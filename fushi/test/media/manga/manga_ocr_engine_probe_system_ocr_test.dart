@@ -28,11 +28,11 @@ class _FakeOcrService implements MangaOcrService {
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
-        detectorReady: modelsReady,
-        recognizerReady: modelsReady,
-        diskBytes: modelsReady ? 1 : 0,
-        totalBytes: 1,
-      );
+    detectorReady: modelsReady,
+    recognizerReady: modelsReady,
+    diskBytes: modelsReady ? 1 : 0,
+    totalBytes: 1,
+  );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -46,8 +46,7 @@ class _FakeOcrService implements MangaOcrService {
     required String imageDirPath,
     String? volumeTitle,
     int startPage = 0,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
 }
 
 class _FakeSystemOcr implements SystemOcrMangaRunner {
@@ -78,41 +77,38 @@ class _FakeSystemOcr implements SystemOcrMangaRunner {
     bool onlyMissing = true,
     required String language,
     MangaOcrPageFocus? focus,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
 
   @override
   Future<MokuroImage> recognizePageBytes(
     Uint8List bytes, {
     required String relativeUrl,
     required String language,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 }
 
 MangaOcrWizardEngines _engines({
   bool modelsReady = false,
   SystemOcrMangaRunner? systemOcr,
-}) =>
-    MangaOcrWizardEngines(
-      service: _FakeOcrService(modelsReady: modelsReady),
-      systemOcrRunner: systemOcr,
-    );
+}) => MangaOcrWizardEngines(
+  service: _FakeOcrService(modelsReady: modelsReady),
+  systemOcrRunner: systemOcr,
+);
 
 MangaOcrEngineId? _resolve(
   MangaOcrEngineAvailability availability,
   MangaOcrEnginePreference preference,
-) =>
-    resolveMangaOcrEngine(
-      preference: preference,
-      hasExistingMetadata: false,
-      capabilities: availability.capabilities,
-    );
+) => resolveMangaOcrEngine(
+  preference: preference,
+  hasExistingMetadata: false,
+  capabilities: availability.capabilities,
+);
 
 void main() {
   test('auto 在本地模型未就绪、系统 OCR 可用时落到系统 OCR', () async {
-    final MangaOcrEngineAvailability availability =
-        await probeMangaOcrEngines(_engines(systemOcr: _FakeSystemOcr()));
+    final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
+      _engines(systemOcr: _FakeSystemOcr()),
+    );
 
     expect(availability.systemOcrOffered, isTrue);
     expect(availability.systemOcrReady, isTrue);
@@ -188,8 +184,9 @@ void main() {
   });
 
   test('没给 runner（隔离入口）时系统 OCR 既不提供也不可用', () async {
-    final MangaOcrEngineAvailability availability =
-        await probeMangaOcrEngines(_engines());
+    final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
+      _engines(),
+    );
 
     expect(availability.systemOcrOffered, isFalse);
     expect(availability.isUsable(MangaOcrEngineId.systemOcr), isFalse);

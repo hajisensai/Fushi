@@ -39,21 +39,28 @@ const String _password = String.fromEnvironment('FUSHI_EMBY_PASS');
 const String _token = String.fromEnvironment('FUSHI_EMBY_TOKEN');
 const String _userId = String.fromEnvironment('FUSHI_EMBY_USERID');
 const String _itemId = String.fromEnvironment('FUSHI_EMBY_ITEM');
-const int _trackIndex =
-    int.fromEnvironment('FUSHI_EMBY_TRACK', defaultValue: 2);
-const int _secondaryTrackIndex =
-    int.fromEnvironment('FUSHI_EMBY_SECONDARY_TRACK', defaultValue: -1);
+const int _trackIndex = int.fromEnvironment(
+  'FUSHI_EMBY_TRACK',
+  defaultValue: 2,
+);
+const int _secondaryTrackIndex = int.fromEnvironment(
+  'FUSHI_EMBY_SECONDARY_TRACK',
+  defaultValue: -1,
+);
 
 /// 截图前 seek 到这里（毫秒；0 = 不 seek）：真片首条 cue 可能在片头台标之后。
 const int _shotSeekMs = int.fromEnvironment('FUSHI_EMBY_SHOT_SEEK_MS');
-const bool _expectFallback =
-    bool.fromEnvironment('FUSHI_EMBY_EXPECT_FALLBACK', defaultValue: true);
+const bool _expectFallback = bool.fromEnvironment(
+  'FUSHI_EMBY_EXPECT_FALLBACK',
+  defaultValue: true,
+);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('真 Emby 兼容层：内嵌轨 libmpv 解码回流成 cue → 重进恢复',
-      (WidgetTester tester) async {
+  testWidgets('真 Emby 兼容层：内嵌轨 libmpv 解码回流成 cue → 重进恢复', (
+    WidgetTester tester,
+  ) async {
     final bool hasToken = _token.isNotEmpty && _userId.isNotEmpty;
     expect(
       _serverUrl.isNotEmpty &&
@@ -81,11 +88,9 @@ void main() {
             accessToken: _token,
           );
         } else {
-          final JellyfinAuthResult auth =
-              await JellyfinApi(serverUrl: url).authenticateByName(
-            _username,
-            _password,
-          );
+          final JellyfinAuthResult auth = await JellyfinApi(
+            serverUrl: url,
+          ).authenticateByName(_username, _password);
           config = JellyfinServerConfig(
             serverUrl: url,
             username: _username,
@@ -108,20 +113,26 @@ void main() {
         VideoFushiTestHooks? readHooks() {
           if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
           return tester.state<State<VideoFushiPage>>(
-            find.byType(VideoFushiPage),
-          ) as VideoFushiTestHooks;
+                find.byType(VideoFushiPage),
+              )
+              as VideoFushiTestHooks;
         }
 
         Future<VideoFushiTestHooks> openAndPlay(String tag) async {
-          final NavigatorState navigator =
-              tester.state<NavigatorState>(find.byType(Navigator).first);
-          unawaited(navigator.push<void>(MaterialPageRoute<void>(
-            builder: (_) => VideoFushiPage.neutralizedRemote(
-              info: info,
-              repo: repo,
-              client: client,
+          final NavigatorState navigator = tester.state<NavigatorState>(
+            find.byType(Navigator).first,
+          );
+          unawaited(
+            navigator.push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => VideoFushiPage.neutralizedRemote(
+                  info: info,
+                  repo: repo,
+                  client: client,
+                ),
+              ),
             ),
-          )));
+          );
           bool ready = false;
           for (int i = 0; i < 360; i++) {
             await tester.pump(const Duration(milliseconds: 250));
@@ -144,8 +155,11 @@ void main() {
 
         // ── ① 选内嵌轨：服务器 404 → libmpv 解码回流 ──
         final VideoFushiTestHooks hooks = await openAndPlay('first');
-        expect(hooks.debugRemoteEmbeddedStreamIndices, contains(_trackIndex),
-            reason: '字幕轨列表应含目标内嵌轨');
+        expect(
+          hooks.debugRemoteEmbeddedStreamIndices,
+          contains(_trackIndex),
+          reason: '字幕轨列表应含目标内嵌轨',
+        );
         await hooks.debugSelectRemoteEmbeddedSubtitle(_trackIndex);
         final String? sourceAfterSelect = hooks.debugCurrentSubtitleSource;
         final String? mpvTrackAfterSelect = hooks.debugActiveSubtitleTrackId;
@@ -156,8 +170,11 @@ void main() {
           'mpvTrack=$mpvTrackAfterSelect graphic=$graphicAfterSelect '
           'cues=$cuesAfterSelect',
         );
-        expect(sourceAfterSelect, 'embedded:$_trackIndex',
-            reason: '选中后字幕源应记为该轨');
+        expect(
+          sourceAfterSelect,
+          'embedded:$_trackIndex',
+          reason: '选中后字幕源应记为该轨',
+        );
         if (!_expectFallback) {
           // 原版服务器：抽取端点正常 → 直接 cue overlay，libmpv 不选轨（回归口径）。
           expect(cuesAfterSelect, greaterThan(0), reason: '服务器抽取成功应直接得到 cue');
@@ -175,17 +192,22 @@ void main() {
             isNot(anyOf(isNull, 'no', 'auto')),
             reason: 'libmpv 应选中容器内真实字幕轨',
           );
-          expect(graphicAfterSelect, isFalse,
-              reason: '文本轨不再走自绘（BUG-2648）');
-          expect(hooks.debugPlayerDecodedSubtitleActive, isTrue,
-              reason: '进入 libmpv 解码 → sub-text 回流模式');
+          expect(graphicAfterSelect, isFalse, reason: '文本轨不再走自绘（BUG-2648）');
+          expect(
+            hooks.debugPlayerDecodedSubtitleActive,
+            isTrue,
+            reason: '进入 libmpv 解码 → sub-text 回流模式',
+          );
           if (_shotSeekMs > 0) await hooks.debugSeekMs(_shotSeekMs);
           for (int i = 0; i < 80 && hooks.debugCueCount == 0; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
           debugPrint('[emb-itest] decoded cues=${hooks.debugCueCount}');
-          expect(hooks.debugCueCount, greaterThan(0),
-              reason: '播到有字幕处应有 libmpv 回流的可点 cue');
+          expect(
+            hooks.debugCueCount,
+            greaterThan(0),
+            reason: '播到有字幕处应有 libmpv 回流的可点 cue',
+          );
           final ObserveShot shot1 = await captureFlutterFrame(
             tester,
             'emb-01-player-rendered',
@@ -195,26 +217,37 @@ void main() {
 
         // ── ①b BUG-2720 副字幕：另一条内嵌轨作副字幕，兼容层同样回落 ──
         if (_secondaryTrackIndex >= 0) {
-          expect(hooks.debugRemoteEmbeddedStreamIndices,
-              contains(_secondaryTrackIndex),
-              reason: '字幕轨列表应含副字幕目标轨');
+          expect(
+            hooks.debugRemoteEmbeddedStreamIndices,
+            contains(_secondaryTrackIndex),
+            reason: '字幕轨列表应含副字幕目标轨',
+          );
           final int primaryCuesBefore = hooks.debugCueCount;
-          await hooks
-              .debugSelectRemoteEmbeddedSecondarySubtitle(_secondaryTrackIndex);
+          await hooks.debugSelectRemoteEmbeddedSecondarySubtitle(
+            _secondaryTrackIndex,
+          );
           debugPrint(
             '[emb-itest] after secondary select: '
             'source=${hooks.debugCurrentSecondarySubtitleSource} '
             'decoded=${hooks.debugSecondaryPlayerDecodedSubtitleActive} '
             'cues=${hooks.debugSecondaryCueCount}',
           );
-          expect(hooks.debugCurrentSecondarySubtitleSource,
-              'embedded:$_secondaryTrackIndex',
-              reason: '副字幕选中后应记为该轨（此前兼容层直接「加载失败」）');
+          expect(
+            hooks.debugCurrentSecondarySubtitleSource,
+            'embedded:$_secondaryTrackIndex',
+            reason: '副字幕选中后应记为该轨（此前兼容层直接「加载失败」）',
+          );
           if (_expectFallback) {
-            expect(hooks.debugSecondaryPlayerDecodedSubtitleActive, isTrue,
-                reason: '兼容层 → libmpv secondary-sid 解码回流');
-            expect(hooks.debugPlayerDecodedSubtitleActive, isTrue,
-                reason: '副字幕不能把主字幕的回流顶掉');
+            expect(
+              hooks.debugSecondaryPlayerDecodedSubtitleActive,
+              isTrue,
+              reason: '兼容层 → libmpv secondary-sid 解码回流',
+            );
+            expect(
+              hooks.debugPlayerDecodedSubtitleActive,
+              isTrue,
+              reason: '副字幕不能把主字幕的回流顶掉',
+            );
           }
           for (int i = 0; i < 120 && hooks.debugSecondaryCueCount == 0; i++) {
             await tester.pump(const Duration(milliseconds: 250));
@@ -223,10 +256,16 @@ void main() {
             '[emb-itest] secondary cues=${hooks.debugSecondaryCueCount} '
             'primary cues=${hooks.debugCueCount} (before=$primaryCuesBefore)',
           );
-          expect(hooks.debugSecondaryCueCount, greaterThan(0),
-              reason: '播到有字幕处应有副字幕 cue');
-          expect(hooks.debugCueCount, greaterThanOrEqualTo(primaryCuesBefore),
-              reason: '主字幕 cue 继续累积、不被副字幕清掉');
+          expect(
+            hooks.debugSecondaryCueCount,
+            greaterThan(0),
+            reason: '播到有字幕处应有副字幕 cue',
+          );
+          expect(
+            hooks.debugCueCount,
+            greaterThanOrEqualTo(primaryCuesBefore),
+            reason: '主字幕 cue 继续累积、不被副字幕清掉',
+          );
           final ObserveShot shotSec = await captureFlutterFrame(
             tester,
             'emb-01b-secondary',
@@ -235,8 +274,9 @@ void main() {
         }
 
         // ── ② 重进：按持久化的 embedded:<n> 恢复（原版 → cue；兼容层 → 解码回流）──
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
         navigator.pop();
         for (int i = 0; i < 80; i++) {
           await tester.pump(const Duration(milliseconds: 250));
@@ -259,14 +299,23 @@ void main() {
           'graphic=${hooks2.debugGraphicSubtitleActive} '
           'decoded=${hooks2.debugPlayerDecodedSubtitleActive}',
         );
-        expect(hooks2.debugCurrentSubtitleSource, 'embedded:$_trackIndex',
-            reason: '重进应恢复上次选的内嵌轨');
+        expect(
+          hooks2.debugCurrentSubtitleSource,
+          'embedded:$_trackIndex',
+          reason: '重进应恢复上次选的内嵌轨',
+        );
         if (!_expectFallback) {
-          expect(hooks2.debugCueCount, greaterThan(0),
-              reason: '服务器可抽 → 重进直接得到 cue');
+          expect(
+            hooks2.debugCueCount,
+            greaterThan(0),
+            reason: '服务器可抽 → 重进直接得到 cue',
+          );
         } else {
-          expect(hooks2.debugPlayerDecodedSubtitleActive, isTrue,
-              reason: '兼容层 → 重进后仍由 libmpv 解码回流');
+          expect(
+            hooks2.debugPlayerDecodedSubtitleActive,
+            isTrue,
+            reason: '兼容层 → 重进后仍由 libmpv 解码回流',
+          );
           expect(hooks2.debugGraphicSubtitleActive, isFalse);
         }
         if (_secondaryTrackIndex >= 0) {
@@ -283,12 +332,17 @@ void main() {
             'decoded=${hooks2.debugSecondaryPlayerDecodedSubtitleActive} '
             'cues=${hooks2.debugSecondaryCueCount}',
           );
-          expect(hooks2.debugCurrentSecondarySubtitleSource,
-              'embedded:$_secondaryTrackIndex',
-              reason: '重进应恢复上次选的副字幕轨');
+          expect(
+            hooks2.debugCurrentSecondarySubtitleSource,
+            'embedded:$_secondaryTrackIndex',
+            reason: '重进应恢复上次选的副字幕轨',
+          );
           if (_expectFallback) {
-            expect(hooks2.debugSecondaryPlayerDecodedSubtitleActive, isTrue,
-                reason: '兼容层 → 重进后副字幕仍由 libmpv 解码回流');
+            expect(
+              hooks2.debugSecondaryPlayerDecodedSubtitleActive,
+              isTrue,
+              reason: '兼容层 → 重进后副字幕仍由 libmpv 解码回流',
+            );
           } else {
             expect(hooks2.debugSecondaryCueCount, greaterThan(0));
           }

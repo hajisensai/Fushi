@@ -14,52 +14,70 @@ void main() {
   ).readAsStringSync();
 
   test('_overlayInert flag is set on deactivate and cleared on activate', () {
-    expect(pageSource, contains('bool _overlayInert'),
-        reason: '需销毁期标志拦截浮层 builder（BUG-121）');
+    expect(
+      pageSource,
+      contains('bool _overlayInert'),
+      reason: '需销毁期标志拦截浮层 builder（BUG-121）',
+    );
     final String deactivate = _functionSource(
       pageSource,
       '  void deactivate() {',
       '  void activate() {',
     );
-    expect(deactivate, contains('_overlayInert = true'),
-        reason: 'deactivate 必须置位（早于同帧 layout 阶段）');
+    expect(
+      deactivate,
+      contains('_overlayInert = true'),
+      reason: 'deactivate 必须置位（早于同帧 layout 阶段）',
+    );
     final String activate = _functionSource(
       pageSource,
       '  void activate() {',
       '  late final PageFocusOwnership _focusOwnership',
     );
-    expect(activate, contains('_overlayInert = false'),
-        reason: 'activate 必须复位 _overlayInert，重挂后恢复浮层');
+    expect(
+      activate,
+      contains('_overlayInert = false'),
+      reason: 'activate 必须复位 _overlayInert，重挂后恢复浮层',
+    );
     // 防呆：deactivate/activate 都调 super。
     expect(deactivate, contains('super.deactivate()'));
     expect(activate, contains('super.activate()'));
   });
 
-  test('popup overlay LayoutBuilder bails out during teardown before lookups',
-      () {
-    final String fn = _functionSource(
-      pageSource,
-      '  Widget _buildPopupOverlay(BuildContext overlayContext) {',
-      '  /// 制卡（覆写',
-    );
-    // 外层与内层 LayoutBuilder 都要有 _overlayInert 早返回守卫。
-    expect(
+  test(
+    'popup overlay LayoutBuilder bails out during teardown before lookups',
+    () {
+      final String fn = _functionSource(
+        pageSource,
+        '  Widget _buildPopupOverlay(BuildContext overlayContext) {',
+        '  /// 制卡（覆写',
+      );
+      // 外层与内层 LayoutBuilder 都要有 _overlayInert 早返回守卫。
+      expect(
         '_overlayInert) return const SizedBox.shrink();'.allMatches(fn).length,
         greaterThanOrEqualTo(2),
-        reason: '外层 + 内层 LayoutBuilder builder 都要在访问 appModel 前空渲染兜底');
+        reason: '外层 + 内层 LayoutBuilder builder 都要在访问 appModel 前空渲染兜底',
+      );
 
-    // 内层守卫必须出现在 LayoutBuilder 的 screen 计算（首个 appModel 失效查找前）之前。
-    final int layoutIdx = fn.indexOf(
-        'builder: (BuildContext context, BoxConstraints constraints) {');
-    expect(layoutIdx, isNonNegative);
-    final int guardIdx =
-        fn.indexOf('_overlayInert) return const SizedBox.shrink();', layoutIdx);
-    final int screenIdx = fn.indexOf('final Size screen', layoutIdx);
-    expect(guardIdx, isNonNegative);
-    expect(screenIdx, isNonNegative);
-    expect(guardIdx, lessThan(screenIdx),
-        reason: '守卫必须在 LayoutBuilder 体内 screen/子层构建之前');
-  });
+      // 内层守卫必须出现在 LayoutBuilder 的 screen 计算（首个 appModel 失效查找前）之前。
+      final int layoutIdx = fn.indexOf(
+        'builder: (BuildContext context, BoxConstraints constraints) {',
+      );
+      expect(layoutIdx, isNonNegative);
+      final int guardIdx = fn.indexOf(
+        '_overlayInert) return const SizedBox.shrink();',
+        layoutIdx,
+      );
+      final int screenIdx = fn.indexOf('final Size screen', layoutIdx);
+      expect(guardIdx, isNonNegative);
+      expect(screenIdx, isNonNegative);
+      expect(
+        guardIdx,
+        lessThan(screenIdx),
+        reason: '守卫必须在 LayoutBuilder 体内 screen/子层构建之前',
+      );
+    },
+  );
 }
 
 String _functionSource(String source, String start, String end) {

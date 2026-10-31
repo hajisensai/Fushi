@@ -17,36 +17,39 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 void main() {
   test(
-      'BUG-1797: getCharacterAtPoint rejects chars clipped into the page-margin '
-      'band and still hits visible body text', () {
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-bug1797-hit-leak-',
-    );
-    final File payloadFile = File('${temp.path}/payload.json')
-      ..writeAsStringSync(
-        jsonEncode(<String, String>{
-          'selection': ReaderSelectionScripts.source(),
-        }),
+    'BUG-1797: getCharacterAtPoint rejects chars clipped into the page-margin '
+    'band and still hits visible body text',
+    () {
+      final Directory temp = Directory.systemTemp.createTempSync(
+        'fushi-bug1797-hit-leak-',
       );
-    late final ProcessResult result;
-    try {
-      result = Process.runSync(
-        'node',
-        <String>['-e', _runner, payloadFile.path],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
+      final File payloadFile = File('${temp.path}/payload.json')
+        ..writeAsStringSync(
+          jsonEncode(<String, String>{
+            'selection': ReaderSelectionScripts.source(),
+          }),
+        );
+      late final ProcessResult result;
+      try {
+        result = Process.runSync(
+          'node',
+          <String>['-e', _runner, payloadFile.path],
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'padding hit-leak runner failed:\n'
+            'stdout=${result.stdout}\nstderr=${result.stderr}',
       );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
-    expect(
-      result.exitCode,
-      0,
-      reason: 'padding hit-leak runner failed:\n'
-          'stdout=${result.stdout}\nstderr=${result.stderr}',
-    );
-    expect(result.stdout.toString().trim(), 'OK');
-  });
+      expect(result.stdout.toString().trim(), 'OK');
+    },
+  );
 }
 
 const String _runner = r'''

@@ -3,21 +3,30 @@ import 'package:test/test.dart';
 
 void main() {
   test('默认值 → toYaml → parse 往返一致', () {
-    final ServerConfig a = ServerConfig.defaults(dataDir: '/srv/fushi/data').copyWith(
-      adminToken: 'tok',
-      qbittorrentUrl: 'http://qb:8080',
-      qbittorrentUsername: 'admin',
-      qbittorrentPassword: 'p"w\\d',
-      libraries: const <LibraryRootConfig>[
-        LibraryRootConfig(id: 'anime', path: '/srv/media/anime'),
-        LibraryRootConfig(id: 'books', path: '/srv/media/books', kind: 'book', enabled: false),
-      ],
-      adminPort: 9000,
-      adminBind: '127.0.0.1',
-      ffmpegPath: '/usr/bin/ffmpeg',
-      ffprobePath: '/usr/bin/ffprobe',
+    final ServerConfig a = ServerConfig.defaults(dataDir: '/srv/fushi/data')
+        .copyWith(
+          adminToken: 'tok',
+          qbittorrentUrl: 'http://qb:8080',
+          qbittorrentUsername: 'admin',
+          qbittorrentPassword: 'p"w\\d',
+          libraries: const <LibraryRootConfig>[
+            LibraryRootConfig(id: 'anime', path: '/srv/media/anime'),
+            LibraryRootConfig(
+              id: 'books',
+              path: '/srv/media/books',
+              kind: 'book',
+              enabled: false,
+            ),
+          ],
+          adminPort: 9000,
+          adminBind: '127.0.0.1',
+          ffmpegPath: '/usr/bin/ffmpeg',
+          ffprobePath: '/usr/bin/ffprobe',
+        );
+    final ServerConfig b = ServerConfig.parse(
+      a.toYaml(),
+      configDir: '/etc/fushi',
     );
-    final ServerConfig b = ServerConfig.parse(a.toYaml(), configDir: '/etc/fushi');
     expect(b.dataDir, a.dataDir);
     expect(b.port, a.port);
     expect(b.adminPort, 9000);
@@ -27,31 +36,45 @@ void main() {
     expect(b.ffprobePath, '/usr/bin/ffprobe');
     expect(b.qbittorrentUrl, 'http://qb:8080');
     expect(b.qbittorrentPassword, 'p"w\\d');
-    expect(b.libraries.map((LibraryRootConfig l) => l.id), <String>['anime', 'books']);
+    expect(b.libraries.map((LibraryRootConfig l) => l.id), <String>[
+      'anime',
+      'books',
+    ]);
     expect(b.libraries[1].kind, 'book');
     expect(b.libraries[1].enabled, isFalse);
   });
 
   test('远程可达三项（公网地址 / P2P / 自建中继）往返一致，默认 P2P 关', () {
-    final ServerConfig defaults =
-        ServerConfig.parse('port: 1\n', configDir: '/etc/fushi');
+    final ServerConfig defaults = ServerConfig.parse(
+      'port: 1\n',
+      configDir: '/etc/fushi',
+    );
     expect(defaults.p2p, isFalse, reason: '开 P2P 会连 iroh 公共中继，必须显式开');
     expect(defaults.publicUrls, isEmpty);
     expect(defaults.p2pRelays, isEmpty);
 
     final ServerConfig a = ServerConfig.defaults(dataDir: '/srv/d').copyWith(
-      publicUrls: <String>['https://home.example:8443', 'http://[2408::5]:38765'],
+      publicUrls: <String>[
+        'https://home.example:8443',
+        'http://[2408::5]:38765',
+      ],
       p2p: true,
       p2pRelays: <String>['https://relay.example/'],
     );
-    final ServerConfig b = ServerConfig.parse(a.toYaml(), configDir: '/etc/fushi');
+    final ServerConfig b = ServerConfig.parse(
+      a.toYaml(),
+      configDir: '/etc/fushi',
+    );
     expect(b.publicUrls, a.publicUrls);
     expect(b.p2p, isTrue);
     expect(b.p2pRelays, a.p2pRelays);
   });
 
   test('缺项取默认，相对 data_dir 按配置目录解析', () {
-    final ServerConfig c = ServerConfig.parse('port: 1234\n', configDir: '/etc/fushi');
+    final ServerConfig c = ServerConfig.parse(
+      'port: 1234\n',
+      configDir: '/etc/fushi',
+    );
     expect(c.port, 1234);
     expect(c.adminPort, ServerConfig.defaultAdminPort);
     expect(c.tls, isTrue);

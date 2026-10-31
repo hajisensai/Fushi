@@ -42,8 +42,10 @@ Rect waveformBucketRect({
   // 柱居中在格内（左右各留 (slot - barWidth)/2）。
   final double barLeft = left + (slot - barWidth) / 2;
   final double clampedValue = value.clamp(0.0, 1.0).toDouble();
-  final double halfSpan =
-      (size.height / 2 - verticalPadding).clamp(0.0, size.height / 2);
+  final double halfSpan = (size.height / 2 - verticalPadding).clamp(
+    0.0,
+    size.height / 2,
+  );
   final double halfHeight = clampedValue * halfSpan;
   return Rect.fromLTRB(
     barLeft,

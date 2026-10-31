@@ -18,10 +18,12 @@ void main() {
   // flutter test 的 cwd 是 fushi 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
   final File toolsContent = File('../tools/browser-extension/content.js');
-  final File assetsActionPopup =
-      File('assets/browser_extension/vendor/action-popup.js');
-  final File toolsActionPopup =
-      File('../tools/browser-extension/vendor/action-popup.js');
+  final File assetsActionPopup = File(
+    'assets/browser_extension/vendor/action-popup.js',
+  );
+  final File toolsActionPopup = File(
+    '../tools/browser-extension/vendor/action-popup.js',
+  );
   final File assetsCss = File('assets/browser_extension/vendor/content.css');
   final File toolsCss = File('../tools/browser-extension/vendor/content.css');
   // 服务端主题下发弹窗尺寸的真值源（app_model.browserExtensionThemeColors）。
@@ -31,29 +33,46 @@ void main() {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
         test('文件存在', () {
-          expect(content.existsSync(), isTrue,
-              reason: 'missing ${content.path}');
+          expect(
+            content.existsSync(),
+            isTrue,
+            reason: 'missing ${content.path}',
+          );
         });
 
         // 分类判据在 mine-outcome.js（与 content.js 同目录），content script 与 service
         // worker 共用；行为由 tools/browser-extension/mine-outcome.test.js 真跑。
         test('出队分类器把 success 与 duplicate 都归为 done（队列才会清）', () {
-          final String src =
-              File('${content.parent.path}/mine-outcome.js').readAsStringSync();
-          expect(src.contains('function fushiMineOutcome('), isTrue,
-              reason: '${content.parent.path} 缺 fushiMineOutcome 分类器');
+          final String src = File(
+            '${content.parent.path}/mine-outcome.js',
+          ).readAsStringSync();
+          expect(
+            src.contains('function fushiMineOutcome('),
+            isTrue,
+            reason: '${content.parent.path} 缺 fushiMineOutcome 分类器',
+          );
           // duplicate 必须与 success 同归 done，否则永久滞留 = 队列永不清。
           final int classifyIdx = src.indexOf('function fushiMineOutcome(');
           final int doneBranchIdx = src.indexOf(
-              "if (r === 'success' || r === 'duplicate')", classifyIdx);
-          final int notConfiguredIdx =
-              src.indexOf("if (r === 'notConfigured')", classifyIdx);
-          expect(doneBranchIdx, greaterThan(classifyIdx),
-              reason:
-                  '${content.parent.path} 缺 success||duplicate 组合出队判据（队列永不清根因）');
-          expect(notConfiguredIdx, greaterThan(doneBranchIdx),
-              reason:
-                  '${content.parent.path} notConfigured 判据应在 success||duplicate 之后');
+            "if (r === 'success' || r === 'duplicate')",
+            classifyIdx,
+          );
+          final int notConfiguredIdx = src.indexOf(
+            "if (r === 'notConfigured')",
+            classifyIdx,
+          );
+          expect(
+            doneBranchIdx,
+            greaterThan(classifyIdx),
+            reason:
+                '${content.parent.path} 缺 success||duplicate 组合出队判据（队列永不清根因）',
+          );
+          expect(
+            notConfiguredIdx,
+            greaterThan(doneBranchIdx),
+            reason:
+                '${content.parent.path} notConfigured 判据应在 success||duplicate 之后',
+          );
           expect(
             src
                 .substring(doneBranchIdx, notConfiguredIdx)
@@ -64,37 +83,51 @@ void main() {
           );
           // notConfigured 留队（提示配 Anki），error/网络失败留队重试。
           expect(
-              src.contains(
-                  "if (r === 'notConfigured') return { cls: 'unconfigured'"),
-              isTrue,
-              reason:
-                  '${content.parent.path} 未把 notConfigured 归为 unconfigured');
+            src.contains(
+              "if (r === 'notConfigured') return { cls: 'unconfigured'",
+            ),
+            isTrue,
+            reason: '${content.parent.path} 未把 notConfigured 归为 unconfigured',
+          );
         });
 
         test('YouTube/Netflix 两条生成路径都走分类器出队', () {
           final String src = content.readAsStringSync();
           // Netflix 回放录制在 content script 里。
-          expect(src.contains('resolve(fushiClassifyMineResp(resp));'), isTrue,
-              reason: '${content.path} Netflix 生成路径未走分类器');
           expect(
-              src.contains("if (cls === 'done') { done++; okIds.push(q.id); }"),
-              isTrue,
-              reason: '${content.path} Netflix 出队未门控到 cls===done');
+            src.contains('resolve(fushiClassifyMineResp(resp));'),
+            isTrue,
+            reason: '${content.path} Netflix 生成路径未走分类器',
+          );
+          expect(
+            src.contains("if (cls === 'done') { done++; okIds.push(q.id); }"),
+            isTrue,
+            reason: '${content.path} Netflix 出队未门控到 cls===done',
+          );
           // YouTube 批量在 service worker 里（不需要视频页），同一份判据、同样只出队 done。
-          final String bg =
-              File('${content.parent.path}/background.js').readAsStringSync();
-          expect(bg.contains('self.fushiMineOutcome('), isTrue,
-              reason: '${content.parent.path} YouTube 生成路径未走共享分类器');
+          final String bg = File(
+            '${content.parent.path}/background.js',
+          ).readAsStringSync();
+          expect(
+            bg.contains('self.fushiMineOutcome('),
+            isTrue,
+            reason: '${content.parent.path} YouTube 生成路径未走共享分类器',
+          );
           // 成功即刻出队（SW 可能被 MV3 中途杀掉，攒到最后再出队会让已成功的卡重制）。
           expect(
-              bg.contains(
-                  "if (o.cls === 'done') { ok++; await fushiRemoveQueuedId(q.id); }"),
-              isTrue,
-              reason: '${content.parent.path} YouTube 出队未门控到 cls===done');
+            bg.contains(
+              "if (o.cls === 'done') { ok++; await fushiRemoveQueuedId(q.id); }",
+            ),
+            isTrue,
+            reason: '${content.parent.path} YouTube 出队未门控到 cls===done',
+          );
           // 旧的「仅 success 才出队」硬判据不得残留。
           for (final String s in <String>[src, bg]) {
-            expect(s.contains("resp.data.result === 'success'"), isFalse,
-                reason: '仍残留「仅 success 出队」硬判据（duplicate 会滞留）');
+            expect(
+              s.contains("resp.data.result === 'success'"),
+              isFalse,
+              reason: '仍残留「仅 success 出队」硬判据（duplicate 会滞留）',
+            );
           }
         });
       });
@@ -112,17 +145,29 @@ void main() {
         test('逐项删除 UI：列表渲染 + 删除按钮调 removeItem(id)（剔除走 fushiFilterQueue）', () {
           final String src = popup.readAsStringSync();
           // 纯剔除函数（读-改-写核心，node 测试也守）。
-          expect(src.contains('function fushiFilterQueue('), isTrue,
-              reason: '${popup.path} 缺队列剔除纯函数 fushiFilterQueue');
+          expect(
+            src.contains('function fushiFilterQueue('),
+            isTrue,
+            reason: '${popup.path} 缺队列剔除纯函数 fushiFilterQueue',
+          );
           // 逐项删除入口。
-          expect(src.contains('async function removeItem('), isTrue,
-              reason: '${popup.path} 缺逐项删除 removeItem');
+          expect(
+            src.contains('async function removeItem('),
+            isTrue,
+            reason: '${popup.path} 缺逐项删除 removeItem',
+          );
           // 删除按钮。
-          expect(src.contains("del.className = 'hp-del';"), isTrue,
-              reason: '${popup.path} 缺逐项删除按钮 hp-del');
+          expect(
+            src.contains("del.className = 'hp-del';"),
+            isTrue,
+            reason: '${popup.path} 缺逐项删除按钮 hp-del',
+          );
           // 按钮点击调 removeItem(id)。
-          expect(src.contains('if (id) removeItem(id);'), isTrue,
-              reason: '${popup.path} 删除按钮未调 removeItem(id)');
+          expect(
+            src.contains('if (id) removeItem(id);'),
+            isTrue,
+            reason: '${popup.path} 删除按钮未调 removeItem(id)',
+          );
         });
       });
     }
@@ -131,22 +176,25 @@ void main() {
   group('TODO-1185 查词弹窗容器有界（不再撑满全屏）', () {
     // popup-size.js 是扩展侧弹窗默认尺寸的真相源（与 app 的
     // kLookupPopupDefaultWidth/Height 对齐）；CSS 兜底值从这里读，不另写数字。
-    final String popupSizeSrc =
-        File('../tools/browser-extension/popup-size.js').readAsStringSync();
+    final String popupSizeSrc = File(
+      '../tools/browser-extension/popup-size.js',
+    ).readAsStringSync();
     int popupSizeDefault(String variable) {
-      final RegExpMatch? m =
-          RegExp(RegExp.escape("fushiParsePx(t['$variable'], ") + r'(\d+)\)')
-              .firstMatch(popupSizeSrc);
+      final RegExpMatch? m = RegExp(
+        RegExp.escape("fushiParsePx(t['$variable'], ") + r'(\d+)\)',
+      ).firstMatch(popupSizeSrc);
       if (m == null) {
         throw StateError('popup-size.js 找不到 $variable 的默认值');
       }
       return int.parse(m.group(1)!);
     }
 
-    final int popupSizeDefaultWidth =
-        popupSizeDefault('--fushi-popup-max-width');
-    final int popupSizeDefaultHeight =
-        popupSizeDefault('--fushi-popup-max-height');
+    final int popupSizeDefaultWidth = popupSizeDefault(
+      '--fushi-popup-max-width',
+    );
+    final int popupSizeDefaultHeight = popupSizeDefault(
+      '--fushi-popup-max-height',
+    );
 
     for (final File css in <File>[
       assetsCss,
@@ -154,35 +202,51 @@ void main() {
       File('../tools/browser-extension/scripts/content-css-overlay.css'),
     ]) {
       test(
-          'content.css ${css.path} #entries-container 有 max-height + overflow-y',
-          () {
-        final String src = css.readAsStringSync();
-        expect(src.contains('max-height: min('), isTrue,
-            reason: '${css.path} #entries-container 缺 max-height 约束');
-        expect(src.contains('overflow-y: auto;'), isTrue,
-            reason: '${css.path} #entries-container 缺 overflow-y 内部滚动');
-        // TODO-1185 follow-up：弹窗宽/高必须消费**服务端真喂**的变量名
-        // （browserExtensionThemeColors 下发 --fushi-popup-max-width /
-        //  --fushi-popup-max-height），否则查词响应下发的用户配置尺寸永远落不到
-        //  弹窗上（历史 bug：content.css 曾读 --fushi-popup-width，服务端只发
-        //  --fushi-popup-max-width → 宽度死锁 400px）。兜底值必须与 popup-size.js
-        //  的默认值同源（PR #2341 把默认改成 480×480 后 CSS 曾残留 400×360）。
-        expect(
-            src.contains(
-                'var(--fushi-popup-max-width, ${popupSizeDefaultWidth}px)'),
+        'content.css ${css.path} #entries-container 有 max-height + overflow-y',
+        () {
+          final String src = css.readAsStringSync();
+          expect(
+            src.contains('max-height: min('),
             isTrue,
-            reason: '${css.path} 弹窗宽度未消费 --fushi-popup-max-width，'
-                '或兜底值与 popup-size.js 默认宽 ${popupSizeDefaultWidth}px 不一致');
-        expect(
-            src.contains(
-                'var(--fushi-popup-max-height, ${popupSizeDefaultHeight}px)'),
+            reason: '${css.path} #entries-container 缺 max-height 约束',
+          );
+          expect(
+            src.contains('overflow-y: auto;'),
             isTrue,
-            reason: '${css.path} 弹窗高度未消费 --fushi-popup-max-height，'
-                '或兜底值与 popup-size.js 默认高 ${popupSizeDefaultHeight}px 不一致');
-        // 旧的不匹配变量名不得复活（服务端从不发 --fushi-popup-width）。
-        expect(src.contains('var(--fushi-popup-width,'), isFalse,
-            reason: '${css.path} 残留服务端从不下发的 --fushi-popup-width（宽度死锁根因）');
-      });
+            reason: '${css.path} #entries-container 缺 overflow-y 内部滚动',
+          );
+          // TODO-1185 follow-up：弹窗宽/高必须消费**服务端真喂**的变量名
+          // （browserExtensionThemeColors 下发 --fushi-popup-max-width /
+          //  --fushi-popup-max-height），否则查词响应下发的用户配置尺寸永远落不到
+          //  弹窗上（历史 bug：content.css 曾读 --fushi-popup-width，服务端只发
+          //  --fushi-popup-max-width → 宽度死锁 400px）。兜底值必须与 popup-size.js
+          //  的默认值同源（PR #2341 把默认改成 480×480 后 CSS 曾残留 400×360）。
+          expect(
+            src.contains(
+              'var(--fushi-popup-max-width, ${popupSizeDefaultWidth}px)',
+            ),
+            isTrue,
+            reason:
+                '${css.path} 弹窗宽度未消费 --fushi-popup-max-width，'
+                '或兜底值与 popup-size.js 默认宽 ${popupSizeDefaultWidth}px 不一致',
+          );
+          expect(
+            src.contains(
+              'var(--fushi-popup-max-height, ${popupSizeDefaultHeight}px)',
+            ),
+            isTrue,
+            reason:
+                '${css.path} 弹窗高度未消费 --fushi-popup-max-height，'
+                '或兜底值与 popup-size.js 默认高 ${popupSizeDefaultHeight}px 不一致',
+          );
+          // 旧的不匹配变量名不得复活（服务端从不发 --fushi-popup-width）。
+          expect(
+            src.contains('var(--fushi-popup-width,'),
+            isFalse,
+            reason: '${css.path} 残留服务端从不下发的 --fushi-popup-width（宽度死锁根因）',
+          );
+        },
+      );
     }
   });
 
@@ -192,25 +256,42 @@ void main() {
       // 服务端在查词响应 theme 字段里把用户配置的 popupMaxWidth/Height 作为这两个
       // CSS 变量下发；content.js fushiRender 逐项 setProperty 到 #entries-container，
       // content.css 用同名 var(...) 消费 → 扩展弹窗跟随 app 内弹窗尺寸设置。
-      expect(src.contains("'--fushi-popup-max-width':"), isTrue,
-          reason: 'app_model 未下发 --fushi-popup-max-width（扩展宽度无法跟随配置）');
-      expect(src.contains("'--fushi-popup-max-height':"), isTrue,
-          reason: 'app_model 未下发 --fushi-popup-max-height（扩展高度无法跟随配置）');
+      expect(
+        src.contains("'--fushi-popup-max-width':"),
+        isTrue,
+        reason: 'app_model 未下发 --fushi-popup-max-width（扩展宽度无法跟随配置）',
+      );
+      expect(
+        src.contains("'--fushi-popup-max-height':"),
+        isTrue,
+        reason: 'app_model 未下发 --fushi-popup-max-height（扩展高度无法跟随配置）',
+      );
       // PR#83（弹窗尺寸精细化）：弹窗宽/高不再直接取 popupMaxWidth/Height，改由
       // extensionPopupEffectiveSize 解析——用户解锁「扩展独立尺寸」用扩展自己的键，
       // 否则回退 app 内 popupMaxWidth/Height（effectiveLookupSize 纯函数）。守卫仍
       // 咬「弹窗尺寸变量源自用户配置、非硬编码 400×360」，只把符号更到有效尺寸解析入口。
       // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置（extensionPopupEffectiveSize）与扩展
       // 所选配置的只读视图（extensionPopupEffectiveSizeIn）两路填，构建函数读 inputs.popupSize。
-      expect(src.contains('popupSize: extensionPopupEffectiveSize,'), isTrue,
-          reason:
-              'app_model 未经 extensionPopupEffectiveSize 生成弹窗尺寸变量（应源自用户配置尺寸）');
-      expect(src.contains('popupSize: extensionPopupEffectiveSizeIn(p),'), isTrue,
-          reason: '扩展所选配置的视图也必须经同一套有效尺寸解析');
-      expect(src.contains('inputs.popupSize.width.round()'), isTrue,
-          reason: '弹窗宽度变量必须取有效尺寸');
-      expect(src.contains('inputs.popupSize.height.round()'), isTrue,
-          reason: '弹窗高度变量必须取有效尺寸');
+      expect(
+        src.contains('popupSize: extensionPopupEffectiveSize,'),
+        isTrue,
+        reason: 'app_model 未经 extensionPopupEffectiveSize 生成弹窗尺寸变量（应源自用户配置尺寸）',
+      );
+      expect(
+        src.contains('popupSize: extensionPopupEffectiveSizeIn(p),'),
+        isTrue,
+        reason: '扩展所选配置的视图也必须经同一套有效尺寸解析',
+      );
+      expect(
+        src.contains('inputs.popupSize.width.round()'),
+        isTrue,
+        reason: '弹窗宽度变量必须取有效尺寸',
+      );
+      expect(
+        src.contains('inputs.popupSize.height.round()'),
+        isTrue,
+        reason: '弹窗高度变量必须取有效尺寸',
+      );
     });
 
     for (final File content in <File>[assetsContent, toolsContent]) {
@@ -218,25 +299,36 @@ void main() {
         final String src = content.readAsStringSync();
         // 通用 theme 应用循环：--fushi-popup-max-* 与 --md-* 同路径下发生效，
         // 无需为弹窗尺寸单开一条并行路径（单一真相源=theme 映射）。
-        expect(src.contains('c.style.setProperty(k, theme[k])'), isTrue,
-            reason: '${content.path} 缺 theme 逐项 setProperty（弹窗尺寸/主题下发生效点）');
+        expect(
+          src.contains('c.style.setProperty(k, theme[k])'),
+          isTrue,
+          reason: '${content.path} 缺 theme 逐项 setProperty（弹窗尺寸/主题下发生效点）',
+        );
       });
     }
   });
 
   group('两份镜像逐字节一致', () {
     test('content.js', () {
-      expect(assetsContent.readAsBytesSync(), toolsContent.readAsBytesSync(),
-          reason: 'content.js 两份镜像不一致');
+      expect(
+        assetsContent.readAsBytesSync(),
+        toolsContent.readAsBytesSync(),
+        reason: 'content.js 两份镜像不一致',
+      );
     });
     test('content.css', () {
-      expect(assetsCss.readAsBytesSync(), toolsCss.readAsBytesSync(),
-          reason: 'content.css 两份镜像不一致');
+      expect(
+        assetsCss.readAsBytesSync(),
+        toolsCss.readAsBytesSync(),
+        reason: 'content.css 两份镜像不一致',
+      );
     });
     test('action-popup.js', () {
-      expect(assetsActionPopup.readAsBytesSync(),
-          toolsActionPopup.readAsBytesSync(),
-          reason: 'action-popup.js 两份镜像不一致');
+      expect(
+        assetsActionPopup.readAsBytesSync(),
+        toolsActionPopup.readAsBytesSync(),
+        reason: 'action-popup.js 两份镜像不一致',
+      );
     });
   });
 }

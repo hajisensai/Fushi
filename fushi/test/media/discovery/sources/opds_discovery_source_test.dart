@@ -19,25 +19,25 @@ OpdsServerConfig _config({
   String password = 'pw',
   String url = 'https://books.example.com/api/v1/opds',
   String name = 'My Books',
-}) =>
-    OpdsServerConfig(
-      id: 'srv1',
-      name: name,
-      catalogUrl: Uri.parse(url),
-      username: username,
-      password: password,
-    );
+}) => OpdsServerConfig(
+  id: 'srv1',
+  name: name,
+  catalogUrl: Uri.parse(url),
+  username: username,
+  password: password,
+);
 
 OpdsDiscoverySource _source(MockClient client, {OpdsServerConfig? config}) =>
     OpdsDiscoverySource(config: config ?? _config(), client: client);
 
-http.Response _xml(String body,
-        {String contentType = 'application/atom+xml'}) =>
-    http.Response.bytes(
-      utf8.encode(body),
-      200,
-      headers: <String, String>{'content-type': contentType},
-    );
+http.Response _xml(
+  String body, {
+  String contentType = 'application/atom+xml',
+}) => http.Response.bytes(
+  utf8.encode(body),
+  200,
+  headers: <String, String>{'content-type': contentType},
+);
 
 /// 一页 acquisition feed：一本 epub + 一卷 cbz + 一个子目录。
 const String _mixedFeed = '''
@@ -70,20 +70,24 @@ void main() {
     );
     final List<DiscoveryEntry> novelEntries = novels.items.single.entries;
     expect(novelEntries.whereType<DiscoveryFolder>().single.title, 'Series');
-    final DiscoveryResourceItem novel =
-        novelEntries.whereType<DiscoveryResourceItem>().single;
+    final DiscoveryResourceItem novel = novelEntries
+        .whereType<DiscoveryResourceItem>()
+        .single;
     expect(novel.title, 'A Novel');
     expect(novel.kind, DiscoveryMediaKind.novel);
 
     final ProviderBatchResult<DiscoveryResultPage> manga = await source.browse(
       const DiscoveryRequest(kind: DiscoveryMediaKind.manga),
     );
-    final List<DiscoveryResourceItem> mangaItems =
-        manga.items.single.entries.whereType<DiscoveryResourceItem>().toList();
+    final List<DiscoveryResourceItem> mangaItems = manga.items.single.entries
+        .whereType<DiscoveryResourceItem>()
+        .toList();
     expect(mangaItems.single.title, 'A Comic', reason: '漫画域不该列出只有 epub 的条目');
     // 目录在两个域下都在：里面装什么要点进去才知道。
     expect(
-        manga.items.single.entries.whereType<DiscoveryFolder>(), hasLength(1));
+      manga.items.single.entries.whereType<DiscoveryFolder>(),
+      hasLength(1),
+    );
     source.close();
   });
 
@@ -94,8 +98,9 @@ void main() {
     final ProviderBatchResult<DiscoveryResultPage> result = await source.browse(
       const DiscoveryRequest(kind: DiscoveryMediaKind.novel),
     );
-    final DiscoveryResourceItem item =
-        result.items.single.entries.whereType<DiscoveryResourceItem>().single;
+    final DiscoveryResourceItem item = result.items.single.entries
+        .whereType<DiscoveryResourceItem>()
+        .single;
     final DiscoveryHttpPayload payload = item.payload! as DiscoveryHttpPayload;
     // 直链是 /dl/1（无扩展名）；下载队列不读 Content-Disposition，
     // 不给 fileName 就会落成无后缀文件并被分类器判 unknownFileType。
@@ -127,14 +132,19 @@ void main() {
     );
     expect(seen['books.example.com'], startsWith('Basic '));
 
-    final DiscoveryHttpPayload payload = result.items.single.entries
-        .whereType<DiscoveryResourceItem>()
-        .single
-        .payload! as DiscoveryHttpPayload;
+    final DiscoveryHttpPayload payload =
+        result.items.single.entries
+                .whereType<DiscoveryResourceItem>()
+                .single
+                .payload!
+            as DiscoveryHttpPayload;
     // 下载链接指向第三方主机：绝不能把用户的 OPDS 密码附上去。
     expect(payload.url, 'https://cdn.other-host.net/dl/9');
-    expect(payload.headers.containsKey('Authorization'), isFalse,
-        reason: '凭据绑定 origin，不跟着链接走');
+    expect(
+      payload.headers.containsKey('Authorization'),
+      isFalse,
+      reason: '凭据绑定 origin，不跟着链接走',
+    );
     source.close();
   });
 
@@ -195,8 +205,10 @@ void main() {
       'P2',
     );
     expect(second.items.single.hasMore, isFalse);
-    expect(requested.last,
-        'https://books.example.com/api/v1/opds/books?cursor=abc');
+    expect(
+      requested.last,
+      'https://books.example.com/api/v1/opds/books?cursor=abc',
+    );
     // 第二页只多发了一次请求：第一页的 next 已被记住，没有从头回走。
     expect(requested, hasLength(2));
     source.close();
@@ -207,8 +219,9 @@ void main() {
     final OpdsDiscoverySource source = _source(
       MockClient((http.Request request) async {
         requested.add(request.url.toString());
-        final int page =
-            int.parse(request.url.queryParameters['cursor'] ?? '1');
+        final int page = int.parse(
+          request.url.queryParameters['cursor'] ?? '1',
+        );
         final String next = page < 3
             ? '<link rel="next" href="/api/v1/opds?cursor=${page + 1}"/>'
             : '';
@@ -336,9 +349,9 @@ void main() {
   test('401/403 收敛成 unauthorized/forbidden，消息里不带地址或凭据', () async {
     for (final (int status, ExternalProviderFailureKind kind)
         in <(int, ExternalProviderFailureKind)>[
-      (401, ExternalProviderFailureKind.unauthorized),
-      (403, ExternalProviderFailureKind.forbidden),
-    ]) {
+          (401, ExternalProviderFailureKind.unauthorized),
+          (403, ExternalProviderFailureKind.forbidden),
+        ]) {
       final OpdsDiscoverySource source = _source(
         MockClient((http.Request request) async => http.Response('no', status)),
       );
@@ -391,10 +404,10 @@ void main() {
       client: MockClient.streaming(
         (http.BaseRequest request, http.ByteStream body) async =>
             http.StreamedResponse(
-          silent.stream,
-          200,
-          headers: <String, String>{'content-type': 'application/atom+xml'},
-        ),
+              silent.stream,
+              200,
+              headers: <String, String>{'content-type': 'application/atom+xml'},
+            ),
       ),
       idleTimeout: const Duration(milliseconds: 50),
     );
@@ -417,13 +430,13 @@ void main() {
       client: MockClient.streaming(
         (http.BaseRequest request, http.ByteStream body) async =>
             http.StreamedResponse(
-          Stream<List<int>>.periodic(
-            const Duration(milliseconds: 5),
-            (int _) => const <int>[0x20],
-          ),
-          200,
-          headers: <String, String>{'content-type': 'application/atom+xml'},
-        ),
+              Stream<List<int>>.periodic(
+                const Duration(milliseconds: 5),
+                (int _) => const <int>[0x20],
+              ),
+              200,
+              headers: <String, String>{'content-type': 'application/atom+xml'},
+            ),
       ),
       requestTimeout: const Duration(milliseconds: 120),
       idleTimeout: const Duration(seconds: 30),
@@ -458,14 +471,18 @@ void main() {
           client: MockClient.streaming(
             (http.BaseRequest request, http.ByteStream body) async =>
                 http.StreamedResponse(
-              Stream<List<int>>.fromIterable(<List<int>>[
-                for (int i = 0; i < feed.length; i += 512)
-                  feed.sublist(
-                      i, i + 512 > feed.length ? feed.length : i + 512),
-              ]),
-              200,
-              headers: <String, String>{'content-type': 'application/atom+xml'},
-            ),
+                  Stream<List<int>>.fromIterable(<List<int>>[
+                    for (int i = 0; i < feed.length; i += 512)
+                      feed.sublist(
+                        i,
+                        i + 512 > feed.length ? feed.length : i + 512,
+                      ),
+                  ]),
+                  200,
+                  headers: <String, String>{
+                    'content-type': 'application/atom+xml',
+                  },
+                ),
           ),
           maxFeedBytes: maxFeedBytes,
         );
@@ -492,8 +509,9 @@ void main() {
     // 对照：同一份响应体在上限之内就正常解析——证明上面那条红是上限造成的，
     // 不是这份 feed 本身有问题。
     final OpdsDiscoverySource roomy = sourceWith(maxFeedBytes: feed.length * 2);
-    final ProviderBatchResult<DiscoveryResultPage> ok = await roomy
-        .browse(const DiscoveryRequest(kind: DiscoveryMediaKind.novel));
+    final ProviderBatchResult<DiscoveryResultPage> ok = await roomy.browse(
+      const DiscoveryRequest(kind: DiscoveryMediaKind.novel),
+    );
     expect(ok.items.single.entries, isEmpty);
     roomy.close();
   });

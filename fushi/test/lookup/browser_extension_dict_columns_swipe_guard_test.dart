@@ -19,77 +19,131 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('browser extension dict-columns + swipe-close app parity', () {
-    test('browserExtensionThemeColors 下发 --dict-columns 与 --fushi-swipe-close',
-        () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src, contains('browserExtensionThemeColors(String? colorScheme)'),
-          reason:
-              'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)');
-      // 多列：列数（popupDictionaryColumns）随 theme 下发。
-      expect(src, contains("'--dict-columns': '\${inputs.dictionaryColumns}'"),
-          reason: 'theme 必须下发 --dict-columns（扩展多列布局的列数来源）');
-      // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路填。
-      expect(src, contains('dictionaryColumns: popupDictionaryColumns,'));
-      expect(src, contains('dictionaryColumns: popupDictionaryColumnsIn(p),'));
-      // 滑动关闭：把 enableSwipeToClose 偏好以 '1'/'0' 随 theme 下发给 content.js。
-      expect(src, contains("'--fushi-swipe-close'"),
-          reason: 'theme 必须下发 --fushi-swipe-close 供 content.js 决定是否启用拖关手势');
-      expect(
-          RegExp(r"'--fushi-swipe-close':\s*inputs\.swipeToClose\s*\?\s*"
-                  "'1'\\s*:\\s*'0'")
-              .hasMatch(src),
+    test(
+      'browserExtensionThemeColors 下发 --dict-columns 与 --fushi-swipe-close',
+      () {
+        final String src = File(
+          'lib/src/models/app_model.dart',
+        ).readAsStringSync();
+        expect(
+          src,
+          contains('browserExtensionThemeColors(String? colorScheme)'),
+          reason: 'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)',
+        );
+        // 多列：列数（popupDictionaryColumns）随 theme 下发。
+        expect(
+          src,
+          contains("'--dict-columns': '\${inputs.dictionaryColumns}'"),
+          reason: 'theme 必须下发 --dict-columns（扩展多列布局的列数来源）',
+        );
+        // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路填。
+        expect(src, contains('dictionaryColumns: popupDictionaryColumns,'));
+        expect(
+          src,
+          contains('dictionaryColumns: popupDictionaryColumnsIn(p),'),
+        );
+        // 滑动关闭：把 enableSwipeToClose 偏好以 '1'/'0' 随 theme 下发给 content.js。
+        expect(
+          src,
+          contains("'--fushi-swipe-close'"),
+          reason: 'theme 必须下发 --fushi-swipe-close 供 content.js 决定是否启用拖关手势',
+        );
+        expect(
+          RegExp(
+            r"'--fushi-swipe-close':\s*inputs\.swipeToClose\s*\?\s*"
+            "'1'\\s*:\\s*'0'",
+          ).hasMatch(src),
           isTrue,
-          reason: '--fushi-swipe-close 值必须是 1/0');
-      expect(
+          reason: '--fushi-swipe-close 值必须是 1/0',
+        );
+        expect(
           src,
           contains(
-              'swipeToClose: ReaderFushiSource.instance.enableSwipeToClose,'),
-          reason: '--fushi-swipe-close 值必须取自 enableSwipeToClose 偏好');
-      expect(src, contains('ReaderFushiSource.instance.enableSwipeToCloseIn('),
-          reason: '扩展所选配置的视图也必须读同一项偏好');
-    });
+            'swipeToClose: ReaderFushiSource.instance.enableSwipeToClose,',
+          ),
+          reason: '--fushi-swipe-close 值必须取自 enableSwipeToClose 偏好',
+        );
+        expect(
+          src,
+          contains('ReaderFushiSource.instance.enableSwipeToCloseIn('),
+          reason: '扩展所选配置的视图也必须读同一项偏好',
+        );
+      },
+    );
 
     test(
-        'content.js 把 --dict-columns 落到 document.documentElement（masonry 才读得到）',
-        () {
-      final String js =
-          File('assets/browser_extension/content.js').readAsStringSync();
-      // 从 theme 取列数并写到宿主页 documentElement：这是让 popup.js masonry/effective 读到的关键。
-      expect(js, contains("theme['--dict-columns']"),
-          reason: 'content.js 必须从下发的 theme 读 --dict-columns');
-      expect(
-          RegExp(r'document\.documentElement\.style\.setProperty\(\s*'
-                  r"'--dict-columns'")
-              .hasMatch(js),
+      'content.js 把 --dict-columns 落到 document.documentElement（masonry 才读得到）',
+      () {
+        final String js = File(
+          'assets/browser_extension/content.js',
+        ).readAsStringSync();
+        // 从 theme 取列数并写到宿主页 documentElement：这是让 popup.js masonry/effective 读到的关键。
+        expect(
+          js,
+          contains("theme['--dict-columns']"),
+          reason: 'content.js 必须从下发的 theme 读 --dict-columns',
+        );
+        expect(
+          RegExp(
+            r'document\.documentElement\.style\.setProperty\(\s*'
+            r"'--dict-columns'",
+          ).hasMatch(js),
           isTrue,
-          reason: 'content.js 必须把 --dict-columns 写到 document.documentElement，'
-              '否则 popup.js masonry 从 documentElement 读不到 → 恒单列（用户报的多列不生效）');
-    });
+          reason:
+              'content.js 必须把 --dict-columns 写到 document.documentElement，'
+              '否则 popup.js masonry 从 documentElement 读不到 → 恒单列（用户报的多列不生效）',
+        );
+      },
+    );
 
     test('content.js 读 --fushi-swipe-close 并装水平拖关手势', () {
-      final String js =
-          File('assets/browser_extension/content.js').readAsStringSync();
+      final String js = File(
+        'assets/browser_extension/content.js',
+      ).readAsStringSync();
       // 偏好门控标志：只有开启才真正关窗。
-      expect(js, contains("theme['--fushi-swipe-close']"),
-          reason: 'content.js 必须读 app 下发的 --fushi-swipe-close 偏好');
-      expect(js, contains('fushiSwipeCloseEnabled'),
-          reason: '必须有门控标志 fushiSwipeCloseEnabled（关时纯 no-op）');
+      expect(
+        js,
+        contains("theme['--fushi-swipe-close']"),
+        reason: 'content.js 必须读 app 下发的 --fushi-swipe-close 偏好',
+      );
+      expect(
+        js,
+        contains('fushiSwipeCloseEnabled'),
+        reason: '必须有门控标志 fushiSwipeCloseEnabled（关时纯 no-op）',
+      );
       // 手势安装函数存在、挂在弹窗宿主上、并调 fushiRemoveContainer 关窗。
-      expect(js, contains('function fushiInstallSwipeClose('),
-          reason: '必须有水平拖关手势安装函数 fushiInstallSwipeClose');
-      expect(js, contains('fushiInstallSwipeClose(fushiHost)'),
-          reason: '手势必须挂到弹窗宿主 fushiHost 上');
+      expect(
+        js,
+        contains('function fushiInstallSwipeClose('),
+        reason: '必须有水平拖关手势安装函数 fushiInstallSwipeClose',
+      );
+      expect(
+        js,
+        contains('fushiInstallSwipeClose(fushiHost)'),
+        reason: '手势必须挂到弹窗宿主 fushiHost 上',
+      );
       // 水平主导判据 + 过阈才关（避免竖向滚动/选区误触）。
-      expect(js, contains('FUSHI_SWIPE_CLOSE_THRESHOLD'),
-          reason: '必须有水平拖关阈值常量');
-      expect(js, contains('fushiRemoveContainer()'),
-          reason: '过阈后必须调 fushiRemoveContainer() 真正关窗');
+      expect(
+        js,
+        contains('FUSHI_SWIPE_CLOSE_THRESHOLD'),
+        reason: '必须有水平拖关阈值常量',
+      );
+      expect(
+        js,
+        contains('fushiRemoveContainer()'),
+        reason: '过阈后必须调 fushiRemoveContainer() 真正关窗',
+      );
       // pointer（桌面鼠标）+ touch（移动浏览器）双家族，且 pointer 路径排除 touch 避免双触发。
-      expect(js, contains("addEventListener('pointerdown'"),
-          reason: '桌面鼠标走 pointer 路径');
-      expect(js, contains("addEventListener('touchstart'"),
-          reason: '移动浏览器走 touch 路径');
+      expect(
+        js,
+        contains("addEventListener('pointerdown'"),
+        reason: '桌面鼠标走 pointer 路径',
+      );
+      expect(
+        js,
+        contains("addEventListener('touchstart'"),
+        reason: '移动浏览器走 touch 路径',
+      );
     });
   });
 }

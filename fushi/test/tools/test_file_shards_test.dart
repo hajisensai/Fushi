@@ -19,7 +19,7 @@ void main() {
         '1/0',
         '1',
         'a/b',
-        '1/2/3'
+        '1/2/3',
       ]) {
         expect(TestFileShard.tryParse(raw), isNull, reason: raw);
       }
@@ -28,10 +28,9 @@ void main() {
 
   group('selectTestFileShard', () {
     Map<String, int> weights(int count) => <String, int>{
-          for (int i = 0; i < count; i++)
-            'test/f${i.toString().padLeft(3, '0')}_test.dart':
-                (i * 37) % 101 + 1,
-        };
+      for (int i = 0; i < count; i++)
+        'test/f${i.toString().padLeft(3, '0')}_test.dart': (i * 37) % 101 + 1,
+    };
 
     test('every file lands in exactly one shard (union = whole suite)', () {
       final Map<String, int> files = weights(250);
@@ -47,11 +46,14 @@ void main() {
 
     test('is deterministic regardless of map insertion order', () {
       final Map<String, int> files = weights(120);
-      final Map<String, int> reversed =
-          Map<String, int>.fromEntries(files.entries.toList().reversed);
+      final Map<String, int> reversed = Map<String, int>.fromEntries(
+        files.entries.toList().reversed,
+      );
       for (int i = 0; i < 4; i++) {
-        expect(selectTestFileShard(reversed, TestFileShard(i, 4)),
-            selectTestFileShard(files, TestFileShard(i, 4)));
+        expect(
+          selectTestFileShard(reversed, TestFileShard(i, 4)),
+          selectTestFileShard(files, TestFileShard(i, 4)),
+        );
       }
     });
 
@@ -59,42 +61,52 @@ void main() {
       final Map<String, int> files = weights(400);
       final List<int> loads = <int>[
         for (int i = 0; i < 4; i++)
-          selectTestFileShard(files, TestFileShard(i, 4))
-              .fold<int>(0, (int sum, String p) => sum + files[p]!),
+          selectTestFileShard(
+            files,
+            TestFileShard(i, 4),
+          ).fold<int>(0, (int sum, String p) => sum + files[p]!),
       ];
-      final int heaviestFile =
-          files.values.reduce((int a, int b) => a > b ? a : b);
-      final int spread = loads.reduce((int a, int b) => a > b ? a : b) -
+      final int heaviestFile = files.values.reduce(
+        (int a, int b) => a > b ? a : b,
+      );
+      final int spread =
+          loads.reduce((int a, int b) => a > b ? a : b) -
           loads.reduce((int a, int b) => a < b ? a : b);
       expect(spread, lessThanOrEqualTo(heaviestFile), reason: '$loads');
     });
 
-    test('splitIntoBatches keeps order, caps size and balances the batches',
-        () {
-      final List<String> files = <String>[
-        for (int i = 0; i < 1093; i++) 'test/f${i.toString().padLeft(4, '0')}',
-      ];
-      final List<List<String>> batches = splitIntoBatches(files, 400);
-      expect(batches.map((List<String> b) => b.length), <int>[364, 364, 365]);
-      expect(<String>[for (final List<String> b in batches) ...b], files);
-      expect(splitIntoBatches(files.sublist(0, 400), 400).length, 1);
-      expect(splitIntoBatches(files.sublist(0, 401), 400).length, 2);
-      expect(splitIntoBatches(<String>[], 400), isEmpty);
-      expect(() => splitIntoBatches(files, 0), throwsArgumentError);
-    });
+    test(
+      'splitIntoBatches keeps order, caps size and balances the batches',
+      () {
+        final List<String> files = <String>[
+          for (int i = 0; i < 1093; i++)
+            'test/f${i.toString().padLeft(4, '0')}',
+        ];
+        final List<List<String>> batches = splitIntoBatches(files, 400);
+        expect(batches.map((List<String> b) => b.length), <int>[364, 364, 365]);
+        expect(<String>[for (final List<String> b in batches) ...b], files);
+        expect(splitIntoBatches(files.sublist(0, 400), 400).length, 1);
+        expect(splitIntoBatches(files.sublist(0, 401), 400).length, 2);
+        expect(splitIntoBatches(<String>[], 400), isEmpty);
+        expect(() => splitIntoBatches(files, 0), throwsArgumentError);
+      },
+    );
 
     test('partitions the real test/ tree with no shard left empty', () {
       final Map<String, int> files = <String, int>{
-        for (final FileSystemEntity e
-            in Directory('test').listSync(recursive: true, followLinks: false))
+        for (final FileSystemEntity e in Directory(
+          'test',
+        ).listSync(recursive: true, followLinks: false))
           if (e is File && e.path.endsWith('_test.dart'))
             e.path: e.lengthSync(),
       };
       expect(files.length, greaterThan(1000));
       int covered = 0;
       for (int i = 0; i < 4; i++) {
-        final List<String> shard =
-            selectTestFileShard(files, TestFileShard(i, 4));
+        final List<String> shard = selectTestFileShard(
+          files,
+          TestFileShard(i, 4),
+        );
         expect(shard, isNotEmpty);
         covered += shard.length;
       }

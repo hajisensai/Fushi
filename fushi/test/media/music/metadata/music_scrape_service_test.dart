@@ -227,7 +227,8 @@ void main() {
   });
 
   test('设置：AcoustID key / VGMdb 开关按调用时的偏好交给 provider 组', () async {
-    final List<({String key, bool vgmdb})> seen = <({String key, bool vgmdb})>[];
+    final List<({String key, bool vgmdb})> seen =
+        <({String key, bool vgmdb})>[];
     bool vgmdb = false;
     String key = '';
     final MusicScrapeService s = MusicScrapeService(

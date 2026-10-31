@@ -64,7 +64,8 @@ Future<bool> migrateOverrideThumbnailPrefixes({
   for (final QueryRow row in rows) {
     final String id = row.read<String>('media_id');
     final File target = File(
-        p.join(thumbnailsDirectory.path, canonicalOverrideThumbnailName(id)));
+      p.join(thumbnailsDirectory.path, canonicalOverrideThumbnailName(id)),
+    );
     if (target.existsSync()) continue;
     for (final String legacyName in legacyOverrideThumbnailNames(id)) {
       final File legacy = File(p.join(thumbnailsDirectory.path, legacyName));

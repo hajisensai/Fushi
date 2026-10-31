@@ -51,8 +51,11 @@ void main() {
         headers: <String, String>{'content-type': 'application/json'},
       );
     }
-    return http.Response('[]', 200,
-        headers: <String, String>{'content-type': 'application/json'});
+    return http.Response(
+      '[]',
+      200,
+      headers: <String, String>{'content-type': 'application/json'},
+    );
   }
 
   setUp(requestedUrls.clear);
@@ -89,8 +92,9 @@ void main() {
       .widgetList<TextField>(glassUnwrapAll<TextField>(find.byType(TextField)))
       .map((TextField f) => f.controller?.text ?? '');
 
-  testWidgets('initialMedia + initialEpisode → 直达选种段并预填合集名/集号',
-      (WidgetTester tester) async {
+  testWidgets('initialMedia + initialEpisode → 直达选种段并预填合集名/集号', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(
       tester,
       initialMedia: const AniListMedia(id: 42, romaji: 'My Show'),
@@ -139,8 +143,11 @@ void main() {
     await pumpDialog(tester);
 
     expect(fieldTexts(tester), isNot(contains('My Show')));
-    expect(fieldTexts(tester).every((String s) => s.isEmpty), isTrue,
-        reason: '无初始上下文时不得预填任何输入框');
+    expect(
+      fieldTexts(tester).every((String s) => s.isEmpty),
+      isTrue,
+      reason: '无初始上下文时不得预填任何输入框',
+    );
   });
 }
 
@@ -182,9 +189,9 @@ class _FakeAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+    backend: QbConnectionConfig.backendQbittorrent,
+    baseUrl: 'http://127.0.0.1:1',
+  );
 
   @override
   bool get torrentUploadIntroShown => true;

@@ -26,8 +26,9 @@ import 'package:window_manager/window_manager.dart';
 /// 主窗此刻是否拥有 OS 焦点。**窗口级**真值，不是进程级。
 ///
 /// 非桌面 / 非 Windows 恒 true：那些平台没有多顶层窗口结构，不该改变既有语义。
-final ValueNotifier<bool> mainWindowForegroundNotifier =
-    ValueNotifier<bool>(true);
+final ValueNotifier<bool> mainWindowForegroundNotifier = ValueNotifier<bool>(
+  true,
+);
 
 /// 测试用平台判据覆盖。**只给测试用**，生产路径永远读 [Platform.isWindows]。
 ///

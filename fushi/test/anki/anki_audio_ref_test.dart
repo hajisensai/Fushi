@@ -46,13 +46,15 @@ void main() {
       );
     });
 
-    test('Windows drive-letter path (forward slash) classifies as localFile',
-        () {
-      expect(
-        AnkiAudioRef.classify('C:/Users/me/AppData/Local/Temp/word.mp3'),
-        AnkiAudioRefKind.localFile,
-      );
-    });
+    test(
+      'Windows drive-letter path (forward slash) classifies as localFile',
+      () {
+        expect(
+          AnkiAudioRef.classify('C:/Users/me/AppData/Local/Temp/word.mp3'),
+          AnkiAudioRefKind.localFile,
+        );
+      },
+    );
 
     // BUG-1050: the popup encodes a local-audio-library word pronunciation as a
     // `data:<mime>;base64,…` URI (audioRefToWebViewUrl) and reuses it verbatim
@@ -62,7 +64,8 @@ void main() {
     test('data: URI classifies as dataUri', () {
       expect(
         AnkiAudioRef.classify(
-            'data:audio/mpeg;base64,${base64Encode(const [1, 2, 3])}'),
+          'data:audio/mpeg;base64,${base64Encode(const [1, 2, 3])}',
+        ),
         AnkiAudioRefKind.dataUri,
       );
     });
@@ -72,7 +75,8 @@ void main() {
     test('decodes bytes and derives extension from MIME', () {
       final List<int> raw = List<int>.generate(64, (int i) => i);
       final AnkiAudioData? data = AnkiAudioRef.decodeDataUri(
-          'data:audio/mpeg;base64,${base64Encode(raw)}');
+        'data:audio/mpeg;base64,${base64Encode(raw)}',
+      );
       expect(data, isNotNull);
       expect(data!.bytes, raw);
       expect(data.extension, 'mp3');
@@ -91,8 +95,9 @@ void main() {
       };
       final String payload = base64Encode(const <int>[9, 8, 7]);
       mimeToExt.forEach((String mime, String ext) {
-        final AnkiAudioData? data =
-            AnkiAudioRef.decodeDataUri('data:$mime;base64,$payload');
+        final AnkiAudioData? data = AnkiAudioRef.decodeDataUri(
+          'data:$mime;base64,$payload',
+        );
         expect(data, isNotNull, reason: mime);
         expect(data!.extension, ext, reason: mime);
       });
@@ -100,7 +105,8 @@ void main() {
 
     test('unknown MIME falls back to mp3', () {
       final AnkiAudioData? data = AnkiAudioRef.decodeDataUri(
-          'data:audio/x-unknown;base64,${base64Encode(const [1])}');
+        'data:audio/x-unknown;base64,${base64Encode(const [1])}',
+      );
       expect(data?.extension, 'mp3');
     });
 
@@ -130,8 +136,9 @@ void main() {
     });
 
     test('file:// URI is decoded to a scheme-less filesystem path', () {
-      final String path =
-          AnkiAudioRef.localPath('file:///C:/Users/me/Temp/word.mp3');
+      final String path = AnkiAudioRef.localPath(
+        'file:///C:/Users/me/Temp/word.mp3',
+      );
       // Exact slash direction is platform-dependent (Uri.toFilePath); assert
       // the scheme is gone and the path still points at the same file.
       expect(path.startsWith('file://'), isFalse);

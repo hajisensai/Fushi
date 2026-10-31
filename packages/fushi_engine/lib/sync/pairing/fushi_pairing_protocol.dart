@@ -197,8 +197,9 @@ class FushiPairingProtocol {
     }
     final List<String> parts = addr.split('.');
     if (parts.length != 4) return false;
-    final List<int?> octets =
-        parts.map((String p) => int.tryParse(p)).toList(growable: false);
+    final List<int?> octets = parts
+        .map((String p) => int.tryParse(p))
+        .toList(growable: false);
     if (octets.any((int? o) => o == null || o < 0 || o > 255)) return false;
     final int a = octets[0]!;
     final int b = octets[1]!;
@@ -261,8 +262,8 @@ class FushiPinRateLimiter {
     this.failureWindow = const Duration(minutes: 5),
     this.lockoutDuration = const Duration(minutes: 15),
     this.maxTrackedSources = 256,
-  })  : assert(maxFailures > 0),
-        assert(maxTrackedSources > 0);
+  }) : assert(maxFailures > 0),
+       assert(maxTrackedSources > 0);
 
   /// 触发锁定的连续（窗口内）失败阈值。第 [maxFailures] 次失败后即锁定。
   final int maxFailures;
@@ -300,7 +301,8 @@ class FushiPinRateLimiter {
   /// **已进入锁定**。滑动窗口：距上次失败超过 [failureWindow] 则计数重置为 1。
   bool recordFailure(String sourceKey, DateTime now) {
     _reclaimStale(now);
-    final _PinFailureRecord existing = _records[sourceKey] ??
+    final _PinFailureRecord existing =
+        _records[sourceKey] ??
         _PinFailureRecord(failureCount: 0, lastFailureAt: now);
     final bool windowExpired =
         now.difference(existing.lastFailureAt) > failureWindow;

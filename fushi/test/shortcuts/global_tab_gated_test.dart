@@ -72,20 +72,27 @@ void main() {
   }
 
   testWidgets('焦点导航关闭：Tab 不移动焦点（停在原控件）', (WidgetTester tester) async {
-    final String? focused =
-        await pumpThenTab(tester, focusNavigationEnabled: false);
+    final String? focused = await pumpThenTab(
+      tester,
+      focusNavigationEnabled: false,
+    );
     expect(focused, 'first', reason: '关闭键盘/手柄焦点导航后，Tab 不应在控件间跳焦点');
   });
 
   testWidgets('焦点导航关闭：Shift+Tab 不移动焦点', (WidgetTester tester) async {
-    final String? focused =
-        await pumpThenTab(tester, focusNavigationEnabled: false, shift: true);
+    final String? focused = await pumpThenTab(
+      tester,
+      focusNavigationEnabled: false,
+      shift: true,
+    );
     expect(focused, 'first', reason: '关闭键盘/手柄焦点导航后，Shift+Tab 同样不应移动焦点');
   });
 
   testWidgets('焦点导航开启：Tab 照常移动焦点（不回归原生遍历）', (WidgetTester tester) async {
-    final String? focused =
-        await pumpThenTab(tester, focusNavigationEnabled: true);
+    final String? focused = await pumpThenTab(
+      tester,
+      focusNavigationEnabled: true,
+    );
     expect(focused, 'second', reason: '开启键盘/手柄焦点导航时，Flutter 原生 Tab 遍历必须照常工作');
   });
 }

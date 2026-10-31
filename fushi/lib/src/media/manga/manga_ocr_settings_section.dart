@@ -218,8 +218,10 @@ class _MangaOcrSettingsSectionState
         ? MangaAiOcrMode.fromStorageKey(storedAiMode)
         : MangaAiOcrMode.lowConfidence;
     _maxParallelTasks = hostMangaOcrMaxParallelTasks();
-    _parallelTasks =
-        (widget.parallelTasksGetter?.call() ?? 0).clamp(0, _maxParallelTasks);
+    _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(
+      0,
+      _maxParallelTasks,
+    );
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
     );
@@ -600,8 +602,9 @@ class _MangaOcrSettingsSectionState
             child: FushiCircularProgressIndicator(strokeWidth: 2),
           )
         : const FushiIcon(FushiIcons.importFile, size: 18);
-    final Widget label =
-        Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import);
+    final Widget label = Text(
+      _importing ? t.manga_ocr_import_running : t.manga_ocr_import,
+    );
     return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
       onPressed: onPressed,
@@ -647,10 +650,9 @@ class _MangaOcrSettingsSectionState
     // 与文本编辑依赖，不改视觉。
     return Material(
       type: MaterialType.transparency,
-      child:
-          widget.presentation == MangaOcrSettingsPresentation.readerPanel
-              ? _buildPanelBody(theme)
-              : _buildBody(theme),
+      child: widget.presentation == MangaOcrSettingsPresentation.readerPanel
+          ? _buildPanelBody(theme)
+          : _buildBody(theme),
     );
   }
 
@@ -915,25 +917,26 @@ class _MangaOcrSettingsSectionState
     List<_EngineOption> options,
     _EngineChoice selected,
   ) async {
-    final _EngineChoice? picked = await showMangaPanelOptionSheet<_EngineChoice>(
-      context: context,
-      title: t.manga_ocr_default_engine,
-      options: <MangaPanelOption<_EngineChoice>>[
-        for (final _EngineOption option in options)
-          MangaPanelOption<_EngineChoice>(
-            value: option.choice,
-            label: option.label,
-            description: option.description,
-            icon: _engineIcon(option.preference),
-            enabled: option.enabled,
-            key: ValueKey<String>(
-              'manga_ocr_engine_${option.preference.name}'
-              '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
-            ),
-          ),
-      ],
-      selected: selected,
-    );
+    final _EngineChoice? picked =
+        await showMangaPanelOptionSheet<_EngineChoice>(
+          context: context,
+          title: t.manga_ocr_default_engine,
+          options: <MangaPanelOption<_EngineChoice>>[
+            for (final _EngineOption option in options)
+              MangaPanelOption<_EngineChoice>(
+                value: option.choice,
+                label: option.label,
+                description: option.description,
+                icon: _engineIcon(option.preference),
+                enabled: option.enabled,
+                key: ValueKey<String>(
+                  'manga_ocr_engine_${option.preference.name}'
+                  '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
+                ),
+              ),
+          ],
+          selected: selected,
+        );
     if (!mounted || picked == null || picked == _currentChoice) return;
     await _selectEngine(picked);
   }
@@ -1552,7 +1555,9 @@ class _MangaOcrSettingsSectionState
                   shape: emphasis
                       ? FushiLeadingShape.cookie
                       : FushiLeadingShape.circle,
-                  tone: emphasis ? FushiCardTone.primary : FushiCardTone.secondary,
+                  tone: emphasis
+                      ? FushiCardTone.primary
+                      : FushiCardTone.secondary,
                 ),
                 const SizedBox(width: 16),
                 Expanded(

@@ -24,9 +24,8 @@ Directory get _repoRoot => Directory.current.path.endsWith('fushi')
     ? Directory.current.parent
     : Directory.current;
 
-File get _actionFile => File(
-      '${_repoRoot.path}/.github/actions/provide-baked-secrets/action.yml',
-    );
+File get _actionFile =>
+    File('${_repoRoot.path}/.github/actions/provide-baked-secrets/action.yml');
 
 File get _analysisOptions =>
     File('${_repoRoot.path}/fushi/analysis_options.yaml');
@@ -74,15 +73,21 @@ String _stripPythonComments(String source) {
 
 void main() {
   test('action.yml 存在（路径没被挪走，守卫不会静默失效）', () {
-    expect(_actionFile.existsSync(), isTrue,
-        reason: '${_actionFile.path} 不在了；守卫失去扫描对象');
+    expect(
+      _actionFile.existsSync(),
+      isTrue,
+      reason: '${_actionFile.path} 不在了；守卫失去扫描对象',
+    );
     expect(_analysisOptions.existsSync(), isTrue);
   });
 
   test('exclude 名单解析出了 google_oauth / log_upload（解析器自身没坏）', () {
     final Set<String> excluded = _excludedBasenames();
-    expect(excluded, contains('google_oauth_secret.dart'),
-        reason: '解析 analyzer.exclude 失败，后面的断言会变成恒真');
+    expect(
+      excluded,
+      contains('google_oauth_secret.dart'),
+      reason: '解析 analyzer.exclude 失败，后面的断言会变成恒真',
+    );
     expect(excluded, contains('log_upload_secret.dart'));
   });
 
@@ -123,19 +128,31 @@ void main() {
       '${_repoRoot.path}/.github/actions/provide-baked-secrets/'
       'write_opensubtitles_key.py',
     );
-    expect(writer.existsSync(), isTrue,
-        reason: '生成脚本不在了；action.yml 会在 CI 上直接报 file not found');
+    expect(
+      writer.existsSync(),
+      isTrue,
+      reason: '生成脚本不在了；action.yml 会在 CI 上直接报 file not found',
+    );
 
     final String src = writer.readAsStringSync();
-    expect(src.contains("kBuiltinOpenSubtitlesApiKey = '%s'"), isTrue,
-        reason: '生成模板必须是单引号 Dart 字面量');
+    expect(
+      src.contains("kBuiltinOpenSubtitlesApiKey = '%s'"),
+      isTrue,
+      reason: '生成模板必须是单引号 Dart 字面量',
+    );
     // 只看**真实代码**：脚本的文档注释本来就要解释「为什么不用 json.dumps」，
     // 拿裸字串判定会把那段说明本身判成违规。
-    expect(_stripPythonComments(src).contains('json.dumps('), isFalse,
-        reason: 'json.dumps 产出双引号，正是本 bug 的成因');
+    expect(
+      _stripPythonComments(src).contains('json.dumps('),
+      isFalse,
+      reason: 'json.dumps 产出双引号，正是本 bug 的成因',
+    );
     // 单引号字符串里 $ 仍是插值符，必须转义，否则 `abc$id` 形态的 key 编译失败。
-    expect(src.contains(r"replace('$'"), isTrue,
-        reason: '缺 \$ 转义：含 \$ 的 key 会被当成 Dart 插值');
+    expect(
+      src.contains(r"replace('$'"),
+      isTrue,
+      reason: '缺 \$ 转义：含 \$ 的 key 会被当成 Dart 插值',
+    );
   });
 
   // 只读源码的断言挡不住「脚本本身跑不起来」：PR #2534 的 write_acoustid_key.py 把

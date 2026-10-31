@@ -17,8 +17,10 @@ void main() {
         defaultRoot: p.join('C:', 'docs', 'anime_downloads', 'content'),
         configuredRoot: '',
       );
-      expect(roots.active,
-          p.normalize(p.join('C:', 'docs', 'anime_downloads', 'content')));
+      expect(
+        roots.active,
+        p.normalize(p.join('C:', 'docs', 'anime_downloads', 'content')),
+      );
       expect(roots.legacy, isEmpty, reason: '默认根就是活动根，不该再重复进历史根');
       expect(
         roots.categoryPathFor('hibiki'),
@@ -40,17 +42,25 @@ void main() {
 
       // ② 两个根的同名分类目录都认。
       expect(
-          roots.ownsCategoryPath(p.join(newRoot, 'hibiki'), 'hibiki'), isTrue,
-          reason: '新根下的新任务必须可见');
+        roots.ownsCategoryPath(p.join(newRoot, 'hibiki'), 'hibiki'),
+        isTrue,
+        reason: '新根下的新任务必须可见',
+      );
       expect(
-          roots.ownsCategoryPath(p.join(oldRoot, 'hibiki'), 'hibiki'), isTrue,
-          reason: 'TODO-1961 回归：改目录后旧根任务从下载页整批消失');
+        roots.ownsCategoryPath(p.join(oldRoot, 'hibiki'), 'hibiki'),
+        isTrue,
+        reason: 'TODO-1961 回归：改目录后旧根任务从下载页整批消失',
+      );
 
       // 别的分类仍然不认（过滤没被放宽成「什么都算我的」）。
       expect(
-          roots.ownsCategoryPath(p.join(newRoot, 'other'), 'hibiki'), isFalse);
+        roots.ownsCategoryPath(p.join(newRoot, 'other'), 'hibiki'),
+        isFalse,
+      );
       expect(
-          roots.ownsCategoryPath(p.join(oldRoot, 'other'), 'hibiki'), isFalse);
+        roots.ownsCategoryPath(p.join(oldRoot, 'other'), 'hibiki'),
+        isFalse,
+      );
       // 根本身（分类目录的父级）不算。
       expect(roots.ownsCategoryPath(newRoot, 'hibiki'), isFalse);
     });
@@ -65,15 +75,19 @@ void main() {
         history: <String>[root1],
       );
       for (final String root in <String>[root0, root1, root2]) {
-        expect(roots.ownsCategoryPath(p.join(root, 'hibiki'), 'hibiki'), isTrue,
-            reason: '历史根必须仍被认');
+        expect(
+          roots.ownsCategoryPath(p.join(root, 'hibiki'), 'hibiki'),
+          isTrue,
+          reason: '历史根必须仍被认',
+        );
       }
       expect(roots.active, p.normalize(root2));
     });
 
     test('withActive 把旧活动根降级为历史根，不丢任何一代', () {
-      final TorrentSaveRoots first =
-          TorrentSaveRoots(active: p.join('C:', 'a'));
+      final TorrentSaveRoots first = TorrentSaveRoots(
+        active: p.join('C:', 'a'),
+      );
       final TorrentSaveRoots second = first.withActive(p.join('D:', 'b'));
       final TorrentSaveRoots third = second.withActive(p.join('E:', 'c'));
       expect(third.active, p.normalize(p.join('E:', 'c')));
@@ -85,7 +99,9 @@ void main() {
       ]) {
         expect(
           third.ownsCategoryPath(
-              p.join(parts[0], parts[1], 'hibiki'), 'hibiki'),
+            p.join(parts[0], parts[1], 'hibiki'),
+            'hibiki',
+          ),
           isTrue,
         );
       }
@@ -94,8 +110,9 @@ void main() {
     });
 
     test('分类目录下的子文件夹仍算本任务（用户整理内容后不蒸发）', () {
-      final TorrentSaveRoots roots =
-          TorrentSaveRoots(active: p.join('D:', 'dl'));
+      final TorrentSaveRoots roots = TorrentSaveRoots(
+        active: p.join('D:', 'dl'),
+      );
       expect(
         roots.ownsCategoryPath(p.join('D:', 'dl', 'hibiki', 'S1'), 'hibiki'),
         isTrue,
@@ -182,24 +199,34 @@ void main() {
 
     test('探针文件用完即删，不给用户留垃圾', () async {
       expect(await checkDownloadSaveRoot(tempDir.path), isNull);
-      expect(File(p.join(tempDir.path, '.fushi_write_probe')).existsSync(),
-          isFalse);
+      expect(
+        File(p.join(tempDir.path, '.fushi_write_probe')).existsSync(),
+        isFalse,
+      );
     });
 
     test('空串 / 相对路径 → notAbsolute（不静默接受）', () async {
       expect(
-          await checkDownloadSaveRoot(''), DownloadSaveRootIssue.notAbsolute);
-      expect(await checkDownloadSaveRoot('   '),
-          DownloadSaveRootIssue.notAbsolute);
-      expect(await checkDownloadSaveRoot(p.join('relative', 'dir')),
-          DownloadSaveRootIssue.notAbsolute);
+        await checkDownloadSaveRoot(''),
+        DownloadSaveRootIssue.notAbsolute,
+      );
+      expect(
+        await checkDownloadSaveRoot('   '),
+        DownloadSaveRootIssue.notAbsolute,
+      );
+      expect(
+        await checkDownloadSaveRoot(p.join('relative', 'dir')),
+        DownloadSaveRootIssue.notAbsolute,
+      );
     });
 
     test('目标被同名文件占住 → createFailed', () async {
       final File blocker = File(p.join(tempDir.path, 'blocker'));
       blocker.writeAsStringSync('x');
-      expect(await checkDownloadSaveRoot(p.join(blocker.path, 'sub')),
-          DownloadSaveRootIssue.createFailed);
+      expect(
+        await checkDownloadSaveRoot(p.join(blocker.path, 'sub')),
+        DownloadSaveRootIssue.createFailed,
+      );
     });
   });
 

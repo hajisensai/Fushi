@@ -10,7 +10,9 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 

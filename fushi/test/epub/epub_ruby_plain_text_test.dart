@@ -45,8 +45,9 @@ void main() {
   });
 
   test('ruby 区间指向纯文本里的基底、读音取 rt', () {
-    final EpubPlainTextWithRuby r =
-        _bookWithHtml(corpus[0]).chapterPlainTextWithRuby(0);
+    final EpubPlainTextWithRuby r = _bookWithHtml(
+      corpus[0],
+    ).chapterPlainTextWithRuby(0);
     expect(r.text, '漢字を読む');
     expect(r.rubies, hasLength(1));
     expect(r.text.substring(r.rubies[0].start, r.rubies[0].end), '漢字');
@@ -54,8 +55,9 @@ void main() {
   });
 
   test('mono-ruby 多段 rt 拼成一处整词读音', () {
-    final EpubPlainTextWithRuby r =
-        _bookWithHtml(corpus[1]).chapterPlainTextWithRuby(0);
+    final EpubPlainTextWithRuby r = _bookWithHtml(
+      corpus[1],
+    ).chapterPlainTextWithRuby(0);
     expect(r.rubies.single.reading, 'かんじ');
     expect(r.text.substring(r.rubies.single.start, r.rubies.single.end), '漢字');
   });
@@ -65,10 +67,11 @@ void main() {
       corpus[2],
       corpus[3],
       corpus[4],
-      corpus[5]
+      corpus[5],
     ]) {
-      final EpubPlainTextWithRuby r =
-          _bookWithHtml(html).chapterPlainTextWithRuby(0);
+      final EpubPlainTextWithRuby r = _bookWithHtml(
+        html,
+      ).chapterPlainTextWithRuby(0);
       expect(r.rubies, hasLength(1), reason: html);
       final EpubRubyAnnotation a = r.rubies.single;
       expect(
@@ -77,33 +80,44 @@ void main() {
         reason: '区间不含首尾空白: $html',
       );
     }
-    final EpubPlainTextWithRuby cat =
-        _bookWithHtml(corpus[4]).chapterPlainTextWithRuby(0);
+    final EpubPlainTextWithRuby cat = _bookWithHtml(
+      corpus[4],
+    ).chapterPlainTextWithRuby(0);
     expect(cat.text, '私は 猫 である。');
-    expect(cat.text.substring(cat.rubies.single.start, cat.rubies.single.end),
-        '猫');
-    expect(cat.rubies.single.reading, 'ねこ');
-    final EpubPlainTextWithRuby glare =
-        _bookWithHtml(corpus[5]).chapterPlainTextWithRuby(0);
     expect(
-        glare.text
-            .substring(glare.rubies.single.start, glare.rubies.single.end),
-        '眩');
+      cat.text.substring(cat.rubies.single.start, cat.rubies.single.end),
+      '猫',
+    );
+    expect(cat.rubies.single.reading, 'ねこ');
+    final EpubPlainTextWithRuby glare = _bookWithHtml(
+      corpus[5],
+    ).chapterPlainTextWithRuby(0);
+    expect(
+      glare.text.substring(glare.rubies.single.start, glare.rubies.single.end),
+      '眩',
+    );
   });
 
   test('相邻两处 ruby 各自独立、按序', () {
-    final EpubPlainTextWithRuby r =
-        _bookWithHtml(corpus[7]).chapterPlainTextWithRuby(0);
-    expect(r.rubies.map((EpubRubyAnnotation a) => a.reading),
-        <String>['そと', 'がわ']);
+    final EpubPlainTextWithRuby r = _bookWithHtml(
+      corpus[7],
+    ).chapterPlainTextWithRuby(0);
+    expect(r.rubies.map((EpubRubyAnnotation a) => a.reading), <String>[
+      'そと',
+      'がわ',
+    ]);
     expect(r.rubies[0].end, lessThanOrEqualTo(r.rubies[1].start));
   });
 
   test('空基底或空读音的 ruby 不产出区间', () {
     expect(
-        _bookWithHtml(corpus[8]).chapterPlainTextWithRuby(0).rubies, isEmpty);
+      _bookWithHtml(corpus[8]).chapterPlainTextWithRuby(0).rubies,
+      isEmpty,
+    );
     expect(
-        _bookWithHtml(corpus[9]).chapterPlainTextWithRuby(0).rubies, isEmpty);
+      _bookWithHtml(corpus[9]).chapterPlainTextWithRuby(0).rubies,
+      isEmpty,
+    );
   });
 
   test('越界章号返回空', () {

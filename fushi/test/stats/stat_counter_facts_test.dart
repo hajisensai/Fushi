@@ -13,7 +13,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// 收藏全被记成 book，数字堆在阅读域、游戏 tab 只剩游玩次数一行）。
 MiningStatisticRow _mining(String source, String dateKey, int count) =>
     MiningStatisticRow(
-        id: 0, sourceType: source, dateKey: dateKey, count: count);
+      id: 0,
+      sourceType: source,
+      dateKey: dateKey,
+      count: count,
+    );
 
 LookupMiningCounterRow _counter(
   String source,
@@ -21,28 +25,27 @@ LookupMiningCounterRow _counter(
   int lookups = 0,
   int mines = 0,
   String title = '',
-}) =>
-    LookupMiningCounterRow(
-      id: 0,
-      bookKey: '',
-      title: title,
-      sourceType: source,
-      dateKey: dateKey,
-      lookupCount: lookups,
-      mineCount: mines,
-    );
+}) => LookupMiningCounterRow(
+  id: 0,
+  bookKey: '',
+  title: title,
+  sourceType: source,
+  dateKey: dateKey,
+  lookupCount: lookups,
+  mineCount: mines,
+);
 
 FavoriteWordRow _word(String source, String dateKey) => FavoriteWordRow(
-      id: 0,
-      expression: 'あ',
-      reading: 'あ',
-      glossary: '',
-      sourceType: source,
-      sentence: '',
-      title: '',
-      dateKey: dateKey,
-      createdAt: 0,
-    );
+  id: 0,
+  expression: 'あ',
+  reading: 'あ',
+  glossary: '',
+  sourceType: source,
+  sentence: '',
+  title: '',
+  dateKey: dateKey,
+  createdAt: 0,
+);
 
 int _sum(Iterable<(String, int)> events) =>
     events.fold<int>(0, (int a, (String, int) e) => a + e.$2);
@@ -73,7 +76,10 @@ void main() {
     ],
     favoriteSentences: <FavoriteSentence>[
       FavoriteSentence(
-          text: 'b', bookTitle: 'B', createdAt: DateTime(2026, 7, 18, 9)),
+        text: 'b',
+        bookTitle: 'B',
+        createdAt: DateTime(2026, 7, 18, 9),
+      ),
       FavoriteSentence(
         text: 'v',
         bookTitle: 'V',
@@ -124,11 +130,18 @@ void main() {
       // 收藏句的 source 是另一个值域（book/video/audiobook/lyrics/game），阅读域
       // 必须同时排除 video 与 game——漏排哪个，那条就在两个域各计一次。
       expect(
-          _sum(facts.favoriteSentenceEvents(source: StatSourceKind.video)), 1);
+        _sum(facts.favoriteSentenceEvents(source: StatSourceKind.video)),
+        1,
+      );
       expect(
-          _sum(facts.favoriteSentenceEvents(source: StatSourceKind.game)), 1);
-      expect(_sum(facts.favoriteSentenceEvents(source: StatSourceKind.book)), 2,
-          reason: '书内那条 + 有声书那条（有声书/歌词都算阅读）');
+        _sum(facts.favoriteSentenceEvents(source: StatSourceKind.game)),
+        1,
+      );
+      expect(
+        _sum(facts.favoriteSentenceEvents(source: StatSourceKind.book)),
+        2,
+        reason: '书内那条 + 有声书那条（有声书/歌词都算阅读）',
+      );
       expect(_sum(facts.favoriteSentenceEvents()), 4);
     });
 
@@ -143,23 +156,29 @@ void main() {
   group('跨域 = 三域之和（总览与三个域 tab 对得上）', () {
     final Map<String, Iterable<(String, int)> Function(StatSourceKind?)> flows =
         <String, Iterable<(String, int)> Function(StatSourceKind?)>{
-      '查词': (StatSourceKind? s) => facts.lookupEvents(source: s),
-      '制卡': (StatSourceKind? s) => facts.minedEvents(source: s),
-      '收藏词': (StatSourceKind? s) => facts.favoriteWordEvents(source: s),
-      '收藏句': (StatSourceKind? s) => facts.favoriteSentenceEvents(source: s),
-    };
+          '查词': (StatSourceKind? s) => facts.lookupEvents(source: s),
+          '制卡': (StatSourceKind? s) => facts.minedEvents(source: s),
+          '收藏词': (StatSourceKind? s) => facts.favoriteWordEvents(source: s),
+          '收藏句': (StatSourceKind? s) => facts.favoriteSentenceEvents(source: s),
+        };
     flows.forEach((
       String name,
       Iterable<(String, int)> Function(StatSourceKind?) of,
     ) {
       test('$name 跨域合计 = book + video + game', () {
         final StatActivityBuckets all = bucketActivityByDateKey(of(null), now);
-        final StatActivityBuckets book =
-            bucketActivityByDateKey(of(StatSourceKind.book), now);
-        final StatActivityBuckets video =
-            bucketActivityByDateKey(of(StatSourceKind.video), now);
-        final StatActivityBuckets game =
-            bucketActivityByDateKey(of(StatSourceKind.game), now);
+        final StatActivityBuckets book = bucketActivityByDateKey(
+          of(StatSourceKind.book),
+          now,
+        );
+        final StatActivityBuckets video = bucketActivityByDateKey(
+          of(StatSourceKind.video),
+          now,
+        );
+        final StatActivityBuckets game = bucketActivityByDateKey(
+          of(StatSourceKind.game),
+          now,
+        );
         expect(all.all, book.all + video.all + game.all, reason: '全部');
         expect(all.today, book.today + video.today + game.today, reason: '今日');
         expect(all.week, book.week + video.week + game.week, reason: '本周');
@@ -169,12 +188,16 @@ void main() {
   });
 
   test('分桶按 dateKey 落窗口（今日只算今天那几行）', () {
-    final StatActivityBuckets lookups =
-        bucketActivityByDateKey(facts.lookupEvents(), now);
+    final StatActivityBuckets lookups = bucketActivityByDateKey(
+      facts.lookupEvents(),
+      now,
+    );
     expect(lookups.today, 23, reason: '10 + 7 + 6，昨天那 1 次不算');
     expect(lookups.all, 24);
-    final StatActivityBuckets mined =
-        bucketActivityByDateKey(facts.minedEvents(), now);
+    final StatActivityBuckets mined = bucketActivityByDateKey(
+      facts.minedEvents(),
+      now,
+    );
     expect(mined.today, 12, reason: '3 + 5 + 4');
     expect(mined.all, 14);
   });

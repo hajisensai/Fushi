@@ -1,8 +1,4 @@
-enum WindowsImeSpaceDispatchAction {
-  ignore,
-  dismissPopup,
-  togglePlayPause,
-}
+enum WindowsImeSpaceDispatchAction { ignore, dismissPopup, togglePlayPause }
 
 /// Resolves the Dart-side ownership gate for the Windows native IME Space
 /// notification. The native runner can identify the physical Space make-code,

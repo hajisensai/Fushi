@@ -23,8 +23,11 @@ void main() {
     test('点 "hello" 任意 index（含首/中/尾）都从词首起', () {
       const String hello = 'hello';
       for (int i = 0; i < hello.characters.length; i++) {
-        expect(subtitleLookupTerm(hello, i), 'hello',
-            reason: 'tap at index $i should start at the word head');
+        expect(
+          subtitleLookupTerm(hello, i),
+          'hello',
+          reason: 'tap at index $i should start at the word head',
+        );
       }
     });
 
@@ -64,10 +67,16 @@ void main() {
     test('点 "listen" 的任意字母，查询串都保留后续 " to"', () {
       for (int i = 2; i <= 7; i++) {
         final String term = subtitleLookupTerm(s, i);
-        expect(term, 'listen to music.',
-            reason: 'tap at index $i must keep the rest of the sentence');
-        expect(term.startsWith('listen to'), isTrue,
-            reason: '引擎要能把 "listen to" 当候选，查询串必须含空格与后一个词');
+        expect(
+          term,
+          'listen to music.',
+          reason: 'tap at index $i must keep the rest of the sentence',
+        );
+        expect(
+          term.startsWith('listen to'),
+          isTrue,
+          reason: '引擎要能把 "listen to" 当候选，查询串必须含空格与后一个词',
+        );
       }
     });
 
@@ -116,8 +125,10 @@ void main() {
   // 词首起算而不是从被点字母起算。
   group('subtitleLookupSpan — 起点供字幕高亮定位', () {
     test('拉丁词点中间字母：起点回退到词首，串与 subtitleLookupTerm 同源', () {
-      final ({int start, String term}) r =
-          subtitleLookupSpan("She's not going", 2);
+      final ({int start, String term}) r = subtitleLookupSpan(
+        "She's not going",
+        2,
+      );
       expect(r.start, 0);
       expect(r.term, subtitleLookupTerm("She's not going", 2));
       expect(r.term, startsWith('She'));
@@ -138,8 +149,10 @@ void main() {
     // 尾部少一个字符。点中空格不是边角：英文逐字命中与 hoverAutoLookup 扫过词间空隙
     // 都会落在那里。
     test('点中空格：起点跳到下一个词的词首，串与查询同源', () {
-      final ({int start, String term}) r =
-          subtitleLookupSpan('She is not going', 6);
+      final ({int start, String term}) r = subtitleLookupSpan(
+        'She is not going',
+        6,
+      );
       expect(r.start, 7, reason: '不是 6（那个空格）');
       expect(r.term, 'not going');
       expect(r.term, r.term.trimLeft(), reason: '串不得带前导空白，否则与引擎口径错位');

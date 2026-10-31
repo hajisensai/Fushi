@@ -191,14 +191,19 @@ Future<_HostLog> _pumpHost(
   final _HostLog log = _HostLog();
   addTearDown(log.dispose);
   await tester.pumpWidget(
-    MaterialApp(home: _HostShell(registry: registry, spec: spec, log: log)),
+    MaterialApp(
+      home: _HostShell(registry: registry, spec: spec, log: log),
+    ),
   );
   // 有界 pump（live UI 禁 pumpAndSettle）：等 post-frame 把浮层插进根 Overlay。
   for (int i = 0; i < 6; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
-  expect(find.byType(DictionaryPopupLayer), findsOneWidget,
-      reason: '前提：浮层必须真的挂进根 Overlay，否则后面测的不是断链场景');
+  expect(
+    find.byType(DictionaryPopupLayer),
+    findsOneWidget,
+    reason: '前提：浮层必须真的挂进根 Overlay，否则后面测的不是断链场景',
+  );
   return log;
 }
 
@@ -221,32 +226,44 @@ void main() {
     expect(spec.mouseButtons, contains(3));
   });
 
-  testWidgets('Windows 运行时真值：指针归宿主，注入脚本不装鼠标监听也不下发按钮表',
-      (WidgetTester tester) async {
+  testWidgets('Windows 运行时真值：指针归宿主，注入脚本不装鼠标监听也不下发按钮表', (
+    WidgetTester tester,
+  ) async {
     // 无 debug 注入 —— 这是本机真平台判据。
-    expect(hostOwnsDictionaryPopupPointerInput, isTrue,
-        reason: 'Windows 的无窗口 WebView2 由 Flutter 第一手拿指针');
+    expect(
+      hostOwnsDictionaryPopupPointerInput,
+      isTrue,
+      reason: 'Windows 的无窗口 WebView2 由 Flutter 第一手拿指针',
+    );
 
     // 同样不传 hostOwnsPointer：取运行平台默认，验的是真正会注进 WebView 的那份脚本。
     final String js = dictionaryPopupInputBridgeScript(spec);
-    expect(js.contains("addEventListener('mousedown'"), isFalse,
-        reason: '装了就是第二条指针路径 → 同一次按下双触发');
+    expect(
+      js.contains("addEventListener('mousedown'"),
+      isFalse,
+      reason: '装了就是第二条指针路径 → 同一次按下双触发',
+    );
     expect(js.contains("addEventListener('auxclick'"), isFalse);
-    expect(RegExp(r'Buttons_hostInputToken.\] = \[\];').hasMatch(js), isTrue,
-        reason: '热槽 WebView 长期存活，表必须被清空覆盖而不只是「这次没装」');
+    expect(
+      RegExp(r'Buttons_hostInputToken.\] = \[\];').hasMatch(js),
+      isTrue,
+      reason: '热槽 WebView 长期存活，表必须被清空覆盖而不只是「这次没装」',
+    );
     // 键表照常下发：键盘那条路不受指针所有权影响（JS 桥与 Flutter 焦点互斥）。
     expect(js.contains("'Escape'"), isTrue);
   });
 
-  testWidgets('嵌套弹窗（焦点在浮层内）按关词典键 → 弹窗真的关掉，且宿主页面 Focus 全程没收到键',
-      (WidgetTester tester) async {
+  testWidgets('嵌套弹窗（焦点在浮层内）按关词典键 → 弹窗真的关掉，且宿主页面 Focus 全程没收到键', (
+    WidgetTester tester,
+  ) async {
     final _HostLog log = await _pumpHost(tester, registry, spec);
     final FocusDriver driver = FocusDriver(tester);
 
     // 焦点驱动（无坐标点击）：走 FocusDriver 认可的 requestFocusInside，它复刻的正是
     // 产品路径 —— 平台视图 onPointerDown → requestFocus 把焦点请求进浮层子树。
-    final bool landed =
-        await driver.requestFocusInside(find.byType(DictionaryPopupLayer));
+    final bool landed = await driver.requestFocusInside(
+      find.byType(DictionaryPopupLayer),
+    );
     expect(landed, isTrue, reason: '焦点必须真的落进浮层子树，否则测的不是嵌套场景');
     expect(log.popupInnerNode.hasPrimaryFocus, isTrue);
 
@@ -259,8 +276,11 @@ void main() {
     // ② token 走的是弹窗层交回宿主这条新链。
     expect(log.tokens, <String>['Escape']);
     // ③ 断链是真的：宿主页面那层 Focus 一个键都没收到 —— 修复不是靠冒泡碰运气。
-    expect(log.hostPageKeys, isEmpty,
-        reason: '根 Overlay → Navigator → App 的冒泡链本来就不经过宿主页面 Focus');
+    expect(
+      log.hostPageKeys,
+      isEmpty,
+      reason: '根 Overlay → Navigator → App 的冒泡链本来就不经过宿主页面 Focus',
+    );
   });
 
   testWidgets('第一层（焦点在宿主页面上）同一键仍走宿主原链关闭 —— 无回归', (WidgetTester tester) async {
@@ -268,8 +288,9 @@ void main() {
     final FocusDriver driver = FocusDriver(tester);
 
     // Tab 遍历落到页面控件上（纯焦点驱动）。
-    final bool onPage =
-        await driver.focusUntil(() => log.pageNode.hasPrimaryFocus);
+    final bool onPage = await driver.focusUntil(
+      () => log.pageNode.hasPrimaryFocus,
+    );
     expect(onPage, isTrue, reason: 'Tab 必须能落到宿主页面的可聚焦控件上');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -306,8 +327,11 @@ void main() {
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byType(DictionaryPopupLayer), findsNothing,
-        reason: '原始失败：侧键在弹窗表面永远无反应');
+    expect(
+      find.byType(DictionaryPopupLayer),
+      findsNothing,
+      reason: '原始失败：侧键在弹窗表面永远无反应',
+    );
     // 只关一次、只回传一个 token —— 宿主 Listener 与 JS 桥互斥的可观测证据。
     expect(log.closeCount, 1);
     expect(log.tokens, <String>['Mouse3']);

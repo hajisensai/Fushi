@@ -27,14 +27,17 @@ class CardDropRegistry<T> {
 
 /// 把 registry 下发给子树卡片。
 class CardDropScope<T> extends InheritedWidget {
-  const CardDropScope(
-      {required this.registry, required super.child, super.key});
+  const CardDropScope({
+    required this.registry,
+    required super.child,
+    super.key,
+  });
 
   final CardDropRegistry<T> registry;
 
   static CardDropRegistry<T>? maybeOf<T>(BuildContext context) {
-    final CardDropScope<T>? scope =
-        context.dependOnInheritedWidgetOfExactType<CardDropScope<T>>();
+    final CardDropScope<T>? scope = context
+        .dependOnInheritedWidgetOfExactType<CardDropScope<T>>();
     return scope?.registry;
   }
 

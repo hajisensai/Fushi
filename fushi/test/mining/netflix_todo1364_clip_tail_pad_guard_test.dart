@@ -27,33 +27,49 @@ void main() {
           final String src = content.readAsStringSync();
           final RegExp re = RegExp(r'const kNfClipTailPadSec = ([0-9.]+);');
           final Match? m = re.firstMatch(src);
-          expect(m, isNotNull,
-              reason: '${content.path} 缺尾部余量常量 kNfClipTailPadSec');
+          expect(
+            m,
+            isNotNull,
+            reason: '${content.path} 缺尾部余量常量 kNfClipTailPadSec',
+          );
           final double pad = double.parse(m!.group(1)!);
-          expect(pad, greaterThan(0),
-              reason: '${content.path} 尾部余量必须 > 0（否则又是句末即停、截尾）');
+          expect(
+            pad,
+            greaterThan(0),
+            reason: '${content.path} 尾部余量必须 > 0（否则又是句末即停、截尾）',
+          );
         });
 
         test('句末后记录 endAtSec 再录尾部余量，而非立即 break', () {
           final String src = content.readAsStringSync();
           // 句末检测到后设 endAtSec = 当前视频时间 + 尾部余量。
-          expect(src.contains('endAtSec = v.currentTime + kNfClipTailPadSec'),
-              isTrue,
-              reason: '${content.path} 句末未记录 endAtSec（应 = currentTime + 尾部余量）');
+          expect(
+            src.contains('endAtSec = v.currentTime + kNfClipTailPadSec'),
+            isTrue,
+            reason: '${content.path} 句末未记录 endAtSec（应 = currentTime + 尾部余量）',
+          );
           // 真正停录门是「录到 endAtSec」，不是句末立即 break。
-          expect(src.contains('if (v.currentTime >= endAtSec) break;'), isTrue,
-              reason: '${content.path} 缺「录满尾部余量才停」的停录门');
+          expect(
+            src.contains('if (v.currentTime >= endAtSec) break;'),
+            isTrue,
+            reason: '${content.path} 缺「录满尾部余量才停」的停录门',
+          );
           // 旧的截尾写法（句末立即 break）不得残留。
-          expect(src.contains('if (nowText !== ref) break; // 字幕变成别句 = 本句结束'),
-              isFalse,
-              reason: '${content.path} 仍残留「句末立即 break」的截尾停录（回归 BUG-681）');
+          expect(
+            src.contains('if (nowText !== ref) break; // 字幕变成别句 = 本句结束'),
+            isFalse,
+            reason: '${content.path} 仍残留「句末立即 break」的截尾停录（回归 BUG-681）',
+          );
         });
       });
     }
 
     test('两份镜像逐字节一致（content.js）', () {
-      expect(contents[0].readAsBytesSync(), contents[1].readAsBytesSync(),
-          reason: 'content.js 两份镜像不一致');
+      expect(
+        contents[0].readAsBytesSync(),
+        contents[1].readAsBytesSync(),
+        reason: 'content.js 两份镜像不一致',
+      );
     });
   });
 }

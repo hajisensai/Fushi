@@ -11,8 +11,9 @@ import 'package:flutter/services.dart';
 /// 非 Windows / 未构建 native 时 native 永不推送，[setHandler] 装上的回调只是不会被
 /// 调用（不崩、不抛）。
 abstract final class MagpieScalingChannel {
-  static const MethodChannel _channel =
-      MethodChannel('app.fushi.reader/magpie');
+  static const MethodChannel _channel = MethodChannel(
+    'app.fushi.reader/magpie',
+  );
 
   /// 当前已装载的回调；null = 未监听。
   static void Function(MagpieScalingEvent event)? _handler;

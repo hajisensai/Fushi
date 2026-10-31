@@ -61,29 +61,34 @@ void main() {
       expect(ReaderFushiSource.parseBookKey(a), isNull);
       expect(
         ReaderFushiSource.parseSrtBookUid(
-            ReaderFushiSource.mediaIdentifierFor('someBookKey')),
+          ReaderFushiSource.mediaIdentifierFor('someBookKey'),
+        ),
         isNull,
       );
     });
 
-    test('override title on one standalone SRT book does not leak to another',
-        () async {
-      final ReaderFushiSource source = ReaderFushiSource.instance;
-      final MediaItem itemA = srtItem('srtbook_a');
-      final MediaItem itemB = srtItem('srtbook_b');
-      addTearDown(
-          () => source.setOverrideTitleFromMediaItem(item: itemA, title: null));
+    test(
+      'override title on one standalone SRT book does not leak to another',
+      () async {
+        final ReaderFushiSource source = ReaderFushiSource.instance;
+        final MediaItem itemA = srtItem('srtbook_a');
+        final MediaItem itemB = srtItem('srtbook_b');
+        addTearDown(
+          () => source.setOverrideTitleFromMediaItem(item: itemA, title: null),
+        );
 
-      await source.setOverrideTitleFromMediaItem(item: itemA, title: '新名A');
+        await source.setOverrideTitleFromMediaItem(item: itemA, title: '新名A');
 
-      expect(source.overrideTitleForSrtUid('srtbook_a'), '新名A');
-      expect(source.overrideTitleForSrtUid('srtbook_b'), isNull);
-      expect(source.getOverrideTitleFromMediaItem(itemB), isNull);
-    });
+        expect(source.overrideTitleForSrtUid('srtbook_a'), '新名A');
+        expect(source.overrideTitleForSrtUid('srtbook_b'), isNull);
+        expect(source.getOverrideTitleFromMediaItem(itemB), isNull);
+      },
+    );
 
     test('setAuthorFromMediaItem writes through to srt_books.author', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       final SrtBookRepository repo = SrtBookRepository(db);
@@ -104,20 +109,23 @@ void main() {
       expect((await repo.findByUid('srtbook_author'))!.author, isNull);
     });
 
-    test('setAuthorFromMediaItem on an unknown srt uid is a safe no-op',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
+    test(
+      'setAuthorFromMediaItem on an unknown srt uid is a safe no-op',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
 
-      await ReaderFushiSource.instance.setAuthorFromMediaItem(
-        item: srtItem('srtbook_missing'),
-        author: 'X',
-      );
-      // 不抛、不落行。
-      expect(await db.getSrtBookByUid('srtbook_missing'), isNull);
-    });
+        await ReaderFushiSource.instance.setAuthorFromMediaItem(
+          item: srtItem('srtbook_missing'),
+          author: 'X',
+        );
+        // 不抛、不落行。
+        expect(await db.getSrtBookByUid('srtbook_missing'), isNull);
+      },
+    );
   });
 
   group('override thumbnail file hygiene (BUG-1018 附带)', () {
@@ -145,25 +153,30 @@ void main() {
       }
     });
 
-    test('save without a new image leaves NO 0-byte override cover behind',
-        () async {
-      final ReaderFushiSource source = ReaderFushiSource.instance;
-      final MediaItem item = srtItem('srtbook_cover');
-      final String filename = source.getOverrideThumbnailFilename(
-        appModel: appModel,
-        item: item,
-      );
+    test(
+      'save without a new image leaves NO 0-byte override cover behind',
+      () async {
+        final ReaderFushiSource source = ReaderFushiSource.instance;
+        final MediaItem item = srtItem('srtbook_cover');
+        final String filename = source.getOverrideThumbnailFilename(
+          appModel: appModel,
+          item: item,
+        );
 
-      await source.setOverrideThumbnailFromMediaItem(
-        appModel: appModel,
-        item: item,
-        file: null,
-        clearOverrideImage: false,
-      );
+        await source.setOverrideThumbnailFromMediaItem(
+          appModel: appModel,
+          item: item,
+          file: null,
+          clearOverrideImage: false,
+        );
 
-      expect(File(filename).existsSync(), isFalse,
-          reason: '未选新图也未清除时不得落空文件（否则封面渲染成损坏占位）');
-    });
+        expect(
+          File(filename).existsSync(),
+          isFalse,
+          reason: '未选新图也未清除时不得落空文件（否则封面渲染成损坏占位）',
+        );
+      },
+    );
 
     test('picking a real image writes it; clearing deletes it', () async {
       final ReaderFushiSource source = ReaderFushiSource.instance;
@@ -221,15 +234,18 @@ void main() {
     }
 
     List<MediaSource> bookSources() => <MediaSource>[
-          ReaderFushiSource.instance,
-          MangaFushiSource.instance,
-          ReaderPdfSource.instance,
-        ];
+      ReaderFushiSource.instance,
+      MangaFushiSource.instance,
+      ReaderPdfSource.instance,
+    ];
 
     /// 把一条 override 书名写进 BUG-1317 之前的**旧位置**：源自己的偏好命名空间
     /// + 源键出现两次的旧键。这就是旧代码的写入路径。
     Future<void> writeLegacyTitle(
-        MediaSource source, String mediaIdentifier, String title) async {
+      MediaSource source,
+      String mediaIdentifier,
+      String title,
+    ) async {
       await source.setPreference<String?>(
         key: MediaSource.legacyOverrideTitleKey(
           sourceId: source.uniqueKey,
@@ -252,32 +268,40 @@ void main() {
     Future<void> purge(String mediaIdentifier) async {
       for (final MediaSource source in bookSources()) {
         await source.clearOverrideTitle(
-            bookItem(source, mediaIdentifier: mediaIdentifier));
+          bookItem(source, mediaIdentifier: mediaIdentifier),
+        );
       }
     }
 
     setUp(() async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       MediaSource.setDatabase(db);
     });
 
     test('规范键只含 mediaIdentifier —— 源键一次都不出现', () async {
       addTearDown(() => purge(kMediaId));
-      final String epubKey = ReaderFushiSource.instance
-          .getOverrideTitleKey(bookItem(ReaderFushiSource.instance));
-      final String mangaKey = MangaFushiSource.instance
-          .getOverrideTitleKey(bookItem(MangaFushiSource.instance));
-      final String pdfKey = ReaderPdfSource.instance
-          .getOverrideTitleKey(bookItem(ReaderPdfSource.instance));
+      final String epubKey = ReaderFushiSource.instance.getOverrideTitleKey(
+        bookItem(ReaderFushiSource.instance),
+      );
+      final String mangaKey = MangaFushiSource.instance.getOverrideTitleKey(
+        bookItem(MangaFushiSource.instance),
+      );
+      final String pdfKey = ReaderPdfSource.instance.getOverrideTitleKey(
+        bookItem(ReaderPdfSource.instance),
+      );
 
       expect(epubKey, 'override_title://$kMediaId');
       expect(mangaKey, epubKey, reason: '同一本书三种 format 必须解析出同一个键');
       expect(pdfKey, epubKey);
       for (final MediaSource source in bookSources()) {
-        expect(epubKey.contains(source.uniqueKey), isFalse,
-            reason: '规范键里绝不能再出现源键 ${source.uniqueKey}');
+        expect(
+          epubKey.contains(source.uniqueKey),
+          isFalse,
+          reason: '规范键里绝不能再出现源键 ${source.uniqueKey}',
+        );
       }
     });
 
@@ -301,15 +325,18 @@ void main() {
     test('旧键回退：三个源各一，都能读到并就地重写成新键', () async {
       for (final MediaSource legacy in bookSources()) {
         // 一源一本书，避免互相干扰。
-        final String mediaId =
-            ReaderFushiSource.mediaIdentifierFor('legacy_${legacy.uniqueKey}');
+        final String mediaId = ReaderFushiSource.mediaIdentifierFor(
+          'legacy_${legacy.uniqueKey}',
+        );
         addTearDown(() => purge(mediaId));
         await writeLegacyTitle(legacy, mediaId, '旧名_${legacy.uniqueKey}');
 
         // 读侧恒用 EPUB 源（首页 / 统计 / 通知栏走的 _overrideTitleForIdentifier
         // 就是这条路），必须能穿透到另外两个源的旧命名空间。
-        final MediaItem readItem =
-            bookItem(ReaderFushiSource.instance, mediaIdentifier: mediaId);
+        final MediaItem readItem = bookItem(
+          ReaderFushiSource.instance,
+          mediaIdentifier: mediaId,
+        );
         expect(
           ReaderFushiSource.instance.getOverrideTitleFromMediaItem(readItem),
           '旧名_${legacy.uniqueKey}',
@@ -317,8 +344,11 @@ void main() {
         );
 
         // 就地重写：旧键已被删，规范键已落值。
-        expect(readLegacyTitle(legacy, mediaId), isNull,
-            reason: '命中后必须删掉旧键，否则回退层永远清不掉');
+        expect(
+          readLegacyTitle(legacy, mediaId),
+          isNull,
+          reason: '命中后必须删掉旧键，否则回退层永远清不掉',
+        );
         expect(
           ReaderFushiSource.instance.overrideStore.getPreference<String?>(
             key: 'override_title://$mediaId',
@@ -331,8 +361,9 @@ void main() {
     });
 
     test('转化 epub 到 manga 再转回后 override 书名不丢', () async {
-      final String mediaId =
-          ReaderFushiSource.mediaIdentifierFor('bug1317_convert');
+      final String mediaId = ReaderFushiSource.mediaIdentifierFor(
+        'bug1317_convert',
+      );
       addTearDown(() => purge(mediaId));
       // 存量：用户在 EPUB 时代改过名（旧位置）。
       await writeLegacyTitle(ReaderFushiSource.instance, mediaId, '我的书');
@@ -359,8 +390,9 @@ void main() {
     });
 
     test('清除改名后旧位置不会把旧名复活', () async {
-      final String mediaId =
-          ReaderFushiSource.mediaIdentifierFor('bug1317_clear');
+      final String mediaId = ReaderFushiSource.mediaIdentifierFor(
+        'bug1317_clear',
+      );
       addTearDown(() => purge(mediaId));
       await writeLegacyTitle(ReaderPdfSource.instance, mediaId, '旧名');
 
@@ -391,14 +423,17 @@ void main() {
         rawTitle: '原始书名',
       );
       // 首页「继续阅读」/ 活动流：只有 bookKey。
-      final String home =
-          displayTitleForBook(bookKey: bookKey, rawTitle: '原始书名');
+      final String home = displayTitleForBook(
+        bookKey: bookKey,
+        rawTitle: '原始书名',
+      );
       // 阅读统计明细行（reading_statistics_page）与有声书通知栏元数据
       // （audiobook_session_launcher）走的是同一个入口。
-      final String? stats =
-          ReaderFushiSource.instance.overrideTitleForBookKey(bookKey);
-      final String? notification =
-          ReaderFushiSource.instance.overrideTitleForBookKey(bookKey);
+      final String? stats = ReaderFushiSource.instance.overrideTitleForBookKey(
+        bookKey,
+      );
+      final String? notification = ReaderFushiSource.instance
+          .overrideTitleForBookKey(bookKey);
 
       expect(shelf, '四处一致');
       expect(home, '四处一致');
@@ -492,13 +527,16 @@ void main() {
         File(legacyPath).writeAsBytesSync(<int>[9, 9, 9]);
 
         // 读侧恒用 EPUB 源（首页 / 书架 hero 都合成 EPUB 身份）。
-        final File? resolved =
-            ReaderFushiSource.instance.resolveOverrideThumbnailFile(
-          appModel: appModel,
-          item: coverItem(ReaderFushiSource.instance, bookKey),
+        final File? resolved = ReaderFushiSource.instance
+            .resolveOverrideThumbnailFile(
+              appModel: appModel,
+              item: coverItem(ReaderFushiSource.instance, bookKey),
+            );
+        expect(
+          resolved,
+          isNotNull,
+          reason: '${legacy.uniqueKey} 的旧封面文件名必须被回退读到',
         );
-        expect(resolved, isNotNull,
-            reason: '${legacy.uniqueKey} 的旧封面文件名必须被回退读到');
         expect(resolved!.path, canonicalPath, reason: '命中后必须就地 rename 成规范名');
         expect(File(canonicalPath).existsSync(), isTrue);
         expect(File(canonicalPath).lengthSync(), 3, reason: '内容必须原样搬过来');
@@ -509,21 +547,21 @@ void main() {
     test('转化 epub 到 manga 后 override 封面不丢', () {
       const String bookKey = 'cover_convert';
       // 存量：EPUB 时代写下的旧文件名。
-      final String legacyPath =
-          ReaderFushiSource.instance.legacyOverrideThumbnailFilename(
-        appModel: appModel,
-        item: coverItem(ReaderFushiSource.instance, bookKey),
-        sourceId: ReaderFushiSource.instance.uniqueKey,
-      );
+      final String legacyPath = ReaderFushiSource.instance
+          .legacyOverrideThumbnailFilename(
+            appModel: appModel,
+            item: coverItem(ReaderFushiSource.instance, bookKey),
+            sourceId: ReaderFushiSource.instance.uniqueKey,
+          );
       File(legacyPath).parent.createSync(recursive: true);
       File(legacyPath).writeAsBytesSync(<int>[7, 7]);
 
       // 书转成漫画后由漫画源读。
-      final File? resolved =
-          MangaFushiSource.instance.resolveOverrideThumbnailFile(
-        appModel: appModel,
-        item: coverItem(MangaFushiSource.instance, bookKey),
-      );
+      final File? resolved = MangaFushiSource.instance
+          .resolveOverrideThumbnailFile(
+            appModel: appModel,
+            item: coverItem(MangaFushiSource.instance, bookKey),
+          );
       expect(resolved, isNotNull);
       expect(resolved!.lengthSync(), 2);
     });
@@ -531,12 +569,12 @@ void main() {
     test('清除封面后旧文件名不会把封面复活', () async {
       const String bookKey = 'cover_clear';
       final MediaItem item = coverItem(MangaFushiSource.instance, bookKey);
-      final String legacyPath =
-          MangaFushiSource.instance.legacyOverrideThumbnailFilename(
-        appModel: appModel,
-        item: item,
-        sourceId: MangaFushiSource.instance.uniqueKey,
-      );
+      final String legacyPath = MangaFushiSource.instance
+          .legacyOverrideThumbnailFilename(
+            appModel: appModel,
+            item: item,
+            sourceId: MangaFushiSource.instance.uniqueKey,
+          );
       File(legacyPath).parent.createSync(recursive: true);
       File(legacyPath).writeAsBytesSync(<int>[5]);
 

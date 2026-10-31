@@ -30,8 +30,9 @@ Future<Map<String, bool>> probeDroppedImageArchives(
   bool preferManga = false,
 }) async {
   final Future<bool> Function(String path) run = probe ?? _probeInIsolate;
-  final Set<String> extensions =
-      dragImageArchiveProbeExtensionsFor(preferManga: preferManga);
+  final Set<String> extensions = dragImageArchiveProbeExtensionsFor(
+    preferManga: preferManga,
+  );
   final Map<String, bool> results = <String, bool>{};
   for (final String path in paths) {
     if (!_needsProbe(path, extensions)) continue;
@@ -53,8 +54,10 @@ Future<bool> _neverThrows(
   try {
     return await run(path);
   } catch (error, stackTrace) {
-    debugPrint('[fushi-drop] image archive probe failed for $path: $error\n'
-        '$stackTrace');
+    debugPrint(
+      '[fushi-drop] image archive probe failed for $path: $error\n'
+      '$stackTrace',
+    );
     return false;
   }
 }

@@ -9,26 +9,40 @@ import 'package:fushi_engine/media/torrent/torrent_task_display.dart';
 void main() {
   group('torrentDisplayStatusFor', () {
     test('qb 下载词族', () {
-      expect(torrentDisplayStatusFor('downloading'),
-          TorrentDisplayStatus.downloading);
-      expect(torrentDisplayStatusFor('forcedDL'),
-          TorrentDisplayStatus.downloading);
       expect(
-          torrentDisplayStatusFor('stalledDL'), TorrentDisplayStatus.stalled);
+        torrentDisplayStatusFor('downloading'),
+        TorrentDisplayStatus.downloading,
+      );
+      expect(
+        torrentDisplayStatusFor('forcedDL'),
+        TorrentDisplayStatus.downloading,
+      );
+      expect(
+        torrentDisplayStatusFor('stalledDL'),
+        TorrentDisplayStatus.stalled,
+      );
       expect(torrentDisplayStatusFor('queuedDL'), TorrentDisplayStatus.queued);
-      expect(torrentDisplayStatusFor('metaDL'),
-          TorrentDisplayStatus.fetchingMetadata);
+      expect(
+        torrentDisplayStatusFor('metaDL'),
+        TorrentDisplayStatus.fetchingMetadata,
+      );
     });
 
     test('qb 做种/完成词族', () {
       expect(
-          torrentDisplayStatusFor('uploading'), TorrentDisplayStatus.seeding);
+        torrentDisplayStatusFor('uploading'),
+        TorrentDisplayStatus.seeding,
+      );
       expect(
-          torrentDisplayStatusFor('stalledUP'), TorrentDisplayStatus.seeding);
+        torrentDisplayStatusFor('stalledUP'),
+        TorrentDisplayStatus.seeding,
+      );
       expect(torrentDisplayStatusFor('forcedUP'), TorrentDisplayStatus.seeding);
       expect(torrentDisplayStatusFor('queuedUP'), TorrentDisplayStatus.queued);
       expect(
-          torrentDisplayStatusFor('checkingUP'), TorrentDisplayStatus.checking);
+        torrentDisplayStatusFor('checkingUP'),
+        TorrentDisplayStatus.checking,
+      );
       expect(torrentDisplayStatusFor('moving'), TorrentDisplayStatus.moving);
     });
 
@@ -39,32 +53,49 @@ void main() {
         'stoppedDL',
         'stoppedUP',
       ]) {
-        expect(torrentDisplayStatusFor(s), TorrentDisplayStatus.paused,
-            reason: s);
+        expect(
+          torrentDisplayStatusFor(s),
+          TorrentDisplayStatus.paused,
+          reason: s,
+        );
       }
     });
 
     test('内置引擎词族（native state_label 全集）', () {
-      expect(torrentDisplayStatusFor('metadata'),
-          TorrentDisplayStatus.fetchingMetadata);
       expect(
-          torrentDisplayStatusFor('checking'), TorrentDisplayStatus.checking);
-      expect(torrentDisplayStatusFor('downloading'),
-          TorrentDisplayStatus.downloading);
+        torrentDisplayStatusFor('metadata'),
+        TorrentDisplayStatus.fetchingMetadata,
+      );
       expect(
-          torrentDisplayStatusFor('finished'), TorrentDisplayStatus.completed);
+        torrentDisplayStatusFor('checking'),
+        TorrentDisplayStatus.checking,
+      );
+      expect(
+        torrentDisplayStatusFor('downloading'),
+        TorrentDisplayStatus.downloading,
+      );
+      expect(
+        torrentDisplayStatusFor('finished'),
+        TorrentDisplayStatus.completed,
+      );
       expect(torrentDisplayStatusFor('seeding'), TorrentDisplayStatus.seeding);
       expect(torrentDisplayStatusFor('error'), TorrentDisplayStatus.error);
     });
 
     test('错误词族与未知词', () {
       expect(
-          torrentDisplayStatusFor('missingFiles'), TorrentDisplayStatus.error);
+        torrentDisplayStatusFor('missingFiles'),
+        TorrentDisplayStatus.error,
+      );
       expect(
-          torrentDisplayStatusFor('allocating'), TorrentDisplayStatus.checking);
+        torrentDisplayStatusFor('allocating'),
+        TorrentDisplayStatus.checking,
+      );
       expect(torrentDisplayStatusFor(''), TorrentDisplayStatus.unknown);
-      expect(torrentDisplayStatusFor('someFutureState'),
-          TorrentDisplayStatus.unknown);
+      expect(
+        torrentDisplayStatusFor('someFutureState'),
+        TorrentDisplayStatus.unknown,
+      );
     });
   });
 
@@ -103,10 +134,14 @@ void main() {
     test('最高两级单位，次级补零', () {
       expect(formatCompactDuration(Duration.zero), '0s');
       expect(formatCompactDuration(const Duration(seconds: 45)), '45s');
-      expect(formatCompactDuration(const Duration(minutes: 12, seconds: 34)),
-          '12m34s');
       expect(
-          formatCompactDuration(const Duration(hours: 1, minutes: 2)), '1h02m');
+        formatCompactDuration(const Duration(minutes: 12, seconds: 34)),
+        '12m34s',
+      );
+      expect(
+        formatCompactDuration(const Duration(hours: 1, minutes: 2)),
+        '1h02m',
+      );
       expect(formatCompactDuration(const Duration(days: 2, hours: 7)), '2d07h');
     });
 
@@ -125,7 +160,9 @@ void main() {
       expect(formatShareRatio(uploadedBytes: 35, downloadedBytes: 100), '0.35');
       expect(formatShareRatio(uploadedBytes: 0, downloadedBytes: 100), '0.00');
       expect(
-          formatShareRatio(uploadedBytes: 300, downloadedBytes: 100), '3.00');
+        formatShareRatio(uploadedBytes: 300, downloadedBytes: 100),
+        '3.00',
+      );
     });
   });
 }

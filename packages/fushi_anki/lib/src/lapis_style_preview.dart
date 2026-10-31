@@ -113,8 +113,11 @@ String _previewBlockHtml(LapisCustomBlock block) {
   final String target = lapisPreviewBlockTarget(block.id);
   final Iterable<String> parts = block.fields
       .where(isValidLapisBlockFieldName)
-      .map((String f) => '<div class="hibiki-block-field" data-hibiki-field="'
-          '$f">${_previewFieldSamples[f] ?? f}</div>');
+      .map(
+        (String f) =>
+            '<div class="hibiki-block-field" data-hibiki-field="'
+            '$f">${_previewFieldSamples[f] ?? f}</div>',
+      );
   // 空区域在真卡上被 `:empty` 隐藏，但预览里必须看得见——否则「新建区域」之后
   // 屏幕上什么都没有，用户既选不中它也不知道它在哪。
   final String body = block.fields.isEmpty

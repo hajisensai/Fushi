@@ -26,19 +26,22 @@ void main() {
       markTestSkipped('node not found on PATH; skipping JS behavior execution');
       return;
     }
-    final File jsTest =
-        File('test/dictionary/popup_instant_scroll_step_test.js');
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
+    final File jsTest = File(
+      'test/dictionary/popup_instant_scroll_step_test.js',
     );
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
+    );
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
     expect(
       result.exitCode,
       0,
-      reason: 'popup instant-scroll step JS behavior test failed.\n'
+      reason:
+          'popup instant-scroll step JS behavior test failed.\n'
           'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
     expect(result.stdout.toString(), contains('all assertions passed'));
@@ -51,17 +54,20 @@ void main() {
         expect(src, contains('function popupEinkStepFraction('));
 
         // 滚轮：瞬时分支内用 popupEinkStepFraction 解析步长，常量只作回退。
-        final int instantAt =
-            src.indexOf('if (window.__fushiPopupInstantScroll)');
+        final int instantAt = src.indexOf(
+          'if (window.__fushiPopupInstantScroll)',
+        );
         final int factorAt = src.indexOf('const factor = (coarseMouseNotch');
         expect(instantAt, greaterThanOrEqualTo(0));
         expect(factorAt, greaterThan(instantAt));
         final String wheelBranch = src.substring(instantAt, factorAt);
         expect(
           wheelBranch,
-          contains('popupEinkStepFraction(\n'
-              '            window.__fushiPopupInstantScrollWheelStep, '
-              'POPUP_EINK_WHEEL_VIEWPORT_FRACTION)'),
+          contains(
+            'popupEinkStepFraction(\n'
+            '            window.__fushiPopupInstantScrollWheelStep, '
+            'POPUP_EINK_WHEEL_VIEWPORT_FRACTION)',
+          ),
           reason: '滚轮步长必须来自用户全局、缺省回退原常量',
         );
         expect(
@@ -84,9 +90,11 @@ void main() {
         );
         expect(
           touchFn,
-          contains('popupEinkStepFraction(\n'
-              '        window.__fushiPopupInstantScrollTouchStep, '
-              'POPUP_EINK_TOUCH_VIEWPORT_FRACTION)'),
+          contains(
+            'popupEinkStepFraction(\n'
+            '        window.__fushiPopupInstantScrollTouchStep, '
+            'POPUP_EINK_TOUCH_VIEWPORT_FRACTION)',
+          ),
         );
         expect(touchFn, contains('Math.min(extent, extent * touchFraction)'));
         expect(
@@ -103,37 +111,50 @@ void main() {
       ).readAsStringSync();
       expect(
         dart,
-        contains(r'window.__fushiPopupInstantScrollWheelStep = '
-            r'${appModel.popupInstantScrollWheelStep};'),
+        contains(
+          r'window.__fushiPopupInstantScrollWheelStep = '
+          r'${appModel.popupInstantScrollWheelStep};',
+        ),
       );
       expect(
         dart,
-        contains(r'window.__fushiPopupInstantScrollTouchStep = '
-            r'${appModel.popupInstantScrollTouchStep};'),
+        contains(
+          r'window.__fushiPopupInstantScrollTouchStep = '
+          r'${appModel.popupInstantScrollTouchStep};',
+        ),
       );
       // BUG-717 ③：静态段有 memo，改设置必须让缓存失效，否则拖完滑杆弹窗不跟。
       expect(
         dart,
-        contains('cached.popupInstantScrollWheelStep ==\n'
-            '          appModel.popupInstantScrollWheelStep &&'),
+        contains(
+          'cached.popupInstantScrollWheelStep ==\n'
+          '          appModel.popupInstantScrollWheelStep &&',
+        ),
       );
       expect(
         dart,
-        contains('cached.popupInstantScrollTouchStep ==\n'
-            '          appModel.popupInstantScrollTouchStep &&'),
+        contains(
+          'cached.popupInstantScrollTouchStep ==\n'
+          '          appModel.popupInstantScrollTouchStep &&',
+        ),
       );
     });
 
     test('扩展 theme 通道下发滚轮步长，content.js / side-panel.js 设同名全局', () {
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       // 只钉「键 → 值表达式」这对映射，不钉折行位置：#2472 的合并解冲突重排了
       // app_model.dart，该行被折成 `…WheelStep` / `.toStringAsFixed(3)` 两行，下发
       // 内容未变，原逐字字面量却红了。
       expect(
         appModel,
-        matches(RegExp(r"'--fushi-instant-scroll-wheel-step':\s*"
-            r'inputs\.instantScrollWheelStep\s*\.toStringAsFixed\(3\),')),
+        matches(
+          RegExp(
+            r"'--fushi-instant-scroll-wheel-step':\s*"
+            r'inputs\.instantScrollWheelStep\s*\.toStringAsFixed\(3\),',
+          ),
+        ),
         reason: '扩展弹窗只有 theme 这一条下发通道（与 --fushi-instant-scroll 同法）',
       );
       // 反馈 biLEesNqWb：theme 表由 App 当前设置与扩展所选配置的只读视图共用，输入
@@ -153,20 +174,28 @@ void main() {
         'assets/browser_extension/side-panel.js',
       ]) {
         final String src = File(path).readAsStringSync();
-        expect(src, contains("theme['--fushi-instant-scroll-wheel-step']"),
-            reason: '$path 必须读 theme 下发的滚轮步长');
-        expect(src, contains('window.__fushiPopupInstantScrollWheelStep ='),
-            reason: '$path 必须设 popup.js 读的同名全局');
+        expect(
+          src,
+          contains("theme['--fushi-instant-scroll-wheel-step']"),
+          reason: '$path 必须读 theme 下发的滚轮步长',
+        );
+        expect(
+          src,
+          contains('window.__fushiPopupInstantScrollWheelStep ='),
+          reason: '$path 必须设 popup.js 读的同名全局',
+        );
       }
     });
 
     test('偏好层：两个 key 登记、clamp 到 [0.1, 1]、默认与原常量一致', () {
-      final String keys =
-          File('lib/src/models/preference_keys.dart').readAsStringSync();
+      final String keys = File(
+        'lib/src/models/preference_keys.dart',
+      ).readAsStringSync();
       expect(keys, contains("'popup_instant_scroll_wheel_step',"));
       expect(keys, contains("'popup_instant_scroll_touch_step',"));
-      final String repo =
-          File('lib/src/models/preferences_repository.dart').readAsStringSync();
+      final String repo = File(
+        'lib/src/models/preferences_repository.dart',
+      ).readAsStringSync();
       expect(repo, contains('kPopupInstantScrollWheelStepDefault = 0.5;'));
       expect(repo, contains('kPopupInstantScrollTouchStepDefault = 0.25;'));
       expect(repo, contains('kPopupInstantScrollStepMin = 0.1;'));
@@ -178,17 +207,21 @@ void main() {
         'lib/src/settings/settings_schema_lookup.dart',
       ).readAsStringSync();
       final int switchAt = src.indexOf("id: 'lookup.popup_instant_scroll',");
-      final int wheelAt =
-          src.indexOf("id: 'lookup.popup_instant_scroll_wheel_step',");
-      final int touchAt =
-          src.indexOf("id: 'lookup.popup_instant_scroll_touch_step',");
+      final int wheelAt = src.indexOf(
+        "id: 'lookup.popup_instant_scroll_wheel_step',",
+      );
+      final int touchAt = src.indexOf(
+        "id: 'lookup.popup_instant_scroll_touch_step',",
+      );
       expect(switchAt, greaterThanOrEqualTo(0));
       expect(wheelAt, greaterThan(switchAt));
       expect(touchAt, greaterThan(wheelAt));
       final String switchBody = src.substring(switchAt, wheelAt);
       final String wheelBody = src.substring(wheelAt, touchAt);
-      final int afterAt =
-          src.indexOf("id: 'lookup.popup_bottom_docked',", touchAt);
+      final int afterAt = src.indexOf(
+        "id: 'lookup.popup_bottom_docked',",
+        touchAt,
+      );
       expect(afterAt, greaterThan(touchAt));
       final String touchBody = src.substring(touchAt, afterAt);
       for (final String body in <String>[switchBody, wheelBody, touchBody]) {
@@ -201,14 +234,20 @@ void main() {
       for (final String body in <String>[wheelBody, touchBody]) {
         expect(
           body,
-          contains('visible: (SettingsContext settingsContext) =>\n'
-              '                settingsContext.appModel.popupInstantScroll,'),
+          contains(
+            'visible: (SettingsContext settingsContext) =>\n'
+            '                settingsContext.appModel.popupInstantScroll,',
+          ),
           reason: '开关关着时步长无意义，不展示',
         );
-        expect(body,
-            contains('min: PreferencesRepository.kPopupInstantScrollStepMin'));
-        expect(body,
-            contains('max: PreferencesRepository.kPopupInstantScrollStepMax'));
+        expect(
+          body,
+          contains('min: PreferencesRepository.kPopupInstantScrollStepMin'),
+        );
+        expect(
+          body,
+          contains('max: PreferencesRepository.kPopupInstantScrollStepMax'),
+        );
       }
       expect(wheelBody, contains('setPopupInstantScrollWheelStep(value)'));
       expect(touchBody, contains('setPopupInstantScrollTouchStep(value)'));
@@ -218,8 +257,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

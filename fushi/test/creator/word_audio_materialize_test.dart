@@ -24,14 +24,18 @@ void main() {
       expect(wordAudioExtFor(Uri.parse('https://a/x.m4a?y=1'), null), 'm4a');
     });
     test('URL 无后缀时按 Content-Type', () {
-      expect(wordAudioExtFor(Uri.parse('https://a/get?term=x'), 'audio/ogg'),
-          'ogg');
+      expect(
+        wordAudioExtFor(Uri.parse('https://a/get?term=x'), 'audio/ogg'),
+        'ogg',
+      );
       expect(wordAudioExtFor(Uri.parse('https://a/get'), 'audio/mpeg'), 'mp3');
     });
     test('都不认时回退 mp3', () {
       expect(wordAudioExtFor(Uri.parse('https://a/get'), null), 'mp3');
       expect(
-          wordAudioExtFor(Uri.parse('https://a/x.txt'), 'text/plain'), 'mp3');
+        wordAudioExtFor(Uri.parse('https://a/x.txt'), 'text/plain'),
+        'mp3',
+      );
     });
   });
 
@@ -42,30 +46,37 @@ void main() {
         return http.Response.bytes(<int>[1, 2, 3, 4], 200);
       });
       final File? f = await materializeWordAudioRef(
-          'https://forvo.example/word.mp3',
-          dir: dir,
-          client: client);
+        'https://forvo.example/word.mp3',
+        dir: dir,
+        client: client,
+      );
       expect(f, isNotNull);
       expect(f!.path, endsWith('.mp3'));
       expect(await f.readAsBytes(), <int>[1, 2, 3, 4]);
     });
 
     test('远端非 2xx（404「本源没有此词」）→ null，不落半成品', () async {
-      final http.Client client =
-          MockClient((http.Request req) async => http.Response('no', 404));
+      final http.Client client = MockClient(
+        (http.Request req) async => http.Response('no', 404),
+      );
       final File? f = await materializeWordAudioRef(
-          'https://forvo.example/word.mp3',
-          dir: dir,
-          client: client);
+        'https://forvo.example/word.mp3',
+        dir: dir,
+        client: client,
+      );
       expect(f, isNull);
       expect(dir.listSync(), isEmpty);
     });
 
     test('远端空体 → null', () async {
       final http.Client client = MockClient(
-          (http.Request req) async => http.Response.bytes(<int>[], 200));
-      final File? f = await materializeWordAudioRef('https://a/x.mp3',
-          dir: dir, client: client);
+        (http.Request req) async => http.Response.bytes(<int>[], 200),
+      );
+      final File? f = await materializeWordAudioRef(
+        'https://a/x.mp3',
+        dir: dir,
+        client: client,
+      );
       expect(f, isNull);
     });
 
@@ -74,8 +85,10 @@ void main() {
         ..writeAsBytesSync(<int>[9, 9]);
       final File? hit = await materializeWordAudioRef(local.path, dir: dir);
       expect(hit?.path, local.path);
-      final File? miss =
-          await materializeWordAudioRef('${dir.path}/nope.mp3', dir: dir);
+      final File? miss = await materializeWordAudioRef(
+        '${dir.path}/nope.mp3',
+        dir: dir,
+      );
       expect(miss, isNull);
     });
 

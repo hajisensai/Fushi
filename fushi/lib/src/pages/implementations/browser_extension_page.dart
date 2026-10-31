@@ -11,8 +11,7 @@ import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
-import 'package:fushi/src/sync/fushi_api_server.dart'
-    show kFushiApiDefaultPort;
+import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -87,10 +86,12 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     _statusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) setState(() {});
     });
-    unawaited(widget.detectBrowser().then((BrowserKind? kind) {
-      if (!mounted || kind == null) return;
-      setState(() => _detectedBrowser = kind);
-    }));
+    unawaited(
+      widget.detectBrowser().then((BrowserKind? kind) {
+        if (!mounted || kind == null) return;
+        setState(() => _detectedBrowser = kind);
+      }),
+    );
   }
 
   @override
@@ -101,8 +102,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 时间窗见 [kBrowserExtensionSeenWindow]（与控制通道同一判据）。
@@ -351,8 +353,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                 const SizedBox(height: 2),
                 Text(
                   t.browser_extension_guide_reinstall_hint,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -396,7 +399,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
               child: DecoratedBox(
                 decoration: ShapeDecoration(
                   color: scheme.secondary,
-                  shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
+                  shape: MaterialShapeBorder(
+                    shape: MaterialShapes.cookie9Sided,
+                  ),
                 ),
                 child: Center(
                   child: FushiIcon(
@@ -627,8 +632,9 @@ class _StatusHero extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           hint,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: fg.withValues(alpha: 0.85)),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: fg.withValues(alpha: 0.85),
+          ),
         ),
         const SizedBox(height: 12),
         Wrap(
@@ -639,21 +645,23 @@ class _StatusHero extends StatelessWidget {
               icon: serverOn ? FushiIcons.cloud : FushiIcons.cloudOff,
               label: serverOn
                   ? '${t.browser_extension_server_on} · '
-                      '${t.browser_extension_port_label(port: port)}'
+                        '${t.browser_extension_port_label(port: port)}'
                   : t.browser_extension_server_off,
               color: fg,
             ),
             if (reportedBuild != null)
               _HeroPill(
                 icon: FushiIcons.browserExtension,
-                label: '${t.browser_extension_version_browser} · '
+                label:
+                    '${t.browser_extension_version_browser} · '
                     '$reportedBuild',
                 color: fg,
               ),
             if (detectedBrowser != null)
               _HeroPill(
                 icon: FushiIcons.globe,
-                label: '${t.browser_extension_browser_default} · '
+                label:
+                    '${t.browser_extension_browser_default} · '
                     '${browserDisplayName(detectedBrowser!)}',
                 color: fg,
               ),
@@ -790,8 +798,8 @@ class _HeroStatusIcon extends StatelessWidget {
         connected
             ? FushiStatusTone.success
             : tone == FushiCardTone.error
-                ? FushiStatusTone.error
-                : FushiStatusTone.warning,
+            ? FushiStatusTone.error
+            : FushiStatusTone.warning,
       );
       // Apple：SF Symbols 式的符号替换（交叉淡入），没有 M3E 弹簧过冲脉冲，
       // 也不画 cookie 形状底。
@@ -843,11 +851,7 @@ class _HeroStatusIcon extends StatelessWidget {
                 child: Center(
                   child: Transform.rotate(
                     angle: -angle,
-                    child: FushiIcon(
-                      icon,
-                      size: size * 0.5,
-                      color: onFill,
-                    ),
+                    child: FushiIcon(icon, size: size * 0.5, color: onFill),
                   ),
                 ),
               ),
@@ -889,10 +893,9 @@ class _HeroPill extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelLarge
-                  ?.copyWith(color: color),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: color),
             ),
           ),
         ],
@@ -1002,8 +1005,9 @@ class _BrowserExtensionInstallStepsState
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _copy(String value) async {
@@ -1030,21 +1034,21 @@ class _BrowserExtensionInstallStepsState
     final bool autoReady = widget.serverEnabled && widget.hasToken;
     final List<(String, Widget Function(BuildContext))> steps =
         <(String, Widget Function(BuildContext))>[
-      (
-        t.browser_extension_step_open_page.replaceFirst(
-          RegExp(r'[:：]\s*$'),
-          '',
-        ),
-        _browserStep,
-      ),
-      (t.browser_extension_step_dev_mode, (BuildContext _) => _nextOnly(1)),
-      (
-        t.browser_extension_step_load_unpacked,
-        (BuildContext _) => _nextOnly(2)
-      ),
-      (t.browser_extension_step_pick_folder, _folderStep),
-      (t.browser_extension_step_verify, _verifyStep),
-    ];
+          (
+            t.browser_extension_step_open_page.replaceFirst(
+              RegExp(r'[:：]\s*$'),
+              '',
+            ),
+            _browserStep,
+          ),
+          (t.browser_extension_step_dev_mode, (BuildContext _) => _nextOnly(1)),
+          (
+            t.browser_extension_step_load_unpacked,
+            (BuildContext _) => _nextOnly(2),
+          ),
+          (t.browser_extension_step_pick_folder, _folderStep),
+          (t.browser_extension_step_verify, _verifyStep),
+        ];
 
     return FushiCard(
       padding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
@@ -1066,8 +1070,9 @@ class _BrowserExtensionInstallStepsState
                   children: <Widget>[
                     Text(
                       t.browser_extension_guide_title,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Text(
                       t.browser_extension_guide_progress(
@@ -1113,12 +1118,7 @@ class _BrowserExtensionInstallStepsState
             const SizedBox(height: 8),
           ],
           for (int i = 0; i < steps.length; i++)
-            _stepTile(
-              context,
-              i,
-              title: steps[i].$1,
-              body: steps[i].$2,
-            ),
+            _stepTile(context, i, title: steps[i].$1, body: steps[i].$2),
         ],
       ),
     );
@@ -1144,8 +1144,8 @@ class _BrowserExtensionInstallStepsState
         color: last
             ? Colors.transparent
             : done
-                ? scheme.primary
-                : scheme.outlineVariant,
+            ? scheme.primary
+            : scheme.outlineVariant,
         width: 2,
       ),
     );
@@ -1157,8 +1157,9 @@ class _BrowserExtensionInstallStepsState
           child: FushiPressScale(
             child: InkWell(
               key: ValueKey<String>('browser-extension-step-$index'),
-              borderRadius:
-                  BorderRadius.circular(SettingsKitRadii.small(style)),
+              borderRadius: BorderRadius.circular(
+                SettingsKitRadii.small(style),
+              ),
               onTap: () => _toggle(index),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1173,13 +1174,15 @@ class _BrowserExtensionInstallStepsState
                     Expanded(
                       child: Text(
                         title,
-                        style: (active
-                                ? theme.textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700)
-                                : theme.textTheme.bodyLarge)
-                            ?.copyWith(
-                          color: done ? scheme.onSurfaceVariant : null,
-                        ),
+                        style:
+                            (active
+                                    ? theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      )
+                                    : theme.textTheme.bodyLarge)
+                                ?.copyWith(
+                                  color: done ? scheme.onSurfaceVariant : null,
+                                ),
                       ),
                     ),
                     AnimatedRotation(
@@ -1295,8 +1298,9 @@ class _BrowserExtensionInstallStepsState
           child: SelectableText(
             url,
             maxLines: 1,
-            style:
-                theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+            ),
           ),
         ),
         FushiIconButton(
@@ -1317,7 +1321,12 @@ class _BrowserExtensionInstallStepsState
             borderRadius: BorderRadius.circular(SettingsKitRadii.small(style)),
           ),
           child: inline
-              ? Row(children: <Widget>[Expanded(child: field), open])
+              ? Row(
+                  children: <Widget>[
+                    Expanded(child: field),
+                    open,
+                  ],
+                )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[field, open],
@@ -1345,8 +1354,9 @@ class _BrowserExtensionInstallStepsState
         children: <Widget>[
           Text(
             t.browser_extension_folder_not_ready,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
           FushiFilledButton.icon(
@@ -1357,8 +1367,9 @@ class _BrowserExtensionInstallStepsState
           const SizedBox(height: 8),
           Text(
             t.browser_extension_prepare_hint,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       );
@@ -1384,8 +1395,9 @@ class _BrowserExtensionInstallStepsState
               Expanded(
                 child: SelectableText(
                   path,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontFamily: 'monospace'),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
               FushiIconButton(
@@ -1430,8 +1442,9 @@ class _BrowserExtensionInstallStepsState
       children: <Widget>[
         Text(
           t.browser_extension_step_done_auto,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 12),
         FushiFilledButton.tonalIcon(
@@ -1448,9 +1461,11 @@ class _BrowserExtensionInstallStepsState
                   child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : const FushiIcon(FushiIcons.wifi, size: 18),
-          label: Text(widget.verifying
-              ? t.browser_extension_verify_checking
-              : t.browser_extension_verify_button),
+          label: Text(
+            widget.verifying
+                ? t.browser_extension_verify_checking
+                : t.browser_extension_verify_button,
+          ),
         ),
       ],
     );
@@ -1482,16 +1497,19 @@ class _StepIndicator extends StatelessWidget {
       builder: (BuildContext context, double t, Widget? _) {
         final double c = t.clamp(0.0, 1.0);
         final double scale = 1 + math.max(0.0, t - 1) * 0.8;
-        final double radius =
-            active && expressive ? lerpDouble(extent / 2, 10, c)! : extent / 2;
-        final Color fill =
-            Color.lerp(
-              FushiDesignTokens.of(context).surfaces.overlay,
-              scheme.primary,
-              c,
-            )!;
-        final Color fg =
-            Color.lerp(scheme.onSurfaceVariant, scheme.onPrimary, c)!;
+        final double radius = active && expressive
+            ? lerpDouble(extent / 2, 10, c)!
+            : extent / 2;
+        final Color fill = Color.lerp(
+          FushiDesignTokens.of(context).surfaces.overlay,
+          scheme.primary,
+          c,
+        )!;
+        final Color fg = Color.lerp(
+          scheme.onSurfaceVariant,
+          scheme.onPrimary,
+          c,
+        )!;
         return Transform.scale(
           scale: scale,
           child: SizedBox.square(

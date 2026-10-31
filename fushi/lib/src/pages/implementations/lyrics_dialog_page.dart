@@ -133,9 +133,6 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
   }
 
   void executeSearch() async {
-    widget.onSearch(
-      _titleController.text,
-      _artistController.text,
-    );
+    widget.onSearch(_titleController.text, _artistController.text);
   }
 }

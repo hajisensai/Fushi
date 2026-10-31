@@ -81,8 +81,9 @@ void main() {
     // 配对成功后自动落 token（免用户手粘）。53NT7G_tSO 起还带上 ping 回报的
     // hostId，让新 token 同步到这台 host 的全部地址。
     expect(
-      RegExp(r'await _onPairSuccess\(\s*baseUrl,\s*token,\s*fingerprint,')
-          .hasMatch(source),
+      RegExp(
+        r'await _onPairSuccess\(\s*baseUrl,\s*token,\s*fingerprint,',
+      ).hasMatch(source),
       isTrue,
       reason: '配对成功后未自动落 token（_onPairSuccess）',
     );
@@ -93,8 +94,10 @@ void main() {
     final int orchestrateEnd = source.indexOf('Future<String> _onPairSuccess(');
     expect(orchestrateStart, greaterThanOrEqualTo(0));
     expect(orchestrateEnd, greaterThan(orchestrateStart));
-    final String orchestrate =
-        source.substring(orchestrateStart, orchestrateEnd);
+    final String orchestrate = source.substring(
+      orchestrateStart,
+      orchestrateEnd,
+    );
     expect(
       orchestrate.contains('FushiDevice'),
       isFalse,

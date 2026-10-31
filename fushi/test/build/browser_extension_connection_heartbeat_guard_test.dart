@@ -18,8 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 服务器刷 last-seen 的不变式。刻意只锁「命中判断 → 调用」的先后，不锁单行/多行、
 /// 不锁同一分支里还顺带干了什么别的事。
 final RegExp _kHeartbeatPingsServer = RegExp(
-    r"name\s*===\s*'fushiHeartbeat'[^}]*checkVersionOnStartup\(\)",
-    dotAll: true);
+  r"name\s*===\s*'fushiHeartbeat'[^}]*checkVersionOnStartup\(\)",
+  dotAll: true,
+);
 
 void main() {
   const Map<String, String> mirrors = <String, String>{
@@ -31,42 +32,62 @@ void main() {
     mirrors.forEach((String name, String root) {
       test('[$name] manifest declares alarms permission', () {
         final String src = File('$root/manifest.json').readAsStringSync();
-        expect(src.contains('"alarms"'), isTrue,
-            reason: '$root manifest.json must request the alarms permission '
-                'for the connection heartbeat');
+        expect(
+          src.contains('"alarms"'),
+          isTrue,
+          reason:
+              '$root manifest.json must request the alarms permission '
+              'for the connection heartbeat',
+        );
       });
 
       test('[$name] background registers a periodic heartbeat alarm', () {
         final String src = File('$root/background.js').readAsStringSync();
-        expect(src.contains("chrome.alarms.create('fushiHeartbeat'"), isTrue,
-            reason: '$root background.js must create the fushiHeartbeat alarm');
-        expect(src.contains('periodInMinutes: 1'), isTrue,
-            reason: '$root background.js heartbeat must fire ~every 60s '
-                '(< the 150s app-side seen window)');
-        expect(src.contains('chrome.alarms.onAlarm.addListener'), isTrue,
-            reason: '$root background.js must handle the heartbeat alarm');
+        expect(
+          src.contains("chrome.alarms.create('fushiHeartbeat'"),
+          isTrue,
+          reason: '$root background.js must create the fushiHeartbeat alarm',
+        );
+        expect(
+          src.contains('periodInMinutes: 1'),
+          isTrue,
+          reason:
+              '$root background.js heartbeat must fire ~every 60s '
+              '(< the 150s app-side seen window)',
+        );
+        expect(
+          src.contains('chrome.alarms.onAlarm.addListener'),
+          isTrue,
+          reason: '$root background.js must handle the heartbeat alarm',
+        );
         // 心跳复用 checkVersionOnStartup —— 既刷 last-seen 又顺带比对版本。
         // 钉「命中 fushiHeartbeat 的那条分支里调了 checkVersionOnStartup」这条不变式，
         // 不钉单行写法：BUG-2481 往同一个回调里加了 maybeExportSiteCookies(null)，
         // 把单行 if 拆成多行块，原来逐字节钉死的断言当场假红（develop 上躺了 2 个
         // commit、功能其实一直是好的）。分支体里只要还 ping 服务器就算达标。
-        expect(src, matches(_kHeartbeatPingsServer),
-            reason:
-                '$root background.js heartbeat must ping the server (refresh '
-                'last-seen) via checkVersionOnStartup');
+        expect(
+          src,
+          matches(_kHeartbeatPingsServer),
+          reason:
+              '$root background.js heartbeat must ping the server (refresh '
+              'last-seen) via checkVersionOnStartup',
+        );
       });
     });
 
     test('app-side seen window widened past a single heartbeat period', () {
       // 时间窗随连接判据抽进 browser_extension_setup.dart（页面与控制通道共用）。
-      final String src =
-          File('lib/src/lookup/browser_extension_setup.dart')
-              .readAsStringSync();
-      expect(src.contains('Duration(seconds: 150)'), isTrue,
-          reason:
-              'kBrowserExtensionSeenWindow must widen to 150s so a '
-              'single missed 60s heartbeat does not flip the status to '
-              '"未连接" (BUG-1045)');
+      final String src = File(
+        'lib/src/lookup/browser_extension_setup.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains('Duration(seconds: 150)'),
+        isTrue,
+        reason:
+            'kBrowserExtensionSeenWindow must widen to 150s so a '
+            'single missed 60s heartbeat does not flip the status to '
+            '"未连接" (BUG-1045)',
+      );
     });
   });
 
@@ -74,56 +95,86 @@ void main() {
     mirrors.forEach((String name, String root) {
       test('[$name] manifest grants scripting + broad host access', () {
         final String src = File('$root/manifest.json').readAsStringSync();
-        expect(src.contains('"scripting"'), isTrue,
-            reason: '$root manifest.json must request the scripting permission '
-                'to re-inject content scripts after a self-reload');
+        expect(
+          src.contains('"scripting"'),
+          isTrue,
+          reason:
+              '$root manifest.json must request the scripting permission '
+              'to re-inject content scripts after a self-reload',
+        );
         // executeScript into arbitrary already-open tabs needs host access to
         // http/https origins (loopback-only host_permissions is not enough).
-        expect(src.contains('"http://*/*"'), isTrue,
-            reason:
-                '$root manifest.json host_permissions must cover http://*/* '
-                'for post-reload re-injection');
-        expect(src.contains('"https://*/*"'), isTrue,
-            reason:
-                '$root manifest.json host_permissions must cover https://*/* '
-                'for post-reload re-injection');
+        expect(
+          src.contains('"http://*/*"'),
+          isTrue,
+          reason:
+              '$root manifest.json host_permissions must cover http://*/* '
+              'for post-reload re-injection',
+        );
+        expect(
+          src.contains('"https://*/*"'),
+          isTrue,
+          reason:
+              '$root manifest.json host_permissions must cover https://*/* '
+              'for post-reload re-injection',
+        );
       });
 
       test('[$name] self-reload flags a pending re-injection', () {
         final String src = File('$root/background.js').readAsStringSync();
-        expect(src.contains('fushiReinjectPending: true'), isTrue,
-            reason:
-                '$root background.js maybeSelfReload must set fushiReinjectPending '
-                'before chrome.runtime.reload() so the new SW knows to re-inject');
+        expect(
+          src.contains('fushiReinjectPending: true'),
+          isTrue,
+          reason:
+              '$root background.js maybeSelfReload must set fushiReinjectPending '
+              'before chrome.runtime.reload() so the new SW knows to re-inject',
+        );
         // 标记必须在 reload 之前落盘。
         final int flag = src.indexOf('fushiReinjectPending: true');
         final int reload = src.indexOf('chrome.runtime.reload();');
-        expect(flag >= 0 && reload > flag, isTrue,
-            reason: '$root background.js must persist the pending flag before '
-                'calling chrome.runtime.reload()');
+        expect(
+          flag >= 0 && reload > flag,
+          isTrue,
+          reason:
+              '$root background.js must persist the pending flag before '
+              'calling chrome.runtime.reload()',
+        );
       });
 
       test('[$name] background re-injects open tabs on the next startup', () {
         final String src = File('$root/background.js').readAsStringSync();
-        expect(src.contains('async function reinjectOpenTabs()'), isTrue,
-            reason: '$root background.js must define reinjectOpenTabs()');
-        expect(src.contains('maybeReinjectAfterReload();'), isTrue,
-            reason:
-                '$root background.js must run maybeReinjectAfterReload() at startup');
-        expect(src.contains('chrome.scripting.executeScript'), isTrue,
-            reason:
-                '$root background.js must re-inject via chrome.scripting.executeScript');
+        expect(
+          src.contains('async function reinjectOpenTabs()'),
+          isTrue,
+          reason: '$root background.js must define reinjectOpenTabs()',
+        );
+        expect(
+          src.contains('maybeReinjectAfterReload();'),
+          isTrue,
+          reason:
+              '$root background.js must run maybeReinjectAfterReload() at startup',
+        );
+        expect(
+          src.contains('chrome.scripting.executeScript'),
+          isTrue,
+          reason:
+              '$root background.js must re-inject via chrome.scripting.executeScript',
+        );
         // 探测已存活的 content script，避免重复注入导致重复监听。
-        expect(src.contains('window.__fushiExtension'), isTrue,
-            reason:
-                '$root background.js must probe window.__fushiExtension to skip '
-                'tabs whose content script is still alive');
+        expect(
+          src.contains('window.__fushiExtension'),
+          isTrue,
+          reason:
+              '$root background.js must probe window.__fushiExtension to skip '
+              'tabs whose content script is still alive',
+        );
         // 只对 reload 前置标记生效（不是每次 SW 冷启动都全量重注入）。
         expect(
-            src.contains("chrome.storage.local.get(['fushiReinjectPending'])"),
-            isTrue,
-            reason:
-                '$root background.js must gate re-injection on the pending flag');
+          src.contains("chrome.storage.local.get(['fushiReinjectPending'])"),
+          isTrue,
+          reason:
+              '$root background.js must gate re-injection on the pending flag',
+        );
       });
     });
   });

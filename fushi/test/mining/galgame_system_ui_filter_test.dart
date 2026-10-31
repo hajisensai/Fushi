@@ -67,8 +67,11 @@ void main() {
     final File controller = File(
       'lib/src/mining/gal_hook_session_controller.dart',
     );
-    expect(controller.existsSync(), isTrue,
-        reason: '找不到 gal_hook_session_controller.dart，路径变更请更新本守卫');
+    expect(
+      controller.existsSync(),
+      isTrue,
+      reason: '找不到 gal_hook_session_controller.dart，路径变更请更新本守卫',
+    );
     final String src = controller.readAsStringSync();
     expect(
       src.contains('isGalgameSystemUiLine(line.text)'),

@@ -15,7 +15,6 @@
 /// （`PrefRedactionPolicy` 管的是 `preferences` 表的 key，与本文件无交集，勿混。）
 library;
 
-
 /// 视为凭据的 query 参数名（小写比较）。
 ///
 /// 覆盖本仓真实出站 client 与常见第三方约定。宁可多脱一个也不漏：这里处理的是
@@ -61,7 +60,9 @@ const String kRedactedPlaceholder = '<redacted>';
 String redactCredentialsInText(String text) {
   if (text.isEmpty) return text;
   final RegExp pattern = RegExp(
-    r'([?&])([A-Za-z_][A-Za-z0-9_\-]*)=([^&\s"' "'" r'<>)]*)',
+    r'([?&])([A-Za-z_][A-Za-z0-9_\-]*)=([^&\s"'
+    "'"
+    r'<>)]*)',
   );
   return text.replaceAllMapped(pattern, (Match m) {
     final String sep = m.group(1)!;

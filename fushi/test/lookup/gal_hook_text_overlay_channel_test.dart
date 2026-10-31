@@ -24,32 +24,34 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('lookup callback preserves exact line id, text, and character index',
-      () async {
-    String? lineId;
-    String? text;
-    int? index;
-    Rect? wordRect;
-    GalHookTextOverlayChannel.setEventHandlers(
-      onLookupText: (String id, String value, int valueIndex, Rect? rect) {
-        lineId = id;
-        text = value;
-        index = valueIndex;
-        wordRect = rect;
-      },
-    );
+  test(
+    'lookup callback preserves exact line id, text, and character index',
+    () async {
+      String? lineId;
+      String? text;
+      int? index;
+      Rect? wordRect;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onLookupText: (String id, String value, int valueIndex, Rect? rect) {
+          lineId = id;
+          text = value;
+          index = valueIndex;
+          wordRect = rect;
+        },
+      );
 
-    await invokeFromNative('lookupText', <String, Object?>{
-      'lineId': 'line-42',
-      'text': 'これは本だ',
-      'index': 3,
-    });
+      await invokeFromNative('lookupText', <String, Object?>{
+        'lineId': 'line-42',
+        'text': 'これは本だ',
+        'index': 3,
+      });
 
-    expect(lineId, 'line-42');
-    expect(text, 'これは本だ');
-    expect(index, 3);
-    expect(wordRect, isNull, reason: '老 native 不带词矩形时必须回落到光标定位，不能伪造锚点');
-  });
+      expect(lineId, 'line-42');
+      expect(text, 'これは本だ');
+      expect(index, 3);
+      expect(wordRect, isNull, reason: '老 native 不带词矩形时必须回落到光标定位，不能伪造锚点');
+    },
+  );
 
   test('被点词的屏幕矩形随查词事件送达，作为查词卡锚点', () async {
     Rect? wordRect;
@@ -105,10 +107,9 @@ void main() {
     await invokeFromNative('close');
     await invokeFromNative('lockChanged', <String, Object?>{'locked': true});
     // BUG-951: native 拒绝进入穿透时的对账事件，Dart 必须收得到。
-    await invokeFromNative(
-      'passThroughChanged',
-      <String, Object?>{'passThrough': false},
-    );
+    await invokeFromNative('passThroughChanged', <String, Object?>{
+      'passThrough': false,
+    });
     await invokeFromNative('windowRectChanged', <String, Object?>{
       'left': 10,
       'top': 20,
@@ -137,9 +138,9 @@ void main() {
     MethodCall? captured;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      captured = call;
-      return true;
-    });
+          captured = call;
+          return true;
+        });
 
     final bool shown = await GalHookTextOverlayChannel.show(
       rect: const GalHookTextWindowRect(
@@ -191,23 +192,28 @@ void main() {
     expect(args['locked'], isTrue);
   });
 
-  test('state setters keep following, pass-through, and lock independent',
-      () async {
-    final List<MethodCall> calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return null;
-    });
+  test(
+    'state setters keep following, pass-through, and lock independent',
+    () async {
+      final List<MethodCall> calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            calls.add(call);
+            return null;
+          });
 
-    await GalHookTextOverlayChannel.setFollowing(false);
-    await GalHookTextOverlayChannel.setPassThrough(true);
-    await GalHookTextOverlayChannel.setLocked(true);
+      await GalHookTextOverlayChannel.setFollowing(false);
+      await GalHookTextOverlayChannel.setPassThrough(true);
+      await GalHookTextOverlayChannel.setLocked(true);
 
-    expect(calls.map((MethodCall call) => call.method),
-        <String>['setFollowing', 'setPassThrough', 'setLocked']);
-    expect(calls[0].arguments, <String, Object?>{'following': false});
-    expect(calls[1].arguments, <String, Object?>{'enabled': true});
-    expect(calls[2].arguments, <String, Object?>{'locked': true});
-  });
+      expect(calls.map((MethodCall call) => call.method), <String>[
+        'setFollowing',
+        'setPassThrough',
+        'setLocked',
+      ]);
+      expect(calls[0].arguments, <String, Object?>{'following': false});
+      expect(calls[1].arguments, <String, Object?>{'enabled': true});
+      expect(calls[2].arguments, <String, Object?>{'locked': true});
+    },
+  );
 }

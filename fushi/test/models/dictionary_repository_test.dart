@@ -7,9 +7,7 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 /// BUG-712 P2：数一数整表历史重写的真实次数，让 debounce 用例能断言
@@ -21,7 +19,8 @@ class _CountingDb extends FushiDatabase {
 
   @override
   Future<void> replaceAllDictionaryHistory(
-      List<DictionaryHistoryCompanion> items) {
+    List<DictionaryHistoryCompanion> items,
+  ) {
     replaceAllCalls++;
     return super.replaceAllDictionaryHistory(items);
   }
@@ -173,38 +172,46 @@ void main() {
   group('dictionary getters', () {
     test('termDictionaries filters by term type', () async {
       await repo.persistDictionary(
-          _dict(name: 'term1', type: DictionaryType.term, order: 0));
+        _dict(name: 'term1', type: DictionaryType.term, order: 0),
+      );
       await repo.persistDictionary(
-          _dict(name: 'freq1', type: DictionaryType.frequency, order: 1));
+        _dict(name: 'freq1', type: DictionaryType.frequency, order: 1),
+      );
       expect(repo.termDictionaries.length, 1);
       expect(repo.termDictionaries.first.name, 'term1');
     });
 
     test('freqDictionaries filters by frequency type', () async {
       await repo.persistDictionary(
-          _dict(name: 'freq1', type: DictionaryType.frequency, order: 0));
+        _dict(name: 'freq1', type: DictionaryType.frequency, order: 0),
+      );
       await repo.persistDictionary(
-          _dict(name: 'term1', type: DictionaryType.term, order: 1));
+        _dict(name: 'term1', type: DictionaryType.term, order: 1),
+      );
       expect(repo.freqDictionaries.length, 1);
       expect(repo.freqDictionaries.first.name, 'freq1');
     });
 
     test('pitchDictionaries filters by pitch type', () async {
       await repo.persistDictionary(
-          _dict(name: 'p1', type: DictionaryType.pitch, order: 0));
+        _dict(name: 'p1', type: DictionaryType.pitch, order: 0),
+      );
       expect(repo.pitchDictionaries.length, 1);
     });
 
     test('kanjiDictionaries filters by kanji type', () async {
       await repo.persistDictionary(
-          _dict(name: 'k1', type: DictionaryType.kanji, order: 0));
+        _dict(name: 'k1', type: DictionaryType.kanji, order: 0),
+      );
       expect(repo.kanjiDictionaries.length, 1);
     });
 
     test('dictionaries list is unmodifiable', () async {
       await repo.persistDictionary(_dict());
-      expect(() => repo.dictionaries.add(_dict(name: 'x')),
-          throwsUnsupportedError);
+      expect(
+        () => repo.dictionaries.add(_dict(name: 'x')),
+        throwsUnsupportedError,
+      );
     });
 
     test('dictionaryHistory list is unmodifiable', () {
@@ -226,8 +233,12 @@ void main() {
     });
 
     test('updates existing dictionary in cache by name', () async {
-      await repo.persistDictionary(_dict(name: 'X', order: 0, metadata: {'v': '1'}));
-      await repo.persistDictionary(_dict(name: 'X', order: 0, metadata: {'v': '2'}));
+      await repo.persistDictionary(
+        _dict(name: 'X', order: 0, metadata: {'v': '1'}),
+      );
+      await repo.persistDictionary(
+        _dict(name: 'X', order: 0, metadata: {'v': '2'}),
+      );
       expect(repo.dictionaries.length, 1);
       expect(repo.dictionaries.first.metadata['v'], '2');
     });
@@ -280,28 +291,36 @@ void main() {
       repo2.dispose();
     });
 
-    test('clears stale search caches so next lookup re-merges (BUG-355)', () async {
-      // Reordering changes the effective merge order of lookup results, so a
-      // result cached under the old order must not survive — otherwise the next
-      // (cache-hit) query replays the stale order until the app restarts.
-      await repo.persistDictionary(_dict(name: 'A', order: 0));
-      await repo.persistDictionary(_dict(name: 'B', order: 1));
-      repo.cacheSearchResult('猫', _result(searchTerm: '猫'));
-      expect(repo.getCachedSearch('猫'), isNotNull);
-      expect(repo.lookupFilters.termDictionaryOrder, <String>['A', 'B']);
-      final int epoch = repo.resultsCacheEpoch;
+    test(
+      'clears stale search caches so next lookup re-merges (BUG-355)',
+      () async {
+        // Reordering changes the effective merge order of lookup results, so a
+        // result cached under the old order must not survive — otherwise the next
+        // (cache-hit) query replays the stale order until the app restarts.
+        await repo.persistDictionary(_dict(name: 'A', order: 0));
+        await repo.persistDictionary(_dict(name: 'B', order: 1));
+        repo.cacheSearchResult('猫', _result(searchTerm: '猫'));
+        expect(repo.getCachedSearch('猫'), isNotNull);
+        expect(repo.lookupFilters.termDictionaryOrder, <String>['A', 'B']);
+        final int epoch = repo.resultsCacheEpoch;
 
-      await repo.updateDictionaryOrder([
-        _dict(name: 'B', order: 0),
-        _dict(name: 'A', order: 1),
-      ]);
+        await repo.updateDictionaryOrder([
+          _dict(name: 'B', order: 0),
+          _dict(name: 'A', order: 1),
+        ]);
 
-      expect(repo.getCachedSearch('猫'), isNull);
-      expect(repo.resultsCacheEpoch, isNot(epoch),
-          reason: '在飞的查词回来时不得把旧顺序的结果写回缓存');
-      expect(repo.lookupFilters.termDictionaryOrder, <String>['B', 'A'],
-          reason: '查词用的顺序快照必须随重排失效');
-    });
+        expect(repo.getCachedSearch('猫'), isNull);
+        expect(
+          repo.resultsCacheEpoch,
+          isNot(epoch),
+          reason: '在飞的查词回来时不得把旧顺序的结果写回缓存',
+        );
+        expect(repo.lookupFilters.termDictionaryOrder, <String>[
+          'B',
+          'A',
+        ], reason: '查词用的顺序快照必须随重排失效');
+      },
+    );
   });
 
   // ── 折叠三态 / Hidden ────────────────────────────────────────────────
@@ -312,14 +331,20 @@ void main() {
     test('三态循环：继承 → 显式展开 → 显式折叠 → 继承', () async {
       final d = _dict(name: 'D');
       await repo.persistDictionary(d);
-      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.inherit,
-          reason: '存量词典两个名单都空 = 继承');
+      expect(
+        d.collapseStateForCode('ja'),
+        DictionaryCollapseState.inherit,
+        reason: '存量词典两个名单都空 = 继承',
+      );
 
       await repo.cycleDictionaryCollapseState(d, 'ja');
       expect(repo.dictionaries.first.expandedLanguages, contains('ja'));
       expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')));
-      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.expanded,
-          reason: '第一次点下去必须是「显式展开」—— 那正是用户以为自己一直在做的事');
+      expect(
+        d.collapseStateForCode('ja'),
+        DictionaryCollapseState.expanded,
+        reason: '第一次点下去必须是「显式展开」—— 那正是用户以为自己一直在做的事',
+      );
 
       await repo.cycleDictionaryCollapseState(d, 'ja');
       expect(repo.dictionaries.first.collapsedLanguages, contains('ja'));
@@ -336,16 +361,26 @@ void main() {
       final d = _dict(name: 'D', collapsedLanguages: ['ja']);
       await repo.persistDictionary(d);
       await repo.setDictionaryCollapseState(
-          d, 'ja', DictionaryCollapseState.expanded);
+        d,
+        'ja',
+        DictionaryCollapseState.expanded,
+      );
       expect(repo.dictionaries.first.expandedLanguages, contains('ja'));
-      expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')),
-          reason: '同一语言同时出现在两个名单里 = 状态自相矛盾，写入点必须保证互斥');
+      expect(
+        repo.dictionaries.first.collapsedLanguages,
+        isNot(contains('ja')),
+        reason: '同一语言同时出现在两个名单里 = 状态自相矛盾，写入点必须保证互斥',
+      );
     });
 
     test('只动被指定的那个语言码，其它语言的表态不受影响', () async {
       final d = _dict(name: 'D', collapsedLanguages: ['ja', 'en']);
       await repo.persistDictionary(d);
-      await repo.setDictionaryCollapseState(d, 'ja', DictionaryCollapseState.inherit);
+      await repo.setDictionaryCollapseState(
+        d,
+        'ja',
+        DictionaryCollapseState.inherit,
+      );
       expect(repo.dictionaries.first.collapsedLanguages, <String>['en']);
       expect(repo.dictionaries.first.expandedLanguages, isEmpty);
     });
@@ -363,20 +398,14 @@ void main() {
       final d = _dict(name: 'D');
       await repo.persistDictionary(d);
       await repo.toggleDictionaryHidden(d, 'en');
-      expect(
-        repo.dictionaries.first.hiddenLanguages,
-        contains('en'),
-      );
+      expect(repo.dictionaries.first.hiddenLanguages, contains('en'));
     });
 
     test('removes language code when already hidden', () async {
       final d = _dict(name: 'D', hiddenLanguages: ['en']);
       await repo.persistDictionary(d);
       await repo.toggleDictionaryHidden(d, 'en');
-      expect(
-        repo.dictionaries.first.hiddenLanguages,
-        isNot(contains('en')),
-      );
+      expect(repo.dictionaries.first.hiddenLanguages, isNot(contains('en')));
     });
   });
 
@@ -420,10 +449,10 @@ void main() {
 
     test('clearDictionaryResultsCache clears all lookup caches', () {
       repo.cacheSearchResult('key', _result());
-      repo.cachePopupSearch(
-        'popup',
-        (popupJson: '[{"expression":"猫"}]', bestLength: 1),
-      );
+      repo.cachePopupSearch('popup', (
+        popupJson: '[{"expression":"猫"}]',
+        bestLength: 1,
+      ));
       final int epoch = repo.resultsCacheEpoch;
       repo.clearDictionaryResultsCache();
       expect(repo.getCachedSearch('key'), isNull);
@@ -438,30 +467,21 @@ void main() {
     test('addHistoryResult adds to end of history', () {
       repo.addHistoryResult(_result(searchTerm: 'a'), 10);
       repo.addHistoryResult(_result(searchTerm: 'b'), 10);
-      expect(
-        repo.dictionaryHistory.map((r) => r.searchTerm),
-        ['a', 'b'],
-      );
+      expect(repo.dictionaryHistory.map((r) => r.searchTerm), ['a', 'b']);
     });
 
     test('addHistoryResult deduplicates by searchTerm', () {
       repo.addHistoryResult(_result(searchTerm: 'a'), 10);
       repo.addHistoryResult(_result(searchTerm: 'b'), 10);
       repo.addHistoryResult(_result(searchTerm: 'a'), 10);
-      expect(
-        repo.dictionaryHistory.map((r) => r.searchTerm),
-        ['b', 'a'],
-      );
+      expect(repo.dictionaryHistory.map((r) => r.searchTerm), ['b', 'a']);
     });
 
     test('addHistoryResult trims oldest when exceeding max', () {
       repo.addHistoryResult(_result(searchTerm: 'a'), 2);
       repo.addHistoryResult(_result(searchTerm: 'b'), 2);
       repo.addHistoryResult(_result(searchTerm: 'c'), 2);
-      expect(
-        repo.dictionaryHistory.map((r) => r.searchTerm),
-        ['b', 'c'],
-      );
+      expect(repo.dictionaryHistory.map((r) => r.searchTerm), ['b', 'c']);
     });
 
     test('addHistoryResult skips empty entries', () {
@@ -517,134 +537,158 @@ void main() {
   // ── history persistence debounce (BUG-712 P2) ────────────────────────
 
   group('history persistence debounce (BUG-712 P2)', () {
-    test('addHistoryResult defers the DB write until flushDictionaryHistoryNow',
-        () async {
-      // 守回归：查词热路径不得回到「每次 add 同步整表序列化+重写」——add 只改
-      // 内存，落库延后；flushDictionaryHistoryNow 把 pending 变更确定性写穿。
-      repo.addHistoryResult(_result(searchTerm: '猫'), 10);
-      expect(await db.getAllDictionaryHistory(), isEmpty,
-          reason: 'add 后立即查 DB 必须为空（未同步落库）');
+    test(
+      'addHistoryResult defers the DB write until flushDictionaryHistoryNow',
+      () async {
+        // 守回归：查词热路径不得回到「每次 add 同步整表序列化+重写」——add 只改
+        // 内存，落库延后；flushDictionaryHistoryNow 把 pending 变更确定性写穿。
+        repo.addHistoryResult(_result(searchTerm: '猫'), 10);
+        expect(
+          await db.getAllDictionaryHistory(),
+          isEmpty,
+          reason: 'add 后立即查 DB 必须为空（未同步落库）',
+        );
 
-      await repo.flushDictionaryHistoryNow();
-      final rows = await db.getAllDictionaryHistory();
-      expect(rows.length, 1);
-      expect(
-        DictionarySearchResult.fromJson(rows.single.resultJson).searchTerm,
-        '猫',
-      );
-    });
-
-    test('flushDictionaryHistoryNow without pending changes is a no-op',
-        () async {
-      // 守回归：无 pending 时不得触发整表重写（退出路径/loadFromDb 前置 flush
-      // 高频调用，no-op 语义是公开契约）。
-      final countingDb = _CountingDb();
-      final repo2 = DictionaryRepository(countingDb);
-      await repo2.loadFromDb();
-      await repo2.flushDictionaryHistoryNow();
-      expect(countingDb.replaceAllCalls, 0);
-      repo2.dispose();
-      await countingDb.close();
-    });
-
-    test('burst of adds inside the debounce window lands in a single DB write',
-        () async {
-      // 守回归：300ms trailing debounce——连续 add 多条只允许一次整表写，
-      // 且最终 DB 内容为全量三条（顺序按 position）。
-      final countingDb = _CountingDb();
-      final repo2 = DictionaryRepository(countingDb);
-      await repo2.loadFromDb();
-
-      repo2.addHistoryResult(_result(searchTerm: 'a'), 10);
-      repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
-      repo2.addHistoryResult(_result(searchTerm: 'c'), 10);
-      expect(countingDb.replaceAllCalls, 0, reason: 'debounce 窗口内不得有任何同步落库');
-
-      // 等真实时间越过 300ms 窗口（留余量），trailing timer 恰好触发一次。
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      expect(countingDb.replaceAllCalls, 1, reason: '3 次连续变更必须合并为恰好 1 次整表写');
-      final rows = await countingDb.getAllDictionaryHistory();
-      expect(
-        rows.map(
-            (r) => DictionarySearchResult.fromJson(r.resultJson).searchTerm),
-        ['a', 'b', 'c'],
-      );
-
-      repo2.dispose();
-      await countingDb.close();
-    });
-
-    test('clearDictionaryHistory cancels the pending flush (no resurrection)',
-        () async {
-      // 守回归：clear 前有 pending add，clear 必须先取消 pending 再删表；
-      // 否则旧快照在 debounce 到期后写回，已清历史「复活」。
-      repo.addHistoryResult(_result(searchTerm: '猫'), 10);
-      await repo.clearDictionaryHistory();
-      expect(repo.dictionaryHistory, isEmpty);
-
-      // 越过 debounce 窗口后 DB 仍须为空。
-      await Future<void>.delayed(const Duration(milliseconds: 450));
-      expect(await db.getAllDictionaryHistory(), isEmpty,
-          reason: 'clear 之后 pending 旧快照不得复活');
-    });
+        await repo.flushDictionaryHistoryNow();
+        final rows = await db.getAllDictionaryHistory();
+        expect(rows.length, 1);
+        expect(
+          DictionarySearchResult.fromJson(rows.single.resultJson).searchTerm,
+          '猫',
+        );
+      },
+    );
 
     test(
-        'scroll index update lands in persisted resultJson (memo invalidation)',
-        () async {
-      // 守回归：逐条序列化 memo（Expando）在就地改 scrollPosition 后必须失效；
-      // 否则第二次 flush 复用 stale JSON，滚动位置永远停在旧值。
-      repo.addHistoryResult(_result(searchTerm: '猫', scrollPosition: 0), 10);
-      await repo.flushDictionaryHistoryNow(); // 第一次 flush 填充该条 memo
-      final rows0 = await db.getAllDictionaryHistory();
-      expect(
-        DictionarySearchResult.fromJson(rows0.single.resultJson).scrollPosition,
-        0,
-      );
-
-      final result = repo.dictionaryHistory.first;
-      repo.updateDictionaryResultScrollIndex(result: result, newIndex: 5);
-      await repo.flushDictionaryHistoryNow();
-
-      final rows = await db.getAllDictionaryHistory();
-      expect(
-        DictionarySearchResult.fromJson(rows.single.resultJson).scrollPosition,
-        5,
-        reason: 'memo 未失效会把 stale 的 scrollPosition=0 写回 DB',
-      );
-    });
+      'flushDictionaryHistoryNow without pending changes is a no-op',
+      () async {
+        // 守回归：无 pending 时不得触发整表重写（退出路径/loadFromDb 前置 flush
+        // 高频调用，no-op 语义是公开契约）。
+        final countingDb = _CountingDb();
+        final repo2 = DictionaryRepository(countingDb);
+        await repo2.loadFromDb();
+        await repo2.flushDictionaryHistoryNow();
+        expect(countingDb.replaceAllCalls, 0);
+        repo2.dispose();
+        await countingDb.close();
+      },
+    );
 
     test(
-        'ExitFlushRegistry.flushAll writes pending history through (exit path)',
-        () async {
-      // 守回归：构造函数必须向 ExitFlushRegistry 注册 flush——桌面点 X 快杀
-      // （exit(0)）前靠 flushAll 把 debounce 中的历史写穿，删注册=退出丢历史。
-      // 隔离进程级单例：先清空既有注册，测试后恢复 setUp repo 的注册
-      // （同对象实例方法 tear-off 相等，re-register 与原注册等价，tearDown 里
-      // dispose 的 unregister 仍能命中）。
-      ExitFlushRegistry.instance.clear();
-      addTearDown(() {
-        ExitFlushRegistry.instance.register(repo.flushPendingWritesNow);
-      });
+      'burst of adds inside the debounce window lands in a single DB write',
+      () async {
+        // 守回归：300ms trailing debounce——连续 add 多条只允许一次整表写，
+        // 且最终 DB 内容为全量三条（顺序按 position）。
+        final countingDb = _CountingDb();
+        final repo2 = DictionaryRepository(countingDb);
+        await repo2.loadFromDb();
 
-      final db2 = _testDb();
-      final repo2 = DictionaryRepository(db2);
-      expect(ExitFlushRegistry.instance.callbackCount, 1,
-          reason: '构造函数必须注册退出 flush 回调');
+        repo2.addHistoryResult(_result(searchTerm: 'a'), 10);
+        repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
+        repo2.addHistoryResult(_result(searchTerm: 'c'), 10);
+        expect(countingDb.replaceAllCalls, 0, reason: 'debounce 窗口内不得有任何同步落库');
 
-      repo2.addHistoryResult(_result(searchTerm: '退'), 10);
-      expect(await db2.getAllDictionaryHistory(), isEmpty);
+        // 等真实时间越过 300ms 窗口（留余量），trailing timer 恰好触发一次。
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(countingDb.replaceAllCalls, 1, reason: '3 次连续变更必须合并为恰好 1 次整表写');
+        final rows = await countingDb.getAllDictionaryHistory();
+        expect(
+          rows.map(
+            (r) => DictionarySearchResult.fromJson(r.resultJson).searchTerm,
+          ),
+          ['a', 'b', 'c'],
+        );
 
-      await ExitFlushRegistry.instance.flushAll();
+        repo2.dispose();
+        await countingDb.close();
+      },
+    );
 
-      final rows = await db2.getAllDictionaryHistory();
-      expect(rows.length, 1);
-      expect(
-        DictionarySearchResult.fromJson(rows.single.resultJson).searchTerm,
-        '退',
-      );
-      repo2.dispose();
-      await db2.close();
-    });
+    test(
+      'clearDictionaryHistory cancels the pending flush (no resurrection)',
+      () async {
+        // 守回归：clear 前有 pending add，clear 必须先取消 pending 再删表；
+        // 否则旧快照在 debounce 到期后写回，已清历史「复活」。
+        repo.addHistoryResult(_result(searchTerm: '猫'), 10);
+        await repo.clearDictionaryHistory();
+        expect(repo.dictionaryHistory, isEmpty);
+
+        // 越过 debounce 窗口后 DB 仍须为空。
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+        expect(
+          await db.getAllDictionaryHistory(),
+          isEmpty,
+          reason: 'clear 之后 pending 旧快照不得复活',
+        );
+      },
+    );
+
+    test(
+      'scroll index update lands in persisted resultJson (memo invalidation)',
+      () async {
+        // 守回归：逐条序列化 memo（Expando）在就地改 scrollPosition 后必须失效；
+        // 否则第二次 flush 复用 stale JSON，滚动位置永远停在旧值。
+        repo.addHistoryResult(_result(searchTerm: '猫', scrollPosition: 0), 10);
+        await repo.flushDictionaryHistoryNow(); // 第一次 flush 填充该条 memo
+        final rows0 = await db.getAllDictionaryHistory();
+        expect(
+          DictionarySearchResult.fromJson(
+            rows0.single.resultJson,
+          ).scrollPosition,
+          0,
+        );
+
+        final result = repo.dictionaryHistory.first;
+        repo.updateDictionaryResultScrollIndex(result: result, newIndex: 5);
+        await repo.flushDictionaryHistoryNow();
+
+        final rows = await db.getAllDictionaryHistory();
+        expect(
+          DictionarySearchResult.fromJson(
+            rows.single.resultJson,
+          ).scrollPosition,
+          5,
+          reason: 'memo 未失效会把 stale 的 scrollPosition=0 写回 DB',
+        );
+      },
+    );
+
+    test(
+      'ExitFlushRegistry.flushAll writes pending history through (exit path)',
+      () async {
+        // 守回归：构造函数必须向 ExitFlushRegistry 注册 flush——桌面点 X 快杀
+        // （exit(0)）前靠 flushAll 把 debounce 中的历史写穿，删注册=退出丢历史。
+        // 隔离进程级单例：先清空既有注册，测试后恢复 setUp repo 的注册
+        // （同对象实例方法 tear-off 相等，re-register 与原注册等价，tearDown 里
+        // dispose 的 unregister 仍能命中）。
+        ExitFlushRegistry.instance.clear();
+        addTearDown(() {
+          ExitFlushRegistry.instance.register(repo.flushPendingWritesNow);
+        });
+
+        final db2 = _testDb();
+        final repo2 = DictionaryRepository(db2);
+        expect(
+          ExitFlushRegistry.instance.callbackCount,
+          1,
+          reason: '构造函数必须注册退出 flush 回调',
+        );
+
+        repo2.addHistoryResult(_result(searchTerm: '退'), 10);
+        expect(await db2.getAllDictionaryHistory(), isEmpty);
+
+        await ExitFlushRegistry.instance.flushAll();
+
+        final rows = await db2.getAllDictionaryHistory();
+        expect(rows.length, 1);
+        expect(
+          DictionarySearchResult.fromJson(rows.single.resultJson).searchTerm,
+          '退',
+        );
+        repo2.dispose();
+        await db2.close();
+      },
+    );
   });
 
   // ── baseName / findUpdatable / deleteDictionaryMeta ──────────────────
@@ -667,23 +711,24 @@ void main() {
     });
 
     test('does not strip non-date brackets', () {
-      expect(
-        DictionaryRepository.baseName('dict [abc]'),
-        'dict [abc]',
-      );
+      expect(DictionaryRepository.baseName('dict [abc]'), 'dict [abc]');
     });
   });
 
   group('findUpdatable', () {
     test('finds older version with different date', () async {
-      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      await repo.persistDictionary(
+        _dict(name: 'JMdict [2026-05-17]', order: 0),
+      );
       final result = repo.findUpdatable('JMdict [2026-05-19]');
       expect(result, isNotNull);
       expect(result!.name, 'JMdict [2026-05-17]');
     });
 
     test('returns null for exact same name', () async {
-      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      await repo.persistDictionary(
+        _dict(name: 'JMdict [2026-05-17]', order: 0),
+      );
       expect(repo.findUpdatable('JMdict [2026-05-17]'), isNull);
     });
 
@@ -693,7 +738,9 @@ void main() {
     });
 
     test('finds dated version when importing undated name', () async {
-      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      await repo.persistDictionary(
+        _dict(name: 'JMdict [2026-05-17]', order: 0),
+      );
       final result = repo.findUpdatable('JMdict');
       expect(result, isNotNull);
       expect(result!.name, 'JMdict [2026-05-17]');
@@ -707,13 +754,16 @@ void main() {
     });
 
     test('returns null when no match exists', () async {
-      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+      await repo.persistDictionary(
+        _dict(name: 'JMdict [2026-05-17]', order: 0),
+      );
       expect(repo.findUpdatable('KANJIDIC [2026-05-19]'), isNull);
     });
 
     test('does not match different base names', () async {
       await repo.persistDictionary(
-          _dict(name: 'JMdict (Dutch) [2026-05-17]', order: 0));
+        _dict(name: 'JMdict (Dutch) [2026-05-17]', order: 0),
+      );
       expect(repo.findUpdatable('JMdict [2026-05-19]'), isNull);
     });
   });
@@ -764,7 +814,8 @@ void main() {
     test('all DictionaryType values survive round-trip', () async {
       for (final type in DictionaryType.values) {
         await repo.persistDictionary(
-            _dict(name: type.name, type: type, order: type.index));
+          _dict(name: type.name, type: type, order: type.index),
+        );
       }
 
       final repo2 = DictionaryRepository(db);

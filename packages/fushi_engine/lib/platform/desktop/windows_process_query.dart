@@ -45,11 +45,7 @@ import 'package:meta/meta.dart';
 /// 调用方压根没要求解析路径——见 [enumerateWindowsProcesses] 的惰性契约）。
 @immutable
 class WindowsProcessEntry {
-  const WindowsProcessEntry({
-    required this.pid,
-    required this.name,
-    this.path,
-  });
+  const WindowsProcessEntry({required this.pid, required this.name, this.path});
 
   final int pid;
 
@@ -59,14 +55,12 @@ class WindowsProcessEntry {
   /// exe 完整路径，取不到为 null。
   final String? path;
 
-  WindowsProcessEntry withPath(String? resolved) => WindowsProcessEntry(
-        pid: pid,
-        name: name,
-        path: resolved ?? path,
-      );
+  WindowsProcessEntry withPath(String? resolved) =>
+      WindowsProcessEntry(pid: pid, name: name, path: resolved ?? path);
 
   @override
-  String toString() => 'WindowsProcessEntry(pid: $pid, name: $name, '
+  String toString() =>
+      'WindowsProcessEntry(pid: $pid, name: $name, '
       'path: ${path ?? '<unresolved>'})';
 }
 
@@ -115,8 +109,9 @@ List<WindowsProcessEntry> windowsProcessesByNames(Set<String> imageNames) {
   if (!Platform.isWindows || imageNames.isEmpty) {
     return const <WindowsProcessEntry>[];
   }
-  final Set<String> wanted =
-      imageNames.map((String name) => name.toLowerCase()).toSet();
+  final Set<String> wanted = imageNames
+      .map((String name) => name.toLowerCase())
+      .toSet();
   return <WindowsProcessEntry>[
     for (final WindowsProcessEntry entry in enumerateWindowsProcesses())
       if (wanted.contains(entry.name.toLowerCase()))
@@ -196,41 +191,49 @@ int? readWindowsRegistryDword(
 /// （调用方拿到空结果，与「查不到」同义，绝不抛到业务层）。
 class _Win32 {
   _Win32._()
-      : _openProcess =
-            _kernel32.lookupFunction<_OpenProcessNative, _OpenProcessDart>(
-                'OpenProcess'),
-        _queryFullProcessImageName = _kernel32.lookupFunction<
+    : _openProcess = _kernel32
+          .lookupFunction<_OpenProcessNative, _OpenProcessDart>('OpenProcess'),
+      _queryFullProcessImageName = _kernel32
+          .lookupFunction<
             _QueryFullProcessImageNameNative,
-            _QueryFullProcessImageNameDart>('QueryFullProcessImageNameW'),
-        _createToolhelp32Snapshot = _kernel32.lookupFunction<
+            _QueryFullProcessImageNameDart
+          >('QueryFullProcessImageNameW'),
+      _createToolhelp32Snapshot = _kernel32
+          .lookupFunction<
             _CreateToolhelp32SnapshotNative,
-            _CreateToolhelp32SnapshotDart>('CreateToolhelp32Snapshot'),
-        _process32First =
-            _kernel32.lookupFunction<_Process32Native, _Process32Dart>(
-                'Process32FirstW'),
-        _process32Next = _kernel32
-            .lookupFunction<_Process32Native, _Process32Dart>('Process32NextW'),
-        _closeHandle =
-            _kernel32.lookupFunction<_CloseHandleNative, _CloseHandleDart>(
-                'CloseHandle'),
-        _regOpenKeyEx =
-            _advapi32.lookupFunction<_RegOpenKeyExNative, _RegOpenKeyExDart>(
-                'RegOpenKeyExW'),
-        _regQueryValueEx = _advapi32.lookupFunction<_RegQueryValueExNative,
-            _RegQueryValueExDart>('RegQueryValueExW'),
-        _regCloseKey =
-            _advapi32.lookupFunction<_RegCloseKeyNative, _RegCloseKeyDart>(
-                'RegCloseKey'),
-        _rmStartSession = _rstrtmgr.lookupFunction<_RmStartSessionNative,
-            _RmStartSessionDart>('RmStartSession'),
-        _rmRegisterResources = _rstrtmgr.lookupFunction<
-            _RmRegisterResourcesNative,
-            _RmRegisterResourcesDart>('RmRegisterResources'),
-        _rmGetList = _rstrtmgr
-            .lookupFunction<_RmGetListNative, _RmGetListDart>('RmGetList'),
-        _rmEndSession =
-            _rstrtmgr.lookupFunction<_RmEndSessionNative, _RmEndSessionDart>(
-                'RmEndSession');
+            _CreateToolhelp32SnapshotDart
+          >('CreateToolhelp32Snapshot'),
+      _process32First = _kernel32
+          .lookupFunction<_Process32Native, _Process32Dart>('Process32FirstW'),
+      _process32Next = _kernel32
+          .lookupFunction<_Process32Native, _Process32Dart>('Process32NextW'),
+      _closeHandle = _kernel32
+          .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle'),
+      _regOpenKeyEx = _advapi32
+          .lookupFunction<_RegOpenKeyExNative, _RegOpenKeyExDart>(
+            'RegOpenKeyExW',
+          ),
+      _regQueryValueEx = _advapi32
+          .lookupFunction<_RegQueryValueExNative, _RegQueryValueExDart>(
+            'RegQueryValueExW',
+          ),
+      _regCloseKey = _advapi32
+          .lookupFunction<_RegCloseKeyNative, _RegCloseKeyDart>('RegCloseKey'),
+      _rmStartSession = _rstrtmgr
+          .lookupFunction<_RmStartSessionNative, _RmStartSessionDart>(
+            'RmStartSession',
+          ),
+      _rmRegisterResources = _rstrtmgr
+          .lookupFunction<_RmRegisterResourcesNative, _RmRegisterResourcesDart>(
+            'RmRegisterResources',
+          ),
+      _rmGetList = _rstrtmgr.lookupFunction<_RmGetListNative, _RmGetListDart>(
+        'RmGetList',
+      ),
+      _rmEndSession = _rstrtmgr
+          .lookupFunction<_RmEndSessionNative, _RmEndSessionDart>(
+            'RmEndSession',
+          );
 
   static _Win32? _cached;
   static bool _initialised = false;
@@ -325,8 +328,9 @@ class _Win32 {
 
       final Pointer<Uint32> needed = calloc<Uint32>();
       final Pointer<Uint32> count = calloc<Uint32>()..value = _rmMaxProcessInfo;
-      final Pointer<_RmProcessInfo> infos =
-          calloc<_RmProcessInfo>(_rmMaxProcessInfo);
+      final Pointer<_RmProcessInfo> infos = calloc<_RmProcessInfo>(
+        _rmMaxProcessInfo,
+      );
       final Pointer<Uint32> reasons = calloc<Uint32>();
       try {
         final int rc = _rmGetList(session.value, needed, count, infos, reasons);
@@ -334,8 +338,9 @@ class _Win32 {
         if (rc != _errorSuccess && rc != _errorMoreData) {
           return const <WindowsProcessEntry>[];
         }
-        final int filled =
-            count.value > _rmMaxProcessInfo ? _rmMaxProcessInfo : count.value;
+        final int filled = count.value > _rmMaxProcessInfo
+            ? _rmMaxProcessInfo
+            : count.value;
         final List<WindowsProcessEntry> result = <WindowsProcessEntry>[];
         final Set<int> seen = <int>{};
         for (int i = 0; i < filled; i++) {
@@ -500,33 +505,37 @@ class _Win32 {
     WindowsRegistryRoot root,
     String subKey,
     String valueName,
-  ) =>
-      _withRegistryValue<String>(root, subKey, valueName,
-          (int type, Pointer<Uint8> data, int bytes) {
-        if (type != _regSz && type != _regExpandSz) return null;
-        // 字节数 → UTF-16 码元数；注册表字符串可能带也可能不带结尾 NUL。
-        final int units = bytes ~/ 2;
-        final Pointer<Uint16> units16 = data.cast<Uint16>();
-        final StringBuffer buffer = StringBuffer();
-        for (int i = 0; i < units; i++) {
-          final int unit = units16[i];
-          if (unit == 0) break;
-          buffer.writeCharCode(unit);
-        }
-        final String value = buffer.toString();
-        return value.isEmpty ? null : value;
-      });
+  ) => _withRegistryValue<String>(root, subKey, valueName, (
+    int type,
+    Pointer<Uint8> data,
+    int bytes,
+  ) {
+    if (type != _regSz && type != _regExpandSz) return null;
+    // 字节数 → UTF-16 码元数；注册表字符串可能带也可能不带结尾 NUL。
+    final int units = bytes ~/ 2;
+    final Pointer<Uint16> units16 = data.cast<Uint16>();
+    final StringBuffer buffer = StringBuffer();
+    for (int i = 0; i < units; i++) {
+      final int unit = units16[i];
+      if (unit == 0) break;
+      buffer.writeCharCode(unit);
+    }
+    final String value = buffer.toString();
+    return value.isEmpty ? null : value;
+  });
 
   int? readRegistryDword(
     WindowsRegistryRoot root,
     String subKey,
     String valueName,
-  ) =>
-      _withRegistryValue<int>(root, subKey, valueName,
-          (int type, Pointer<Uint8> data, int bytes) {
-        if (type != _regDword || bytes < 4) return null;
-        return data.cast<Uint32>().value;
-      });
+  ) => _withRegistryValue<int>(root, subKey, valueName, (
+    int type,
+    Pointer<Uint8> data,
+    int bytes,
+  ) {
+    if (type != _regDword || bytes < 4) return null;
+    return data.cast<Uint32>().value;
+  });
 }
 
 /// `PROCESSENTRY32W`。`dwSize` 必须等于 `sizeOf<_ProcessEntry32W>()`，字段顺序与
@@ -563,82 +572,77 @@ final class _ProcessEntry32W extends Struct {
   external Array<Uint16> szExeFile;
 }
 
-typedef _OpenProcessNative = IntPtr Function(
-  Uint32 desiredAccess,
-  Int32 inheritHandle,
-  Uint32 processId,
-);
-typedef _OpenProcessDart = int Function(
-  int desiredAccess,
-  int inheritHandle,
-  int processId,
-);
+typedef _OpenProcessNative =
+    IntPtr Function(
+      Uint32 desiredAccess,
+      Int32 inheritHandle,
+      Uint32 processId,
+    );
+typedef _OpenProcessDart =
+    int Function(int desiredAccess, int inheritHandle, int processId);
 
-typedef _QueryFullProcessImageNameNative = Int32 Function(
-  IntPtr process,
-  Uint32 flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
-typedef _QueryFullProcessImageNameDart = int Function(
-  int process,
-  int flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
+typedef _QueryFullProcessImageNameNative =
+    Int32 Function(
+      IntPtr process,
+      Uint32 flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
+typedef _QueryFullProcessImageNameDart =
+    int Function(
+      int process,
+      int flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
 
-typedef _CreateToolhelp32SnapshotNative = IntPtr Function(
-  Uint32 flags,
-  Uint32 processId,
-);
-typedef _CreateToolhelp32SnapshotDart = int Function(
-  int flags,
-  int processId,
-);
+typedef _CreateToolhelp32SnapshotNative =
+    IntPtr Function(Uint32 flags, Uint32 processId);
+typedef _CreateToolhelp32SnapshotDart = int Function(int flags, int processId);
 
-typedef _Process32Native = Int32 Function(
-  IntPtr snapshot,
-  Pointer<_ProcessEntry32W> entry,
-);
-typedef _Process32Dart = int Function(
-  int snapshot,
-  Pointer<_ProcessEntry32W> entry,
-);
+typedef _Process32Native =
+    Int32 Function(IntPtr snapshot, Pointer<_ProcessEntry32W> entry);
+typedef _Process32Dart =
+    int Function(int snapshot, Pointer<_ProcessEntry32W> entry);
 
 typedef _CloseHandleNative = Int32 Function(IntPtr handle);
 typedef _CloseHandleDart = int Function(int handle);
 
-typedef _RegOpenKeyExNative = Int32 Function(
-  IntPtr key,
-  Pointer<Utf16> subKey,
-  Uint32 options,
-  Uint32 desired,
-  Pointer<IntPtr> result,
-);
-typedef _RegOpenKeyExDart = int Function(
-  int key,
-  Pointer<Utf16> subKey,
-  int options,
-  int desired,
-  Pointer<IntPtr> result,
-);
+typedef _RegOpenKeyExNative =
+    Int32 Function(
+      IntPtr key,
+      Pointer<Utf16> subKey,
+      Uint32 options,
+      Uint32 desired,
+      Pointer<IntPtr> result,
+    );
+typedef _RegOpenKeyExDart =
+    int Function(
+      int key,
+      Pointer<Utf16> subKey,
+      int options,
+      int desired,
+      Pointer<IntPtr> result,
+    );
 
-typedef _RegQueryValueExNative = Int32 Function(
-  IntPtr key,
-  Pointer<Utf16> valueName,
-  Pointer<Uint32> reserved,
-  Pointer<Uint32> type,
-  Pointer<Uint8> data,
-  Pointer<Uint32> size,
-);
-typedef _RegQueryValueExDart = int Function(
-  int key,
-  Pointer<Utf16> valueName,
-  Pointer<Uint32> reserved,
-  Pointer<Uint32> type,
-  Pointer<Uint8> data,
-  Pointer<Uint32> size,
-);
+typedef _RegQueryValueExNative =
+    Int32 Function(
+      IntPtr key,
+      Pointer<Utf16> valueName,
+      Pointer<Uint32> reserved,
+      Pointer<Uint32> type,
+      Pointer<Uint8> data,
+      Pointer<Uint32> size,
+    );
+typedef _RegQueryValueExDart =
+    int Function(
+      int key,
+      Pointer<Utf16> valueName,
+      Pointer<Uint32> reserved,
+      Pointer<Uint32> type,
+      Pointer<Uint8> data,
+      Pointer<Uint32> size,
+    );
 
 typedef _RegCloseKeyNative = Int32 Function(IntPtr key);
 typedef _RegCloseKeyDart = int Function(int key);
@@ -685,50 +689,56 @@ final class _RmProcessInfo extends Struct {
   external int bRestartable;
 }
 
-typedef _RmStartSessionNative = Int32 Function(
-  Pointer<Uint32> sessionHandle,
-  Uint32 sessionFlags,
-  Pointer<Utf16> sessionKey,
-);
-typedef _RmStartSessionDart = int Function(
-  Pointer<Uint32> sessionHandle,
-  int sessionFlags,
-  Pointer<Utf16> sessionKey,
-);
+typedef _RmStartSessionNative =
+    Int32 Function(
+      Pointer<Uint32> sessionHandle,
+      Uint32 sessionFlags,
+      Pointer<Utf16> sessionKey,
+    );
+typedef _RmStartSessionDart =
+    int Function(
+      Pointer<Uint32> sessionHandle,
+      int sessionFlags,
+      Pointer<Utf16> sessionKey,
+    );
 
-typedef _RmRegisterResourcesNative = Int32 Function(
-  Uint32 sessionHandle,
-  Uint32 nFiles,
-  Pointer<Pointer<Utf16>> rgsFileNames,
-  Uint32 nApplications,
-  Pointer<_RmUniqueProcess> rgApplications,
-  Uint32 nServices,
-  Pointer<Pointer<Utf16>> rgsServiceNames,
-);
-typedef _RmRegisterResourcesDart = int Function(
-  int sessionHandle,
-  int nFiles,
-  Pointer<Pointer<Utf16>> rgsFileNames,
-  int nApplications,
-  Pointer<_RmUniqueProcess> rgApplications,
-  int nServices,
-  Pointer<Pointer<Utf16>> rgsServiceNames,
-);
+typedef _RmRegisterResourcesNative =
+    Int32 Function(
+      Uint32 sessionHandle,
+      Uint32 nFiles,
+      Pointer<Pointer<Utf16>> rgsFileNames,
+      Uint32 nApplications,
+      Pointer<_RmUniqueProcess> rgApplications,
+      Uint32 nServices,
+      Pointer<Pointer<Utf16>> rgsServiceNames,
+    );
+typedef _RmRegisterResourcesDart =
+    int Function(
+      int sessionHandle,
+      int nFiles,
+      Pointer<Pointer<Utf16>> rgsFileNames,
+      int nApplications,
+      Pointer<_RmUniqueProcess> rgApplications,
+      int nServices,
+      Pointer<Pointer<Utf16>> rgsServiceNames,
+    );
 
-typedef _RmGetListNative = Int32 Function(
-  Uint32 sessionHandle,
-  Pointer<Uint32> procInfoNeeded,
-  Pointer<Uint32> procInfo,
-  Pointer<_RmProcessInfo> affectedApps,
-  Pointer<Uint32> rebootReasons,
-);
-typedef _RmGetListDart = int Function(
-  int sessionHandle,
-  Pointer<Uint32> procInfoNeeded,
-  Pointer<Uint32> procInfo,
-  Pointer<_RmProcessInfo> affectedApps,
-  Pointer<Uint32> rebootReasons,
-);
+typedef _RmGetListNative =
+    Int32 Function(
+      Uint32 sessionHandle,
+      Pointer<Uint32> procInfoNeeded,
+      Pointer<Uint32> procInfo,
+      Pointer<_RmProcessInfo> affectedApps,
+      Pointer<Uint32> rebootReasons,
+    );
+typedef _RmGetListDart =
+    int Function(
+      int sessionHandle,
+      Pointer<Uint32> procInfoNeeded,
+      Pointer<Uint32> procInfo,
+      Pointer<_RmProcessInfo> affectedApps,
+      Pointer<Uint32> rebootReasons,
+    );
 
 typedef _RmEndSessionNative = Int32 Function(Uint32 sessionHandle);
 typedef _RmEndSessionDart = int Function(int sessionHandle);

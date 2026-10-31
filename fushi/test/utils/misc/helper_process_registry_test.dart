@@ -20,10 +20,13 @@ void main() {
     /// 一个会一直跑下去的子进程，模拟正在转码的 ffmpeg。
     Future<Process> startLongRunning() {
       if (Platform.isWindows) {
-        return registry.start(
-          'cmd.exe',
-          <String>['/c', 'ping', '-n', '600', '127.0.0.1'],
-        );
+        return registry.start('cmd.exe', <String>[
+          '/c',
+          'ping',
+          '-n',
+          '600',
+          '127.0.0.1',
+        ]);
       }
       return registry.start('sleep', <String>['600']);
     }

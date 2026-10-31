@@ -19,7 +19,9 @@ Season 00\\Miss Kobayashi's Dragon Maid - S00E01.mkv
 void main() {
   group('parseM3u8', () {
     test('解析龙女仆样例：条数/标题/绝对路径（反斜杠归一化）', () {
-      const String baseDir = r'D:\video\Miss Kobayashi' 's Dragon Maid';
+      const String baseDir =
+          r'D:\video\Miss Kobayashi'
+          's Dragon Maid';
       final List<PlaylistEntry> entries = parseM3u8(
         content: _dragonMaidSample,
         baseDir: baseDir,
@@ -34,24 +36,30 @@ void main() {
       // 路径：baseDir + 相对路径（\\ 归一化），用 path 包断言以兼容平台分隔符。
       expect(
         entries[0].path,
-        p.normalize(p.join(
-          baseDir,
-          "Season 01/Miss Kobayashi's Dragon Maid - S01E01.mkv",
-        )),
+        p.normalize(
+          p.join(
+            baseDir,
+            "Season 01/Miss Kobayashi's Dragon Maid - S01E01.mkv",
+          ),
+        ),
       );
       expect(
         entries[1].path,
-        p.normalize(p.join(
-          baseDir,
-          "Season 01/Miss Kobayashi's Dragon Maid - S01E02.mkv",
-        )),
+        p.normalize(
+          p.join(
+            baseDir,
+            "Season 01/Miss Kobayashi's Dragon Maid - S01E02.mkv",
+          ),
+        ),
       );
       expect(
         entries[2].path,
-        p.normalize(p.join(
-          baseDir,
-          "Season 00/Miss Kobayashi's Dragon Maid - S00E01.mkv",
-        )),
+        p.normalize(
+          p.join(
+            baseDir,
+            "Season 00/Miss Kobayashi's Dragon Maid - S00E01.mkv",
+          ),
+        ),
       );
     });
 
@@ -102,16 +110,20 @@ plain.mkv
     });
 
     test('toJson/fromJson 往返带 positionMs', () {
-      const PlaylistEntry entry =
-          PlaylistEntry(title: 't', path: '/a.mkv', positionMs: 12345);
+      const PlaylistEntry entry = PlaylistEntry(
+        title: 't',
+        path: '/a.mkv',
+        positionMs: 12345,
+      );
       final PlaylistEntry round = PlaylistEntry.fromJson(entry.toJson());
       expect(round.positionMs, 12345);
     });
 
     test('fromJson 兼容旧数据（缺 positionMs 字段回退 0）', () {
-      final PlaylistEntry round = PlaylistEntry.fromJson(
-        <String, dynamic>{'title': 't', 'path': '/a.mkv'},
-      );
+      final PlaylistEntry round = PlaylistEntry.fromJson(<String, dynamic>{
+        'title': 't',
+        'path': '/a.mkv',
+      });
       expect(round.positionMs, 0);
     });
 
@@ -180,12 +192,9 @@ plain.mkv
     test('completed on the last episode or non-playlist does not advance', () {
       expect(nextPlaylistIndexAfterCompletion(entries, 2), isNull);
       expect(
-        nextPlaylistIndexAfterCompletion(
-          const <PlaylistEntry>[
-            PlaylistEntry(title: 'only', path: '/only.mkv')
-          ],
-          0,
-        ),
+        nextPlaylistIndexAfterCompletion(const <PlaylistEntry>[
+          PlaylistEntry(title: 'only', path: '/only.mkv'),
+        ], 0),
         isNull,
       );
       expect(nextPlaylistIndexAfterCompletion(entries, -1), isNull);
@@ -227,7 +236,8 @@ plain.mkv
     });
 
     test('多集 JSON → 集数', () {
-      const String json = '[{"title":"E1","path":"/a.mkv","positionMs":0},'
+      const String json =
+          '[{"title":"E1","path":"/a.mkv","positionMs":0},'
           '{"title":"E2","path":"/b.mkv","positionMs":0},'
           '{"title":"E3","path":"/c.mkv","positionMs":0}]';
       expect(playlistEpisodeCount(json), 3);
@@ -302,8 +312,11 @@ seg1.ts
         resolution: '1920x1080',
       );
       expect(v.qualityLabel, '1080p · 5.0 Mbps');
-      const HlsVariant lowBitrate =
-          HlsVariant(url: 'x', bandwidth: 800000, resolution: '640x360');
+      const HlsVariant lowBitrate = HlsVariant(
+        url: 'x',
+        bandwidth: 800000,
+        resolution: '640x360',
+      );
       expect(lowBitrate.qualityLabel, '360p · 800 kbps');
       const HlsVariant noRes = HlsVariant(url: 'x', bandwidth: 3000000);
       expect(noRes.qualityLabel, '3.0 Mbps');
@@ -317,8 +330,11 @@ seg1.ts
         baseUrl: 'https://host.example/hls/master.m3u8',
       );
       final List<HlsVariant> sorted = sortedHlsVariantsByQualityDesc(variants);
-      expect(sorted.map((HlsVariant v) => v.height).toList(),
-          <int?>[1080, 720, 360]);
+      expect(sorted.map((HlsVariant v) => v.height).toList(), <int?>[
+        1080,
+        720,
+        360,
+      ]);
       // 纯函数不改入参顺序。
       expect(variants[0].height, 360);
     });
@@ -352,60 +368,87 @@ seg1.ts
     final p.Context pos = p.Context(style: p.Style.posix);
     final String bs = String.fromCharCode(0x5c);
 
-    test('windows: absolute drive path (backslashes) used as-is, not joined',
-        () {
-      final String entry = 'D:${bs}video${bs}Bocchi${bs}S01E01.mp4';
-      expect(
-          resolveM3uEntryPath(entry, 'D:${bs}playlists', context: win), entry,
-          reason: 'absolute entry must NOT be joined onto the m3u8 dir');
-    });
+    test(
+      'windows: absolute drive path (backslashes) used as-is, not joined',
+      () {
+        final String entry = 'D:${bs}video${bs}Bocchi${bs}S01E01.mp4';
+        expect(
+          resolveM3uEntryPath(entry, 'D:${bs}playlists', context: win),
+          entry,
+          reason: 'absolute entry must NOT be joined onto the m3u8 dir',
+        );
+      },
+    );
 
     test('windows: absolute drive path (forward slashes) normalizes', () {
       expect(
-          resolveM3uEntryPath('D:/video/Bocchi/E01.mp4', 'D:${bs}pl',
-              context: win),
-          'D:${bs}video${bs}Bocchi${bs}E01.mp4');
+        resolveM3uEntryPath(
+          'D:/video/Bocchi/E01.mp4',
+          'D:${bs}pl',
+          context: win,
+        ),
+        'D:${bs}video${bs}Bocchi${bs}E01.mp4',
+      );
     });
 
     test('windows: relative backslash path resolves against the m3u8 dir', () {
       expect(
-          resolveM3uEntryPath('Season 01${bs}E01.mp4', 'D:${bs}video${bs}pl',
-              context: win),
-          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4');
+        resolveM3uEntryPath(
+          'Season 01${bs}E01.mp4',
+          'D:${bs}video${bs}pl',
+          context: win,
+        ),
+        'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4',
+      );
     });
 
-    test('windows: relative forward-slash path resolves against the m3u8 dir',
-        () {
-      expect(
-          resolveM3uEntryPath('Season 01/E01.mp4', 'D:${bs}video${bs}pl',
-              context: win),
-          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4');
-    });
+    test(
+      'windows: relative forward-slash path resolves against the m3u8 dir',
+      () {
+        expect(
+          resolveM3uEntryPath(
+            'Season 01/E01.mp4',
+            'D:${bs}video${bs}pl',
+            context: win,
+          ),
+          'D:${bs}video${bs}pl${bs}Season 01${bs}E01.mp4',
+        );
+      },
+    );
 
     test('windows: UNC path preserved, never turned into a drive path', () {
       final String unc = '$bs${bs}NAS${bs}share${bs}E01.mp4';
-      expect(resolveM3uEntryPath(unc, 'D:${bs}pl', context: win), unc,
-          reason: 'the old p.join turned UNC into a bogus D: drive path');
+      expect(
+        resolveM3uEntryPath(unc, 'D:${bs}pl', context: win),
+        unc,
+        reason: 'the old p.join turned UNC into a bogus D: drive path',
+      );
     });
 
     test('posix: absolute path used as-is', () {
-      expect(resolveM3uEntryPath('/mnt/media/E01.mp4', '/base', context: pos),
-          '/mnt/media/E01.mp4');
+      expect(
+        resolveM3uEntryPath('/mnt/media/E01.mp4', '/base', context: pos),
+        '/mnt/media/E01.mp4',
+      );
     });
 
     test('posix: relative path resolves against the m3u8 dir', () {
-      expect(resolveM3uEntryPath('sub/E01.mp4', '/base', context: pos),
-          '/base/sub/E01.mp4');
+      expect(
+        resolveM3uEntryPath('sub/E01.mp4', '/base', context: pos),
+        '/base/sub/E01.mp4',
+      );
     });
 
-    test('posix host: a Windows-absolute entry is still absolute (by shape)',
-        () {
-      // Cross-device sync / non-Windows CI: D:\... must not be joined onto the
-      // posix m3u8 dir. Absoluteness is judged by string shape, not host
-      // p.isAbsolute (which would call it relative on posix).
-      final String entry = 'D:${bs}video${bs}E01.mp4';
-      expect(resolveM3uEntryPath(entry, '/base', context: pos), entry);
-    });
+    test(
+      'posix host: a Windows-absolute entry is still absolute (by shape)',
+      () {
+        // Cross-device sync / non-Windows CI: D:\... must not be joined onto the
+        // posix m3u8 dir. Absoluteness is judged by string shape, not host
+        // p.isAbsolute (which would call it relative on posix).
+        final String entry = 'D:${bs}video${bs}E01.mp4';
+        expect(resolveM3uEntryPath(entry, '/base', context: pos), entry);
+      },
+    );
 
     test('empty / whitespace entry returns empty', () {
       expect(resolveM3uEntryPath('   ', '/base', context: pos), '');
@@ -418,58 +461,85 @@ seg1.ts
       const String base = 'https://dav.example.com/media/Lists';
 
       test('相对明文条目：正斜杠 join + 段按需百分号编码', () {
-        expect(resolveM3uEntryPath('clip 1.mkv', base, context: win),
-            'https://dav.example.com/media/Lists/clip%201.mkv');
-        expect(resolveM3uEntryPath('Show A/E01 (BD).mkv', base, context: pos),
-            'https://dav.example.com/media/Lists/Show%20A/E01%20(BD).mkv');
+        expect(
+          resolveM3uEntryPath('clip 1.mkv', base, context: win),
+          'https://dav.example.com/media/Lists/clip%201.mkv',
+        );
+        expect(
+          resolveM3uEntryPath('Show A/E01 (BD).mkv', base, context: pos),
+          'https://dav.example.com/media/Lists/Show%20A/E01%20(BD).mkv',
+        );
       });
 
       test('已编码段不二次编码（%20 不变 %2520）', () {
-        expect(resolveM3uEntryPath('Show%20A/ep%201.mkv', base, context: win),
-            'https://dav.example.com/media/Lists/Show%20A/ep%201.mkv');
+        expect(
+          resolveM3uEntryPath('Show%20A/ep%201.mkv', base, context: win),
+          'https://dav.example.com/media/Lists/Show%20A/ep%201.mkv',
+        );
       });
 
       test('`..` 上跳但钳制在 scheme://host 之下', () {
-        expect(resolveM3uEntryPath('../Show A/E01.mkv', base, context: win),
-            'https://dav.example.com/media/Show%20A/E01.mkv');
-        expect(resolveM3uEntryPath('../../../../E01.mkv', base, context: win),
-            'https://dav.example.com/E01.mkv',
-            reason: '越过 host 根的 .. 全部钳制');
+        expect(
+          resolveM3uEntryPath('../Show A/E01.mkv', base, context: win),
+          'https://dav.example.com/media/Show%20A/E01.mkv',
+        );
+        expect(
+          resolveM3uEntryPath('../../../../E01.mkv', base, context: win),
+          'https://dav.example.com/E01.mkv',
+          reason: '越过 host 根的 .. 全部钳制',
+        );
       });
 
       test('绝对 http(s) 条目直通（不 join、不改写）——本地基底同样成立', () {
         const String url = 'https://cdn.example.com/hls/stream.m3u8';
         expect(resolveM3uEntryPath(url, base, context: win), url);
-        expect(resolveM3uEntryPath(url, 'D:${bs}pl', context: win), url,
-            reason: '此前 URL 条目被误判为相对路径 join 到本地目录上');
+        expect(
+          resolveM3uEntryPath(url, 'D:${bs}pl', context: win),
+          url,
+          reason: '此前 URL 条目被误判为相对路径 join 到本地目录上',
+        );
       });
 
       test('parseM3u8 对 URL 基底产出可播 URL + 解码标题回退', () {
         const String manifest = '#EXTM3U\nclip 1.mkv\n';
-        final List<PlaylistEntry> entries =
-            parseM3u8(content: manifest, baseDir: base);
-        expect(entries.single.path,
-            'https://dav.example.com/media/Lists/clip%201.mkv');
-        expect(entries.single.title, 'clip 1.mkv',
-            reason: '标题回退必须是解码后的文件名，不能带 %20');
+        final List<PlaylistEntry> entries = parseM3u8(
+          content: manifest,
+          baseDir: base,
+        );
+        expect(
+          entries.single.path,
+          'https://dav.example.com/media/Lists/clip%201.mkv',
+        );
+        expect(
+          entries.single.title,
+          'clip 1.mkv',
+          reason: '标题回退必须是解码后的文件名，不能带 %20',
+        );
       });
     });
 
-    test('parseM3u8 routes an absolute entry through the resolver (not joined)',
-        () {
-      // Forward-slash absolute entry so the manifest carries no backslash; on
-      // any host it must resolve to an absolute path WITHOUT the m3u8 dir.
-      const String manifest = '''
+    test(
+      'parseM3u8 routes an absolute entry through the resolver (not joined)',
+      () {
+        // Forward-slash absolute entry so the manifest carries no backslash; on
+        // any host it must resolve to an absolute path WITHOUT the m3u8 dir.
+        const String manifest = '''
 #EXTM3U
 #EXTINF:-1,Ep1
 D:/video/Bocchi/S01E01.mp4
 ''';
-      final List<PlaylistEntry> entries =
-          parseM3u8(content: manifest, baseDir: 'D:${bs}playlists');
-      expect(entries, hasLength(1));
-      expect(entries.single.path.contains('playlists'), isFalse,
-          reason: 'absolute entry must not be joined onto the m3u8 dir');
-    });
+        final List<PlaylistEntry> entries = parseM3u8(
+          content: manifest,
+          baseDir: 'D:${bs}playlists',
+        );
+        expect(entries, hasLength(1));
+        expect(
+          entries.single.path.contains('playlists'),
+          isFalse,
+          reason: 'absolute entry must not be joined onto the m3u8 dir',
+        );
+      },
+    );
   });
 
   // TODO-1346：视频卡观看进度分数。无持久化总时长 → 多集按「看到第几集」到集粒度，
@@ -479,13 +549,19 @@ D:/video/Bocchi/S01E01.mp4
       // K-ON! 现场值：第 47 集 / 共 59 集 ≈ 0.797。
       expect(
         videoWatchFraction(
-            completed: false, currentEpisode: 47, episodeCount: 59),
+          completed: false,
+          currentEpisode: 47,
+          episodeCount: 59,
+        ),
         closeTo(47 / 59, 1e-9),
       );
       // currentEpisode 越界也不炸、绝不 >1。
       expect(
         videoWatchFraction(
-            completed: false, currentEpisode: 999, episodeCount: 12),
+          completed: false,
+          currentEpisode: 999,
+          episodeCount: 12,
+        ),
         1.0,
       );
     });
@@ -493,7 +569,10 @@ D:/video/Bocchi/S01E01.mp4
     test('已看完（completed）恒满格，压过集数', () {
       expect(
         videoWatchFraction(
-            completed: true, currentEpisode: 0, episodeCount: 12),
+          completed: true,
+          currentEpisode: 0,
+          episodeCount: 12,
+        ),
         1.0,
       );
       expect(
@@ -505,7 +584,10 @@ D:/video/Bocchi/S01E01.mp4
     test('多集停在第一集(0)且未看完 → null（不画空条）', () {
       expect(
         videoWatchFraction(
-            completed: false, currentEpisode: 0, episodeCount: 24),
+          completed: false,
+          currentEpisode: 0,
+          episodeCount: 24,
+        ),
         isNull,
       );
     });
@@ -514,12 +596,18 @@ D:/video/Bocchi/S01E01.mp4
       // 单视频起播中：有 lastPositionMs 但没时长可算 → 不画。
       expect(
         videoWatchFraction(
-            completed: false, currentEpisode: 0, episodeCount: 0),
+          completed: false,
+          currentEpisode: 0,
+          episodeCount: 0,
+        ),
         isNull,
       );
       expect(
         videoWatchFraction(
-            completed: false, currentEpisode: 0, episodeCount: 1),
+          completed: false,
+          currentEpisode: 0,
+          episodeCount: 1,
+        ),
         isNull,
       );
     });

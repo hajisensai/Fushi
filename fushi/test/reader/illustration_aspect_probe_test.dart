@@ -159,11 +159,14 @@ void main() {
     });
 
     test('阈值与阅读器分页脚本的 block-img 判据同一个数', () {
-      final String js = File('lib/src/reader/reader_pagination_scripts.dart')
-          .readAsStringSync();
+      final String js = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
       expect(
-        js.contains('img.naturalWidth > $kInlineImageMaxSide || '
-            'img.naturalHeight > $kInlineImageMaxSide'),
+        js.contains(
+          'img.naturalWidth > $kInlineImageMaxSide || '
+          'img.naturalHeight > $kInlineImageMaxSide',
+        ),
         isTrue,
         reason: '插图册剔除的小图必须正是正文里排进文字流的那些',
       );
@@ -184,12 +187,9 @@ void main() {
         ..writeAsBytesSync(img.encodeJpg(img.Image(width: 2, height: 4)));
       final File bad = File('${dir.path}/bad.png')..writeAsStringSync('nope');
 
-      final Map<String, ImagePixelSize> result = probeIllustrationSizes(<String>[
-        wide.path,
-        tall.path,
-        bad.path,
-        '${dir.path}/missing.png',
-      ]);
+      final Map<String, ImagePixelSize> result = probeIllustrationSizes(
+        <String>[wide.path, tall.path, bad.path, '${dir.path}/missing.png'],
+      );
       expect(result.keys, unorderedEquals(<String>[wide.path, tall.path]));
       expect(result[wide.path], (width: 4, height: 2));
       expect(result[tall.path], (width: 2, height: 4));
@@ -213,9 +213,9 @@ void main() {
         ..writeAsBytesSync(bytes);
       expect(file.lengthSync(), greaterThan(kIllustrationProbeHeadBytes));
 
-      final Map<String, ImagePixelSize> result = probeIllustrationSizes(<String>[
-        file.path,
-      ]);
+      final Map<String, ImagePixelSize> result = probeIllustrationSizes(
+        <String>[file.path],
+      );
       expect(result[file.path], (width: 512, height: 256));
     });
   });

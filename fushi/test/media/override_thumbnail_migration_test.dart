@@ -15,9 +15,11 @@ void main() {
 
   setUp(() {
     thumbs = Directory.systemTemp.createTempSync('fushi_thumb_mig_test');
-    db = FushiDatabase.forTesting(NativeDatabase.memory(
-      setup: (raw) => raw.execute('PRAGMA foreign_keys = ON'),
-    ));
+    db = FushiDatabase.forTesting(
+      NativeDatabase.memory(
+        setup: (raw) => raw.execute('PRAGMA foreign_keys = ON'),
+      ),
+    );
   });
 
   tearDown(() async {
@@ -26,74 +28,92 @@ void main() {
   });
 
   Future<void> seedItem(String identifier) => db.customStatement(
-        'INSERT INTO media_open_history '
-        '(media_type, media_source, media_id) '
-        "VALUES ('reader', 'reader_fushi', '$identifier')",
-      );
+    'INSERT INTO media_open_history '
+    '(media_type, media_source, media_id) '
+    "VALUES ('reader', 'reader_fushi', '$identifier')",
+  );
 
   File fileFor(String name) => File(p.join(thumbs.path, name));
 
-  test('old-canonical and legacy source-burned names move to new canonical',
-      () async {
-    await seedItem('fushi://book/A');
-    await seedItem('fushi://srtbook/S');
-    // A：旧规范形态（BUG-1317 后、W2-3 前写的）。
-    final String oldCanonicalA =
-        'hoshi://book/A/override_thumbnail'.hashCode.toString();
-    fileFor(oldCanonicalA).writeAsStringSync('jpgA');
-    // S：legacy 烧源键形态（BUG-1317 前写的）。
-    final String legacyS =
-        'hoshi://srtbook/S/reader_ttu/override_thumbnail'.hashCode.toString();
-    fileFor(legacyS).writeAsStringSync('jpgS');
+  test(
+    'old-canonical and legacy source-burned names move to new canonical',
+    () async {
+      await seedItem('fushi://book/A');
+      await seedItem('fushi://srtbook/S');
+      // A：旧规范形态（BUG-1317 后、W2-3 前写的）。
+      final String oldCanonicalA = 'hoshi://book/A/override_thumbnail'.hashCode
+          .toString();
+      fileFor(oldCanonicalA).writeAsStringSync('jpgA');
+      // S：legacy 烧源键形态（BUG-1317 前写的）。
+      final String legacyS = 'hoshi://srtbook/S/reader_ttu/override_thumbnail'
+          .hashCode
+          .toString();
+      fileFor(legacyS).writeAsStringSync('jpgS');
 
-    final bool clean = await migrateOverrideThumbnailPrefixes(
-        db: db, thumbnailsDirectory: thumbs);
+      final bool clean = await migrateOverrideThumbnailPrefixes(
+        db: db,
+        thumbnailsDirectory: thumbs,
+      );
 
-    expect(clean, isTrue);
-    expect(
-        fileFor(canonicalOverrideThumbnailName('fushi://book/A'))
-            .readAsStringSync(),
-        'jpgA');
-    expect(
-        fileFor(canonicalOverrideThumbnailName('fushi://srtbook/S'))
-            .readAsStringSync(),
-        'jpgS');
-    expect(fileFor(oldCanonicalA).existsSync(), isFalse);
-    expect(fileFor(legacyS).existsSync(), isFalse);
-  });
+      expect(clean, isTrue);
+      expect(
+        fileFor(
+          canonicalOverrideThumbnailName('fushi://book/A'),
+        ).readAsStringSync(),
+        'jpgA',
+      );
+      expect(
+        fileFor(
+          canonicalOverrideThumbnailName('fushi://srtbook/S'),
+        ).readAsStringSync(),
+        'jpgS',
+      );
+      expect(fileFor(oldCanonicalA).existsSync(), isFalse);
+      expect(fileFor(legacyS).existsSync(), isFalse);
+    },
+  );
 
   test('existing new-canonical file wins; idempotent second run', () async {
     await seedItem('fushi://book/B');
     final String newName = canonicalOverrideThumbnailName('fushi://book/B');
     fileFor(newName).writeAsStringSync('new');
-    final String oldName =
-        'hoshi://book/B/override_thumbnail'.hashCode.toString();
+    final String oldName = 'hoshi://book/B/override_thumbnail'.hashCode
+        .toString();
     fileFor(oldName).writeAsStringSync('old');
 
     expect(
-        await migrateOverrideThumbnailPrefixes(
-            db: db, thumbnailsDirectory: thumbs),
-        isTrue);
+      await migrateOverrideThumbnailPrefixes(
+        db: db,
+        thumbnailsDirectory: thumbs,
+      ),
+      isTrue,
+    );
     expect(fileFor(newName).readAsStringSync(), 'new', reason: '新规范名已存在时绝不覆盖');
     expect(fileFor(oldName).existsSync(), isTrue, reason: '旧文件原样保留（永不再读，无害残影）');
 
     // 幂等：再跑一遍零变化。
     expect(
-        await migrateOverrideThumbnailPrefixes(
-            db: db, thumbnailsDirectory: thumbs),
-        isTrue);
+      await migrateOverrideThumbnailPrefixes(
+        db: db,
+        thumbnailsDirectory: thumbs,
+      ),
+      isTrue,
+    );
     expect(fileFor(newName).readAsStringSync(), 'new');
   });
 
   test('no thumbnails dir / no book items -> clean no-op', () async {
     final Directory gone = Directory(p.join(thumbs.path, 'nope'));
     expect(
-        await migrateOverrideThumbnailPrefixes(
-            db: db, thumbnailsDirectory: gone),
-        isTrue);
+      await migrateOverrideThumbnailPrefixes(db: db, thumbnailsDirectory: gone),
+      isTrue,
+    );
     expect(
-        await migrateOverrideThumbnailPrefixes(
-            db: db, thumbnailsDirectory: thumbs),
-        isTrue);
+      await migrateOverrideThumbnailPrefixes(
+        db: db,
+        thumbnailsDirectory: thumbs,
+      ),
+      isTrue,
+    );
   });
 }

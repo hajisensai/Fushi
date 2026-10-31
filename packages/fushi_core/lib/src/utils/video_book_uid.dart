@@ -37,7 +37,7 @@ String corePlaylistBookUid(String m3u8Path) =>
 /// （照搬 EpubImporter 策略），保证「本地不出现两个同 book_uid 视频」不变量。
 String coreUniqueVideoBookUid(String base, Set<String> existingKeys) {
   if (!existingKeys.contains(base)) return base;
-  for (int i = 2;; i++) {
+  for (int i = 2; ; i++) {
     final String candidate = '$base ($i)';
     if (!existingKeys.contains(candidate)) return candidate;
   }

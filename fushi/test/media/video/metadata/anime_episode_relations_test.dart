@@ -177,13 +177,10 @@ void main() {
   });
 
   test('redirectRange requires both ends on one destination', () {
-    expect(
-      relations.redirectRange(malId: 52991, start: 29, end: 31),
-      (
-        start: const AnimeEpisodeRedirection(malId: 59978, episode: 1),
-        end: const AnimeEpisodeRedirection(malId: 59978, episode: 3),
-      ),
-    );
+    expect(relations.redirectRange(malId: 52991, start: 29, end: 31), (
+      start: const AnimeEpisodeRedirection(malId: 59978, episode: 1),
+      end: const AnimeEpisodeRedirection(malId: 59978, episode: 3),
+    ));
     // 跨越 Fairy Tail 两段：目标 id 不同。
     expect(relations.redirectRange(malId: 6702, start: 276, end: 279), isNull);
     // 一端无规则命中。
@@ -217,11 +214,13 @@ void main() {
       int calls = 0;
       final AnimeEpisodeRelationsCatalog catalog = AnimeEpisodeRelationsCatalog(
         now: () => now,
-        httpClient: VideoMetadataHttpClient(client: MockClient((_) async {
-          calls++;
-          // 样例含中文注释，走 UTF-8 字节体（String 构造默认按 Latin-1 编码）。
-          return http.Response.bytes(utf8.encode(_sample), 200);
-        })),
+        httpClient: VideoMetadataHttpClient(
+          client: MockClient((_) async {
+            calls++;
+            // 样例含中文注释，走 UTF-8 字节体（String 构造默认按 Latin-1 编码）。
+            return http.Response.bytes(utf8.encode(_sample), 200);
+          }),
+        ),
       );
       expect(
         await catalog.redirect(malId: 52991, episode: 30),
@@ -238,9 +237,11 @@ void main() {
     test('rejects oversized payloads', () async {
       final AnimeEpisodeRelationsCatalog catalog = AnimeEpisodeRelationsCatalog(
         maxResponseBytes: 32,
-        httpClient: VideoMetadataHttpClient(client: MockClient((_) async {
-          return http.Response('#' * 33, 200);
-        })),
+        httpClient: VideoMetadataHttpClient(
+          client: MockClient((_) async {
+            return http.Response('#' * 33, 200);
+          }),
+        ),
       );
       await expectLater(catalog.load(), throwsFormatException);
       catalog.close();

@@ -63,11 +63,8 @@ class BookSourceIndex {
   BookSourceIndex._(this.sourceId, this._uidByRel, this._rejectedByRel);
 
   /// 空索引（测试 / 来源还没扫过）。
-  factory BookSourceIndex.empty(int sourceId) => BookSourceIndex._(
-    sourceId,
-    <String, String>{},
-    <String, String>{},
-  );
+  factory BookSourceIndex.empty(int sourceId) =>
+      BookSourceIndex._(sourceId, <String, String>{}, <String, String>{});
 
   final int sourceId;
   final Map<String, String> _uidByRel;
@@ -169,10 +166,9 @@ class BookSourceIndex {
       Map<String, String>.unmodifiable(_rejectedByRel);
 
   /// 只留下本轮仍在场的源的负向结果（文件删了 / 改名了，旧判定随之作废）。
-  void retainRejected(Set<String> presentRels) =>
-      _rejectedByRel.removeWhere(
-        (String rel, String _) => !presentRels.contains(rel),
-      );
+  void retainRejected(Set<String> presentRels) => _rejectedByRel.removeWhere(
+    (String rel, String _) => !presentRels.contains(rel),
+  );
 }
 
 /// 一个源文件的内容指纹：ETag 优先，否则「字节数 + 修改时刻」能拿到几样拼几样；
@@ -513,7 +509,10 @@ Future<Set<String>> enumerateBookSourceRelPaths(
       throw ArgumentError.value(kind, 'kind', 'video roots use video prune');
     case SourceLibraryKind.music:
       throw ArgumentError.value(
-          kind, 'kind', 'music roots soft-delete via the music scanner');
+        kind,
+        'kind',
+        'music roots soft-delete via the music scanner',
+      );
   }
   return <String>{
     for (final String path in paths) bookSourceRelPath(root.path, path),

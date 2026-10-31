@@ -54,8 +54,9 @@ Map<String, Object?> encodeVideoMetadataWork(VideoMetadataWork work) =>
 
 /// 解码作品。`provider` / `kind` 缺失或不是合法枚举名时抛 [FormatException]。
 VideoMetadataWork decodeVideoMetadataWork(Map<String, Object?> json) {
-  final VideoMetadataProviderKind? provider =
-      _providerKind(metadataString(json['provider']));
+  final VideoMetadataProviderKind? provider = _providerKind(
+    metadataString(json['provider']),
+  );
   if (provider == null) {
     throw FormatException(
       'VideoMetadataWork wire: provider 缺失或非法: ${json['provider']}',
@@ -118,8 +119,9 @@ Map<String, Object?> encodeVideoMetadataLookup(VideoMetadataLookup lookup) =>
 VideoMetadataLookup? decodeVideoMetadataLookup(Object? json) {
   final Map<String, Object?>? map = metadataObject(json);
   if (map == null) return null;
-  final VideoMetadataProviderKind? provider =
-      _providerKind(metadataString(map['provider']));
+  final VideoMetadataProviderKind? provider = _providerKind(
+    metadataString(map['provider']),
+  );
   final String? externalId = metadataString(map['externalId']);
   final VideoMetadataMediaKind? mediaKind = VideoMetadataMediaKind.values
       .asNameMap()[metadataString(map['mediaKind']) ?? ''];
@@ -201,10 +203,10 @@ VideoMetadataEpisode _decodeEpisode(Map<String, Object?> json) =>
 // ─── 身份 ────────────────────────────────────────────────────────────
 
 Map<String, Object?> _encodeId(VideoMetadataId id) => <String, Object?>{
-      'type': id.type,
-      'value': id.value,
-      'isDefault': id.isDefault,
-    };
+  'type': id.type,
+  'value': id.value,
+  'isDefault': id.isDefault,
+};
 
 /// type / value 任一缺失的条目丢弃。
 VideoMetadataId? _decodeId(Map<String, Object?> json) {
@@ -227,8 +229,9 @@ Map<String, Object?> _encodeCredit(VideoMetadataCredit credit) =>
     <String, Object?>{
       'kind': credit.kind.name,
       'person': _encodePerson(credit.person),
-      'character':
-          credit.character == null ? null : _encodeCharacter(credit.character!),
+      'character': credit.character == null
+          ? null
+          : _encodeCharacter(credit.character!),
       'language': credit.language,
       'roleName': credit.roleName,
       'department': credit.department,
@@ -335,8 +338,9 @@ Map<String, Object?> _encodeImage(VideoMetadataImage image) =>
 VideoMetadataImage? _decodeImage(Map<String, Object?> json) {
   final VideoMetadataImageKind? kind = VideoMetadataImageKind.values
       .asNameMap()[metadataString(json['kind']) ?? ''];
-  final VideoMetadataProviderKind? provider =
-      _providerKind(metadataString(json['provider']));
+  final VideoMetadataProviderKind? provider = _providerKind(
+    metadataString(json['provider']),
+  );
   final String? url = metadataString(json['url']);
   if (kind == null || provider == null || url == null) return null;
   return VideoMetadataImage(

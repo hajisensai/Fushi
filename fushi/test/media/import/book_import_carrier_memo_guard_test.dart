@@ -23,24 +23,34 @@ void main() {
   });
 
   test('对话框不得裸调 classifyImportCarrier（必须经 ImportCarrierResolver）', () {
-    expect(src.contains('classifyImportCarrier('), isFalse,
-        reason: '裸调会绕过记忆 → 同一路径重复全量解压；改用 _classifyCarrier');
+    expect(
+      src.contains('classifyImportCarrier('),
+      isFalse,
+      reason: '裸调会绕过记忆 → 同一路径重复全量解压；改用 _classifyCarrier',
+    );
   });
 
   test('对话框持有且只持有一个 ImportCarrierResolver', () {
-    expect('ImportCarrierResolver('.allMatches(src).length, 1,
-        reason: '多个 resolver = 各自一份记忆 = 还是会重复开包');
+    expect(
+      'ImportCarrierResolver('.allMatches(src).length,
+      1,
+      reason: '多个 resolver = 各自一份记忆 = 还是会重复开包',
+    );
   });
 
   test('_classifyCarrier 是唯一入口且委托给 resolver', () {
-    expect(src.contains('_carrierResolver.resolve('), isTrue,
-        reason: '_classifyCarrier 必须委托给 resolver，而不是自己再拼一次判据');
+    expect(
+      src.contains('_carrierResolver.resolve('),
+      isTrue,
+      reason: '_classifyCarrier 必须委托给 resolver，而不是自己再拼一次判据',
+    );
     // 真实注入的判据不能被换成简化桩，否则词典包一票否决就失效了
     // （那条判据活在 MangaArchiveImporter.looksLikeImageArchive 里）。
     expect(
       src.contains('widget.imageArchiveProbe ?? MangaModule.isImageArchive'),
       isTrue,
-      reason: '生产 fallback 必须是真判据；换成按扩展名的桩会让 '
+      reason:
+          '生产 fallback 必须是真判据；换成按扩展名的桩会让 '
           'Yomitan 词典 zip 被当漫画导入',
     );
   });

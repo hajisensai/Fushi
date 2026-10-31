@@ -8,8 +8,9 @@ import 'package:fushi_engine/media/torrent/video_resource_relevance.dart';
 void main() {
   group('parseVideoResourceIdentity', () {
     test('番剧标题后的裸数字按季号读，基础标题剥掉它', () {
-      final VideoResourceTitleIdentity identity =
-          parseVideoResourceIdentity('Hibike! Euphonium 2');
+      final VideoResourceTitleIdentity identity = parseVideoResourceIdentity(
+        'Hibike! Euphonium 2',
+      );
 
       expect(identity.season, 2);
       expect(identity.titles, contains('hibike euphonium'));
@@ -112,15 +113,17 @@ void main() {
     });
 
     test('季号未知的条目不被惩罚到错季之下', () {
-      final List<VideoResourceCandidate> ranked = rankVideoResourcesByRelevance(
-        <VideoResourceCandidate>[
-          _candidate('[Judas] Hibike! Euphonium (Season 3) (Batch)',
-              seeders: 900),
-          _candidate('[Okay-Subs] Hibike! Euphonium Ensemble Contest OVA',
-              seeders: 1),
-        ],
-        query: 'Hibike! Euphonium 2',
-      );
+      final List<VideoResourceCandidate> ranked =
+          rankVideoResourcesByRelevance(<VideoResourceCandidate>[
+            _candidate(
+              '[Judas] Hibike! Euphonium (Season 3) (Batch)',
+              seeders: 900,
+            ),
+            _candidate(
+              '[Okay-Subs] Hibike! Euphonium Ensemble Contest OVA',
+              seeders: 1,
+            ),
+          ], query: 'Hibike! Euphonium 2');
 
       expect(ranked.first.title, contains('Okay-Subs'));
     });
@@ -165,12 +168,12 @@ VideoResourceCandidate _candidate(String title, {required int seeders}) =>
 
 class _RelevanceCandidate extends VideoResourceCandidate {
   _RelevanceCandidate({required String title, required int seeders})
-      : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa',
-          remoteId: '${_instance++}',
-          title: title,
-          providerPriority: 100,
-          seeders: seeders,
-        );
+    : super(
+        providerId: 'nyaa',
+        providerInstanceId: 'nyaa',
+        remoteId: '${_instance++}',
+        title: title,
+        providerPriority: 100,
+        seeders: seeders,
+      );
 }

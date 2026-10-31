@@ -105,8 +105,9 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
       await DesktopAudioPlayback.stop();
       return;
     }
-    final GalTrackPreview? preview =
-        await _controller.exportTrackPreview(track.sourcePtr);
+    final GalTrackPreview? preview = await _controller.exportTrackPreview(
+      track.sourcePtr,
+    );
     if (!mounted) return;
     if (preview == null) {
       FushiToast.show(
@@ -144,12 +145,12 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
           final GalHookSessionState state = _controller.state;
           final List<GalHookEvent> events = _warningsOnly
               ? _controller.events
-                  .where(
-                    (GalHookEvent event) =>
-                        event.severity == GalHookEventSeverity.warning ||
-                        event.severity == GalHookEventSeverity.error,
-                  )
-                  .toList(growable: false)
+                    .where(
+                      (GalHookEvent event) =>
+                          event.severity == GalHookEventSeverity.warning ||
+                          event.severity == GalHookEventSeverity.error,
+                    )
+                    .toList(growable: false)
               : _controller.events;
           return Column(
             children: <Widget>[
@@ -220,15 +221,17 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                       // 本页由 HomeGamePage 的 IndexedStack 急切构建：切到诊断
                       // 子区时重开进场窗口，错峰进场才落在用户眼前。
                       child: FushiEntranceScope(
-                        replayKey: gameSectionNotifier.value ==
+                        replayKey:
+                            gameSectionNotifier.value ==
                             GameSection.diagnostics,
                         // 必须在 Builder 里读让位：外层 builder 的 context 在
                         // [FushiFloatingChromeScrollInset] 之上。吃掉后从子树
                         // 摘掉，卡片里的列表不再让一遍。
                         child: Builder(
                           builder: (BuildContext context) {
-                            final double chromeTop =
-                                MediaQuery.paddingOf(context).top;
+                            final double chromeTop = MediaQuery.paddingOf(
+                              context,
+                            ).top;
                             return MediaQuery.removePadding(
                               context: context,
                               removeTop: true,
@@ -388,10 +391,10 @@ FushiCardTone _diagnosticTone(BuildContext context, _DiagnosticLevel level) {
 }
 
 IconData _diagnosticIcon(_DiagnosticLevel level) => switch (level) {
-      _DiagnosticLevel.ok => FushiIcons.success,
-      _DiagnosticLevel.waiting => FushiIcons.pending,
-      _DiagnosticLevel.error => FushiIcons.error,
-    };
+  _DiagnosticLevel.ok => FushiIcons.success,
+  _DiagnosticLevel.waiting => FushiIcons.pending,
+  _DiagnosticLevel.error => FushiIcons.error,
+};
 
 class _PipelineCard extends StatelessWidget {
   const _PipelineCard({required this.state});
@@ -426,8 +429,8 @@ class _PipelineCard extends StatelessWidget {
             value: state.boundWindow == null
                 ? t.game_window_missing
                 : (state.boundWindow!.title.isEmpty
-                    ? '#${state.boundWindow!.hwnd}'
-                    : state.boundWindow!.title),
+                      ? '#${state.boundWindow!.hwnd}'
+                      : state.boundWindow!.title),
             ok: state.boundWindow != null,
           ),
           _DiagnosticRow(
@@ -441,10 +444,7 @@ class _PipelineCard extends StatelessWidget {
             ok: state.hasAudio,
           ),
           if (state.fallbackReason != null)
-            _DetailBox(
-              icon: FushiIcons.info,
-              text: state.fallbackReason!,
-            ),
+            _DetailBox(icon: FushiIcons.info, text: state.fallbackReason!),
           if (state.lastError != null)
             _DetailBox(
               icon: FushiIcons.error,
@@ -560,7 +560,8 @@ class _EndpointRow extends StatelessWidget {
           const SizedBox(width: 12),
           Flexible(
             child: FushiTooltip(
-              message: endpoint.lastError ??
+              message:
+                  endpoint.lastError ??
                   texthookerEndpointPhaseLabel(endpoint.phase),
               child: Text(
                 texthookerEndpointPhaseLabel(endpoint.phase),
@@ -681,24 +682,27 @@ class _EventTile extends StatelessWidget {
     // tonal 变体、在 Apple 下都塌成单色强调，四档读不出区别。
     final Color color = switch (event.severity) {
       GalHookEventSeverity.info => fushiNeutralSecondaryForeground(context),
-      GalHookEventSeverity.success =>
-        fushiStatusColor(context, FushiStatusTone.success),
-      GalHookEventSeverity.warning =>
-        fushiStatusColor(context, FushiStatusTone.warning),
-      GalHookEventSeverity.error =>
-        fushiStatusColor(context, FushiStatusTone.error),
+      GalHookEventSeverity.success => fushiStatusColor(
+        context,
+        FushiStatusTone.success,
+      ),
+      GalHookEventSeverity.warning => fushiStatusColor(
+        context,
+        FushiStatusTone.warning,
+      ),
+      GalHookEventSeverity.error => fushiStatusColor(
+        context,
+        FushiStatusTone.error,
+      ),
     };
     // eink 下彩色圆点塌缩成同一灰阶（巡检 G5）：改成形状可辨的语义图标区分严重度。
     final Widget leading = isEinkTheme(context)
-        ? FushiIcon(
-            switch (event.severity) {
-              GalHookEventSeverity.info => FushiIcons.info,
-              GalHookEventSeverity.success => FushiIcons.success,
-              GalHookEventSeverity.warning => FushiIcons.warning,
-              GalHookEventSeverity.error => FushiIcons.error,
-            },
-            size: 18,
-          )
+        ? FushiIcon(switch (event.severity) {
+            GalHookEventSeverity.info => FushiIcons.info,
+            GalHookEventSeverity.success => FushiIcons.success,
+            GalHookEventSeverity.warning => FushiIcons.warning,
+            GalHookEventSeverity.error => FushiIcons.error,
+          }, size: 18)
         : SizedBox.square(
             dimension: 10,
             child: DecoratedBox(
@@ -748,10 +752,7 @@ class _SectionCard extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                FushiListLeadingIcon(
-                  icon,
-                  shape: FushiLeadingShape.square,
-                ),
+                FushiListLeadingIcon(icon, shape: FushiLeadingShape.square),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -791,8 +792,8 @@ class _DiagnosticRow extends StatelessWidget {
     final _DiagnosticLevel level = error
         ? _DiagnosticLevel.error
         : ok
-            ? _DiagnosticLevel.ok
-            : _DiagnosticLevel.waiting;
+        ? _DiagnosticLevel.ok
+        : _DiagnosticLevel.waiting;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -825,8 +826,11 @@ class _DiagnosticRow extends StatelessWidget {
 }
 
 class _DetailBox extends StatelessWidget {
-  const _DetailBox(
-      {required this.icon, required this.text, this.error = false});
+  const _DetailBox({
+    required this.icon,
+    required this.text,
+    this.error = false,
+  });
 
   final IconData icon;
   final String text;
@@ -850,7 +854,9 @@ class _DetailBox extends StatelessWidget {
             size: 18,
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: TextStyle(color: foreground))),
+          Expanded(
+            child: Text(text, style: TextStyle(color: foreground)),
+          ),
         ],
       ),
     );

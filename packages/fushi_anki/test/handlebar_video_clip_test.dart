@@ -10,10 +10,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 void main() {
   const AnkiMiningPayload payload = AnkiMiningPayload(expression: '言葉');
 
-  AnkiMiningContext contextWithCover(String? cover) => AnkiMiningContext(
-        sentence: 'これは言葉です。',
-        coverPath: cover,
-      );
+  AnkiMiningContext contextWithCover(String? cover) =>
+      AnkiMiningContext(sentence: 'これは言葉です。', coverPath: cover);
 
   group('AnkiHandlebarRenderer {video-clip}', () {
     test('renders context.coverPath', () {
@@ -27,10 +25,16 @@ void main() {
 
     test('{video-clip} 与 {book-cover} 同 context 渲染逐字节相同', () {
       final AnkiMiningContext ctx = contextWithCover('fushi_cover_x.gif');
-      final String clip =
-          AnkiHandlebarRenderer.render('{video-clip}', payload, ctx);
-      final String cover =
-          AnkiHandlebarRenderer.render('{book-cover}', payload, ctx);
+      final String clip = AnkiHandlebarRenderer.render(
+        '{video-clip}',
+        payload,
+        ctx,
+      );
+      final String cover = AnkiHandlebarRenderer.render(
+        '{book-cover}',
+        payload,
+        ctx,
+      );
       expect(clip, cover);
     });
 
@@ -45,7 +49,9 @@ void main() {
       const String mediaRef = '<img src="fushi_cover_abc.gif">';
       final AnkiMiningContext ctx = contextWithCover(mediaRef);
       expect(
-          AnkiHandlebarRenderer.render('{video-clip}', payload, ctx), mediaRef);
+        AnkiHandlebarRenderer.render('{video-clip}', payload, ctx),
+        mediaRef,
+      );
       expect(
         AnkiHandlebarRenderer.render('{video-clip}', payload, ctx),
         AnkiHandlebarRenderer.render('{book-cover}', payload, ctx),
@@ -60,8 +66,9 @@ void main() {
     });
 
     test('forTermDictionaries 保留 video-clip', () {
-      final List<String> options =
-          AnkiHandlebarOptions.forTermDictionaries(<String>['広辞苑']);
+      final List<String> options = AnkiHandlebarOptions.forTermDictionaries(
+        <String>['広辞苑'],
+      );
       expect(options, contains('{video-clip}'));
       expect(options, contains('{single-glossary-広辞苑}'));
     });

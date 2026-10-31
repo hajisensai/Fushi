@@ -38,42 +38,34 @@ typedef _CreateHardLinkWDart =
       Pointer<Utf16> existingFileName,
       Pointer<Void> securityAttributes,
     );
-typedef _MoveFileWNative = Int32 Function(
-  Pointer<Utf16> existingFileName,
-  Pointer<Utf16> newFileName,
-);
-typedef _MoveFileWDart = int Function(
-  Pointer<Utf16> existingFileName,
-  Pointer<Utf16> newFileName,
-);
+typedef _MoveFileWNative =
+    Int32 Function(Pointer<Utf16> existingFileName, Pointer<Utf16> newFileName);
+typedef _MoveFileWDart =
+    int Function(Pointer<Utf16> existingFileName, Pointer<Utf16> newFileName);
 typedef _PosixLinkNative =
     Int32 Function(Pointer<Utf8> existingPath, Pointer<Utf8> newPath);
 typedef _PosixLinkDart =
     int Function(Pointer<Utf8> existingPath, Pointer<Utf8> newPath);
-typedef _RenameAt2Native = Int32 Function(
-  Int32 oldDirectory,
-  Pointer<Utf8> oldPath,
-  Int32 newDirectory,
-  Pointer<Utf8> newPath,
-  Uint32 flags,
-);
-typedef _RenameAt2Dart = int Function(
-  int oldDirectory,
-  Pointer<Utf8> oldPath,
-  int newDirectory,
-  Pointer<Utf8> newPath,
-  int flags,
-);
-typedef _RenameExclusiveNative = Int32 Function(
-  Pointer<Utf8> oldPath,
-  Pointer<Utf8> newPath,
-  Uint32 flags,
-);
-typedef _RenameExclusiveDart = int Function(
-  Pointer<Utf8> oldPath,
-  Pointer<Utf8> newPath,
-  int flags,
-);
+typedef _RenameAt2Native =
+    Int32 Function(
+      Int32 oldDirectory,
+      Pointer<Utf8> oldPath,
+      Int32 newDirectory,
+      Pointer<Utf8> newPath,
+      Uint32 flags,
+    );
+typedef _RenameAt2Dart =
+    int Function(
+      int oldDirectory,
+      Pointer<Utf8> oldPath,
+      int newDirectory,
+      Pointer<Utf8> newPath,
+      int flags,
+    );
+typedef _RenameExclusiveNative =
+    Int32 Function(Pointer<Utf8> oldPath, Pointer<Utf8> newPath, Uint32 flags);
+typedef _RenameExclusiveDart =
+    int Function(Pointer<Utf8> oldPath, Pointer<Utf8> newPath, int flags);
 
 class VideoScrapeCleanupResult {
   const VideoScrapeCleanupResult({
@@ -333,7 +325,8 @@ class VideoScrapeCleanupService {
             videoMeta.length +
             collectionMeta.length +
             runs.length +
-            artifacts.length - artifactSummary.protectedArtifactIds.length,
+            artifacts.length -
+            artifactSummary.protectedArtifactIds.length,
         clearedSeries: scrapedCollections.length + scrapedBooks.length,
         deletedGeneratedFiles: artifactSummary.deleted,
         deletedLegacyCoverFiles: legacySummary.deleted,
@@ -456,8 +449,10 @@ class VideoScrapeCleanupService {
         final String currentHash =
             (await sha256.bind(quarantine.openRead()).first).toString();
         if (currentHash.toLowerCase() != artifact.sha256.toLowerCase()) {
-          final _QuarantineRestoreResult restore =
-              await _restoreQuarantine(quarantine, target);
+          final _QuarantineRestoreResult restore = await _restoreQuarantine(
+            quarantine,
+            target,
+          );
           if (restore == _QuarantineRestoreResult.targetOccupied) {
             throw VideoScrapeCleanupRecoveryException(
               originalPath: target,
@@ -483,8 +478,10 @@ class VideoScrapeCleanupService {
         rethrow;
       } on Object {
         if (quarantine != null && await quarantine.exists()) {
-          final _QuarantineRestoreResult restore =
-              await _restoreQuarantine(quarantine, target);
+          final _QuarantineRestoreResult restore = await _restoreQuarantine(
+            quarantine,
+            target,
+          );
           if (restore == _QuarantineRestoreResult.targetOccupied) {
             throw VideoScrapeCleanupRecoveryException(
               originalPath: target,
@@ -524,8 +521,10 @@ class VideoScrapeCleanupService {
         followLinks: false,
       );
       if (targetType == FileSystemEntityType.notFound) {
-        final _QuarantineRestoreResult restore =
-            await _restoreQuarantine(quarantine, target);
+        final _QuarantineRestoreResult restore = await _restoreQuarantine(
+          quarantine,
+          target,
+        );
         return restore == _QuarantineRestoreResult.restored
             ? null
             : _FileDisposition.protected;
@@ -724,8 +723,10 @@ class VideoScrapeCleanupService {
         // rename 前后文件可能被替换：隔离摘要不匹配并不能证明 q 是旧生成物。
         // 原路径为空时必须先原样恢复，再由正常删除路径做 expected/current CAS；
         // 否则用户替换物会永久隐藏在 suffix 下。
-        final _QuarantineRestoreResult restore =
-            await _restoreQuarantine(quarantine, target);
+        final _QuarantineRestoreResult restore = await _restoreQuarantine(
+          quarantine,
+          target,
+        );
         if (restore == _QuarantineRestoreResult.restored) {
           return _LegacyQuarantineRecovery.restored;
         }
@@ -819,8 +820,10 @@ class VideoScrapeCleanupService {
         final String movedHash =
             (await sha256.bind(quarantine.openRead()).first).toString();
         if (movedHash.toLowerCase() != expectedHash.toLowerCase()) {
-          final _QuarantineRestoreResult restore =
-              await _restoreQuarantine(quarantine, target);
+          final _QuarantineRestoreResult restore = await _restoreQuarantine(
+            quarantine,
+            target,
+          );
           if (restore == _QuarantineRestoreResult.targetOccupied) {
             throw VideoScrapeCleanupRecoveryException(
               originalPath: target,
@@ -847,8 +850,10 @@ class VideoScrapeCleanupService {
         rethrow;
       } on Object {
         if (quarantine != null && await quarantine.exists()) {
-          final _QuarantineRestoreResult restore =
-              await _restoreQuarantine(quarantine, target);
+          final _QuarantineRestoreResult restore = await _restoreQuarantine(
+            quarantine,
+            target,
+          );
           if (restore == _QuarantineRestoreResult.targetOccupied) {
             throw VideoScrapeCleanupRecoveryException(
               originalPath: target,
@@ -882,10 +887,8 @@ class VideoScrapeCleanupService {
       // 先用平台原生 no-replace move（覆盖 exFAT/SMB 等不支持 hard-link 的介质），
       // 再以 hard-link create-if-absent 兜底。两者都失败时抛出，让外层 SQLite
       // transaction 回滚并保留 ledger/pointer，绝不能把隐藏 q 当成普通 protected。
-      final bool restored = restoreQuarantineAtomically?.call(
-            quarantine.path,
-            target,
-          ) ??
+      final bool restored =
+          restoreQuarantineAtomically?.call(quarantine.path, target) ??
           await _moveOrLinkNoReplace(quarantine, target);
       if (restored) {
         return _QuarantineRestoreResult.restored;
@@ -945,8 +948,11 @@ class VideoScrapeCleanupService {
         if (Platform.isLinux || Platform.isAndroid) {
           const int atCurrentWorkingDirectory = -100;
           const int renameNoReplace = 1;
-          final _RenameAt2Dart renameAt2 = _renameAt2 ??= DynamicLibrary.process()
-              .lookupFunction<_RenameAt2Native, _RenameAt2Dart>('renameat2');
+          final _RenameAt2Dart renameAt2 = _renameAt2 ??=
+              DynamicLibrary.process()
+                  .lookupFunction<_RenameAt2Native, _RenameAt2Dart>(
+                    'renameat2',
+                  );
           return renameAt2(
                 atCurrentWorkingDirectory,
                 existingPointer,
@@ -958,11 +964,11 @@ class VideoScrapeCleanupService {
         }
         if (Platform.isMacOS || Platform.isIOS) {
           const int renameExclusive = 0x00000004;
-          final _RenameExclusiveDart renameExclusiveCall =
-              _renameExclusive ??= DynamicLibrary.process().lookupFunction<
-                _RenameExclusiveNative,
-                _RenameExclusiveDart
-              >('renamex_np');
+          final _RenameExclusiveDart renameExclusiveCall = _renameExclusive ??=
+              DynamicLibrary.process()
+                  .lookupFunction<_RenameExclusiveNative, _RenameExclusiveDart>(
+                    'renamex_np',
+                  );
           return renameExclusiveCall(
                 existingPointer,
                 newPointer,

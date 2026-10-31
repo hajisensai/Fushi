@@ -7,8 +7,10 @@ import 'package:remove_emoji/remove_emoji.dart';
 
 void main() {
   final RegExp emojiRegex = RegExp(RemoveEmoji().getRegexString());
-  final RegExp punctuationRegex =
-      RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
+  final RegExp punctuationRegex = RegExp(
+    r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$',
+    unicode: true,
+  );
   final RegExp loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
@@ -22,15 +24,18 @@ void main() {
   }
 
   String normalize(String input) => normalizeSearchTerm(
-        input,
-        emojiRegex: emojiRegex,
-        punctuationRegex: punctuationRegex,
-        loneSurrogateRegex: loneSurrogateRegex,
-      );
+    input,
+    emojiRegex: emojiRegex,
+    punctuationRegex: punctuationRegex,
+    loneSurrogateRegex: loneSurrogateRegex,
+  );
 
   void expectEquivalent(String input) {
-    expect(normalize(input), legacyNormalize(input),
-        reason: 'normalizeSearchTerm must equal legacy 4-step inline');
+    expect(
+      normalize(input),
+      legacyNormalize(input),
+      reason: 'normalizeSearchTerm must equal legacy 4-step inline',
+    );
   }
 
   group('normalizeSearchTerm query cleanup (byte-exact vs legacy inline)', () {
@@ -122,7 +127,9 @@ void main() {
 
     test('empty term key', () {
       expect(
-          buildSearchCacheKey(term: '', maxTerms: 0, maxResults: 0), '0:/0/0');
+        buildSearchCacheKey(term: '', maxTerms: 0, maxResults: 0),
+        '0:/0/0',
+      );
     });
 
     test('term with slash/colon not escaped', () {
@@ -140,7 +147,7 @@ void main() {
         '',
         'a/b',
         '\u{2000B}',
-        'long word here'
+        'long word here',
       ]) {
         expect(
           buildSearchCacheKey(term: term, maxTerms: 8, maxResults: 32),
@@ -186,9 +193,13 @@ void main() {
 
     test('mode not freq|pitch -> null', () {
       expect(
-          decodeDictTypeFromBlobHeader(blob(exprLen: 3, mode: 'term')), null);
+        decodeDictTypeFromBlobHeader(blob(exprLen: 3, mode: 'term')),
+        null,
+      );
       expect(
-          decodeDictTypeFromBlobHeader(blob(exprLen: 0, mode: 'kanji')), null);
+        decodeDictTypeFromBlobHeader(blob(exprLen: 0, mode: 'kanji')),
+        null,
+      );
     });
 
     test('non-zero exprLen locates modeLen at offset 3+exprLen', () {
@@ -204,12 +215,14 @@ void main() {
     test('flag != 0x01 -> null', () {
       expect(
         decodeDictTypeFromBlobHeader(
-            blob(flag: 0x00, exprLen: 0, mode: 'freq')),
+          blob(flag: 0x00, exprLen: 0, mode: 'freq'),
+        ),
         null,
       );
       expect(
         decodeDictTypeFromBlobHeader(
-            blob(flag: 0xFF, exprLen: 0, mode: 'pitch')),
+          blob(flag: 0xFF, exprLen: 0, mode: 'pitch'),
+        ),
         null,
       );
     });
@@ -227,11 +240,17 @@ void main() {
 
     test('mode bytes truncated at EOF: take remainder', () {
       final b = <int>[0x01, 0x00, 0x00, 0x04, ...'fre'.codeUnits];
-      expect(decodeDictTypeFromBlobHeader(b), null,
-          reason: 'truncated to fre != freq -> null');
+      expect(
+        decodeDictTypeFromBlobHeader(b),
+        null,
+        reason: 'truncated to fre != freq -> null',
+      );
       final liar = <int>[0x01, 0x00, 0x00, 0x0A, ...'freq'.codeUnits];
-      expect(decodeDictTypeFromBlobHeader(liar), DictionaryType.frequency,
-          reason: 'matches raf.readSync returning only remaining bytes');
+      expect(
+        decodeDictTypeFromBlobHeader(liar),
+        DictionaryType.frequency,
+        reason: 'matches raf.readSync returning only remaining bytes',
+      );
     });
 
     test('mode starts exactly at EOF -> empty -> null', () {
@@ -274,8 +293,11 @@ void main() {
       ]) {
         final int leadUnits = lead(s);
         final int removedTotal = s.length - normalize(s).length;
-        expect(leadUnits, removedTotal,
-            reason: '「$s」句首剥离长度须等于归一化移除总量（无句尾标点样本）');
+        expect(
+          leadUnits,
+          removedTotal,
+          reason: '「$s」句首剥离长度须等于归一化移除总量（无句尾标点样本）',
+        );
       }
     });
   });
@@ -312,13 +334,20 @@ void main() {
       );
       expect(
         buildSearchCacheKey(
-            term: '这个', maxTerms: 8, maxResults: 8, chineseSimpToTrad: true),
+          term: '这个',
+          maxTerms: 8,
+          maxResults: 8,
+          chineseSimpToTrad: true,
+        ),
         '2:这个/8/8/zh',
       );
       expect(buildFfiLookupCacheKey(term: '这个', maxResults: 8), '2:这个/8');
       expect(
         buildFfiLookupCacheKey(
-            term: '这个', maxResults: 8, chineseSimpToTrad: true),
+          term: '这个',
+          maxResults: 8,
+          chineseSimpToTrad: true,
+        ),
         '2:这个/8/zh',
       );
     });

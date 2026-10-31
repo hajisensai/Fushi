@@ -13,7 +13,8 @@ import '../widgets/widget_test_helpers.dart';
 // 该测试直接 pump AdaptiveSettingsRow，取出标题 Text 断言其 maxLines：
 //  ① 传 titleMaxLines: 4 时 maxLines 必须 > 2（不再是 2 行截断）——修复前红。
 //  ② 不传时回退到默认 2，证明所有既有调用零行为变化。
-const String _longChapterTitle = '第十二章 とても長い章のタイトルがここに続いていて、二行では到底収まらない '
+const String _longChapterTitle =
+    '第十二章 とても長い章のタイトルがここに続いていて、二行では到底収まらない '
     'ような非常に長い見出しのサンプルテキストです これは折り返しの検証用';
 
 /// 从一棵 AdaptiveSettingsRow 里定位标题 Text（其内容即 title）。
@@ -57,7 +58,8 @@ void main() {
       expect(
         title.maxLines,
         greaterThan(2),
-        reason: 'a TOC chapter row must allow more than the default 2 lines so '
+        reason:
+            'a TOC chapter row must allow more than the default 2 lines so '
             'long chapter names wrap instead of being clipped',
       );
       expect(title.maxLines, 4);

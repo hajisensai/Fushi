@@ -259,13 +259,14 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   bool get isCustomAction => customActionSlotIndex != null;
 
   /// 全部自定义「快捷键」按钮槽位，按序号升序（= 快捷键1、2、3、4）。
-  static List<VideoControlItem> get customActionItems => <VideoControlItem>[
+  static List<VideoControlItem> get customActionItems =>
+      <VideoControlItem>[
         for (final VideoControlItem item in VideoControlItem.values)
           if (item.isCustomAction) item,
       ]..sort(
-          (VideoControlItem a, VideoControlItem b) =>
-              a.customActionSlotIndex!.compareTo(b.customActionSlotIndex!),
-        );
+        (VideoControlItem a, VideoControlItem b) =>
+            a.customActionSlotIndex!.compareTo(b.customActionSlotIndex!),
+      );
 
   static VideoControlItem? fromStorage(String value) {
     for (final VideoControlItem item in VideoControlItem.values) {
@@ -287,9 +288,9 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   /// settings). Transport / nav keys stay fixed in the chrome and are not
   /// user-customizable in this stage.
   static List<VideoControlItem> get customizableLearning => <VideoControlItem>[
-        for (final VideoControlItem item in VideoControlItem.values)
-          if (item.legacyButton != null) item,
-      ];
+    for (final VideoControlItem item in VideoControlItem.values)
+      if (item.legacyButton != null) item,
+  ];
 
   /// Whether the visual icon-chip editor can represent this button as a single
   /// draggable chip. [volume] is a dedicated player widget, but the editor can
@@ -366,9 +367,9 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   /// episode list, fullscreen). The non-chip special renders (volume slider,
   /// title text, position indicator) keep their dedicated branch and stay out.
   static List<VideoControlItem> get customizableItems => <VideoControlItem>[
-        for (final VideoControlItem item in VideoControlItem.values)
-          if (item.isChipRenderable) item,
-      ];
+    for (final VideoControlItem item in VideoControlItem.values)
+      if (item.isChipRenderable) item,
+  ];
 }
 
 /// Per-slot ordered full control button layout. Each [VideoControlSlot]
@@ -396,25 +397,24 @@ class VideoControlLayout {
   /// The generic scheme: 9 slots, ~33 items, hidden slot, video chrome rules.
   static const ControlLayoutScheme<VideoControlSlot, VideoControlItem> scheme =
       ControlLayoutScheme<VideoControlSlot, VideoControlItem>(
-    slots: VideoControlSlot.values,
-    hiddenSlot: VideoControlSlot.hidden,
-    items: VideoControlItem.values,
-    postNormalize: _normalizeVideoChrome,
-  );
+        slots: VideoControlSlot.values,
+        hiddenSlot: VideoControlSlot.hidden,
+        items: VideoControlItem.values,
+        postNormalize: _normalizeVideoChrome,
+      );
 
   /// Build from a flat button->slot map; normalizes into slot->ordered list.
   /// [explicitOrder] controls within-slot ordering (preserves user drag order).
   factory VideoControlLayout.fromAssignments(
     Map<VideoControlItem, VideoControlSlot> assignments, {
     Map<VideoControlSlot, List<VideoControlItem>>? explicitOrder,
-  }) =>
-      VideoControlLayout._(
-        ControlLayout<VideoControlSlot, VideoControlItem>.fromAssignments(
-          scheme,
-          assignments,
-          explicitOrder: explicitOrder,
-        ),
-      );
+  }) => VideoControlLayout._(
+    ControlLayout<VideoControlSlot, VideoControlItem>.fromAssignments(
+      scheme,
+      assignments,
+      explicitOrder: explicitOrder,
+    ),
+  );
 
   /// Build directly from a slot->ordered-items map **without de-duplicating**:
   /// the same [VideoControlItem] may appear in more than one slot (TODO-399:
@@ -425,15 +425,14 @@ class VideoControlLayout {
     Map<VideoControlSlot, List<VideoControlItem>> slotItems, {
     Map<VideoControlItem, VideoControlSlot>? assignments,
     Set<VideoControlItem>? removedItems,
-  }) =>
-      VideoControlLayout._(
-        ControlLayout<VideoControlSlot, VideoControlItem>.fromSlots(
-          scheme,
-          slotItems,
-          assignments: assignments,
-          removedItems: removedItems,
-        ),
-      );
+  }) => VideoControlLayout._(
+    ControlLayout<VideoControlSlot, VideoControlItem>.fromSlots(
+      scheme,
+      slotItems,
+      assignments: assignments,
+      removedItems: removedItems,
+    ),
+  );
 
   /// Default layout: transport keys at traditional positions + learning keys
   /// per the user decision (favorite buttons default to bottomRight).
@@ -541,78 +540,78 @@ class VideoControlLayout {
   /// 收起、由密度档收掉整条栏。
   static final VideoControlLayout currentChrome =
       VideoControlLayout.fromAssignments(
-    const <VideoControlItem, VideoControlSlot>{
-      // -- 顶栏 / 侧栏锁 --
-      VideoControlItem.back: VideoControlSlot.topLeft,
-      VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
-      VideoControlItem.title: VideoControlSlot.topCenter,
-      VideoControlItem.episodeList: VideoControlSlot.topRight,
-      VideoControlItem.chapterList: VideoControlSlot.topRight,
-      VideoControlItem.screenshot: VideoControlSlot.topRight,
-      VideoControlItem.settings: VideoControlSlot.topRight,
-      // -- 左下：播放 / 暂停 + 时间 --
-      VideoControlItem.playPause: VideoControlSlot.bottomLeft,
-      VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
-      // -- 右下 --
-      VideoControlItem.volume: VideoControlSlot.bottomRight,
-      VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
-      VideoControlItem.speed: VideoControlSlot.bottomRight,
-      VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
-      // -- 学习侧栏 --
-      VideoControlItem.subtitleList: VideoControlSlot.screenRight,
-      // -- 默认移出播放器（进「⋯」，布局编辑器里可拖回）--
-      VideoControlItem.audioTrack: VideoControlSlot.hidden,
-      VideoControlItem.clipExport: VideoControlSlot.hidden,
-      VideoControlItem.previousEpisode: VideoControlSlot.hidden,
-      VideoControlItem.nextEpisode: VideoControlSlot.hidden,
-      VideoControlItem.previousChapter: VideoControlSlot.hidden,
-      VideoControlItem.nextChapter: VideoControlSlot.hidden,
-      VideoControlItem.seekBackward: VideoControlSlot.hidden,
-      VideoControlItem.frameBackward: VideoControlSlot.hidden,
-      VideoControlItem.previousCue: VideoControlSlot.hidden,
-      VideoControlItem.replayCue: VideoControlSlot.hidden,
-      VideoControlItem.nextCue: VideoControlSlot.hidden,
-      VideoControlItem.frameForward: VideoControlSlot.hidden,
-      VideoControlItem.seekForward: VideoControlSlot.hidden,
-      VideoControlItem.favoriteSentence: VideoControlSlot.hidden,
-      // 弹幕开关：默认移出播放器，且**不**进「⋯」（见 `_foldedBarEntries`）——只有
-      // 用户在布局编辑器里拖进槽位才出现。
-      VideoControlItem.danmaku: VideoControlSlot.hidden,
-      // 识别当前画面：同弹幕开关（默认移出、不进「⋯」）。
-      VideoControlItem.ocrFrame: VideoControlSlot.hidden,
-      // 自定义「快捷键 1..4」按钮：默认在右下「⋯」里（已绑的 + 第一个未绑的「加号」，
-      // 门控在 `_shouldRenderControlItem`），点它就地配动作。
-      VideoControlItem.customAction1: VideoControlSlot.hidden,
-      VideoControlItem.customAction2: VideoControlSlot.hidden,
-      VideoControlItem.customAction3: VideoControlSlot.hidden,
-      VideoControlItem.customAction4: VideoControlSlot.hidden,
-    },
-    explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
-      VideoControlSlot.topLeft: <VideoControlItem>[VideoControlItem.back],
-      VideoControlSlot.topRight: <VideoControlItem>[
-        VideoControlItem.episodeList,
-        VideoControlItem.chapterList,
-        VideoControlItem.screenshot,
-        VideoControlItem.settings,
-      ],
-      VideoControlSlot.screenLeft: <VideoControlItem>[
-        VideoControlItem.immersiveLock,
-      ],
-      VideoControlSlot.bottomLeft: <VideoControlItem>[
-        VideoControlItem.playPause,
-        VideoControlItem.positionIndicator,
-      ],
-      VideoControlSlot.bottomRight: <VideoControlItem>[
-        VideoControlItem.volume,
-        VideoControlItem.subtitleTrack,
-        VideoControlItem.speed,
-        VideoControlItem.fullscreen,
-      ],
-      VideoControlSlot.screenRight: <VideoControlItem>[
-        VideoControlItem.subtitleList,
-      ],
-    },
-  );
+        const <VideoControlItem, VideoControlSlot>{
+          // -- 顶栏 / 侧栏锁 --
+          VideoControlItem.back: VideoControlSlot.topLeft,
+          VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
+          VideoControlItem.title: VideoControlSlot.topCenter,
+          VideoControlItem.episodeList: VideoControlSlot.topRight,
+          VideoControlItem.chapterList: VideoControlSlot.topRight,
+          VideoControlItem.screenshot: VideoControlSlot.topRight,
+          VideoControlItem.settings: VideoControlSlot.topRight,
+          // -- 左下：播放 / 暂停 + 时间 --
+          VideoControlItem.playPause: VideoControlSlot.bottomLeft,
+          VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
+          // -- 右下 --
+          VideoControlItem.volume: VideoControlSlot.bottomRight,
+          VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
+          VideoControlItem.speed: VideoControlSlot.bottomRight,
+          VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
+          // -- 学习侧栏 --
+          VideoControlItem.subtitleList: VideoControlSlot.screenRight,
+          // -- 默认移出播放器（进「⋯」，布局编辑器里可拖回）--
+          VideoControlItem.audioTrack: VideoControlSlot.hidden,
+          VideoControlItem.clipExport: VideoControlSlot.hidden,
+          VideoControlItem.previousEpisode: VideoControlSlot.hidden,
+          VideoControlItem.nextEpisode: VideoControlSlot.hidden,
+          VideoControlItem.previousChapter: VideoControlSlot.hidden,
+          VideoControlItem.nextChapter: VideoControlSlot.hidden,
+          VideoControlItem.seekBackward: VideoControlSlot.hidden,
+          VideoControlItem.frameBackward: VideoControlSlot.hidden,
+          VideoControlItem.previousCue: VideoControlSlot.hidden,
+          VideoControlItem.replayCue: VideoControlSlot.hidden,
+          VideoControlItem.nextCue: VideoControlSlot.hidden,
+          VideoControlItem.frameForward: VideoControlSlot.hidden,
+          VideoControlItem.seekForward: VideoControlSlot.hidden,
+          VideoControlItem.favoriteSentence: VideoControlSlot.hidden,
+          // 弹幕开关：默认移出播放器，且**不**进「⋯」（见 `_foldedBarEntries`）——只有
+          // 用户在布局编辑器里拖进槽位才出现。
+          VideoControlItem.danmaku: VideoControlSlot.hidden,
+          // 识别当前画面：同弹幕开关（默认移出、不进「⋯」）。
+          VideoControlItem.ocrFrame: VideoControlSlot.hidden,
+          // 自定义「快捷键 1..4」按钮：默认在右下「⋯」里（已绑的 + 第一个未绑的「加号」，
+          // 门控在 `_shouldRenderControlItem`），点它就地配动作。
+          VideoControlItem.customAction1: VideoControlSlot.hidden,
+          VideoControlItem.customAction2: VideoControlSlot.hidden,
+          VideoControlItem.customAction3: VideoControlSlot.hidden,
+          VideoControlItem.customAction4: VideoControlSlot.hidden,
+        },
+        explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
+          VideoControlSlot.topLeft: <VideoControlItem>[VideoControlItem.back],
+          VideoControlSlot.topRight: <VideoControlItem>[
+            VideoControlItem.episodeList,
+            VideoControlItem.chapterList,
+            VideoControlItem.screenshot,
+            VideoControlItem.settings,
+          ],
+          VideoControlSlot.screenLeft: <VideoControlItem>[
+            VideoControlItem.immersiveLock,
+          ],
+          VideoControlSlot.bottomLeft: <VideoControlItem>[
+            VideoControlItem.playPause,
+            VideoControlItem.positionIndicator,
+          ],
+          VideoControlSlot.bottomRight: <VideoControlItem>[
+            VideoControlItem.volume,
+            VideoControlItem.subtitleTrack,
+            VideoControlItem.speed,
+            VideoControlItem.fullscreen,
+          ],
+          VideoControlSlot.screenRight: <VideoControlItem>[
+            VideoControlItem.subtitleList,
+          ],
+        },
+      );
 
   /// Re-wrap a generic layout handed back by the generic editor. Only layouts
   /// built on [scheme] are valid here (the editor never swaps schemes).
@@ -656,8 +655,7 @@ class VideoControlLayout {
     VideoControlItem item,
     VideoControlSlot target, {
     int? index,
-  }) =>
-      _wrap(_core.moveItem(item, target, index: index));
+  }) => _wrap(_core.moveItem(item, target, index: index));
 
   /// Add a copy of [item] into [target] WITHOUT removing it from other slots
   /// (TODO-399: one button in multiple positions). Idempotent within a slot.
@@ -666,8 +664,7 @@ class VideoControlLayout {
     VideoControlItem item,
     VideoControlSlot target, {
     int? index,
-  }) =>
-      _wrap(_core.addItemToSlot(item, target, index: index));
+  }) => _wrap(_core.addItemToSlot(item, target, index: index));
 
   /// Move the exact dragged copy represented by [payload] into [target].
   ///
@@ -679,8 +676,7 @@ class VideoControlLayout {
     VideoControlDragData payload,
     VideoControlSlot target, {
     int? targetIndex,
-  }) =>
-      _wrap(_core.moveDraggedItem(payload, target, targetIndex: targetIndex));
+  }) => _wrap(_core.moveDraggedItem(payload, target, targetIndex: targetIndex));
 
   /// Remove the copy of [item] sitting in [slot] (TODO-399 delete / un-place).
   /// If that was its last visible copy, the button is marked removed. A required
@@ -688,15 +684,13 @@ class VideoControlLayout {
   VideoControlLayout removeItemFromSlot(
     VideoControlItem item,
     VideoControlSlot slot,
-  ) =>
-      _wrap(_core.removeItemFromSlot(item, slot));
+  ) => _wrap(_core.removeItemFromSlot(item, slot));
 
   /// Rejected write ops return the same core instance; keep `this` so callers
   /// comparing identity / equality see a no-op either way.
   VideoControlLayout _wrap(
     ControlLayout<VideoControlSlot, VideoControlItem> next,
-  ) =>
-      identical(next, _core) ? this : VideoControlLayout._(next);
+  ) => identical(next, _core) ? this : VideoControlLayout._(next);
 
   String encode() {
     final List<String> removed = _core.encodeRemoved();
@@ -755,8 +749,9 @@ class VideoControlLayout {
           entry.key,
         );
         final Object? value = entry.value;
-        final VideoControlPlacement? placement =
-            value is String ? VideoControlPlacement.fromStorage(value) : null;
+        final VideoControlPlacement? placement = value is String
+            ? VideoControlPlacement.fromStorage(value)
+            : null;
         if (legacy == null || placement == null) continue;
         final VideoControlItem? item = VideoControlItem.fromLegacy(legacy);
         if (item == null) continue;
@@ -846,11 +841,11 @@ class VideoControlLayout {
   }) {
     final ControlLayout<VideoControlSlot, VideoControlItem>? decoded =
         ControlLayout.decodeSlots<VideoControlSlot, VideoControlItem>(
-      scheme,
-      slotsRaw,
-      removedRaw: removedRaw,
-      fallbackAssignments: _currentChromeAssignments(),
-    );
+          scheme,
+          slotsRaw,
+          removedRaw: removedRaw,
+          fallbackAssignments: _currentChromeAssignments(),
+        );
     return decoded == null ? currentChrome : VideoControlLayout._(decoded);
   }
 
@@ -941,5 +936,5 @@ class VideoControlLayout {
 /// (same-slot reorder / exact-copy removal). Alias of the generic
 /// [ControlDragData] so the generic editor and the video editors share one
 /// payload type.
-typedef VideoControlDragData
-    = ControlDragData<VideoControlSlot, VideoControlItem>;
+typedef VideoControlDragData =
+    ControlDragData<VideoControlSlot, VideoControlItem>;

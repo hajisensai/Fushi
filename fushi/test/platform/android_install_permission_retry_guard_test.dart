@@ -81,8 +81,9 @@ void main() {
   });
 
   test('onActivityResult 新增 INSTALL_PERMISSION_REQUEST 分支并续接安装', () {
-    final int idx =
-        src.indexOf('protected void onActivityResult(int requestCode');
+    final int idx = src.indexOf(
+      'protected void onActivityResult(int requestCode',
+    );
     expect(idx, greaterThan(0));
     final String oar = src.substring(idx);
     expect(
@@ -102,11 +103,15 @@ void main() {
   });
 
   test('SAF 分支仍存在且独立（向后兼容）', () {
-    final int idx =
-        src.indexOf('protected void onActivityResult(int requestCode');
+    final int idx = src.indexOf(
+      'protected void onActivityResult(int requestCode',
+    );
     final String oar = src.substring(idx);
-    expect(oar, contains('if (requestCode == SAF_PICK_DIR_REQUEST)'),
-        reason: 'SAF 续接分支必须保留。');
+    expect(
+      oar,
+      contains('if (requestCode == SAF_PICK_DIR_REQUEST)'),
+      reason: 'SAF 续接分支必须保留。',
+    );
     expect(oar, contains('pendingSafResult'));
   });
 
@@ -117,11 +122,7 @@ void main() {
 
   test('FileProvider.getUriForFile 只出现一次（抽 helper 无复制漂移）', () {
     final int count = 'FileProvider.getUriForFile('.allMatches(src).length;
-    expect(
-      count,
-      1,
-      reason: '安装 intent 构造应只在 launchApkInstaller 里出现一次，两路径共用。',
-    );
+    expect(count, 1, reason: '安装 intent 构造应只在 launchApkInstaller 里出现一次，两路径共用。');
   });
 
   test('onResume 兜底续接悬挂 pending（OEM 不回调 onActivityResult）', () {

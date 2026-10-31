@@ -44,18 +44,17 @@ Future<VideoCustomActionPick?> showVideoCustomActionPicker({
           title: Text(t.video_control_custom_action_none),
           leading: const FushiIcon(Icons.block),
           selected: current == null,
-          onTap: () => Navigator.of(dialogContext).pop(
-            const VideoCustomActionPick(null),
-          ),
+          onTap: () => Navigator.of(
+            dialogContext,
+          ).pop(const VideoCustomActionPick(null)),
         ),
         for (final ShortcutAction action in kVideoAssignableActions)
           FushiListItem(
             title: Text(action.label),
             leading: FushiIcon(action.buttonIcon ?? Icons.bolt_outlined),
             selected: current == action,
-            onTap: () => Navigator.of(dialogContext).pop(
-              VideoCustomActionPick(action),
-            ),
+            onTap: () =>
+                Navigator.of(dialogContext).pop(VideoCustomActionPick(action)),
           ),
       ],
     ),

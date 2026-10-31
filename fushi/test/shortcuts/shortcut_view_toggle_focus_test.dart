@@ -79,42 +79,46 @@ void main() {
   }
 
   testWidgets(
-      'view toggle registers as a single focus stop and arrow keys flip the '
-      'view (TODO-942)', (WidgetTester tester) async {
-    bool? lastMode;
-    await tester
-        .pumpWidget(buildHarness(onModeChanged: (bool m) => lastMode = m));
-    await tester.pump();
+    'view toggle registers as a single focus stop and arrow keys flip the '
+    'view (TODO-942)',
+    (WidgetTester tester) async {
+      bool? lastMode;
+      await tester.pumpWidget(
+        buildHarness(onModeChanged: (bool m) => lastMode = m),
+      );
+      await tester.pump();
 
-    // 开关真的存在且可寻址（Key 保留 ⇒ 鼠标 / 触摸 / 测试仍可用）。
-    expect(find.byKey(const Key('shortcut_view_toggle')), findsOneWidget);
+      // 开关真的存在且可寻址（Key 保留 ⇒ 鼠标 / 触摸 / 测试仍可用）。
+      expect(find.byKey(const Key('shortcut_view_toggle')), findsOneWidget);
 
-    // 焦点根里只有这一个停靠点，ensureFocus 必然落在开关上（修复前它整个被
-    // 方向式焦点控制器跳过，activeId 会是 null）。
-    final FushiFocusController controller = FushiFocusRoot.controllerOf(
-      tester.element(find.byKey(const Key('shortcut_view_toggle'))),
-    );
-    controller.ensureFocus();
-    await tester.pump();
-    expect(controller.activeId, isNotNull, reason: '模式开关必须注册为单一手柄/键盘焦点停靠点');
+      // 焦点根里只有这一个停靠点，ensureFocus 必然落在开关上（修复前它整个被
+      // 方向式焦点控制器跳过，activeId 会是 null）。
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.byKey(const Key('shortcut_view_toggle'))),
+      );
+      controller.ensureFocus();
+      await tester.pump();
+      expect(controller.activeId, isNotNull, reason: '模式开关必须注册为单一手柄/键盘焦点停靠点');
 
-    // 方向键右 = 进到 keyboard 视图 (false -> true)。
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pump();
-    expect(lastMode, isTrue, reason: '右方向键从列表翻到键盘皮肤视图');
+      // 方向键右 = 进到 keyboard 视图 (false -> true)。
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(lastMode, isTrue, reason: '右方向键从列表翻到键盘皮肤视图');
 
-    // 方向键左 = 回到 list 视图 (true -> false)。
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-    await tester.pump();
-    expect(lastMode, isFalse, reason: '左方向键从键盘皮肤翻回列表视图');
-  });
+      // 方向键左 = 回到 list 视图 (true -> false)。
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(lastMode, isFalse, reason: '左方向键从键盘皮肤翻回列表视图');
+    },
+  );
 
   testWidgets('D-pad left/right flips the view toggle in place (TODO-942)', (
     WidgetTester tester,
   ) async {
     bool? lastMode;
-    await tester
-        .pumpWidget(buildHarness(onModeChanged: (bool m) => lastMode = m));
+    await tester.pumpWidget(
+      buildHarness(onModeChanged: (bool m) => lastMode = m),
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(

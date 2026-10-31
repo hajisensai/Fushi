@@ -22,7 +22,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 class _FakeRepo extends BaseAnkiRepository {
   _FakeRepo({required this.supported, required AnkiSettings settings})
-      : _settings = settings;
+    : _settings = settings;
 
   final bool supported;
   AnkiSettings _settings;
@@ -89,8 +89,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      mineResult;
+  }) async => mineResult;
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -103,16 +102,16 @@ class _FakeRepo extends BaseAnkiRepository {
 }
 
 AnkiCardInfo _card(int id, int due, String expression) => AnkiCardInfo(
-      cardId: id,
-      noteId: id,
-      ord: 0,
-      due: due,
-      type: 0,
-      queue: 0,
-      modelName: 'Basic',
-      deckName: 'Mining',
-      fields: <String, String>{'Expression': expression, 'Meaning': ''},
-    );
+  cardId: id,
+  noteId: id,
+  ord: 0,
+  due: due,
+  type: 0,
+  queue: 0,
+  modelName: 'Basic',
+  deckName: 'Mining',
+  fields: <String, String>{'Expression': expression, 'Meaning': ''},
+);
 
 /// 假词频表：`common` 排名 1、`rare` 排名 9999。
 List<FushiTermResult> _lookup(String expression) {
@@ -170,8 +169,9 @@ void main() {
     final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
       runner: AnkiDeckRepositionRunner(
         repo,
-        lookup:
-            noFrequencies ? (String e) => const <FushiTermResult>[] : _lookup,
+        lookup: noFrequencies
+            ? (String e) => const <FushiTermResult>[]
+            : _lookup,
         snapshotDirectory: () async => tempDir,
       ),
       loadSettings: repo.loadSettings,
@@ -188,12 +188,16 @@ void main() {
     }
     await r.scheduler.flushNow();
 
-    expect(r.repo.writes, hasLength(1),
-        reason: '五次制卡应合并成一次写回，而不是一张卡刷一次 AnkiConnect');
+    expect(
+      r.repo.writes,
+      hasLength(1),
+      reason: '五次制卡应合并成一次写回，而不是一张卡刷一次 AnkiConnect',
+    );
     expect(r.repo.writes.single, hasLength(2));
     // common(cardId 2) 应被排到第一个位置。
     final AnkiCardDueUpdate first = r.repo.writes.single.reduce(
-        (AnkiCardDueUpdate a, AnkiCardDueUpdate b) => a.due <= b.due ? a : b);
+      (AnkiCardDueUpdate a, AnkiCardDueUpdate b) => a.due <= b.due ? a : b,
+    );
     expect(first.cardId, 2, reason: '词频最高的卡应排到队首');
     r.scheduler.dispose();
   });
@@ -258,8 +262,11 @@ void main() {
       expect(f.failed, 2);
       expect(f.attempted, 2);
       expect(f.firstReason, 'card was not found');
-      expect(error.toString(), contains('card was not found'),
-          reason: '错误日志记的是 toString()，原因不在里面就等于没记');
+      expect(
+        error.toString(),
+        contains('card was not found'),
+        reason: '错误日志记的是 toString()，原因不在里面就等于没记',
+      );
       r.scheduler.dispose();
     });
 
@@ -270,16 +277,21 @@ void main() {
         onFailure: (String deck, Object error, StackTrace? stack) =>
             reports.add((deck, error, stack)),
       );
-      final TimeoutException boom =
-          TimeoutException('cardsInfo', const Duration(seconds: 10));
+      final TimeoutException boom = TimeoutException(
+        'cardsInfo',
+        const Duration(seconds: 10),
+      );
       r.repo.listError = boom;
       r.scheduler.notifyMined('Mining');
       await r.scheduler.flushNow();
 
       expect(reports, hasLength(1));
       expect(reports.single.$1, 'Mining');
-      expect(identical(reports.single.$2, boom), isTrue,
-          reason: '只报牌组名时用户日志里一行 Anki 记录都没有，无从定位');
+      expect(
+        identical(reports.single.$2, boom),
+        isTrue,
+        reason: '只报牌组名时用户日志里一行 Anki 记录都没有，无从定位',
+      );
       expect(reports.single.$3, isNotNull);
       expect(r.repo.writes, isEmpty);
       r.scheduler.dispose();
@@ -299,18 +311,14 @@ void main() {
       _FakeRepo repo,
       AnkiAutoRepositionScheduler scheduler,
       AutoRepositionAnkiRepository decorated,
-    }) wrap({
-      bool supported = true,
-    }) {
+    })
+    wrap({bool supported = true}) {
       final r = build(supported: supported);
       // 直接观测 notifyMined 的入参：把调度器换成一个只记账的探针不现实
       // （它是具体类），改用真调度器 + 记 pending 的间接观测反而更脆。
       // 这里用 onRunForTesting 之外的最短路径：跑完 flushNow 后看写回次数。
       final AutoRepositionAnkiRepository decorated =
-          AutoRepositionAnkiRepository(
-        inner: r.repo,
-        scheduler: r.scheduler,
-      );
+          AutoRepositionAnkiRepository(inner: r.repo, scheduler: r.scheduler);
       return (repo: r.repo, scheduler: r.scheduler, decorated: decorated);
     }
 
@@ -319,7 +327,8 @@ void main() {
         _FakeRepo repo,
         AnkiAutoRepositionScheduler scheduler,
         AutoRepositionAnkiRepository decorated,
-      }) w,
+      })
+      w,
     ) async {
       await w.decorated.mineEntry(
         rawPayloadJson: '{}',
@@ -362,10 +371,14 @@ void main() {
     r.scheduler.notifyMined('Mining');
     await r.scheduler.flushNow();
 
-    expect(r.repo.writes, isEmpty,
-        reason: '判据必须是 plan.changed，不是 plan.updates.isEmpty——'
-            'planCardPositions 给每张新卡都发一条 update，用 updates 判等于'
-            '每批制卡都把整个牌组重写一遍');
+    expect(
+      r.repo.writes,
+      isEmpty,
+      reason:
+          '判据必须是 plan.changed，不是 plan.updates.isEmpty——'
+          'planCardPositions 给每张新卡都发一条 update，用 updates 判等于'
+          '每批制卡都把整个牌组重写一遍',
+    );
     expect(tempDir.listSync(), isEmpty, reason: '没写回就不该留快照');
     r.scheduler.dispose();
   });
@@ -375,9 +388,13 @@ void main() {
     r.scheduler.notifyMined('Mining');
     await r.scheduler.flushNow();
 
-    expect(r.repo.writes, isEmpty,
-        reason: '没有任何排序依据的「重排」只是一次无信息量的全牌组位置重写'
-            '（选中的词频词典被删/被隐藏时就是这个状态）');
+    expect(
+      r.repo.writes,
+      isEmpty,
+      reason:
+          '没有任何排序依据的「重排」只是一次无信息量的全牌组位置重写'
+          '（选中的词频词典被删/被隐藏时就是这个状态）',
+    );
     r.scheduler.dispose();
   });
 
@@ -396,8 +413,9 @@ void main() {
       options: const AnkiRepositionRankOptions(),
     );
     await runner.apply(manual!);
-    final AnkiRepositionSnapshot? afterManual =
-        await runner.latestSnapshot('Mining');
+    final AnkiRepositionSnapshot? afterManual = await runner.latestSnapshot(
+      'Mining',
+    );
     expect(afterManual, isNotNull);
 
     // 再让自动路径跑一轮（卡的位置已被手动那次改过，这里重新造成待排状态）。
@@ -409,11 +427,16 @@ void main() {
     await r.scheduler.flushNow();
     expect(r.repo.writes, isNotEmpty, reason: '自动那轮应该真的写了');
 
-    final AnkiRepositionSnapshot? afterAuto =
-        await runner.latestSnapshot('Mining');
-    expect(afterAuto!.file.path, afterManual!.file.path,
-        reason: '撤销按钮必须仍指向手动那次之前的状态；被自动快照顶掉的话，'
-            '那次手动重排就永远撤不回去了，而按钮看起来一切正常');
+    final AnkiRepositionSnapshot? afterAuto = await runner.latestSnapshot(
+      'Mining',
+    );
+    expect(
+      afterAuto!.file.path,
+      afterManual!.file.path,
+      reason:
+          '撤销按钮必须仍指向手动那次之前的状态；被自动快照顶掉的话，'
+          '那次手动重排就永远撤不回去了，而按钮看起来一切正常',
+    );
     r.scheduler.dispose();
   });
 
@@ -428,23 +451,29 @@ void main() {
         File('${tempDir.path}/$name')..writeAsStringSync('{}');
 
     snap(
-        '${AnkiDeckRepositionRunner.kManualPrefix}2026-09-01T00-00-00.000Z.json');
+      '${AnkiDeckRepositionRunner.kManualPrefix}2026-09-01T00-00-00.000Z.json',
+    );
     for (int i = 1; i <= 5; i++) {
-      snap('${AnkiDeckRepositionRunner.kAutoPrefix}2026-09-0${i}T00-00-00.000Z'
-          '.json');
+      snap(
+        '${AnkiDeckRepositionRunner.kAutoPrefix}2026-09-0${i}T00-00-00.000Z'
+        '.json',
+      );
     }
 
     final int deleted = await runner.pruneSnapshots(keep: 2);
 
     expect(deleted, 3, reason: '5 份自动快照只留 2 份');
-    final List<String> left = tempDir
-        .listSync()
-        .map((FileSystemEntity e) => p.basename(e.path))
-        .toList()
-      ..sort();
+    final List<String> left =
+        tempDir
+            .listSync()
+            .map((FileSystemEntity e) => p.basename(e.path))
+            .toList()
+          ..sort();
     expect(
-        left.where((String n) => !n.startsWith('reposition-auto-')).length, 1,
-        reason: '手动快照是用户的撤销点，一份都不能被自动路径的产物挤掉');
+      left.where((String n) => !n.startsWith('reposition-auto-')).length,
+      1,
+      reason: '手动快照是用户的撤销点，一份都不能被自动路径的产物挤掉',
+    );
     expect(left.length, 3);
     r.scheduler.dispose();
   });

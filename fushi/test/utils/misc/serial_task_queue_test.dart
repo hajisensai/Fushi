@@ -5,36 +5,40 @@ import 'package:fushi/src/utils/misc/serial_task_queue.dart';
 
 void main() {
   group('SerialTaskQueue', () {
-    test('serializes tasks: second starts only after first completes',
-        () async {
-      final SerialTaskQueue queue = SerialTaskQueue();
-      final List<String> events = <String>[];
-      final Completer<void> firstGate = Completer<void>();
+    test(
+      'serializes tasks: second starts only after first completes',
+      () async {
+        final SerialTaskQueue queue = SerialTaskQueue();
+        final List<String> events = <String>[];
+        final Completer<void> firstGate = Completer<void>();
 
-      // 第一个任务悬挂在 firstGate 上（模拟 extractAudioSegment 的 await）。
-      final Future<String> first = queue.enqueue<String>(() async {
-        events.add('first:start');
-        await firstGate.future;
-        events.add('first:end');
-        return 'first';
-      });
+        // 第一个任务悬挂在 firstGate 上（模拟 extractAudioSegment 的 await）。
+        final Future<String> first = queue.enqueue<String>(() async {
+          events.add('first:start');
+          await firstGate.future;
+          events.add('first:end');
+          return 'first';
+        });
 
-      // 第二个任务紧接着入队（模拟快速连制第二张卡）。
-      final Future<String> second = queue.enqueue<String>(() async {
-        events.add('second:start');
-        return 'second';
-      });
+        // 第二个任务紧接着入队（模拟快速连制第二张卡）。
+        final Future<String> second = queue.enqueue<String>(() async {
+          events.add('second:start');
+          return 'second';
+        });
 
-      // 让微任务跑一圈：此时第一个已 start 但被 gate 挡住，第二个绝不能已 start。
-      await Future<void>.delayed(Duration.zero);
-      expect(events, <String>['first:start'], reason: '第二个任务在第一个完成前不得启动（串行化）。');
+        // 让微任务跑一圈：此时第一个已 start 但被 gate 挡住，第二个绝不能已 start。
+        await Future<void>.delayed(Duration.zero);
+        expect(events, <String>[
+          'first:start',
+        ], reason: '第二个任务在第一个完成前不得启动（串行化）。');
 
-      // 放行第一个 → 第二个才被调度。
-      firstGate.complete();
-      expect(await first, 'first');
-      expect(await second, 'second');
-      expect(events, <String>['first:start', 'first:end', 'second:start']);
-    });
+        // 放行第一个 → 第二个才被调度。
+        firstGate.complete();
+        expect(await first, 'first');
+        expect(await second, 'second');
+        expect(events, <String>['first:start', 'first:end', 'second:start']);
+      },
+    );
 
     test('each task observes its own captured value (no interleave)', () async {
       final SerialTaskQueue queue = SerialTaskQueue();
@@ -106,16 +110,21 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       // 未串行化时第二个在第一个悬挂期间（first:end 尚未发生）就已 start（交错）。
       expect(events, contains('second:start'));
-      expect(events, isNot(contains('first:end')),
-          reason: '此刻第一个仍悬挂在 gate 上，尚未结束。');
+      expect(
+        events,
+        isNot(contains('first:end')),
+        reason: '此刻第一个仍悬挂在 gate 上，尚未结束。',
+      );
 
       firstGate.complete();
       await first;
       await second;
       // 收尾确认交错：second:start 排在 first:end 之前。
       expect(
-          events.indexOf('second:start') < events.indexOf('first:end'), isTrue,
-          reason: '未串行化 → 第二个任务在第一个结束前就跑（race）。');
+        events.indexOf('second:start') < events.indexOf('first:end'),
+        isTrue,
+        reason: '未串行化 → 第二个任务在第一个结束前就跑（race）。',
+      );
     });
   });
 }

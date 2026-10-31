@@ -13,10 +13,10 @@ import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dar
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 
 OpdsServerConfig _server(String id, {String name = ''}) => OpdsServerConfig(
-      id: id,
-      name: name,
-      catalogUrl: Uri.parse('https://books.example.com/api/v1/opds'),
-    );
+  id: id,
+  name: name,
+  catalogUrl: Uri.parse('https://books.example.com/api/v1/opds'),
+);
 
 void main() {
   group('MangaSourceCatalog', () {
@@ -24,8 +24,9 @@ void main() {
       // 算空会让「有扩展宿主却一个来源都没启用」的提示压在有内容的列表上面。
       expect(const MangaSourceCatalog().isEmpty, isTrue);
       expect(
-        MangaSourceCatalog(opdsServers: <OpdsServerConfig>[_server('a')])
-            .isEmpty,
+        MangaSourceCatalog(
+          opdsServers: <OpdsServerConfig>[_server('a')],
+        ).isEmpty,
         isFalse,
       );
     });
@@ -35,8 +36,9 @@ void main() {
         mokuroEnabled: true,
         opdsServers: <OpdsServerConfig>[_server('a', name: 'Shelf')],
       );
-      final List<String> ids =
-          catalog.sourceOptions.map((DiscoverySourceOption o) => o.id).toList();
+      final List<String> ids = catalog.sourceOptions
+          .map((DiscoverySourceOption o) => o.id)
+          .toList();
       expect(ids, <String>[MangaSourceCatalog.mokuroSourceId]);
       expect(ids.any((String id) => id.contains('opds')), isFalse);
     });
@@ -46,11 +48,15 @@ void main() {
         mokuroEnabled: true,
         opdsServers: <OpdsServerConfig>[_server('a')],
       );
-      final MangaSourceCatalog narrowed =
-          catalog.filterById(MangaSourceCatalog.mokuroSourceId);
+      final MangaSourceCatalog narrowed = catalog.filterById(
+        MangaSourceCatalog.mokuroSourceId,
+      );
       expect(narrowed.mokuroEnabled, isTrue);
-      expect(narrowed.opdsServers, isEmpty,
-          reason: '选中了别的来源，OPDS 卡片留在列表里与选择无关');
+      expect(
+        narrowed.opdsServers,
+        isEmpty,
+        reason: '选中了别的来源，OPDS 卡片留在列表里与选择无关',
+      );
     });
 
     test('「全部来源」不过滤，OPDS 原样保留', () {
@@ -68,20 +74,19 @@ void main() {
     Widget harness(
       MangaSourceCatalog catalog, {
       required ValueChanged<OpdsServerConfig> onOpenOpds,
-    }) =>
-        MaterialApp(
-          theme: ThemeData(useMaterial3: true),
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: MangaSourceCatalogSection(
-                catalog: catalog,
-                onOpenMokuro: () {},
-                onOpenMihon: (_) {},
-                onOpenOpds: onOpenOpds,
-              ),
-            ),
+    }) => MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: MangaSourceCatalogSection(
+            catalog: catalog,
+            onOpenMokuro: () {},
+            onOpenMihon: (_) {},
+            onOpenOpds: onOpenOpds,
           ),
-        );
+        ),
+      ),
+    );
 
     testWidgets('每台 OPDS 服务器一张卡片，点击回调带出该服务器', (WidgetTester tester) async {
       final List<String> opened = <String>[];

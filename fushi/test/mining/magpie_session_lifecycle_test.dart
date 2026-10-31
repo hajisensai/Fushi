@@ -35,10 +35,10 @@ const ExternalWindowInfo kOtherWindow = ExternalWindowInfo(
 /// 就是 [MagpieUpscalingService]，替身与生产同型才谈得上「咬住的是真实契约」。
 class _RecordingMagpie extends MagpieUpscalingService {
   _RecordingMagpie()
-      : super(
-          modeReader: () => MagpieUpscalingMode.off,
-          isWindowsOverride: false,
-        );
+    : super(
+        modeReader: () => MagpieUpscalingMode.off,
+        isWindowsOverride: false,
+      );
 
   final List<String> calls = <String>[];
 
@@ -56,11 +56,11 @@ class _RecordingMagpie extends MagpieUpscalingService {
 class _FakeLoopbackSource extends LoopbackGalAudioSource {
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 2,
-        bitsPerSample: 32,
-        isFloat: true,
-      );
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 32,
+    isFloat: true,
+  );
 
   @override
   Future<void> stop() async {}
@@ -163,11 +163,11 @@ void main() {
       await controller.stopCapture();
       await controller.startAttachedCapture(kWindow);
       await controller.magpieUpscalingSettled;
-      expect(
-        magpie.calls,
-        <String>['ready:4242', 'ended', 'ready:4242'],
-        reason: '第二局必须重新拉起超分，而不是静默失效',
-      );
+      expect(magpie.calls, <String>[
+        'ready:4242',
+        'ended',
+        'ready:4242',
+      ], reason: '第二局必须重新拉起超分，而不是静默失效');
       expect(controller.magpieArmedHwnd, kWindow.hwnd);
     });
 

@@ -18,18 +18,27 @@ void main() {
   test('三域 tab 以 embedded 模式复用现有统计页', () {
     expect(
       center,
-      matches(RegExp(
-          r'ReadingStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,')),
+      matches(
+        RegExp(
+          r'ReadingStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,',
+        ),
+      ),
     );
     expect(
       center,
-      matches(RegExp(
-          r'VideoStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,')),
+      matches(
+        RegExp(
+          r'VideoStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,',
+        ),
+      ),
     );
     expect(
       center,
-      matches(RegExp(
-          r'GameStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,')),
+      matches(
+        RegExp(
+          r'GameStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,',
+        ),
+      ),
     );
     expect(
       center,
@@ -123,7 +132,8 @@ void main() {
         expect(
           src,
           isNot(contains('_kMaxContentWidth')),
-          reason: '$path：阅读 tab 曾独有 Center + ConstrainedBox(1040)，'
+          reason:
+              '$path：阅读 tab 曾独有 Center + ConstrainedBox(1040)，'
               '横过去时只有它缩在中间一条',
         );
       }
@@ -133,8 +143,11 @@ void main() {
       for (final String path in tabPages) {
         final String src = File(path).readAsStringSync();
         expect(src, contains('StatTabSettings('), reason: path);
-        expect(src, contains('trailing: StatRangeActions('),
-            reason: '$path 的统计设置挂在范围条行尾');
+        expect(
+          src,
+          contains('trailing: StatRangeActions('),
+          reason: '$path 的统计设置挂在范围条行尾',
+        );
         expect(src, contains('settings: _statSettings,'), reason: path);
         expect(src, contains('onClearAll: _confirmAndClearAll'), reason: path);
         for (final String gone in <String>[
@@ -165,8 +178,11 @@ void main() {
         expect(start, greaterThanOrEqualTo(0), reason: path);
         final String body = src.substring(start, src.indexOf('\n  }\n', start));
         expect(body, contains('showStatPeriodDetailSheet('), reason: path);
-        expect(body, contains('periodLabel: formatStatRange(range)'),
-            reason: path);
+        expect(
+          body,
+          contains('periodLabel: formatStatRange(range)'),
+          reason: path,
+        );
         expect(body, contains('contains: range.contains'), reason: path);
       }
     });

@@ -49,23 +49,23 @@ void main() {
     const Map<String, String> missedTables = <String, String>{
       'reading_hourly_logs':
           'INSERT INTO reading_hourly_logs (date_key, hour, reading_time_ms) '
-              "VALUES ('2026-09-12', 9, 60000)",
+          "VALUES ('2026-09-12', 9, 60000)",
       'video_hourly_logs':
           'INSERT INTO video_hourly_logs (date_key, hour, watch_time_ms) '
-              "VALUES ('2026-09-12', 9, 60000)",
+          "VALUES ('2026-09-12', 9, 60000)",
       'lookup_mining_counters':
           'INSERT INTO lookup_mining_counters (source_type, date_key, '
-              "lookup_count, mine_count) VALUES ('book', '2026-09-12', 3, 1)",
+          "lookup_count, mine_count) VALUES ('book', '2026-09-12', 3, 1)",
       'mined_sentences':
           'INSERT INTO mined_sentences (source, date_key, created_at) '
-              "VALUES ('book', '2026-09-12', 1)",
+          "VALUES ('book', '2026-09-12', 1)",
       'favorite_words':
           'INSERT INTO favorite_words (expression, source_type, date_key, '
-              "created_at) VALUES ('猫', 'book', '2026-09-12', 1)",
+          "created_at) VALUES ('猫', 'book', '2026-09-12', 1)",
       'activity_events':
           'INSERT INTO activity_events (event_type, media_type, title, '
-              'date_key, timestamp_ms) '
-              "VALUES ('read', 'book', 'T', '2026-09-12', 1)",
+          'date_key, timestamp_ms) '
+          "VALUES ('read', 'book', 'T', '2026-09-12', 1)",
     };
 
     missedTables.forEach((String table, String insert) {
@@ -78,7 +78,8 @@ void main() {
         expect(
           summary.countFor(BackupCategory.statistics),
           greaterThan(0),
-          reason: '$table 在 statistics 的裁剪面里，判据就必须数到它——否则这种库被算成'
+          reason:
+              '$table 在 statistics 的裁剪面里，判据就必须数到它——否则这种库被算成'
               '「没有统计数据」，开关不出现，覆盖导入时包里的 $table 行被静默裁掉',
         );
         expect(summary.present, contains(BackupCategory.statistics));
@@ -98,7 +99,8 @@ void main() {
     expect(
       summary.countFor(BackupCategory.progress),
       greaterThan(0),
-      reason: 'progress 的裁剪面含 preferences 里的 audiobook_pos_*；判据漏掉它，'
+      reason:
+          'progress 的裁剪面含 preferences 里的 audiobook_pos_*；判据漏掉它，'
           '纯有声书用户的听书进度会在覆盖导入时静默丢失',
     );
     expect(summary.present, contains(BackupCategory.progress));

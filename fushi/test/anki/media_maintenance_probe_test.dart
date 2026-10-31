@@ -58,8 +58,7 @@ class _ProbeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -98,8 +97,10 @@ void main() {
     });
 
     test('后端类型支持但媒体目录本机没有（手机连局域网桌面）：记 false', () async {
-      final _ProbeRepo repo =
-          _ProbeRepo(staticSupport: true, probeResult: false);
+      final _ProbeRepo repo = _ProbeRepo(
+        staticSupport: true,
+        probeResult: false,
+      );
       final AnkiViewModel vm = AnkiViewModel(repo);
       await vm.probeMediaMaintenance();
       expect(vm.debugState.mediaMaintenanceAvailable, isFalse);
@@ -107,16 +108,20 @@ void main() {
     });
 
     test('本机可读：记 true', () async {
-      final _ProbeRepo repo =
-          _ProbeRepo(staticSupport: true, probeResult: true);
+      final _ProbeRepo repo = _ProbeRepo(
+        staticSupport: true,
+        probeResult: true,
+      );
       final AnkiViewModel vm = AnkiViewModel(repo);
       await vm.probeMediaMaintenance();
       expect(vm.debugState.mediaMaintenanceAvailable, isTrue);
     });
 
     test('后端不可达（Anki 没开）：保持未知，绝不记成不支持', () async {
-      final _ProbeRepo repo =
-          _ProbeRepo(staticSupport: true, probeThrows: true);
+      final _ProbeRepo repo = _ProbeRepo(
+        staticSupport: true,
+        probeThrows: true,
+      );
       final AnkiViewModel vm = AnkiViewModel(repo);
       await vm.probeMediaMaintenance();
       // null = 未知；设置页据此回落静态能力，区块照常显示（点了会报连接错误）。
@@ -133,8 +138,10 @@ void main() {
       // 退回裸 `if (vm.supportsMediaMaintenance)` 就是本 bug 的原状。
       expect(
         page,
-        contains('uiState.mediaMaintenanceAvailable ?? '
-            'vm.supportsMediaMaintenance'),
+        contains(
+          'uiState.mediaMaintenanceAvailable ?? '
+          'vm.supportsMediaMaintenance',
+        ),
       );
       expect(page, contains('probeMediaMaintenance()'));
     });

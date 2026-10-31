@@ -90,8 +90,10 @@ String normalizeVideoPath(String videoPath) =>
 /// `D:\a\b.mkv` 派生同一 uid。
 String externalVideoBookUid(String videoPath) {
   final String normalized = normalizeVideoPath(videoPath);
-  final String digest =
-      sha1.convert(utf8.encode(normalized)).toString().substring(0, 12);
+  final String digest = sha1
+      .convert(utf8.encode(normalized))
+      .toString()
+      .substring(0, 12);
   return 'video/ext/$digest';
 }
 

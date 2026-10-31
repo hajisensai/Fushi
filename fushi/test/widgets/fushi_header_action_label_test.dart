@@ -18,7 +18,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: Center(child: child))),
+      MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 

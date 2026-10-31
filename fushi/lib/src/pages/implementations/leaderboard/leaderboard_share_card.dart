@@ -224,20 +224,17 @@ class LeaderboardShareCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            switch (data.window) {
-              LeaderboardWindow.week => t.leaderboard_share_card_week(
-                date: data.periodLabel,
-              ),
-              LeaderboardWindow.month => t.leaderboard_share_card_month(
-                month: data.periodLabel,
-              ),
-              LeaderboardWindow.all => t.leaderboard_share_card_all(
-                date: data.periodLabel,
-              ),
-            },
-            style: text.labelLarge?.copyWith(color: foreground),
-          ),
+          Text(switch (data.window) {
+            LeaderboardWindow.week => t.leaderboard_share_card_week(
+              date: data.periodLabel,
+            ),
+            LeaderboardWindow.month => t.leaderboard_share_card_month(
+              month: data.periodLabel,
+            ),
+            LeaderboardWindow.all => t.leaderboard_share_card_all(
+              date: data.periodLabel,
+            ),
+          }, style: text.labelLarge?.copyWith(color: foreground)),
           const SizedBox(height: 4),
           Text(
             switch (data.window) {
@@ -277,16 +274,12 @@ class LeaderboardShareCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   data.accountTag,
-                  style: text.titleSmall?.copyWith(
-                    color: foreground,
-                  ),
+                  style: text.titleSmall?.copyWith(color: foreground),
                 ),
               ),
               Text(
                 'Fushi',
-                style: text.labelMedium?.copyWith(
-                  color: foreground,
-                ),
+                style: text.labelMedium?.copyWith(color: foreground),
               ),
             ],
           ),

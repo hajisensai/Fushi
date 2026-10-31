@@ -249,10 +249,7 @@ void main() {
       final MatchResult first = _firstPass(
         secs,
         cues,
-        <int, String>{
-          0: 'mpが増えていくものだしか',
-          2: 'しこの世界では増えないらしい',
-        },
+        <int, String>{0: 'mpが増えていくものだしか', 2: 'しこの世界では増えないらしい'},
         scores: <int, double>{0: 0.9, 2: 0.9},
       );
       final MatchResult filled = filler.fill(
@@ -266,10 +263,14 @@ void main() {
       final String norm = AudioTextNormalizer.normalize(secs.single.text);
       expect(norm.substring(by[1]!.normCharStart, by[1]!.normCharEnd), 'しかし');
       // 邻句边界被纠正到字。
-      expect(norm.substring(by[0]!.normCharStart, by[0]!.normCharEnd),
-          'mpが増えていくものだ');
-      expect(norm.substring(by[2]!.normCharStart, by[2]!.normCharEnd),
-          'この世界では増えないらしい');
+      expect(
+        norm.substring(by[0]!.normCharStart, by[0]!.normCharEnd),
+        'mpが増えていくものだ',
+      );
+      expect(
+        norm.substring(by[2]!.normCharStart, by[2]!.normCharEnd),
+        'この世界では増えないらしい',
+      );
     });
 
     test('重切放不下任何中间句时锚点原样保留（不是正文里的感叹词）', () {
@@ -326,10 +327,7 @@ void main() {
 
     test('邻句让位：多读出来的字从「替换邻句正文」改成「删除」，把正文让给中间句', () {
       final List<EpubSection> secs = <EpubSection>[
-        _section(
-          0,
-          'ロキシーは続けた。まず魔術というのは古代長耳族が創りだしたものだと言われています。当時は違ったそうです。',
-        ),
+        _section(0, 'ロキシーは続けた。まず魔術というのは古代長耳族が創りだしたものだと言われています。当時は違ったそうです。'),
       ];
       final List<AudioCue> cues = <AudioCue>[
         _cue(0, 'ロキシーは続けた'),
@@ -491,11 +489,7 @@ void main() {
       final MatchResult first = _firstPass(
         secs,
         cues,
-        <int, String>{
-          0: '前の文章はここまでである',
-          1: 'である次の長い文章',
-          4: '最後の文章で終わる',
-        },
+        <int, String>{0: '前の文章はここまでである', 1: 'である次の長い文章', 4: '最後の文章で終わる'},
         scores: <int, double>{1: 0.8},
       );
       final MatchResult filled = filler.fill(
@@ -567,17 +561,24 @@ void main() {
         ),
       ];
       final List<AudioCue> cues = <AudioCue>[
-        _cue(0,
-            'Mr. and Mrs. Dursley, of No. 4 Privet Drive, were proud to say that they were perfectly normal'),
-        _cue(1,
-            'They were the last people you would expect to be involved in anything strange'),
+        _cue(
+          0,
+          'Mr. and Mrs. Dursley, of No. 4 Privet Drive, were proud to say that they were perfectly normal',
+        ),
+        _cue(
+          1,
+          'They were the last people you would expect to be involved in anything strange',
+        ),
       ];
       final MatchResult first = _firstPass(en, cues, <int, String>{
         0: 'Mr. and Mrs. Dursley, of number four, Privet Drive, were proud to say that they were perfectly normal',
         1: 'They were the last people you’d expect to be involved in anything strange',
       });
       replaceMatchedCueTextWithBookText(
-          sections: en, cues: cues, result: first);
+        sections: en,
+        cues: cues,
+        result: first,
+      );
       expect(
         cues[0].text,
         // 归一化区间只到 normal；逗号属于本句，后面的空格与下一句一起留下。
@@ -599,7 +600,10 @@ void main() {
         0: '俺は三十四歳、住所不定無職',
       });
       replaceMatchedCueTextWithBookText(
-          sections: ja, cues: cues, result: first);
+        sections: ja,
+        cues: cues,
+        result: first,
+      );
       expect(cues[0].text, '俺は三十四歳、住所不定無職。');
     });
   });

@@ -58,13 +58,14 @@ Future<List<EpisodeRenameProposal>> renameCollectionEpisodes({
   required int collectionId,
   required bool dryRun,
 }) async {
-  final CollectionScrapeMetaRow? collectionMeta =
-      await db.getCollectionScrapeMeta(collectionId);
+  final CollectionScrapeMetaRow? collectionMeta = await db
+      .getCollectionScrapeMeta(collectionId);
 
-  final List<MediaCollectionItemRow> items =
-      await db.getCollectionItems(collectionId);
+  final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+    collectionId,
+  );
   final List<({VideoBookRow book, VideoScrapeMetaRow meta, int episode})>
-      scraped = <({VideoBookRow book, VideoScrapeMetaRow meta, int episode})>[];
+  scraped = <({VideoBookRow book, VideoScrapeMetaRow meta, int episode})>[];
   for (final MediaCollectionItemRow item in items) {
     if (item.mediaType != 'video') continue;
     final VideoBookRow? book = await db.getVideoBookByBookUid(item.entryKey);
@@ -81,8 +82,9 @@ Future<List<EpisodeRenameProposal>> renameCollectionEpisodes({
       in scraped) {
     if (s.episode > maxEpisode) maxEpisode = s.episode;
   }
-  final int padWidth =
-      maxEpisode.toString().length < 2 ? 2 : maxEpisode.toString().length;
+  final int padWidth = maxEpisode.toString().length < 2
+      ? 2
+      : maxEpisode.toString().length;
 
   final List<EpisodeRenameProposal> proposals = <EpisodeRenameProposal>[];
   for (final ({VideoBookRow book, VideoScrapeMetaRow meta, int episode}) s
@@ -90,19 +92,21 @@ Future<List<EpisodeRenameProposal>> renameCollectionEpisodes({
     // 集名缺失时集级刮削回退写了作品名——那不是集名，别拼成「E01 作品名」。
     final String? episodeTitle =
         (collectionMeta != null && s.meta.title == collectionMeta.title)
-            ? null
-            : s.meta.title;
+        ? null
+        : s.meta.title;
     final String newTitle = proposeEpisodeDisplayName(
       episodeNumber: s.episode,
       episodeTitle: episodeTitle,
       padWidth: padWidth,
     );
     if (newTitle == s.book.title) continue;
-    proposals.add(EpisodeRenameProposal(
-      bookUid: s.book.bookUid,
-      oldTitle: s.book.title,
-      newTitle: newTitle,
-    ));
+    proposals.add(
+      EpisodeRenameProposal(
+        bookUid: s.book.bookUid,
+        oldTitle: s.book.title,
+        newTitle: newTitle,
+      ),
+    );
   }
 
   if (!dryRun) {

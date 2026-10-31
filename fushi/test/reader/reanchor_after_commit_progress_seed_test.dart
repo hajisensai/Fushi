@@ -25,8 +25,9 @@ void main() {
   });
 
   Future<void> pumpOnePostFrame() async {
-    final List<void Function()> due =
-        List<void Function()>.from(pendingPostFrame);
+    final List<void Function()> due = List<void Function()>.from(
+      pendingPostFrame,
+    );
     pendingPostFrame.clear();
     for (final void Function() cb in due) {
       cb();
@@ -63,26 +64,37 @@ void main() {
 
   group('onAfterCommit 进度 seed 时序（TODO-933）', () {
     test('commit 成功后确定性回调 onAfterCommit，且严格发生在 commit（清旗）之后', () async {
-      await runOrchestration(onAfterCommit: () async {
-        evals.add('afterCommit');
-      });
+      await runOrchestration(
+        onAfterCommit: () async {
+          evals.add('afterCommit');
+        },
+      );
       // begin 已发生；commit / afterCommit 都在 postFrame，尚未发生。
-      expect(evals, <String>['begin'],
-          reason: 'commit 与补刷都必须延迟到 postFrame settle，不在 begin 同帧发生');
+      expect(evals, <String>[
+        'begin',
+      ], reason: 'commit 与补刷都必须延迟到 postFrame settle，不在 begin 同帧发生');
 
       await pumpOnePostFrame();
-      expect(evals, <String>['begin', 'commit', 'afterCommit'],
-          reason: 'commit 成功清旗后，onAfterCommit 必须确定性补跑且严格在 commit 之后');
-      expect(evals.indexOf('commit'), lessThan(evals.indexOf('afterCommit')),
-          reason: '补刷必须在清旗（commit）之后，旗已清才不会被 stableProgress 的 null gate 挡掉');
+      expect(evals, <String>[
+        'begin',
+        'commit',
+        'afterCommit',
+      ], reason: 'commit 成功清旗后，onAfterCommit 必须确定性补跑且严格在 commit 之后');
+      expect(
+        evals.indexOf('commit'),
+        lessThan(evals.indexOf('afterCommit')),
+        reason: '补刷必须在清旗（commit）之后，旗已清才不会被 stableProgress 的 null gate 挡掉',
+      );
     });
 
     test('撤掉补刷（onAfterCommit 不传，旧行为）：commit 后不再有补刷——red→green 锚点', () async {
       // 不传 onAfterCommit 模拟修复前/缩放·样式重锚路径：commit 后没有 afterCommit。
       await runOrchestration();
       await pumpOnePostFrame();
-      expect(evals, <String>['begin', 'commit'],
-          reason: '不传 onAfterCommit 时编排只 begin→commit，不得凭空补刷（缩放/样式路径行为不变）');
+      expect(evals, <String>[
+        'begin',
+        'commit',
+      ], reason: '不传 onAfterCommit 时编排只 begin→commit，不得凭空补刷（缩放/样式路径行为不变）');
       expect(evals, isNot(contains('afterCommit')));
     });
 
@@ -97,10 +109,16 @@ void main() {
         },
       );
       await pumpOnePostFrame();
-      expect(commitErrors, hasLength(1),
-          reason: 'commit 异常仍经 onCommitError 上报');
-      expect(afterCommitCalled, isFalse,
-          reason: 'commit 失败旗未确定性清，补刷仍会被 null gate 挡，必须跳过');
+      expect(
+        commitErrors,
+        hasLength(1),
+        reason: 'commit 异常仍经 onCommitError 上报',
+      );
+      expect(
+        afterCommitCalled,
+        isFalse,
+        reason: 'commit 失败旗未确定性清，补刷仍会被 null gate 挡，必须跳过',
+      );
       expect(evals, <String>['begin', 'commit']);
     });
 
@@ -141,8 +159,11 @@ void main() {
       );
       // 不应抛出 pumpOnePostFrame。
       await pumpOnePostFrame();
-      expect(commitErrors, hasLength(1),
-          reason: '补刷异常必须经 onCommitError 上报且不外抛（postFrame 回调里抛会被引擎吞或崩）');
+      expect(
+        commitErrors,
+        hasLength(1),
+        reason: '补刷异常必须经 onCommitError 上报且不外抛（postFrame 回调里抛会被引擎吞或崩）',
+      );
       expect(evals, <String>['begin', 'commit']);
     });
   });

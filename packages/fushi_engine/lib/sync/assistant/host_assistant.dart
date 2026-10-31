@@ -74,10 +74,10 @@ class HostAssistantSessions {
     int maxSessions = 8,
     DateTime Function()? now,
     Random? random,
-  })  : _idleTimeout = idleTimeout,
-        _maxSessions = maxSessions,
-        _now = now ?? DateTime.now,
-        _random = random ?? Random.secure();
+  }) : _idleTimeout = idleTimeout,
+       _maxSessions = maxSessions,
+       _now = now ?? DateTime.now,
+       _random = random ?? Random.secure();
 
   final HostAssistantProvider _provider;
   final Duration _idleTimeout;
@@ -99,16 +99,19 @@ class HostAssistantSessions {
     required String locale,
   }) async {
     await _evictIdle();
-    final HostAssistantSession session =
-        await _provider.open(feature, locale: locale);
+    final HostAssistantSession session = await _provider.open(
+      feature,
+      locale: locale,
+    );
     // 超上限时先关最久没碰的那场：手机端退出页面会 DELETE，留下来的多半是断线
     // 遗孤；新会话总是用户此刻正在用的那一场。
     while (_sessions.length >= _maxSessions) {
       final String oldest = _sessions.entries
           .reduce(
-            (MapEntry<String, _SessionEntry> a,
-                    MapEntry<String, _SessionEntry> b) =>
-                a.value.touchedAt.isBefore(b.value.touchedAt) ? a : b,
+            (
+              MapEntry<String, _SessionEntry> a,
+              MapEntry<String, _SessionEntry> b,
+            ) => a.value.touchedAt.isBefore(b.value.touchedAt) ? a : b,
           )
           .key;
       await close(oldest);
@@ -203,10 +206,9 @@ class HostAssistantSessions {
   static Map<String, Object?> _envelope(
     String id,
     HostAssistantSession session,
-  ) =>
-      <String, Object?>{
-        'id': id,
-        'revision': session.revision,
-        'view': session.snapshot(),
-      };
+  ) => <String, Object?>{
+    'id': id,
+    'revision': session.revision,
+    'view': session.snapshot(),
+  };
 }

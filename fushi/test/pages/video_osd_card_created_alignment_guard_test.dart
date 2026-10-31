@@ -40,9 +40,9 @@ void main() {
       reason: '制卡结果必须经 _showMineOsd 出（内容 / 触发不得改）',
     );
     expect(
-      compactCode(src).contains(
-        compactCode('_showOsd(message, prominent: true,'),
-      ),
+      compactCode(
+        src,
+      ).contains(compactCode('_showOsd(message, prominent: true,')),
       isTrue,
       reason: '制卡成功提示必须仍走 prominent OSD',
     );

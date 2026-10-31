@@ -84,19 +84,18 @@ class _BinaryBackend implements FfmpegBackend {
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
-    final ProcessResult r = await Process.run(
-      ffmpeg,
-      <String>['-hide_banner', '-loglevel', 'error', ...args],
-    ).timeout(timeout);
+    final ProcessResult r = await Process.run(ffmpeg, <String>[
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      ...args,
+    ]).timeout(timeout);
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stderr}');
   }
 
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
-    final ProcessResult r = await Process.run(
-      ffprobe,
-      args,
-    ).timeout(timeout);
+    final ProcessResult r = await Process.run(ffprobe, args).timeout(timeout);
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stdout}');
   }
 

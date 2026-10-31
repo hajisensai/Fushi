@@ -32,8 +32,9 @@ void main() {
     TargetPlatform.linux,
     TargetPlatform.macOS,
   ]) {
-    testWidgets('desktop ($platform): immediate ReorderableDragStartListener',
-        (WidgetTester tester) async {
+    testWidgets('desktop ($platform): immediate ReorderableDragStartListener', (
+      WidgetTester tester,
+    ) async {
       await pumpUnder(tester, platform);
       // 桌面端用即时识别器（按下即拖），不用延迟（长按）识别器。
       // find.byType 精确匹配 runtimeType，Delayed 子类不会误命中父类。
@@ -48,11 +49,15 @@ void main() {
     TargetPlatform.fuchsia,
   ]) {
     testWidgets(
-        'touch ($platform): delayed ReorderableDelayedDragStartListener',
-        (WidgetTester tester) async {
-      await pumpUnder(tester, platform);
-      // 移动/触摸端保留长按起拖。
-      expect(find.byType(ReorderableDelayedDragStartListener), findsOneWidget);
-    });
+      'touch ($platform): delayed ReorderableDelayedDragStartListener',
+      (WidgetTester tester) async {
+        await pumpUnder(tester, platform);
+        // 移动/触摸端保留长按起拖。
+        expect(
+          find.byType(ReorderableDelayedDragStartListener),
+          findsOneWidget,
+        );
+      },
+    );
   }
 }

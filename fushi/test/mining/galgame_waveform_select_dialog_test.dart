@@ -35,26 +35,31 @@ void main() {
 
   Future<void> openDialog(WidgetTester tester) async {
     dialogResult = null;
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(useMaterial3: true),
-      home: Scaffold(
-        body: Builder(
-          builder: (BuildContext context) => TextButton(
-            onPressed: () {
-              dialogResult =
-                  showGalWaveformSelectDialog(context, slice: buildSlice());
-            },
-            child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () {
+                dialogResult = showGalWaveformSelectDialog(
+                  context,
+                  slice: buildSlice(),
+                );
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('走共享 MD3 骨架：frame + i18n 标题 + FilledButton 肯定动作',
-      (WidgetTester tester) async {
+  testWidgets('走共享 MD3 骨架：frame + i18n 标题 + FilledButton 肯定动作', (
+    WidgetTester tester,
+  ) async {
     await openDialog(tester);
     expect(find.byType(FushiDialogFrame), findsOneWidget);
     expect(find.byType(FushiModalSheetFrame), findsOneWidget);

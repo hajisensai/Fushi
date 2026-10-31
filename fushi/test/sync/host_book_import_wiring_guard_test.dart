@@ -21,25 +21,35 @@ void main() {
     return f.readAsStringSync();
   }
 
-  group('BUG-714 host library service wires book import in production factory',
-      () {
-    test(
-        'AppModel.libraryServiceFactory passes importBookFromFile bound to '
-        'EpubImporter.importFromPath', () {
-      final String src = read('lib/src/models/app_model.dart');
+  group(
+    'BUG-714 host library service wires book import in production factory',
+    () {
+      test('AppModel.libraryServiceFactory passes importBookFromFile bound to '
+          'EpubImporter.importFromPath', () {
+        final String src = read('lib/src/models/app_model.dart');
 
-      // 生产工厂里确实构造了 host service。
-      expect(src, contains('LocalLibraryHostService('),
-          reason: 'app_model 必须构造 LocalLibraryHostService 作为互联 host 服务');
+        // 生产工厂里确实构造了 host service。
+        expect(
+          src,
+          contains('LocalLibraryHostService('),
+          reason: 'app_model 必须构造 LocalLibraryHostService 作为互联 host 服务',
+        );
 
-      // 关键接线：importBookFromFile 必须被显式传入（缺则 importBook 抛
-      // UnsupportedError → PUT 书籍 500）。
-      expect(src, contains('importBookFromFile:'),
-          reason: '生产工厂必须接线 importBookFromFile，否则互联书籍推送全部 HTTP 500');
+        // 关键接线：importBookFromFile 必须被显式传入（缺则 importBook 抛
+        // UnsupportedError → PUT 书籍 500）。
+        expect(
+          src,
+          contains('importBookFromFile:'),
+          reason: '生产工厂必须接线 importBookFromFile，否则互联书籍推送全部 HTTP 500',
+        );
 
-      // 接线的必须是真实导入原语 EpubImporter.importFromPath（不是空实现/桩）。
-      expect(src, contains('EpubImporter.importFromPath('),
-          reason: 'importBookFromFile 必须接到真实导入原语 EpubImporter.importFromPath');
-    });
-  });
+        // 接线的必须是真实导入原语 EpubImporter.importFromPath（不是空实现/桩）。
+        expect(
+          src,
+          contains('EpubImporter.importFromPath('),
+          reason: 'importBookFromFile 必须接到真实导入原语 EpubImporter.importFromPath',
+        );
+      });
+    },
+  );
 }

@@ -13,8 +13,9 @@ import '../../integration_test/helpers/focus_driver.dart';
 /// 全部变成恒真（iOS smoke 失败排查中实锤：更新弹窗把焦点抢到 ModalScope 后，
 /// 断言才第一次真的开始检验，随即暴露 Tab 从未真正工作）。
 void main() {
-  testWidgets('skipTraversal key-sink 持焦时不得误报拥有 target，Tab 仍能真实到达',
-      (WidgetTester tester) async {
+  testWidgets('skipTraversal key-sink 持焦时不得误报拥有 target，Tab 仍能真实到达', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -42,15 +43,24 @@ void main() {
     // 前置：primary focus 确实落在 skipTraversal sink 上。
     final FocusNode? initial = FocusManager.instance.primaryFocus;
     expect(initial, isNotNull);
-    expect(initial!.skipTraversal, isTrue,
-        reason: 'autofocus 的整页 sink 应持有初始焦点（复现 HomePage 场景）');
+    expect(
+      initial!.skipTraversal,
+      isTrue,
+      reason: 'autofocus 的整页 sink 应持有初始焦点（复现 HomePage 场景）',
+    );
 
     // maxSteps: 0 = 不按 Tab 只判定现状：sink 持焦不得算「已拥有」按钮。
-    expect(await driver.focusWidget(target, maxSteps: 0), isFalse,
-        reason: 'skipTraversal sink 持焦时 focusWidget 不得误报命中');
+    expect(
+      await driver.focusWidget(target, maxSteps: 0),
+      isFalse,
+      reason: 'skipTraversal sink 持焦时 focusWidget 不得误报命中',
+    );
 
     // 真实 Tab 遍历必须能到达按钮（排除 sink 后判定仍对真控件成立）。
-    expect(await driver.focusWidget(target, maxSteps: 5), isTrue,
-        reason: 'Tab 遍历应真实到达按钮并被判定命中');
+    expect(
+      await driver.focusWidget(target, maxSteps: 5),
+      isTrue,
+      reason: 'Tab 遍历应真实到达按钮并被判定命中',
+    );
   });
 }

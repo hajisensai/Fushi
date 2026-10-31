@@ -23,12 +23,11 @@ import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 /// 与 [CollectionMemberProgress] 的痕迹口径**同源**：卡菜单「清除观看进度」按它决定
 /// 要不要画那个按钮，合集续播按它决定锚点——两处判据一旦分叉，就会出现「菜单说没
 /// 进度可清、续播却仍钉在这一集」的自相矛盾。纯函数，build 里安全。
-bool videoBookHasWatchTrace(VideoBookRow book) =>
-    CollectionMemberProgress(
-      positionMs: book.lastPositionMs,
-      completed: book.completedAt != null,
-      lastPlayedAt: book.lastPlayedAt,
-    ).hasTrace;
+bool videoBookHasWatchTrace(VideoBookRow book) => CollectionMemberProgress(
+  positionMs: book.lastPositionMs,
+  completed: book.completedAt != null,
+  lastPlayedAt: book.lastPlayedAt,
+).hasTrace;
 
 /// 成员播放痕迹（合集内已排序，index 0 在前）。
 class CollectionMemberProgress {

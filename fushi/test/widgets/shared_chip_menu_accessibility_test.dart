@@ -259,8 +259,10 @@ void main() {
         )
         .first;
     expect(tester.widget<AnimatedSwitcher>(swap).duration, Duration.zero);
-    expect(tester.widget<FilterChip>(find.byType(FilterChip)).showCheckmark,
-        isFalse);
+    expect(
+      tester.widget<FilterChip>(find.byType(FilterChip)).showCheckmark,
+      isFalse,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -286,9 +288,7 @@ void main() {
       );
       notifier.loadFromPrefsSnapshot(<String, String>{
         'app_theme_key': PrefCodec.encode('custom-theme:${entry.id}'),
-        'custom_themes': PrefCodec.encode(<String>[
-          jsonEncode(entry.toJson()),
-        ]),
+        'custom_themes': PrefCodec.encode(<String>[jsonEncode(entry.toJson())]),
         'selected_custom_theme_id': PrefCodec.encode(entry.id),
         'brightness_mode': PrefCodec.encode('dark'),
       });
@@ -314,8 +314,11 @@ void main() {
         Color.alphaBlend(foreground, background),
         background,
       );
-      expect(contrast, greaterThanOrEqualTo(4.5),
-          reason: 'foreground=$foreground background=$background');
+      expect(
+        contrast,
+        greaterThanOrEqualTo(4.5),
+        reason: 'foreground=$foreground background=$background',
+      );
     });
 
     testWidgets('menu entries meet Android semantic touch targets', (

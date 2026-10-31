@@ -118,8 +118,10 @@ void main() {
 
   group('表自身不变式', () {
     test('key 全小写、不含点；value 形如 type/subtype', () {
-      final RegExp valueRe = RegExp(r'^[a-z0-9.+-]+/[a-z0-9.+-]+'
-          r'(; charset=utf-8)?$');
+      final RegExp valueRe = RegExp(
+        r'^[a-z0-9.+-]+/[a-z0-9.+-]+'
+        r'(; charset=utf-8)?$',
+      );
       kMimeTypeByExtension.forEach((String ext, String mime) {
         expect(ext, ext.toLowerCase(), reason: 'key 必须小写：$ext');
         expect(ext.contains('.'), isFalse, reason: 'key 不含点：$ext');
@@ -137,7 +139,8 @@ void main() {
       expect(
         kAnkiMimeTypeByExtension,
         kMimeTypeByExtension,
-        reason: 'fushi_anki 是无 fushi_core 依赖的独立模块，mimeTypeForPath '
+        reason:
+            'fushi_anki 是无 fushi_core 依赖的独立模块，mimeTypeForPath '
             '持共享表的镜像副本；改动任一侧必须同步另一侧'
             '（真相源 packages/fushi_core/lib/src/utils/mime_types.dart，'
             '镜像 packages/fushi_anki/lib/src/anki_models.dart）。',
@@ -146,8 +149,11 @@ void main() {
 
     test('镜像 lookup 行为与共享表一致（抽样）', () {
       for (final String ext in kMimeTypeByExtension.keys) {
-        expect(mimeTypeForPath('f.$ext'), mimeTypeForFilePath('f.$ext'),
-            reason: '扩展名 .$ext 两侧推断不一致');
+        expect(
+          mimeTypeForPath('f.$ext'),
+          mimeTypeForFilePath('f.$ext'),
+          reason: '扩展名 .$ext 两侧推断不一致',
+        );
       }
     });
   });
@@ -164,8 +170,9 @@ void main() {
       const Set<String> allowlist = <String>{
         'fushi/lib/src/media/manga/reader/manga_fushi_page.dart',
       };
-      final RegExp caseRe =
-          RegExp(r"case\s+'\.?(?:png|jpe?g|webp|gif|svg)'\s*:");
+      final RegExp caseRe = RegExp(
+        r"case\s+'\.?(?:png|jpe?g|webp|gif|svg)'\s*:",
+      );
       final List<String> offenders = <String>[];
       int scanned = 0;
       for (final String libDir in <String>[
@@ -180,20 +187,26 @@ void main() {
         if (!dir.existsSync()) continue;
         for (final FileSystemEntity e in dir.listSync(recursive: true)) {
           if (e is! File || !e.path.endsWith('.dart')) continue;
-          final String rel =
-              e.path.substring(root.path.length + 1).replaceAll('\\', '/');
+          final String rel = e.path
+              .substring(root.path.length + 1)
+              .replaceAll('\\', '/');
           if (allowlist.contains(rel)) continue;
           scanned++;
           if (caseRe.hasMatch(e.readAsStringSync())) offenders.add(rel);
         }
       }
-      expectScanScale(scanned,
-          what: '6 个 lib 根下的 .dart', atLeast: 850, measured: 1033);
+      expectScanScale(
+        scanned,
+        what: '6 个 lib 根下的 .dart',
+        atLeast: 850,
+        measured: 1033,
+      );
 
       expect(
         offenders,
         isEmpty,
-        reason: '发现新的扩展名→MIME switch 副本。请改查 fushi_core 的单一映射表 '
+        reason:
+            '发现新的扩展名→MIME switch 副本。请改查 fushi_core 的单一映射表 '
             'mimeTypeForFilePath（packages/fushi_core/lib/src/utils/'
             'mime_types.dart）；fushi_anki 内请查 kAnkiMimeTypeByExtension 镜像。',
       );

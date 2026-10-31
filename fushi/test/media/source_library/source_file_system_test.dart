@@ -50,8 +50,12 @@ void main() {
       };
 
       // 非递归：直接子项 = 3 文件 + 1 目录，不含 sub 内的 ep1.mp4。
-      expect(byName.keys.toSet(),
-          <String>{'book.epub', 'book.mp4', 'book.srt', 'season1'});
+      expect(byName.keys.toSet(), <String>{
+        'book.epub',
+        'book.mp4',
+        'book.srt',
+        'season1',
+      });
       expect(byName['book.epub']!.isDirectory, isFalse);
       expect(byName['book.mp4']!.isDirectory, isFalse);
       expect(byName['book.srt']!.isDirectory, isFalse);
@@ -72,10 +76,13 @@ void main() {
       await sub.create();
       await File(p.join(sub.path, 'ep1.mp4')).writeAsString('y');
 
-      final List<SourceFileEntry> entries =
-          await fs.listFiles(tmp.path, recursive: true);
-      final Set<String> names =
-          entries.map((SourceFileEntry e) => e.name).toSet();
+      final List<SourceFileEntry> entries = await fs.listFiles(
+        tmp.path,
+        recursive: true,
+      );
+      final Set<String> names = entries
+          .map((SourceFileEntry e) => e.name)
+          .toSet();
 
       // 递归模式只回文件（含后代），不单列目录条目。
       expect(names, <String>{'top.epub', 'ep1.mp4'});
@@ -88,8 +95,13 @@ void main() {
       final String missing = p.join(tmp.path, 'nope');
       await expectLater(
         fs.listFiles(missing),
-        throwsA(isA<FileSystemException>()
-            .having((FileSystemException e) => e.path, 'path', missing)),
+        throwsA(
+          isA<FileSystemException>().having(
+            (FileSystemException e) => e.path,
+            'path',
+            missing,
+          ),
+        ),
       );
     });
 
@@ -101,13 +113,18 @@ void main() {
       await File(p.join(tmp.path, 'other.txt')).writeAsString('x');
 
       final List<String> names = await fs.listSiblingNames(main);
-      expect(names.toSet(),
-          <String>{'book.epub', 'book.srt', 'book 01.mp3', 'other.txt'});
+      expect(names.toSet(), <String>{
+        'book.epub',
+        'book.srt',
+        'book 01.mp3',
+        'other.txt',
+      });
     });
 
     test('listSiblingNames 目录不可读返回空列表（不抛）', () async {
-      final List<String> names =
-          await fs.listSiblingNames(p.join(tmp.path, 'gone', 'book.epub'));
+      final List<String> names = await fs.listSiblingNames(
+        p.join(tmp.path, 'gone', 'book.epub'),
+      );
       expect(names, isEmpty);
     });
 
@@ -169,61 +186,74 @@ void main() {
     });
 
     test(
-        'NetworkSourceConfig webdav：isWebDav true、isSftp false（URL 承载 host/port）',
-        () {
-      const NetworkSourceConfig dav = NetworkSourceConfig(
-        transport: 'webdav',
-        host: '',
-        port: 443,
-        username: 'reader',
-        password: 'pw',
-      );
-      expect(dav.isWebDav, isTrue);
-      expect(dav.isSftp, isFalse);
-      expect(dav.username, 'reader');
-      expect(dav.password, 'pw');
+      'NetworkSourceConfig webdav：isWebDav true、isSftp false（URL 承载 host/port）',
+      () {
+        const NetworkSourceConfig dav = NetworkSourceConfig(
+          transport: 'webdav',
+          host: '',
+          port: 443,
+          username: 'reader',
+          password: 'pw',
+        );
+        expect(dav.isWebDav, isTrue);
+        expect(dav.isSftp, isFalse);
+        expect(dav.username, 'reader');
+        expect(dav.password, 'pw');
 
-      final NetworkSourceFileSystem fs = NetworkSourceFileSystem(dav);
-      expect(fs.isLocal, isFalse);
-      expect(fs.config.isWebDav, isTrue);
-    });
+        final NetworkSourceFileSystem fs = NetworkSourceFileSystem(dav);
+        expect(fs.isLocal, isFalse);
+        expect(fs.config.isWebDav, isTrue);
+      },
+    );
   });
 
   group('命名守卫', () {
-    test('LocalSourceFileSystem / NetworkSourceFileSystem 都是 SourceFileSystem',
-        () {
-      const SourceFileSystem local = LocalSourceFileSystem();
-      final SourceFileSystem network = NetworkSourceFileSystem(
-        const NetworkSourceConfig(
-          transport: 'ftp',
-          host: 'h',
-          port: 21,
-          username: 'u',
-          password: 'p',
-        ),
-      );
-      expect(local, isA<SourceFileSystem>());
-      expect(network, isA<SourceFileSystem>());
-    });
+    test(
+      'LocalSourceFileSystem / NetworkSourceFileSystem 都是 SourceFileSystem',
+      () {
+        const SourceFileSystem local = LocalSourceFileSystem();
+        final SourceFileSystem network = NetworkSourceFileSystem(
+          const NetworkSourceConfig(
+            transport: 'ftp',
+            host: 'h',
+            port: 21,
+            username: 'u',
+            password: 'p',
+          ),
+        );
+        expect(local, isA<SourceFileSystem>());
+        expect(network, isA<SourceFileSystem>());
+      },
+    );
 
     test('源文件用 SourceFileSystem 命名，不与既有 MediaSource 撞名', () {
-      final File src = File(p.join(
-        Directory.current.path,
-        'lib',
-        'src',
-        'media',
-        'source_library',
-        'source_file_system.dart',
-      ));
+      final File src = File(
+        p.join(
+          Directory.current.path,
+          'lib',
+          'src',
+          'media',
+          'source_library',
+          'source_file_system.dart',
+        ),
+      );
       final String text = src.readAsStringSync();
-      expect(text.contains('abstract class SourceFileSystem'), isTrue,
-          reason: '接口必须命名为 SourceFileSystem');
+      expect(
+        text.contains('abstract class SourceFileSystem'),
+        isTrue,
+        reason: '接口必须命名为 SourceFileSystem',
+      );
       // 守 MediaSource 撞名：匹配「行首的类声明」（多行模式），用单词边界排除
       // MediaSourceRow / 注释里的引用（注释行以 // 开头，不会命中行首 class）。
-      final RegExp mediaSourceDecl =
-          RegExp(r'^(abstract )?class MediaSource', multiLine: true);
-      expect(mediaSourceDecl.hasMatch(text), isFalse,
-          reason: '不得在本文件声明 MediaSource 类（已存在于 media_source.dart）');
+      final RegExp mediaSourceDecl = RegExp(
+        r'^(abstract )?class MediaSource',
+        multiLine: true,
+      );
+      expect(
+        mediaSourceDecl.hasMatch(text),
+        isFalse,
+        reason: '不得在本文件声明 MediaSource 类（已存在于 media_source.dart）',
+      );
     });
 
     // 命名统一 §1-F / Phase 3.2 防回潮守卫：
@@ -234,13 +264,24 @@ void main() {
     // （MediaSourceScanner / MediaSourceCredentialStore），已整体改名。此守卫钉死
     // 新格局，防止旧目录复活或来源库域再次出现 MediaSource* 前缀类型。
     test('防回潮：旧歧义目录不复活，source_library 域不得声明 MediaSource* 类型', () {
-      final String mediaDir =
-          p.join(Directory.current.path, 'lib', 'src', 'media');
-      expect(Directory(p.join(mediaDir, 'source')).existsSync(), isFalse,
-          reason: '来源库已改名 media/source_library/，禁止再建与 media/sources/ '
-              '只差一个 s 的 media/source/ 目录');
-      expect(Directory(p.join(mediaDir, 'source_types')).existsSync(), isFalse,
-          reason: 'source_types/ 单文件目录已并入 media/sources/，禁止复活');
+      final String mediaDir = p.join(
+        Directory.current.path,
+        'lib',
+        'src',
+        'media',
+      );
+      expect(
+        Directory(p.join(mediaDir, 'source')).existsSync(),
+        isFalse,
+        reason:
+            '来源库已改名 media/source_library/，禁止再建与 media/sources/ '
+            '只差一个 s 的 media/source/ 目录',
+      );
+      expect(
+        Directory(p.join(mediaDir, 'source_types')).existsSync(),
+        isFalse,
+        reason: 'source_types/ 单文件目录已并入 media/sources/，禁止复活',
+      );
 
       // source_library/ 域内禁止声明任何 MediaSource* 前缀类型（class/mixin/enum/
       // typedef/extension type）。MediaSourceRow 只能来自 fushi_core 的 drift
@@ -250,18 +291,27 @@ void main() {
         r'(?:class|mixin|enum|typedef|extension type) +MediaSource',
         multiLine: true,
       );
-      final Directory sourceLibrary =
-          Directory(p.join(mediaDir, 'source_library'));
-      expect(sourceLibrary.existsSync(), isTrue,
-          reason: '来源库域目录 media/source_library/ 必须存在');
-      for (final FileSystemEntity entity
-          in sourceLibrary.listSync(recursive: true)) {
+      final Directory sourceLibrary = Directory(
+        p.join(mediaDir, 'source_library'),
+      );
+      expect(
+        sourceLibrary.existsSync(),
+        isTrue,
+        reason: '来源库域目录 media/source_library/ 必须存在',
+      );
+      for (final FileSystemEntity entity in sourceLibrary.listSync(
+        recursive: true,
+      )) {
         if (entity is! File || !entity.path.endsWith('.dart')) {
           continue;
         }
-        expect(forbiddenDecl.hasMatch(entity.readAsStringSync()), isFalse,
-            reason: '来源库域不得声明 MediaSource* 前缀类型（与 UI 媒体源撞名）：'
-                '${entity.path}');
+        expect(
+          forbiddenDecl.hasMatch(entity.readAsStringSync()),
+          isFalse,
+          reason:
+              '来源库域不得声明 MediaSource* 前缀类型（与 UI 媒体源撞名）：'
+              '${entity.path}',
+        );
       }
     });
   });

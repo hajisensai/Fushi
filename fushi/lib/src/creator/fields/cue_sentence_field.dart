@@ -5,13 +5,12 @@ import 'package:fushi/models.dart';
 
 class CueSentenceField extends Field {
   CueSentenceField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Cue Sentence',
-          description:
-              'Full subtitle cue text without punctuation segmentation.',
-          icon: Icons.subtitles_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Cue Sentence',
+        description: 'Full subtitle cue text without punctuation segmentation.',
+        icon: Icons.subtitles_outlined,
+      );
 
   static CueSentenceField get instance => _instance;
 

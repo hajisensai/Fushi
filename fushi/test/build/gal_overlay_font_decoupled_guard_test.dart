@@ -16,8 +16,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final String src =
-      File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
+  final String src = File(
+    'windows/runner/floating_lyric_window.cpp',
+  ).readAsStringSync();
 
   test('① 按窗高缩放 hook 字号的三个常量必须消失（BUG-1095）', () {
     for (final String name in <String>[
@@ -28,7 +29,8 @@ void main() {
       expect(
         src.contains(name),
         isFalse,
-        reason: '$name 是「拖高浮窗 = 放大台词」的耦合来源；'
+        reason:
+            '$name 是「拖高浮窗 = 放大台词」的耦合来源；'
             '它一旦回来，用户「放不下想拖高」就又拖不出更多行了',
       );
     }
@@ -38,13 +40,15 @@ void main() {
     expect(
       src.contains('hook_text_mode_ ? 1.0f'),
       isTrue,
-      reason: 'hook 模式必须直接用 style_.font_size（真值来自 gal_hook_text_font_size '
+      reason:
+          'hook 模式必须直接用 style_.font_size（真值来自 gal_hook_text_font_size '
           '偏好），不得再从 strip_height_dip_ 推导字号',
     );
     // 缩放仍旧只作用在 style_.font_size 上（没有把整支字号逻辑删掉）。
     expect(
       src.contains(
-          'const float scaled_font = static_cast<float>(style_.font_size) *'),
+        'const float scaled_font = static_cast<float>(style_.font_size) *',
+      ),
       isTrue,
       reason: '字号仍必须以 style_.font_size 为基准（channel 送来的用户偏好值）',
     );
@@ -62,7 +66,8 @@ void main() {
     expect(
       src.contains('DWRITE_PARAGRAPH_ALIGNMENT_NEAR'),
       isTrue,
-      reason: '顶端对齐是滚动的前提（排版从 text_rect_.top 起画，滚动 = 平移绘制原点）；'
+      reason:
+          '顶端对齐是滚动的前提（排版从 text_rect_.top 起画，滚动 = 平移绘制原点）；'
           '改回居中会让滚动偏移与实际排版对不上，且未滚动时头尾一起被裁',
     );
     expect(

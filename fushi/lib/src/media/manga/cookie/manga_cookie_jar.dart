@@ -22,14 +22,14 @@ class MangaCookie {
   });
 
   factory MangaCookie.fromJson(Map<String, Object?> json) => MangaCookie(
-        name: json['name']?.toString() ?? '',
-        value: json['value']?.toString() ?? '',
-        domain: json['domain']?.toString() ?? '',
-        path: json['path']?.toString() ?? '/',
-        secure: json['secure'] == true,
-        hostOnly: json['hostOnly'] == true,
-        expiresAt: (json['expiresAt'] as num?)?.toInt(),
-      );
+    name: json['name']?.toString() ?? '',
+    value: json['value']?.toString() ?? '',
+    domain: json['domain']?.toString() ?? '',
+    path: json['path']?.toString() ?? '/',
+    secure: json['secure'] == true,
+    hostOnly: json['hostOnly'] == true,
+    expiresAt: (json['expiresAt'] as num?)?.toInt(),
+  );
 
   final String name;
   final String value;
@@ -67,14 +67,14 @@ class MangaCookie {
       : hostMatchesDomain(host, canonicalDomain);
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'name': name,
-        'value': value,
-        'domain': canonicalDomain,
-        'path': path,
-        'secure': secure,
-        if (hostOnly) 'hostOnly': true,
-        if (expiresAt != null) 'expiresAt': expiresAt,
-      };
+    'name': name,
+    'value': value,
+    'domain': canonicalDomain,
+    'path': path,
+    'secure': secure,
+    if (hostOnly) 'hostOnly': true,
+    if (expiresAt != null) 'expiresAt': expiresAt,
+  };
 
   static String canonicalizeDomain(String domain) {
     String value = domain.trim().toLowerCase();
@@ -100,14 +100,15 @@ class MangaCookie {
 /// 只存扩展源站的 cookie，设备本地、不进同步/备份。
 class MangaCookieJar {
   MangaCookieJar(File file, {int Function()? clock})
-      : _resolveFile = (() async => file),
-        _clock = clock ?? _defaultClock;
+    : _resolveFile = (() async => file),
+      _clock = clock ?? _defaultClock;
 
   /// 路径延迟解析（共享实例：支持目录要等平台通道就绪）。
-  MangaCookieJar.lazy(Future<File> Function() resolveFile,
-      {int Function()? clock})
-      : _resolveFile = resolveFile,
-        _clock = clock ?? _defaultClock;
+  MangaCookieJar.lazy(
+    Future<File> Function() resolveFile, {
+    int Function()? clock,
+  }) : _resolveFile = resolveFile,
+       _clock = clock ?? _defaultClock;
 
   static int _defaultClock() => DateTime.now().millisecondsSinceEpoch;
 
@@ -244,8 +245,9 @@ class MangaCookieJar {
               MangaCookie.hostMatchesDomain(host, cookie.canonicalDomain),
         )
         .toList(growable: false);
-    final Set<String> replacedDomains =
-        incoming.map((MangaCookie cookie) => cookie.canonicalDomain).toSet();
+    final Set<String> replacedDomains = incoming
+        .map((MangaCookie cookie) => cookie.canonicalDomain)
+        .toSet();
     _cookies = <MangaCookie>[
       for (final MangaCookie cookie in _cookies)
         if (!cookie.isExpiredAt(now) &&
@@ -319,7 +321,8 @@ class MangaCookieJar {
     for (final MangaCookie cookie in fresh) {
       merged[keyOf(cookie)] = cookie;
     }
-    final bool changed = merged.length != before.length ||
+    final bool changed =
+        merged.length != before.length ||
         merged.entries.any(
           (MapEntry<String, MangaCookie> entry) =>
               before[entry.key]?.value != entry.value.value,
@@ -354,7 +357,8 @@ class MangaCookieJar {
     final File staged = File('${target.path}.tmp');
     await staged.writeAsString(
       jsonEncode(
-          _cookies.map((MangaCookie cookie) => cookie.toJson()).toList()),
+        _cookies.map((MangaCookie cookie) => cookie.toJson()).toList(),
+      ),
       flush: true,
     );
     await staged.rename(target.path);

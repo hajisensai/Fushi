@@ -69,9 +69,36 @@ void main() {
         add(
           'term_bank_1.json',
           jsonEncode(<Object>[
-            <Object>['食べる', 'たべる', '', 'v1', 0, <String>['eat'], 0, ''],
-            <Object>['猫', 'ねこ', '', '', 0, <String>['cat'], 0, ''],
-            <Object>['go', '', '', 'v', 0, <String>['move'], 0, ''],
+            <Object>[
+              '食べる',
+              'たべる',
+              '',
+              'v1',
+              0,
+              <String>['eat'],
+              0,
+              '',
+            ],
+            <Object>[
+              '猫',
+              'ねこ',
+              '',
+              '',
+              0,
+              <String>['cat'],
+              0,
+              '',
+            ],
+            <Object>[
+              'go',
+              '',
+              '',
+              'v',
+              0,
+              <String>['move'],
+              0,
+              '',
+            ],
           ]),
         );
         final File zip = File('${root.path}/d.zip')

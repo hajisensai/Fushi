@@ -33,8 +33,10 @@ Directory _repoRoot() {
     if (parent.path == dir.path) break;
     dir = parent;
   }
-  fail('找不到含 tool/ffmpeg-unified/recipe.env 的仓库根'
-      '（从 ${Directory.current.path} 向上）');
+  fail(
+    '找不到含 tool/ffmpeg-unified/recipe.env 的仓库根'
+    '（从 ${Directory.current.path} 向上）',
+  );
 }
 
 /// 把 workflow 切成 `job 名 -> 该 job 的正文行`。
@@ -62,13 +64,15 @@ Map<String, List<String>> _splitJobs(List<String> lines) {
 
 void main() {
   final Directory root = _repoRoot();
-  final File workflow =
-      File('${root.path}/.github/workflows/release-desktop.yml');
+  final File workflow = File(
+    '${root.path}/.github/workflows/release-desktop.yml',
+  );
 
   group('桌面发布随包统一 FFmpeg 守卫（BUG-1420 / BUG-1421）', () {
     test('每个构建桌面 release 的 job 都验证随包的 ffmpeg 与 ffprobe', () {
-      final Map<String, List<String>> jobs =
-          _splitJobs(workflow.readAsLinesSync());
+      final Map<String, List<String>> jobs = _splitJobs(
+        workflow.readAsLinesSync(),
+      );
       final List<String> problems = <String>[];
       int desktopJobsSeen = 0;
 
@@ -85,36 +89,53 @@ void main() {
             'ffprobe',
           ]) {
             if (!text.contains(needle)) {
-              problems.add('job `$jobName` 构建了 $platform 发布物，却没有 `$needle`：'
-                  '随包的 ffmpeg/ffprobe 缺失或残缺会静默降级整条桌面制卡链'
-                  '（BUG-1420 / BUG-1421）。');
+              problems.add(
+                'job `$jobName` 构建了 $platform 发布物，却没有 `$needle`：'
+                '随包的 ffmpeg/ffprobe 缺失或残缺会静默降级整条桌面制卡链'
+                '（BUG-1420 / BUG-1421）。',
+              );
             }
           }
           if (platform == 'macos' &&
               !text.contains('ffmpeg-unified-macos.tar.gz')) {
-            problems.add('job `$jobName` 没有从统一布局包安装 ffmpeg/ffprobe 到 '
-                'Contents/MacOS（BUG-1421）。');
+            problems.add(
+              'job `$jobName` 没有从统一布局包安装 ffmpeg/ffprobe 到 '
+              'Contents/MacOS（BUG-1421）。',
+            );
           }
         }
       });
 
-      expect(desktopJobsSeen, greaterThan(0),
-          reason: '在 release-desktop.yml 里没找到任何 `flutter build <桌面平台> --release`；'
-              '若构建命令改了写法，请同步更新本守卫的判据，否则它会退化成空壳。');
+      expect(
+        desktopJobsSeen,
+        greaterThan(0),
+        reason:
+            '在 release-desktop.yml 里没找到任何 `flutter build <桌面平台> --release`；'
+            '若构建命令改了写法，请同步更新本守卫的判据，否则它会退化成空壳。',
+      );
       expect(problems, isEmpty, reason: problems.join('\n'));
     });
 
     test('macOS 布局包与 Makefile 钉的哈希一致，且确实带 ffmpeg / ffprobe', () {
-      final File layout = File('${root.path}/third_party/media_kit_libs_macos_video/'
-          'native/ffmpeg-unified-macos.tar.gz');
+      final File layout = File(
+        '${root.path}/third_party/media_kit_libs_macos_video/'
+        'native/ffmpeg-unified-macos.tar.gz',
+      );
       expect(layout.existsSync(), isTrue, reason: '缺 ${layout.path}');
-      expect(layout.lengthSync(), greaterThan(1 << 20),
-          reason: '布局包太小，疑似 LFS 指针或占位文件');
-      final String makefile = File('${root.path}/third_party/'
-              'media_kit_libs_macos_video/macos/Makefile')
-          .readAsStringSync();
-      expect(makefile, contains('UNIFIED_FFMPEG_SHA256SUM='),
-          reason: 'Makefile 必须钉住布局包的 SHA-256');
+      expect(
+        layout.lengthSync(),
+        greaterThan(1 << 20),
+        reason: '布局包太小，疑似 LFS 指针或占位文件',
+      );
+      final String makefile = File(
+        '${root.path}/third_party/'
+        'media_kit_libs_macos_video/macos/Makefile',
+      ).readAsStringSync();
+      expect(
+        makefile,
+        contains('UNIFIED_FFMPEG_SHA256SUM='),
+        reason: 'Makefile 必须钉住布局包的 SHA-256',
+      );
     });
   });
 }

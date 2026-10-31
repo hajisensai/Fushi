@@ -6,10 +6,8 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/utils.dart';
 
 /// 合集成员行在库页上是否画得出来（[mediaType] 是成员表的 `media_type` 原值）。
-typedef CollectionMemberVisibility = bool Function(
-  String mediaType,
-  String entryKey,
-);
+typedef CollectionMemberVisibility =
+    bool Function(String mediaType, String entryKey);
 
 /// 各合集的成员数：只数 [isMemberVisible] 认可的行（null = 全数），与合集详情页
 /// 显示的成员同一口径（BUG-3361）。
@@ -53,12 +51,14 @@ Future<bool> showAddToCollectionDialog({
 }) async {
   // BUG-2974：只列与本条目同一库页域的合集（书不见视频合集、漫画不见书合集），
   // 域判据收口在数据层 [FushiDatabase.getMediaCollectionsForEntryDomain]。
-  final List<MediaCollectionRow> collections =
-      await database.getMediaCollectionsForEntryDomain(mediaType, entryKey);
-  final List<MediaCollectionItemRow> allItems =
-      await database.getAllCollectionItems();
-  final Map<int, int> memberCounts =
-      countVisibleCollectionMembers(allItems, isMemberVisible);
+  final List<MediaCollectionRow> collections = await database
+      .getMediaCollectionsForEntryDomain(mediaType, entryKey);
+  final List<MediaCollectionItemRow> allItems = await database
+      .getAllCollectionItems();
+  final Map<int, int> memberCounts = countVisibleCollectionMembers(
+    allItems,
+    isMemberVisible,
+  );
   final Set<int> alreadyIn = <int>{
     for (final MediaCollectionItemRow item in allItems)
       if (item.mediaType == mediaType.dbValue && item.entryKey == entryKey)
@@ -92,8 +92,8 @@ Future<bool> showAddToCollectionDialog({
     // BUG-2974：createMediaCollection 按 (名称, 类型) 自然键复用已有行。同名合集若
     // 属于别的库页（如视频合集），复用就等于把书塞进视频合集——两域又混在一起。
     // 本域里已有的同名合集照常复用；别的域占着这个名字就拒绝，让用户换名。
-    final MediaCollectionRow? sameName =
-        await database.getMediaCollectionByNaturalKey(name, 'collection');
+    final MediaCollectionRow? sameName = await database
+        .getMediaCollectionByNaturalKey(name, 'collection');
     if (sameName != null &&
         !collections.any((MediaCollectionRow c) => c.id == sameName.id)) {
       FushiToast.show(
@@ -127,15 +127,14 @@ Future<int?> pickTargetCollectionForMembers({
   String defaultNewName = '',
   CollectionMemberVisibility? isMemberVisible,
 }) async {
-  final List<MediaCollectionRow> collections =
-      await database.getMediaCollectionsForEntryDomain(
-    domainKind,
-    domainEntryKey,
+  final List<MediaCollectionRow> collections = await database
+      .getMediaCollectionsForEntryDomain(domainKind, domainEntryKey);
+  final List<MediaCollectionItemRow> allItems = await database
+      .getAllCollectionItems();
+  final Map<int, int> memberCounts = countVisibleCollectionMembers(
+    allItems,
+    isMemberVisible,
   );
-  final List<MediaCollectionItemRow> allItems =
-      await database.getAllCollectionItems();
-  final Map<int, int> memberCounts =
-      countVisibleCollectionMembers(allItems, isMemberVisible);
   collections.sort(
     (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
   );
@@ -158,8 +157,8 @@ Future<int?> pickTargetCollectionForMembers({
     initialName: defaultNewName,
   );
   if (name == null || !context.mounted) return null;
-  final MediaCollectionRow? sameName =
-      await database.getMediaCollectionByNaturalKey(name, 'collection');
+  final MediaCollectionRow? sameName = await database
+      .getMediaCollectionByNaturalKey(name, 'collection');
   if (sameName != null &&
       !collections.any((MediaCollectionRow c) => c.id == sameName.id)) {
     FushiToast.show(

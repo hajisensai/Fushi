@@ -34,12 +34,13 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
     this.trustedOnly = false,
     bool userConfigured = false,
     NyaaQualityFilterProvider? qualityFilter,
-  })  : _userConfigured = userConfigured,
-        _categoryByKind =
-            Map<DiscoveryMediaKind, String>.unmodifiable(categoryByKind),
-        _client = client,
-        _qualityFilter =
-            qualityFilter ?? (trustedOnly ? _trustedOnlyFilter : _allFilter);
+  }) : _userConfigured = userConfigured,
+       _categoryByKind = Map<DiscoveryMediaKind, String>.unmodifiable(
+         categoryByKind,
+       ),
+       _client = client,
+       _qualityFilter =
+           qualityFilter ?? (trustedOnly ? _trustedOnlyFilter : _allFilter);
 
   @override
   final String id;
@@ -65,10 +66,8 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
   final NyaaQualityFilterProvider _qualityFilter;
 
   @override
-  DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: _categoryByKind.keys,
-        supportsPaging: true,
-      );
+  DiscoveryCapabilities get capabilities =>
+      DiscoveryCapabilities(kinds: _categoryByKind.keys, supportsPaging: true);
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
@@ -92,44 +91,42 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
       page: request.page,
     );
     final bool classify = request.kind == DiscoveryMediaKind.novel;
-    return ProviderBatchResult<DiscoveryResultPage>.success(
-      <DiscoveryResultPage>[
-        DiscoveryResultPage(
-          entries: <DiscoveryEntry>[
-            for (final NyaaTorrent torrent in torrents)
-              DiscoveryResourceItem(
-                sourceId: id,
-                // 详情页 URL 含站内种子 id，是最稳的源内身份。
-                id: torrent.pageUrl,
-                title: torrent.title,
-                kind: request.kind,
-                payloadKind: DiscoveryPayloadKind.torrent,
-                payload: DiscoveryTorrentPayload(magnetUri: torrent.magnet),
-                sizeBytes: torrent.sizeBytes,
-                dateText:
-                    torrent.pubDate?.toLocal().toString().split('.').first,
-                seeders: torrent.seeders,
-                leechers: torrent.leechers,
-                detailUrl: torrent.pageUrl,
-                category:
-                    torrent.categoryId.isEmpty ? null : torrent.categoryId,
-                trusted: torrent.trusted,
-                remake: torrent.remake,
-                contentHint: classify
-                    ? classifyNyaaLiterature(
-                        title: torrent.title,
-                        sizeBytes: torrent.sizeBytes,
-                        categoryId: torrent.categoryId,
-                      )
-                    : DiscoveryContentHint.none,
-              ),
-          ],
-          page: request.page,
-          // 过了末页 nyaa 返回空列表（client 把 404 / 越界页归一成空）；空页即到底。
-          hasMore: torrents.isNotEmpty,
-        ),
-      ],
-    );
+    return ProviderBatchResult<DiscoveryResultPage>.success(<
+      DiscoveryResultPage
+    >[
+      DiscoveryResultPage(
+        entries: <DiscoveryEntry>[
+          for (final NyaaTorrent torrent in torrents)
+            DiscoveryResourceItem(
+              sourceId: id,
+              // 详情页 URL 含站内种子 id，是最稳的源内身份。
+              id: torrent.pageUrl,
+              title: torrent.title,
+              kind: request.kind,
+              payloadKind: DiscoveryPayloadKind.torrent,
+              payload: DiscoveryTorrentPayload(magnetUri: torrent.magnet),
+              sizeBytes: torrent.sizeBytes,
+              dateText: torrent.pubDate?.toLocal().toString().split('.').first,
+              seeders: torrent.seeders,
+              leechers: torrent.leechers,
+              detailUrl: torrent.pageUrl,
+              category: torrent.categoryId.isEmpty ? null : torrent.categoryId,
+              trusted: torrent.trusted,
+              remake: torrent.remake,
+              contentHint: classify
+                  ? classifyNyaaLiterature(
+                      title: torrent.title,
+                      sizeBytes: torrent.sizeBytes,
+                      categoryId: torrent.categoryId,
+                    )
+                  : DiscoveryContentHint.none,
+            ),
+        ],
+        page: request.page,
+        // 过了末页 nyaa 返回空列表（client 把 404 / 越界页归一成空）；空页即到底。
+        hasMore: torrents.isNotEmpty,
+      ),
+    ]);
   }
 
   @override
@@ -143,24 +140,24 @@ List<NyaaDiscoverySource> nyaaDiscoverySourcesForBtSites(
   Iterable<BtSiteConfig> sites, {
   NyaaQualityFilterProvider? qualityFilter,
   NyaaClient Function(BtSiteConfig site)? clientFactory,
-}) =>
-    <NyaaDiscoverySource>[
-      for (final BtSiteConfig site in sites)
-        if (site.enabled &&
-            site.format == BtSiteFormat.nyaa &&
-            site.effectiveDiscoveryKinds.isNotEmpty)
-          NyaaDiscoverySource(
-            id: site.discoverySourceId,
-            displayName: site.displayName,
-            priority: 10,
-            userConfigured: true,
-            categoryByKind: <DiscoveryMediaKind, String>{
-              for (final BtSiteDomain domain in site.effectiveDomains)
-                if (domain.discoveryKind case final DiscoveryMediaKind kind)
-                  kind: site.nyaaCategories[domain]!,
-            },
-            client: clientFactory?.call(site) ??
-                NyaaClient(baseUrl: site.baseUrl.toString()),
-            qualityFilter: qualityFilter,
-          ),
-    ];
+}) => <NyaaDiscoverySource>[
+  for (final BtSiteConfig site in sites)
+    if (site.enabled &&
+        site.format == BtSiteFormat.nyaa &&
+        site.effectiveDiscoveryKinds.isNotEmpty)
+      NyaaDiscoverySource(
+        id: site.discoverySourceId,
+        displayName: site.displayName,
+        priority: 10,
+        userConfigured: true,
+        categoryByKind: <DiscoveryMediaKind, String>{
+          for (final BtSiteDomain domain in site.effectiveDomains)
+            if (domain.discoveryKind case final DiscoveryMediaKind kind)
+              kind: site.nyaaCategories[domain]!,
+        },
+        client:
+            clientFactory?.call(site) ??
+            NyaaClient(baseUrl: site.baseUrl.toString()),
+        qualityFilter: qualityFilter,
+      ),
+];

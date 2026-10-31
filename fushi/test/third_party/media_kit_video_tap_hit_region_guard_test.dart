@@ -26,41 +26,65 @@ void main() {
 
   late String src;
   setUpAll(() {
-    expect(mobile.existsSync(), isTrue,
-        reason: 'vendored media_kit material.dart 必须存在');
+    expect(
+      mobile.existsSync(),
+      isTrue,
+      reason: 'vendored media_kit material.dart 必须存在',
+    );
     src = mobile.readAsStringSync().replaceAll('\r\n', '\n');
   });
 
   test('承载 onTap 的手势层不再对 tap 命中区施 bottom 内缩（全画面命中）', () {
     final int onTapIdx = src.indexOf('onTap: _handleSurfaceTap');
-    expect(onTapIdx, greaterThanOrEqualTo(0),
-        reason: 'toggle 控制栏必须仍走全画面层的 onTap（_handleSurfaceTap）');
+    expect(
+      onTapIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'toggle 控制栏必须仍走全画面层的 onTap（_handleSurfaceTap）',
+    );
 
     // 锚定承载 onTap 的那个 Positioned.fill 的起点（onTap 之前最近的 Positioned.fill）。
     final int tapLayerStart = src.lastIndexOf('Positioned.fill(', onTapIdx);
-    expect(tapLayerStart, greaterThanOrEqualTo(0),
-        reason: 'onTap 必须挂在一个 Positioned.fill 手势层里');
+    expect(
+      tapLayerStart,
+      greaterThanOrEqualTo(0),
+      reason: 'onTap 必须挂在一个 Positioned.fill 手势层里',
+    );
 
     // 该 tap 层从起点到 onTap 之间**不得**再出现 bottom 内缩
     // （尤其不得含 subtitleVerticalShiftOffset）——命中区必须是全画面。
     final String tapLayerHead = src.substring(tapLayerStart, onTapIdx);
-    expect(tapLayerHead.contains('subtitleVerticalShiftOffset'), isFalse,
-        reason: 'TODO-1073：tap 命中层不得再对底部施 subtitleVerticalShiftOffset 内缩');
-    expect(RegExp(r'bottom:\s*16\.0').hasMatch(tapLayerHead), isFalse,
-        reason: 'TODO-1073：tap 命中层不得再施 16px 底部内缩（那是拖动层的边缘 buffer）');
+    expect(
+      tapLayerHead.contains('subtitleVerticalShiftOffset'),
+      isFalse,
+      reason: 'TODO-1073：tap 命中层不得再对底部施 subtitleVerticalShiftOffset 内缩',
+    );
+    expect(
+      RegExp(r'bottom:\s*16\.0').hasMatch(tapLayerHead),
+      isFalse,
+      reason: 'TODO-1073：tap 命中层不得再施 16px 底部内缩（那是拖动层的边缘 buffer）',
+    );
   });
 
   test('边缘拖动 buffer 迁到独立 inset 拖动层（保留 16px + shift 内缩且 translucent）', () {
     // 仍须存在一个带底部 buffer 的 inset 层承载竖滑/横滑（不回退边缘误触初衷）。
-    final int dragBottomIdx =
-        src.indexOf('bottom: 16.0 + subtitleVerticalShiftOffset,');
-    expect(dragBottomIdx, greaterThanOrEqualTo(0),
-        reason: '拖动层必须保留 16px + subtitleVerticalShiftOffset 边缘 buffer');
+    final int dragBottomIdx = src.indexOf(
+      'bottom: 16.0 + subtitleVerticalShiftOffset,',
+    );
+    expect(
+      dragBottomIdx,
+      greaterThanOrEqualTo(0),
+      reason: '拖动层必须保留 16px + subtitleVerticalShiftOffset 边缘 buffer',
+    );
 
-    final int dragLayerStart =
-        src.lastIndexOf('Positioned.fill(', dragBottomIdx);
-    expect(dragLayerStart, greaterThanOrEqualTo(0),
-        reason: 'inset 拖动层应为一个 Positioned.fill');
+    final int dragLayerStart = src.lastIndexOf(
+      'Positioned.fill(',
+      dragBottomIdx,
+    );
+    expect(
+      dragLayerStart,
+      greaterThanOrEqualTo(0),
+      reason: 'inset 拖动层应为一个 Positioned.fill',
+    );
 
     // 该 inset 层里应有拖动识别器，且**不得**承载 onTap（tap 已迁走）。
     final int nextPositioned = src.indexOf('Positioned.fill(', dragBottomIdx);
@@ -70,40 +94,66 @@ void main() {
     expect(dragLayerEnd, greaterThan(dragBottomIdx), reason: 'inset 拖动层应有明确终点');
     final String dragLayer = src.substring(dragLayerStart, dragLayerEnd);
 
-    expect(dragLayer.contains('onHorizontalDragUpdate'), isTrue,
-        reason: 'inset 层必须承载横向拖动识别器');
-    expect(dragLayer.contains('onVerticalDragUpdate'), isTrue,
-        reason: 'inset 层必须承载竖向拖动识别器');
-    expect(dragLayer.contains('onTap: _handleSurfaceTap'), isFalse,
-        reason: 'TODO-1073：tap 已迁到全画面层，inset 拖动层不得再承载 onTap');
+    expect(
+      dragLayer.contains('onHorizontalDragUpdate'),
+      isTrue,
+      reason: 'inset 层必须承载横向拖动识别器',
+    );
+    expect(
+      dragLayer.contains('onVerticalDragUpdate'),
+      isTrue,
+      reason: 'inset 层必须承载竖向拖动识别器',
+    );
+    expect(
+      dragLayer.contains('onTap: _handleSurfaceTap'),
+      isFalse,
+      reason: 'TODO-1073：tap 已迁到全画面层，inset 拖动层不得再承载 onTap',
+    );
 
     // inset 拖动层在全画面 tap 层内部；保留 translucent 让它在自身无实绘内容处
     // 仍加入竞技场，父级 tap detector 也会同时在 hit-test 路径里。
-    expect(dragLayer.contains('behavior: HitTestBehavior.translucent'), isTrue,
-        reason: 'TODO-1073：inset 拖动层应保留 translucent，以便与父级 tap detector 同场仲裁');
+    expect(
+      dragLayer.contains('behavior: HitTestBehavior.translucent'),
+      isTrue,
+      reason: 'TODO-1073：inset 拖动层应保留 translucent，以便与父级 tap detector 同场仲裁',
+    );
   });
 
   test('inset 拖动层必须嵌在全画面 tap 层内部，而不是作为上层 sibling 截断 hit test', () {
     final int onTapIdx = src.indexOf('onTap: _handleSurfaceTap');
-    expect(onTapIdx, greaterThanOrEqualTo(0),
-        reason: 'toggle 控制栏必须仍走全画面层的 onTap（_handleSurfaceTap）');
+    expect(
+      onTapIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'toggle 控制栏必须仍走全画面层的 onTap（_handleSurfaceTap）',
+    );
 
     final int tapGestureStart = src.lastIndexOf('GestureDetector(', onTapIdx);
-    expect(tapGestureStart, greaterThanOrEqualTo(0),
-        reason: 'onTap 必须挂在全画面 GestureDetector 上');
+    expect(
+      tapGestureStart,
+      greaterThanOrEqualTo(0),
+      reason: 'onTap 必须挂在全画面 GestureDetector 上',
+    );
     final int tapGestureEnd = _balancedInvocationEnd(src, tapGestureStart);
-    expect(tapGestureEnd, greaterThan(onTapIdx),
-        reason: '无法定位承载 onTap 的 GestureDetector 结尾');
+    expect(
+      tapGestureEnd,
+      greaterThan(onTapIdx),
+      reason: '无法定位承载 onTap 的 GestureDetector 结尾',
+    );
 
-    final int dragBottomIdx =
-        src.indexOf('bottom: 16.0 + subtitleVerticalShiftOffset,');
-    expect(dragBottomIdx, greaterThanOrEqualTo(0),
-        reason: '拖动层必须保留 16px + subtitleVerticalShiftOffset 边缘 buffer');
+    final int dragBottomIdx = src.indexOf(
+      'bottom: 16.0 + subtitleVerticalShiftOffset,',
+    );
+    expect(
+      dragBottomIdx,
+      greaterThanOrEqualTo(0),
+      reason: '拖动层必须保留 16px + subtitleVerticalShiftOffset 边缘 buffer',
+    );
 
     expect(
       dragBottomIdx,
       inInclusiveRange(tapGestureStart, tapGestureEnd),
-      reason: 'Flutter Stack hit test 命中上层子节点后不会继续命中后面的 sibling；'
+      reason:
+          'Flutter Stack hit test 命中上层子节点后不会继续命中后面的 sibling；'
           'inset 拖动层若作为 full-screen onTap 层之上的 sibling，会挡住画面中部 tap，'
           '导致 iOS 只能在 inset 外的上下边缘唤出控制栏。',
     );

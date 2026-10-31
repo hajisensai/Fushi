@@ -20,12 +20,12 @@ class NyaaVideoResourceProvider implements LabeledVideoResourceProvider {
     this.filter = '0',
     this.priority = 100,
     bool closesClient = false,
-  })  : _client = client,
-        _closesClient = closesClient,
-        categoryByDomain = Map<VideoDiscoveryCategory, String>.unmodifiable(
-          categoryByDomain,
-        ),
-        displayName = displayName ?? Uri.parse(client.baseUrl).host;
+  }) : _client = client,
+       _closesClient = closesClient,
+       categoryByDomain = Map<VideoDiscoveryCategory, String>.unmodifiable(
+         categoryByDomain,
+       ),
+       displayName = displayName ?? Uri.parse(client.baseUrl).host;
 
   final NyaaClient _client;
   final bool _closesClient;
@@ -78,8 +78,7 @@ class NyaaVideoResourceProvider implements LabeledVideoResourceProvider {
     }
     final List<VideoResourceCandidate> candidates = <VideoResourceCandidate>[];
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
-    final List<VideoResourceQueryReport> reports =
-        <VideoResourceQueryReport>[];
+    final List<VideoResourceQueryReport> reports = <VideoResourceQueryReport>[];
     for (final String query in queries) {
       try {
         final List<NyaaTorrent> torrents = await _client.search(
@@ -94,30 +93,32 @@ class NyaaVideoResourceProvider implements LabeledVideoResourceProvider {
         candidates.addAll(
           torrents.map(
             (NyaaTorrent torrent) =>
-              _NyaaResourceCandidate(torrent, siteId, priority),
+                _NyaaResourceCandidate(torrent, siteId, priority),
           ),
         );
       } on Object catch (error) {
         final ExternalProviderFailure failure =
             ExternalProviderFailure.fromException(
-          providerId: id,
-          operation: 'search',
-          error: error,
-        );
+              providerId: id,
+              operation: 'search',
+              error: error,
+            );
         failures.add(failure);
         reports.add(VideoResourceQueryReport(query: query, failure: failure));
       }
     }
-    final bool succeeded =
-        reports.any((VideoResourceQueryReport r) => r.failure == null);
+    final bool succeeded = reports.any(
+      (VideoResourceQueryReport r) => r.failure == null,
+    );
     // 多个拼写各查一次，同一个种子（infohash）只留一条。
     final List<VideoResourceCandidate> items = succeeded
         ? deduplicateVideoResources(candidates).take(request.limit).toList()
         : const <VideoResourceCandidate>[];
     return VideoResourceSearchResult(
       items: items,
-      failures:
-          succeeded ? failures : <ExternalProviderFailure>[failures.first],
+      failures: succeeded
+          ? failures
+          : <ExternalProviderFailure>[failures.first],
       successfulProviderCount: succeeded ? 1 : 0,
       sources: <VideoResourceSourceReport>[
         VideoResourceSourceReport(
@@ -254,32 +255,31 @@ List<String> nyaaSearchQueries(VideoResourceSearchRequest request) {
   ];
 }
 
-String _nyaaTitleKey(String value) => foldFullWidthAscii(value)
-    .trim()
-    .replaceAll(RegExp(r'\s+'), ' ')
-    .toLowerCase();
+String _nyaaTitleKey(String value) => foldFullWidthAscii(
+  value,
+).trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
 
 class _NyaaResourceCandidate extends VideoResourceCandidate {
   _NyaaResourceCandidate(this.torrent, String siteId, int providerPriority)
-      : super(
-          providerId: kNyaaResourceProviderId,
-          providerInstanceId: siteId,
-          remoteId: torrent.infoHash.toLowerCase(),
-          title: torrent.title,
-          providerPriority: providerPriority,
-          infoHash: torrent.infoHash.toLowerCase(),
-          sizeBytes: torrent.sizeBytes,
-          seeders: torrent.seeders,
-          leechers: torrent.leechers,
-          completed: torrent.downloads,
-          publishedAt: torrent.pubDate,
-          category: torrent.categoryId,
-          resolution: torrent.resolution,
-          releaseGroup: torrent.releaseGroup,
-          trusted: torrent.trusted,
-          detailsUrl: torrent.pageUrl,
-          magnetUri: torrent.magnet,
-        );
+    : super(
+        providerId: kNyaaResourceProviderId,
+        providerInstanceId: siteId,
+        remoteId: torrent.infoHash.toLowerCase(),
+        title: torrent.title,
+        providerPriority: providerPriority,
+        infoHash: torrent.infoHash.toLowerCase(),
+        sizeBytes: torrent.sizeBytes,
+        seeders: torrent.seeders,
+        leechers: torrent.leechers,
+        completed: torrent.downloads,
+        publishedAt: torrent.pubDate,
+        category: torrent.categoryId,
+        resolution: torrent.resolution,
+        releaseGroup: torrent.releaseGroup,
+        trusted: torrent.trusted,
+        detailsUrl: torrent.pageUrl,
+        magnetUri: torrent.magnet,
+      );
 
   final NyaaTorrent torrent;
 }

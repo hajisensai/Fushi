@@ -236,11 +236,7 @@ void main() {
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(
-      secondSettled,
-      isFalse,
-      reason: '已有刷新在进行时不能立刻返回（调用方会当成功处理）',
-    );
+    expect(secondSettled, isFalse, reason: '已有刷新在进行时不能立刻返回（调用方会当成功处理）');
 
     failing = true;
     final Future<void> firstFails = expectLater(first, throwsA(anything));
@@ -296,10 +292,6 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     held.complete();
     await center;
-    expect(
-      await checked,
-      1,
-      reason: '修复前 check() 在结果落下前就读 tickets，新回复漏提示',
-    );
+    expect(await checked, 1, reason: '修复前 check() 在结果落下前就读 tickets，新回复漏提示');
   });
 }

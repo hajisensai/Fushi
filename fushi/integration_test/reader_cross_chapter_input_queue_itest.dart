@@ -62,10 +62,14 @@ void main() {
       }
       expect(appModel.isInitialised, isTrue);
 
-      await appModel.database
-          .setPref('src:reader_fushi:view_mode', 'pagination');
-      await appModel.database
-          .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
+      await appModel.database.setPref(
+        'src:reader_fushi:view_mode',
+        'pagination',
+      );
+      await appModel.database.setPref(
+        'src:reader_fushi:writing_mode',
+        'horizontal-tb',
+      );
       await ReaderFushiSource.readerSettings?.refreshFromDb();
 
       final String bookKey = await EpubImporter.import(
@@ -86,17 +90,24 @@ void main() {
         canEdit: true,
       );
 
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => source.buildLaunchPage(item: item),
-      )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => source.buildLaunchPage(item: item),
+          ),
+        ),
+      );
       await tester.pump(const Duration(seconds: 3));
 
       const Key webViewKey = ValueKey<String>('fushi_webview');
-      for (int i = 0;
-          i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
-          i++) {
+      for (
+        int i = 0;
+        i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(find.byKey(webViewKey), findsOneWidget);
@@ -117,7 +128,8 @@ void main() {
 
       Future<String> currentChapterFile() async {
         final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
-            "(document.baseURI || '').split('/').pop()");
+          "(document.baseURI || '').split('/').pop()",
+        );
         return raw?.toString() ?? '';
       }
 
@@ -172,34 +184,48 @@ void main() {
         }
         final String to = await currentChapterFile();
         landingMs.add(elapsed.inMilliseconds);
-        debugPrint('[xchapter-queue] #$i $dir $from -> $to '
-            'landed=${elapsed.inMilliseconds}ms');
+        debugPrint(
+          '[xchapter-queue] #$i $dir $from -> $to '
+          'landed=${elapsed.inMilliseconds}ms',
+        );
 
-        expect(elapsed, isNot(Duration.zero),
-            reason: '第 $i 拍（$dir）没有落地：跨章手势在 30s 内没产生任何跨章。'
-                '修复前这里会因为跨章冷却窗（锚在上一次 content-ready）而被静默吞掉');
+        expect(
+          elapsed,
+          isNot(Duration.zero),
+          reason:
+              '第 $i 拍（$dir）没有落地：跨章手势在 30s 内没产生任何跨章。'
+              '修复前这里会因为跨章冷却窗（锚在上一次 content-ready）而被静默吞掉',
+        );
         expect(to, isNot(equals(from)), reason: '第 $i 拍（$dir）必须真的换章');
         visited.add(to);
       }
 
       // 来回四拍应当回到起点：A→B→A→B→A。
-      expect(visited.first, equals(visited.last),
-          reason: '来回等量的前进/后退必须回到起始章；对不上说明有一拍跨了两章');
+      expect(
+        visited.first,
+        equals(visited.last),
+        reason: '来回等量的前进/后退必须回到起始章；对不上说明有一拍跨了两章',
+      );
       expect(visited[1], equals(visited[3]), reason: '两次 forward 必须落到同一章');
 
       // 每一拍都必须是**一次**跨章，不多不少：一次输入放大成两次跨章正是 TODO-1229
       // 那套时间窗当初要防的「跳两章」。队列的 1:1 消费取代了它，这里做行为端复核。
-      expect(ReaderChapterPerfTrace.completed.length, script.length,
-          reason: '${script.length} 次输入必须恰好产生 ${script.length} 次跨章');
+      expect(
+        ReaderChapterPerfTrace.completed.length,
+        script.length,
+        reason: '${script.length} 次输入必须恰好产生 ${script.length} 次跨章',
+      );
 
       ReaderChapterPerfTrace.enabled = false;
       debugPrint('[xchapter-queue] landings=$landingMs visited=$visited');
 
       navigator.pop();
       await tester.pump(const Duration(seconds: 2));
-      for (int i = 0;
-          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-          i++) {
+      for (
+        int i = 0;
+        i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 250));
       }
     },

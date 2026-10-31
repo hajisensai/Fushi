@@ -14,28 +14,30 @@ import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 void main() {
-  testWidgets('missing book resolves to error state, not a stuck loader',
-      (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+  testWidgets('missing book resolves to error state, not a stuck loader', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PlatformServices platformServices = testPlatformServices();
     final AppModel appModel = AppModel(platformServices)
       ..wireDatabaseForTesting(db);
     final FakeAnkiRepository ankiRepository = FakeAnkiRepository();
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(platformServices),
-        ankiRepositoryProvider.overrideWithValue(ankiRepository),
-        appProvider.overrideWith((ref) => appModel),
-      ],
-      child: MaterialApp(
-        home: VideoFushiPage(
-          bookUid: 'video/none',
-          repo: VideoBookRepository(db),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: MaterialApp(
+          home: VideoFushiPage(
+            bookUid: 'video/none',
+            repo: VideoBookRepository(db),
+          ),
         ),
       ),
-    ));
+    );
     // Let _init() complete (getByBookUid → null → error state).
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.error_outline), findsOneWidget);

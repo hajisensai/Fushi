@@ -18,15 +18,19 @@ void main() {
 
   late String code;
   setUpAll(() {
-    expect(src.existsSync(), isTrue,
-        reason: 'video_subtitle_overlay.dart 必须存在');
+    expect(
+      src.existsSync(),
+      isTrue,
+      reason: 'video_subtitle_overlay.dart 必须存在',
+    );
     code = src.readAsStringSync().replaceAll('\r\n', '\n');
   });
 
   test('存在按字符门控的 tap 识别器（isPointerAllowed 门控竞技场）', () {
     expect(
       code.contains(
-          'class _SubtitleCharTapRecognizer extends TapGestureRecognizer'),
+        'class _SubtitleCharTapRecognizer extends TapGestureRecognizer',
+      ),
       isTrue,
       reason: 'BUG-553：字幕 tap 必须走按字符门控的 _SubtitleCharTapRecognizer',
     );
@@ -37,8 +41,9 @@ void main() {
     );
     // 门控判据：未命中字符即拒收指针（返回 false）。
     expect(
-      RegExp(r'if \(!hitTestChar\(event\.position\)\) return false;')
-          .hasMatch(code),
+      RegExp(
+        r'if \(!hitTestChar\(event\.position\)\) return false;',
+      ).hasMatch(code),
       isTrue,
       reason: '门控必须在未命中字符时拒收指针（让 media_kit 竞技场胜出）',
     );
@@ -53,15 +58,27 @@ void main() {
     expect(end, greaterThan(start));
     final String block = code.substring(start, end);
 
-    expect(block.contains('RawGestureDetector'), isTrue,
-        reason: 'BUG-553：字符点击须经 RawGestureDetector + 门控识别器承载');
-    expect(block.contains('_SubtitleCharTapRecognizer'), isTrue,
-        reason: '字符点击的手势识别器必须是 _SubtitleCharTapRecognizer');
+    expect(
+      block.contains('RawGestureDetector'),
+      isTrue,
+      reason: 'BUG-553：字符点击须经 RawGestureDetector + 门控识别器承载',
+    );
+    expect(
+      block.contains('_SubtitleCharTapRecognizer'),
+      isTrue,
+      reason: '字符点击的手势识别器必须是 _SubtitleCharTapRecognizer',
+    );
     // 仍是 translucent：hover 透传 / media_kit 在命中路径不回归（BUG-198）。
-    expect(block.contains('HitTestBehavior.translucent'), isTrue,
-        reason: 'BUG-553 修复不得改变 translucent 命中语义（否则 BUG-198 hover 回归）');
+    expect(
+      block.contains('HitTestBehavior.translucent'),
+      isTrue,
+      reason: 'BUG-553 修复不得改变 translucent 命中语义（否则 BUG-198 hover 回归）',
+    );
     // 不得再用普通 GestureDetector 无条件收 tap（旧根因结构）。
-    expect(block.contains('box = GestureDetector('), isFalse,
-        reason: 'BUG-553：字符点击不得再用无条件收 tap 的整片 GestureDetector');
+    expect(
+      block.contains('box = GestureDetector('),
+      isFalse,
+      reason: 'BUG-553：字符点击不得再用无条件收 tap 的整片 GestureDetector',
+    );
   });
 }

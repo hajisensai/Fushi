@@ -10,8 +10,9 @@ import 'test_flow/suite_timings.dart';
 import 'test_flow/test_file_shards.dart';
 
 Future<void> main(List<String> args) async {
-  final _FlutterTestFailureOptions options =
-      _FlutterTestFailureOptions.parse(args);
+  final _FlutterTestFailureOptions options = _FlutterTestFailureOptions.parse(
+    args,
+  );
   // The machine-wide heavy-run lease (test_flow/heavy_lease.dart; nothing on
   // CI): a slot, and this worktree's build/ and default
   // output directory to itself -- two runs in one checkout used to fight over
@@ -30,8 +31,10 @@ Future<void> main(List<String> args) async {
     );
   } on HeavyLeaseTimeout catch (e) {
     stderr.writeln(e.message);
-    stdout.writeln('$kFlutterTestVerdictPrefix FAILED - not admitted: the '
-        'machine had no room (tests completed: 0)');
+    stdout.writeln(
+      '$kFlutterTestVerdictPrefix FAILED - not admitted: the '
+      'machine had no room (tests completed: 0)',
+    );
     exit(75);
   }
   final Directory outputDir = Directory(options.outputDir)
@@ -59,8 +62,10 @@ Future<void> main(List<String> args) async {
   int exitCode = 0;
   for (int i = 0; i < batches.length; i++) {
     if (batches.length > 1) {
-      stdout.writeln('Batch ${i + 1}/${batches.length}: '
-          '${batches[i].length} test files');
+      stdout.writeln(
+        'Batch ${i + 1}/${batches.length}: '
+        '${batches[i].length} test files',
+      );
     }
     final ({int exitCode, List<String> lines}) run = await _runFlutterTest(
       <String>[
@@ -82,9 +87,11 @@ Future<void> main(List<String> args) async {
   lease.release();
   final int? peak = job?.peakMb();
   if (peak != null && heavyCapHit(peak, need.capMb)) {
-    stderr.writeln('heavy: MEMORY CAP HIT ($peak MB of ${need.capMb} MB) -- '
-        'failures in this run can come from the ceiling, not from the code; '
-        'narrow the run or lower --concurrency.');
+    stderr.writeln(
+      'heavy: MEMORY CAP HIT ($peak MB of ${need.capMb} MB) -- '
+      'failures in this run can come from the ceiling, not from the code; '
+      'narrow the run or lower --concurrency.',
+    );
   }
 
   final FlutterTestRunSummary summary = FlutterTestRunSummary.merge(summaries);
@@ -95,16 +102,20 @@ Future<void> main(List<String> args) async {
   );
 
   if (verdictFailure != null) {
-    stderr.writeln(renderFlutterTestFailureSummary(
-      summary,
-      logPath: jsonLog.path,
-      stderrLogPath: stderrLog.path,
-      minimumTests: options.minimumTests,
-    ));
+    stderr.writeln(
+      renderFlutterTestFailureSummary(
+        summary,
+        logPath: jsonLog.path,
+        stderrLogPath: stderrLog.path,
+        minimumTests: options.minimumTests,
+      ),
+    );
     await stderr.flush();
-    stdout.writeln('$kFlutterTestVerdictPrefix FAILED - $verdictFailure '
-        '(tests completed: ${summary.testsCompleted}, '
-        'flutter exit code: $exitCode)');
+    stdout.writeln(
+      '$kFlutterTestVerdictPrefix FAILED - $verdictFailure '
+      '(tests completed: ${summary.testsCompleted}, '
+      'flutter exit code: $exitCode)',
+    );
     await stdout.flush();
     exit(exitCode != 0 ? exitCode : 1);
   }
@@ -112,8 +123,9 @@ Future<void> main(List<String> args) async {
   stdout
     ..writeln('Full JSON log: ${jsonLog.path}')
     ..writeln(
-        '$kFlutterTestVerdictPrefix PASSED - ${summary.testsCompleted} tests ran, '
-        'all tests passed');
+      '$kFlutterTestVerdictPrefix PASSED - ${summary.testsCompleted} tests ran, '
+      'all tests passed',
+    );
   await stdout.flush();
 }
 
@@ -135,22 +147,34 @@ Future<({int exitCode, List<String> lines})> _runFlutterTest(
   final Completer<void> stderrDone = Completer<void>();
   const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
 
-  process.stdout.transform(decoder).transform(const LineSplitter()).listen(
-      (String line) {
-    jsonLines.add(line);
-    logSink.writeln(line);
-    if (verbose) {
-      stdout.writeln(line);
-    }
-  }, onDone: stdoutDone.complete, onError: stdoutDone.completeError);
+  process.stdout
+      .transform(decoder)
+      .transform(const LineSplitter())
+      .listen(
+        (String line) {
+          jsonLines.add(line);
+          logSink.writeln(line);
+          if (verbose) {
+            stdout.writeln(line);
+          }
+        },
+        onDone: stdoutDone.complete,
+        onError: stdoutDone.completeError,
+      );
 
   // Always mirror the child's stderr. Native-assets / compile failures report
   // exclusively there, and swallowing it is what makes a dead run look silent
   // and therefore green.
-  process.stderr.transform(decoder).listen((String chunk) {
-    stderrSink.write(chunk);
-    stderr.write(chunk);
-  }, onDone: stderrDone.complete, onError: stderrDone.completeError);
+  process.stderr
+      .transform(decoder)
+      .listen(
+        (String chunk) {
+          stderrSink.write(chunk);
+          stderr.write(chunk);
+        },
+        onDone: stderrDone.complete,
+        onError: stderrDone.completeError,
+      );
 
   final int exitCode = await process.exitCode;
   await Future.wait(<Future<void>>[stdoutDone.future, stderrDone.future]);
@@ -214,8 +238,10 @@ class _FlutterTestFailureOptions {
         final String raw = arg.substring('--file-shard='.length);
         fileShard = TestFileShard.tryParse(raw);
         if (fileShard == null) {
-          stderr.writeln('Invalid --file-shard value: $raw '
-              '(expected <index>/<total>, 0 <= index < total)');
+          stderr.writeln(
+            'Invalid --file-shard value: $raw '
+            '(expected <index>/<total>, 0 <= index < total)',
+          );
           exit(64);
         }
       } else if (arg.startsWith('--max-suites-per-run=')) {
@@ -258,8 +284,9 @@ class _FlutterTestFailureOptions {
 /// test_flow/suite_timings.dart).
 List<String> _shardTestFiles(TestFileShard shard) {
   final Map<String, int> bytes = <String, int>{};
-  for (final FileSystemEntity entity
-      in Directory('test').listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in Directory(
+    'test',
+  ).listSync(recursive: true, followLinks: false)) {
     if (entity is! File || !entity.path.endsWith('_test.dart')) continue;
     bytes[entity.path.replaceAll(r'\', '/')] = entity.lengthSync();
   }
@@ -269,16 +296,22 @@ List<String> _shardTestFiles(TestFileShard shard) {
   if (selected.isEmpty) {
     // An empty path list would make `flutter test` fall back to the WHOLE
     // test/ directory, silently turning this shard into a full run.
-    stderr.writeln('File shard ${shard.index}/${shard.total} is empty '
-        '(${weights.length} test files); lower --file-shard total.');
+    stderr.writeln(
+      'File shard ${shard.index}/${shard.total} is empty '
+      '(${weights.length} test files); lower --file-shard total.',
+    );
     exit(64);
   }
   final int timed = bytes.keys.where(timings.containsKey).length;
-  final int shardMs =
-      selected.fold<int>(0, (int sum, String path) => sum + weights[path]!);
-  stdout.writeln('File shard ${shard.index}/${shard.total}: '
-      '${selected.length} of ${weights.length} test files, '
-      '~${(shardMs / 60000).toStringAsFixed(1)} suite-minutes '
-      '($timed of ${bytes.length} suites have a measured time)');
+  final int shardMs = selected.fold<int>(
+    0,
+    (int sum, String path) => sum + weights[path]!,
+  );
+  stdout.writeln(
+    'File shard ${shard.index}/${shard.total}: '
+    '${selected.length} of ${weights.length} test files, '
+    '~${(shardMs / 60000).toStringAsFixed(1)} suite-minutes '
+    '($timed of ${bytes.length} suites have a measured time)',
+  );
   return selected;
 }

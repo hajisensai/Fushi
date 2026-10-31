@@ -30,12 +30,10 @@ void main() {
             ).readAsStringSync(),
           )
           as Map<String, Object?>;
-  final Map<String, Map<String, Object?>> want =
-      <String, Map<String, Object?>>{
-        for (final Object? e in fixture['cases']! as List<Object?>)
-          (e! as Map<String, Object?>)['id']! as String:
-              e as Map<String, Object?>,
-      };
+  final Map<String, Map<String, Object?>> want = <String, Map<String, Object?>>{
+    for (final Object? e in fixture['cases']! as List<Object?>)
+      (e! as Map<String, Object?>)['id']! as String: e as Map<String, Object?>,
+  };
   final FushiComputeText text = FushiComputeText.instance;
 
   for (final AlignCase c in alignCases()) {
@@ -50,10 +48,9 @@ void main() {
       for (int k = 0; k < maps.length; k++) {
         expect(maps[k].length, c.pairs[k].$1.length + 1, reason: 'pair $k');
       }
-      expect(
-        <int>[for (final Int32List m in maps) _checksum(m)],
-        w['checksums'],
-      );
+      expect(<int>[
+        for (final Int32List m in maps) _checksum(m),
+      ], w['checksums']);
       final List<int> all = <int>[for (final Int32List m in maps) ...m];
       expect(all.length, w['totalLength']);
       expect(
@@ -68,10 +65,7 @@ void main() {
   }
 
   test('用例集与夹具一致', () {
-    expect(
-      want.keys,
-      unorderedEquals(alignCases().map((AlignCase c) => c.id)),
-    );
+    expect(want.keys, unorderedEquals(alignCases().map((AlignCase c) => c.id)));
   });
 
   test('空批 / a 与 b 数量不等', () {

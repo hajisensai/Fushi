@@ -8,43 +8,43 @@ import 'package:fushi/src/pages/implementations/video_download_subscriptions_pan
 VideoDownloadSubscriptionRow _subscription({
   bool enabled = true,
   String? lastError = 'Indexer temporarily unavailable; token was redacted.',
-}) =>
-    VideoDownloadSubscriptionRow(
-      subscriptionId: 'subscription-1',
-      resourceProvider: 'nyaa:default',
-      metadataProvider: 'anilist',
-      externalId: '100',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      title: 'A deliberately long anime subscription title for narrow screens',
-      year: 2026,
-      season: 1,
-      coverUrl: null,
-      searchQuery: 'Example anime',
-      filterJson: '{"strict":true,"releaseGroup":"Group",'
-          '"resolution":"1080p","trusted":true}',
-      mode: 'ongoing',
-      startAfterEpisode: 3,
-      backendKind: 'embedded',
-      backendProfileId: null,
-      fingerprint: 'embedded-test',
-      category: 'fushi-video',
-      targetSourceId: null,
-      collectionId: null,
-      organizationPolicy: 'library',
-      subtitlePolicy: 'bestEffort',
-      enabled: enabled,
-      nextCheckAt: null,
-      claimedBy: null,
-      claimExpiresAt: null,
-      retryCount: 0,
-      lastCheckedAt: DateTime.utc(2026, 8, 9).millisecondsSinceEpoch,
-      lastMatchedAt: null,
-      fulfilledAt: null,
-      lastError: lastError,
-      createdAt: 1,
-      updatedAt: 2,
-    );
+}) => VideoDownloadSubscriptionRow(
+  subscriptionId: 'subscription-1',
+  resourceProvider: 'nyaa:default',
+  metadataProvider: 'anilist',
+  externalId: '100',
+  mediaKind: 'tv',
+  discoveryCategory: 'anime',
+  title: 'A deliberately long anime subscription title for narrow screens',
+  year: 2026,
+  season: 1,
+  coverUrl: null,
+  searchQuery: 'Example anime',
+  filterJson:
+      '{"strict":true,"releaseGroup":"Group",'
+      '"resolution":"1080p","trusted":true}',
+  mode: 'ongoing',
+  startAfterEpisode: 3,
+  backendKind: 'embedded',
+  backendProfileId: null,
+  fingerprint: 'embedded-test',
+  category: 'fushi-video',
+  targetSourceId: null,
+  collectionId: null,
+  organizationPolicy: 'library',
+  subtitlePolicy: 'bestEffort',
+  enabled: enabled,
+  nextCheckAt: null,
+  claimedBy: null,
+  claimExpiresAt: null,
+  retryCount: 0,
+  lastCheckedAt: DateTime.utc(2026, 8, 9).millisecondsSinceEpoch,
+  lastMatchedAt: null,
+  fulfilledAt: null,
+  lastError: lastError,
+  createdAt: 1,
+  updatedAt: 2,
+);
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -94,17 +94,15 @@ void main() {
     expect(videoDownloadSubscriptionFilterSummary('invalid'), isEmpty);
   });
 
-  testWidgets('v78 subscription is manageable without narrow-screen overflow',
-      (WidgetTester tester) async {
+  testWidgets('v78 subscription is manageable without narrow-screen overflow', (
+    WidgetTester tester,
+  ) async {
     final List<String> actions = <String>[];
     final VideoDownloadSubscriptionRow subscription = _subscription();
     await _pump(
       tester,
       subscriptions: <VideoDownloadSubscriptionRow>[subscription],
-      onToggle: (
-        VideoDownloadSubscriptionRow row,
-        bool enabled,
-      ) async =>
+      onToggle: (VideoDownloadSubscriptionRow row, bool enabled) async =>
           actions.add('toggle:${row.subscriptionId}:$enabled'),
       onCheck: (VideoDownloadSubscriptionRow row) async =>
           actions.add('check:${row.subscriptionId}'),
@@ -116,7 +114,9 @@ void main() {
     expect(find.text('1080p'), findsOneWidget);
     expect(find.text(t.anime_download_trusted), findsOneWidget);
     expect(
-        find.textContaining('Indexer temporarily unavailable'), findsOneWidget);
+      find.textContaining('Indexer temporarily unavailable'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
 
     await tester.tap(
@@ -138,19 +138,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      actions,
-      <String>[
-        'check:subscription-1',
-        'toggle:subscription-1:false',
-        'delete:subscription-1',
-      ],
-    );
+    expect(actions, <String>[
+      'check:subscription-1',
+      'toggle:subscription-1:false',
+      'delete:subscription-1',
+    ]);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('empty v78 subscription state is explicit',
-      (WidgetTester tester) async {
+  testWidgets('empty v78 subscription state is explicit', (
+    WidgetTester tester,
+  ) async {
     await _pump(
       tester,
       subscriptions: const <VideoDownloadSubscriptionRow>[],
@@ -164,8 +162,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('wide subscription header and cards fill the page width',
-      (WidgetTester tester) async {
+  testWidgets('wide subscription header and cards fill the page width', (
+    WidgetTester tester,
+  ) async {
     await _pump(
       tester,
       size: const Size(1400, 800),
@@ -178,9 +177,7 @@ void main() {
     expect(
       tester
           .getSize(
-            find.byKey(
-              const ValueKey<String>('video-subscriptions-header'),
-            ),
+            find.byKey(const ValueKey<String>('video-subscriptions-header')),
           )
           .width,
       greaterThan(1300),
@@ -218,53 +215,51 @@ void main() {
       String title, {
       int createdAt = 0,
       int? lastMatchedAt,
-    }) =>
-        VideoDownloadSubscriptionRow(
-          subscriptionId: id,
-          resourceProvider: 'nyaa:default',
-          metadataProvider: 'anilist',
-          externalId: id,
-          mediaKind: 'tv',
-          discoveryCategory: 'anime',
-          title: title,
-          year: null,
-          season: null,
-          coverUrl: null,
-          searchQuery: 'query-$id',
-          filterJson: '{}',
-          mode: 'ongoing',
-          startAfterEpisode: null,
-          backendKind: 'embedded',
-          backendProfileId: null,
-          fingerprint: 'f',
-          category: 'c',
-          targetSourceId: null,
-          collectionId: null,
-          organizationPolicy: 'library',
-          subtitlePolicy: 'none',
-          enabled: true,
-          nextCheckAt: null,
-          claimedBy: null,
-          claimExpiresAt: null,
-          retryCount: 0,
-          lastCheckedAt: null,
-          lastMatchedAt: lastMatchedAt,
-          fulfilledAt: null,
-          lastError: null,
-          createdAt: createdAt,
-          updatedAt: 0,
-        );
+    }) => VideoDownloadSubscriptionRow(
+      subscriptionId: id,
+      resourceProvider: 'nyaa:default',
+      metadataProvider: 'anilist',
+      externalId: id,
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      title: title,
+      year: null,
+      season: null,
+      coverUrl: null,
+      searchQuery: 'query-$id',
+      filterJson: '{}',
+      mode: 'ongoing',
+      startAfterEpisode: null,
+      backendKind: 'embedded',
+      backendProfileId: null,
+      fingerprint: 'f',
+      category: 'c',
+      targetSourceId: null,
+      collectionId: null,
+      organizationPolicy: 'library',
+      subtitlePolicy: 'none',
+      enabled: true,
+      nextCheckAt: null,
+      claimedBy: null,
+      claimExpiresAt: null,
+      retryCount: 0,
+      lastCheckedAt: null,
+      lastMatchedAt: lastMatchedAt,
+      fulfilledAt: null,
+      lastError: null,
+      createdAt: createdAt,
+      updatedAt: 0,
+    );
 
     final List<VideoDownloadSubscriptionRow> rows =
         <VideoDownloadSubscriptionRow>[
-      row('a', 'Beta Show', createdAt: 10),
-      row('b', 'Alpha Show', createdAt: 20, lastMatchedAt: 5),
-    ];
+          row('a', 'Beta Show', createdAt: 10),
+          row('b', 'Alpha Show', createdAt: 20, lastMatchedAt: 5),
+        ];
     expect(
-      filterVideoDownloadSubscriptions(
-        <VideoDownloadSubscriptionRow>[row('c', 'Ｆａｔｅ Show')],
-        'fate',
-      ),
+      filterVideoDownloadSubscriptions(<VideoDownloadSubscriptionRow>[
+        row('c', 'Ｆａｔｅ Show'),
+      ], 'fate'),
       hasLength(1),
       reason: '全角标题归一化后可被半角查询命中',
     );
@@ -336,22 +331,22 @@ void main() {
     );
     final VideoDownloadSubscriptionItemRow item =
         VideoDownloadSubscriptionItemRow(
-      id: 1,
-      subscriptionId: normal.subscriptionId,
-      logicalItemKey: 'S01E05',
-      resourceProvider: 'nyaa:default',
-      selectedResourceId: 'r1',
-      torrentHash: null,
-      title: '[Group] Show - 05 (1080p)',
-      season: 1,
-      episode: 5,
-      publishedAt: null,
-      jobId: null,
-      status: VideoDownloadSubscriptionItemStatus.processed,
-      error: null,
-      discoveredAt: 0,
-      updatedAt: 0,
-    );
+          id: 1,
+          subscriptionId: normal.subscriptionId,
+          logicalItemKey: 'S01E05',
+          resourceProvider: 'nyaa:default',
+          selectedResourceId: 'r1',
+          torrentHash: null,
+          title: '[Group] Show - 05 (1080p)',
+          season: 1,
+          episode: 5,
+          publishedAt: null,
+          jobId: null,
+          status: VideoDownloadSubscriptionItemStatus.processed,
+          error: null,
+          discoveredAt: 0,
+          updatedAt: 0,
+        );
 
     tester.view.physicalSize = const Size(700, 900);
     tester.view.devicePixelRatio = 1;
@@ -375,10 +370,10 @@ void main() {
                   actions.add('edit:${row.subscriptionId}'),
               itemsWatcher: (String id) =>
                   Stream<List<VideoDownloadSubscriptionItemRow>>.value(
-                id == normal.subscriptionId
-                    ? <VideoDownloadSubscriptionItemRow>[item]
-                    : const <VideoDownloadSubscriptionItemRow>[],
-              ),
+                    id == normal.subscriptionId
+                        ? <VideoDownloadSubscriptionItemRow>[item]
+                        : const <VideoDownloadSubscriptionItemRow>[],
+                  ),
             ),
           ),
         ),

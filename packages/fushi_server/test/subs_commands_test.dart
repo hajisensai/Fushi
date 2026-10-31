@@ -23,12 +23,14 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 class _MapPrefs implements PrefStore {
-  _MapPrefs([Map<String, Object?>? values]) : values = values ?? <String, Object?>{};
+  _MapPrefs([Map<String, Object?>? values])
+    : values = values ?? <String, Object?>{};
 
   final Map<String, Object?> values;
 
   @override
-  dynamic getPref(String key, {dynamic defaultValue}) => values.containsKey(key) ? values[key] : defaultValue;
+  dynamic getPref(String key, {dynamic defaultValue}) =>
+      values.containsKey(key) ? values[key] : defaultValue;
 
   @override
   Future<void> setPref(String key, dynamic value) async => values[key] = value;
@@ -36,17 +38,27 @@ class _MapPrefs implements PrefStore {
 
 class _FakeCandidate extends VideoSubtitleCandidate {
   _FakeCandidate(String id, {required super.fileName, required super.language})
-    : super(providerId: 'jimaku', remoteId: id, providerPriority: 100, releaseName: 'Group');
+    : super(
+        providerId: 'jimaku',
+        remoteId: id,
+        providerPriority: 100,
+        releaseName: 'Group',
+      );
 }
 
 /// 记录请求、按 remoteId 回字节的假来源（冒用 jimaku 的 id，好过凭据门）。
 class _FakeProvider implements VideoSubtitleProvider {
-  _FakeProvider(this.candidates, {this.bytes = const <String, String>{}, this.failure});
+  _FakeProvider(
+    this.candidates, {
+    this.bytes = const <String, String>{},
+    this.failure,
+  });
 
   final List<VideoSubtitleCandidate> candidates;
   final Map<String, String> bytes;
   final ExternalProviderFailure? failure;
-  final List<VideoSubtitleSearchRequest> requests = <VideoSubtitleSearchRequest>[];
+  final List<VideoSubtitleSearchRequest> requests =
+      <VideoSubtitleSearchRequest>[];
   int downloads = 0;
   bool closed = false;
 
@@ -60,14 +72,19 @@ class _FakeProvider implements VideoSubtitleProvider {
   bool get allowsFreeProbeDownload => true;
 
   @override
-  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(VideoSubtitleSearchRequest request) async {
+  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
+    VideoSubtitleSearchRequest request,
+  ) async {
     requests.add(request);
-    if (failure != null) return ProviderBatchResult<VideoSubtitleCandidate>.failure(failure!);
+    if (failure != null)
+      return ProviderBatchResult<VideoSubtitleCandidate>.failure(failure!);
     return ProviderBatchResult<VideoSubtitleCandidate>.success(candidates);
   }
 
   @override
-  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) async {
+  Future<VideoSubtitleDownload> download(
+    VideoSubtitleCandidate candidate,
+  ) async {
     downloads++;
     return VideoSubtitleDownload(
       bytes: Uint8List.fromList(utf8.encode(bytes[candidate.remoteId] ?? '')),
@@ -148,15 +165,19 @@ void main() {
         kSubdlEnabledPref: false,
         kJimakuApiKeyPref: '',
       });
-      final SubsCredentials none = resolveSubsCredentials(prefs, const <String, String>{});
+      final SubsCredentials none = resolveSubsCredentials(
+        prefs,
+        const <String, String>{},
+      );
       expect(none.unavailableReason(kSubsProviderIds[1]), contains('关闭'));
       expect(none.unavailableReason('jimaku'), contains(kJimakuApiKeyEnv));
 
-      final SubsCredentials env = resolveSubsCredentials(prefs, const <String, String>{
-        kSubdlApiKeyEnv: 'env-key',
-        kJimakuApiKeyEnv: 'jk',
-        kOpenSubtitlesApiKeyEnv: 'os-key',
-      });
+      final SubsCredentials env =
+          resolveSubsCredentials(prefs, const <String, String>{
+            kSubdlApiKeyEnv: 'env-key',
+            kJimakuApiKeyEnv: 'jk',
+            kOpenSubtitlesApiKeyEnv: 'os-key',
+          });
       expect(env.subdlApiKey, 'env-key');
       expect(env.unavailableReason('subdl'), isNull);
       expect(env.unavailableReason('jimaku'), isNull);
@@ -166,9 +187,18 @@ void main() {
 
     test('OpenSubtitles 偏好 JSON 与 app 同口径解码', () {
       final _MapPrefs prefs = _MapPrefs(<String, Object?>{
-        kOpenSubtitlesConfigPref: jsonEncode(<String, Object?>{'apiKey': 'k1', 'enabled': true}),
+        kOpenSubtitlesConfigPref: jsonEncode(<String, Object?>{
+          'apiKey': 'k1',
+          'enabled': true,
+        }),
       });
-      expect(resolveSubsCredentials(prefs, const <String, String>{}).openSubtitles.effectiveApiKey, 'k1');
+      expect(
+        resolveSubsCredentials(
+          prefs,
+          const <String, String>{},
+        ).openSubtitles.effectiveApiKey,
+        'k1',
+      );
     });
   });
 
@@ -182,13 +212,29 @@ void main() {
 
     test('按文件名解析出标题与集号，合并结果并落搜索缓存', () async {
       final _FakeProvider provider = _FakeProvider(<VideoSubtitleCandidate>[
-        _FakeCandidate('11:ep03.ja.srt', fileName: 'ep03.ja.srt', language: 'ja'),
-        _FakeCandidate('11:ep03.en.srt', fileName: 'ep03.en.srt', language: 'en'),
+        _FakeCandidate(
+          '11:ep03.ja.srt',
+          fileName: 'ep03.ja.srt',
+          language: 'ja',
+        ),
+        _FakeCandidate(
+          '11:ep03.en.srt',
+          fileName: 'ep03.en.srt',
+          language: 'en',
+        ),
       ]);
       final StringBuffer out = StringBuffer();
       final int code = await withRt(
         (ServerRuntime rt) => runSubsCommand(
-          _parse(<String>['search', video.path, '-l', 'ja,EN', '--provider', 'jimaku', '--json']),
+          _parse(<String>[
+            'search',
+            video.path,
+            '-l',
+            'ja,EN',
+            '--provider',
+            'jimaku',
+            '--json',
+          ]),
           rt: rt,
           io: CliIo(out: out, err: StringBuffer(), json: true),
           deps: SubsDeps(
@@ -205,18 +251,33 @@ void main() {
       expect(request.fingerprint?.fileSize, 256 * 1024);
       expect(request.fingerprint?.openSubtitlesMovieHash, isNotNull);
       expect(provider.closed, isTrue);
-      final Map<String, Object?> json = jsonDecode(out.toString()) as Map<String, Object?>;
+      final Map<String, Object?> json =
+          jsonDecode(out.toString()) as Map<String, Object?>;
       expect(json['ok'], isTrue);
       final List<Object?> results = json['results'] as List<Object?>;
       expect(results, hasLength(2));
-      expect((results.first as Map<String, Object?>)['id'], 'jimaku:11:ep03.ja.srt');
+      expect(
+        (results.first as Map<String, Object?>)['id'],
+        'jimaku:11:ep03.ja.srt',
+      );
       expect((results.first as Map<String, Object?>)['language'], 'ja');
-      expect(await withRt((ServerRuntime rt) async => subsSearchCacheFile(rt).existsSync()), isTrue);
+      expect(
+        await withRt(
+          (ServerRuntime rt) async => subsSearchCacheFile(rt).existsSync(),
+        ),
+        isTrue,
+      );
     });
 
     test('download 按缓存的请求重新定位同一条，写到视频旁', () async {
       final _FakeProvider provider = _FakeProvider(
-        <VideoSubtitleCandidate>[_FakeCandidate('11:ep03.ja.srt', fileName: 'ep03.ja.srt', language: 'ja')],
+        <VideoSubtitleCandidate>[
+          _FakeCandidate(
+            '11:ep03.ja.srt',
+            fileName: 'ep03.ja.srt',
+            language: 'ja',
+          ),
+        ],
         bytes: <String, String>{
           '11:ep03.ja.srt': _srt(<double>[1, 5, 9, 1300]),
         },
@@ -237,15 +298,25 @@ void main() {
       final StringBuffer out = StringBuffer();
       final int code = await withRt(
         (ServerRuntime rt) => runSubsCommand(
-          _parse(<String>['download', 'jimaku:11:ep03.ja.srt', '--to', video.path, '--json']),
+          _parse(<String>[
+            'download',
+            'jimaku:11:ep03.ja.srt',
+            '--to',
+            video.path,
+            '--json',
+          ]),
           rt: rt,
           io: CliIo(out: out, err: StringBuffer(), json: true),
           deps: deps,
         ),
       );
       expect(code, kExitOk);
-      final String expected = p.join(temp.path, '[Group] Show Name - 03 [1080p].ja.srt');
-      final Map<String, Object?> json = jsonDecode(out.toString()) as Map<String, Object?>;
+      final String expected = p.join(
+        temp.path,
+        '[Group] Show Name - 03 [1080p].ja.srt',
+      );
+      final Map<String, Object?> json =
+          jsonDecode(out.toString()) as Map<String, Object?>;
       expect(json['output'], expected);
       expect((json['timing'] as Map<String, Object?>)['verdict'], 'ok');
       expect(File(expected).readAsStringSync(), contains('台词 3'));
@@ -254,7 +325,12 @@ void main() {
       // 已存在且没给 --force → 业务失败，不覆盖。
       final int again = await withRt(
         (ServerRuntime rt) => runSubsCommand(
-          _parse(<String>['download', 'jimaku:11:ep03.ja.srt', '--to', video.path]),
+          _parse(<String>[
+            'download',
+            'jimaku:11:ep03.ja.srt',
+            '--to',
+            video.path,
+          ]),
           rt: rt,
           io: CliIo(out: StringBuffer(), err: StringBuffer()),
           deps: deps,
@@ -270,9 +346,18 @@ void main() {
           deps: deps,
         ),
       );
-      expect(await dl(<String>['download', 'jimaku:nope', '--to', video.path]), kExitNoInput);
-      expect(await dl(<String>['download', 'jimaku:11:ep03.ja.srt']), kExitUsage);
-      expect(await dl(<String>['download', 'bad-id', '--to', video.path]), kExitUsage);
+      expect(
+        await dl(<String>['download', 'jimaku:nope', '--to', video.path]),
+        kExitNoInput,
+      );
+      expect(
+        await dl(<String>['download', 'jimaku:11:ep03.ja.srt']),
+        kExitUsage,
+      );
+      expect(
+        await dl(<String>['download', 'bad-id', '--to', video.path]),
+        kExitUsage,
+      );
     });
 
     test('点名的来源没配凭据 → 69，且不造 provider、不发请求', () async {
@@ -280,7 +365,13 @@ void main() {
       final StringBuffer out = StringBuffer();
       final int code = await withRt(
         (ServerRuntime rt) => runSubsCommand(
-          _parse(<String>['search', video.path, '--provider', 'subdl', '--json']),
+          _parse(<String>[
+            'search',
+            video.path,
+            '--provider',
+            'subdl',
+            '--json',
+          ]),
           rt: rt,
           io: CliIo(out: out, err: StringBuffer(), json: true),
           deps: SubsDeps(
@@ -294,7 +385,10 @@ void main() {
       );
       expect(code, kExitUnavailable);
       expect(built, isFalse);
-      expect((jsonDecode(out.toString()) as Map<String, Object?>)['exitCode'], kExitUnavailable);
+      expect(
+        (jsonDecode(out.toString()) as Map<String, Object?>)['exitCode'],
+        kExitUnavailable,
+      );
     });
 
     test('唯一的来源搜索失败 → 69；没有结果 → 1', () async {
@@ -323,29 +417,71 @@ void main() {
         ),
         kExitUnavailable,
       );
-      expect(await search(_FakeProvider(const <VideoSubtitleCandidate>[])), kExitFailure);
+      expect(
+        await search(_FakeProvider(const <VideoSubtitleCandidate>[])),
+        kExitFailure,
+      );
     });
 
     test('经主 CLI：缺参数 64、目标既非文件也非库内 id 66', () async {
-      expect(await runFushiServerCli(<String>['-c', config.path, 'subs']), kExitUsage);
-      expect(await runFushiServerCli(<String>['-c', config.path, 'subs', 'search']), kExitUsage);
-      expect(await runFushiServerCli(<String>['-c', config.path, 'subs', 'search', 'no-such-video-id']), kExitNoInput);
-      expect(await runFushiServerCli(<String>['-c', config.path, 'subs', 'search', '--provider', 'nope', 'x']), 64);
+      expect(
+        await runFushiServerCli(<String>['-c', config.path, 'subs']),
+        kExitUsage,
+      );
+      expect(
+        await runFushiServerCli(<String>['-c', config.path, 'subs', 'search']),
+        kExitUsage,
+      );
+      expect(
+        await runFushiServerCli(<String>[
+          '-c',
+          config.path,
+          'subs',
+          'search',
+          'no-such-video-id',
+        ]),
+        kExitNoInput,
+      );
+      expect(
+        await runFushiServerCli(<String>[
+          '-c',
+          config.path,
+          'subs',
+          'search',
+          '--provider',
+          'nope',
+          'x',
+        ]),
+        64,
+      );
     });
 
     test('库内视频 id 解析到文件', () async {
       await withRt((ServerRuntime rt) async {
         await rt.db.upsertVideoBook(
-          VideoBooksCompanion.insert(bookUid: 'vid-1', title: 'Show Name 03', videoPath: video.path),
+          VideoBooksCompanion.insert(
+            bookUid: 'vid-1',
+            title: 'Show Name 03',
+            videoPath: video.path,
+          ),
         );
         return 0;
       });
-      final _FakeProvider provider = _FakeProvider(const <VideoSubtitleCandidate>[]);
+      final _FakeProvider provider = _FakeProvider(
+        const <VideoSubtitleCandidate>[],
+      );
       await withRt(
         (ServerRuntime rt) => runSubsCommand(
           // 点名 jimaku：CI 会注入内置 OpenSubtitles key，不点名时 opensubtitles 也算可用，
           // 假工厂对两家返回同一个实例，请求就记了两条。
-          _parse(<String>['search', 'vid-1', '--season', '2', '--provider', 'jimaku']),
+          _parse(<String>[
+            'search',
+            'vid-1',
+            '--season',
+            '2',
+            '--provider',
+            'jimaku',
+          ]),
           rt: rt,
           io: CliIo(out: StringBuffer(), err: StringBuffer()),
           deps: SubsDeps(
@@ -363,11 +499,16 @@ void main() {
   group('subs check', () {
     late File video;
     setUp(() async {
-      video = File(p.join(temp.path, 'check.mkv'))..writeAsStringSync('not a real video');
+      video = File(p.join(temp.path, 'check.mkv'))
+        ..writeAsStringSync('not a real video');
     });
 
-    Future<(int, Map<String, Object?>)> check(String subtitle, int? durationMs) async {
-      final File sub = File(p.join(temp.path, 'check.srt'))..writeAsStringSync(subtitle);
+    Future<(int, Map<String, Object?>)> check(
+      String subtitle,
+      int? durationMs,
+    ) async {
+      final File sub = File(p.join(temp.path, 'check.srt'))
+        ..writeAsStringSync(subtitle);
       final StringBuffer out = StringBuffer();
       final int code = await subsCheck(
         _parse(<String>['check', video.path, sub.path, '--json']),
@@ -378,28 +519,48 @@ void main() {
     }
 
     test('与视频自洽 → 0；整季合并文件（远超视频）→ 1；读不出时间 → 1', () async {
-      final (int ok, Map<String, Object?> okJson) = await check(_srt(<double>[5, 600, 1300]), 24 * 60 * 1000);
+      final (int ok, Map<String, Object?> okJson) = await check(
+        _srt(<double>[5, 600, 1300]),
+        24 * 60 * 1000,
+      );
       expect(ok, kExitOk);
       expect(okJson['verdict'], 'ok');
       expect(okJson['cueCount'], 3);
       expect(okJson['videoDurationMs'], 24 * 60 * 1000);
-      final (int over, Map<String, Object?> overJson) = await check(_srt(<double>[5, 5 * 3600]), 24 * 60 * 1000);
+      final (int over, Map<String, Object?> overJson) = await check(
+        _srt(<double>[5, 5 * 3600]),
+        24 * 60 * 1000,
+      );
       expect(over, kExitFailure);
       expect(overJson['verdict'], 'overrunsVideo');
       expect((await check('garbage', 24 * 60 * 1000)).$1, kExitFailure);
     });
 
     test('量不到视频时长 → 69（主判据没跑，不能报通过）', () async {
-      final (int code, Map<String, Object?> json) = await check(_srt(<double>[5, 600]), null);
+      final (int code, Map<String, Object?> json) = await check(
+        _srt(<double>[5, 600]),
+        null,
+      );
       expect(code, kExitUnavailable);
       expect(json['videoDurationMs'], isNull);
     });
 
     test('缺文件 66、缺参数 64', () async {
       final CliIo io = CliIo(out: StringBuffer(), err: StringBuffer());
-      expect(await subsCheck(_parse(<String>['check', video.path]), io: io, deps: const SubsDeps()), kExitUsage);
       expect(
-        await subsCheck(_parse(<String>['check', video.path, '/no/such.srt']), io: io, deps: const SubsDeps()),
+        await subsCheck(
+          _parse(<String>['check', video.path]),
+          io: io,
+          deps: const SubsDeps(),
+        ),
+        kExitUsage,
+      );
+      expect(
+        await subsCheck(
+          _parse(<String>['check', video.path, '/no/such.srt']),
+          io: io,
+          deps: const SubsDeps(),
+        ),
         kExitNoInput,
       );
     });
@@ -407,15 +568,19 @@ void main() {
 
   group('subs sync / restore（注入参考轨，不跑 ffmpeg）', () {
     test('ffmpeg 不可用 → 69；视频没有参考轨 → 1；非对齐产物 restore → 1', () async {
-      final File video = File(p.join(temp.path, 'sync.mkv'))..writeAsStringSync('x');
-      final File sub = File(p.join(temp.path, 'sync.srt'))..writeAsStringSync(_srt(_irregularStarts(30)));
+      final File video = File(p.join(temp.path, 'sync.mkv'))
+        ..writeAsStringSync('x');
+      final File sub = File(p.join(temp.path, 'sync.srt'))
+        ..writeAsStringSync(_srt(_irregularStarts(30)));
       await withRt((ServerRuntime rt) async {
         final CliIo io = CliIo(out: StringBuffer(), err: StringBuffer());
         expect(
           await subsSync(
             _parse(<String>['sync', video.path, sub.path]),
             io: io,
-            deps: SubsDeps(ffmpegProblem: ({required bool probe}) async => '找不到 ffmpeg'),
+            deps: SubsDeps(
+              ffmpegProblem: ({required bool probe}) async => '找不到 ffmpeg',
+            ),
           ),
           kExitUnavailable,
         );
@@ -432,9 +597,22 @@ void main() {
           ),
           kExitFailure,
         );
-        expect((jsonDecode(out.toString()) as Map<String, Object?>)['status'], 'noReference');
-        expect(await subsRestore(_parse(<String>['restore', sub.path]), io: io), kExitFailure);
-        expect(await subsSync(_parse(<String>['sync', video.path]), io: io, deps: const SubsDeps()), kExitUsage);
+        expect(
+          (jsonDecode(out.toString()) as Map<String, Object?>)['status'],
+          'noReference',
+        );
+        expect(
+          await subsRestore(_parse(<String>['restore', sub.path]), io: io),
+          kExitFailure,
+        );
+        expect(
+          await subsSync(
+            _parse(<String>['sync', video.path]),
+            io: io,
+            deps: const SubsDeps(),
+          ),
+          kExitUsage,
+        );
         return 0;
       });
     });
@@ -446,19 +624,26 @@ void main() {
       '外挂字幕整体晚 4 秒 → 按内嵌轨拉回，restore 找回原稿',
       () async {
         final List<double> starts = _irregularStarts(40);
-        final File ref = File(p.join(temp.path, 'ref.srt'))..writeAsStringSync(_srt(starts));
+        final File ref = File(p.join(temp.path, 'ref.srt'))
+          ..writeAsStringSync(_srt(starts));
         final File video = File(p.join(temp.path, 'with_subs.mkv'));
         final ProcessResult made = await Process.run('ffmpeg', <String>[
           '-y', '-v', 'error', //
-          '-f', 'lavfi', '-i', 'color=c=black:s=32x32:r=2:d=${(starts.last + 30).ceil()}',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=black:s=32x32:r=2:d=${(starts.last + 30).ceil()}',
           '-i', ref.path,
           '-map', '0:v', '-map', '1:s',
           '-c:v', 'mpeg4', '-c:s', 'srt',
           video.path,
         ]);
         expect(made.exitCode, 0, reason: '${made.stderr}');
-        final String original = _srt(starts.map((double s) => s + 4.0).toList());
-        final File sub = File(p.join(temp.path, 'late.srt'))..writeAsStringSync(original);
+        final String original = _srt(
+          starts.map((double s) => s + 4.0).toList(),
+        );
+        final File sub = File(p.join(temp.path, 'late.srt'))
+          ..writeAsStringSync(original);
 
         await withRt((ServerRuntime rt) async {
           final StringBuffer out = StringBuffer();
@@ -467,11 +652,14 @@ void main() {
             io: CliIo(out: out, err: StringBuffer(), json: true),
             deps: const SubsDeps(),
           );
-          final Map<String, Object?> json = jsonDecode(out.toString()) as Map<String, Object?>;
+          final Map<String, Object?> json =
+              jsonDecode(out.toString()) as Map<String, Object?>;
           expect(code, kExitOk, reason: '$json');
           expect(json['applied'], isTrue);
           final double offset =
-              ((json['offsets'] as List<Object?>).first as Map<String, Object?>)['offsetSeconds'] as double;
+              ((json['offsets'] as List<Object?>).first
+                      as Map<String, Object?>)['offsetSeconds']
+                  as double;
           expect(offset, closeTo(-4.0, 0.2));
           expect(sub.readAsStringSync(), isNot(original));
 

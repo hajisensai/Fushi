@@ -18,11 +18,11 @@ import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 /// 同名节。目录分节后前者归第七話，后者合成一节。
 EpubBook _book() {
   EpubChapter chapter(int i, String body) => EpubChapter(
-        id: 'c$i',
-        href: 'ch$i.xhtml',
-        mediaType: 'application/xhtml+xml',
-        html: '<html><body>$body</body></html>',
-      );
+    id: 'c$i',
+    href: 'ch$i.xhtml',
+    mediaType: 'application/xhtml+xml',
+    html: '<html><body>$body</body></html>',
+  );
   return EpubBook(
     title: '無職転生 25',
     chapters: <EpubChapter>[
@@ -79,20 +79,23 @@ double _headerTop(WidgetTester tester, Finder header) => tester
 
 /// 页面上全部节头的 key，按从上到下的顺序。
 List<String> _sectionKeys(WidgetTester tester) {
-  final List<Element> headers = find
-      .byWidgetPredicate(
-        (Widget w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith(
+  final List<Element> headers =
+      find
+          .byWidgetPredicate(
+            (Widget w) =>
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.startsWith(
                   'fushi_gallery_section_',
                 ),
-      )
-      .evaluate()
-      .toList()
-    ..sort(
-      (Element a, Element b) => _headerTop(tester, find.byWidget(a.widget))
-          .compareTo(_headerTop(tester, find.byWidget(b.widget))),
-    );
+          )
+          .evaluate()
+          .toList()
+        ..sort(
+          (Element a, Element b) => _headerTop(
+            tester,
+            find.byWidget(a.widget),
+          ).compareTo(_headerTop(tester, find.byWidget(b.widget))),
+        );
   return <String>[
     for (final Element e in headers) (e.widget.key! as ValueKey<String>).value,
   ];
@@ -153,8 +156,9 @@ void main() {
   test('插图带上与目录锚点同一把尺的章内字符偏移', () {
     final EpubBook book = _book();
     final Map<String, int> anchors = computeTocAnchorCharOffsets(book);
-    final EpubImageRef i2 =
-        book.images.firstWhere((EpubImageRef r) => r.src == 'i2.png');
+    final EpubImageRef i2 = book.images.firstWhere(
+      (EpubImageRef r) => r.src == 'i2.png',
+    );
     // 第七話锚点之后、正文五个字之后。
     expect(i2.chapterIndex, 1);
     expect(i2.charOffset, anchors[tocAnchorKey(1, 'a7')]! + 3 + 5);
@@ -170,7 +174,8 @@ void main() {
           mediaType: 'application/xhtml+xml',
           // close.png 收尾第一話（紧贴第二話标题之前）；open.png 开启第三話
           // （锚点挂在包裹元素上，图在标题之前）。
-          html: '<html><body><h2>第一話</h2><p>あいうえお</p>'
+          html:
+              '<html><body><h2>第一話</h2><p>あいうえお</p>'
               '<img src="close.png"/>\n'
               '<h2 id="n2">第二話</h2><p>かきくけこ</p>'
               '<div id="n3">\n<img src="open.png"/><h2>第三話</h2></div>'
@@ -205,7 +210,8 @@ void main() {
           id: 'c0',
           href: 'ch0.xhtml',
           mediaType: 'application/xhtml+xml',
-          html: '<html><body><h2>One</h2><p>abc</p><p>def</p><p>ghi</p>'
+          html:
+              '<html><body><h2>One</h2><p>abc</p><p>def</p><p>ghi</p>'
               '<img src="close.png"/><h2 id="n2">Two</h2><p>jkl</p>'
               '</body></html>',
         ),
@@ -217,8 +223,11 @@ void main() {
     );
     final List<TtuTocEntry> toc = _tocOf(book);
     final EpubImageRef close = book.images.single;
-    expect(close.charOffset, toc[1].anchorCharOffset,
-        reason: '图与紧随其后的锚点同一偏移，才轮得到平局规则');
+    expect(
+      close.charOffset,
+      toc[1].anchorCharOffset,
+      reason: '图与紧随其后的锚点同一偏移，才轮得到平局规则',
+    );
     expect(resolveTocEntryForImage(toc, close), 0, reason: '收尾第一节的图不得被归到第二节');
   });
 
@@ -298,8 +307,9 @@ void main() {
     );
 
     expect(find.text('Current reading position'), findsOneWidget);
-    final double badgeTop =
-        tester.getTopLeft(find.text('Current reading position')).dy;
+    final double badgeTop = tester
+        .getTopLeft(find.text('Current reading position'))
+        .dy;
     final double headerTop = _headerTop(tester, _tocSection(3));
     // 徽标画在第七話节头那一行上，而不是同一 xhtml 的第五話。
     expect((badgeTop - headerTop).abs(), lessThan(44));
@@ -317,8 +327,9 @@ void main() {
     );
 
     expect(find.text('Current reading position'), findsOneWidget);
-    final double markerTop =
-        tester.getTopLeft(find.text('Current reading position')).dy;
+    final double markerTop = tester
+        .getTopLeft(find.text('Current reading position'))
+        .dy;
     expect(markerTop, greaterThan(_headerTop(tester, _tocSection(1))));
     expect(markerTop, lessThan(_headerTop(tester, _tocSection(3))));
   });

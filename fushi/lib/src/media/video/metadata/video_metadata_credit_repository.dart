@@ -28,9 +28,7 @@ class VideoMetadataPersonSummary {
     this.biography,
     this.profileUrl,
     this.profilePath,
-  }) : identities = List<VideoMetadataIdentitySummary>.unmodifiable(
-          identities,
-        );
+  }) : identities = List<VideoMetadataIdentitySummary>.unmodifiable(identities);
 
   final String personKey;
   final String name;
@@ -49,9 +47,7 @@ class VideoMetadataCharacterSummary {
     this.description,
     this.imageUrl,
     this.imagePath,
-  }) : identities = List<VideoMetadataIdentitySummary>.unmodifiable(
-          identities,
-        );
+  }) : identities = List<VideoMetadataIdentitySummary>.unmodifiable(identities);
 
   final String characterKey;
   final String name;
@@ -95,10 +91,8 @@ class VideoMetadataWorkCredits {
     required this.workId,
     required List<VideoMetadataIdentitySummary> identities,
     required List<VideoMetadataCreditSummary> credits,
-  })  : identities = List<VideoMetadataIdentitySummary>.unmodifiable(
-          identities,
-        ),
-        credits = List<VideoMetadataCreditSummary>.unmodifiable(credits);
+  }) : identities = List<VideoMetadataIdentitySummary>.unmodifiable(identities),
+       credits = List<VideoMetadataCreditSummary>.unmodifiable(credits);
 
   final int workId;
   final List<VideoMetadataIdentitySummary> identities;
@@ -111,20 +105,20 @@ class VideoMetadataCreditRepository {
   final FushiDatabase _database;
 
   Future<VideoMetadataWorkCredits?> forCollection(int collectionId) async {
-    final VideoMetadataWorkRow? work =
-        await _database.resolveVideoMetadataWorkForCollection(collectionId);
+    final VideoMetadataWorkRow? work = await _database
+        .resolveVideoMetadataWorkForCollection(collectionId);
     return work == null ? null : _readWork(work.id);
   }
 
   Future<VideoMetadataWorkCredits?> forBook(String bookUid) async {
-    final VideoMetadataWorkRow? work =
-        await _database.getVideoMetadataWorkByBook(bookUid);
+    final VideoMetadataWorkRow? work = await _database
+        .getVideoMetadataWorkByBook(bookUid);
     return work == null ? null : _readWork(work.id);
   }
 
   Future<VideoMetadataWorkCredits> _readWork(int workId) async {
-    final List<VideoMetadataCreditRow> rows =
-        await _database.getVideoMetadataCredits(workId: workId);
+    final List<VideoMetadataCreditRow> rows = await _database
+        .getVideoMetadataCredits(workId: workId);
     final Set<String> personKeys = <String>{
       for (final VideoMetadataCreditRow row in rows) row.personKey,
     };
@@ -140,14 +134,14 @@ class VideoMetadataCreditRepository {
     );
     final Map<String, VideoMetadataPersonSummary> peopleByKey =
         <String, VideoMetadataPersonSummary>{
-      for (final VideoMetadataPersonSummary? person in people)
-        if (person != null) person.personKey: person,
-    };
+          for (final VideoMetadataPersonSummary? person in people)
+            if (person != null) person.personKey: person,
+        };
     final Map<String, VideoMetadataCharacterSummary> charactersByKey =
         <String, VideoMetadataCharacterSummary>{
-      for (final VideoMetadataCharacterSummary? character in characters)
-        if (character != null) character.characterKey: character,
-    };
+          for (final VideoMetadataCharacterSummary? character in characters)
+            if (character != null) character.characterKey: character,
+        };
     return VideoMetadataWorkCredits(
       workId: workId,
       identities: _identities(
@@ -174,8 +168,9 @@ class VideoMetadataCreditRepository {
   }
 
   Future<VideoMetadataPersonSummary?> _readPerson(String personKey) async {
-    final VideoMetadataPersonRow? row =
-        await _database.getVideoMetadataPerson(personKey);
+    final VideoMetadataPersonRow? row = await _database.getVideoMetadataPerson(
+      personKey,
+    );
     if (row == null) return null;
     return VideoMetadataPersonSummary(
       personKey: row.personKey,
@@ -201,8 +196,8 @@ class VideoMetadataCreditRepository {
   Future<VideoMetadataCharacterSummary?> _readCharacter(
     String characterKey,
   ) async {
-    final VideoMetadataCharacterRow? row =
-        await _database.getVideoMetadataCharacter(characterKey);
+    final VideoMetadataCharacterRow? row = await _database
+        .getVideoMetadataCharacter(characterKey);
     if (row == null) return null;
     return VideoMetadataCharacterSummary(
       characterKey: row.characterKey,
@@ -220,14 +215,13 @@ class VideoMetadataCreditRepository {
 
   static List<VideoMetadataIdentitySummary> _identities(
     Iterable<VideoMetadataProviderIdentityRow> rows,
-  ) =>
-      <VideoMetadataIdentitySummary>[
-        for (final VideoMetadataProviderIdentityRow row in rows)
-          VideoMetadataIdentitySummary(
-            provider: row.provider,
-            externalId: row.externalId,
-            externalUrl: row.externalUrl,
-            isPrimary: row.isPrimary,
-          ),
-      ];
+  ) => <VideoMetadataIdentitySummary>[
+    for (final VideoMetadataProviderIdentityRow row in rows)
+      VideoMetadataIdentitySummary(
+        provider: row.provider,
+        externalId: row.externalId,
+        externalUrl: row.externalUrl,
+        isPrimary: row.isPrimary,
+      ),
+  ];
 }

@@ -23,29 +23,48 @@ void main() {
   test('shelf SRT reimport routes by which table owns the audio', () {
     final String history = readReaderHistorySource();
     final int start = history.indexOf('Future<void> _openSrtBookReimport(');
-    expect(start, isNonNegative,
-        reason: '_openSrtBookReimport 应存在于书架 part 语料中');
+    expect(
+      start,
+      isNonNegative,
+      reason: '_openSrtBookReimport 应存在于书架 part 语料中',
+    );
 
     // 切出方法体：到下一个同缩进的方法签名为止。
     final int nextMethod = history.indexOf(
-        '\n  Future<', start + 'Future<void> _openSrtBookReimport('.length);
+      '\n  Future<',
+      start + 'Future<void> _openSrtBookReimport('.length,
+    );
     final String body = nextMethod >= 0
         ? history.substring(start, nextMethod)
         : history.substring(start);
 
-    expect(body.contains('getAudiobookByBookKey('), isTrue,
-        reason: '必须按「这本书有没有 Audiobooks 行」分流，'
-            '而不是无条件写 SrtBooks（写了播放侧也不看）');
-    expect(body.contains('SrtBookReimportDialog('), isTrue,
-        reason: '真字幕书那一支必须走字幕书自己的重新导入对话框');
+    expect(
+      body.contains('getAudiobookByBookKey('),
+      isTrue,
+      reason:
+          '必须按「这本书有没有 Audiobooks 行」分流，'
+          '而不是无条件写 SrtBooks（写了播放侧也不看）',
+    );
+    expect(
+      body.contains('SrtBookReimportDialog('),
+      isTrue,
+      reason: '真字幕书那一支必须走字幕书自己的重新导入对话框',
+    );
   });
 
   test('reimportSrtBook writes audio through replaceAudio only', () {
-    final String service =
-        File('lib/src/media/import/srt_book_reimport.dart').readAsStringSync();
-    expect(service.contains('repo.replaceAudio('), isTrue,
-        reason: '字幕书音频写入必须复用 SrtBookRepository.replaceAudio 唯一路径');
-    expect(service.contains('AudiobookRepository('), isFalse,
-        reason: '字幕书重新导入不得自己往 Audiobooks 表写行');
+    final String service = File(
+      'lib/src/media/import/srt_book_reimport.dart',
+    ).readAsStringSync();
+    expect(
+      service.contains('repo.replaceAudio('),
+      isTrue,
+      reason: '字幕书音频写入必须复用 SrtBookRepository.replaceAudio 唯一路径',
+    );
+    expect(
+      service.contains('AudiobookRepository('),
+      isFalse,
+      reason: '字幕书重新导入不得自己往 Audiobooks 表写行',
+    );
   });
 }

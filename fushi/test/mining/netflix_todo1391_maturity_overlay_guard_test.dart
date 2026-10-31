@@ -21,25 +21,37 @@ void main() {
       final String content = File('$root/content.js').readAsStringSync();
 
       // 复用既有隐藏机制，而非新增一套（同一 style id + 同一开关门控）。
-      expect(content.contains('fushi-nf-hide-next'), isTrue,
-          reason:
-              '$root content.js must reuse the fushi-nf-hide-next style id');
-      expect(content.contains('netflixHideNextEpisode'), isTrue,
-          reason:
-              '$root content.js maturity hide must share the netflixHideNextEpisode gate');
+      expect(
+        content.contains('fushi-nf-hide-next'),
+        isTrue,
+        reason: '$root content.js must reuse the fushi-nf-hide-next style id',
+      );
+      expect(
+        content.contains('netflixHideNextEpisode'),
+        isTrue,
+        reason:
+            '$root content.js maturity hide must share the netflixHideNextEpisode gate',
+      );
 
       // 年龄分级 overlay 选择器进入隐藏清单：播放器作用域的容器前缀 + data-uia 兜底。
       expect(
-          content.contains('[class*="watch-video--maturity-rating"]'), isTrue,
-          reason:
-              '$root content.js must target the player maturity-rating container');
-      expect(content.contains('.watch-video [data-uia*="maturity"]'), isTrue,
-          reason:
-              '$root content.js must target the maturity data-uia player hook');
+        content.contains('[class*="watch-video--maturity-rating"]'),
+        isTrue,
+        reason:
+            '$root content.js must target the player maturity-rating container',
+      );
       expect(
-          content.contains('.watch-video [class*="maturity-rating"]'), isTrue,
-          reason:
-              '$root content.js must target nested player maturity-rating nodes');
+        content.contains('.watch-video [data-uia*="maturity"]'),
+        isTrue,
+        reason:
+            '$root content.js must target the maturity data-uia player hook',
+      );
+      expect(
+        content.contains('.watch-video [class*="maturity-rating"]'),
+        isTrue,
+        reason:
+            '$root content.js must target nested player maturity-rating nodes',
+      );
     });
   });
 }

@@ -38,9 +38,7 @@ void main() {
     });
 
     test('含大量标点的段落：实义计数严格低于原始长度（比旧口径低）', () {
-      final EpubBook book = _bookWithHtml(
-        '<p>「ねえ、」と彼女は言った。──そして、笑った！</p>',
-      );
+      final EpubBook book = _bookWithHtml('<p>「ねえ、」と彼女は言った。──そして、笑った！</p>');
       final String plain = book.chapterPlainText(0);
       expect(book.chapterCharacterCount(0), lessThan(plain.length));
       expect(book.chapterCharacterCount(0), greaterThan(0));
@@ -49,14 +47,20 @@ void main() {
     test('英文章节按词计，不再逐字母（v3→v4 的核心变化）', () {
       final EpubBook book = _bookWithHtml('<p>I do not know.</p>');
       expect(book.chapterPlainText(0), 'I do not know.');
-      expect(book.chapterCharacterCount(0), 4,
-          reason: 'v3 会算成 11（逐字母），英文书的字数因此虚高约 5 倍');
+      expect(
+        book.chapterCharacterCount(0),
+        4,
+        reason: 'v3 会算成 11（逐字母），英文书的字数因此虚高约 5 倍',
+      );
     });
 
     test('俄文章节不再记 0（v3 整脚本漏计 → 进度分母为 0）', () {
       final EpubBook book = _bookWithHtml('<p>Привет мир</p>');
-      expect(book.chapterCharacterCount(0), 2,
-          reason: 'v3 记 0，computeBookProgress 分母为 0 后进度退化成章号/章数');
+      expect(
+        book.chapterCharacterCount(0),
+        2,
+        reason: 'v3 记 0，computeBookProgress 分母为 0 后进度退化成章号/章数',
+      );
     });
 
     test('越界索引 → 0', () {

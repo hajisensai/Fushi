@@ -35,12 +35,12 @@ class CreatorModel with ChangeNotifier {
 
   /// Prepare the [CreatorModel]'s final variables for use.
   void initialise() {
-    _controllersByField = Map.unmodifiable(
-      {for (Field field in globalFields) field: TextEditingController()},
-    );
-    _lockNotifiersByField = Map.unmodifiable(
-      {for (Field field in globalFields) field: ValueNotifier<bool>(false)},
-    );
+    _controllersByField = Map.unmodifiable({
+      for (Field field in globalFields) field: TextEditingController(),
+    });
+    _lockNotifiersByField = Map.unmodifiable({
+      for (Field field in globalFields) field: ValueNotifier<bool>(false),
+    });
   }
 
   @override
@@ -61,10 +61,7 @@ class CreatorModel with ChangeNotifier {
   }
 
   /// Clear all fields and current context.
-  void clearAll({
-    required bool overrideLocks,
-    required String savedTags,
-  }) {
+  void clearAll({required bool overrideLocks, required String savedTags}) {
     if (overrideLocks) {
       for (Field field in fieldsByKey.values) {
         getLockedNotifier(field).value = false;

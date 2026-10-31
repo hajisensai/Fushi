@@ -26,8 +26,11 @@ void main() {
     // 以类声明的真实代码锚点 + 花括号配对抽体，邻接类增删不会把窗口误扩/截断。
     final String searchable = maskComments(source);
     final int start = searchable.indexOf('class _SessionOverviewCard');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '找不到 _SessionOverviewCard，测试锚点过期');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '找不到 _SessionOverviewCard，测试锚点过期',
+    );
     cardSource = balancedBlockFrom(
       source,
       start,
@@ -42,10 +45,7 @@ void main() {
       reason: '降级原因的渲染条件必须只看 fallbackReason，不看屏宽',
     );
     expect(
-      containsCodeLine(
-        cardSource,
-        '!compact && state.fallbackReason != null',
-      ),
+      containsCodeLine(cardSource, '!compact && state.fallbackReason != null'),
       isFalse,
       reason: '窄屏藏掉降级原因正是 BUG-1110，不得回退',
     );
@@ -70,12 +70,21 @@ void main() {
     final int question = expr.indexOf('?');
     final int colon = expr.indexOf(':', question);
     expect(question, greaterThan(0), reason: 'audioChipLabel 应是 compact 三元');
-    expect(expr.substring(0, question).contains('compact'), isTrue,
-        reason: '音频 chip 标签按 compact 分支');
-    expect(expr.substring(question, colon).contains('format'), isFalse,
-        reason: 'compact 分支不该带 format（采样率/声道/位深是次要信息）');
-    expect(expr.substring(colon).contains('format'), isTrue,
-        reason: '非 compact 分支必须仍带 format');
+    expect(
+      expr.substring(0, question).contains('compact'),
+      isTrue,
+      reason: '音频 chip 标签按 compact 分支',
+    );
+    expect(
+      expr.substring(question, colon).contains('format'),
+      isFalse,
+      reason: 'compact 分支不该带 format（采样率/声道/位深是次要信息）',
+    );
+    expect(
+      expr.substring(colon).contains('format'),
+      isTrue,
+      reason: '非 compact 分支必须仍带 format',
+    );
   });
 
   test('降级徽章与降级原因的显示条件必须对称（BUG-1110）', () {
@@ -84,8 +93,11 @@ void main() {
       cardSource,
       'label: state.isDegraded',
     );
-    expect(pill.text.startsWith('_StatusPill('), isTrue,
-        reason: '降级标签应由 _StatusPill 承载');
+    expect(
+      pill.text.startsWith('_StatusPill('),
+      isTrue,
+      reason: '降级标签应由 _StatusPill 承载',
+    );
     expect(
       pill.text.contains('state.isDegraded'),
       isTrue,

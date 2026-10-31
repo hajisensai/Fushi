@@ -17,8 +17,9 @@ import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
-final Uri kGoogleLensEndpoint =
-    Uri.parse('https://lensfrontend-pa.googleapis.com/v1/crupload');
+final Uri kGoogleLensEndpoint = Uri.parse(
+  'https://lensfrontend-pa.googleapis.com/v1/crupload',
+);
 const String _kChromiumLensApiKey = 'AIzaSyDr2UxVnv_U85AbhhY8XSHSIavUW0DC-sY';
 const String _kChromiumUserAgent =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
@@ -45,8 +46,8 @@ class HttpGoogleLensTransport implements GoogleLensTransport {
     Uri? endpoint,
     HttpClient? client,
     this.timeout = const Duration(seconds: 60),
-  })  : endpoint = endpoint ?? kGoogleLensEndpoint,
-        _client = client ?? createAppHttpClient() {
+  }) : endpoint = endpoint ?? kGoogleLensEndpoint,
+       _client = client ?? createAppHttpClient() {
     _client.connectionTimeout = timeout;
     _client.userAgent = _kChromiumUserAgent;
     _client.maxConnectionsPerHost = 2;
@@ -59,16 +60,21 @@ class HttpGoogleLensTransport implements GoogleLensTransport {
   @override
   Future<Uint8List> post(Uint8List body) async {
     try {
-      final HttpClientRequest request =
-          await _client.postUrl(endpoint).timeout(timeout);
-      request.headers.contentType =
-          ContentType('application', 'x-protobuf', charset: null);
+      final HttpClientRequest request = await _client
+          .postUrl(endpoint)
+          .timeout(timeout);
+      request.headers.contentType = ContentType(
+        'application',
+        'x-protobuf',
+        charset: null,
+      );
       request.headers.set('X-Goog-Api-Key', _kChromiumLensApiKey);
       request.headers.set(HttpHeaders.userAgentHeader, _kChromiumUserAgent);
       request.contentLength = body.length;
       request.add(body);
-      final HttpClientResponse response =
-          await request.close().timeout(timeout);
+      final HttpClientResponse response = await request.close().timeout(
+        timeout,
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.drain<void>();
         throw GoogleLensOcrException(
@@ -127,7 +133,7 @@ abstract interface class GoogleLensMangaOcrRunner {
 
 class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   GoogleLensMangaOcrService({GoogleLensTransport? transport})
-      : _transport = transport ?? HttpGoogleLensTransport();
+    : _transport = transport ?? HttpGoogleLensTransport();
 
   final GoogleLensTransport _transport;
 
@@ -166,8 +172,9 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
               },
             );
             if (!controller.isClosed) {
-              final int pages =
-                  enumerateMangaPages(Directory(imageDirPath)).length;
+              final int pages = enumerateMangaPages(
+                Directory(imageDirPath),
+              ).length;
               controller.add(
                 MangaOcrVolumeEvent.finished(
                   pagesTotal: pages,
@@ -205,8 +212,9 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     if (pages.isEmpty) {
       throw const GoogleLensOcrException('no_pages');
     }
-    final Directory outputDirectory =
-        Directory(p.join(root.path, kMangaOcrOutDirName));
+    final Directory outputDirectory = Directory(
+      p.join(root.path, kMangaOcrOutDirName),
+    );
     final Directory cacheDirectory = Directory(
       p.join(
         outputDirectory.path,
@@ -216,15 +224,20 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     );
     final GoogleLensPageCache cache = GoogleLensPageCache(cacheDirectory);
     await cache.writeManifest(pages);
-    final File output =
-        File(p.join(outputDirectory.path, kMangaOcrOutputFileName));
+    final File output = File(
+      p.join(outputDirectory.path, kMangaOcrOutputFileName),
+    );
     final Map<String, MokuroImage> existing = onlyMissing
         ? await _readExistingPages(output)
         : <String, MokuroImage>{};
-    final List<MokuroImage?> results =
-        List<MokuroImage?>.filled(pages.length, null);
-    final MangaOcrPageScheduler scheduler =
-        MangaOcrPageScheduler(pages.length, startPage);
+    final List<MokuroImage?> results = List<MokuroImage?>.filled(
+      pages.length,
+      null,
+    );
+    final MangaOcrPageScheduler scheduler = MangaOcrPageScheduler(
+      pages.length,
+      startPage,
+    );
     int done = 0;
     while (true) {
       final int? focused = focus?.take();
@@ -287,8 +300,8 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   }) async {
     final GoogleLensPreparedImage prepared =
         await Isolate.run<GoogleLensPreparedImage>(
-      () => GoogleLensProtocol.prepareImage(source),
-    );
+          () => GoogleLensProtocol.prepareImage(source),
+        );
     final Uint8List request = GoogleLensProtocol.makeRequest(
       imageData: prepared.data,
       width: prepared.width,
@@ -323,8 +336,9 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         MokuroBlock(
           rectangle: blockRect,
           isVertical: paragraph.isVertical,
-          fontSize:
-              math.sqrt(blockRect.width * blockRect.height / characterCount),
+          fontSize: math.sqrt(
+            blockRect.width * blockRect.height / characterCount,
+          ),
           zIndex: index,
           lines: <String>[paragraph.sentence],
           regions: <MangaOcrTextRegion>[
@@ -392,10 +406,7 @@ class GoogleLensPageCache {
     );
   }
 
-  Future<MokuroImage?> read(
-    int pageIndex,
-    MangaOcrPageFile page,
-  ) async {
+  Future<MokuroImage?> read(int pageIndex, MangaOcrPageFile page) async {
     final String memoryKey = jsonEncode(_fingerprint(page));
     final MokuroImage? memory = _memory[memoryKey];
     if (memory != null) {
@@ -449,10 +460,13 @@ class GoogleLensPageCache {
     MokuroImage result,
   ) async {
     await directory.create(recursive: true);
-    final Map<String, Object?> pageJson = (mangaPayloadToJson(
-                MokuroPayload(images: <MokuroImage>[result]))['pages']
-            as List<Object?>)
-        .single as Map<String, Object?>;
+    final Map<String, Object?> pageJson =
+        (mangaPayloadToJson(
+                      MokuroPayload(images: <MokuroImage>[result]),
+                    )['pages']
+                    as List<Object?>)
+                .single
+            as Map<String, Object?>;
     final Map<String, Object?> encoded = <String, Object?>{
       'fingerprint': _fingerprint(page),
       'geometry_version': 3,
@@ -467,7 +481,8 @@ class GoogleLensPageCache {
   }
 
   File _pageFile(int pageIndex) => File(
-      p.join(directory.path, '${pageIndex.toString().padLeft(6, '0')}.json'));
+    p.join(directory.path, '${pageIndex.toString().padLeft(6, '0')}.json'),
+  );
 
   static Map<String, Object?> _fingerprint(MangaOcrPageFile page) {
     final FileStat stat = page.file.statSync();
@@ -478,10 +493,7 @@ class GoogleLensPageCache {
     };
   }
 
-  static bool _sameFingerprint(
-    Object? raw,
-    Map<String, Object?> expected,
-  ) {
+  static bool _sameFingerprint(Object? raw, Map<String, Object?> expected) {
     if (raw is! Map) {
       return false;
     }
@@ -508,24 +520,25 @@ MokuroImage _migrateLegacyCachedLensPage(MokuroImage page) {
   final double pageHeight = page.size.height;
   final List<MokuroBlock> blocks = <MokuroBlock>[
     for (final MokuroBlock block in page.blocks)
-      _normalizeCachedLensBlock(MokuroBlock(
-        rectangle: _flipLegacyLensRect(block.rectangle, pageHeight),
-        isVertical: block.isVertical,
-        fontSize: block.fontSize,
-        zIndex: block.zIndex,
-        lines: block.lines,
-        linesCoords: block.linesCoords,
-        regions: block.regions
-            ?.map((MangaOcrTextRegion region) => MangaOcrTextRegion(
-                  rectangle: _flipLegacyLensRect(
-                    region.rectangle,
-                    pageHeight,
-                  ),
+      _normalizeCachedLensBlock(
+        MokuroBlock(
+          rectangle: _flipLegacyLensRect(block.rectangle, pageHeight),
+          isVertical: block.isVertical,
+          fontSize: block.fontSize,
+          zIndex: block.zIndex,
+          lines: block.lines,
+          linesCoords: block.linesCoords,
+          regions: block.regions
+              ?.map(
+                (MangaOcrTextRegion region) => MangaOcrTextRegion(
+                  rectangle: _flipLegacyLensRect(region.rectangle, pageHeight),
                   utf16Start: region.utf16Start,
                   utf16End: region.utf16End,
-                ))
-            .toList(),
-      )),
+                ),
+              )
+              .toList(),
+        ),
+      ),
   ];
   return MokuroImage(url: page.url, size: page.size, blocks: blocks);
 }
@@ -549,15 +562,19 @@ MokuroBlock _normalizeCachedLensBlock(MokuroBlock block) {
     final int start = region.utf16Start.clamp(0, original.length);
     final int end = region.utf16End.clamp(start, original.length);
     if (end <= start) continue;
-    pieces.add(_CachedLensPiece(
-      text: original.substring(start, end),
-      rectangle: region.rectangle,
-    ));
+    pieces.add(
+      _CachedLensPiece(
+        text: original.substring(start, end),
+        rectangle: region.rectangle,
+      ),
+    );
   }
   if (pieces.length < 2) return block;
 
-  final List<List<_CachedLensPiece>> groups =
-      _groupCachedLensPieces(pieces, vertical: block.isVertical);
+  final List<List<_CachedLensPiece>> groups = _groupCachedLensPieces(
+    pieces,
+    vertical: block.isVertical,
+  );
   final List<_CachedLensPiece> ordered = <_CachedLensPiece>[
     for (final List<_CachedLensPiece> group in groups) ...group,
   ];
@@ -567,11 +584,13 @@ MokuroBlock _normalizeCachedLensBlock(MokuroBlock block) {
   for (final _CachedLensPiece piece in ordered) {
     final int end = offset + piece.text.length;
     sentence.write(piece.text);
-    normalizedRegions.add(MangaOcrTextRegion(
-      rectangle: piece.rectangle,
-      utf16Start: offset,
-      utf16End: end,
-    ));
+    normalizedRegions.add(
+      MangaOcrTextRegion(
+        rectangle: piece.rectangle,
+        utf16Start: offset,
+        utf16End: end,
+      ),
+    );
     offset = end;
   }
   return MokuroBlock(
@@ -590,23 +609,33 @@ List<List<_CachedLensPiece>> _groupCachedLensPieces(
   required bool vertical,
 }) {
   final List<_CachedLensPiece> remaining = List<_CachedLensPiece>.of(pieces)
-    ..sort(vertical
-        ? (_CachedLensPiece a, _CachedLensPiece b) =>
-            b.rectangle.center.dx.compareTo(a.rectangle.center.dx)
-        : (_CachedLensPiece a, _CachedLensPiece b) =>
-            a.rectangle.center.dy.compareTo(b.rectangle.center.dy));
+    ..sort(
+      vertical
+          ? (_CachedLensPiece a, _CachedLensPiece b) =>
+                b.rectangle.center.dx.compareTo(a.rectangle.center.dx)
+          : (_CachedLensPiece a, _CachedLensPiece b) =>
+                a.rectangle.center.dy.compareTo(b.rectangle.center.dy),
+    );
   final List<List<_CachedLensPiece>> groups = <List<_CachedLensPiece>>[];
   for (final _CachedLensPiece piece in remaining) {
     List<_CachedLensPiece>? match;
     for (final List<_CachedLensPiece> group in groups) {
       final MokuroRect anchor = group.first.rectangle;
       final bool overlaps = vertical
-          ? _axisOverlap(anchor.left, anchor.right, piece.rectangle.left,
-                  piece.rectangle.right) >
-              math.min(anchor.width, piece.rectangle.width) * 0.35
-          : _axisOverlap(anchor.top, anchor.bottom, piece.rectangle.top,
-                  piece.rectangle.bottom) >
-              math.min(anchor.height, piece.rectangle.height) * 0.35;
+          ? _axisOverlap(
+                  anchor.left,
+                  anchor.right,
+                  piece.rectangle.left,
+                  piece.rectangle.right,
+                ) >
+                math.min(anchor.width, piece.rectangle.width) * 0.35
+          : _axisOverlap(
+                  anchor.top,
+                  anchor.bottom,
+                  piece.rectangle.top,
+                  piece.rectangle.bottom,
+                ) >
+                math.min(anchor.height, piece.rectangle.height) * 0.35;
       if (overlaps) {
         match = group;
         break;
@@ -614,17 +643,25 @@ List<List<_CachedLensPiece>> _groupCachedLensPieces(
     }
     (match ?? (groups..add(<_CachedLensPiece>[])).last).add(piece);
   }
-  groups.sort(vertical
-      ? (List<_CachedLensPiece> a, List<_CachedLensPiece> b) =>
-          b.first.rectangle.center.dx.compareTo(a.first.rectangle.center.dx)
-      : (List<_CachedLensPiece> a, List<_CachedLensPiece> b) =>
-          a.first.rectangle.center.dy.compareTo(b.first.rectangle.center.dy));
+  groups.sort(
+    vertical
+        ? (List<_CachedLensPiece> a, List<_CachedLensPiece> b) =>
+              b.first.rectangle.center.dx.compareTo(a.first.rectangle.center.dx)
+        : (List<_CachedLensPiece> a, List<_CachedLensPiece> b) => a
+              .first
+              .rectangle
+              .center
+              .dy
+              .compareTo(b.first.rectangle.center.dy),
+  );
   for (final List<_CachedLensPiece> group in groups) {
-    group.sort(vertical
-        ? (_CachedLensPiece a, _CachedLensPiece b) =>
-            a.rectangle.center.dy.compareTo(b.rectangle.center.dy)
-        : (_CachedLensPiece a, _CachedLensPiece b) =>
-            a.rectangle.center.dx.compareTo(b.rectangle.center.dx));
+    group.sort(
+      vertical
+          ? (_CachedLensPiece a, _CachedLensPiece b) =>
+                a.rectangle.center.dy.compareTo(b.rectangle.center.dy)
+          : (_CachedLensPiece a, _CachedLensPiece b) =>
+                a.rectangle.center.dx.compareTo(b.rectangle.center.dx),
+    );
   }
   return groups;
 }
@@ -653,10 +690,7 @@ Future<Map<String, MokuroImage>> _readExistingPages(File output) async {
   }
 }
 
-Future<void> _writeJsonAtomically(
-  File target,
-  Map<String, Object?> value,
-) =>
+Future<void> _writeJsonAtomically(File target, Map<String, Object?> value) =>
     _writeTextAtomically(target, jsonEncode(value));
 
 Future<void> _writeTextAtomically(File target, String value) async {

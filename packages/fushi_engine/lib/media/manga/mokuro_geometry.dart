@@ -87,11 +87,11 @@ class MokuroRect {
   bool get isEmpty => left >= right || top >= bottom;
 
   MokuroRect shift(MokuroPoint offset) => MokuroRect.fromLTRB(
-        left + offset.dx,
-        top + offset.dy,
-        right + offset.dx,
-        bottom + offset.dy,
-      );
+    left + offset.dx,
+    top + offset.dy,
+    right + offset.dx,
+    bottom + offset.dy,
+  );
 
   /// 与 `dart:ui` `Rect.contains` 同义：左上闭、右下开。
   bool contains(MokuroPoint point) =>
@@ -112,7 +112,8 @@ class MokuroRect {
   int get hashCode => Object.hash(left, top, right, bottom);
 
   @override
-  String toString() => 'MokuroRect.fromLTRB('
+  String toString() =>
+      'MokuroRect.fromLTRB('
       '${left.toStringAsFixed(1)}, ${top.toStringAsFixed(1)}, '
       '${right.toStringAsFixed(1)}, ${bottom.toStringAsFixed(1)})';
 }
@@ -183,8 +184,7 @@ const double kMokuroTiltMaxDriftRatio = 0.1;
 /// 可忽略——同样斜 3°，3 个字的短列两端只偏 0.08 字宽，20 个字的长列要偏半个
 /// 字宽、首尾的字点不中。所以长行斜一点也照样转，短行不会被噪声角度带着转。
 bool mokuroTiltIsNegligible(double length, double thickness, double tilt) =>
-    length / 2 * math.sin(tilt).abs() <
-    kMokuroTiltMaxDriftRatio * thickness;
+    length / 2 * math.sin(tilt).abs() < kMokuroTiltMaxDriftRatio * thickness;
 
 /// 把 mokuro `lines_coords` 的一个四点多边形拟合成 [MokuroOrientedRect]。
 ///
@@ -231,11 +231,12 @@ MokuroOrientedRect? mokuroOrientedRectFromQuad(List<List<double>> polygon) {
     center: MokuroPoint(cx, cy),
     width: width,
     height: height,
-    rotation: mokuroTiltIsNegligible(
-      math.max(width, height),
-      math.min(width, height),
-      rotation,
-    )
+    rotation:
+        mokuroTiltIsNegligible(
+          math.max(width, height),
+          math.min(width, height),
+          rotation,
+        )
         ? 0
         : rotation,
   );

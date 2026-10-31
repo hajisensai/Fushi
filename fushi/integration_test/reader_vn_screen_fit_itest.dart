@@ -245,8 +245,10 @@ Future<void> _verifyWritingMode(
     return;
   }
   final ObserveShot before = await captureReaderWebView('vn-fit-$tag-before');
-  debugPrint('[vn-fit] $tag webview before saved=${before.saved} '
-      'nonBlank=${before.nonBlank} path=${before.path}');
+  debugPrint(
+    '[vn-fit] $tag webview before saved=${before.saved} '
+    'nonBlank=${before.nonBlank} path=${before.path}',
+  );
 
   final Map<String, dynamic> fit = await _eval(runJs, _fitProbeJs);
   final Map<String, dynamic> summary = Map<String, dynamic>.from(fit)
@@ -258,8 +260,9 @@ Future<void> _verifyWritingMode(
     return;
   }
   final String wm = fit['writingMode']?.toString() ?? '';
-  if (!wm
-      .startsWith(writingMode == 'vertical-rl' ? 'vertical' : 'horizontal')) {
+  if (!wm.startsWith(
+    writingMode == 'vertical-rl' ? 'vertical' : 'horizontal',
+  )) {
     failures.add('$tag: writing mode not applied (got $wm)');
   }
   final List<num> screenBox = (fit['screenBox'] as List).cast<num>();
@@ -271,8 +274,10 @@ Future<void> _verifyWritingMode(
     // BUG-2575 不变式 1：量尺盒 == 真屏盒。修前这里 mirror 高 == innerHeight。
     if ((mirrorBox[2] - screenBox[2]).abs() > 1 ||
         (mirrorBox[3] - screenBox[3]).abs() > 1) {
-      failures.add('$tag: measurement mirror ${mirrorBox.join(",")} != '
-          'screen box ${screenBox.join(",")} (innerHeight=${fit['innerHeight']})');
+      failures.add(
+        '$tag: measurement mirror ${mirrorBox.join(",")} != '
+        'screen box ${screenBox.join(",")} (innerHeight=${fit['innerHeight']})',
+      );
     }
     if (priority == null ||
         priority[0] != 'important' ||
@@ -293,26 +298,34 @@ Future<void> _verifyWritingMode(
       overflowScreens++;
       outsideRects += outside;
       if (overflowScreens <= 5) {
-        debugPrint('[vn-fit] $tag overflow screen ${s['i']} '
-            'outside=$outside/${s['total']} len=${s['len']} '
-            'over(l,r,t,b)=${s['over']} content(top,bottom,h)=${s['content']}');
+        debugPrint(
+          '[vn-fit] $tag overflow screen ${s['i']} '
+          'outside=$outside/${s['total']} len=${s['len']} '
+          'over(l,r,t,b)=${s['over']} content(top,bottom,h)=${s['content']}',
+        );
       }
     }
     if (s['contiguous'] != true) nonContiguous++;
   }
-  debugPrint('[vn-fit] $tag screens=$screens overflowScreens=$overflowScreens '
-      'outsideRects=$outsideRects nonContiguous=$nonContiguous '
-      'joinedEqualsSource=${fit['joinedEqualsSource']}');
+  debugPrint(
+    '[vn-fit] $tag screens=$screens overflowScreens=$overflowScreens '
+    'outsideRects=$outsideRects nonContiguous=$nonContiguous '
+    'joinedEqualsSource=${fit['joinedEqualsSource']}',
+  );
   // BUG-2575 不变式 2：任何屏都不许有文本行盒溢出真屏盒。
   if (overflowScreens > 0) {
-    failures.add('$tag: $overflowScreens/$screens screens overflow the VN '
-        'screen box ($outsideRects line boxes outside)');
+    failures.add(
+      '$tag: $overflowScreens/$screens screens overflow the VN '
+      'screen box ($outsideRects line boxes outside)',
+    );
   }
   // 不变式 3：切屏不丢字不错序。
   if (nonContiguous > 0 || fit['joinedEqualsSource'] != true) {
-    failures.add('$tag: screen text not contiguous with the chapter source '
-        '(nonContiguous=$nonContiguous joinedEqualsSource='
-        '${fit['joinedEqualsSource']})');
+    failures.add(
+      '$tag: screen text not contiguous with the chapter source '
+      '(nonContiguous=$nonContiguous joinedEqualsSource='
+      '${fit['joinedEqualsSource']})',
+    );
   }
 
   // BUG-2576：restoreProgress(0.99) 必须落末屏。
@@ -323,14 +336,18 @@ Future<void> _verifyWritingMode(
   final int idx = (after['idx'] as num).toInt();
   final int n = (after['screens'] as num).toInt();
   if (n <= 0 || idx != n - 1) {
-    failures.add('$tag: restoreProgress(0.99) landed on screen $idx of $n '
-        '(want last = ${n - 1})');
+    failures.add(
+      '$tag: restoreProgress(0.99) landed on screen $idx of $n '
+      '(want last = ${n - 1})',
+    );
   }
   final Map<String, dynamic> geom = await _eval(runJs, _geomProbeJs);
   debugPrint('[vn-fit] $tag chapter-end geometry ${jsonEncode(geom)}');
   final ObserveShot end = await captureReaderWebView('vn-fit-$tag-chapter-end');
-  debugPrint('[vn-fit] $tag webview chapter-end saved=${end.saved} '
-      'nonBlank=${end.nonBlank} path=${end.path}');
+  debugPrint(
+    '[vn-fit] $tag webview chapter-end saved=${end.saved} '
+    'nonBlank=${end.nonBlank} path=${end.path}',
+  );
   // 回到章首再合上，别把 0.99 留给下一次开书的存档。
   await runJs('window.fushiReader.restoreProgress(0);');
   await tester.pump(const Duration(seconds: 1));

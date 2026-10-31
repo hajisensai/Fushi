@@ -64,8 +64,11 @@ void main() {
     );
 
     expect(jsonDecode(popupJson), isEmpty);
-    expect(result.entries, isEmpty,
-        reason: 'entries 与 popupJson 必须同口径：宿主据 entries 判有无结果');
+    expect(
+      result.entries,
+      isEmpty,
+      reason: 'entries 与 popupJson 必须同口径：宿主据 entries 判有无结果',
+    );
     expect(result.bestLength, 0, reason: '隐藏词典的匹配不贡献高亮长度');
   });
 

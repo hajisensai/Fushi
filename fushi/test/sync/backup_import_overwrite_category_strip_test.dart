@@ -35,26 +35,36 @@ void main() {
       ..createSync(recursive: true)
       ..writeAsStringSync('<html>hi</html>');
     final FushiDatabase src = FushiDatabase(dbDir);
-    await src.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'B1',
-      title: 'B1',
-      epubPath: 'B1.epub',
-      extractDir: p.join(books, 'B1'),
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: _now(),
-    ));
+    await src.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'B1',
+        title: 'B1',
+        epubPath: 'B1.epub',
+        extractDir: p.join(books, 'B1'),
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: _now(),
+      ),
+    );
     // v82：reader_positions 键 = epub_books.uid（insertEpubBook 自动生成）。
     final String b1Uid = (await src.resolveEpubBookUid('B1'))!;
-    await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookUid: b1Uid, sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
-    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'B1',
-      dateKey: '2026-01-01',
-      charactersRead: 100,
-      readingTimeMs: 6000,
-      lastStatisticModified: 10,
-    ));
+    await src.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookUid: b1Uid,
+        sectionIndex: 0,
+        normCharOffset: 100,
+        updatedAt: 1,
+      ),
+    );
+    await src.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
+        title: 'B1',
+        dateKey: '2026-01-01',
+        charactersRead: 100,
+        readingTimeMs: 6000,
+        lastStatisticModified: 10,
+      ),
+    );
     final String zip = p.join(zipDir.path, 'b.zip');
     await BackupService(
       db: src,
@@ -68,10 +78,14 @@ void main() {
 
   Future<int> countRows(FushiDatabase db, String table) async =>
       (await db.customSelect('SELECT COUNT(*) c FROM $table').getSingle())
-          .data['c'] as int;
+              .data['c']
+          as int;
 
-  Future<FushiDatabase> importInto(String zip, Set<BackupCategory> cats,
-      {required Directory curRoot}) async {
+  Future<FushiDatabase> importInto(
+    String zip,
+    Set<BackupCategory> cats, {
+    required Directory curRoot,
+  }) async {
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
     await BackupRestoreService.restoreBackup(
@@ -86,20 +100,30 @@ void main() {
 
   test('untick books → no book rows or content on overwrite', () async {
     final String zip = await buildBackup();
-    final Directory curRoot =
-        await Directory.systemTemp.createTemp('ovcat_c1_');
+    final Directory curRoot = await Directory.systemTemp.createTemp(
+      'ovcat_c1_',
+    );
     addTearDown(() => cleanupTempDir(curRoot));
     final FushiDatabase cur = await importInto(
-        zip, BackupCategory.values.toSet()..remove(BackupCategory.books),
-        curRoot: curRoot);
+      zip,
+      BackupCategory.values.toSet()..remove(BackupCategory.books),
+      curRoot: curRoot,
+    );
     addTearDown(cur.close);
     expect(await countRows(cur, 'epub_books'), 0);
     // statistics unaffected (still ticked).
     expect(await countRows(cur, 'reading_statistics'), 1);
     expect(
-      File(p.join(curRoot.path, 'documents', 'fushi_books', 'B1', 'text',
-              'ch0.html'))
-          .existsSync(),
+      File(
+        p.join(
+          curRoot.path,
+          'documents',
+          'fushi_books',
+          'B1',
+          'text',
+          'ch0.html',
+        ),
+      ).existsSync(),
       isFalse,
       reason: 'book content tree skipped when books unticked',
     );
@@ -107,26 +131,35 @@ void main() {
 
   test('untick statistics → no stats rows on overwrite', () async {
     final String zip = await buildBackup();
-    final Directory curRoot =
-        await Directory.systemTemp.createTemp('ovcat_c2_');
+    final Directory curRoot = await Directory.systemTemp.createTemp(
+      'ovcat_c2_',
+    );
     addTearDown(() => cleanupTempDir(curRoot));
     final FushiDatabase cur = await importInto(
-        zip, BackupCategory.values.toSet()..remove(BackupCategory.statistics),
-        curRoot: curRoot);
+      zip,
+      BackupCategory.values.toSet()..remove(BackupCategory.statistics),
+      curRoot: curRoot,
+    );
     addTearDown(cur.close);
     expect(await countRows(cur, 'reading_statistics'), 0);
-    expect(await countRows(cur, 'epub_books'), 1,
-        reason: 'books still restore');
+    expect(
+      await countRows(cur, 'epub_books'),
+      1,
+      reason: 'books still restore',
+    );
   });
 
   test('untick progress → no reader positions on overwrite', () async {
     final String zip = await buildBackup();
-    final Directory curRoot =
-        await Directory.systemTemp.createTemp('ovcat_c3_');
+    final Directory curRoot = await Directory.systemTemp.createTemp(
+      'ovcat_c3_',
+    );
     addTearDown(() => cleanupTempDir(curRoot));
     final FushiDatabase cur = await importInto(
-        zip, BackupCategory.values.toSet()..remove(BackupCategory.progress),
-        curRoot: curRoot);
+      zip,
+      BackupCategory.values.toSet()..remove(BackupCategory.progress),
+      curRoot: curRoot,
+    );
     addTearDown(cur.close);
     expect(await countRows(cur, 'reader_positions'), 0);
     expect(await countRows(cur, 'epub_books'), 1);
@@ -134,11 +167,15 @@ void main() {
 
   test('all ticked → everything restores (legacy overwrite)', () async {
     final String zip = await buildBackup();
-    final Directory curRoot =
-        await Directory.systemTemp.createTemp('ovcat_c4_');
+    final Directory curRoot = await Directory.systemTemp.createTemp(
+      'ovcat_c4_',
+    );
     addTearDown(() => cleanupTempDir(curRoot));
-    final FushiDatabase cur =
-        await importInto(zip, BackupCategory.values.toSet(), curRoot: curRoot);
+    final FushiDatabase cur = await importInto(
+      zip,
+      BackupCategory.values.toSet(),
+      curRoot: curRoot,
+    );
     addTearDown(cur.close);
     expect(await countRows(cur, 'epub_books'), 1);
     expect(await countRows(cur, 'reading_statistics'), 1);

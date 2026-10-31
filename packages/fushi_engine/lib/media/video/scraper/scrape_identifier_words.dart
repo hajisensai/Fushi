@@ -126,7 +126,8 @@ class ScrapeIdentifierWords {
     String current = title;
     int offset = 0;
     for (final ScrapeIdentifierWord word in words) {
-      final bool replaces = word.kind == ScrapeIdentifierWordKind.block ||
+      final bool replaces =
+          word.kind == ScrapeIdentifierWordKind.block ||
           word.kind == ScrapeIdentifierWordKind.replace ||
           word.kind == ScrapeIdentifierWordKind.replaceAndOffset;
       if (replaces) {
@@ -140,8 +141,10 @@ class ScrapeIdentifierWords {
       }
       if (word.kind == ScrapeIdentifierWordKind.offset ||
           word.kind == ScrapeIdentifierWordKind.replaceAndOffset) {
-        final ({String title, int applied})? shifted =
-            _applyOffset(current, word);
+        final ({String title, int applied})? shifted = _applyOffset(
+          current,
+          word,
+        );
         if (shifted == null) continue;
         current = shifted.title;
         offset += shifted.applied;
@@ -180,7 +183,8 @@ class ScrapeIdentifierWords {
     if (shifted <= 0 || shifted > _kMaxEpisodeNumber) return null;
     final String replacement = shifted.toString().padLeft(original.length, '0');
     return (
-      title: title.substring(0, start + digits.start) +
+      title:
+          title.substring(0, start + digits.start) +
           replacement +
           title.substring(start + digits.end),
       applied: word.episodeOffset,
@@ -268,8 +272,9 @@ class ScrapeIdentifierWords {
 ///
 /// 故意不支持任何算术表达式：上游用 `eval()`，那是客户端上的任意代码执行口子。
 int? parseEpisodeOffsetExpression(String expression) {
-  final RegExpMatch? match = RegExp(r'^EP\s*([+-])\s*(\d+)$')
-      .firstMatch(expression.replaceAll(RegExp(r'\s+'), ' ').trim());
+  final RegExpMatch? match = RegExp(
+    r'^EP\s*([+-])\s*(\d+)$',
+  ).firstMatch(expression.replaceAll(RegExp(r'\s+'), ' ').trim());
   if (match == null) return null;
   final int? magnitude = int.tryParse(match.group(2)!);
   if (magnitude == null || magnitude > _kMaxEpisodeNumber) return null;

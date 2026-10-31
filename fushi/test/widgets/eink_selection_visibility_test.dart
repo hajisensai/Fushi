@@ -181,7 +181,9 @@ void main() {
 
     testWidgets('eink：选中 chip 反色填充，边框不再消失', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
+      final ChoiceChip chip = tester.widget<ChoiceChip>(
+        glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),
+      );
 
       // 塌缩前：填充 = primaryContainer = 白 = 页面底色，且边框也是白——选中的
       // chip 比未选中的更没有边，是个负信号。
@@ -197,7 +199,9 @@ void main() {
       // 原 leading 图标，颜色契约落在对勾上，仍须跟着前景翻成白。
       final Finder check = find.descendant(
         of: find.byType(ChoiceChip),
-        matching: find.byKey(const ValueKey<String>('fushi-chip-leading-check')),
+        matching: find.byKey(
+          const ValueKey<String>('fushi-chip-leading-check'),
+        ),
       );
       expect(check, findsOneWidget);
       expect(
@@ -213,7 +217,9 @@ void main() {
     ) async {
       await tester.pumpWidget(app(eink: false, selected: true));
       final Element context = tester.element(find.byType(ChoiceChip));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
+      final ChoiceChip chip = tester.widget<ChoiceChip>(
+        glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),
+      );
       final ColorScheme cs = Theme.of(context).colorScheme;
       expect(chip.selectedColor, cs.secondaryContainer);
       expect(chip.side, BorderSide.none);

@@ -42,7 +42,9 @@ void main() {
       }
       if (!inRepoBlock) continue;
       if (line.startsWith('ref:')) {
-        refs.add(line.substring(4).trim().replaceAll('"', '').replaceAll("'", ''));
+        refs.add(
+          line.substring(4).trim().replaceAll('"', '').replaceAll("'", ''),
+        );
         inRepoBlock = false;
       }
     }
@@ -77,8 +79,7 @@ void main() {
       byFile[path.substring(root.path.length + 1)] = refs;
     }
 
-    expect(byFile, isNotEmpty,
-        reason: '一个 $repo 的 ref 都没扫到——扫描面空了，这条守卫等于没跑');
+    expect(byFile, isNotEmpty, reason: '一个 $repo 的 ref 都没扫到——扫描面空了，这条守卫等于没跑');
 
     // fushi_compute 把上游的 Rust crate（native/asr_cue_post，`fcp_*`）当 Cargo git 依赖编进
     // 原生库；它的 rev 与 Dart 绑定（fushi_asr_subtitles）必须是同一个 sha，否则 C ABI 与绑定
@@ -87,17 +88,23 @@ void main() {
     final RegExpMatch? cargoRev = RegExp(
       r'git\s*=\s*"https://github\.com/hajisensai/fushi-subtitles[^"]*"\s*,\s*rev\s*=\s*"([0-9a-f]+)"',
     ).firstMatch(cargo.readAsStringSync());
-    expect(cargoRev, isNotNull,
-        reason: 'native/fushi_compute/Cargo.toml 里找不到 fushi-subtitles 的 git rev'
-            '——上游 crate 依赖被改写了，扫描规则要跟着改');
+    expect(
+      cargoRev,
+      isNotNull,
+      reason:
+          'native/fushi_compute/Cargo.toml 里找不到 fushi-subtitles 的 git rev'
+          '——上游 crate 依赖被改写了，扫描规则要跟着改',
+    );
     byFile['native/fushi_compute/Cargo.toml'] = <String>[cargoRev!.group(1)!];
 
-    final Set<String> distinct =
-        byFile.values.expand((List<String> r) => r).toSet();
+    final Set<String> distinct = byFile.values
+        .expand((List<String> r) => r)
+        .toSet();
     expect(
       distinct,
       hasLength(1),
-      reason: '同一个 git 仓库被钉了多个 sha，pub 会解析出**两份副本**：\n'
+      reason:
+          '同一个 git 仓库被钉了多个 sha，pub 会解析出**两份副本**：\n'
           '${byFile.entries.map((MapEntry<String, List<String>> e) => '  ${e.key}: ${e.value.join(", ")}').join('\n')}\n'
           'ci/patches/git/ 的补丁按 <repo>-<sha> 命名，只会打中其中一份，另一份'
           '静默地没打补丁——本机与 app 侧测试都看不出来，只有 CI 的 '
@@ -114,7 +121,8 @@ void main() {
       expect(
         name,
         '$repo-$pinned',
-        reason: '补丁目录名里的 sha 与 pubspec 钉的对不上。'
+        reason:
+            '补丁目录名里的 sha 与 pubspec 钉的对不上。'
             'ci/apply-patches.sh 按目录名去 pub-cache 找目标，对不上就只打一行 '
             'WARNING 然后跳过——补丁形同不存在，而依赖它的包会在编译期才炸。',
       );

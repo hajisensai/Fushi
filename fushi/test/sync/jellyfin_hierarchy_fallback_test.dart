@@ -36,40 +36,36 @@ http.Response _page(List<Map<String, Object?>> items, int total) =>
     _json(<String, Object?>{'Items': items, 'TotalRecordCount': total});
 
 Map<String, Object?> _series(String id, String name) => <String, Object?>{
-      'Id': id,
-      'Name': name,
-      'Type': 'Series',
-    };
+  'Id': id,
+  'Name': name,
+  'Type': 'Series',
+};
 
 Map<String, Object?> _episode(
   String id,
   String seriesName, {
   int season = 1,
   int episode = 1,
-}) =>
-    <String, Object?>{
-      'Id': id,
-      'Name': '第 $episode 集',
-      'Type': 'Episode',
-      'SeriesName': seriesName,
-      'ParentIndexNumber': season,
-      'IndexNumber': episode,
-      'RunTimeTicks': 24 * 60 * 1000 * kTicksPerMs,
-      'ImageTags': <String, Object?>{'Primary': 't$id'},
-    };
+}) => <String, Object?>{
+  'Id': id,
+  'Name': '第 $episode 集',
+  'Type': 'Episode',
+  'SeriesName': seriesName,
+  'ParentIndexNumber': season,
+  'IndexNumber': episode,
+  'RunTimeTicks': 24 * 60 * 1000 * kTicksPerMs,
+  'ImageTags': <String, Object?>{'Primary': 't$id'},
+};
 
 Map<String, Object?> _movie(String id, String name) => <String, Object?>{
-      'Id': id,
-      'Name': name,
-      'Type': 'Movie',
-      'RunTimeTicks': 90 * 60 * 1000 * kTicksPerMs,
-    };
+  'Id': id,
+  'Name': name,
+  'Type': 'Movie',
+  'RunTimeTicks': 90 * 60 * 1000 * kTicksPerMs,
+};
 
 /// 取分页窗口，模仿服务器对 StartIndex / Limit 的处理（实测该服两者均生效）。
-List<Map<String, Object?>> _slice(
-  List<Map<String, Object?>> all,
-  Uri url,
-) {
+List<Map<String, Object?>> _slice(List<Map<String, Object?>> all, Uri url) {
   final int start = int.tryParse(url.queryParameters['StartIndex'] ?? '') ?? 0;
   final int limit =
       int.tryParse(url.queryParameters['Limit'] ?? '') ?? all.length;
@@ -87,48 +83,49 @@ MockClient _ignoringServer({
   required Map<String, List<Map<String, Object?>>> episodes,
   required List<String> log,
   Set<String> failingSeries = const <String>{},
-}) =>
-    MockClient((http.Request req) async {
-      final Uri url = req.url;
-      log.add(url.path);
-      if (url.path == '/Users/u1/Views') {
-        return _json(<String, Object?>{
-          'Items': <Object?>[
-            <String, Object?>{
-              'Id': 'lib1',
-              'Name': '日韩新番',
-              'CollectionType': 'tvshows',
-            },
-          ],
-        });
-      }
-      if (url.path.startsWith('/Shows/') && url.path.endsWith('/Episodes')) {
-        final String seriesId = url.path
-            .substring('/Shows/'.length, url.path.length - '/Episodes'.length);
-        if (failingSeries.contains(seriesId)) {
-          return http.Response('not found', 404);
-        }
-        final List<Map<String, Object?>> all =
-            episodes[seriesId] ?? const <Map<String, Object?>>[];
-        return _page(_slice(all, url), all.length);
-      }
-      if (url.path == '/Users/u1/Items') {
-        final String parent = url.queryParameters['ParentId'] ?? '';
-        final List<Map<String, Object?>> all =
-            children[parent] ?? const <Map<String, Object?>>[];
-        return _page(_slice(all, url), all.length);
-      }
-      return http.Response('unexpected ${url.path}', 500);
+}) => MockClient((http.Request req) async {
+  final Uri url = req.url;
+  log.add(url.path);
+  if (url.path == '/Users/u1/Views') {
+    return _json(<String, Object?>{
+      'Items': <Object?>[
+        <String, Object?>{
+          'Id': 'lib1',
+          'Name': '日韩新番',
+          'CollectionType': 'tvshows',
+        },
+      ],
     });
+  }
+  if (url.path.startsWith('/Shows/') && url.path.endsWith('/Episodes')) {
+    final String seriesId = url.path.substring(
+      '/Shows/'.length,
+      url.path.length - '/Episodes'.length,
+    );
+    if (failingSeries.contains(seriesId)) {
+      return http.Response('not found', 404);
+    }
+    final List<Map<String, Object?>> all =
+        episodes[seriesId] ?? const <Map<String, Object?>>[];
+    return _page(_slice(all, url), all.length);
+  }
+  if (url.path == '/Users/u1/Items') {
+    final String parent = url.queryParameters['ParentId'] ?? '';
+    final List<Map<String, Object?>> all =
+        children[parent] ?? const <Map<String, Object?>>[];
+    return _page(_slice(all, url), all.length);
+  }
+  return http.Response('unexpected ${url.path}', 500);
+});
 
 JellyfinVideoClient _clientFor(MockClient mock) => JellyfinVideoClient(
-      api: JellyfinApi(
-        serverUrl: 'http://nas:8096',
-        accessToken: 'tok',
-        client: mock,
-      ),
-      userId: 'u1',
-    );
+  api: JellyfinApi(
+    serverUrl: 'http://nas:8096',
+    accessToken: 'tok',
+    client: mock,
+  ),
+  userId: 'u1',
+);
 
 void main() {
   group('BUG-2567 层级回退枚举', () {
@@ -151,12 +148,16 @@ void main() {
         },
       );
 
-      final List<RemoteVideoInfo> videos =
-          await _clientFor(mock).listRemoteVideos();
+      final List<RemoteVideoInfo> videos = await _clientFor(
+        mock,
+      ).listRemoteVideos();
 
       // 修复前这里是 0——Series 全被 isPlayableVideo 滤掉，用户看到空库。
-      expect(
-          videos.map((RemoteVideoInfo v) => v.id), <String>['e1', 'e2', 'e3']);
+      expect(videos.map((RemoteVideoInfo v) => v.id), <String>[
+        'e1',
+        'e2',
+        'e3',
+      ]);
       // 分集必须经 /Shows/{id}/Episodes 取得，不是靠继续分页硬撞。
       expect(log, contains('/Shows/s1/Episodes'));
       expect(log, contains('/Shows/s2/Episodes'));
@@ -193,8 +194,9 @@ void main() {
         return _page(_slice(all, req.url), all.length);
       });
 
-      final List<RemoteVideoInfo> videos =
-          await _clientFor(mock).listRemoteVideos();
+      final List<RemoteVideoInfo> videos = await _clientFor(
+        mock,
+      ).listRemoteVideos();
 
       expect(videos.map((RemoteVideoInfo v) => v.id), <String>['m1', 'e1']);
       expect(
@@ -221,16 +223,17 @@ void main() {
         children: <String, List<Map<String, Object?>>>{'lib1': libChildren},
         episodes: episodes,
       );
-      final JellyfinRecursiveResult result = await JellyfinApi(
-        serverUrl: 'http://nas:8096',
-        accessToken: 'tok',
-        client: mock,
-      ).recursiveVideoItems(
-        userId: 'u1',
-        parentId: 'lib1',
-        // 节流在真机是特性、在测试里是 60 秒的等待。
-        pageInterval: Duration.zero,
-      );
+      final JellyfinRecursiveResult result =
+          await JellyfinApi(
+            serverUrl: 'http://nas:8096',
+            accessToken: 'tok',
+            client: mock,
+          ).recursiveVideoItems(
+            userId: 'u1',
+            parentId: 'lib1',
+            // 节流在真机是特性、在测试里是 60 秒的等待。
+            pageInterval: Duration.zero,
+          );
 
       expect(result.truncated, isTrue, reason: '截断必须报出来，不能静默给一半');
       expect(
@@ -261,8 +264,9 @@ void main() {
         episodes: const <String, List<Map<String, Object?>>>{},
       );
 
-      final List<RemoteVideoInfo> videos =
-          await _clientFor(mock).listRemoteVideos();
+      final List<RemoteVideoInfo> videos = await _clientFor(
+        mock,
+      ).listRemoteVideos();
 
       expect(videos.map((RemoteVideoInfo v) => v.id), <String>['e1']);
     });
@@ -309,8 +313,9 @@ void main() {
         return http.Response('unexpected ${url.path}', 500);
       });
 
-      final List<RemoteVideoInfo> videos =
-          await _clientFor(mock).listRemoteVideos();
+      final List<RemoteVideoInfo> videos = await _clientFor(
+        mock,
+      ).listRemoteVideos();
 
       expect(videos.map((RemoteVideoInfo v) => v.id), <String>['e2']);
     });
@@ -335,8 +340,9 @@ void main() {
         episodes: const <String, List<Map<String, Object?>>>{},
       );
 
-      final List<RemoteVideoInfo> videos =
-          await _clientFor(mock).listRemoteVideos();
+      final List<RemoteVideoInfo> videos = await _clientFor(
+        mock,
+      ).listRemoteVideos();
 
       expect(videos.map((RemoteVideoInfo v) => v.id), <String>['m1']);
       expect(log.length, lessThan(20), reason: '成环不能把预算烧光');

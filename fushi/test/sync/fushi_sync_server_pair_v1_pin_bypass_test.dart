@@ -56,8 +56,11 @@ void main() {
       'upgrade_required',
       reason: 'BUG-1555：必须给出可分型的原因，client 才能说「对方需要升级」而非「对方拒绝」',
     );
-    expect(resp.body.contains('shared-token'), isFalse,
-        reason: '任何情况下都不得在拒绝响应里泄漏共享 token');
+    expect(
+      resp.body.contains('shared-token'),
+      isFalse,
+      reason: '任何情况下都不得在拒绝响应里泄漏共享 token',
+    );
     expect(prompts, 0, reason: 'BUG-1555：必须在弹审批框之前拦下——弹了框就等于给了用户一次误点失守的机会');
   });
 
@@ -94,7 +97,10 @@ void main() {
     await server.start();
 
     final http.Response resp = await http.post(pairUri());
-    expect(resp.statusCode, 200,
-        reason: '未接 lanRequiresPin 供给器时不得把 LAN 会话误判成要 PIN（会砸掉既有配对）');
+    expect(
+      resp.statusCode,
+      200,
+      reason: '未接 lanRequiresPin 供给器时不得把 LAN 会话误判成要 PIN（会砸掉既有配对）',
+    );
   });
 }

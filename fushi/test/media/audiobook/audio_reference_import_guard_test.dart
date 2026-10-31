@@ -15,8 +15,9 @@ void main() {
   String read(String path) => File(path).readAsStringSync();
 
   test('audiobook_import_dialog 引用分支双重门控 isDesktopPlatform', () {
-    final String src =
-        read('lib/src/media/audiobook/audiobook_import_dialog.dart');
+    final String src = read(
+      'lib/src/media/audiobook/audiobook_import_dialog.dart',
+    );
     expect(
       RegExp(r'_referenceOriginal\s*&&\s*isDesktopPlatform').hasMatch(src),
       isTrue,
@@ -37,8 +38,9 @@ void main() {
       reason: '引用复制判据必须 && isDesktopPlatform，否则移动端会引用缓存临时副本',
     );
     expect(
-      RegExp(r'if \(isDesktopPlatform\s*&&\s*_audioPaths\.isNotEmpty\)')
-          .hasMatch(src),
+      RegExp(
+        r'if \(isDesktopPlatform\s*&&\s*_audioPaths\.isNotEmpty\)',
+      ).hasMatch(src),
       isTrue,
       reason: '引用开关 UI 必须 isDesktopPlatform 门控（移动端隐藏）',
     );
@@ -46,13 +48,15 @@ void main() {
 
   test('删除有声书时引用的外部 audioRoot 不被递归删除', () {
     // B4 拆分后 deleteAudiobook / _deleteAudioRootIfPersisted 在 audiobooks.part.dart。
-    final String src =
-        read('../packages/fushi_engine/lib/sync/local_library_host_service/audiobooks.part.dart');
+    final String src = read(
+      '../packages/fushi_engine/lib/sync/local_library_host_service/audiobooks.part.dart',
+    );
     // audioRoot 删除前必须经引用判据守卫（引用导入的外部目录不删）。
     expect(
       src.contains('AudiobookStorage.isReferencedPath'),
       isTrue,
-      reason: 'deleteAudiobook 删 audioRoot 前必须用 isReferencedPath 守卫，'
+      reason:
+          'deleteAudiobook 删 audioRoot 前必须用 isReferencedPath 守卫，'
           '否则会递归删用户引用导入的原始外部目录',
     );
     expect(

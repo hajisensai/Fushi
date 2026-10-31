@@ -43,21 +43,23 @@ void main() {
       MaterialApp(
         key: UniqueKey(),
         home: Scaffold(
-          body: Builder(builder: (BuildContext ctx) {
-            return ElevatedButton(
-              onPressed: () => showDialog<String>(
-                context: ctx,
-                builder: (_) => JimakuSubtitleDialog(
-                  initialQuery: 'Some Anime',
-                  initialApiKey: 'TEST_KEY',
-                  onApiKeyChanged: (_) async {},
-                  saveDirectory: '/tmp/jimaku',
-                  debugInitialCandidates: makeCandidates(candidateCount),
+          body: Builder(
+            builder: (BuildContext ctx) {
+              return ElevatedButton(
+                onPressed: () => showDialog<String>(
+                  context: ctx,
+                  builder: (_) => JimakuSubtitleDialog(
+                    initialQuery: 'Some Anime',
+                    initialApiKey: 'TEST_KEY',
+                    onApiKeyChanged: (_) async {},
+                    saveDirectory: '/tmp/jimaku',
+                    debugInitialCandidates: makeCandidates(candidateCount),
+                  ),
                 ),
-              ),
-              child: const Text('open'),
-            );
-          }),
+                child: const Text('open'),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -66,9 +68,9 @@ void main() {
   }
 
   Finder candidateScrollable() => find.descendant(
-        of: find.byType(JimakuCandidateList),
-        matching: find.byType(Scrollable),
-      );
+    of: find.byType(JimakuCandidateList),
+    matching: find.byType(Scrollable),
+  );
 
   // 矮屏：小屏手机竖屏 / 软键盘弹起后压低的可视高度（修后仍可见、可滚、不溢出）。
   const Size shortScreen = Size(360, 480);
@@ -76,115 +78,149 @@ void main() {
   const Size collapseScreen = Size(360, 320);
 
   testWidgets(
-      'regression: OLD AlertDialog Flexible layout collapses candidate list',
-      (WidgetTester tester) async {
-    // 复刻旧布局（已被废弃），锁定它在矮屏下确实把列表压成 0 高（根因）。
-    tester.view.physicalSize = collapseScreen;
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(builder: (BuildContext ctx) {
-            return ElevatedButton(
-              onPressed: () => showDialog<void>(
-                context: ctx,
-                builder: (_) => AlertDialog(
-                  title: const Text('Jimaku'),
-                  content: SizedBox(
-                    width: 380,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        const TextField(),
-                        const SizedBox(height: 8),
-                        const TextField(),
-                        const SizedBox(height: 12),
-                        Flexible(
-                          child: JimakuCandidateList(
-                            candidates: makeCandidates(40),
-                            filter: '',
-                            busyName: null,
-                            onDownload: (_) {},
-                          ),
+    'regression: OLD AlertDialog Flexible layout collapses candidate list',
+    (WidgetTester tester) async {
+      // 复刻旧布局（已被废弃），锁定它在矮屏下确实把列表压成 0 高（根因）。
+      tester.view.physicalSize = collapseScreen;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext ctx) {
+                return ElevatedButton(
+                  onPressed: () => showDialog<void>(
+                    context: ctx,
+                    builder: (_) => AlertDialog(
+                      title: const Text('Jimaku'),
+                      content: SizedBox(
+                        width: 380,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            const TextField(),
+                            const SizedBox(height: 8),
+                            const TextField(),
+                            const SizedBox(height: 12),
+                            Flexible(
+                              child: JimakuCandidateList(
+                                candidates: makeCandidates(40),
+                                filter: '',
+                                busyName: null,
+                                onDownload: (_) {},
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: <Widget>[
+                        TextButton(
+                          onPressed: () {},
+                          child: const Text('Cancel'),
                         ),
                       ],
                     ),
                   ),
-                  actions: <Widget>[
-                    TextButton(onPressed: () {}, child: const Text('Cancel')),
-                  ],
-                ),
-              ),
-              child: const Text('open'),
-            );
-          }),
+                  child: const Text('open'),
+                );
+              },
+            ),
+          ),
         ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    final Size listSize = tester.getSize(find.byType(JimakuCandidateList));
-    expect(listSize.height, lessThan(1.0),
-        reason: '旧 AlertDialog+Column.min+Flexible 在矮屏把候选列表压成 0 高（根因）');
-    // 旧布局在该矮屏上还会触发 RenderFlex 溢出——这是同一根因的伴随症状，预期发生，
-    // 取出以免污染本测试。
-    expect(tester.takeException(), isNotNull,
-        reason: '旧布局矮屏下伴随 RenderFlex 溢出（根因症状之一）');
-  });
+      final Size listSize = tester.getSize(find.byType(JimakuCandidateList));
+      expect(
+        listSize.height,
+        lessThan(1.0),
+        reason: '旧 AlertDialog+Column.min+Flexible 在矮屏把候选列表压成 0 高（根因）',
+      );
+      // 旧布局在该矮屏上还会触发 RenderFlex 溢出——这是同一根因的伴随症状，预期发生，
+      // 取出以免污染本测试。
+      expect(
+        tester.takeException(),
+        isNotNull,
+        reason: '旧布局矮屏下伴随 RenderFlex 溢出（根因症状之一）',
+      );
+    },
+  );
 
-  testWidgets('fixed: real dialog list is visible and bounded on short screen',
-      (WidgetTester tester) async {
-    await pumpDialog(tester, screen: shortScreen);
-    final Size listSize = tester.getSize(find.byType(JimakuCandidateList));
-    expect(listSize.height, greaterThan(0.0), reason: '修后矮屏候选列表应仍可见（非 0 高）');
-    expect(listSize.height, lessThan(480.0), reason: '高度有界、不溢出屏幕');
-    expect(tester.takeException(), isNull, reason: '不应有 RenderFlex 溢出异常');
-  });
+  testWidgets(
+    'fixed: real dialog list is visible and bounded on short screen',
+    (WidgetTester tester) async {
+      await pumpDialog(tester, screen: shortScreen);
+      final Size listSize = tester.getSize(find.byType(JimakuCandidateList));
+      expect(listSize.height, greaterThan(0.0), reason: '修后矮屏候选列表应仍可见（非 0 高）');
+      expect(listSize.height, lessThan(480.0), reason: '高度有界、不溢出屏幕');
+      expect(tester.takeException(), isNull, reason: '不应有 RenderFlex 溢出异常');
+    },
+  );
 
-  testWidgets('fixed: real dialog list actually scrolls when overflowing',
-      (WidgetTester tester) async {
+  testWidgets('fixed: real dialog list actually scrolls when overflowing', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(tester, screen: shortScreen);
     final ScrollableState state = tester.state(candidateScrollable());
     final double before = state.position.pixels;
-    expect(state.position.maxScrollExtent, greaterThan(0.0),
-        reason: '候选超出可视区时应有可滚动余量');
+    expect(
+      state.position.maxScrollExtent,
+      greaterThan(0.0),
+      reason: '候选超出可视区时应有可滚动余量',
+    );
 
     await tester.drag(candidateScrollable(), const Offset(0, -100));
     await tester.pumpAndSettle();
     expect(state.position.pixels, greaterThan(before), reason: '拖动后列表应真的滚下去');
   });
 
-  testWidgets('fixed: list grows with available height',
-      (WidgetTester tester) async {
+  testWidgets('fixed: list grows with available height', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(tester, screen: const Size(360, 480));
-    final double shortH =
-        tester.getSize(find.byType(JimakuCandidateList)).height;
+    final double shortH = tester
+        .getSize(find.byType(JimakuCandidateList))
+        .height;
     await pumpDialog(tester, screen: const Size(360, 800));
-    final double tallH =
-        tester.getSize(find.byType(JimakuCandidateList)).height;
-    expect(tallH, greaterThan(shortH),
-        reason: '可用高度更大时列表应更高（Flexible 分到更多剩余空间）');
+    final double tallH = tester
+        .getSize(find.byType(JimakuCandidateList))
+        .height;
+    expect(
+      tallH,
+      greaterThan(shortH),
+      reason: '可用高度更大时列表应更高（Flexible 分到更多剩余空间）',
+    );
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('feature: api key collapses to summary when key set + results',
-      (WidgetTester tester) async {
+  testWidgets('feature: api key collapses to summary when key set + results', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(tester, screen: const Size(360, 700));
     // 已配 key + 有结果 → 折叠为摘要行（不再有 obscure 密码框），并出现「修改」按钮。
-    expect(find.text(t.video_jimaku_api_key_set), findsOneWidget,
-        reason: '配好 key 且有结果时 API key 输入区应折叠为摘要');
-    expect(find.widgetWithText(TextButton, t.dialog_edit), findsOneWidget,
-        reason: '折叠后应有「修改」按钮可展开');
+    expect(
+      find.text(t.video_jimaku_api_key_set),
+      findsOneWidget,
+      reason: '配好 key 且有结果时 API key 输入区应折叠为摘要',
+    );
+    expect(
+      find.widgetWithText(TextButton, t.dialog_edit),
+      findsOneWidget,
+      reason: '折叠后应有「修改」按钮可展开',
+    );
 
     // 点「修改」→ 展开回完整密码框（labelText 出现）。
     await tester.tap(find.widgetWithText(TextButton, t.dialog_edit));
     await tester.pumpAndSettle();
-    expect(find.text(t.video_jimaku_api_key_set), findsNothing,
-        reason: '点「修改」后应展开输入区，摘要消失');
+    expect(
+      find.text(t.video_jimaku_api_key_set),
+      findsNothing,
+      reason: '点「修改」后应展开输入区，摘要消失',
+    );
   });
 
   // TODO-673：番名都一样、只有集数（第01話/E01...）不同的真实场景下，结果项文件名
@@ -205,48 +241,58 @@ void main() {
   }
 
   testWidgets(
-      'TODO-673: result title wraps (maxLines>1 + softWrap), episode visible',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            height: 600,
-            child: JimakuCandidateList(
-              candidates: makeSameSeriesEpisodes(),
-              filter: '',
-              busyName: null,
-              onDownload: (_) {},
+    'TODO-673: result title wraps (maxLines>1 + softWrap), episode visible',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 600,
+              child: JimakuCandidateList(
+                candidates: makeSameSeriesEpisodes(),
+                filter: '',
+                busyName: null,
+                onDownload: (_) {},
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // 标题 Text（文件名）必须换行：maxLines>1 且 softWrap，且不再用 ellipsis 截断
-    // （否则集数被吃掉）。
-    final Iterable<Text> titles = tester.widgetList<Text>(
-      find.textContaining('第01話'),
-    );
-    expect(titles, isNotEmpty, reason: '含集数(第01話)的完整文件名应作为标题被渲染');
-    final Text title = titles.first;
-    expect(title.maxLines, isNotNull, reason: '标题应设置 maxLines（多行而非默认单行截断）');
-    expect(title.maxLines!, greaterThan(1),
-        reason: '标题 maxLines 应 >1 才能换行显示完整文件名');
-    expect(title.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
-    expect(title.overflow, isNot(TextOverflow.ellipsis),
-        reason: '标题不应再用 ellipsis 截断（会吃掉区分集数的部分）');
+      // 标题 Text（文件名）必须换行：maxLines>1 且 softWrap，且不再用 ellipsis 截断
+      // （否则集数被吃掉）。
+      final Iterable<Text> titles = tester.widgetList<Text>(
+        find.textContaining('第01話'),
+      );
+      expect(titles, isNotEmpty, reason: '含集数(第01話)的完整文件名应作为标题被渲染');
+      final Text title = titles.first;
+      expect(title.maxLines, isNotNull, reason: '标题应设置 maxLines（多行而非默认单行截断）');
+      expect(
+        title.maxLines!,
+        greaterThan(1),
+        reason: '标题 maxLines 应 >1 才能换行显示完整文件名',
+      );
+      expect(title.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
+      expect(
+        title.overflow,
+        isNot(TextOverflow.ellipsis),
+        reason: '标题不应再用 ellipsis 截断（会吃掉区分集数的部分）',
+      );
 
-    // 第二集的集数同样可见——两集番名相同，唯一区分点（第02話）必须渲染出来。
-    expect(find.textContaining('第02話'), findsOneWidget,
-        reason: '第二集的集数(第02話)也应完整可见');
-    expect(tester.takeException(), isNull);
-  });
+      // 第二集的集数同样可见——两集番名相同，唯一区分点（第02話）必须渲染出来。
+      expect(
+        find.textContaining('第02話'),
+        findsOneWidget,
+        reason: '第二集的集数(第02話)也应完整可见',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   /// 实际可视对话框宽度：取 FushiDialogFrame 内层 [ConstrainedBox]（受 maxWidth 约束、
   /// 被 [Dialog] 居中、宽度贴合内容）。FushiDialogFrame 本身的 RenderBox 是充满屏幕的
@@ -266,42 +312,54 @@ void main() {
   // 其余 90%），由 [resolveJimakuDialogMaxWidth] 单一真相源给出。所以这里**引用那个
   // 函数**而不是再钉一个常数——上一次就是实现换了公式、这条还钉着 720，于是本用例
   // 在 develop 上红着没人认领。
-  testWidgets('TODO-835: wide screen dialog is wider than old 380 cap',
-      (WidgetTester tester) async {
+  testWidgets('TODO-835: wide screen dialog is wider than old 380 cap', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(tester, screen: const Size(1280, 800));
     // 候选列表宽度 = 对话框内容宽 - 左右各 24 padding（约 720-48=672），必 >380-48。
-    final double listWidth =
-        tester.getSize(find.byType(JimakuCandidateList)).width;
-    expect(listWidth, greaterThan(380.0 - 48.0),
-        reason: '大屏候选列表内容宽应比旧 380 上限内容宽更宽（FushiDialogFrame maxWidth:720）');
+    final double listWidth = tester
+        .getSize(find.byType(JimakuCandidateList))
+        .width;
+    expect(
+      listWidth,
+      greaterThan(380.0 - 48.0),
+      reason: '大屏候选列表内容宽应比旧 380 上限内容宽更宽（FushiDialogFrame maxWidth:720）',
+    );
     final double dialogWidth = measuredDialogWidth(tester);
     expect(dialogWidth, greaterThan(380.0), reason: '大屏对话框实际宽应 >380（旧写死上限）');
-    expect(dialogWidth, closeTo(resolveJimakuDialogMaxWidth(1280.0), 0.5),
-        reason: '对话框宽应由 resolveJimakuDialogMaxWidth(视口宽) 封顶（BUG-1504）');
+    expect(
+      dialogWidth,
+      closeTo(resolveJimakuDialogMaxWidth(1280.0), 0.5),
+      reason: '对话框宽应由 resolveJimakuDialogMaxWidth(视口宽) 封顶（BUG-1504）',
+    );
     expect(tester.takeException(), isNull);
   });
 
   // TODO-835：窄窗（小手机）下 insetPadding 保留 horizontal:16，对话框宽 = 屏宽-32，
   // 不被 frame 默认 horizontal:40 挤窄，且不溢出。
   testWidgets(
-      'TODO-835: narrow screen dialog fits within screen width minus 32',
-      (WidgetTester tester) async {
-    await pumpDialog(tester, screen: const Size(360, 640));
-    final double dialogWidth = measuredDialogWidth(tester);
-    expect(dialogWidth, lessThanOrEqualTo(360.0 - 32.0 + 0.5),
-        reason: '窄窗对话框宽应 <=屏宽-32（insetPadding horizontal:16 左右共 32）');
-    expect(tester.takeException(), isNull, reason: '窄窗不应溢出');
-  });
+    'TODO-835: narrow screen dialog fits within screen width minus 32',
+    (WidgetTester tester) async {
+      await pumpDialog(tester, screen: const Size(360, 640));
+      final double dialogWidth = measuredDialogWidth(tester);
+      expect(
+        dialogWidth,
+        lessThanOrEqualTo(360.0 - 32.0 + 0.5),
+        reason: '窄窗对话框宽应 <=屏宽-32（insetPadding horizontal:16 左右共 32）',
+      );
+      expect(tester.takeException(), isNull, reason: '窄窗不应溢出');
+    },
+  );
 
   // ── TODO-674: 语言筛选 + 记忆 + 集数保底 ────────────────────────────────
 
   /// 混合语言候选（ja/zh + 一个认不出语言）。
   List<JimakuCandidate> mixedLangCandidates() => <JimakuCandidate>[
-        JimakuCandidate(entryName: 'S', name: 'ep01.ja.srt'),
-        JimakuCandidate(entryName: 'S', name: 'ep02.ja.srt'),
-        JimakuCandidate(entryName: 'S', name: 'ep01.zh.srt'),
-        JimakuCandidate(entryName: 'S', name: 'ep01.srt'),
-      ];
+    JimakuCandidate(entryName: 'S', name: 'ep01.ja.srt'),
+    JimakuCandidate(entryName: 'S', name: 'ep02.ja.srt'),
+    JimakuCandidate(entryName: 'S', name: 'ep01.zh.srt'),
+    JimakuCandidate(entryName: 'S', name: 'ep01.srt'),
+  ];
 
   /// pump 真实对话框（混合语言候选），可注入语言记忆 + 选语言回调。
   Future<void> pumpLangDialog(
@@ -317,24 +375,26 @@ void main() {
       MaterialApp(
         key: UniqueKey(),
         home: Scaffold(
-          body: Builder(builder: (BuildContext ctx) {
-            return ElevatedButton(
-              onPressed: () => showDialog<String>(
-                context: ctx,
-                builder: (_) => JimakuSubtitleDialog(
-                  initialQuery: 'Some Anime',
-                  initialApiKey: 'TEST_KEY',
-                  onApiKeyChanged: (_) async {},
-                  saveDirectory: '/tmp/jimaku',
-                  initialPreferredLanguage: initialPreferredLanguage,
-                  onPreferredLanguageChanged: (String lang) async =>
-                      onLang?.call(lang),
-                  debugInitialCandidates: mixedLangCandidates(),
+          body: Builder(
+            builder: (BuildContext ctx) {
+              return ElevatedButton(
+                onPressed: () => showDialog<String>(
+                  context: ctx,
+                  builder: (_) => JimakuSubtitleDialog(
+                    initialQuery: 'Some Anime',
+                    initialApiKey: 'TEST_KEY',
+                    onApiKeyChanged: (_) async {},
+                    saveDirectory: '/tmp/jimaku',
+                    initialPreferredLanguage: initialPreferredLanguage,
+                    onPreferredLanguageChanged: (String lang) async =>
+                        onLang?.call(lang),
+                    debugInitialCandidates: mixedLangCandidates(),
+                  ),
                 ),
-              ),
-              child: const Text('open'),
-            );
-          }),
+                child: const Text('open'),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -345,17 +405,21 @@ void main() {
   // 候选列表喂给 JimakuCandidateList 的候选数（语言筛选后）。比数 ListTile 更可靠：
   // 列表是非 shrinkWrap 懒加载 ListView，只渲染可视行，数 ListTile 会受屏高影响。
   int shownCandidateCount(WidgetTester tester) {
-    final JimakuCandidateList list =
-        tester.widget(find.byType(JimakuCandidateList));
+    final JimakuCandidateList list = tester.widget(
+      find.byType(JimakuCandidateList),
+    );
     return list.candidates.length;
   }
 
-  testWidgets('TODO-674: language chips render only present languages + All',
-      (WidgetTester tester) async {
+  testWidgets('TODO-674: language chips render only present languages + All', (
+    WidgetTester tester,
+  ) async {
     await pumpLangDialog(tester);
     // 「全部」+ ja + zh chip 渲染；ko/en 不渲染（候选里没有）。
-    expect(find.widgetWithText(ChoiceChip, t.video_jimaku_language_all),
-        findsOneWidget);
+    expect(
+      find.widgetWithText(ChoiceChip, t.video_jimaku_language_all),
+      findsOneWidget,
+    );
     expect(find.widgetWithText(ChoiceChip, '日本語'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, '中文'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'English'), findsNothing);
@@ -363,8 +427,9 @@ void main() {
     expect(shownCandidateCount(tester), 4);
   });
 
-  testWidgets('TODO-674: selecting ja filters list + persists language',
-      (WidgetTester tester) async {
+  testWidgets('TODO-674: selecting ja filters list + persists language', (
+    WidgetTester tester,
+  ) async {
     String? saved;
     await pumpLangDialog(tester, onLang: (String l) => saved = l);
     await tester.tap(find.widgetWithText(ChoiceChip, '日本語'));
@@ -375,35 +440,42 @@ void main() {
     expect(saved, 'ja');
   });
 
-  testWidgets('TODO-674: remembered language preselects + prefilters list',
-      (WidgetTester tester) async {
+  testWidgets('TODO-674: remembered language preselects + prefilters list', (
+    WidgetTester tester,
+  ) async {
     await pumpLangDialog(tester, initialPreferredLanguage: 'zh');
     // 记忆语言 zh 预选 → 首屏只列 1 条 zh 候选。
     expect(shownCandidateCount(tester), 1);
-    final ChoiceChip zhChip =
-        tester.widget(find.widgetWithText(ChoiceChip, '中文'));
+    final ChoiceChip zhChip = tester.widget(
+      find.widgetWithText(ChoiceChip, '中文'),
+    );
     expect(zhChip.selected, isTrue, reason: '记忆语言应预选');
   });
 
   testWidgets(
-      'TODO-674: remembered language absent in results falls back to All',
-      (WidgetTester tester) async {
-    // 记忆 ko，但候选里没有 ko → 退回「全部」，不空屏。
-    await pumpLangDialog(tester, initialPreferredLanguage: 'ko');
-    expect(shownCandidateCount(tester), 4, reason: '退回全部，列全部候选');
-    final ChoiceChip allChip = tester
-        .widget(find.widgetWithText(ChoiceChip, t.video_jimaku_language_all));
-    expect(allChip.selected, isTrue, reason: '无候选的记忆语言退回「全部」');
-  });
+    'TODO-674: remembered language absent in results falls back to All',
+    (WidgetTester tester) async {
+      // 记忆 ko，但候选里没有 ko → 退回「全部」，不空屏。
+      await pumpLangDialog(tester, initialPreferredLanguage: 'ko');
+      expect(shownCandidateCount(tester), 4, reason: '退回全部，列全部候选');
+      final ChoiceChip allChip = tester.widget(
+        find.widgetWithText(ChoiceChip, t.video_jimaku_language_all),
+      );
+      expect(allChip.selected, isTrue, reason: '无候选的记忆语言退回「全部」');
+    },
+  );
 
   testWidgets(
-      'TODO-674: episode field present + empty value lists all (no shrink)',
-      (WidgetTester tester) async {
-    await pumpLangDialog(tester);
-    // 集数输入框存在（labelText）。
-    expect(
-        find.widgetWithText(TextField, t.video_jimaku_episode), findsOneWidget);
-    // 默认空集号：候选数不减（= 现状，保底空集号不藏候选）。
-    expect(shownCandidateCount(tester), 4);
-  });
+    'TODO-674: episode field present + empty value lists all (no shrink)',
+    (WidgetTester tester) async {
+      await pumpLangDialog(tester);
+      // 集数输入框存在（labelText）。
+      expect(
+        find.widgetWithText(TextField, t.video_jimaku_episode),
+        findsOneWidget,
+      );
+      // 默认空集号：候选数不减（= 现状，保底空集号不藏候选）。
+      expect(shownCandidateCount(tester), 4);
+    },
+  );
 }

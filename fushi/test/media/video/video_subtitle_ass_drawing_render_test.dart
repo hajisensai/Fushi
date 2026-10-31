@@ -26,11 +26,13 @@ Dialogue: 0,0:00:01.00,0:00:04.00,Sign,,0,0,0,,{\an7\pos(100,50)\1c&HFFFFFF&\p1}
 Dialogue: 1,0:00:01.00,0:00:04.00,Default,,0,0,0,,That is why.
 ''';
 
-List<AudioCue> _cues() => AssParser.parseString(
-    content: _kHead, bookKey: 'b', includeDrawings: true);
+List<AudioCue> _cues() =>
+    AssParser.parseString(content: _kHead, bookKey: 'b', includeDrawings: true);
 
-Future<VideoPlayerController> _pump(WidgetTester tester,
-    {required bool respect}) async {
+Future<VideoPlayerController> _pump(
+  WidgetTester tester, {
+  required bool respect,
+}) async {
   tester.view.physicalSize = const Size(1280, 720);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -41,21 +43,24 @@ Future<VideoPlayerController> _pump(WidgetTester tester,
   c.setCues(_cues());
   c.debugSetPositionForTesting(2000);
   c.debugUpdateCueForPosition(2000);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: SizedBox(
-        width: 1280,
-        height: 720,
-        child: VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 1280,
+          height: 720,
+          child: VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
   return c;
 }
 
 Finder _painterFinder() => find.byWidgetPredicate(
-    (Widget w) => w is CustomPaint && w.painter is AssDrawingPainter);
+  (Widget w) => w is CustomPaint && w.painter is AssDrawingPainter,
+);
 
 void main() {
   test('controller：绘图事件分流到渲染专用流，对白流零污染', () {
@@ -73,8 +78,9 @@ void main() {
     expect(c.activeDrawingCues, isEmpty);
   });
 
-  testWidgets('respect ON：白填充绘图按包围盒落在 \\an7\\pos(100,50)，盒 200×100',
-      (WidgetTester tester) async {
+  testWidgets('respect ON：白填充绘图按包围盒落在 \\an7\\pos(100,50)，盒 200×100', (
+    WidgetTester tester,
+  ) async {
     await _pump(tester, respect: true);
     expect(_painterFinder(), findsOneWidget);
     final Rect r = tester.getRect(_painterFinder());

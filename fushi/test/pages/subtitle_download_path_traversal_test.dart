@@ -178,29 +178,27 @@ class _HostileNameProvider implements VideoSubtitleProvider {
   @override
   Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
     VideoSubtitleSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoSubtitleCandidate>.success(
-        <VideoSubtitleCandidate>[
-          _HostileCandidate(
-            providerId: id,
-            remoteId: '$id:1',
-            fileName: '../../evil.srt',
-            language: 'ja',
-            providerPriority: priority,
-            releaseName: 'Hostile Entry',
-          ),
-        ],
-      );
+  ) async => ProviderBatchResult<VideoSubtitleCandidate>.success(
+    <VideoSubtitleCandidate>[
+      _HostileCandidate(
+        providerId: id,
+        remoteId: '$id:1',
+        fileName: '../../evil.srt',
+        language: 'ja',
+        providerPriority: priority,
+        releaseName: 'Hostile Entry',
+      ),
+    ],
+  );
 
   @override
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
-  ) async =>
-      VideoSubtitleDownload(
-        bytes: Uint8List.fromList(utf8.encode('1')),
-        fileName: '../../evil.srt',
-        language: candidate.language,
-      );
+  ) async => VideoSubtitleDownload(
+    bytes: Uint8List.fromList(utf8.encode('1')),
+    fileName: '../../evil.srt',
+    language: candidate.language,
+  );
 
   @override
   void close() {}

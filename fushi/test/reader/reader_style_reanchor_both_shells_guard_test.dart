@@ -26,76 +26,92 @@ import '../helpers/source_guard.dart';
 void main() {
   final List<({String label, String Function() source})> shells =
       <({String label, String Function() source})>[
-    (
-      label: 'paginated',
-      source: ReaderPaginationScripts.paginatedShellSource,
-    ),
-    (
-      label: 'continuous',
-      source: ReaderPaginationScripts.continuousShellSource,
-    ),
-    (
-      label: 'visual novel',
-      source: ReaderVisualNovelScripts.vnShellScript,
-    ),
-  ];
+        (
+          label: 'paginated',
+          source: ReaderPaginationScripts.paginatedShellSource,
+        ),
+        (
+          label: 'continuous',
+          source: ReaderPaginationScripts.continuousShellSource,
+        ),
+        (label: 'visual novel', source: ReaderVisualNovelScripts.vnShellScript),
+      ];
 
   for (final ({String label, String Function() source}) shell in shells) {
     test(
-        '${shell.label} shell defines beginStyleReanchor + commitStyleReanchor',
-        () {
-      final String script = maskJsComments(shell.source());
-      expect(
-        script.contains('beginStyleReanchor = function') ||
-            script.contains('beginStyleReanchor: function'),
-        isTrue,
-        reason: '${shell.label} shell 缺 beginStyleReanchor：'
-            '该模式换样式只能走裸换 CSS 兜底、丢失翻页/翻屏保位。',
-      );
-      expect(
-        script.contains('commitStyleReanchor = function') ||
-            script.contains('commitStyleReanchor: function'),
-        isTrue,
-        reason: '${shell.label} shell 缺 commitStyleReanchor：'
-            '样式重锚第二阶段无法提交。',
-      );
-    });
+      '${shell.label} shell defines beginStyleReanchor + commitStyleReanchor',
+      () {
+        final String script = maskJsComments(shell.source());
+        expect(
+          script.contains('beginStyleReanchor = function') ||
+              script.contains('beginStyleReanchor: function'),
+          isTrue,
+          reason:
+              '${shell.label} shell 缺 beginStyleReanchor：'
+              '该模式换样式只能走裸换 CSS 兜底、丢失翻页/翻屏保位。',
+        );
+        expect(
+          script.contains('commitStyleReanchor = function') ||
+              script.contains('commitStyleReanchor: function'),
+          isTrue,
+          reason:
+              '${shell.label} shell 缺 commitStyleReanchor：'
+              '样式重锚第二阶段无法提交。',
+        );
+      },
+    );
   }
 
   test('three shells really are three different scripts', () {
     final Set<String> distinct = shells
         .map((({String label, String Function() source}) s) => s.source())
         .toSet();
-    expect(distinct.length, shells.length,
-        reason: '守卫曾两轮都读分页脚本——连续 shell 从未被真正断言');
+    expect(
+      distinct.length,
+      shells.length,
+      reason: '守卫曾两轮都读分页脚本——连续 shell 从未被真正断言',
+    );
   });
 
   test('beginStyleReanchorInvocation 目标方法在分页脚本里真实可解析', () {
     final String paginated = ReaderPaginationScripts.paginatedShellSource();
     // 调用点用 typeof === 'function' 门控；脚本里必须存在同名函数定义，否则门控恒假。
     expect(
-      ReaderPaginationScripts.beginStyleReanchorInvocation('"body{}"')
-          .contains('window.fushiReader.beginStyleReanchor'),
+      ReaderPaginationScripts.beginStyleReanchorInvocation(
+        '"body{}"',
+      ).contains('window.fushiReader.beginStyleReanchor'),
       isTrue,
     );
-    expect(paginated.contains('beginStyleReanchor: function(styleEl, css)'),
-        isTrue);
+    expect(
+      paginated.contains('beginStyleReanchor: function(styleEl, css)'),
+      isTrue,
+    );
   });
 
   test('BUG-2261：invocation 的无方法兜底自己换 CSS，而不是裸返 -1', () {
     final String invocation =
         ReaderPaginationScripts.beginStyleReanchorInvocation('"body{}"');
     // 有方法 → 交给 shell 原子「换 CSS + 采锚」；没方法 → 调用点就地换 CSS 再返 -1。
-    final int callIdx =
-        invocation.indexOf('window.fushiReader.beginStyleReanchor(el, css)');
+    final int callIdx = invocation.indexOf(
+      'window.fushiReader.beginStyleReanchor(el, css)',
+    );
     final int swapIdx = invocation.indexOf('el.textContent = css');
     final int minusOneIdx = invocation.lastIndexOf('return -1');
     expect(callIdx, isNonNegative);
-    expect(swapIdx, greaterThan(callIdx),
-        reason: '兜底换 CSS 必须在方法分支 return 之后、只在无方法时执行');
-    expect(minusOneIdx, greaterThan(swapIdx),
-        reason: '-1 只能在换完 CSS 之后返回；CSS 永不丢');
-    expect(invocation, contains('paginationMetrics = null'),
-        reason: '兜底换 CSS 后须失效分页 metrics，让余白/字号几何重新分栏');
+    expect(
+      swapIdx,
+      greaterThan(callIdx),
+      reason: '兜底换 CSS 必须在方法分支 return 之后、只在无方法时执行',
+    );
+    expect(
+      minusOneIdx,
+      greaterThan(swapIdx),
+      reason: '-1 只能在换完 CSS 之后返回；CSS 永不丢',
+    );
+    expect(
+      invocation,
+      contains('paginationMetrics = null'),
+      reason: '兜底换 CSS 后须失效分页 metrics，让余白/字号几何重新分栏',
+    );
   });
 }

@@ -32,14 +32,14 @@ class _FakeResource extends VideoResourceCandidate {
     String remoteId = 'r1',
     int seeders = 30,
   }) : super(
-          remoteId: remoteId,
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa',
-          providerPriority: 100,
-          releaseGroup: 'SubsPlease',
-          resolution: '1080p',
-          seeders: seeders,
-        );
+         remoteId: remoteId,
+         providerId: 'nyaa',
+         providerInstanceId: 'nyaa',
+         providerPriority: 100,
+         releaseGroup: 'SubsPlease',
+         resolution: '1080p',
+         seeders: seeders,
+       );
 }
 
 class _SeededProvider implements VideoResourceProvider {
@@ -60,8 +60,7 @@ class _SeededProvider implements VideoResourceProvider {
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(items);
+  ) async => ProviderBatchResult<VideoResourceCandidate>.success(items);
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
@@ -72,15 +71,15 @@ class _SeededProvider implements VideoResourceProvider {
 }
 
 VideoDiscoveryItem _item() => VideoDiscoveryItem(
-      reference: VideoMediaReference(
-        providerId: 'anilist',
-        mediaId: '42',
-        mediaKind: VideoMetadataMediaKind.tv,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-        title: 'Show',
-        anilistId: 42,
-      ),
-    );
+  reference: VideoMediaReference(
+    providerId: 'anilist',
+    mediaId: '42',
+    mediaKind: VideoMetadataMediaKind.tv,
+    discoveryCategory: VideoDiscoveryCategory.anime,
+    title: 'Show',
+    anilistId: 42,
+  ),
+);
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
@@ -138,31 +137,29 @@ void main() {
     const ValueKey<String>('video-subscription-start-after'),
   );
 
-  String startAfterText(WidgetTester tester) =>
-      tester.widget<TextField>(glassUnwrap<TextField>(startAfterField)).controller!.text;
+  String startAfterText(WidgetTester tester) => tester
+      .widget<TextField>(glassUnwrap<TextField>(startAfterField))
+      .controller!
+      .text;
 
   bool strictConfirmed(WidgetTester tester) => tester
       .widget<AdaptiveSettingsSwitchRow>(
-        find.byKey(
-          const ValueKey<String>('video-subscription-strict-confirm'),
-        ),
+        find.byKey(const ValueKey<String>('video-subscription-strict-confirm')),
       )
       .value;
 
-  testWidgets('选中候选后「加入订阅」默认打开，提交按钮直接可用', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('选中候选后「加入订阅」默认打开，提交按钮直接可用', (WidgetTester tester) async {
     await pumpSubscription(
       tester,
       _FakeResource(title: '[SubsPlease] Show - 05 (1080p)'),
     );
     expect(strictConfirmed(tester), isTrue, reason: '默认打开，不必手动确认一次');
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-subscription-submit'))),);
-    expect(
-      submit.onPressed,
-      isNotNull,
-      reason: '开关默认关时按钮恒禁用，用户只能看着一个能点的开关猜',
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('video-subscription-submit')),
+      ),
     );
+    expect(submit.onPressed, isNotNull, reason: '开关默认关时按钮恒禁用，用户只能看着一个能点的开关猜');
   });
 
   testWidgets('集数用选中 release 解析出的集号', (WidgetTester tester) async {
@@ -173,9 +170,7 @@ void main() {
     expect(startAfterText(tester), '5', reason: '选中的 release 集号优先');
   });
 
-  testWidgets('代表条无集号但同组里还有单集时，集数框仍是 1，不留空', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('代表条无集号但同组里还有单集时，集数框仍是 1，不留空', (WidgetTester tester) async {
     // 代表条 = 做种最多的那条，这里是无集号的整包；组里还有一条单集，于是
     // batchOnly=false、按追更建订阅，起始集号框照常出现。
     await pumpSubscription(
@@ -189,11 +184,7 @@ void main() {
         ),
       ],
     );
-    expect(
-      startAfterText(tester),
-      '1',
-      reason: 'helper 写着「从第 1 集开始」，框里就不该是空的',
-    );
+    expect(startAfterText(tester), '1', reason: 'helper 写着「从第 1 集开始」，框里就不该是空的');
   });
 
   testWidgets('整包订阅不显示起始集号框（BUG-2619）', (WidgetTester tester) async {

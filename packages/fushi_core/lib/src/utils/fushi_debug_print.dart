@@ -21,5 +21,6 @@ void _defaultDebugPrint(String? message, {int? wrapWidth}) {
 FushiDebugPrint fushiDebugPrint = _defaultDebugPrint;
 
 /// 与 Flutter 的 `kDebugMode` 同语义（既非 product 也非 profile 构建）。
-const bool fushiDebugMode = !bool.fromEnvironment('dart.vm.product') &&
+const bool fushiDebugMode =
+    !bool.fromEnvironment('dart.vm.product') &&
     !bool.fromEnvironment('dart.vm.profile');

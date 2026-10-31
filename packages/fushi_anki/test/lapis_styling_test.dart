@@ -12,8 +12,10 @@ void main() {
 
     test('有客制化时 = 出厂 CSS + 标记包裹的用户区段', () {
       const String custom = '.front-vocab { color: #8ab4f8; }';
-      final String css =
-          composeLapisCss(fontScalePercent: 100, customCss: custom);
+      final String css = composeLapisCss(
+        fontScalePercent: 100,
+        customCss: custom,
+      );
       expect(css, startsWith(LapisNoteType.template.css));
       expect(css, contains(lapisUserCssBeginMarker));
       expect(css, contains(custom));
@@ -27,15 +29,18 @@ void main() {
 
     test('extractLapisUserSectionBody 与 compose 往返一致', () {
       const String custom = '.jpsentence { line-height: 2.1; }';
-      final String css =
-          composeLapisCss(fontScalePercent: 125, customCss: custom);
+      final String css = composeLapisCss(
+        fontScalePercent: 125,
+        customCss: custom,
+      );
       final String? body = extractLapisUserSectionBody(css);
       expect(body, isNotNull);
       expect(body, contains(custom));
       // 回填 body 后重组能精确复现（备份恢复对齐路径依赖这一点）。
       expect(
         normalizeCssForCompare(
-            composeLapisCss(fontScalePercent: 100, customCss: body!)),
+          composeLapisCss(fontScalePercent: 100, customCss: body!),
+        ),
         normalizeCssForCompare(css),
       );
     });
@@ -68,8 +73,9 @@ void main() {
       // 释义字号不跟随「界面缩放」。判据不写死变量清单，而是直接从
       // LapisNoteType.css 反推：**所有** px 取值的 --pc-* / --mobile-* 变量
       // 都必须出现在缩放块里，vendored 升级新增变量同样会打红。
-      final RegExp declared =
-          RegExp(r'--((?:pc|mobile)-[a-z0-9-]+):\s*(\d+)px');
+      final RegExp declared = RegExp(
+        r'--((?:pc|mobile)-[a-z0-9-]+):\s*(\d+)px',
+      );
       final Map<String, int> baselines = <String, int>{
         for (final RegExpMatch m in declared.allMatches(LapisNoteType.css))
           m.group(1)!: int.parse(m.group(2)!),
@@ -99,8 +105,10 @@ void main() {
   });
 
   group('decideLapisStylingAction', () {
-    final String expected =
-        composeLapisCss(fontScalePercent: 110, customCss: '.x { color: red; }');
+    final String expected = composeLapisCss(
+      fontScalePercent: 110,
+      customCss: '.x { color: red; }',
+    );
 
     test('内容一致（含 CRLF/尾空白差异）→ upToDate', () {
       expect(
@@ -114,8 +122,10 @@ void main() {
     });
 
     test('Anki 端 == 上次推送指纹 → safeUpdate（自动迁移放行）', () {
-      final String previous =
-          composeLapisCss(fontScalePercent: 100, customCss: '.old { }');
+      final String previous = composeLapisCss(
+        fontScalePercent: 100,
+        customCss: '.old { }',
+      );
       expect(
         decideLapisStylingAction(
           ankiCss: previous,
@@ -190,9 +200,7 @@ void main() {
       expect(css, contains('color: #2F6B5F !important'));
       expect(
         css,
-        contains(
-          'font-size: calc(var(--vocab-font-size) * 1.25) !important',
-        ),
+        contains('font-size: calc(var(--vocab-font-size) * 1.25) !important'),
       );
       expect(
         css,
@@ -203,10 +211,7 @@ void main() {
 
       final LapisVisualStyleSheet round = splitLapisVisualStyleSheet(css);
       expect(round.freeformCss, freeform);
-      expect(
-        round.ruleFor(LapisVisualField.expression).fontScalePercent,
-        125,
-      );
+      expect(round.ruleFor(LapisVisualField.expression).fontScalePercent, 125);
       expect(round.ruleFor(LapisVisualField.expression).bold, isTrue);
       expect(
         round.ruleFor(LapisVisualField.expression).alignment,
@@ -249,7 +254,8 @@ void main() {
     test('CONFIG 注释缺失时整段原样保留（不销毁用户手写 CSS）', () {
       const String before = '.mine-before { color: #111111; }';
       const String after = '.mine-after { color: #222222; }';
-      const String broken = '$before\n\n'
+      const String broken =
+          '$before\n\n'
           '$lapisVisualCssBeginMarker\n'
           '.front-vocab {\n  color: #333333 !important;\n}\n'
           '$lapisVisualCssEndMarker\n\n'
@@ -264,7 +270,8 @@ void main() {
     test('CONFIG JSON 损坏时整段原样保留（不销毁用户手写 CSS）', () {
       const String before = '.mine-before { color: #111111; }';
       const String after = '.mine-after { color: #222222; }';
-      const String broken = '$before\n\n'
+      const String broken =
+          '$before\n\n'
           '$lapisVisualCssBeginMarker\n'
           '/* HIBIKI-LAPIS-VISUAL-CONFIG {"expression": */\n'
           '$lapisVisualCssEndMarker\n\n'
@@ -278,7 +285,8 @@ void main() {
 
     test('CONFIG 是合法 JSON 但不是对象时整段原样保留', () {
       const String mine = '.mine { color: #111111; }';
-      const String broken = '$lapisVisualCssBeginMarker\n'
+      const String broken =
+          '$lapisVisualCssBeginMarker\n'
           '/* HIBIKI-LAPIS-VISUAL-CONFIG [1,2,3] */\n'
           '$lapisVisualCssEndMarker\n\n'
           '$mine';
@@ -289,14 +297,16 @@ void main() {
     });
 
     test('用户写在托管区段之后的 CSS 保存后仍在托管区段之后（覆盖不被静默推翻）', () {
-      const String override = '.main-def {\n'
+      const String override =
+          '.main-def {\n'
           '  background-color: #101010 !important;\n'
           '}';
       final String managedOnly = composeLapisVisualStyleSheet(
         freeformCss: '',
         rules: const <LapisVisualField, LapisVisualRule>{
-          LapisVisualField.definitionBox:
-              LapisVisualRule(backgroundColorHex: '#FFF0A6'),
+          LapisVisualField.definitionBox: LapisVisualRule(
+            backgroundColorHex: '#FFF0A6',
+          ),
         },
       );
       final String stored = '$managedOnly\n\n$override';
@@ -323,8 +333,9 @@ void main() {
       final String stored = composeLapisVisualStyleSheet(
         freeformCss: freeform,
         rules: const <LapisVisualField, LapisVisualRule>{
-          LapisVisualField.definitionBox:
-              LapisVisualRule(backgroundColorHex: '#FFF0A6'),
+          LapisVisualField.definitionBox: LapisVisualRule(
+            backgroundColorHex: '#FFF0A6',
+          ),
         },
       );
       final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(stored);
@@ -378,27 +389,28 @@ void main() {
     // 字号变量字面量：真实 DOM 依据见 lapisVisualSelector 的文档注释。
     const Map<LapisVisualField, String> expectedSelectors =
         <LapisVisualField, String>{
-      LapisVisualField.expression: '.front-vocab, .vocab',
-      LapisVisualField.reading: '.pitch',
-      LapisVisualField.sentence:
-          '#hint, .front-sentence, .sentence, .sentence-alt',
-      LapisVisualField.definitionInfo: '.def-info',
-      LapisVisualField.definitionBox: '.main-def',
-      LapisVisualField.definitionContent: '.main-def > .definition > div',
-      LapisVisualField.selectedDefinition: '#selection',
-      LapisVisualField.primaryDefinition: '#primary',
-      LapisVisualField.glossaries: '#glossaries',
-      LapisVisualField.dictionaryEntry:
-          '#primary li[data-dictionary], #glossaries li[data-dictionary]',
-      LapisVisualField.dictionaryName: '.definition li[data-dictionary] > i',
-      LapisVisualField.definitionExample:
-          '.definition [data-sc-content|="example-sentence"]',
-    };
+          LapisVisualField.expression: '.front-vocab, .vocab',
+          LapisVisualField.reading: '.pitch',
+          LapisVisualField.sentence:
+              '#hint, .front-sentence, .sentence, .sentence-alt',
+          LapisVisualField.definitionInfo: '.def-info',
+          LapisVisualField.definitionBox: '.main-def',
+          LapisVisualField.definitionContent: '.main-def > .definition > div',
+          LapisVisualField.selectedDefinition: '#selection',
+          LapisVisualField.primaryDefinition: '#primary',
+          LapisVisualField.glossaries: '#glossaries',
+          LapisVisualField.dictionaryEntry:
+              '#primary li[data-dictionary], #glossaries li[data-dictionary]',
+          LapisVisualField.dictionaryName:
+              '.definition li[data-dictionary] > i',
+          LapisVisualField.definitionExample:
+              '.definition [data-sc-content|="example-sentence"]',
+        };
 
     /// 字段 → 110% 缩放时必须逐字节出现的字号规则。选择器与变量名任意一处写错
     /// 都会让这里对不上。
-    const Map<LapisVisualField, List<String>> expectedFontRules =
-        <LapisVisualField, List<String>>{
+    const Map<LapisVisualField, List<String>>
+    expectedFontRules = <LapisVisualField, List<String>>{
       LapisVisualField.expression: <String>[
         '.front-vocab {\n  font-size: calc(var(--vocab-font-size) * 1.10)'
             ' !important;\n}',
@@ -473,8 +485,11 @@ void main() {
           },
         );
         for (final String rule in expectedFontRules[field]!) {
-          expect(css, contains(rule),
-              reason: '${field.wireName} 缺字号规则:\n$rule');
+          expect(
+            css,
+            contains(rule),
+            reason: '${field.wireName} 缺字号规则:\n$rule',
+          );
         }
         expect(
           splitLapisVisualStyleSheet(css).ruleFor(field).fontScalePercent,
@@ -560,8 +575,9 @@ void main() {
       expect(css, contains('padding: 16px !important'));
       expect(css, contains('margin-block: 8px !important'));
 
-      final LapisVisualRule round = splitLapisVisualStyleSheet(css)
-          .ruleFor(LapisVisualField.definitionBox);
+      final LapisVisualRule round = splitLapisVisualStyleSheet(
+        css,
+      ).ruleFor(LapisVisualField.definitionBox);
       expect(round.fontScalePercent, 115);
       expect(round.lineHeightPercent, 175);
       expect(round.backgroundColorHex, '#FFF0A6');
@@ -573,18 +589,16 @@ void main() {
     });
 
     test('损坏或越界的可视参数安全归一化', () {
-      final LapisVisualRule? rule = LapisVisualRule.fromJson(
-        <String, dynamic>{
-          'fontScalePercent': 999,
-          'lineHeightPercent': 999,
-          'backgroundColorHex': 'red',
-          'borderWidthPx': -4,
-          'borderColorHex': '#aabbcc',
-          'borderRadiusPx': 999,
-          'paddingPx': -1,
-          'marginBlockPx': 999,
-        },
-      );
+      final LapisVisualRule? rule = LapisVisualRule.fromJson(<String, dynamic>{
+        'fontScalePercent': 999,
+        'lineHeightPercent': 999,
+        'backgroundColorHex': 'red',
+        'borderWidthPx': -4,
+        'borderColorHex': '#aabbcc',
+        'borderRadiusPx': 999,
+        'paddingPx': -1,
+        'marginBlockPx': 999,
+      });
 
       expect(rule, isNotNull);
       expect(rule!.fontScalePercent, 250);
@@ -625,8 +639,9 @@ void main() {
       final String css = composeLapisVisualStyleSheet(
         freeformCss: '',
         rules: const <LapisVisualField, LapisVisualRule>{
-          LapisVisualField.sentence:
-              LapisVisualRule(alignment: LapisVisualTextAlign.start),
+          LapisVisualField.sentence: LapisVisualRule(
+            alignment: LapisVisualTextAlign.start,
+          ),
         },
       );
       expect(css, contains('text-align: left !important;'));
@@ -637,15 +652,16 @@ void main() {
       final String css = composeLapisVisualStyleSheet(
         freeformCss: '',
         rules: const <LapisVisualField, LapisVisualRule>{
-          LapisVisualField.sentence:
-              LapisVisualRule(alignment: LapisVisualTextAlign.end),
+          LapisVisualField.sentence: LapisVisualRule(
+            alignment: LapisVisualTextAlign.end,
+          ),
         },
       );
       expect(css, contains('"alignment":"end"'));
       expect(
-        splitLapisVisualStyleSheet(css)
-            .ruleFor(LapisVisualField.sentence)
-            .alignment,
+        splitLapisVisualStyleSheet(
+          css,
+        ).ruleFor(LapisVisualField.sentence).alignment,
         LapisVisualTextAlign.end,
       );
     });
@@ -656,16 +672,17 @@ void main() {
       final String css = composeLapisVisualStyleSheet(
         freeformCss: '',
         rules: const <LapisVisualField, LapisVisualRule>{
-          LapisVisualField.definitionContent:
-              LapisVisualRule(textIndentPercent: 150),
+          LapisVisualField.definitionContent: LapisVisualRule(
+            textIndentPercent: 150,
+          ),
         },
       );
       expect(css, contains('text-indent: 1.50em !important;'));
       expect(css, contains('"textIndentPercent":150'));
       expect(
-        splitLapisVisualStyleSheet(css)
-            .ruleFor(LapisVisualField.definitionContent)
-            .textIndentPercent,
+        splitLapisVisualStyleSheet(
+          css,
+        ).ruleFor(LapisVisualField.definitionContent).textIndentPercent,
         150,
       );
     });
@@ -678,26 +695,27 @@ void main() {
         isNot(contains('text-indent')),
       );
       expect(
-        LapisVisualRule.fromJson(
-          <String, dynamic>{'textIndentPercent': 9999},
-        )!
-            .textIndentPercent,
+        LapisVisualRule.fromJson(<String, dynamic>{
+          'textIndentPercent': 9999,
+        })!.textIndentPercent,
         400,
       );
       // 负值夹到 0，而 0 就是默认：归一成 null、不生成覆盖。
       expect(
-        LapisVisualRule.fromJson(
-          <String, dynamic>{'textIndentPercent': -50},
-        )!
-            .textIndentPercent,
+        LapisVisualRule.fromJson(<String, dynamic>{
+          'textIndentPercent': -50,
+        })!.textIndentPercent,
         isNull,
       );
-      final LapisVisualRule zero = LapisVisualRule.fromJson(
-        <String, dynamic>{'textIndentPercent': 0},
-      )!;
+      final LapisVisualRule zero = LapisVisualRule.fromJson(<String, dynamic>{
+        'textIndentPercent': 0,
+      })!;
       expect(zero.textIndentPercent, isNull);
       expect(zero.isDefault, isTrue);
-      expect(lapisVisualDeclarations(zero).join(), isNot(contains('text-indent')));
+      expect(
+        lapisVisualDeclarations(zero).join(),
+        isNot(contains('text-indent')),
+      );
     });
 
     test('copyWith 可以把缩进清回默认', () {
@@ -710,10 +728,7 @@ void main() {
   group('Lapis 区块位置', () {
     test('布局保留键不与任何可视字段 wireName 相撞', () {
       // 撞上就意味着某个字段的规则会被当成布局吃掉（或反之）。
-      expect(
-        LapisVisualField.fromWireName(lapisVisualLayoutConfigKey),
-        isNull,
-      );
+      expect(LapisVisualField.fromWireName(lapisVisualLayoutConfigKey), isNull);
     });
 
     test('每项位置同时覆写桌面与移动端变量', () {
@@ -810,7 +825,8 @@ void main() {
 
     test('旧版托管区段（无 layout 键）解析成默认布局，字段规则照常保留', () {
       // 老版本写下的 CONFIG 只有字段键。降级/升级都不许因此丢字段规则。
-      const String legacy = '$lapisVisualCssBeginMarker\n'
+      const String legacy =
+          '$lapisVisualCssBeginMarker\n'
           '/* HIBIKI-LAPIS-VISUAL-CONFIG '
           '{"sentence":{"fontScalePercent":100,"bold":true}} */\n'
           '.sentence {\n  font-weight: 700 !important;\n}\n'
@@ -821,14 +837,12 @@ void main() {
     });
 
     test('CONFIG 里的未知位置取值被丢弃，不产出非法 CSS', () {
-      const String hostile = '$lapisVisualCssBeginMarker\n'
+      const String hostile =
+          '$lapisVisualCssBeginMarker\n'
           '/* HIBIKI-LAPIS-VISUAL-CONFIG '
           '{"layout":{"sentencePosition":"sideways"}} */\n'
           '$lapisVisualCssEndMarker';
-      expect(
-        splitLapisVisualStyleSheet(hostile).layout.isDefault,
-        isTrue,
-      );
+      expect(splitLapisVisualStyleSheet(hostile).layout.isDefault, isTrue);
     });
 
     test('copyWith 能把某项清回默认', () {
@@ -879,10 +893,9 @@ void main() {
         lapisVisualFieldSources(LapisVisualField.primaryDefinition),
         <String>['MainDefinition'],
       );
-      expect(
-        lapisVisualFieldSources(LapisVisualField.glossaries),
-        <String>['Glossary'],
-      );
+      expect(lapisVisualFieldSources(LapisVisualField.glossaries), <String>[
+        'Glossary',
+      ]);
       // `.def-info` 是模板写死的计数标签，没有字段可改。
       expect(lapisVisualFieldSources(LapisVisualField.definitionInfo), isEmpty);
     });
@@ -898,8 +911,9 @@ void main() {
         ],
         css: 'body { }',
       );
-      final AnkiNoteTypeDefinition round =
-          AnkiNoteTypeDefinition.fromJson(def.toJson());
+      final AnkiNoteTypeDefinition round = AnkiNoteTypeDefinition.fromJson(
+        def.toJson(),
+      );
       expect(round.name, def.name);
       expect(round.fields, def.fields);
       expect(round.templates.single.name, 'Card 1');
@@ -928,8 +942,9 @@ void main() {
     });
 
     test('旧版 JSON（无 Lapis 键）解析到默认值（向后兼容）', () {
-      final AnkiSettings legacy =
-          AnkiSettings.fromJson(<String, dynamic>{'tags': 'a'});
+      final AnkiSettings legacy = AnkiSettings.fromJson(<String, dynamic>{
+        'tags': 'a',
+      });
       expect(legacy.lapisFontScalePercent, 100);
       expect(legacy.lapisCustomCss, '');
       expect(legacy.lapisAppliedCssSha, isNull);

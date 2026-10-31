@@ -24,9 +24,13 @@ void main() {
     });
 
     test('泰文按码点计', () {
-      expect(countStudyChars('สวัสดี'), 4,
-          reason: '6 个码点里 ั 与 ี 是组合记号（透明），计入的是 4 个辅音字母；'
-              '泰文不用空格分词，按码点计的是字母而非音节');
+      expect(
+        countStudyChars('สวัสดี'),
+        4,
+        reason:
+            '6 个码点里 ั 与 ี 是组合记号（透明），计入的是 4 个辅音字母；'
+            '泰文不用空格分词，按码点计的是字母而非音节',
+      );
     });
   });
 
@@ -38,8 +42,11 @@ void main() {
 
     test('词内撇号不拆词', () {
       expect(countStudyChars("I don't know"), 3);
-      expect(countStudyChars('I don\u2019t know'), 3,
-          reason: '排版撇号 U+2019 同样透明');
+      expect(
+        countStudyChars('I don\u2019t know'),
+        3,
+        reason: '排版撇号 U+2019 同样透明',
+      );
       expect(countStudyChars("John's book"), 2);
       expect(countStudyChars("rock 'n' roll"), 3, reason: '断词靠空白，不靠撇号；n 自成一词');
     });
@@ -54,18 +61,24 @@ void main() {
       expect(countStudyChars('Καλημέρα κόσμε'), 2);
       expect(countStudyChars('\u0645\u0631\u062D\u0628\u0627 \u0628\u0643'), 2);
       expect(
-          countStudyChars('\u05E9\u05DC\u05D5\u05DD \u05E2\u05D5\u05DC\u05DD'),
-          2);
+        countStudyChars('\u05E9\u05DC\u05D5\u05DD \u05E2\u05D5\u05DC\u05DD'),
+        2,
+      );
       expect(
-          countStudyChars(
-              '\u0928\u092E\u0938\u094D\u0924\u0947 \u0926\u0941\u0928\u093F\u092F\u093E'),
-          2,
-          reason: '天城文用空格分词，matra 是组合记号（透明）');
+        countStudyChars(
+          '\u0928\u092E\u0938\u094D\u0924\u0947 \u0926\u0941\u0928\u093F\u092F\u093E',
+        ),
+        2,
+        reason: '天城文用空格分词，matra 是组合记号（透明）',
+      );
     });
 
     test('阿拉伯语的 harakat 不拆词', () {
-      expect(countStudyChars('\u0643\u0650\u062A\u064E\u0627\u0628'), 1,
-          reason: r'词中的 harakat 是 \p{M}，透明不断词');
+      expect(
+        countStudyChars('\u0643\u0650\u062A\u064E\u0627\u0628'),
+        1,
+        reason: r'词中的 harakat 是 \p{M}，透明不断词',
+      );
     });
 
     test('数字连续串计 1', () {
@@ -83,10 +96,16 @@ void main() {
     });
 
     test('判定顺序：先脚本后类别', () {
-      expect(countStudyChars('\u3007'), 1,
-          reason: r'〇 是 \p{N} 但 Script Ext 是 Han，必须按码点计 1 而不是并进词串');
-      expect(countStudyChars('\u3002'), 0,
-          reason: r'。的 Script Ext 含 Han，但既非 \p{L} 也非 \p{N}，不得计入');
+      expect(
+        countStudyChars('\u3007'),
+        1,
+        reason: r'〇 是 \p{N} 但 Script Ext 是 Han，必须按码点计 1 而不是并进词串',
+      );
+      expect(
+        countStudyChars('\u3002'),
+        0,
+        reason: r'。的 Script Ext 含 Han，但既非 \p{L} 也非 \p{N}，不得计入',
+      );
       expect(countStudyChars('\u30071\u30072'), 4, reason: '〇 逐个计，中间的西文数字各自成串');
     });
   });
@@ -110,14 +129,18 @@ void main() {
         '',
       ];
       for (final String text in samples) {
-        final List<String> runes =
-            text.runes.map((int r) => String.fromCharCode(r)).toList();
+        final List<String> runes = text.runes
+            .map((int r) => String.fromCharCode(r))
+            .toList();
         for (int cut = 0; cut <= runes.length; cut++) {
           final StudyCharCounter counter = StudyCharCounter()
             ..add(runes.sublist(0, cut).join())
             ..add(runes.sublist(cut).join());
-          expect(counter.count, countStudyChars(text),
-              reason: '「$text」在第 $cut 个码点处切开');
+          expect(
+            counter.count,
+            countStudyChars(text),
+            reason: '「$text」在第 $cut 个码点处切开',
+          );
         }
       }
     });

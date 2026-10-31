@@ -309,10 +309,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, body);
-    return FushiPageScaffold(
-      title: t.video_statistics,
-      body: body,
-    );
+    return FushiPageScaffold(title: t.video_statistics, body: body);
   }
 
   /// 骨架与总览 / 阅读 / 游戏 tab 同一套（2026-10 统计中心重设计，

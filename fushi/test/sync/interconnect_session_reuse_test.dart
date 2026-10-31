@@ -31,8 +31,10 @@ void main() {
 
   test('配置未变时 restoreAuth 不触发全候选重探测', () async {
     int probes = 0;
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       probes++;
       return true;
     });
@@ -55,8 +57,10 @@ void main() {
 
   test('令牌变化触发重探测（凭据换了，会话必须重来）', () async {
     int probes = 0;
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       probes++;
       return true;
     });
@@ -72,8 +76,10 @@ void main() {
 
   test('候选地址集合变化触发重探测（换了对端）', () async {
     int probes = 0;
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       probes++;
       return true;
     });
@@ -91,8 +97,10 @@ void main() {
 
   test('钉扎指纹变化触发重解析（同地址换证书也是换身份）', () async {
     int probes = 0;
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       probes++;
       return true;
     });
@@ -121,8 +129,10 @@ void main() {
 
   test('仅对端展示名变化不触发重探测（deviceName 不进会话身份）', () async {
     int probes = 0;
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       probes++;
       return true;
     });
@@ -152,21 +162,27 @@ void main() {
       const FushiClientUrl(url: 'http://192.168.1.10:8384'), // 不可达
       const FushiClientUrl(url: 'http://192.168.1.20:8384'), // 可达
     ]);
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       return url.contains('192.168.1.20');
     });
 
     await backend.authenticate(repo: repo);
-    expect(backend.activeBaseUrl, contains('192.168.1.20'),
-        reason: '首次解析应落在真可达的那台');
+    expect(
+      backend.activeBaseUrl,
+      contains('192.168.1.20'),
+      reason: '首次解析应落在真可达的那台',
+    );
 
     // 切页面 → restoreAuth。配置一字未改。
     expect(await backend.restoreAuth(repo), isTrue);
     expect(
       backend.activeBaseUrl,
       contains('192.168.1.20'),
-      reason: 'BUG-1559：会话已解析就不能被重建成候选[0]——'
+      reason:
+          'BUG-1559：会话已解析就不能被重建成候选[0]——'
           '那条不可达，而且 _sessionResolved 仍为 true，永不重探',
     );
 
@@ -180,8 +196,10 @@ void main() {
       const FushiClientUrl(url: 'http://192.168.1.10:8384'),
       const FushiClientUrl(url: 'http://192.168.1.20:8384'),
     ]);
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       return !url.contains('192.168.1.10');
     });
     await backend.authenticate(repo: repo);
@@ -192,8 +210,11 @@ void main() {
       const FushiClientUrl(url: 'http://192.168.1.30:8384'),
     ]);
     expect(await backend.restoreAuth(repo), isTrue);
-    expect(backend.activeBaseUrl, contains('192.168.1.30'),
-        reason: '配置真变了就必须重建，否则会拿旧对端的句柄发请求');
+    expect(
+      backend.activeBaseUrl,
+      contains('192.168.1.30'),
+      reason: '配置真变了就必须重建，否则会拿旧对端的句柄发请求',
+    );
   });
 
   // ── BUG-1180：换对端必须让远端清单缓存失效 ────────────────────────────
@@ -205,8 +226,10 @@ void main() {
   //      addListener → 「缓存随对端身份变化失效」红）。
 
   test('BUG-1180: 换对端地址自增会话身份版本号', () async {
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       return true;
     });
     await backend.restoreAuth(repo);
@@ -217,13 +240,18 @@ void main() {
     ]);
     await backend.restoreAuth(repo);
 
-    expect(backend.sessionIdentityRevision.value, greaterThan(before),
-        reason: 'BUG-1180：换了对端，远端清单缓存必须收到失效信号');
+    expect(
+      backend.sessionIdentityRevision.value,
+      greaterThan(before),
+      reason: 'BUG-1180：换了对端，远端清单缓存必须收到失效信号',
+    );
   });
 
   test('BUG-1180: 换令牌自增会话身份版本号', () async {
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       return true;
     });
     await backend.restoreAuth(repo);
@@ -232,13 +260,18 @@ void main() {
     await repo.setFushiClientToken('token-b');
     await backend.restoreAuth(repo);
 
-    expect(backend.sessionIdentityRevision.value, greaterThan(before),
-        reason: '令牌是对端身份的一部分（局域网配对就是这么落库的）');
+    expect(
+      backend.sessionIdentityRevision.value,
+      greaterThan(before),
+      reason: '令牌是对端身份的一部分（局域网配对就是这么落库的）',
+    );
   });
 
   test('BUG-1180: 配置没变不自增（否则每次切页面都白白清空缓存）', () async {
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       return true;
     });
     await backend.restoreAuth(repo);
@@ -247,14 +280,19 @@ void main() {
     await backend.restoreAuth(repo);
     await backend.restoreAuth(repo);
 
-    expect(backend.sessionIdentityRevision.value, before,
-        reason: '配置没变还清缓存，等于把 BUG-1180 的缓存收益全退回去');
+    expect(
+      backend.sessionIdentityRevision.value,
+      before,
+      reason: '配置没变还清缓存，等于把 BUG-1180 的缓存收益全退回去',
+    );
   });
 
   test('signOut 后配置身份归零，下次连接必然重探', () async {
     int probes = 0;
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String url, String token) async {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
       probes++;
       return true;
     });

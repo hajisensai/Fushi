@@ -33,8 +33,10 @@ void main() {
         MediaRef.tryParse('epub', 'bookKey'),
         const MediaRef(kind: MediaKind.epub, entryKey: 'bookKey'),
       );
-      expect(MediaRef.tryParse('srt', 'uid-1'),
-          const MediaRef(kind: MediaKind.srt, entryKey: 'uid-1'));
+      expect(
+        MediaRef.tryParse('srt', 'uid-1'),
+        const MediaRef(kind: MediaKind.srt, entryKey: 'uid-1'),
+      );
       // 未知种类（对端未来值 / 其它值域的串）→ null，调用方保留裸串透传。
       expect(MediaRef.tryParse('book', 'k'), isNull);
       expect(MediaRef.tryParse('', 'k'), isNull, reason: "'' 合集墓碑哨兵");
@@ -46,13 +48,17 @@ void main() {
 
   group('既有身份类型委托 MediaRef（对外 API 不变）', () {
     test('ShelfEntryRef：字段/相等性/toString 与旧实现一致，ref 可取', () {
-      const ShelfEntryRef ref =
-          ShelfEntryRef(mediaType: MediaKind.epub, entryKey: 'k');
+      const ShelfEntryRef ref = ShelfEntryRef(
+        mediaType: MediaKind.epub,
+        entryKey: 'k',
+      );
       expect(ref.mediaType, MediaKind.epub);
       expect(ref.entryKey, 'k');
       expect(ref.ref, const MediaRef(kind: MediaKind.epub, entryKey: 'k'));
       expect(
-          ref, const ShelfEntryRef(mediaType: MediaKind.epub, entryKey: 'k'));
+        ref,
+        const ShelfEntryRef(mediaType: MediaKind.epub, entryKey: 'k'),
+      );
       expect(
         ref,
         isNot(const ShelfEntryRef(mediaType: MediaKind.srt, entryKey: 'k')),

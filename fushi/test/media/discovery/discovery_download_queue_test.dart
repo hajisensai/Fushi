@@ -74,10 +74,7 @@ void main() {
     );
     addTearDown(queue.dispose);
 
-    expect(
-      queue.enqueue(_item('1'), destinationDir: tempDir.path),
-      isTrue,
-    );
+    expect(queue.enqueue(_item('1'), destinationDir: tempDir.path), isTrue);
     await _waitFor(() => queue.tasks.single.isFinished);
 
     final DiscoveryDownloadTask task = queue.tasks.single;
@@ -183,10 +180,7 @@ void main() {
     );
     addTearDown(queue.dispose);
 
-    expect(
-      queue.enqueue(_item('1'), destinationDir: tempDir.path),
-      isTrue,
-    );
+    expect(queue.enqueue(_item('1'), destinationDir: tempDir.path), isTrue);
     expect(
       queue.enqueue(_item('1'), destinationDir: tempDir.path),
       isFalse,
@@ -210,7 +204,8 @@ void main() {
 
     gate.complete();
     await _waitFor(
-        () => queue.tasks.every((DiscoveryDownloadTask t) => t.isFinished));
+      () => queue.tasks.every((DiscoveryDownloadTask t) => t.isFinished),
+    );
     expect(started.length, 2);
   });
 
@@ -449,8 +444,9 @@ void main() {
 
     // 收尾仍以 `_running` 身份认领这次执行 → 执行位释放，第二个任务跑完。
     gate.complete();
-    await _waitFor(() => queue.tasks.single.status ==
-        DiscoveryDownloadStatus.done);
+    await _waitFor(
+      () => queue.tasks.single.status == DiscoveryDownloadStatus.done,
+    );
     expect(queue.runningTask, isNull);
   });
 

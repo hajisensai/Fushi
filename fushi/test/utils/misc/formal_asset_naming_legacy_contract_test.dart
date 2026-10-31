@@ -43,8 +43,9 @@ void main() {
 
   /// Hibiki v1.2.0：无产品族过滤。
   String? hibikiV120Pick(List<String> assetNames, List<String> deviceAbis) {
-    final List<String> abiTags =
-        deviceAbis.map((String a) => a.replaceAll('_', '-')).toList();
+    final List<String> abiTags = deviceAbis
+        .map((String a) => a.replaceAll('_', '-'))
+        .toList();
     String? fallback;
     for (final String name in asGitHubReturnsThem(assetNames)) {
       if (!legacyMatchesStableChannel(name)) continue;
@@ -56,8 +57,9 @@ void main() {
 
   /// 在野 Fushi（BUG-1481 之后、本次改动之前）：多了产品族白名单，其余同上。
   String? shippedFushiPick(List<String> assetNames, List<String> deviceAbis) {
-    final List<String> abiTags =
-        deviceAbis.map((String a) => a.replaceAll('_', '-')).toList();
+    final List<String> abiTags = deviceAbis
+        .map((String a) => a.replaceAll('_', '-'))
+        .toList();
     String? fallback;
     for (final String name in asGitHubReturnsThem(assetNames)) {
       if (!name.startsWith('fushi-')) continue;
@@ -75,15 +77,16 @@ void main() {
   const String bridgePrefix = 'bridge-';
 
   List<String> bridgeAssets(String prefix) => <String>[
-        for (final String abi in kAndroidReleaseAbis)
-          '$prefix$version-$abi.apk',
-      ];
+    for (final String abi in kAndroidReleaseAbis) '$prefix$version-$abi.apk',
+  ];
 
   /// 本体资产：与 [synthesizeStableAssetNames] 同源，保证守卫跟着真相源走。
   List<String> fushiAssets() => synthesizeStableAssetNames(version);
 
-  List<String> formalReleaseAssets({String prefix = bridgePrefix}) =>
-      <String>[...fushiAssets(), ...bridgeAssets(prefix)];
+  List<String> formalReleaseAssets({String prefix = bridgePrefix}) => <String>[
+    ...fushiAssets(),
+    ...bridgeAssets(prefix),
+  ];
 
   /// 设备 `SUPPORTED_ABIS` 的真实取值（含 64 位设备同时上报的 32 位项）。
   const Map<String, List<String>> deviceAbis = <String, List<String>>{
@@ -119,23 +122,30 @@ void main() {
   group('已出货 Hibiki v1.2.0 面对 2.0 正式版资产表', () {
     for (final MapEntry<String, List<String>> device in deviceAbis.entries) {
       test('${device.key}：命中桥包，绝不命中本体 Fushi 的 APK', () {
-        final String? picked =
-            hibikiV120Pick(formalReleaseAssets(), device.value);
+        final String? picked = hibikiV120Pick(
+          formalReleaseAssets(),
+          device.value,
+        );
         expect(picked, isNotNull);
         expect(
           picked!.startsWith(bridgePrefix),
           isTrue,
-          reason: '跨包名装到 Fushi 上 = 并存空 app，用户卸旧包即永久丢数据；'
+          reason:
+              '跨包名装到 Fushi 上 = 并存空 app，用户卸旧包即永久丢数据；'
               '实际选中 $picked',
         );
       });
     }
 
     test('arm64 / arm32 各自命中本架构的桥包', () {
-      expect(hibikiV120Pick(formalReleaseAssets(), deviceAbis['arm64 设备']!),
-          '$bridgePrefix$version-arm64-v8a.apk');
-      expect(hibikiV120Pick(formalReleaseAssets(), deviceAbis['arm32 设备']!),
-          '$bridgePrefix$version-armeabi-v7a.apk');
+      expect(
+        hibikiV120Pick(formalReleaseAssets(), deviceAbis['arm64 设备']!),
+        '$bridgePrefix$version-arm64-v8a.apk',
+      );
+      expect(
+        hibikiV120Pick(formalReleaseAssets(), deviceAbis['arm32 设备']!),
+        '$bridgePrefix$version-armeabi-v7a.apk',
+      );
     });
 
     test('x86_64 设备落到 armeabi 桥包：v1.2.0 自身的字母序缺陷，非本方案引入', () {
@@ -143,13 +153,17 @@ void main() {
       // armeabi-v7a 先命中（x86_64 设备的 SUPPORTED_ABIS 本来就带 armeabi-v7a）。
       // 判定可接受：x86_64 Android 只有模拟器 / Chromebook，上报 armeabi-v7a 就意味着
       // 有 ARM 翻译层，而桥包唯一职责是把数据导出来。关键是它**仍然是桥包**。
-      expect(hibikiV120Pick(formalReleaseAssets(), deviceAbis['x86_64 设备']!),
-          '$bridgePrefix$version-armeabi-v7a.apk');
+      expect(
+        hibikiV120Pick(formalReleaseAssets(), deviceAbis['x86_64 设备']!),
+        '$bridgePrefix$version-armeabi-v7a.apk',
+      );
     });
 
     test('反向：桥包若用 hibiki- 前缀（字母序在 fushi- 之后）就会失守', () {
       final String? picked = hibikiV120Pick(
-          formalReleaseAssets(prefix: 'hibiki-'), deviceAbis['arm64 设备']!);
+        formalReleaseAssets(prefix: 'hibiki-'),
+        deviceAbis['arm64 设备']!,
+      );
       expect(
         picked,
         'fushi-$version-arm64-v8a.apk',
@@ -158,8 +172,10 @@ void main() {
     });
 
     test('反向：桥包缺席时老客户端照样装到本体上——桥包资产不可省', () {
-      final String? picked =
-          hibikiV120Pick(fushiAssets(), deviceAbis['arm64 设备']!);
+      final String? picked = hibikiV120Pick(
+        fushiAssets(),
+        deviceAbis['arm64 设备']!,
+      );
       expect(picked, 'fushi-$version-arm64-v8a.apk');
     });
   });
@@ -175,61 +191,85 @@ void main() {
       });
 
       test('${device.key}：选中的必须是本体、且是按 ABI 命中而非 fallback', () {
-        final String? picked =
-            shippedFushiPick(formalReleaseAssets(), device.value);
+        final String? picked = shippedFushiPick(
+          formalReleaseAssets(),
+          device.value,
+        );
         expect(picked, isNotNull);
         expect(picked!.startsWith('fushi-'), isTrue);
-        final List<String> abiTags =
-            device.value.map((String a) => a.replaceAll('_', '-')).toList();
-        expect(abiTags.any(picked.contains), isTrue,
-            reason: '退化到 fallback 就会拿到错架构包，装不上');
+        final List<String> abiTags = device.value
+            .map((String a) => a.replaceAll('_', '-'))
+            .toList();
+        expect(
+          abiTags.any(picked.contains),
+          isTrue,
+          reason: '退化到 fallback 就会拿到错架构包，装不上',
+        );
       });
     }
   });
 
   group('当前客户端：架构选择正确且不受资产顺序影响', () {
     Future<UpdateAsset?> pick(List<String> names, List<String> abis) =>
-        AndroidUpdater(abiProvider: () async => abis)
-            .selectAsset(<Map<String, dynamic>>[
-          for (final String n in names)
-            <String, dynamic>{
-              'name': n,
-              'browser_download_url': 'https://example.invalid/$n',
-            },
-        ]);
+        AndroidUpdater(abiProvider: () async => abis).selectAsset(
+          <Map<String, dynamic>>[
+            for (final String n in names)
+              <String, dynamic>{
+                'name': n,
+                'browser_download_url': 'https://example.invalid/$n',
+              },
+          ],
+        );
 
     test('三类设备各挑到本架构的 fushi 包，桥包在场也不选', () async {
-      expect((await pick(formalReleaseAssets(), deviceAbis['arm64 设备']!))!.name,
-          'fushi-$version-arm64-v8a.apk');
-      expect((await pick(formalReleaseAssets(), deviceAbis['arm32 设备']!))!.name,
-          'fushi-$version-armeabi-v7a.apk');
       expect(
-          (await pick(formalReleaseAssets(), deviceAbis['x86_64 设备']!))!.name,
-          'fushi-$version-x86_64.apk');
+        (await pick(formalReleaseAssets(), deviceAbis['arm64 设备']!))!.name,
+        'fushi-$version-arm64-v8a.apk',
+      );
+      expect(
+        (await pick(formalReleaseAssets(), deviceAbis['arm32 设备']!))!.name,
+        'fushi-$version-armeabi-v7a.apk',
+      );
+      expect(
+        (await pick(formalReleaseAssets(), deviceAbis['x86_64 设备']!))!.name,
+        'fushi-$version-x86_64.apk',
+      );
     });
 
     test('x86_64 设备真能拿到 x86_64 包（旧实现把 x86_64 改写成 x86-64，永不命中）', () async {
-      expect(androidAssetMatchesAbi('fushi-$version-x86_64.apk', 'x86_64'),
-          isTrue);
-      expect((await pick(fushiAssets(), <String>['x86_64', 'x86']))!.name,
-          'fushi-$version-x86_64.apk');
+      expect(
+        androidAssetMatchesAbi('fushi-$version-x86_64.apk', 'x86_64'),
+        isTrue,
+      );
+      expect(
+        (await pick(fushiAssets(), <String>['x86_64', 'x86']))!.name,
+        'fushi-$version-x86_64.apk',
+      );
     });
 
     test('32 位 x86 设备不会拿到 x86_64 包（裸 contains 会误命中）', () async {
       expect(
-          androidAssetMatchesAbi('fushi-$version-x86_64.apk', 'x86'), isFalse);
+        androidAssetMatchesAbi('fushi-$version-x86_64.apk', 'x86'),
+        isFalse,
+      );
       expect(
-          (await pick(
-                  fushiAssets(), <String>['x86', 'armeabi-v7a', 'armeabi']))!
-              .name,
-          'fushi-$version-armeabi-v7a.apk');
+        (await pick(fushiAssets(), <String>[
+          'x86',
+          'armeabi-v7a',
+          'armeabi',
+        ]))!.name,
+        'fushi-$version-armeabi-v7a.apk',
+      );
     });
 
     test('资产倒序喂入不改变架构选择', () async {
-      final List<String> reversed =
-          formalReleaseAssets().reversed.toList(growable: false);
-      expect((await pick(reversed, deviceAbis['arm64 设备']!))!.name,
-          'fushi-$version-arm64-v8a.apk');
+      final List<String> reversed = formalReleaseAssets().reversed.toList(
+        growable: false,
+      );
+      expect(
+        (await pick(reversed, deviceAbis['arm64 设备']!))!.name,
+        'fushi-$version-arm64-v8a.apk',
+      );
     });
 
     test('有分架构包但没有本机这一档 → 返回 null，不塞错架构', () async {
@@ -242,14 +282,16 @@ void main() {
     });
 
     test('universal 单包（debug 通道）仍走兜底，不被上面的收紧误伤', () async {
-      final UpdateAsset? picked = await AndroidUpdater(
-        abiProvider: () async => <String>[],
-      ).selectAsset(<Map<String, dynamic>>[
-        <String, dynamic>{
-          'name': 'fushi-1.4.0-debug.10332-2cddfff-debug.apk',
-          'browser_download_url': 'https://example.invalid/u.apk',
-        },
-      ], channel: UpdateChannel.debug);
+      final UpdateAsset? picked =
+          await AndroidUpdater(abiProvider: () async => <String>[]).selectAsset(
+            <Map<String, dynamic>>[
+              <String, dynamic>{
+                'name': 'fushi-1.4.0-debug.10332-2cddfff-debug.apk',
+                'browser_download_url': 'https://example.invalid/u.apk',
+              },
+            ],
+            channel: UpdateChannel.debug,
+          );
       expect(picked!.name, 'fushi-1.4.0-debug.10332-2cddfff-debug.apk');
     });
   });

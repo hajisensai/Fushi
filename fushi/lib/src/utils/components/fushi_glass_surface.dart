@@ -145,8 +145,9 @@ class FushiGlassSurface extends StatelessWidget {
       );
     }
     final Brightness brightness = theme.brightness;
-    final Color fill =
-        base.withValues(alpha: fushiGlassFillOpacity(brightness));
+    final Color fill = base.withValues(
+      alpha: fushiGlassFillOpacity(brightness),
+    );
     if (glassMaterialOf(context) == FushiGlassMaterial.liquid) {
       return _buildLiquid(fill);
     }
@@ -160,10 +161,11 @@ class FushiGlassSurface extends StatelessWidget {
         borderRadius: borderRadius,
         border: showBorder
             ? Border.all(
-                color: (brightness == Brightness.dark
-                        ? Colors.white
-                        : Colors.black)
-                    .withValues(alpha: 0.08),
+                color:
+                    (brightness == Brightness.dark
+                            ? Colors.white
+                            : Colors.black)
+                        .withValues(alpha: 0.08),
               )
             : null,
       ),

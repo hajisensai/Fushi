@@ -119,11 +119,16 @@ void main() {
       await tester.pumpWidget(buildHarness(AppModel(testPlatformServices())));
       await tester.pump();
 
-      final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.byType(Slider)));
+      final Slider slider = tester.widget<Slider>(
+        glassUnwrap<Slider>(find.byType(Slider)),
+      );
       expect(slider.min, 0);
       expect(slider.max, 100);
-      expect(slider.divisions, 100,
-          reason: '0–100% 共 100 档 = 拖动 1% 一档（旧 20 档 = 5% 太粗）');
+      expect(
+        slider.divisions,
+        100,
+        reason: '0–100% 共 100 档 = 拖动 1% 一档（旧 20 档 = 5% 太粗）',
+      );
 
       // 行为证明：从 50% 拖 +2.5% 轨道宽，divisions=100 吸附到 51–54 之间
       // 某个非 5 倍数；旧 divisions=20 只能落 50 或 55。
@@ -135,8 +140,11 @@ void main() {
       final int volume = ReaderFushiSource.instance.lookupAudioVolume;
       expect(volume, isNot(50), reason: '拖动确实改了音量');
       expect(volume, inInclusiveRange(51, 54));
-      expect(volume % 5, isNot(0),
-          reason: '落点不是 5 的倍数 ⇒ 拖动档位确实细到 1%（旧 5% 网格给不出这个值）');
+      expect(
+        volume % 5,
+        isNot(0),
+        reason: '落点不是 5 的倍数 ⇒ 拖动档位确实细到 1%（旧 5% 网格给不出这个值）',
+      );
     });
 
     testWidgets('arrow keys nudge 5% per press with live title readout', (
@@ -149,8 +157,11 @@ void main() {
       // 读数槽里（AdaptiveSettingsSliderRow._buildMd3）；契约不变——行内有
       // 实时百分比读数。
       expect(find.text(t.lookup_audio_volume), findsOneWidget);
-      expect(find.text('100%'), findsOneWidget,
-          reason: '行内带实时百分比读数（与有声书音量行同款）');
+      expect(
+        find.text('100%'),
+        findsOneWidget,
+        reason: '行内带实时百分比读数（与有声书音量行同款）',
+      );
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
@@ -165,10 +176,12 @@ void main() {
       // notifyReaderSettingsChanged 在 await 之后重建；pumpAndSettle 排空该
       // 异步写 + 重建，单次 pump 会漏掉读数刷新（值已同步进 _cache 故不受影响）。
       await tester.pumpAndSettle();
-      expect(ReaderFushiSource.instance.lookupAudioVolume, 95,
-          reason: '左方向键 = -5%（键步经 step 与 1% 拖动档位解耦）');
-      expect(find.text('95%'), findsOneWidget,
-          reason: '实时读数跟随（没有读数细步进等于白调）');
+      expect(
+        ReaderFushiSource.instance.lookupAudioVolume,
+        95,
+        reason: '左方向键 = -5%（键步经 step 与 1% 拖动档位解耦）',
+      );
+      expect(find.text('95%'), findsOneWidget, reason: '实时读数跟随（没有读数细步进等于白调）');
 
       // clamp 在 100% 不过冲。
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -221,38 +234,53 @@ void main() {
 
   group('source guard (anti-regression)', () {
     test('schema keeps the fine-grained lookup volume contract', () {
-      final String source = File('lib/src/settings/settings_schema_lookup.dart')
-          .readAsStringSync();
+      final String source = File(
+        'lib/src/settings/settings_schema_lookup.dart',
+      ).readAsStringSync();
       final int start = source.indexOf("id: 'lookup.audio_volume'");
       expect(start, isNonNegative);
       final int end = source.indexOf("id: 'lookup.pause_on_lookup'", start);
       expect(end, greaterThan(start));
       final String block = source.substring(start, end);
 
-      expect(block, contains('divisions: 100'),
-          reason: '拖动必须保持 1% 一档（与有声书音量行同款粒度）');
+      expect(
+        block,
+        contains('divisions: 100'),
+        reason: '拖动必须保持 1% 一档（与有声书音量行同款粒度）',
+      );
       expect(block, contains('step: 5'), reason: '键盘/手柄步进必须保持 5%（与拖动档位解耦）');
       expect(block, contains('titleReadout: true'), reason: '标题必须保留实时百分比读数');
-      expect(block, isNot(contains('divisions: 20')),
-          reason: '旧的 5% 粗粒度档位不得回潮');
+      expect(
+        block,
+        isNot(contains('divisions: 20')),
+        reason: '旧的 5% 粗粒度档位不得回潮',
+      );
     });
 
-    test('shared schema widget passes step + readout through to the slider row',
-        () {
-      // _slider 已从两个渲染器收口到共享 settings_schema_widgets（单一位置），
-      // material/cupertino 都复用它，故 step/readout 接线只需在共享文件断言一次。
-      final String shared = File(
-        'lib/src/settings/settings_schema_widgets.dart',
-      ).readAsStringSync();
-      // 两种提交语义已收口到同一个有状态载体（_CommitOnReleaseSlider，BUG-3174
-      // 滑条跟手），局部变量名是 item。
-      expect(shared, contains('step: item.step'),
-          reason: '共享 schema widget 必须把 SettingsSliderItem.step 传给滑条行');
-      expect(
+    test(
+      'shared schema widget passes step + readout through to the slider row',
+      () {
+        // _slider 已从两个渲染器收口到共享 settings_schema_widgets（单一位置），
+        // material/cupertino 都复用它，故 step/readout 接线只需在共享文件断言一次。
+        final String shared = File(
+          'lib/src/settings/settings_schema_widgets.dart',
+        ).readAsStringSync();
+        // 两种提交语义已收口到同一个有状态载体（_CommitOnReleaseSlider，BUG-3174
+        // 滑条跟手），局部变量名是 item。
+        expect(
           shared,
-          contains('readout: item.titleReadout ? '
-              'item.label?.call(value) : null'),
-          reason: '共享 schema widget 必须把 titleReadout 投影成标题读数');
-    });
+          contains('step: item.step'),
+          reason: '共享 schema widget 必须把 SettingsSliderItem.step 传给滑条行',
+        );
+        expect(
+          shared,
+          contains(
+            'readout: item.titleReadout ? '
+            'item.label?.call(value) : null',
+          ),
+          reason: '共享 schema widget 必须把 titleReadout 投影成标题读数',
+        );
+      },
+    );
   });
 }

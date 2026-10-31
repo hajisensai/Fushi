@@ -92,18 +92,19 @@ class BookScrapeCandidate {
 
   /// 条目详情页 URL（「查看条目」用）。
   String get detailUrl => switch (source) {
-        BookScrapeSource.bangumi => 'https://bgm.tv/subject/$subjectId',
-        BookScrapeSource.dlsite => DlsiteWorkId.tryParse(subjectId)?.pageUrl ??
-            'https://www.dlsite.com/maniax/work/=/product_id/$subjectId.html',
-      };
+    BookScrapeSource.bangumi => 'https://bgm.tv/subject/$subjectId',
+    BookScrapeSource.dlsite =>
+      DlsiteWorkId.tryParse(subjectId)?.pageUrl ??
+          'https://www.dlsite.com/maniax/work/=/product_id/$subjectId.html',
+  };
 }
 
 /// 书籍封面刮削客户端。构造注入 [http.Client]（默认自建），测试用 mock client。
 class BookMetadataScraper {
   BookMetadataScraper({http.Client? client, DlsiteClient? dlsiteClient})
-      : _api = BangumiApiClient(client: client, userAgent: _userAgent),
-        _dlsite = dlsiteClient ?? DlsiteClient(client: client),
-        _ownsDlsite = dlsiteClient == null;
+    : _api = BangumiApiClient(client: client, userAgent: _userAgent),
+      _dlsite = dlsiteClient ?? DlsiteClient(client: client),
+      _ownsDlsite = dlsiteClient == null;
 
   final BangumiApiClient _api;
   final DlsiteClient _dlsite;

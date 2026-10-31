@@ -228,15 +228,15 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   }) async {
     final ShortcutBindingEditResult? result =
         await showAppDialog<ShortcutBindingEditResult>(
-      context: context,
-      builder: (BuildContext ctx) => ShortcutBindingEditDialog(
-        action: action,
-        registry: _registry,
-        initial: _registry.bindingsFor(action),
-        prefillKey: prefillKey,
-        prefillButton: prefillButton,
-      ),
-    );
+          context: context,
+          builder: (BuildContext ctx) => ShortcutBindingEditDialog(
+            action: action,
+            registry: _registry,
+            initial: _registry.bindingsFor(action),
+            prefillKey: prefillKey,
+            prefillButton: prefillButton,
+          ),
+        );
     if (result == null || !mounted) return;
     _registry.updateBindingWithReassignments(
       action,
@@ -343,9 +343,9 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// 让 `GlobalLookupController._onRegistryChanged` **当场**装上 OS 热键与
   /// native RawInput 鼠标钩子——查词模块关着时装系统级钩子是实打实的越权。
   List<ShortcutScope> _visibleScopes() => <ShortcutScope>[
-        for (final ShortcutScope scope in ShortcutScope.values)
-          if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,
-      ];
+    for (final ShortcutScope scope in ShortcutScope.values)
+      if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,
+  ];
 
   bool get _isMobilePlatform =>
       defaultTargetPlatform == TargetPlatform.android ||
@@ -383,8 +383,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       // 手柄按钮样式只换显示（键帽 / 键位图），切到手柄设备时才出现。
       deviceAccessory: (ShortcutInputDevice device) =>
           device == ShortcutInputDevice.gamepad
-              ? _buildGamepadBrandSelector()
-              : null,
+          ? _buildGamepadBrandSelector()
+          : null,
     );
   }
 

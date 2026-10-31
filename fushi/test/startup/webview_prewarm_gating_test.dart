@@ -6,7 +6,10 @@ void main() {
     test('mobile prewarms when not low-memory', () {
       expect(
         shouldPrewarmWebView(
-            isMobile: true, isDesktop: false, lowMemory: false),
+          isMobile: true,
+          isDesktop: false,
+          lowMemory: false,
+        ),
         isTrue,
       );
     });
@@ -21,7 +24,10 @@ void main() {
     test('desktop prewarms (regression: was mobile-only)', () {
       expect(
         shouldPrewarmWebView(
-            isMobile: false, isDesktop: true, lowMemory: false),
+          isMobile: false,
+          isDesktop: true,
+          lowMemory: false,
+        ),
         isTrue,
       );
     });
@@ -36,7 +42,10 @@ void main() {
     test('neither mobile nor desktop does not prewarm', () {
       expect(
         shouldPrewarmWebView(
-            isMobile: false, isDesktop: false, lowMemory: false),
+          isMobile: false,
+          isDesktop: false,
+          lowMemory: false,
+        ),
         isFalse,
       );
     });

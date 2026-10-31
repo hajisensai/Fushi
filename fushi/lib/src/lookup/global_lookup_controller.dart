@@ -1205,10 +1205,8 @@ class GlobalLookupController {
 
       // 原文自带振假名（texthooker 行的 ruby 等）随查词带进引擎；查询串是 [text] 原样，
       // AppModel 清洗查询串时会把区间对齐（alignRubySpansToSearchTerm）。
-      final DictionarySearchResult result = await model.searchDictionaryWithRuby(
-        searchTerm: text,
-        rubySpans: rubySpans,
-      );
+      final DictionarySearchResult result = await model
+          .searchDictionaryWithRuby(searchTerm: text, rubySpans: rubySpans);
       if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
       // New card: forget the previous size + reveal state so the overlay

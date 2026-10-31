@@ -52,13 +52,14 @@ void main() {
                 onPressed: () async {
                   final ShortcutBindingEditResult? result =
                       await showAppDialog<ShortcutBindingEditResult>(
-                    context: context,
-                    builder: (BuildContext ctx) => ShortcutBindingEditDialog(
-                      action: action,
-                      registry: registry,
-                      initial: initial,
-                    ),
-                  );
+                        context: context,
+                        builder: (BuildContext ctx) =>
+                            ShortcutBindingEditDialog(
+                              action: action,
+                              registry: registry,
+                              initial: initial,
+                            ),
+                      );
                   if (result == null) return;
                   registry.updateBindingWithReassignments(
                     action,
@@ -103,11 +104,14 @@ void main() {
 
   testWidgets('Alt+滚轮下被录成 Alt+WheelDown 并写穿注册表', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
+    );
     // 先清空默认，避免录同一条时命中「已绑定到本动作」的重复分支。
     registry.updateBinding(
-        ShortcutAction.popupNextEntry, const ShortcutBindingSet());
+      ShortcutAction.popupNextEntry,
+      const ShortcutBindingSet(),
+    );
     await pumpDialogHost(
       tester,
       registry,
@@ -118,8 +122,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.shortcut_press_wheel), findsOneWidget);
 
-    await scrollCaptureRegion(tester,
-        dy: 120, modifier: LogicalKeyboardKey.altLeft);
+    await scrollCaptureRegion(
+      tester,
+      dy: 120,
+      modifier: LogicalKeyboardKey.altLeft,
+    );
 
     // 捕获结束 + chip 出现（"Alt+Wheel down"）。
     expect(find.text(t.shortcut_press_wheel), findsNothing);
@@ -130,8 +137,12 @@ void main() {
 
     expect(
       registry.bindingsFor(ShortcutAction.popupNextEntry).wheelBindings,
-      contains(const WheelBinding(WheelDirection.down,
-          modifiers: <ModifierKey>{ModifierKey.alt})),
+      contains(
+        const WheelBinding(
+          WheelDirection.down,
+          modifiers: <ModifierKey>{ModifierKey.alt},
+        ),
+      ),
     );
 
     resetPlatform();
@@ -139,10 +150,13 @@ void main() {
 
   testWidgets('裸滚轮不记录绑定，只提示需要修饰键（捕获保持开启）', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
+    );
     registry.updateBinding(
-        ShortcutAction.popupNextEntry, const ShortcutBindingSet());
+      ShortcutAction.popupNextEntry,
+      const ShortcutBindingSet(),
+    );
     await pumpDialogHost(
       tester,
       registry,
@@ -169,8 +183,9 @@ void main() {
 
   testWidgets('冲突：Alt+滚轮上已属「上一个词条」，重分配后从旧动作摘掉', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
+    );
     await pumpDialogHost(
       tester,
       registry,
@@ -180,8 +195,11 @@ void main() {
 
     await tester.tap(find.byKey(const Key('shortcut_add_wheel')));
     await tester.pumpAndSettle();
-    await scrollCaptureRegion(tester,
-        dy: -120, modifier: LogicalKeyboardKey.altLeft);
+    await scrollCaptureRegion(
+      tester,
+      dy: -120,
+      modifier: LogicalKeyboardKey.altLeft,
+    );
 
     // 冲突确认对话框 → 确认重分配。
     expect(
@@ -194,18 +212,25 @@ void main() {
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
 
-    const WheelBinding altUp = WheelBinding(WheelDirection.up,
-        modifiers: <ModifierKey>{ModifierKey.alt});
-    expect(registry.bindingsFor(ShortcutAction.popupNextEntry).wheelBindings,
-        contains(altUp));
-    expect(registry.bindingsFor(ShortcutAction.popupPrevEntry).wheelBindings,
-        isNot(contains(altUp)));
+    const WheelBinding altUp = WheelBinding(
+      WheelDirection.up,
+      modifiers: <ModifierKey>{ModifierKey.alt},
+    );
+    expect(
+      registry.bindingsFor(ShortcutAction.popupNextEntry).wheelBindings,
+      contains(altUp),
+    );
+    expect(
+      registry.bindingsFor(ShortcutAction.popupPrevEntry).wheelBindings,
+      isNot(contains(altUp)),
+    );
 
     resetPlatform();
   });
 
-  testWidgets('弹窗 scope 给滚轮 + 键盘 + 手柄入口，不给鼠标入口（不造死绑定）',
-      (WidgetTester tester) async {
+  testWidgets('弹窗 scope 给滚轮 + 键盘 + 手柄入口，不给鼠标入口（不造死绑定）', (
+    WidgetTester tester,
+  ) async {
     // 契约变更史：本 scope 早先只开滚轮；加入 popupMineEntry（= 点弹窗里的「＋」，
     // 默认 Ctrl+Enter）后键盘通道有了真实消费者，键盘入口出现；手柄重设计 P2 再开
     // 手柄——GamepadService 的弹窗兜底（tryDictionaryPopupGamepadButton）按本 scope
@@ -217,8 +242,9 @@ void main() {
     // 统一分派；手柄侧全部动作都进 tryDictionaryPopupGamepadButton 的分派表。
     // 鼠标仍无解析入口，保持不给。
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
+    );
     await pumpDialogHost(
       tester,
       registry,
@@ -235,8 +261,9 @@ void main() {
 
   testWidgets('页面 scope 不因新通道而多出滚轮入口（既有对话框不变）', (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
-    final FushiShortcutRegistry registry =
-        buildRegistry(TargetPlatform.windows);
+    final FushiShortcutRegistry registry = buildRegistry(
+      TargetPlatform.windows,
+    );
     await pumpDialogHost(
       tester,
       registry,

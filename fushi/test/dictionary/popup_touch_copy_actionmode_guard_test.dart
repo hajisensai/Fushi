@@ -38,9 +38,9 @@ import '../helpers/source_guard.dart';
 /// - 中转方法把写剪贴板那一跳删了 / 换成本文件之外定义的东西 → 解析不到实现体，
 ///   判不可达并在失败信息里点名 action 到底调到了谁。
 void main() {
-  final String source =
-      File('lib/src/pages/implementations/dictionary_popup_webview.dart')
-          .readAsStringSync();
+  final String source = File(
+    'lib/src/pages/implementations/dictionary_popup_webview.dart',
+  ).readAsStringSync();
   // 窗口在**每条用例内部**才切：`_contextMenuBlock` 里的锚点断言会走 `expect`，
   // 在 `main()` 体里（测试之外）跑会抛 OutsideTestException —— 那是「整个 suite 装载
   // 失败、零测试执行」，而不是一条看得懂的红。
@@ -50,13 +50,16 @@ void main() {
     test('Android hides broken system items while iOS is not expanded', () {
       final String menu = contextMenu();
       // 判据抬到「这个命名参数的实参表达式」上：换行、参数顺序、加不加括号都无关。
-      final List<String> hide =
-          namedArgumentValues(menu, 'hideDefaultSystemContextMenuItems');
+      final List<String> hide = namedArgumentValues(
+        menu,
+        'hideDefaultSystemContextMenuItems',
+      );
       expect(hide, hasLength(1), reason: 'ContextMenuSettings 必须显式声明是否隐藏系统默认项');
       expect(
         hide.single,
         contains('Platform.isAndroid'),
-        reason: 'Android 上系统默认项已被 finish 掉的 ActionMode 弄成死项，必须隐藏；'
+        reason:
+            'Android 上系统默认项已被 finish 掉的 ActionMode 弄成死项，必须隐藏；'
             '现在的实参是 `${hide.single}`',
       );
       expect(
@@ -74,8 +77,11 @@ void main() {
     test('copy is custom Dart clipboard action and selection is cleared', () {
       final String menu = contextMenu();
       final EnclosingCall copy = _copyItem(menu);
-      expect(copy.name, 'ContextMenuItem',
-          reason: '「复制」必须是 WebView 上下文菜单的一项，不是别的什么控件');
+      expect(
+        copy.name,
+        'ContextMenuItem',
+        reason: '「复制」必须是 WebView 上下文菜单的一项，不是别的什么控件',
+      );
 
       final List<String> actions = namedArgumentValues(copy.text, 'action');
       expect(actions, hasLength(1), reason: '「复制」项必须挂一个 action');
@@ -84,41 +90,58 @@ void main() {
       expect(
         _clipboardWriterReachedFrom(source, action),
         isNotNull,
-        reason: 'BUG-1237：Android 的「复制」必须是自定义 Dart 剪贴板动作。'
+        reason:
+            'BUG-1237：Android 的「复制」必须是自定义 Dart 剪贴板动作。'
             '它现在既没有直接调 $_kClipboardWrite，也没有调用本文件里任何一个'
             '自己写剪贴板的方法（一跳可达闭包），等于又落回被 finish 掉的系统 '
             'ActionMode。当前 action 调到、且解析得到实现体的是：'
             '${_resolvableCallees(source, action)}',
       );
 
-      expect(containsCodeLine(action, '_selectedTextAcrossFrames()'), isTrue,
-          reason: '选区在同源子 iframe 里，只读顶层文档取不到（BUG-802）');
       expect(
-          containsCodeLine(action, '_clearSelectedTextAcrossFrames()'), isTrue,
-          reason: '复制完必须清掉选区，否则原生高亮留在页面上');
+        containsCodeLine(action, '_selectedTextAcrossFrames()'),
+        isTrue,
+        reason: '选区在同源子 iframe 里，只读顶层文档取不到（BUG-802）',
+      );
+      expect(
+        containsCodeLine(action, '_clearSelectedTextAcrossFrames()'),
+        isTrue,
+        reason: '复制完必须清掉选区，否则原生高亮留在页面上',
+      );
     });
 
     test('share and web search reuse the common action seam', () {
       final String menu = contextMenu();
       for (final String title in <String>[
         't.share',
-        't.selection_web_search'
+        't.selection_web_search',
       ]) {
         final EnclosingCall item = enclosingCallOf(menu, 'title: $title');
         expect(item.name, 'ContextMenuItem');
-        expect(_elementPrefix(menu, item.start), contains('Platform.isAndroid'),
-            reason: '$title 项同样是给 Android 补的，必须门控');
+        expect(
+          _elementPrefix(menu, item.start),
+          contains('Platform.isAndroid'),
+          reason: '$title 项同样是给 Android 补的，必须门控',
+        );
       }
       expect(
-          containsCodeLine(
-              menu, 'SelectionExternalActions.instance.shareText(text)'),
-          isTrue);
+        containsCodeLine(
+          menu,
+          'SelectionExternalActions.instance.shareText(text)',
+        ),
+        isTrue,
+      );
       expect(
-          containsCodeLine(
-              menu, 'SelectionExternalActions.instance.searchWeb(text)'),
-          isTrue);
+        containsCodeLine(
+          menu,
+          'SelectionExternalActions.instance.searchWeb(text)',
+        ),
+        isTrue,
+      );
       expect(
-          containsCodeLine(menu, 't.selection_web_search_unavailable'), isTrue);
+        containsCodeLine(menu, 't.selection_web_search_unavailable'),
+        isTrue,
+      );
     });
   });
 
@@ -131,21 +154,30 @@ void main() {
     final String? windows = topLevelFunctionBody(source, _kWindowsMenu);
     expect(windows, isNotNull, reason: '找不到 $_kWindowsMenu 的实现体：守卫失去锚点');
 
-    final List<String> disable =
-        namedArgumentValues(source, 'disableContextMenu');
+    final List<String> disable = namedArgumentValues(
+      source,
+      'disableContextMenu',
+    );
     expect(disable, hasLength(1));
-    expect(disable.single, contains('isWindowsPlatform'),
-        reason: 'Windows 的 WebView2 原生菜单定位是错的，必须禁掉改走 Flutter showMenu');
+    expect(
+      disable.single,
+      contains('isWindowsPlatform'),
+      reason: 'Windows 的 WebView2 原生菜单定位是错的，必须禁掉改走 Flutter showMenu',
+    );
 
     expect(containsCodeLine(windows!, '_selectedTextAcrossFrames()'), isTrue);
     expect(
       _clipboardWriterReachedFrom(source, windows),
       isNotNull,
-      reason: 'Windows 右键「复制」同样必须落到 $_kClipboardWrite；当前调到、'
+      reason:
+          'Windows 右键「复制」同样必须落到 $_kClipboardWrite；当前调到、'
           '且解析得到实现体的是：${_resolvableCallees(source, windows)}',
     );
-    expect(containsCodeLine(windows, 'SelectionExternalActions'), isFalse,
-        reason: 'Windows 右键菜单只有「查词 / 复制」，不复用移动端的分享 / 网搜外部动作');
+    expect(
+      containsCodeLine(windows, 'SelectionExternalActions'),
+      isFalse,
+      reason: 'Windows 右键菜单只有「查词 / 复制」，不复用移动端的分享 / 网搜外部动作',
+    );
   });
 }
 
@@ -166,8 +198,11 @@ const String _kWindowsMenu = '_showWindowsContextMenu';
 String _contextMenuBlock(String src) {
   const String anchor = 'contextMenu: ContextMenu(';
   final int at = maskCommentsAndStrings(src).indexOf(anchor);
-  expect(at, greaterThanOrEqualTo(0),
-      reason: 'WebView 的 contextMenu 参数不见了：守卫失去锚点，先修锚点再谈断言');
+  expect(
+    at,
+    greaterThanOrEqualTo(0),
+    reason: 'WebView 的 contextMenu 参数不见了：守卫失去锚点，先修锚点再谈断言',
+  );
   return enclosingCall(src, at + anchor.length).text;
 }
 
@@ -191,15 +226,16 @@ String? _clipboardWriterReachedFrom(String src, String block) {
 }
 
 /// [block] 里调用到、且能在 [src] 里解析出实现体的被调方名字（只用于失败信息）。
-List<String> _resolvableCallees(String src, String block) => _calleeNames(block)
-    .where((String name) => topLevelFunctionBody(src, name) != null)
-    .toList();
+List<String> _resolvableCallees(String src, String block) => _calleeNames(
+  block,
+).where((String name) => topLevelFunctionBody(src, name) != null).toList();
 
 /// 代码里以独立标识符身份被调用的名字（不含点链——那是别的对象的方法，本文件解析
 /// 不到实现体，也就拿不到可达性）。注释与字符串里的同名文本不算。
 List<String> _calleeNames(String block) {
-  final RegExp call =
-      RegExp(r'(?<![A-Za-z0-9_$.])([A-Za-z_$][A-Za-z0-9_$]*)\s*\(');
+  final RegExp call = RegExp(
+    r'(?<![A-Za-z0-9_$.])([A-Za-z_$][A-Za-z0-9_$]*)\s*\(',
+  );
   final Set<String> names = <String>{};
   for (final RegExpMatch m in call.allMatches(maskCommentsAndStrings(block))) {
     names.add(m.group(1)!);

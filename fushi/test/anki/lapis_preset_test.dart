@@ -3,8 +3,11 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 void main() {
   test('Lapis preset defaults == LapisNoteType.defaultFieldMappings', () {
-    final noteType =
-        AnkiNoteType(id: 1, name: 'Lapis', fields: LapisNoteType.fields);
+    final noteType = AnkiNoteType(
+      id: 1,
+      name: 'Lapis',
+      fields: LapisNoteType.fields,
+    );
     final mappings = NoteTypePresets.applyDefaults(noteType, {});
     for (final entry in LapisNoteType.defaultFieldMappings.entries) {
       expect(mappings[entry.key], entry.value);
@@ -14,16 +17,23 @@ void main() {
   });
 
   test('matches() recognises the official Lapis note type', () {
-    final noteType =
-        AnkiNoteType(id: 1, name: 'Lapis', fields: LapisNoteType.fields);
+    final noteType = AnkiNoteType(
+      id: 1,
+      name: 'Lapis',
+      fields: LapisNoteType.fields,
+    );
     expect(LapisPreset.matches(noteType), isTrue);
   });
 
   test('existing user mappings are preserved over defaults', () {
-    final noteType =
-        AnkiNoteType(id: 1, name: 'Lapis', fields: LapisNoteType.fields);
-    final result =
-        NoteTypePresets.applyDefaults(noteType, {'Expression': '{reading}'});
+    final noteType = AnkiNoteType(
+      id: 1,
+      name: 'Lapis',
+      fields: LapisNoteType.fields,
+    );
+    final result = NoteTypePresets.applyDefaults(noteType, {
+      'Expression': '{reading}',
+    });
     expect(result['Expression'], '{reading}');
   });
 }

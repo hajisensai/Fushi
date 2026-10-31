@@ -84,13 +84,23 @@ Future<int> withServerRuntime(
   // 一份库没有任何协调，迁移撞上 serve 的写事务就是损坏 / SQLITE_BUSY。
   final ServerDataLock dataLock;
   try {
-    dataLock = await ServerDataLock.acquire(config.dataDir, mode: serve ? 'serve' : 'offline', command: command);
+    dataLock = await ServerDataLock.acquire(
+      config.dataDir,
+      mode: serve ? 'serve' : 'offline',
+      command: command,
+    );
   } on ServerDataLockedException catch (e) {
     stderr.writeln(serve ? 'serve 拒绝启动：${e.describe()}' : e.describe());
     return kExitConflict;
   }
   try {
-    return await _withLockedRuntime(configFile, config, verbose, dataLock, body);
+    return await _withLockedRuntime(
+      configFile,
+      config,
+      verbose,
+      dataLock,
+      body,
+    );
   } catch (_) {
     // 运行时还没建起来（dispose 管不到锁）时出错：这里放锁；建起来之后 dispose 放，
     // release 幂等。
@@ -112,7 +122,10 @@ Future<int> _withLockedRuntime(
   }
   final ServerPaths paths = ServerPaths(config.dataDir);
   await paths.ensureLayout();
-  final ServerLog log = ServerLog(file: File(p.join(paths.logs.path, 'fushi_server.log')), verbose: verbose);
+  final ServerLog log = ServerLog(
+    file: File(p.join(paths.logs.path, 'fushi_server.log')),
+    verbose: verbose,
+  );
   await log.open();
   installServerHostBindings(config: config, paths: paths, log: log);
   // 与 app 侧 `AppModel.initialise()` 对偶：`createAppHttpClient()` 的 auto 模式

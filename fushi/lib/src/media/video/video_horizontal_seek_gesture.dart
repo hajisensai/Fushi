@@ -88,10 +88,14 @@ class VideoHorizontalSeekGesture {
     final int deltaMs = dragDx.isNegative ? -magnitudeMs : magnitudeMs;
 
     // clamp 到可达区间：向前不越过片尾，向后不越过片头。
-    final int positionMs =
-        position.inMilliseconds.clamp(0, duration.inMilliseconds);
-    final int targetMs =
-        (positionMs + deltaMs).clamp(0, duration.inMilliseconds);
+    final int positionMs = position.inMilliseconds.clamp(
+      0,
+      duration.inMilliseconds,
+    );
+    final int targetMs = (positionMs + deltaMs).clamp(
+      0,
+      duration.inMilliseconds,
+    );
     return Duration(milliseconds: targetMs - positionMs);
   }
 
@@ -111,8 +115,10 @@ class VideoHorizontalSeekGesture {
       position: position,
       sensitivity: sensitivity,
     );
-    final int positionMs =
-        position.inMilliseconds.clamp(0, duration.inMilliseconds);
+    final int positionMs = position.inMilliseconds.clamp(
+      0,
+      duration.inMilliseconds,
+    );
     return Duration(milliseconds: positionMs + delta.inMilliseconds);
   }
 

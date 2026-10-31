@@ -14,14 +14,13 @@ MediaSourcesCompanion _source({
   String mediaKind = 'book',
   String rootPath = '/srv/media',
   int sortOrder = 0,
-}) =>
-    MediaSourcesCompanion.insert(
-      label: label,
-      mediaKind: mediaKind,
-      rootPath: rootPath,
-      createdAt: 1000,
-      sortOrder: Value(sortOrder),
-    );
+}) => MediaSourcesCompanion.insert(
+  label: label,
+  mediaKind: mediaKind,
+  rootPath: rootPath,
+  createdAt: 1000,
+  sortOrder: Value(sortOrder),
+);
 
 void main() {
   group('MediaSources table', () {
@@ -52,12 +51,15 @@ void main() {
 
     test('getAllMediaSources orders by sortOrder then id', () async {
       final db = await _openDb();
-      final idB = await db
-          .insertMediaSource(_source(label: 'B', sortOrder: 5, rootPath: '/b'));
-      final idA = await db
-          .insertMediaSource(_source(label: 'A', sortOrder: 1, rootPath: '/a'));
-      final idC = await db
-          .insertMediaSource(_source(label: 'C', sortOrder: 1, rootPath: '/c'));
+      final idB = await db.insertMediaSource(
+        _source(label: 'B', sortOrder: 5, rootPath: '/b'),
+      );
+      final idA = await db.insertMediaSource(
+        _source(label: 'A', sortOrder: 1, rootPath: '/a'),
+      );
+      final idC = await db.insertMediaSource(
+        _source(label: 'C', sortOrder: 1, rootPath: '/c'),
+      );
 
       final all = await db.getAllMediaSources();
       expect(all.map((r) => r.label).toList(), ['A', 'C', 'B']);
@@ -70,11 +72,14 @@ void main() {
     test('getMediaSourcesByKind filters by mediaKind', () async {
       final db = await _openDb();
       await db.insertMediaSource(
-          _source(label: 'Book1', mediaKind: 'book', rootPath: '/b1'));
+        _source(label: 'Book1', mediaKind: 'book', rootPath: '/b1'),
+      );
       await db.insertMediaSource(
-          _source(label: 'Vid1', mediaKind: 'video', rootPath: '/v1'));
+        _source(label: 'Vid1', mediaKind: 'video', rootPath: '/v1'),
+      );
       await db.insertMediaSource(
-          _source(label: 'Book2', mediaKind: 'book', rootPath: '/b2'));
+        _source(label: 'Book2', mediaKind: 'book', rootPath: '/b2'),
+      );
 
       final books = await db.getMediaSourcesByKind('book');
       expect(books.map((r) => r.label).toSet(), {'Book1', 'Book2'});
@@ -123,33 +128,31 @@ void main() {
       FushiDatabase db,
       String bookKey, {
       int? sourceId,
-    }) =>
-        db.insertEpubBook(
-          EpubBooksCompanion.insert(
-            bookKey: bookKey,
-            title: bookKey,
-            epubPath: '/tmp/$bookKey.epub',
-            extractDir: '/tmp/$bookKey',
-            chapterCount: 1,
-            chaptersJson: '[]',
-            importedAt: 1000,
-            sourceId: Value(sourceId),
-          ),
-        );
+    }) => db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: '/tmp/$bookKey.epub',
+        extractDir: '/tmp/$bookKey',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+        sourceId: Value(sourceId),
+      ),
+    );
 
     Future<void> insertVideo(
       FushiDatabase db,
       String bookUid, {
       int? sourceId,
-    }) =>
-        db.upsertVideoBook(
-          VideoBooksCompanion.insert(
-            bookUid: bookUid,
-            title: bookUid,
-            videoPath: '/tmp/$bookUid.mp4',
-            sourceId: Value(sourceId),
-          ),
-        );
+    }) => db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: bookUid,
+        title: bookUid,
+        videoPath: '/tmp/$bookUid.mp4',
+        sourceId: Value(sourceId),
+      ),
+    );
 
     test('counts epub_books that point at the source (book kind)', () async {
       final db = await _openDb();
@@ -165,8 +168,9 @@ void main() {
     test('isolates by source_id (other source not counted)', () async {
       final db = await _openDb();
       final id = await db.insertMediaSource(_source(mediaKind: 'book'));
-      final other = await db
-          .insertMediaSource(_source(mediaKind: 'book', rootPath: '/other'));
+      final other = await db.insertMediaSource(
+        _source(mediaKind: 'book', rootPath: '/other'),
+      );
 
       await insertEpub(db, 'B1', sourceId: id);
       await insertEpub(db, 'B2', sourceId: id);
@@ -189,34 +193,37 @@ void main() {
       expect(await db.countMediaBySourceId(id, 'video'), 2);
     });
 
-    test('counts live music_tracks for music kind, excluding soft-deleted',
-        () async {
-      final db = await _openDb();
-      final id = await db.insertMediaSource(_source(mediaKind: 'music'));
-      final other = await db.insertMediaSource(
-        _source(mediaKind: 'music', rootPath: '/srv/other'),
-      );
-      Future<void> track(String uid, int? sourceId, {int? deletedAt}) =>
-          db.into(db.musicTracks).insert(
-                MusicTracksCompanion.insert(
-                  trackUid: uid,
-                  sourceId: Value(sourceId),
-                  path: '/srv/media/$uid.flac',
-                  title: uid,
-                  fileMtimeAt: 1,
-                  fileSize: 1,
-                  addedAt: 1,
-                  deletedAt: Value(deletedAt),
-                ),
-              );
-      await track('t1', id);
-      await track('t2', id);
-      await track('t3', id, deletedAt: 5);
-      await track('t4', other);
+    test(
+      'counts live music_tracks for music kind, excluding soft-deleted',
+      () async {
+        final db = await _openDb();
+        final id = await db.insertMediaSource(_source(mediaKind: 'music'));
+        final other = await db.insertMediaSource(
+          _source(mediaKind: 'music', rootPath: '/srv/other'),
+        );
+        Future<void> track(String uid, int? sourceId, {int? deletedAt}) => db
+            .into(db.musicTracks)
+            .insert(
+              MusicTracksCompanion.insert(
+                trackUid: uid,
+                sourceId: Value(sourceId),
+                path: '/srv/media/$uid.flac',
+                title: uid,
+                fileMtimeAt: 1,
+                fileSize: 1,
+                addedAt: 1,
+                deletedAt: Value(deletedAt),
+              ),
+            );
+        await track('t1', id);
+        await track('t2', id);
+        await track('t3', id, deletedAt: 5);
+        await track('t4', other);
 
-      expect(await db.countMediaBySourceId(id, 'music'), 2);
-      expect(await db.countMediaBySourceId(other, 'music'), 1);
-    });
+        expect(await db.countMediaBySourceId(id, 'music'), 2);
+        expect(await db.countMediaBySourceId(other, 'music'), 1);
+      },
+    );
 
     test('returns 0 for a source with no media', () async {
       final db = await _openDb();

@@ -34,11 +34,13 @@ import 'reader_fushi_page_source_corpus.dart';
 /// docs/BUGS.md，与 reader_esc_focus_reclaim_static_test 同范式）。
 void main() {
   group('BUG-161 · 源码守卫：阅读器焦点导航分支门控在开关上', () {
-    final File file =
-        File('lib/src/pages/implementations/reader_fushi_page.dart');
+    final File file = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
     // 掩码注释（避免匹配记录守卫的散文）+ 折叠空白，便于跨行匹配。
-    final String code =
-        _collapse(maskCommentsAndScriptLines(readReaderPageSource()));
+    final String code = _collapse(
+      maskCommentsAndScriptLines(readReaderPageSource()),
+    );
 
     test('阅读器页面源文件存在', () {
       expect(file.existsSync(), isTrue);
@@ -47,7 +49,8 @@ void main() {
     test('_focusNavEnabled getter 读全局开关', () {
       expect(
         code.contains(
-            'bool get _focusNavEnabled => appModel.experimentalFocusNavigationEnabled;'),
+          'bool get _focusNavEnabled => appModel.experimentalFocusNavigationEnabled;',
+        ),
         isTrue,
         reason:
             '_focusNavEnabled 必须等于 appModel.experimentalFocusNavigationEnabled，'
@@ -58,26 +61,30 @@ void main() {
     test('手柄 A 进/操作光标的处理门控在开关上', () {
       expect(
         code.contains(
-            '_focusNavEnabled ? _handleGamepadAKeyEvent(event) : null'),
+          '_focusNavEnabled ? _handleGamepadAKeyEvent(event) : null',
+        ),
         isTrue,
         reason: '手柄 A 是焦点导航（进/操作光标），开关关闭时不应运行（BUG-161）。',
       );
     });
 
     test('进光标的 enter-trigger 把开关透传给纯函数 router（键盘 + 手柄两处）', () {
-      final int count =
-          'focusNavEnabled: _focusNavEnabled'.allMatches(code).length;
+      final int count = 'focusNavEnabled: _focusNavEnabled'
+          .allMatches(code)
+          .length;
       expect(
         count,
         greaterThanOrEqualTo(2),
-        reason: 'isEnterTriggerKeyboard / isEnterTriggerGamepad 必须收到 '
+        reason:
+            'isEnterTriggerKeyboard / isEnterTriggerGamepad 必须收到 '
             'focusNavEnabled: _focusNavEnabled，开关关闭时不进光标（BUG-161）。',
       );
     });
 
     test('光标激活分支（键盘 + 手柄两处）以 _focusNavEnabled 短路', () {
-      final int count =
-          'if (_focusNavEnabled && _caretActive)'.allMatches(code).length;
+      final int count = 'if (_focusNavEnabled && _caretActive)'
+          .allMatches(code)
+          .length;
       expect(
         count,
         greaterThanOrEqualTo(2),
@@ -91,7 +98,8 @@ void main() {
     test('TODO-700 T8：方向键 ↓ 跳底栏的焦点搬运分支已删', () {
       expect(
         code.contains(
-            'if (_focusNavEnabled && !_caretActive && event.logicalKey == LogicalKeyboardKey.arrowDown'),
+          'if (_focusNavEnabled && !_caretActive && event.logicalKey == LogicalKeyboardKey.arrowDown',
+        ),
         isFalse,
         reason: '底栏退出焦点遍历后，方向键 ↓ 把焦点塞进底栏的分支必须删除（T8）。',
       );
@@ -100,7 +108,8 @@ void main() {
     test('TODO-700 T8：手柄 D-pad ↓ 跳底栏的焦点搬运分支已删', () {
       expect(
         code.contains(
-            'if (_focusNavEnabled && button == GamepadButton.dpadDown && _showChrome)'),
+          'if (_focusNavEnabled && button == GamepadButton.dpadDown && _showChrome)',
+        ),
         isFalse,
         reason: '底栏退出焦点遍历后，手柄 D-pad ↓ 把焦点塞进底栏的分支必须删除（T8）。',
       );
@@ -128,45 +137,56 @@ void main() {
     }
 
     test('reader_fushi_page 定义 _canOwnReaderFocus 且正确门控内容就绪落焦', () {
-      final String src =
-          read('lib/src/pages/implementations/reader_fushi_page.dart');
-      expect(src.contains('bool _canOwnReaderFocus(FocusReclaimCause cause)'),
-          isTrue,
-          reason: '缺统一焦点判据');
-      expect(src.contains('PageFocusOwnership _focusOwnership'), isTrue,
-          reason: '缺确定性落焦的单一所有者');
+      final String src = read(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      );
+      expect(
+        src.contains('bool _canOwnReaderFocus(FocusReclaimCause cause)'),
+        isTrue,
+        reason: '缺统一焦点判据',
+      );
+      expect(
+        src.contains('PageFocusOwnership _focusOwnership'),
+        isTrue,
+        reason: '缺确定性落焦的单一所有者',
+      );
       // 门控：光标态 / 弹窗 / 歌词态不抢。
-      final int start =
-          src.indexOf('bool _canOwnReaderFocus(FocusReclaimCause cause)');
+      final int start = src.indexOf(
+        'bool _canOwnReaderFocus(FocusReclaimCause cause)',
+      );
       final int end = src.indexOf('\n  }', start);
       final String body = src.substring(start, end);
-      expect(body.contains('_caretActive') || body.contains('_caretSurface'),
-          isTrue,
-          reason: 'helper 必须门控光标态');
+      expect(
+        body.contains('_caretActive') || body.contains('_caretSurface'),
+        isTrue,
+        reason: 'helper 必须门控光标态',
+      );
       expect(body.contains('_lyricsMode'), isTrue, reason: 'helper 必须门控歌词态');
       expect(
-          body.contains('isDictionaryShown') ||
-              body.contains('_hasVisiblePopup'),
-          isTrue,
-          reason: 'helper 必须门控弹窗态');
+        body.contains('isDictionaryShown') || body.contains('_hasVisiblePopup'),
+        isTrue,
+        reason: 'helper 必须门控弹窗态',
+      );
       expect(body.contains('_readerContentReady'), isTrue);
     });
 
     test('内容就绪三落点回收焦点（不含歌词路径）', () {
       final String nav = read(
-          'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
-      final String web =
-          read('lib/src/pages/implementations/reader_fushi/webview.part.dart');
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+      );
+      final String web = read(
+        'lib/src/pages/implementations/reader_fushi/webview.part.dart',
+      );
       expect(
-          nav.contains(
-              '_focusOwnership.reclaim(FocusReclaimCause.contentReady)'),
-          isTrue,
-          reason: 'navigation.part 内容就绪点应落焦');
+        nav.contains('_focusOwnership.reclaim(FocusReclaimCause.contentReady)'),
+        isTrue,
+        reason: 'navigation.part 内容就绪点应落焦',
+      );
       expect(
-          web.contains(
-              '_focusOwnership.reclaim(FocusReclaimCause.contentReady)'),
-          isTrue,
-          reason: 'webview.part spreadReady 应落焦');
+        web.contains('_focusOwnership.reclaim(FocusReclaimCause.contentReady)'),
+        isTrue,
+        reason: 'webview.part spreadReady 应落焦',
+      );
     });
   });
 
@@ -252,10 +272,10 @@ void main() {
         expect(bodies, isNotEmpty);
         for (final String body in bodies) {
           expect(
-            body.contains(
-                '_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
+            body.contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
             isTrue,
-            reason: "'$handler' 回调丢了夺回焦点的调用 —— 该手势翻页/切栏后 ESC "
+            reason:
+                "'$handler' 回调丢了夺回焦点的调用 —— 该手势翻页/切栏后 ESC "
                 '将无法退出书籍（BUG-136）。',
           );
         }
@@ -276,7 +296,8 @@ void main() {
       expect(
         code.contains('shouldReclaimReaderFocusAfterGesture('),
         isTrue,
-        reason: '_canOwnReaderFocus 的 gesture 分支应调用纯谓词 '
+        reason:
+            '_canOwnReaderFocus 的 gesture 分支应调用纯谓词 '
             'shouldReclaimReaderFocusAfterGesture 决定是否夺回焦点。',
       );
     });
@@ -299,8 +320,11 @@ List<String> _handlerCallbackBodies(String code, String handlerName) {
 
 String _handlerCallbackBody(String code, String handlerName) {
   final int start = code.indexOf("handlerName: '$handlerName'");
-  expect(start, isNonNegative,
-      reason: "找不到 handlerName: '$handlerName' —— 回调被改名/移除，更新此守卫");
+  expect(
+    start,
+    isNonNegative,
+    reason: "找不到 handlerName: '$handlerName' —— 回调被改名/移除，更新此守卫",
+  );
   final int next = code.indexOf('handlerName:', start + 1);
   return next < 0 ? code.substring(start) : code.substring(start, next);
 }

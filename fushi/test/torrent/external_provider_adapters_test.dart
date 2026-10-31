@@ -34,59 +34,59 @@ void main() {
       ),
     );
 
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await provider.search(
-      const VideoResourceSearchRequest(query: 'Test Show'),
-    );
+    final ProviderBatchResult<VideoResourceCandidate> result = await provider
+        .search(const VideoResourceSearchRequest(query: 'Test Show'));
 
     expect(result.failures, isEmpty);
     expect(result.items.single.seeders, 15);
     expect(result.items.single.resolution, '1080p');
-    final TorrentAddPayload payload =
-        await provider.resolve(result.items.single);
+    final TorrentAddPayload payload = await provider.resolve(
+      result.items.single,
+    );
     expect(payload, isA<TorrentMagnetPayload>());
     expect(payload.torrentId, '0123456789abcdef0123456789abcdef01234567');
   });
 
   test(
-      'Nyaa adapter searches AniList romaji and Japanese titles, not localized title',
-      () async {
-    final List<String> queries = <String>[];
-    final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
-      siteId: 'nyaa-test',
-      categoryByDomain: const <VideoDiscoveryCategory, String>{
-        VideoDiscoveryCategory.anime: '1_0',
-      },
-      client: NyaaClient(
-        baseUrl: 'https://nyaa.si',
-        minRequestInterval: Duration.zero,
-        client: MockClient((http.Request request) async {
-          queries.add(request.url.queryParameters['q']!);
-          return http.Response(_nyaaPage, 200);
-        }),
-      ),
-    );
-
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await provider.search(
-      VideoResourceSearchRequest(
-        media: VideoMediaReference(
-          providerId: 'anilist',
-          mediaId: '1535',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.anime,
-          title: '死亡笔记',
-          originalTitle: 'デスノート',
-          aliases: const <String>['Death Note', 'DEATH NOTE'],
-          anilistId: 1535,
+    'Nyaa adapter searches AniList romaji and Japanese titles, not localized title',
+    () async {
+      final List<String> queries = <String>[];
+      final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        siteId: 'nyaa-test',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_0',
+        },
+        client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
+          minRequestInterval: Duration.zero,
+          client: MockClient((http.Request request) async {
+            queries.add(request.url.queryParameters['q']!);
+            return http.Response(_nyaaPage, 200);
+          }),
         ),
-      ),
-    );
+      );
 
-    expect(queries, <String>['Death Note', 'デスノート']);
-    expect(result.items, hasLength(1));
-    expect(result.failures, isEmpty);
-  });
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(
+            VideoResourceSearchRequest(
+              media: VideoMediaReference(
+                providerId: 'anilist',
+                mediaId: '1535',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.anime,
+                title: '死亡笔记',
+                originalTitle: 'デスノート',
+                aliases: const <String>['Death Note', 'DEATH NOTE'],
+                anilistId: 1535,
+              ),
+            ),
+          );
+
+      expect(queries, <String>['Death Note', 'デスノート']);
+      expect(result.items, hasLength(1));
+      expect(result.failures, isEmpty);
+    },
+  );
 
   // BUG-2794：显式词只是候选之一。资源页会把首选词预填进搜索框，旧契约「有显式
   // 词就只搜显式词」让预填的日文原名覆盖掉作品的罗马字别名（Nyaa 0 条）。
@@ -123,22 +123,22 @@ void main() {
       expect(queries, <String>[query]);
       queries.clear();
 
-      final ProviderBatchResult<VideoResourceCandidate> result =
-          await provider.search(
-        VideoResourceSearchRequest(
-          media: VideoMediaReference(
-            providerId: 'anilist',
-            mediaId: '1535',
-            mediaKind: VideoMetadataMediaKind.tv,
-            discoveryCategory: VideoDiscoveryCategory.anime,
-            title: '死亡笔记',
-            originalTitle: 'デスノート',
-            aliases: const <String>['Death Note', 'DEATH NOTE'],
-            anilistId: 1535,
-          ),
-          query: '  $query  ',
-        ),
-      );
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(
+            VideoResourceSearchRequest(
+              media: VideoMediaReference(
+                providerId: 'anilist',
+                mediaId: '1535',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.anime,
+                title: '死亡笔记',
+                originalTitle: 'デスノート',
+                aliases: const <String>['Death Note', 'DEATH NOTE'],
+                anilistId: 1535,
+              ),
+              query: '  $query  ',
+            ),
+          );
       expect(queries, expected);
       expect(result.failures, isEmpty);
       // 每条查询都回同一个种子：按 infohash 去重后只剩一条。
@@ -147,8 +147,7 @@ void main() {
   }
 
   test('Jimaku adapter searches, keeps text subtitles and season packs, and '
-      'downloads',
-      () async {
+      'downloads', () async {
     final JimakuVideoSubtitleProvider provider = JimakuVideoSubtitleProvider(
       client: JimakuClient(
         apiKey: 'jimaku-secret',
@@ -159,10 +158,7 @@ void main() {
           }
           if (request.url.path.endsWith('/entries/7/files')) {
             // 带集号的列表之外，还会再列一次全表补回整季压缩包（BUG-3000）。
-            expect(
-              request.url.queryParameters['episode'],
-              anyOf('2', isNull),
-            );
+            expect(request.url.queryParameters['episode'], anyOf('2', isNull));
             return http.Response(
               '[{"name":"Test Show - 02.ja.srt",'
               '"url":"https://jimaku.cc/file/7","size":12},'
@@ -182,20 +178,21 @@ void main() {
       ),
     );
 
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await provider.search(
-      VideoSubtitleSearchRequest(
-        query: 'Test Show',
-        episode: 2,
-        languages: <String>['ja'],
-      ),
-    );
+    final ProviderBatchResult<VideoSubtitleCandidate> result = await provider
+        .search(
+          VideoSubtitleSearchRequest(
+            query: 'Test Show',
+            episode: 2,
+            languages: <String>['ja'],
+          ),
+        );
 
     expect(result.failures, isEmpty);
     // 文本字幕之外的非字幕文件仍滤掉；zip 整季包现在作为整季包候选列出。
     expect(result.items, hasLength(2));
-    final VideoSubtitleCandidate text = result.items
-        .firstWhere((VideoSubtitleCandidate c) => !c.isArchivePack);
+    final VideoSubtitleCandidate text = result.items.firstWhere(
+      (VideoSubtitleCandidate c) => !c.isArchivePack,
+    );
     expect(text.episode, 2);
     expect(
       result.items
@@ -208,28 +205,30 @@ void main() {
     expect(utf8.decode(download.bytes), contains('hello'));
   });
 
-  test('Jimaku adapter keeps provider failure distinct from zero results',
-      () async {
-    final JimakuVideoSubtitleProvider provider = JimakuVideoSubtitleProvider(
-      client: JimakuClient(
-        apiKey: 'jimaku-secret',
-        client: MockClient((http.Request request) async {
-          return http.Response('unauthorized', 401);
-        }),
-      ),
-    );
+  test(
+    'Jimaku adapter keeps provider failure distinct from zero results',
+    () async {
+      final JimakuVideoSubtitleProvider provider = JimakuVideoSubtitleProvider(
+        client: JimakuClient(
+          apiKey: 'jimaku-secret',
+          client: MockClient((http.Request request) async {
+            return http.Response('unauthorized', 401);
+          }),
+        ),
+      );
 
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await provider.search(VideoSubtitleSearchRequest(query: 'Test Show'));
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await provider
+          .search(VideoSubtitleSearchRequest(query: 'Test Show'));
 
-    expect(result.items, isEmpty);
-    expect(result.failures, hasLength(1));
-    expect(
-      result.failures.single.kind,
-      ExternalProviderFailureKind.unauthorized,
-    );
-    expect(result.failures.single.statusCode, 401);
-  });
+      expect(result.items, isEmpty);
+      expect(result.failures, hasLength(1));
+      expect(
+        result.failures.single.kind,
+        ExternalProviderFailureKind.unauthorized,
+      );
+      expect(result.failures.single.statusCode, 401);
+    },
+  );
 }
 
 /// 一条 trusted 结果的 HTML 搜索页（id `1` → pageUrl `https://nyaa.si/view/1`）。

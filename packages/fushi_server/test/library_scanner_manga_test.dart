@@ -42,8 +42,12 @@ Uint8List _minimalPng({int width = 20, int height = 40}) {
   return out.toBytes();
 }
 
-List<int> _be32(int v) =>
-    <int>[(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF];
+List<int> _be32(int v) => <int>[
+  (v >> 24) & 0xFF,
+  (v >> 16) & 0xFF,
+  (v >> 8) & 0xFF,
+  v & 0xFF,
+];
 
 int _crc32(List<int> bytes) {
   int crc = 0xFFFFFFFF;
@@ -63,8 +67,11 @@ void _writePage(String dir, String name) {
 
 /// 在 [dir] 写出一份最小合法 mokuro 卷（`.mokuro` + `images/` 页图），返回
 /// `.mokuro` 路径。[withImage] 为 false 时故意缺页图（用于「单卷失败不中断整批」）。
-String _writeMokuro(String dir,
-    {required String title, bool withImage = true}) {
+String _writeMokuro(
+  String dir, {
+  required String title,
+  bool withImage = true,
+}) {
   Directory(dir).createSync(recursive: true);
   if (withImage) {
     File(p.join(dir, 'images', 'p001.jpg'))
@@ -104,8 +111,11 @@ void main() {
     // 测试的产物落进上一个已删除的临时目录。
     EpubStorage.debugBaseDirectoryOverride = null;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    scanner =
-        LibraryScanner(db: db, subtitleLanguage: 'ja', extractCovers: false);
+    scanner = LibraryScanner(
+      db: db,
+      subtitleLanguage: 'ja',
+      extractCovers: false,
+    );
   });
 
   tearDown(() async {
@@ -118,24 +128,28 @@ void main() {
   });
 
   Future<ScanSummary> scan() => scanner.scanAll(<LibraryRootConfig>[
-        LibraryRootConfig(id: 'm', path: libraryRoot.path, kind: 'manga'),
-      ]);
+    LibraryRootConfig(id: 'm', path: libraryRoot.path, kind: 'manga'),
+  ]);
 
   Future<void> expectMangaArtifacts(EpubBookRow book) async {
     expect(book.format, 'manga');
     expect(
-      File(p.join(book.extractDir, MangaStorage.kMangaJsonFileName))
-          .existsSync(),
+      File(
+        p.join(book.extractDir, MangaStorage.kMangaJsonFileName),
+      ).existsSync(),
       isTrue,
       reason: 'host 列漫画要求 extractDir/manga.json 存在',
     );
     expect(book.coverPath, startsWith('images/'));
     expect(File(p.join(book.extractDir, book.coverPath!)).existsSync(), isTrue);
     expect(
-        p.isWithin(p.join(tmp.path, 'data', 'documents', 'fushi_books'),
-            book.extractDir),
-        isTrue,
-        reason: '产物必须落在 ServerPaths.documents/fushi_books 下');
+      p.isWithin(
+        p.join(tmp.path, 'data', 'documents', 'fushi_books'),
+        book.extractDir,
+      ),
+      isTrue,
+      reason: '产物必须落在 ServerPaths.documents/fushi_books 下',
+    );
   }
 
   test('根目录直接有页图 → 根本身一卷（标题 = 目录名）', () async {
@@ -170,8 +184,9 @@ void main() {
     };
     expect(
       <String?>[
-        for (final MediaCollectionItemRow i
-            in await db.getCollectionItems(series.id))
+        for (final MediaCollectionItemRow i in await db.getCollectionItems(
+          series.id,
+        ))
           titleByUid[i.entryKey],
       ],
       <String>['志乃と恋 1', '志乃と恋 2'],
@@ -189,8 +204,10 @@ void main() {
     expect(summary.errors, isEmpty);
     expect(summary.mangaAdded, 2);
     final List<EpubBookRow> books = await db.getAllEpubBooks();
-    expect(books.map((EpubBookRow b) => b.title).toList()..sort(),
-        <String>['volume-01', 'volume-02']);
+    expect(books.map((EpubBookRow b) => b.title).toList()..sort(), <String>[
+      'volume-01',
+      'volume-02',
+    ]);
     for (final EpubBookRow book in books) {
       await expectMangaArtifacts(book);
     }
@@ -210,15 +227,19 @@ void main() {
     final Map<String, String> titleByUid = <String, String>{
       for (final EpubBookRow b in await db.getAllEpubBooks()) b.uid: b.title,
     };
-    expect(titleByUid.values.toList()..sort(),
-        <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03']);
+    expect(titleByUid.values.toList()..sort(), <String>[
+      'ONE PIECE Vol01',
+      'ONE PIECE Vol02',
+      'ONE PIECE Vol03',
+    ]);
     final MediaCollectionRow series =
         (await db.getAllMediaCollections()).single;
     expect(series.name, 'ONE PIECE');
     expect(
       <String?>[
-        for (final MediaCollectionItemRow i
-            in await db.getCollectionItems(series.id))
+        for (final MediaCollectionItemRow i in await db.getCollectionItems(
+          series.id,
+        ))
           titleByUid[i.entryKey],
       ],
       <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03'],
@@ -269,8 +290,10 @@ void main() {
     expect(summary.errors, isEmpty);
     expect(summary.mangaAdded, 2);
     final List<EpubBookRow> books = await db.getAllEpubBooks();
-    expect(books.map((EpubBookRow b) => b.title).toList()..sort(),
-        <String>['MokuroVolume', 'vol-b']);
+    expect(books.map((EpubBookRow b) => b.title).toList()..sort(), <String>[
+      'MokuroVolume',
+      'vol-b',
+    ]);
     for (final EpubBookRow book in books) {
       await expectMangaArtifacts(book);
     }
@@ -292,8 +315,11 @@ void main() {
   });
 
   test('单卷失败只记 errors，不中断整批', () async {
-    _writeMokuro(p.join(libraryRoot.path, 'broken'),
-        title: 'Broken', withImage: false);
+    _writeMokuro(
+      p.join(libraryRoot.path, 'broken'),
+      title: 'Broken',
+      withImage: false,
+    );
     _writePage(p.join(libraryRoot.path, 'good'), '001.png');
 
     final ScanSummary summary = await scan();
@@ -318,7 +344,10 @@ void main() {
   test('单文件卷 .cbz / .zip 逐卷入库（此前服务端漫画根完全不认压缩包）', () async {
     final String series = p.join(libraryRoot.path, 'Veil');
     writePagesZip(p.join(series, 'Veil（1）オレンジの体温.zip'), <String>['001.png']);
-    writePagesZip(p.join(series, 'Veil（2）凪いだノワール.cbz'), <String>['001.png', '002.png']);
+    writePagesZip(p.join(series, 'Veil（2）凪いだノワール.cbz'), <String>[
+      '001.png',
+      '002.png',
+    ]);
     // 系列目录里的封面不是一卷。
     _writePage(series, 'cover.jpg');
 
@@ -327,8 +356,10 @@ void main() {
     expect(summary.errors, isEmpty);
     expect(summary.mangaAdded, 2);
     final List<EpubBookRow> books = await db.getAllEpubBooks();
-    expect(books.map((EpubBookRow b) => b.title).toSet(),
-        <String>{'Veil（1）オレンジの体温', 'Veil（2）凪いだノワール'});
+    expect(books.map((EpubBookRow b) => b.title).toSet(), <String>{
+      'Veil（1）オレンジの体温',
+      'Veil（2）凪いだノワール',
+    });
     for (final EpubBookRow book in books) {
       await expectMangaArtifacts(book);
     }
@@ -355,8 +386,13 @@ void main() {
   });
 
   test('不同系列目录下同名的 Vol 1.cbz 是两卷：第二卷换名入库，重扫不再导入', () async {
-    writePagesZip(p.join(libraryRoot.path, 'SeriesA', 'Vol 1.cbz'), <String>['001.png']);
-    writePagesZip(p.join(libraryRoot.path, 'SeriesB', 'Vol 1.cbz'), <String>['001.png', '002.png']);
+    writePagesZip(p.join(libraryRoot.path, 'SeriesA', 'Vol 1.cbz'), <String>[
+      '001.png',
+    ]);
+    writePagesZip(p.join(libraryRoot.path, 'SeriesB', 'Vol 1.cbz'), <String>[
+      '001.png',
+      '002.png',
+    ]);
 
     final ScanSummary first = await scan();
 
@@ -377,7 +413,9 @@ void main() {
     List<int> dictZip() {
       final Archive archive = Archive();
       for (final String name in <String>['index.json', 'term_bank_1.json']) {
-        final List<int> bytes = utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+        final List<int> bytes = utf8.encode(
+          name == 'index.json' ? '{"title":"d"}' : '[]',
+        );
         archive.addFile(ArchiveFile(name, bytes.length, bytes));
       }
       return ZipEncoder().encode(archive)!;
@@ -396,7 +434,10 @@ void main() {
     // 末尾补零让两份字节数相同（EOCD 从尾部回扫，尾随填充不影响读包）：换内容后
     // 字节数与修改时刻都还原，指纹不变——这正是「只要指纹不变就不重判」的边界。
     final int size = dict.length > pages.length ? dict.length : pages.length;
-    List<int> padded(List<int> bytes) => <int>[...bytes, ...List<int>.filled(size - bytes.length, 0)];
+    List<int> padded(List<int> bytes) => <int>[
+      ...bytes,
+      ...List<int>.filled(size - bytes.length, 0),
+    ];
     zip.writeAsBytesSync(padded(dict));
     final DateTime mtime = DateTime(2026, 1, 2, 3, 4, 5);
     zip.setLastModifiedSync(mtime);
@@ -422,12 +463,16 @@ void main() {
   test('漫画根里的词典 .zip 不是漫画：跳过、不报错', () async {
     final Archive archive = Archive();
     for (final String name in <String>['index.json', 'term_bank_1.json']) {
-      final List<int> bytes = utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+      final List<int> bytes = utf8.encode(
+        name == 'index.json' ? '{"title":"d"}' : '[]',
+      );
       archive.addFile(ArchiveFile(name, bytes.length, bytes));
     }
     final List<int> png = _minimalPng();
     archive.addFile(ArchiveFile('img/a.png', png.length, png));
-    File(p.join(libraryRoot.path, 'dict.zip')).writeAsBytesSync(ZipEncoder().encode(archive)!);
+    File(
+      p.join(libraryRoot.path, 'dict.zip'),
+    ).writeAsBytesSync(ZipEncoder().encode(archive)!);
 
     final ScanSummary summary = await scan();
 

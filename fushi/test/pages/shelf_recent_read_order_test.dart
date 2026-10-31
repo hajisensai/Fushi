@@ -22,10 +22,10 @@ void main() {
 
   group('mostRecentlyReadCandidate（hero 选书纯选择器）', () {
     test('选最后阅读时间最大者，而非列表首位（列表首位=最近导入）', () {
-      final String? hero = mostRecentlyReadCandidate(
-        <String>['新导入在读', '刚读过的老书'],
-        (String s) => s == '刚读过的老书' ? 200 : 100,
-      );
+      final String? hero = mostRecentlyReadCandidate(<String>[
+        '新导入在读',
+        '刚读过的老书',
+      ], (String s) => s == '刚读过的老书' ? 200 : 100);
       expect(hero, '刚读过的老书', reason: '刚读的书必须赢过更晚导入的书（BUG-777 原症状）');
     });
 
@@ -37,10 +37,7 @@ void main() {
     });
 
     test('空候选返回 null（无在读书 → 整块只剩统计）', () {
-      expect(
-        mostRecentlyReadCandidate(<String>[], (String _) => 0),
-        isNull,
-      );
+      expect(mostRecentlyReadCandidate(<String>[], (String _) => 0), isNull);
     });
   });
 
@@ -83,9 +80,9 @@ void main() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       final AppModel appModel = AppModel(testPlatformServices())
         ..wireDatabaseForTesting(db);
-      container = ProviderContainer(overrides: <Override>[
-        appProvider.overrideWith((ref) => appModel),
-      ]);
+      container = ProviderContainer(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+      );
     });
 
     tearDown(() async {
@@ -94,42 +91,51 @@ void main() {
     });
 
     test('映射 = bookUid → updatedAt（EPUB 行走 uid、SRT 行沿用原键，一次批量查询）', () async {
-      await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookUid: Value('老书'),
-        sectionIndex: Value(3),
-        normCharOffset: Value(5000),
-        updatedAt: Value(200),
-      ));
-      await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookUid: Value('新导入'),
-        sectionIndex: Value(0),
-        normCharOffset: Value(10),
-        updatedAt: Value(100),
-      ));
+      await db.upsertReaderPosition(
+        const ReaderPositionsCompanion(
+          bookUid: Value('老书'),
+          sectionIndex: Value(3),
+          normCharOffset: Value(5000),
+          updatedAt: Value(200),
+        ),
+      );
+      await db.upsertReaderPosition(
+        const ReaderPositionsCompanion(
+          bookUid: Value('新导入'),
+          sectionIndex: Value(0),
+          normCharOffset: Value(10),
+          updatedAt: Value(100),
+        ),
+      );
 
-      final Map<String, int> map =
-          await container.read(bookLastReadAtProvider.future);
+      final Map<String, int> map = await container.read(
+        bookLastReadAtProvider.future,
+      );
       expect(map, <String, int>{'老书': 200, '新导入': 100});
     });
 
     test('重读后 invalidate 重取拿到新 updatedAt（关书 onSourceExit 失效语义）', () async {
-      await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookUid: Value('书'),
-        sectionIndex: Value(0),
-        normCharOffset: Value(1),
-        updatedAt: Value(1),
-      ));
+      await db.upsertReaderPosition(
+        const ReaderPositionsCompanion(
+          bookUid: Value('书'),
+          sectionIndex: Value(0),
+          normCharOffset: Value(1),
+          updatedAt: Value(1),
+        ),
+      );
       expect(
         await container.read(bookLastReadAtProvider.future),
         containsPair('书', 1),
       );
 
-      await db.upsertReaderPosition(const ReaderPositionsCompanion(
-        bookUid: Value('书'),
-        sectionIndex: Value(2),
-        normCharOffset: Value(9),
-        updatedAt: Value(999),
-      ));
+      await db.upsertReaderPosition(
+        const ReaderPositionsCompanion(
+          bookUid: Value('书'),
+          sectionIndex: Value(2),
+          normCharOffset: Value(9),
+          updatedAt: Value(999),
+        ),
+      );
       container.invalidate(bookLastReadAtProvider);
       expect(
         await container.read(bookLastReadAtProvider.future),

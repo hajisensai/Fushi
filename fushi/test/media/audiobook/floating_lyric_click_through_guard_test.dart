@@ -20,31 +20,33 @@ void main() {
   setUpAll(() {
     cpp = File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
     header = File('windows/runner/floating_lyric_window.h').readAsStringSync();
-    flutterWindow =
-        File('windows/runner/flutter_window.cpp').readAsStringSync();
+    flutterWindow = File(
+      'windows/runner/flutter_window.cpp',
+    ).readAsStringSync();
   });
 
   group('desktop floating-lyric click-through guards', () {
     test(
-        'strip is created mouse-interactive so first clicks cannot fall through',
-        () {
-      final int createWindow = cpp.indexOf('CreateWindowExW(');
-      final int className = cpp.indexOf('kWindowClassName', createWindow);
-      final String createFlags = cpp.substring(createWindow, className);
+      'strip is created mouse-interactive so first clicks cannot fall through',
+      () {
+        final int createWindow = cpp.indexOf('CreateWindowExW(');
+        final int className = cpp.indexOf('kWindowClassName', createWindow);
+        final String createFlags = cpp.substring(createWindow, className);
 
-      // The native strip must be interactive from the first hit-test. Keeping
-      // WS_EX_TRANSPARENT in the creation flags reopens the race where a fast
-      // first click reaches the app underneath before a timer clears the bit.
-      expect(
-        createFlags.contains('WS_EX_TRANSPARENT'),
-        isFalse,
-        reason: 'The strip must not be born mouse-transparent.',
-      );
-      // It must still not steal keyboard focus.
-      expect(createFlags.contains('WS_EX_NOACTIVATE'), isTrue);
-      // And it must float over every app, not just the Fushi window.
-      expect(createFlags.contains('WS_EX_TOPMOST'), isTrue);
-    });
+        // The native strip must be interactive from the first hit-test. Keeping
+        // WS_EX_TRANSPARENT in the creation flags reopens the race where a fast
+        // first click reaches the app underneath before a timer clears the bit.
+        expect(
+          createFlags.contains('WS_EX_TRANSPARENT'),
+          isFalse,
+          reason: 'The strip must not be born mouse-transparent.',
+        );
+        // It must still not steal keyboard focus.
+        expect(createFlags.contains('WS_EX_NOACTIVATE'), isTrue);
+        // And it must float over every app, not just the Fushi window.
+        expect(createFlags.contains('WS_EX_TOPMOST'), isTrue);
+      },
+    );
 
     test('no timer can flip interactivity (PR#460 invariant)', () {
       // A timer-driven transparent/interactive flip is inherently racy: a fast
@@ -84,9 +86,13 @@ void main() {
       // one applier, escape hatch shown first, refuse the toggle if it cannot
       // be — is pinned by
       // test/tools/gal_overlay_passthrough_dual_window_guard_test.dart.
-      expect(cpp.contains('ApplyPassThroughExStyle'), isTrue,
-          reason: 'Pass-through must go through the single applier that also '
-              'puts the escape-hatch toolbar on screen.');
+      expect(
+        cpp.contains('ApplyPassThroughExStyle'),
+        isTrue,
+        reason:
+            'Pass-through must go through the single applier that also '
+            'puts the escape-hatch toolbar on screen.',
+      );
       expect(cpp.contains('pass_through_toolbar_.Show('), isTrue);
     });
 
@@ -109,17 +115,25 @@ void main() {
       // 10 个空格 + 'glyph, 1,'）。后来新增的 hook 工具栏把同样的调用写成单行，
       // 于是整个从它旁边溜了过去。改成「按调用点计数」：任何一个 glyph 绘制不走
       // GlyphLength 就红，与缩进、换行、参数换行位置全部无关。
-      expect(cpp.contains('GlyphLength'), isTrue,
-          reason: 'Emoji glyphs need their full UTF-16 code-unit length.');
-      final Iterable<RegExpMatch> glyphDraws =
-          RegExp(r'DrawTextW\(\s*glyph,\s*([^,]+),').allMatches(cpp);
-      expect(glyphDraws, isNotEmpty,
-          reason: 'The glyph draw call must still exist.');
+      expect(
+        cpp.contains('GlyphLength'),
+        isTrue,
+        reason: 'Emoji glyphs need their full UTF-16 code-unit length.',
+      );
+      final Iterable<RegExpMatch> glyphDraws = RegExp(
+        r'DrawTextW\(\s*glyph,\s*([^,]+),',
+      ).allMatches(cpp);
+      expect(
+        glyphDraws,
+        isNotEmpty,
+        reason: 'The glyph draw call must still exist.',
+      );
       for (final RegExpMatch m in glyphDraws) {
         expect(
           m.group(1)!.trim(),
           'GlyphLength(glyph)',
-          reason: 'Every glyph DrawTextW must pass the full UTF-16 length; a '
+          reason:
+              'Every glyph DrawTextW must pass the full UTF-16 length; a '
               'literal length truncates U+1F512/U+1F513-class glyphs.',
         );
       }
@@ -136,26 +150,30 @@ void main() {
       //
       // 这条守卫因此改成检查新形态下的等价事实：锁定键仍在这张槽表里，命中仍走
       // 单一真相的槽表，且锁定 / 未锁定两种状态各有自己的字形。
-      final String header =
-          File(p.join('windows', 'runner', 'hook_toolbar_window.h'))
-              .readAsStringSync();
+      final String header = File(
+        p.join('windows', 'runner', 'hook_toolbar_window.h'),
+      ).readAsStringSync();
       final int tableStart = header.indexOf('kAudiobookSlotActions[');
       expect(tableStart, greaterThan(0), reason: '找不到有声书槽表');
-      final String table =
-          header.substring(tableStart, header.indexOf('};', tableStart));
-      expect(table.contains('"lock"'), isTrue,
-          reason: '有声书槽表必须仍有锁定键');
+      final String table = header.substring(
+        tableStart,
+        header.indexOf('};', tableStart),
+      );
+      expect(table.contains('"lock"'), isTrue, reason: '有声书槽表必须仍有锁定键');
 
-      expect(cpp.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
-          isTrue,
-          reason: 'ControlActionAt must resolve the lock button through the '
-              'single source of truth slot table.');
+      expect(
+        cpp.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
+        isTrue,
+        reason:
+            'ControlActionAt must resolve the lock button through the '
+            'single source of truth slot table.',
+      );
 
       // 锁定 / 未锁定必须是两个字形（Material Symbols lock / lock_open），
       // 否则用户看不出自己锁没锁。
-      final String toolbarCpp =
-          File(p.join('windows', 'runner', 'hook_toolbar_window.cpp'))
-              .readAsStringSync();
+      final String toolbarCpp = File(
+        p.join('windows', 'runner', 'hook_toolbar_window.cpp'),
+      ).readAsStringSync();
       expect(
         toolbarCpp.contains(r'states.locked ? L"\uE899" : L"\uE898"'),
         isTrue,
@@ -169,8 +187,11 @@ void main() {
       expect(cpp.contains('locked_'), isTrue);
       expect(header.contains('void SetLocked(bool locked);'), isTrue);
       expect(header.contains('bool IsLocked()'), isTrue);
-      expect(cpp.contains('if (pressed_ && !locked_)'), isTrue,
-          reason: 'Drag promotion must be suppressed while locked.');
+      expect(
+        cpp.contains('if (pressed_ && !locked_)'),
+        isTrue,
+        reason: 'Drag promotion must be suppressed while locked.',
+      );
       // The lock button toggle reports back to Dart via the lock callback.
       expect(cpp.contains('on_lock_'), isTrue);
       expect(header.contains('SetLockCallback'), isTrue);
@@ -180,12 +201,16 @@ void main() {
       // The old desktop strip stubbed setLocked as a no-op; it must now drive
       // the window and surface user toggles back over "lockChanged".
       expect(
-          flutterWindow.contains('floating_lyric_window_->SetLocked('), isTrue);
+        flutterWindow.contains('floating_lyric_window_->SetLocked('),
+        isTrue,
+      );
       expect(flutterWindow.contains('"lockChanged"'), isTrue);
       // And it must NOT still carry the old no-op excuse comment.
-      expect(flutterWindow.contains('desktop strip has no lock affordance'),
-          isFalse,
-          reason: 'The lock no-op was removed; setLocked is now real.');
+      expect(
+        flutterWindow.contains('desktop strip has no lock affordance'),
+        isFalse,
+        reason: 'The lock no-op was removed; setLocked is now real.',
+      );
     });
 
     test('the bar is draggable from the text, not only blank margins', () {

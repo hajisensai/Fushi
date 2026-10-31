@@ -1,5 +1,4 @@
-import 'package:drift/drift.dart'
-    show Value;
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -259,10 +258,15 @@ void main() {
       await db.upsertStudySegment(
         _seg('b', ms: 8000, startAt: 7200000, endAt: 7208000),
       );
-      expect((await loadStatFacts(db, activityLimit: 0)).sessions, hasLength(2));
+      expect(
+        (await loadStatFacts(db, activityLimit: 0)).sessions,
+        hasLength(2),
+      );
       await db.deleteStudySession(segmentUids: <String>{'a'});
-      final List<StudySession> after =
-          (await loadStatFacts(db, activityLimit: 0)).sessions;
+      final List<StudySession> after = (await loadStatFacts(
+        db,
+        activityLimit: 0,
+      )).sessions;
       expect(after, hasLength(1));
       expect(after.single.segmentUids, <String>['b']);
     });
@@ -332,11 +336,10 @@ void main() {
     expect((await db.getStudySegments()).single.uid, 'b');
     final List<StudySegmentTombstoneRow> tombs = await db
         .getStudySegmentTombstones();
-    expect(
-      tombs.map((t) => '${t.mediaKind}|${t.mediaKey}').toSet(),
-      <String>{'book|b1', 'book|b2'},
-      reason: '每个被清的身份一块碑；视频域不连坐',
-    );
+    expect(tombs.map((t) => '${t.mediaKind}|${t.mediaKey}').toSet(), <String>{
+      'book|b1',
+      'book|b2',
+    }, reason: '每个被清的身份一块碑；视频域不连坐');
     for (final StudySegmentTombstoneRow t in tombs) {
       expect(t.deletedAt, greaterThanOrEqualTo(before));
     }
@@ -650,9 +653,10 @@ void main() {
       await db.upsertStudySegment(_seg('b', chars: 20));
       await db.upsertStudySegment(_seg('c', chars: 30));
       expect(
-        (await db.getStudySegmentsByUids(<String>{'a', 'c'}))
-            .map((r) => r.uid)
-            .toSet(),
+        (await db.getStudySegmentsByUids(<String>{
+          'a',
+          'c',
+        })).map((r) => r.uid).toSet(),
         <String>{'a', 'c'},
       );
       expect(
@@ -661,9 +665,10 @@ void main() {
         reason: '空集不许退化成「取全表」',
       );
       expect(
-        (await db.getStudySegmentsByUids(<String>{'a', 'nope'}))
-            .map((r) => r.uid)
-            .toSet(),
+        (await db.getStudySegmentsByUids(<String>{
+          'a',
+          'nope',
+        })).map((r) => r.uid).toSet(),
         <String>{'a'},
         reason: '不存在的 uid 不报错、不造行',
       );

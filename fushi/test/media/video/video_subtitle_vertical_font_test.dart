@@ -19,8 +19,11 @@ import 'package:fushi_audio/fushi_audio.dart';
 import '../../helpers/source_guard.dart';
 
 AudioCue _cueOf(String raw) {
-  final SubtitleMarkup m =
-      parseSubtitleMarkup(raw, playResX: 1280, playResY: 720);
+  final SubtitleMarkup m = parseSubtitleMarkup(
+    raw,
+    playResX: 1280,
+    playResY: 720,
+  );
   return AudioCue()
     ..bookKey = 'b'
     ..chapterHref = 'c'
@@ -32,8 +35,11 @@ AudioCue _cueOf(String raw) {
     ..endMs = 5000;
 }
 
-Future<void> _pump(WidgetTester tester, AudioCue cue,
-    {bool respect = true}) async {
+Future<void> _pump(
+  WidgetTester tester,
+  AudioCue cue, {
+  bool respect = true,
+}) async {
   tester.view.physicalSize = const Size(1280, 720);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -41,17 +47,19 @@ Future<void> _pump(WidgetTester tester, AudioCue cue,
   addTearDown(c.dispose);
   c.setCues(<AudioCue>[cue]);
   c.debugUpdateCueForPosition(1000);
-  await tester.pumpWidget(MaterialApp(
-    // 关调试横幅：它本身是个 45° 旋转 Transform，会污染旋转扫描。
-    debugShowCheckedModeBanner: false,
-    home: Scaffold(
-      body: SizedBox(
-        width: 1280,
-        height: 720,
-        child: VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+  await tester.pumpWidget(
+    MaterialApp(
+      // 关调试横幅：它本身是个 45° 旋转 Transform，会污染旋转扫描。
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: SizedBox(
+          width: 1280,
+          height: 720,
+          child: VideoSubtitleOverlay(controller: c, respectAssStyle: respect),
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -63,7 +71,8 @@ Offset _glyphAxis(WidgetTester tester, String glyph) {
   Offset axis = const Offset(1, 0);
   for (final Transform t in ts) {
     // 取两点之差消掉平移分量，只留旋转/缩放对**方向**的作用。
-    axis = MatrixUtils.transformPoint(t.transform, axis) -
+    axis =
+        MatrixUtils.transformPoint(t.transform, axis) -
         MatrixUtils.transformPoint(t.transform, Offset.zero);
   }
   final double len = axis.distance;
@@ -93,8 +102,11 @@ void main() {
       );
       final Offset axis = _glyphAxis(tester, '雨');
       // 字形逆时针 90°（@）+ 整行顺时针 90°（\frz270）= 净 0：x 轴仍指向 x 轴。
-      expect(axis.dx, closeTo(1, 0.02),
-          reason: '@ 与 \\frz270 必须抵消成正立字形；只剩单向 90° 就是用户报的「整行躺倒」');
+      expect(
+        axis.dx,
+        closeTo(1, 0.02),
+        reason: '@ 与 \\frz270 必须抵消成正立字形；只剩单向 90° 就是用户报的「整行躺倒」',
+      );
       expect(axis.dy, closeTo(0, 0.02));
     });
 
@@ -107,10 +119,15 @@ void main() {
 
     testWidgets('无 @ 的普通字体 + \\frz270：字形躺倒（既有行为不变，非竖排）', (tester) async {
       await _pump(
-          tester, _cueOf(r'{\fnA-OTF Kaimin Tsuki Std H\frz270\pos(10,360)}雨'));
+        tester,
+        _cueOf(r'{\fnA-OTF Kaimin Tsuki Std H\frz270\pos(10,360)}雨'),
+      );
       final Offset axis = _glyphAxis(tester, '雨');
-      expect(axis.dy, closeTo(1, 0.02),
-          reason: '没有 @ 就没有预旋转，\\frz270 单向生效——招牌类字幕的既有语义不能被改');
+      expect(
+        axis.dy,
+        closeTo(1, 0.02),
+        reason: '没有 @ 就没有预旋转，\\frz270 单向生效——招牌类字幕的既有语义不能被改',
+      );
     });
 
     testWidgets('纯字幕模式（respectAssStyle 关）竖排一并不生效', (tester) async {
@@ -148,32 +165,45 @@ void main() {
       c.debugVideoHeightOverride = 720;
       c.setCues(<AudioCue>[cue]);
       c.debugUpdateCueForPosition(1000);
-      await tester.pumpWidget(MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          body: SizedBox(
-            width: 1280,
-            height: 720,
-            child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(
+            body: SizedBox(
+              width: 1280,
+              height: 720,
+              child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
     }
 
-    testWidgets('片源真值 \\an2\\frz270\\pos(10,360)：整列落在 \\pos 右侧、不越出画面左缘',
-        (tester) async {
+    testWidgets('片源真值 \\an2\\frz270\\pos(10,360)：整列落在 \\pos 右侧、不越出画面左缘', (
+      tester,
+    ) async {
       await pumpPositioned(
-          tester,
-          _cueOf(r'{\fn@A-OTF Kaimin Tsuki Std H\an2\frz270'
-              r'\pos(10,360)}雨上がり　君は'));
+        tester,
+        _cueOf(
+          r'{\fn@A-OTF Kaimin Tsuki Std H\an2\frz270'
+          r'\pos(10,360)}雨上がり　君は',
+        ),
+      );
       for (final String ch in <String>['雨', '君']) {
         final Rect r = tester.getRect(find.text(ch).first);
-        expect(r.left, greaterThanOrEqualTo(0.0),
-            reason: '「$ch」跑出画面左缘了——这正是用户报的「左边出框」');
-        expect(r.left, greaterThanOrEqualTo(10.0 - 0.01),
-            reason: '绕 \\an2（底边中点）转，整列应在锚点 x=10 右侧；'
-                '绕盒中心转会把列整体左移半个行高');
+        expect(
+          r.left,
+          greaterThanOrEqualTo(0.0),
+          reason: '「$ch」跑出画面左缘了——这正是用户报的「左边出框」',
+        );
+        expect(
+          r.left,
+          greaterThanOrEqualTo(10.0 - 0.01),
+          reason:
+              '绕 \\an2（底边中点）转，整列应在锚点 x=10 右侧；'
+              '绕盒中心转会把列整体左移半个行高',
+        );
       }
     });
 
@@ -181,14 +211,18 @@ void main() {
       // \an5 = 中中，对齐点本来就是盒中心 → 新旧原点同一个点，像素级不动。
       await pumpPositioned(tester, _cueOf(r'{\an5\frz30\pos(640,360)}看板'));
       final Rect r = tester.getRect(find.text('看').first);
-      expect(r.center.dx, closeTo(640, 60),
-          reason: '\\an5 招牌应仍绕自身中心转、留在 \\pos 附近');
+      expect(
+        r.center.dx,
+        closeTo(640, 60),
+        reason: '\\an5 招牌应仍绕自身中心转、留在 \\pos 附近',
+      );
     });
   });
 
   group('源码守卫', () {
-    final String src = File('lib/src/media/video/video_subtitle_overlay.dart')
-        .readAsStringSync();
+    final String src = File(
+      'lib/src/media/video/video_subtitle_overlay.dart',
+    ).readAsStringSync();
 
     /// 🔴 这两条断言必须锚在**调用方的方法体**里，不能对整份源码裸 `contains`。
     ///
@@ -199,33 +233,49 @@ void main() {
     ///
     /// `containsCodeLine` 另外掩掉注释，注释里提一嘴函数名也不算数。
     test('@ 前缀剥离处必须仍有竖排语义的承接方（不得只剥不接）', () {
-      expect(src, contains("name.startsWith('@') ? name.substring(1) : name"),
-          reason: '家族名解析仍应剥 @（DirectWrite 家族名不含 @）');
+      expect(
+        src,
+        contains("name.startsWith('@') ? name.substring(1) : name"),
+        reason: '家族名解析仍应剥 @（DirectWrite 家族名不含 @）',
+      );
 
       // 承接方①：字形预旋转必须真的被字符构建路径调用（调用点在 _buildCueBox 内）。
       final String cueBoxBody = methodBody(src, 'Widget _buildCueBox(');
       expect(
-          containsCodeLine(cueBoxBody, '_applyVerticalGlyphRotation('), isTrue,
-          reason: '字形预旋转必须真的作用到字符渲染上：'
-              '_buildCueBox 里没有调用点 = 剥了 @ 却没人转字形，回到 BUG-1331');
+        containsCodeLine(cueBoxBody, '_applyVerticalGlyphRotation('),
+        isTrue,
+        reason:
+            '字形预旋转必须真的作用到字符渲染上：'
+            '_buildCueBox 里没有调用点 = 剥了 @ 却没人转字形，回到 BUG-1331',
+      );
 
       // 承接方②：预旋转内部必须真的据 @ 前缀判据决定转不转。
-      final String rotationBody =
-          methodBody(src, 'Widget _applyVerticalGlyphRotation(');
-      expect(containsCodeLine(rotationBody, 'isAssVerticalFontName('), isTrue,
-          reason: '预旋转必须据 isAssVerticalFontName 判据放行，'
-              '否则要么全转（非 @ 字体也躺倒）要么全不转（回到 BUG-1331）');
+      final String rotationBody = methodBody(
+        src,
+        'Widget _applyVerticalGlyphRotation(',
+      );
+      expect(
+        containsCodeLine(rotationBody, 'isAssVerticalFontName('),
+        isTrue,
+        reason:
+            '预旋转必须据 isAssVerticalFontName 判据放行，'
+            '否则要么全转（非 @ 字体也躺倒）要么全不转（回到 BUG-1331）',
+      );
     });
 
     /// 窗口用 [methodBody] 按花括号配对取，不再拿**下一个方法的注释文本**当结束锚
     /// （原实现是 `src.indexOf('\n  /// span 级静态', fn)`）：那句注释被改写或那个方法
     /// 被挪走，窗口就断在错误位置——守卫会在与竖排毫无关系的改动下炸掉或悄悄扩窗。
     test('预旋转方向锁死为逆时针 90°（-π/2）', () {
-      final String body =
-          methodBody(src, 'Widget _applyVerticalGlyphRotation(');
-      expect(containsCodeLine(body, 'Transform.rotate(angle: -math.pi / 2'),
-          isTrue,
-          reason: '方向写反（+π/2）会让字形与 \\frz270 叠成 180°，字倒立');
+      final String body = methodBody(
+        src,
+        'Widget _applyVerticalGlyphRotation(',
+      );
+      expect(
+        containsCodeLine(body, 'Transform.rotate(angle: -math.pi / 2'),
+        isTrue,
+        reason: '方向写反（+π/2）会让字形与 \\frz270 叠成 180°，字倒立',
+      );
     });
   });
 }

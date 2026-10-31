@@ -103,14 +103,14 @@ bool get _dandanplayEmbedded =>
 
 /// 服务条目在总览里的行首图标（按条目 id；未知 id 回落到云）。
 IconData onlineServiceOnboardingIcon(String id) => switch (id) {
-      'anidb' => FushiIcons.fingerprint,
-      'mal_anilist' => FushiIcons.globe,
-      'tmdb' => FushiIcons.video,
-      'jimaku' || 'opensubtitles' || 'subdl' => FushiIcons.subtitles,
-      'dandanplay' => FushiIcons.quote,
-      'servers' => FushiIcons.server,
-      _ => FushiIcons.cloud,
-    };
+  'anidb' => FushiIcons.fingerprint,
+  'mal_anilist' => FushiIcons.globe,
+  'tmdb' => FushiIcons.video,
+  'jimaku' || 'opensubtitles' || 'subdl' => FushiIcons.subtitles,
+  'dandanplay' => FushiIcons.quote,
+  'servers' => FushiIcons.server,
+  _ => FushiIcons.cloud,
+};
 
 /// 新手向导与视频提示共用的总览。展示和点击注册入口不会修改服务开关。
 ///
@@ -141,13 +141,17 @@ class OnlineServicesOnboardingView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (showHeader) ...<Widget>[
-            Text(t.onboarding_online_services_title,
-                style: type.headlineSmallEmphasized),
+            Text(
+              t.onboarding_online_services_title,
+              style: type.headlineSmallEmphasized,
+            ),
             SizedBox(height: tokens.spacing.gap),
-            Text(t.onboarding_online_services_body,
-                style: type.bodyLarge.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                )),
+            Text(
+              t.onboarding_online_services_body,
+              style: type.bodyLarge.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
             SizedBox(height: tokens.spacing.card),
           ],
           Align(
@@ -207,8 +211,10 @@ class _OnlineServiceRow extends StatelessWidget {
                   runSpacing: tokens.spacing.gap / 2,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
-                    Text(item.title,
-                        style: context.fushiType.titleMediumEmphasized),
+                    Text(
+                      item.title,
+                      style: context.fushiType.titleMediumEmphasized,
+                    ),
                     FushiTagChip(
                       label: item.requirement,
                       color: theme.colorScheme.tertiaryContainer,
@@ -216,10 +222,12 @@ class _OnlineServiceRow extends StatelessWidget {
                   ],
                 ),
                 SizedBox(height: tokens.spacing.gap / 2),
-                Text(item.description,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    )),
+                Text(
+                  item.description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 if (item.link != null) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap / 2),
                   FushiTextButton.icon(
@@ -243,41 +251,40 @@ class OnlineServicesOnboardingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
-        title: t.settings_destination_services,
-        // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
-        // 页头），内容才能滚到页头底下。
-        body: Builder(
-          builder: (BuildContext context) => SingleChildScrollView(
-            // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，滚动内容末尾自己
-            // 补上 home indicator / 手势条的高度。
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.all(FushiDesignTokens.of(context).spacing.page)
-                  .copyWith(
-                top: FushiDesignTokens.of(context).spacing.page +
-                    MediaQuery.paddingOf(context).top,
-              ),
-            ),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: OnlineServicesOnboardingView(
-                  items: onlineServiceOnboardingItems(),
-                  onConfigure: () => Navigator.of(context).push<void>(
-                    adaptivePageRoute<void>(
-                      context: context,
-                      builder: (_) => SettingsDetailPage(
-                          destination: buildServicesDestination()),
-                    ),
-                  ),
-                  onOpenLink: (Uri url) => launchUrl(
-                    url,
-                    mode: LaunchMode.externalApplication,
+    title: t.settings_destination_services,
+    // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
+    // 页头），内容才能滚到页头底下。
+    body: Builder(
+      builder: (BuildContext context) => SingleChildScrollView(
+        // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，滚动内容末尾自己
+        // 补上 home indicator / 手势条的高度。
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.all(FushiDesignTokens.of(context).spacing.page).copyWith(
+            top:
+                FushiDesignTokens.of(context).spacing.page +
+                MediaQuery.paddingOf(context).top,
+          ),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: OnlineServicesOnboardingView(
+              items: onlineServiceOnboardingItems(),
+              onConfigure: () => Navigator.of(context).push<void>(
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (_) => SettingsDetailPage(
+                    destination: buildServicesDestination(),
                   ),
                 ),
               ),
+              onOpenLink: (Uri url) =>
+                  launchUrl(url, mode: LaunchMode.externalApplication),
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }

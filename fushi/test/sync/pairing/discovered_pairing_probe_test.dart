@@ -24,8 +24,9 @@ void main() {
     supportsPairV2: true,
     tlsEnabled: false,
   );
-  const FushiPingOutcome unreachable =
-      FushiPingOutcome.failed(FushiPingFailure.unreachable);
+  const FushiPingOutcome unreachable = FushiPingOutcome.failed(
+    FushiPingFailure.unreachable,
+  );
 
   group('discoveredPairingCandidateUrls', () {
     test('TXT 广播 tls=1 时 https 优先', () {
@@ -60,20 +61,19 @@ void main() {
 
       final DiscoveredPairingProbeResult? result =
           (await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: true,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('aa:bb:cc'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async {
-          pingedUrls.add(baseUrl);
-          pingedPins.add(pinnedFingerprint);
-          return baseUrl.startsWith('https://')
-              ? const FushiPingOutcome.ok(v2TlsPing)
-              : unreachable;
-        },
-      ))
-              .result;
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: true,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('aa:bb:cc'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async {
+              pingedUrls.add(baseUrl);
+              pingedPins.add(pinnedFingerprint);
+              return baseUrl.startsWith('https://')
+                  ? const FushiPingOutcome.ok(v2TlsPing)
+                  : unreachable;
+            },
+          )).result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'https://h:38765');
@@ -89,19 +89,18 @@ void main() {
 
       final DiscoveredPairingProbeResult? result =
           (await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: true,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.failed(FushiTofuFailure.unreachable),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async {
-          pingedUrls.add(baseUrl);
-          return baseUrl.startsWith('http://')
-              ? const FushiPingOutcome.ok(v2PlainPing)
-              : unreachable;
-        },
-      ))
-              .result;
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: true,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.failed(FushiTofuFailure.unreachable),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async {
+              pingedUrls.add(baseUrl);
+              return baseUrl.startsWith('http://')
+                  ? const FushiPingOutcome.ok(v2PlainPing)
+                  : unreachable;
+            },
+          )).result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'http://h:38765');
@@ -115,19 +114,18 @@ void main() {
 
       final DiscoveredPairingProbeResult? result =
           (await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: false,
-        captureFingerprint: (String host, int port) async =>
-            fail('明文 host ping 通后不应再做 TOFU 握手'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async {
-          pingedUrls.add(baseUrl);
-          return baseUrl.startsWith('http://')
-              ? const FushiPingOutcome.ok(v2PlainPing)
-              : unreachable;
-        },
-      ))
-              .result;
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: false,
+            captureFingerprint: (String host, int port) async =>
+                fail('明文 host ping 通后不应再做 TOFU 握手'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async {
+              pingedUrls.add(baseUrl);
+              return baseUrl.startsWith('http://')
+                  ? const FushiPingOutcome.ok(v2PlainPing)
+                  : unreachable;
+            },
+          )).result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'http://h:38765');
@@ -137,17 +135,16 @@ void main() {
     test('TXT 丢失但 host 已开 TLS：http 失败后 https 兜底探到', () async {
       final DiscoveredPairingProbeResult? result =
           (await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: false,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('aa:bb:cc'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            baseUrl.startsWith('https://')
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: false,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('aa:bb:cc'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                baseUrl.startsWith('https://')
                 ? const FushiPingOutcome.ok(v2TlsPing)
                 : unreachable,
-      ))
-              .result;
+          )).result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'https://h:38765');
@@ -162,17 +159,16 @@ void main() {
       );
       final DiscoveredPairingProbeResult? result =
           (await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: true,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('de:ad:be'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            baseUrl.startsWith('https://')
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: true,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('de:ad:be'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                baseUrl.startsWith('https://')
                 ? const FushiPingOutcome.ok(noFpPing)
                 : unreachable,
-      ))
-              .result;
+          )).result;
 
       expect(result, isNotNull);
       expect(result!.fingerprint, 'de:ad:be');
@@ -181,15 +177,14 @@ void main() {
     test('两个 scheme 都探不通（旧 host 无 /api/ping）返回 null', () async {
       final DiscoveredPairingProbeResult? result =
           (await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: false,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.failed(FushiTofuFailure.unreachable),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            unreachable,
-      ))
-              .result;
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: false,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.failed(FushiTofuFailure.unreachable),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                unreachable,
+          )).result;
 
       expect(result, isNull);
     });
@@ -202,14 +197,14 @@ void main() {
     test('钉扎失败：带出 tls 原因，且确证对端讲 TLS（禁止回落 v1）', () async {
       final DiscoveredPairingProbeOutcome outcome =
           await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: true,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('aa:bb:cc'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            const FushiPingOutcome.failed(FushiPingFailure.tls),
-      );
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: true,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('aa:bb:cc'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                const FushiPingOutcome.failed(FushiPingFailure.tls),
+          );
 
       expect(outcome.result, isNull);
       expect(outcome.failure, FushiPingFailure.tls);
@@ -220,14 +215,14 @@ void main() {
     test('TXT 丢了 tls 标志：http 先失败，https 握手成功也算确证讲 TLS', () async {
       final DiscoveredPairingProbeOutcome outcome =
           await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: false,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('aa:bb:cc'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            const FushiPingOutcome.failed(FushiPingFailure.timeout),
-      );
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: false,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('aa:bb:cc'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                const FushiPingOutcome.failed(FushiPingFailure.timeout),
+          );
 
       expect(outcome.result, isNull);
       expect(outcome.peerSpeaksTls, isTrue);
@@ -236,14 +231,14 @@ void main() {
     test('真·旧版明文 host：没有任何 TLS 证据，允许回落 v1', () async {
       final DiscoveredPairingProbeOutcome outcome =
           await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: false,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.failed(FushiTofuFailure.notTls),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            const FushiPingOutcome.failed(FushiPingFailure.notFushi),
-      );
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: false,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.failed(FushiTofuFailure.notTls),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                const FushiPingOutcome.failed(FushiPingFailure.notFushi),
+          );
 
       expect(outcome.result, isNull);
       expect(outcome.peerSpeaksTls, isFalse);
@@ -253,16 +248,16 @@ void main() {
     test('多候选失败时取最严重的原因：tls 盖过 unreachable', () async {
       final DiscoveredPairingProbeOutcome outcome =
           await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: true,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('aa:bb:cc'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            baseUrl.startsWith('https://')
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: true,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('aa:bb:cc'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                baseUrl.startsWith('https://')
                 ? const FushiPingOutcome.failed(FushiPingFailure.tls)
                 : unreachable,
-      );
+          );
 
       expect(outcome.failure, FushiPingFailure.tls);
     });
@@ -270,14 +265,14 @@ void main() {
     test('探测成功时不带失败原因', () async {
       final DiscoveredPairingProbeOutcome outcome =
           await probeDiscoveredPairingEndpointDetailed(
-        host: 'h',
-        port: 38765,
-        tlsAdvertised: true,
-        captureFingerprint: (String host, int port) async =>
-            const FushiTofuOutcome.captured('aa:bb:cc'),
-        ping: (String baseUrl, {String? pinnedFingerprint}) async =>
-            const FushiPingOutcome.ok(v2TlsPing),
-      );
+            host: 'h',
+            port: 38765,
+            tlsAdvertised: true,
+            captureFingerprint: (String host, int port) async =>
+                const FushiTofuOutcome.captured('aa:bb:cc'),
+            ping: (String baseUrl, {String? pinnedFingerprint}) async =>
+                const FushiPingOutcome.ok(v2TlsPing),
+          );
 
       expect(outcome.failure, isNull);
       expect(outcome.result?.baseUrl, 'https://h:38765');

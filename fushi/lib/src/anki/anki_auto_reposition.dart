@@ -85,11 +85,11 @@ class AnkiAutoRepositionScheduler {
     AnkiAutoRepositionFailureReporter? onFailure,
     Duration debounce = kDefaultDebounce,
     int keepSnapshots = AnkiDeckRepositionRunner.kDefaultAutoSnapshots,
-  })  : _runner = runner,
-        _loadSettings = loadSettings,
-        _onFailure = onFailure,
-        _debounce = debounce,
-        _keepSnapshots = keepSnapshots;
+  }) : _runner = runner,
+       _loadSettings = loadSettings,
+       _onFailure = onFailure,
+       _debounce = debounce,
+       _keepSnapshots = keepSnapshots;
 
   /// 默认防抖窗口。够长到把「连着挖十个词」合成一批，又短到用户切回 Anki
   /// 时位置已经排好。
@@ -200,8 +200,10 @@ class AnkiAutoRepositionScheduler {
       // apply 一旦开始就让它跑完，即使中途 dispose：它是一批位置写入，
       // 半途停下留下的是「排了一半」的队列，比写完更糟。
       if (_disposed) return;
-      final AnkiRepositionOutcome outcome =
-          await _runner.apply(plan, auto: true);
+      final AnkiRepositionOutcome outcome = await _runner.apply(
+        plan,
+        auto: true,
+      );
       onRunForTesting?.call(
         AnkiAutoRepositionRun(
           deckName: deckName,

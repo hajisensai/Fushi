@@ -7,12 +7,12 @@ import 'package:fushi/models.dart';
 class NotesField extends Field {
   /// Initialise this field with the predeAudioined and hardset values.
   NotesField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Notes',
-          description: 'Supplementary information or personal observations.',
-          icon: Icons.description_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Notes',
+        description: 'Supplementary information or personal observations.',
+        icon: Icons.description_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static NotesField get instance => _instance;

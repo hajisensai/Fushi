@@ -21,24 +21,35 @@ void main() {
   double flexOf(List<KeyboardKeySpec> row) =>
       row.fold<double>(0, (double a, KeyboardKeySpec s) => a + s.flex);
 
-  test('main area has the 6 ANSI rows (function..modifier), no nav/arrow rows',
-      () {
-    // 功能 / 数字 / QWER / ASDF / ZXCV / 修饰键 = 6 行。导航簇与方向键不在主区。
-    expect(rows.length, 6);
-    final Set<LogicalKeyboardKey?> mainKeys = <LogicalKeyboardKey?>{
-      for (final List<KeyboardKeySpec> row in rows)
-        for (final KeyboardKeySpec s in row) s.key,
-    };
-    expect(mainKeys.contains(LogicalKeyboardKey.arrowUp), isFalse,
-        reason: 'arrow keys moved to the nav cluster block');
-    expect(mainKeys.contains(LogicalKeyboardKey.home), isFalse,
-        reason: 'Home moved to the nav cluster block');
-  });
+  test(
+    'main area has the 6 ANSI rows (function..modifier), no nav/arrow rows',
+    () {
+      // 功能 / 数字 / QWER / ASDF / ZXCV / 修饰键 = 6 行。导航簇与方向键不在主区。
+      expect(rows.length, 6);
+      final Set<LogicalKeyboardKey?> mainKeys = <LogicalKeyboardKey?>{
+        for (final List<KeyboardKeySpec> row in rows)
+          for (final KeyboardKeySpec s in row) s.key,
+      };
+      expect(
+        mainKeys.contains(LogicalKeyboardKey.arrowUp),
+        isFalse,
+        reason: 'arrow keys moved to the nav cluster block',
+      );
+      expect(
+        mainKeys.contains(LogicalKeyboardKey.home),
+        isFalse,
+        reason: 'Home moved to the nav cluster block',
+      );
+    },
+  );
 
   test('every main row conserves flex == kAnsiMainRowFlex (rectangular)', () {
     for (final List<KeyboardKeySpec> row in rows) {
-      expect(flexOf(row), kAnsiMainRowFlex,
-          reason: 'each ANSI row must span exactly 15 units');
+      expect(
+        flexOf(row),
+        kAnsiMainRowFlex,
+        reason: 'each ANSI row must span exactly 15 units',
+      );
     }
     expect(kAnsiMainRowFlex, 15);
   });
@@ -54,8 +65,11 @@ void main() {
     final List<String> fLabels = labelsOf(rows[0]).split('');
     expect(rows[0].first.key, LogicalKeyboardKey.escape);
     for (int n = 1; n <= 12; n++) {
-      expect(labelsOf(rows[0]).contains('F$n'), isTrue,
-          reason: 'function row must contain F$n');
+      expect(
+        labelsOf(rows[0]).contains('F$n'),
+        isTrue,
+        reason: 'function row must contain F$n',
+      );
     }
     expect(fLabels.isNotEmpty, isTrue);
   });
@@ -85,8 +99,9 @@ void main() {
         .map((KeyboardKeySpec s) => s.label)
         .toList();
     expect(modLabels, containsAll(<String>['Ctrl', 'Win', 'Alt']));
-    final KeyboardKeySpec space =
-        modRow.firstWhere((KeyboardKeySpec s) => s.label == 'Space');
+    final KeyboardKeySpec space = modRow.firstWhere(
+      (KeyboardKeySpec s) => s.label == 'Space',
+    );
     expect(space.kind, KeyCapKind.normal);
     expect(space.key, LogicalKeyboardKey.space);
   });
@@ -109,27 +124,30 @@ void main() {
     );
   });
 
-  test('nav cluster arrows form an inverted-T (Up alone, then Left/Down/Right)',
-      () {
-    final List<KeyboardKeySpec> upRow = nav[nav.length - 2];
-    final List<KeyboardKeySpec> lrdRow = nav[nav.length - 1];
-    final List<KeyboardKeySpec> upKeys =
-        upRow.where((KeyboardKeySpec s) => !s.isSpacer).toList();
-    expect(upKeys.length, 1);
-    expect(upKeys.single.key, LogicalKeyboardKey.arrowUp);
-    expect(upRow.first.isSpacer, isTrue);
-    expect(upRow.last.isSpacer, isTrue);
-    expect(labelsOf(lrdRow), 'LeftDownRight');
-    final List<LogicalKeyboardKey?> lrdKeys = lrdRow
-        .where((KeyboardKeySpec s) => !s.isSpacer)
-        .map((KeyboardKeySpec s) => s.key)
-        .toList();
-    expect(lrdKeys, <LogicalKeyboardKey>[
-      LogicalKeyboardKey.arrowLeft,
-      LogicalKeyboardKey.arrowDown,
-      LogicalKeyboardKey.arrowRight,
-    ]);
-  });
+  test(
+    'nav cluster arrows form an inverted-T (Up alone, then Left/Down/Right)',
+    () {
+      final List<KeyboardKeySpec> upRow = nav[nav.length - 2];
+      final List<KeyboardKeySpec> lrdRow = nav[nav.length - 1];
+      final List<KeyboardKeySpec> upKeys = upRow
+          .where((KeyboardKeySpec s) => !s.isSpacer)
+          .toList();
+      expect(upKeys.length, 1);
+      expect(upKeys.single.key, LogicalKeyboardKey.arrowUp);
+      expect(upRow.first.isSpacer, isTrue);
+      expect(upRow.last.isSpacer, isTrue);
+      expect(labelsOf(lrdRow), 'LeftDownRight');
+      final List<LogicalKeyboardKey?> lrdKeys = lrdRow
+          .where((KeyboardKeySpec s) => !s.isSpacer)
+          .map((KeyboardKeySpec s) => s.key)
+          .toList();
+      expect(lrdKeys, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowRight,
+      ]);
+    },
+  );
 
   test('spacer items carry no logical key and never bind', () {
     for (final List<KeyboardKeySpec> row in <List<KeyboardKeySpec>>[

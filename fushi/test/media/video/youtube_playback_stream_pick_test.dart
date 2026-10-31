@@ -198,8 +198,12 @@ void main() {
         const _FakeStream(480, 'avc1.640028'),
       ];
       final List<_FakeStream> out = _dedupe(streams);
-      expect(out.map((_FakeStream s) => s.height).toList(),
-          <int>[1080, 720, 480, 360]);
+      expect(out.map((_FakeStream s) => s.height).toList(), <int>[
+        1080,
+        720,
+        480,
+        360,
+      ]);
     });
 
     test('同高度多编码 → 每档取编码最优（avc1 胜 vp9/av01）', () {

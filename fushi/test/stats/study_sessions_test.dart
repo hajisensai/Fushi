@@ -90,8 +90,14 @@ void main() {
         _seg('a', start: 0, end: _min, ms: _min),
         _seg('b', key: 'b2', start: _min, end: 2 * _min, ms: _min),
         _seg('c', device: 'other', start: 2 * _min, end: 3 * _min, ms: _min),
-        _seg('d', kind: kActivityMediaVideo, key: 'b1', start: 3 * _min,
-            end: 4 * _min, ms: _min),
+        _seg(
+          'd',
+          kind: kActivityMediaVideo,
+          key: 'b1',
+          start: 3 * _min,
+          end: 4 * _min,
+          ms: _min,
+        ),
       ],
     );
     expect(out, hasLength(4));
@@ -109,8 +115,7 @@ void main() {
     expect(out.every((StudySession s) => !s.segmentUids.contains('z')), isTrue);
   });
 
-  test('游戏：骨架窗口之前的字数段不产出 0 分钟孤儿会话（kRecentGameSessionsLimit 截断）',
-      () {
+  test('游戏：骨架窗口之前的字数段不产出 0 分钟孤儿会话（kRecentGameSessionsLimit 截断）', () {
     // 调用方按 kRecentGameSessionsLimit=200 截断骨架，只传进来最近这一条。
     // 更早的那次游玩没有骨架行，它的 hook 字数段 durationMs 恒为 0：若掉进通用
     // 归并就是一条「0 分钟、只有字数」的假会话，用户翻过 200 条之后整片都是。
@@ -126,11 +131,23 @@ void main() {
     );
     final List<StudySession> out = deriveStudySessions(
       segments: <StudySegmentRow>[
-        _seg('inside', kind: kActivityMediaGame, key: 'g1', start: 110 * _min,
-            end: 120 * _min, chars: 500),
+        _seg(
+          'inside',
+          kind: kActivityMediaGame,
+          key: 'g1',
+          start: 110 * _min,
+          end: 120 * _min,
+          chars: 500,
+        ),
         // 骨架窗口之前：属于已被截断的更早那次游玩。
-        _seg('older', kind: kActivityMediaGame, key: 'g1', start: 10 * _min,
-            end: 20 * _min, chars: 700),
+        _seg(
+          'older',
+          kind: kActivityMediaGame,
+          key: 'g1',
+          start: 10 * _min,
+          end: 20 * _min,
+          chars: 700,
+        ),
       ],
       gameSessions: const <GalgameSessionRow>[recent],
     );
@@ -157,16 +174,40 @@ void main() {
     );
     final List<StudySession> out = deriveStudySessions(
       segments: <StudySegmentRow>[
-        _seg('h1', kind: kActivityMediaGame, key: 'g1', start: 5 * _min,
-            end: 30 * _min, chars: 800),
-        _seg('h2', kind: kActivityMediaGame, key: 'g1', start: 30 * _min,
-            end: 59 * _min, chars: 200),
+        _seg(
+          'h1',
+          kind: kActivityMediaGame,
+          key: 'g1',
+          start: 5 * _min,
+          end: 30 * _min,
+          chars: 800,
+        ),
+        _seg(
+          'h2',
+          kind: kActivityMediaGame,
+          key: 'g1',
+          start: 30 * _min,
+          end: 59 * _min,
+          chars: 200,
+        ),
         // 另一游戏、另一时间：不被吸收，自成会话。
-        _seg('h3', kind: kActivityMediaGame, key: 'g2', start: 0,
-            end: 10 * _min, chars: 50),
+        _seg(
+          'h3',
+          kind: kActivityMediaGame,
+          key: 'g2',
+          start: 0,
+          end: 10 * _min,
+          chars: 50,
+        ),
         // 同游戏但在游玩记录之后 2 小时：不相交，不被吸收。
-        _seg('h4', kind: kActivityMediaGame, key: 'g1', start: 180 * _min,
-            end: 190 * _min, chars: 30),
+        _seg(
+          'h4',
+          kind: kActivityMediaGame,
+          key: 'g1',
+          start: 180 * _min,
+          end: 190 * _min,
+          chars: 30,
+        ),
       ],
       gameSessions: const <GalgameSessionRow>[play],
       gameNamesById: const <String, String>{'g1': 'Clannad'},
@@ -278,18 +319,18 @@ void main() {
 
   group('StudySession.withEdit：sheet 里改完那行的展示副本', () {
     StudySession session() => StudySession(
-          mediaKind: kActivityMediaBook,
-          mediaKey: 'b1',
-          title: 'T',
-          format: 'epub',
-          deviceId: 'dev',
-          startAt: DateTime(2026, 9, 8, 10, 0).millisecondsSinceEpoch,
-          endAt: DateTime(2026, 9, 8, 11, 0).millisecondsSinceEpoch,
-          durationMs: 45 * _min,
-          chars: 1200,
-          pages: 3,
-          segmentUids: <String>['a', 'b'],
-        );
+      mediaKind: kActivityMediaBook,
+      mediaKey: 'b1',
+      title: 'T',
+      format: 'epub',
+      deviceId: 'dev',
+      startAt: DateTime(2026, 9, 8, 10, 0).millisecondsSinceEpoch,
+      endAt: DateTime(2026, 9, 8, 11, 0).millisecondsSinceEpoch,
+      durationMs: 45 * _min,
+      chars: 1200,
+      pages: 3,
+      segmentUids: <String>['a', 'b'],
+    );
 
     test('只改字数：总字数换掉，起止 / 时长 / 身份一个都不动', () {
       final StudySession out = session().withEdit(

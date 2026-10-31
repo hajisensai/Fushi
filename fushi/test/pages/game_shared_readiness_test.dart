@@ -51,9 +51,7 @@ void main() {
     test('无引擎的 WebSocket 会话维持原有无需选线程的监听语义', () {
       expect(
         galWorkbenchReadiness(
-          state: const GalHookSessionState(
-            phase: GalHookSessionPhase.running,
-          ),
+          state: const GalHookSessionState(phase: GalHookSessionPhase.running),
           hasEngineSource: false,
           selectedTextThreadKey: null,
         ),
@@ -91,15 +89,14 @@ void main() {
         int count = 2,
         bool shown = false,
         bool riskPending = false,
-      }) =>
-          shouldPromptGalCaptureSetup(
-            state: launched,
-            hasEngineSource: true,
-            selectedTextThreadKey: selected,
-            textThreadCount: count,
-            sessionAlreadyPrompted: shown,
-            lookupRiskAcceptancePending: riskPending,
-          );
+      }) => shouldPromptGalCaptureSetup(
+        state: launched,
+        hasEngineSource: true,
+        selectedTextThreadKey: selected,
+        textThreadCount: count,
+        sessionAlreadyPrompted: shown,
+        lookupRiskAcceptancePending: riskPending,
+      );
 
       expect(prompt(count: 0), isFalse);
       expect(prompt(selected: 'pid:thread:hook'), isFalse);
@@ -147,10 +144,7 @@ void main() {
         texthooker,
         '_buildMonitorBody',
       )!;
-      expect(
-        containsIdentifierCall(monitor, 'galWorkbenchReadiness'),
-        isTrue,
-      );
+      expect(containsIdentifierCall(monitor, 'galWorkbenchReadiness'), isTrue);
       expect(
         RegExp(
           r'readiness\s*==\s*GalWorkbenchReadiness\.waitingForThread\s*'
@@ -202,10 +196,7 @@ void main() {
         what: '_SessionOverviewCard 类体',
       );
       final String overviewBuild = topLevelFunctionBody(overview, 'build')!;
-      expect(
-        containsIdentifier(overviewBuild, 'waitingForThread'),
-        isTrue,
-      );
+      expect(containsIdentifier(overviewBuild, 'waitingForThread'), isTrue);
       expect(
         containsIdentifier(overviewBuild, 'game_session_waiting_thread'),
         isTrue,
@@ -231,14 +222,11 @@ void main() {
 
     test('游戏库状态带必须消费同一 readiness', () {
       final String library = topLevelFunctionBody(homeGame, '_buildLibrary')!;
+      expect(containsIdentifierCall(library, 'galWorkbenchReadiness'), isTrue);
       expect(
-        containsIdentifierCall(library, 'galWorkbenchReadiness'),
-        isTrue,
-      );
-      expect(
-        RegExp(r'readiness:\s*readiness').hasMatch(
-          maskCommentsAndStrings(library),
-        ),
+        RegExp(
+          r'readiness:\s*readiness',
+        ).hasMatch(maskCommentsAndStrings(library)),
         isTrue,
       );
 

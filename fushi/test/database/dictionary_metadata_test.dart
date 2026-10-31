@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -75,23 +75,24 @@ void main() {
 
   group('DictionaryHistory table', () {
     test(
-        'replaceAllDictionaryHistory inserts and getAllDictionaryHistory reads',
-        () async {
-      final db = await _openDb();
-      await db.replaceAllDictionaryHistory([
-        DictionaryHistoryCompanion.insert(
-          position: 0,
-          resultJson: '{"word":"猫"}',
-        ),
-        DictionaryHistoryCompanion.insert(
-          position: 1,
-          resultJson: '{"word":"犬"}',
-        ),
-      ]);
+      'replaceAllDictionaryHistory inserts and getAllDictionaryHistory reads',
+      () async {
+        final db = await _openDb();
+        await db.replaceAllDictionaryHistory([
+          DictionaryHistoryCompanion.insert(
+            position: 0,
+            resultJson: '{"word":"猫"}',
+          ),
+          DictionaryHistoryCompanion.insert(
+            position: 1,
+            resultJson: '{"word":"犬"}',
+          ),
+        ]);
 
-      final all = await db.getAllDictionaryHistory();
-      expect(all, hasLength(2));
-    });
+        final all = await db.getAllDictionaryHistory();
+        expect(all, hasLength(2));
+      },
+    );
 
     test('replaceAll clears old entries first', () async {
       final db = await _openDb();
@@ -117,10 +118,7 @@ void main() {
     test('clearDictionaryHistory removes all entries', () async {
       final db = await _openDb();
       await db.replaceAllDictionaryHistory([
-        DictionaryHistoryCompanion.insert(
-          position: 0,
-          resultJson: '{}',
-        ),
+        DictionaryHistoryCompanion.insert(position: 0, resultJson: '{}'),
       ]);
 
       await db.clearDictionaryHistory();

@@ -138,23 +138,23 @@ class HostSubscriptionCreate {
   final String? subtitlePolicy;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'title': title,
-        'searchQuery': searchQuery,
-        'mediaKind': mediaKind,
-        'resourceProvider': resourceProvider,
-        if (subscriptionId != null) 'subscriptionId': subscriptionId,
-        if (mode != null) 'mode': mode,
-        if (identityJson != null) 'identityJson': identityJson,
-        if (metadataProvider != null) 'metadataProvider': metadataProvider,
-        if (externalId != null) 'externalId': externalId,
-        if (discoveryCategory != null) 'discoveryCategory': discoveryCategory,
-        if (year != null) 'year': year,
-        if (season != null) 'season': season,
-        if (coverUrl != null) 'coverUrl': coverUrl,
-        if (filterJson != null) 'filterJson': filterJson,
-        if (startAfterEpisode != null) 'startAfterEpisode': startAfterEpisode,
-        if (subtitlePolicy != null) 'subtitlePolicy': subtitlePolicy,
-      };
+    'title': title,
+    'searchQuery': searchQuery,
+    'mediaKind': mediaKind,
+    'resourceProvider': resourceProvider,
+    if (subscriptionId != null) 'subscriptionId': subscriptionId,
+    if (mode != null) 'mode': mode,
+    if (identityJson != null) 'identityJson': identityJson,
+    if (metadataProvider != null) 'metadataProvider': metadataProvider,
+    if (externalId != null) 'externalId': externalId,
+    if (discoveryCategory != null) 'discoveryCategory': discoveryCategory,
+    if (year != null) 'year': year,
+    if (season != null) 'season': season,
+    if (coverUrl != null) 'coverUrl': coverUrl,
+    if (filterJson != null) 'filterJson': filterJson,
+    if (startAfterEpisode != null) 'startAfterEpisode': startAfterEpisode,
+    if (subtitlePolicy != null) 'subtitlePolicy': subtitlePolicy,
+  };
 }
 
 class HostSubscriptionException implements Exception {
@@ -176,11 +176,11 @@ class InterconnectSubscriptionClient {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
-        _probeTimeout = probeTimeout,
-        _requestTimeout = requestTimeout;
+  }) : _repo = repo,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probeTimeout = probeTimeout,
+       _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -203,10 +203,14 @@ class InterconnectSubscriptionClient {
     );
     final String? fallbackToken = await _repo.getFushiClientToken();
     final List<HostSubscriptionTarget> targets = <HostSubscriptionTarget>[];
-    for (final List<FushiClientUrl> host in groupInterconnectPeers(candidates)) {
+    for (final List<FushiClientUrl> host in groupInterconnectPeers(
+      candidates,
+    )) {
       for (final FushiClientUrl candidate in host) {
-        final HostSubscriptionTarget? target =
-            await _probeCandidate(candidate, fallbackToken);
+        final HostSubscriptionTarget? target = await _probeCandidate(
+          candidate,
+          fallbackToken,
+        );
         if (target == null) continue;
         targets.add(target);
         break;
@@ -241,9 +245,7 @@ class InterconnectSubscriptionClient {
         deviceName: candidate.deviceName,
         backend: (subs['backend'] ?? '').toString(),
         providers: providers is List
-            ? providers
-                .map((dynamic e) => e.toString())
-                .toList(growable: false)
+            ? providers.map((dynamic e) => e.toString()).toList(growable: false)
             : const <String>[],
         fingerprintSha256: candidate.fingerprintSha256,
       );
@@ -270,8 +272,11 @@ class InterconnectSubscriptionClient {
   }
 
   Future<List<HostSubscription>> list(HostSubscriptionTarget target) async {
-    final Map<String, dynamic> body =
-        await _call(target, 'GET', '/api/subscriptions');
+    final Map<String, dynamic> body = await _call(
+      target,
+      'GET',
+      '/api/subscriptions',
+    );
     final List<dynamic> rows =
         body['subscriptions'] as List<dynamic>? ?? const <dynamic>[];
     return rows
@@ -284,23 +289,23 @@ class InterconnectSubscriptionClient {
     HostSubscriptionTarget target,
     String subscriptionId,
     bool enabled,
-  ) =>
-      _call(
-        target,
-        'POST',
-        '/api/subscriptions/${Uri.encodeComponent(subscriptionId)}/enable',
-        jsonBody: <String, Object?>{'enabled': enabled},
-      );
+  ) => _call(
+    target,
+    'POST',
+    '/api/subscriptions/${Uri.encodeComponent(subscriptionId)}/enable',
+    jsonBody: <String, Object?>{'enabled': enabled},
+  );
 
   Future<void> checkNow(
-          HostSubscriptionTarget target, String? subscriptionId) =>
-      _call(
-        target,
-        'POST',
-        subscriptionId == null
-            ? '/api/subscriptions/check'
-            : '/api/subscriptions/${Uri.encodeComponent(subscriptionId)}/check',
-      );
+    HostSubscriptionTarget target,
+    String? subscriptionId,
+  ) => _call(
+    target,
+    'POST',
+    subscriptionId == null
+        ? '/api/subscriptions/check'
+        : '/api/subscriptions/${Uri.encodeComponent(subscriptionId)}/check',
+  );
 
   Future<void> delete(HostSubscriptionTarget target, String subscriptionId) =>
       _call(
@@ -358,8 +363,9 @@ class InterconnectSubscriptionClient {
           reason,
         );
       }
-      final dynamic decoded =
-          text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+      final dynamic decoded = text.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(text);
       if (decoded is! Map) return <String, dynamic>{};
       return Map<String, dynamic>.from(decoded);
     } finally {
@@ -381,12 +387,13 @@ class InterconnectSubscriptionClient {
   }
 
   Map<String, String> _headers(String token) => <String, String>{
-        'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-      };
+    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  };
 
   (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
     final Uri? base = _parse(baseUrl);
-    final bool usePinned = base != null &&
+    final bool usePinned =
+        base != null &&
         base.isScheme('https') &&
         fingerprint != null &&
         fingerprint.isNotEmpty;

@@ -52,28 +52,28 @@ void main() {
 
   /// 最小 PNG（1x1，真字节）——词典自带插图就长这样。
   List<int> onePixelPng() => <int>[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-        0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-        0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-        0x42, 0x60, 0x82,
-      ];
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+    0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+    0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
+  ];
 
   List<int> utf8Bytes(String text) => utf8.encode(text);
 
   /// 用**生产实参**跑分类：`isImageArchive` 就是两个对话框注入的那一个。
   ImportCarrier classifyWithRealPredicate(String path) => classifyImportCarrier(
-        path,
-        isDirectory: (String p) => Directory(p).existsSync(),
-        isImageArchive: MangaModule.isImageArchive,
-        directoryHasPageImages: MangaModule.directoryHasPageImages,
-        directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
-        directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
-      );
+    path,
+    isDirectory: (String p) => Directory(p).existsSync(),
+    isImageArchive: MangaModule.isImageArchive,
+    directoryHasPageImages: MangaModule.directoryHasPageImages,
+    directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+    directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
+  );
 
   test('自带插图的 Yomitan 词典 zip 不得被判成漫画载体', () {
     final String dictZip = writeZip('yomitan_dict.zip', <String, List<int>>{
@@ -90,11 +90,18 @@ void main() {
 
     final ImportCarrier carrier = classifyWithRealPredicate(dictZip);
 
-    expect(carrier.isManga, isFalse,
-        reason: '词典包一票否决必须优先于「有图片就算漫画」：判成漫画 = 词典没被导入，'
-            '还平白多出一本只有插图的垃圾漫画（4f9644db4 回归）');
-    expect(carrier, ImportCarrier.epub,
-        reason: '.zip 非图片包时落 epub 分支（与分家前 _importEpubOnly 的兜底一致）');
+    expect(
+      carrier.isManga,
+      isFalse,
+      reason:
+          '词典包一票否决必须优先于「有图片就算漫画」：判成漫画 = 词典没被导入，'
+          '还平白多出一本只有插图的垃圾漫画（4f9644db4 回归）',
+    );
+    expect(
+      carrier,
+      ImportCarrier.epub,
+      reason: '.zip 非图片包时落 epub 分支（与分家前 _importEpubOnly 的兜底一致）',
+    );
   });
 
   test('kanji_bank 形态的词典包同样被否决', () {
@@ -104,8 +111,11 @@ void main() {
       'img/stroke.png': onePixelPng(),
     });
 
-    expect(classifyWithRealPredicate(dictZip).isManga, isFalse,
-        reason: 'kanji_bank_ 也在 Yomitan 前缀集里，不能只认 term_bank_');
+    expect(
+      classifyWithRealPredicate(dictZip).isManga,
+      isFalse,
+      reason: 'kanji_bank_ 也在 Yomitan 前缀集里，不能只认 term_bank_',
+    );
   });
 
   test('反向用例：真页图 zip 仍判为漫画（否决判据不得误伤漫画）', () {
@@ -115,9 +125,13 @@ void main() {
       '003.png': onePixelPng(),
     });
 
-    expect(classifyWithRealPredicate(mangaZip), ImportCarrier.mangaArchive,
-        reason: '没有 index.json + bank 的纯页图包就是漫画——否决判据必须精确，'
-            '否则「拖图包 zip 到书架仍要能导成漫画」这条红线会被误伤');
+    expect(
+      classifyWithRealPredicate(mangaZip),
+      ImportCarrier.mangaArchive,
+      reason:
+          '没有 index.json + bank 的纯页图包就是漫画——否决判据必须精确，'
+          '否则「拖图包 zip 到书架仍要能导成漫画」这条红线会被误伤',
+    );
   });
 
   test('只有 index.json 而没有 bank 的 zip 不算词典（单有清单不足以否决）', () {
@@ -127,8 +141,12 @@ void main() {
       '002.png': onePixelPng(),
     });
 
-    expect(classifyWithRealPredicate(zip), ImportCarrier.mangaArchive,
-        reason: '打包工具随手生成的清单也叫 index.json，bank 前缀才是 Yomitan 指纹；'
-            '只认 index.json 会把普通图包误判成词典而拒绝导入');
+    expect(
+      classifyWithRealPredicate(zip),
+      ImportCarrier.mangaArchive,
+      reason:
+          '打包工具随手生成的清单也叫 index.json，bank 前缀才是 Yomitan 指纹；'
+          '只认 index.json 会把普通图包误判成词典而拒绝导入',
+    );
   });
 }

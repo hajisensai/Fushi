@@ -107,48 +107,54 @@ void main() {
   // HBK-AUDIT-198：竖排跨列时两球的 y 顺序与选区起止**相反**（起点在右列中部、终点在下一列
   // 顶部）。按"所有球的全局 top"判断会把"末端球贴页顶"误判成头部上方没空间，于是白白翻到
   // 下方（曾输出 y=324）。按逐个球的边生成候选后，起点球上方（y=180）就是合法解。
-  test('cross-column vertical selection does not flip below on a far-end grip', () {
-    const Size crossScreen = Size(400, 700);
-    const Size crossBar = Size(384, 48);
-    const Rect selection = Rect.fromLTWH(300, 260, 24, 24);
-    const List<Rect> grips = <Rect>[
-      Rect.fromLTWH(296, 236, 32, 32),
-      Rect.fromLTWH(216, 56, 32, 32),
-    ];
-    final Offset result = const ReaderSelectionToolbarLayout(
-      selectionRect: selection,
-      gripBoxes: grips,
-    ).getPositionForChild(crossScreen, crossBar);
-    expect(result.dy, 180, reason: '起点球上方是合法位置，不得因末端球贴页顶就翻到下方');
-    final Rect placed = result & crossBar;
-    expect(placed.overlaps(selection), isFalse);
-    for (final Rect grip in grips) {
-      expect(placed.overlaps(grip), isFalse);
-    }
-  });
+  test(
+    'cross-column vertical selection does not flip below on a far-end grip',
+    () {
+      const Size crossScreen = Size(400, 700);
+      const Size crossBar = Size(384, 48);
+      const Rect selection = Rect.fromLTWH(300, 260, 24, 24);
+      const List<Rect> grips = <Rect>[
+        Rect.fromLTWH(296, 236, 32, 32),
+        Rect.fromLTWH(216, 56, 32, 32),
+      ];
+      final Offset result = const ReaderSelectionToolbarLayout(
+        selectionRect: selection,
+        gripBoxes: grips,
+      ).getPositionForChild(crossScreen, crossBar);
+      expect(result.dy, 180, reason: '起点球上方是合法位置，不得因末端球贴页顶就翻到下方');
+      final Rect placed = result & crossBar;
+      expect(placed.overlaps(selection), isFalse);
+      for (final Rect grip in grips) {
+        expect(placed.overlaps(grip), isFalse);
+      }
+    },
+  );
 
   // HBK-AUDIT-199：矮视口（400×180）下首选下方位置撞末球、clamp 又会把条压回球上（曾输出
   // y=124，与末球 104..136 重叠 12px）。现在候选里就有合法空隙（两球之间 y=40），且最终
   // 位置还要通过碰撞复验。
-  test('short viewport uses the legal gap between grips, not a clamped overlap', () {
-    const Size shortScreen = Size(400, 180);
-    const Size shortBar = Size(384, 48);
-    const Rect selection = Rect.fromLTWH(350, 0, 24, 24);
-    const List<Rect> grips = <Rect>[
-      Rect.fromLTWH(346, 0, 32, 32),
-      Rect.fromLTWH(306, 104, 32, 32),
-    ];
-    final Offset result = const ReaderSelectionToolbarLayout(
-      selectionRect: selection,
-      gripBoxes: grips,
-    ).getPositionForChild(shortScreen, shortBar);
-    expect(result.dy, 40, reason: '两球之间存在合法空隙，必须选它而不是 clamp 后的压球位置');
-    final Rect placed = result & shortBar;
-    expect(placed.overlaps(selection), isFalse);
-    for (final Rect grip in grips) {
-      expect(placed.overlaps(grip), isFalse);
-    }
-  });
+  test(
+    'short viewport uses the legal gap between grips, not a clamped overlap',
+    () {
+      const Size shortScreen = Size(400, 180);
+      const Size shortBar = Size(384, 48);
+      const Rect selection = Rect.fromLTWH(350, 0, 24, 24);
+      const List<Rect> grips = <Rect>[
+        Rect.fromLTWH(346, 0, 32, 32),
+        Rect.fromLTWH(306, 104, 32, 32),
+      ];
+      final Offset result = const ReaderSelectionToolbarLayout(
+        selectionRect: selection,
+        gripBoxes: grips,
+      ).getPositionForChild(shortScreen, shortBar);
+      expect(result.dy, 40, reason: '两球之间存在合法空隙，必须选它而不是 clamp 后的压球位置');
+      final Rect placed = result & shortBar;
+      expect(placed.overlaps(selection), isFalse);
+      for (final Rect grip in grips) {
+        expect(placed.overlaps(grip), isFalse);
+      }
+    },
+  );
 
   for (final double scale in <double>[1, 1.5]) {
     testWidgets(

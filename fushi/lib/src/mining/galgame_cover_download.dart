@@ -53,8 +53,11 @@ bool shouldDownloadExplicitScrapedCover({required String? coverUrl}) {
 /// 数是 JPEG；解码按内容嗅探，后缀只是文件名）。`.jpeg` 统一归一成 `.jpg`，与
 /// `saveGameCoverFromFile` 的归一化一致。
 String galgameCoverExtension({required String url, String? contentType}) {
-  final String normalizedType =
-      (contentType ?? '').split(';').first.trim().toLowerCase();
+  final String normalizedType = (contentType ?? '')
+      .split(';')
+      .first
+      .trim()
+      .toLowerCase();
   const Map<String, String> byContentType = <String, String>{
     'image/png': '.png',
     'image/jpeg': '.jpg',
@@ -69,8 +72,9 @@ String galgameCoverExtension({required String url, String? contentType}) {
     final String path = uri.path.toLowerCase();
     final int dot = path.lastIndexOf('.');
     if (dot >= 0) {
-      final String ext =
-          path.substring(dot) == '.jpeg' ? '.jpg' : path.substring(dot);
+      final String ext = path.substring(dot) == '.jpeg'
+          ? '.jpg'
+          : path.substring(dot);
       if (kGameCoverImageExtensions.contains(ext)) return ext;
     }
   }
@@ -115,15 +119,18 @@ Future<String?> downloadGalgameCoverToFile({
     await for (final List<int> chunk in response) {
       builder.add(chunk);
       if (builder.length > kGalgameCoverMaxDownloadBytes) {
-        debugPrint('[galgame] cover download too large (> '
-            '$kGalgameCoverMaxDownloadBytes bytes): $url');
+        debugPrint(
+          '[galgame] cover download too large (> '
+          '$kGalgameCoverMaxDownloadBytes bytes): $url',
+        );
         return null;
       }
     }
     final Uint8List bytes = builder.takeBytes();
     if (bytes.length < kGalgameCoverMinDownloadBytes) {
       debugPrint(
-          '[galgame] cover download too small (${bytes.length} bytes): $url');
+        '[galgame] cover download too small (${bytes.length} bytes): $url',
+      );
       return null;
     }
     return await saveGameCoverBytes(

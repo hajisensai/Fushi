@@ -71,13 +71,15 @@ void main() {
       final DateTime monday = DateTime(2026, 8, 3);
       final AniListAiringEpisode late1 = _episode(1, DateTime(2026, 8, 3, 22));
       final AniListAiringEpisode early = _episode(2, DateTime(2026, 8, 3, 9));
-      final AniListAiringEpisode sunday =
-          _episode(3, DateTime(2026, 8, 9, 23, 30));
+      final AniListAiringEpisode sunday = _episode(
+        3,
+        DateTime(2026, 8, 9, 23, 30),
+      );
       final List<List<AniListAiringEpisode>> buckets =
           groupEpisodesByLocalWeekday(
-        episodes: <AniListAiringEpisode>[late1, early, sunday],
-        weekStartLocal: monday,
-      );
+            episodes: <AniListAiringEpisode>[late1, early, sunday],
+            weekStartLocal: monday,
+          );
       expect(buckets, hasLength(7));
       expect(
         buckets[0].map((AniListAiringEpisode e) => e.mediaId).toList(),
@@ -91,15 +93,19 @@ void main() {
 
     test('drops entries outside the 7-day window', () {
       final DateTime monday = DateTime(2026, 8, 3);
-      final AniListAiringEpisode before =
-          _episode(1, DateTime(2026, 8, 2, 23, 59));
-      final AniListAiringEpisode after =
-          _episode(2, DateTime(2026, 8, 10, 0, 1));
+      final AniListAiringEpisode before = _episode(
+        1,
+        DateTime(2026, 8, 2, 23, 59),
+      );
+      final AniListAiringEpisode after = _episode(
+        2,
+        DateTime(2026, 8, 10, 0, 1),
+      );
       final List<List<AniListAiringEpisode>> buckets =
           groupEpisodesByLocalWeekday(
-        episodes: <AniListAiringEpisode>[before, after],
-        weekStartLocal: monday,
-      );
+            episodes: <AniListAiringEpisode>[before, after],
+            weekStartLocal: monday,
+          );
       expect(buckets.expand((List<AniListAiringEpisode> b) => b), isEmpty);
     });
   });

@@ -23,7 +23,8 @@ String _debugManifestJson({
     'channel': 'debug',
     'prerelease': true,
     'notes': 'debug build $version',
-    'assets': assets ??
+    'assets':
+        assets ??
         <Map<String, dynamic>>[
           <String, dynamic>{
             'name': 'fushi-$version-abc1234-debug.apk',
@@ -43,33 +44,38 @@ const String _kInstalled = '0.11.1-debug.5613';
 
 void main() {
   group('debug update-prompt chain (manifest -> selection)', () {
-    test('higher manifest seq (5614 > installed 5613) yields a newer selection',
-        () async {
-      final Map<String, dynamic>? release = buildReleaseFromManifest(
-        _debugManifestJson(
-          tag: 'v0.11.1-debug.5614+abc1234',
-          version: '0.11.1-debug.5614',
-        ),
-      );
-      expect(release, isNotNull,
-          reason: 'a well-formed debug manifest must rebuild into a release');
-      expect(release!['tag_name'], 'v0.11.1-debug.5614+abc1234');
+    test(
+      'higher manifest seq (5614 > installed 5613) yields a newer selection',
+      () async {
+        final Map<String, dynamic>? release = buildReleaseFromManifest(
+          _debugManifestJson(
+            tag: 'v0.11.1-debug.5614+abc1234',
+            version: '0.11.1-debug.5614',
+          ),
+        );
+        expect(
+          release,
+          isNotNull,
+          reason: 'a well-formed debug manifest must rebuild into a release',
+        );
+        expect(release!['tag_name'], 'v0.11.1-debug.5614+abc1234');
 
-      final UpdateReleaseSelection? selected =
-          await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[release],
-        currentVersion: _kInstalled,
-        channel: UpdateChannel.debug,
-        updater: WindowsUpdater(),
-      );
+        final UpdateReleaseSelection? selected =
+            await selectUpdateReleaseForCurrentPlatform(
+              <Map<String, dynamic>>[release],
+              currentVersion: _kInstalled,
+              channel: UpdateChannel.debug,
+              updater: WindowsUpdater(),
+            );
 
-      expect(selected, isNotNull, reason: '有更新时链路必须返回非空 selection（即会提示）');
-      expect(selected!.version, '0.11.1-debug.5614');
-      expect(
-        selected.downloadUrl,
-        'https://github.com/hajisensai/hibiki/releases/download/v0.11.1-debug.5614+abc1234/fushi-0.11.1-debug.5614-windows-setup.exe',
-      );
-    });
+        expect(selected, isNotNull, reason: '有更新时链路必须返回非空 selection（即会提示）');
+        expect(selected!.version, '0.11.1-debug.5614');
+        expect(
+          selected.downloadUrl,
+          'https://github.com/hajisensai/hibiki/releases/download/v0.11.1-debug.5614+abc1234/fushi-0.11.1-debug.5614-windows-setup.exe',
+        );
+      },
+    );
 
     test('isUpdateVersionNewer: 5614 over installed 5613 is newer', () {
       expect(
@@ -82,34 +88,36 @@ void main() {
       );
     });
 
-    test('same seq (manifest 5613 == installed 5613) is NOT newer -> no prompt',
-        () async {
-      expect(
-        isUpdateVersionNewer(
-          '0.11.1-debug.5613',
-          _kInstalled,
-          UpdateChannel.debug,
-        ),
-        isFalse,
-        reason: '本机已是最新时不得判定为有更新',
-      );
+    test(
+      'same seq (manifest 5613 == installed 5613) is NOT newer -> no prompt',
+      () async {
+        expect(
+          isUpdateVersionNewer(
+            '0.11.1-debug.5613',
+            _kInstalled,
+            UpdateChannel.debug,
+          ),
+          isFalse,
+          reason: '本机已是最新时不得判定为有更新',
+        );
 
-      // 即便 manifest 也是同序号 5613，选择链也不得产出 selection。
-      final Map<String, dynamic> release = buildReleaseFromManifest(
-        _debugManifestJson(
-          tag: 'v0.11.1-debug.5613+abc1234',
-          version: '0.11.1-debug.5613',
-        ),
-      )!;
-      final UpdateReleaseSelection? selected =
-          await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[release],
-        currentVersion: _kInstalled,
-        channel: UpdateChannel.debug,
-        updater: WindowsUpdater(),
-      );
-      expect(selected, isNull, reason: '同序号时链路不得返回 selection（即不弹）');
-    });
+        // 即便 manifest 也是同序号 5613，选择链也不得产出 selection。
+        final Map<String, dynamic> release = buildReleaseFromManifest(
+          _debugManifestJson(
+            tag: 'v0.11.1-debug.5613+abc1234',
+            version: '0.11.1-debug.5613',
+          ),
+        )!;
+        final UpdateReleaseSelection? selected =
+            await selectUpdateReleaseForCurrentPlatform(
+              <Map<String, dynamic>>[release],
+              currentVersion: _kInstalled,
+              channel: UpdateChannel.debug,
+              updater: WindowsUpdater(),
+            );
+        expect(selected, isNull, reason: '同序号时链路不得返回 selection（即不弹）');
+      },
+    );
   });
 
   // TODO-1049：debug 通道改为「单一滚动 GitHub Release」（固定 tag `debug-rolling`），
@@ -119,13 +127,9 @@ void main() {
   //   * 资产 `browser_download_url` 指向 `releases/download/debug-rolling/<name>`（滚动 tag）。
   // 本组守卫「客户端对下载 URL 里的 tag 段完全无感」这一契约：只要版本化 `tag` 递进就判更新，
   // 且下载 URL 原样透传（不从 URL 反解 tag），滚动 tag 不破坏任何既有行为。
-  group(
-      'rolling debug release: versioned tag vs debug-rolling download URL '
+  group('rolling debug release: versioned tag vs debug-rolling download URL '
       '(TODO-1049)', () {
-    String rollingManifestJson({
-      required String tag,
-      required String version,
-    }) {
+    String rollingManifestJson({required String tag, required String version}) {
       // 关键：assets 的下载 URL 用固定滚动 tag `debug-rolling`，而 manifest.tag 用
       // 版本化 tag —— 正是 publish_update_manifest.sh 的 DOWNLOAD_TAG 解耦产物。
       return _debugManifestJson(
@@ -146,51 +150,55 @@ void main() {
       );
     }
 
-    test('higher seq still prompts; download URL uses debug-rolling verbatim',
-        () async {
-      final Map<String, dynamic>? release = buildReleaseFromManifest(
-        rollingManifestJson(
-          tag: 'v0.11.1-debug.5614+abc1234',
-          version: '0.11.1-debug.5614',
-        ),
-      );
-      expect(release, isNotNull);
-      // 版本比较仍走版本化 tag（含 seq），与滚动下载 tag 无关。
-      expect(release!['tag_name'], 'v0.11.1-debug.5614+abc1234');
+    test(
+      'higher seq still prompts; download URL uses debug-rolling verbatim',
+      () async {
+        final Map<String, dynamic>? release = buildReleaseFromManifest(
+          rollingManifestJson(
+            tag: 'v0.11.1-debug.5614+abc1234',
+            version: '0.11.1-debug.5614',
+          ),
+        );
+        expect(release, isNotNull);
+        // 版本比较仍走版本化 tag（含 seq），与滚动下载 tag 无关。
+        expect(release!['tag_name'], 'v0.11.1-debug.5614+abc1234');
 
-      final UpdateReleaseSelection? selected =
-          await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[release],
-        currentVersion: _kInstalled,
-        channel: UpdateChannel.debug,
-        updater: WindowsUpdater(),
-      );
+        final UpdateReleaseSelection? selected =
+            await selectUpdateReleaseForCurrentPlatform(
+              <Map<String, dynamic>>[release],
+              currentVersion: _kInstalled,
+              channel: UpdateChannel.debug,
+              updater: WindowsUpdater(),
+            );
 
-      expect(selected, isNotNull, reason: 'seq 5614 > 5613：仍必须判为有更新');
-      expect(selected!.version, '0.11.1-debug.5614');
-      // 下载 URL 原样透传滚动 tag：客户端不从 URL 反解 tag，滚动 tag 不影响下载。
-      expect(
-        selected.downloadUrl,
-        'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-0.11.1-debug.5614-windows-setup.exe',
-      );
-    });
+        expect(selected, isNotNull, reason: 'seq 5614 > 5613：仍必须判为有更新');
+        expect(selected!.version, '0.11.1-debug.5614');
+        // 下载 URL 原样透传滚动 tag：客户端不从 URL 反解 tag，滚动 tag 不影响下载。
+        expect(
+          selected.downloadUrl,
+          'https://github.com/hajisensai/hibiki/releases/download/debug-rolling/fushi-0.11.1-debug.5614-windows-setup.exe',
+        );
+      },
+    );
 
-    test('same seq under a rolling download URL still yields no prompt',
-        () async {
-      final Map<String, dynamic> release = buildReleaseFromManifest(
-        rollingManifestJson(
-          tag: 'v0.11.1-debug.5613+abc1234',
-          version: '0.11.1-debug.5613',
-        ),
-      )!;
-      final UpdateReleaseSelection? selected =
-          await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[release],
-        currentVersion: _kInstalled,
-        channel: UpdateChannel.debug,
-        updater: WindowsUpdater(),
-      );
-      expect(selected, isNull, reason: '同 seq（即便下载 URL 是滚动 tag）也不得判为有更新');
-    });
+    test(
+      'same seq under a rolling download URL still yields no prompt',
+      () async {
+        final Map<String, dynamic> release = buildReleaseFromManifest(
+          rollingManifestJson(
+            tag: 'v0.11.1-debug.5613+abc1234',
+            version: '0.11.1-debug.5613',
+          ),
+        )!;
+        final UpdateReleaseSelection? selected =
+            await selectUpdateReleaseForCurrentPlatform(
+              <Map<String, dynamic>>[release],
+              currentVersion: _kInstalled,
+              channel: UpdateChannel.debug,
+              updater: WindowsUpdater(),
+            );
+        expect(selected, isNull, reason: '同 seq（即便下载 URL 是滚动 tag）也不得判为有更新');
+      },
+    );
   });
 }

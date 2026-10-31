@@ -15,14 +15,20 @@ import 'package:flutter_test/flutter_test.dart';
 /// 隔离），从来不经过 targetLanguage。
 void main() {
   test('AppModel 不再声明或访问 targetLanguage', () {
-    final String appModel =
-        File('lib/src/models/app_model.dart').readAsStringSync();
+    final String appModel = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
     // 钉具体形态而非任意出现（历史说明注释允许提到这个名字）。
     expect(
-      appModel.contains(RegExp(r'get\s+targetLanguage|targetLanguage\s*=>'
-          r'|\.targetLanguage\b|targetLanguage\.')),
+      appModel.contains(
+        RegExp(
+          r'get\s+targetLanguage|targetLanguage\s*=>'
+          r'|\.targetLanguage\b|targetLanguage\.',
+        ),
+      ),
       isFalse,
-      reason: '假抽象已删——日语专属功能直接用 JapaneseLanguage.instance，'
+      reason:
+          '假抽象已删——日语专属功能直接用 JapaneseLanguage.instance，'
           '别再引入恒定单值的 targetLanguage 间接层',
     );
   });

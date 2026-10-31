@@ -22,8 +22,11 @@ void main() {
         maxHeight: maxHeight,
       );
 
-      expect(rect.top, greaterThanOrEqualTo(glyph.bottom),
-          reason: '字在上部时弹窗应在字下方');
+      expect(
+        rect.top,
+        greaterThanOrEqualTo(glyph.bottom),
+        reason: '字在上部时弹窗应在字下方',
+      );
       // 不与被查字垂直重叠。
       expect(rect.top, greaterThanOrEqualTo(glyph.bottom));
       _expectInScreen(rect, screen);
@@ -39,28 +42,36 @@ void main() {
         maxHeight: maxHeight,
       );
 
-      expect(rect.bottom, lessThanOrEqualTo(glyph.top),
-          reason: '字在底部时弹窗应翻到字上方，不被屏幕底裁掉也不盖住字');
-      _expectInScreen(rect, screen);
-    });
-
-    test('whole subtitle window as avoid rect → card clears the whole strip',
-        () {
-      // TODO-708 P1 ⑥：避让锚是「整条字幕窗矩形」（超集，覆盖被查字与未点的其它字）。
-      // 字幕窗在屏幕中上部、下方空间充足 → 弹窗落在整条字幕窗下方，绝不与之垂直重叠，
-      // 即弹窗不遮字幕窗里任何一个字（含没点的）。
-      const Rect subtitleWindow = Rect.fromLTWH(20, 90, 360, 60);
-      final Rect rect = computeFloatingLyricPopupRect(
-        glyphRect: subtitleWindow,
-        screen: screen,
-        maxWidth: maxWidth,
-        maxHeight: maxHeight,
+      expect(
+        rect.bottom,
+        lessThanOrEqualTo(glyph.top),
+        reason: '字在底部时弹窗应翻到字上方，不被屏幕底裁掉也不盖住字',
       );
-
-      expect(rect.top, greaterThanOrEqualTo(subtitleWindow.bottom),
-          reason: '弹窗须落在整条字幕窗下方，不遮任一字');
       _expectInScreen(rect, screen);
     });
+
+    test(
+      'whole subtitle window as avoid rect → card clears the whole strip',
+      () {
+        // TODO-708 P1 ⑥：避让锚是「整条字幕窗矩形」（超集，覆盖被查字与未点的其它字）。
+        // 字幕窗在屏幕中上部、下方空间充足 → 弹窗落在整条字幕窗下方，绝不与之垂直重叠，
+        // 即弹窗不遮字幕窗里任何一个字（含没点的）。
+        const Rect subtitleWindow = Rect.fromLTWH(20, 90, 360, 60);
+        final Rect rect = computeFloatingLyricPopupRect(
+          glyphRect: subtitleWindow,
+          screen: screen,
+          maxWidth: maxWidth,
+          maxHeight: maxHeight,
+        );
+
+        expect(
+          rect.top,
+          greaterThanOrEqualTo(subtitleWindow.bottom),
+          reason: '弹窗须落在整条字幕窗下方，不遮任一字',
+        );
+        _expectInScreen(rect, screen);
+      },
+    );
 
     test('subtitle window near bottom → card flips above the whole strip', () {
       // 整条字幕窗贴屏幕底部：下方放不下 → 弹窗翻到整条字幕窗上方（仍不遮任一字）。
@@ -72,8 +83,11 @@ void main() {
         maxHeight: maxHeight,
       );
 
-      expect(rect.bottom, lessThanOrEqualTo(subtitleWindow.top),
-          reason: '底部字幕窗 → 弹窗翻到其上方，不遮任一字');
+      expect(
+        rect.bottom,
+        lessThanOrEqualTo(subtitleWindow.top),
+        reason: '底部字幕窗 → 弹窗翻到其上方，不遮任一字',
+      );
       _expectInScreen(rect, screen);
     });
 

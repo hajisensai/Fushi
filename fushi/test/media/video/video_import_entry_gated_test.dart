@@ -15,8 +15,9 @@ void main() {
   test('kVideoImportEnabled 常量存在且默认 false（入口隐藏）', () {
     final String flags = read('lib/src/media/video/video_feature_flags.dart');
     expect(
-      RegExp(r'const\s+bool\s+kVideoImportEnabled\s*=\s*false\s*;')
-          .hasMatch(flags),
+      RegExp(
+        r'const\s+bool\s+kVideoImportEnabled\s*=\s*false\s*;',
+      ).hasMatch(flags),
       isTrue,
       reason: 'kVideoImportEnabled 必须存在且默认 false，新导入入口才隐藏',
     );
@@ -26,14 +27,23 @@ void main() {
     final String page = readReaderHistorySource();
     // 门控条件出现，且其后紧跟视频导入入口（_openVideoImport）。
     final int gateAt = page.indexOf('if (kVideoImportEnabled)');
-    expect(gateAt, greaterThanOrEqualTo(0),
-        reason: '视频导入入口必须被 if (kVideoImportEnabled) 门控');
+    expect(
+      gateAt,
+      greaterThanOrEqualTo(0),
+      reason: '视频导入入口必须被 if (kVideoImportEnabled) 门控',
+    );
     final int entryAt = page.indexOf('onTap: _openVideoImport', gateAt);
-    expect(entryAt, greaterThan(gateAt),
-        reason: '_openVideoImport 入口必须落在 kVideoImportEnabled 门控之内');
+    expect(
+      entryAt,
+      greaterThan(gateAt),
+      reason: '_openVideoImport 入口必须落在 kVideoImportEnabled 门控之内',
+    );
     // 门控与入口之间不应再出现另一个 _headerAction(...) 闭合，防止门控套错了别的按钮。
     final String between = page.substring(gateAt, entryAt);
-    expect(between.contains('onTap:'), isFalse,
-        reason: '门控与视频入口之间不应夹着其他 action（确认门控的就是视频入口）');
+    expect(
+      between.contains('onTap:'),
+      isFalse,
+      reason: '门控与视频入口之间不应夹着其他 action（确认门控的就是视频入口）',
+    );
   });
 }

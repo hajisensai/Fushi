@@ -48,10 +48,11 @@ void main() {
     });
 
     test('ASCII 词按空白切分，罗马数字保留为独立 token', () {
-      expect(
-        TitleNormalizer.tokens('mushoku tensei ii'),
-        <String>['mushoku', 'tensei', 'ii'],
-      );
+      expect(TitleNormalizer.tokens('mushoku tensei ii'), <String>[
+        'mushoku',
+        'tensei',
+        'ii',
+      ]);
       expect(
         TitleNormalizer.tokens(TitleNormalizer.normalize('無職転生Ⅱ')),
         contains('ⅱ'),
@@ -63,7 +64,9 @@ void main() {
     test('繁简/大小写差异视为全同', () {
       expect(TitleNormalizer.similarity('無職転生', '无职转生'), 1.0);
       expect(
-          TitleNormalizer.similarity('Mushoku Tensei', 'mushoku tensei'), 1.0);
+        TitleNormalizer.similarity('Mushoku Tensei', 'mushoku tensei'),
+        1.0,
+      );
     });
 
     test('真实季度对给出显著高于无关标题的分数', () {
@@ -71,20 +74,14 @@ void main() {
         '无职转生 第三季',
         '无职转生Ⅲ～到了异世界就拿出真本事～',
       );
-      final double unrelated = TitleNormalizer.similarity(
-        '无职转生 第三季',
-        '孤独摇滚',
-      );
+      final double unrelated = TitleNormalizer.similarity('无职转生 第三季', '孤独摇滚');
       expect(related, greaterThan(0.25));
       expect(unrelated, lessThan(0.1));
       expect(related, greaterThan(unrelated + 0.15));
     });
 
     test('同系列不同季标题给出中高相似度', () {
-      expect(
-        TitleNormalizer.similarity('无职转生', '无职转生 第2季'),
-        greaterThan(0.6),
-      );
+      expect(TitleNormalizer.similarity('无职转生', '无职转生 第2季'), greaterThan(0.6));
     });
 
     test('少量错字仍保持高相似度（Levenshtein 兜底）', () {

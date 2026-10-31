@@ -42,50 +42,73 @@ void main() {
 
       // native 侧重启标志常量字面量必须与 Dart 侧一致。
       expect(
-        src.contains('constexpr wchar_t kRestartMarkerArg[] = '
-            'L"--fushi-restarted";'),
+        src.contains(
+          'constexpr wchar_t kRestartMarkerArg[] = '
+          'L"--fushi-restarted";',
+        ),
         isTrue,
-        reason: 'native runner must define the restart marker matching '
+        reason:
+            'native runner must define the restart marker matching '
             'DesktopLifecycleService.restartMarkerArg',
       );
 
       // 必须有「检测到已有实例 + 带重启标志 → 等待互斥量」的保护，并在取得所有权后
       // 把 another_instance 置回 false 继续启动（而不是直接前置旧窗口退出）。
-      expect(src.contains('HasRestartMarker()'), isTrue,
-          reason: 'runner must detect the restart marker in argv');
-      expect(src.contains('single_instance_mutex.Wait('), isTrue,
-          reason: 'runner must wait for the old instance to release the mutex '
-              'instead of bailing out on a restart');
+      expect(
+        src.contains('HasRestartMarker()'),
+        isTrue,
+        reason: 'runner must detect the restart marker in argv',
+      );
+      expect(
+        src.contains('single_instance_mutex.Wait('),
+        isTrue,
+        reason:
+            'runner must wait for the old instance to release the mutex '
+            'instead of bailing out on a restart',
+      );
       expect(
         src.contains('if (another_instance && HasRestartMarker())'),
         isTrue,
-        reason: 'the restart-marker wait must guard the single-instance bail '
+        reason:
+            'the restart-marker wait must guard the single-instance bail '
             'so an automatic restart can take over instead of exiting',
       );
 
       // 等待逻辑接受 WAIT_OBJECT_0 / WAIT_ABANDONED（旧进程释放或未释放就退出都算
       // 「旧实例已走、本进程接管」），并加超时上界避免永久卡死。
-      expect(mutex.contains('WAIT_ABANDONED'), isTrue,
-          reason: 'an abandoned mutex (old process exited without release) '
-              'must also count as taking over single-instance ownership');
-      expect(src.contains('single_instance_mutex.Wait(10000)'),
-          isTrue,
-          reason: 'the wait must be bounded so a stuck old process cannot hang '
-              'the restart forever');
+      expect(
+        mutex.contains('WAIT_ABANDONED'),
+        isTrue,
+        reason:
+            'an abandoned mutex (old process exited without release) '
+            'must also count as taking over single-instance ownership',
+      );
+      expect(
+        src.contains('single_instance_mutex.Wait(10000)'),
+        isTrue,
+        reason:
+            'the wait must be bounded so a stuck old process cannot hang '
+            'the restart forever',
+      );
     });
 
     test('restartApp 仍透传重启标志给新进程（等待逻辑的触发前提）', () {
-      final String src =
-          readSource('lib/src/platform/desktop/desktop_lifecycle_service.dart');
+      final String src = readSource(
+        'lib/src/platform/desktop/desktop_lifecycle_service.dart',
+      );
       final int start = src.indexOf('Future<void> restartApp(');
       expect(start, isNonNegative, reason: 'restartApp must exist');
       final int end = src.indexOf('\n  }', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
       // 新进程 argv 第一个就是 restartMarkerArg，runner 才能识别这是自动重启。
-      expect(body.contains('restartMarkerArg'), isTrue,
-          reason: 'the spawned process must carry the restart marker so the '
-              'native runner waits instead of treating it as a 2nd instance');
+      expect(
+        body.contains('restartMarkerArg'),
+        isTrue,
+        reason:
+            'the spawned process must carry the restart marker so the '
+            'native runner waits instead of treating it as a 2nd instance',
+      );
       expect(body.contains('ProcessStartMode.detached'), isTrue);
     });
   });

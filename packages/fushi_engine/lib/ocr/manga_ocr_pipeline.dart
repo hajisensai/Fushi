@@ -46,8 +46,8 @@ class OcrCancelledException implements Exception {
 
 /// 进度回调：completedPages 含缓存命中页；[pageIndex] 是刚完成的那一页的真实
 /// 页号（整卷任务按 `startPage` 旋转顺序跑，完成计数不再等于页号 + 1）。
-typedef OcrProgressCallback = void Function(
-    int completedPages, int totalPages, int pageIndex);
+typedef OcrProgressCallback =
+    void Function(int completedPages, int totalPages, int pageIndex);
 
 /// 整卷处理顺序：从 [startPage]（越界时夹到合法范围）起向后到末页，再绕回
 /// 0 补齐前面的页。阅读器从当前页开跑，读者眼前这页最先出结果——与 Lens /
@@ -70,8 +70,8 @@ List<int> mangaOcrPageOrder(int pageCount, int startPage) {
 /// 读者往前翻回去时也是「先那页、再往后接着跑」，已经处理过的页直接跳过。
 class MangaOcrPageScheduler {
   MangaOcrPageScheduler(this.pageCount, int startPage)
-      : _taken = List<bool>.filled(pageCount < 0 ? 0 : pageCount, false),
-        _cursor = pageCount <= 0 ? 0 : startPage.clamp(0, pageCount - 1);
+    : _taken = List<bool>.filled(pageCount < 0 ? 0 : pageCount, false),
+      _cursor = pageCount <= 0 ? 0 : startPage.clamp(0, pageCount - 1);
 
   final int pageCount;
   final List<bool> _taken;
@@ -312,9 +312,9 @@ class MangaOcrPipeline {
     this.cache,
     this.rightToLeft = true,
     OcrPageTextSweeper? sweeper,
-  })  : _detector = detector,
-        _recognizer = recognizer,
-        _sweeper = sweeper;
+  }) : _detector = detector,
+       _recognizer = recognizer,
+       _sweeper = sweeper;
 
   final OcrDetector _detector;
   final OcrRecognizer _recognizer;
@@ -351,8 +351,10 @@ class MangaOcrPipeline {
       pageCount,
       null,
     );
-    final MangaOcrPageScheduler scheduler =
-        MangaOcrPageScheduler(pageCount, startPage);
+    final MangaOcrPageScheduler scheduler = MangaOcrPageScheduler(
+      pageCount,
+      startPage,
+    );
     int completed = 0;
     while (true) {
       final int? focused = takeFocus?.call();
@@ -368,7 +370,8 @@ class MangaOcrPipeline {
         continue;
       }
       final img.Image image = await loadPage(page);
-      final OcrPageResult result = await _relayoutLegacyPage(
+      final OcrPageResult result =
+          await _relayoutLegacyPage(
             bookId: bookId,
             pageIndex: page,
             image: image,
@@ -470,8 +473,9 @@ class MangaOcrPipeline {
 
     final List<OcrBlock> blocks = <OcrBlock>[];
     final OcrRecognizer recognizer = _recognizer;
-    final int batchSize =
-        recognizer is BatchOcrRecognizer ? _recognitionBatchSize : 1;
+    final int batchSize = recognizer is BatchOcrRecognizer
+        ? _recognitionBatchSize
+        : 1;
     for (int start = 0; start < order.length; start += batchSize) {
       cancelToken?.throwIfCancelled();
       final int end = (start + batchSize).clamp(0, order.length);
@@ -544,10 +548,9 @@ class MangaOcrPipeline {
     if (swept.isEmpty) return blocks;
     final List<OcrBlock> all = <OcrBlock>[...blocks, ...swept];
     return <OcrBlock>[
-      for (final int index in computeReadingOrder(
-        <OcrRect>[for (final OcrBlock block in all) block.box],
-        rightToLeft: rightToLeft,
-      ))
+      for (final int index in computeReadingOrder(<OcrRect>[
+        for (final OcrBlock block in all) block.box,
+      ], rightToLeft: rightToLeft))
         all[index],
     ];
   }
@@ -567,8 +570,10 @@ class MangaOcrPipeline {
     }
     if (recognizer is ScoredOcrRecognizer &&
         recognizer is! BatchOcrRecognizer) {
-      final ScoredOcrText scored =
-          await recognizer.recognizeScored(image, boxes.single);
+      final ScoredOcrText scored = await recognizer.recognizeScored(
+        image,
+        boxes.single,
+      );
       return <OcrRecognition>[
         OcrRecognition(
           text: scored.text,

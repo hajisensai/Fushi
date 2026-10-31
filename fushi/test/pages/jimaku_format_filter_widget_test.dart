@@ -10,10 +10,8 @@ import 'package:fushi/utils.dart';
 /// 里断言；这里驱动真对话框，锁住三条 UI 契约：类型 chip 真渲染、点它真过滤列表、
 /// 只有一种类型时整区不出现（单选项筛选器是纯噪声）。
 void main() {
-  JimakuCandidate cand(String name) => JimakuCandidate(
-        entryName: 'Some Anime Series',
-        name: name,
-      );
+  JimakuCandidate cand(String name) =>
+      JimakuCandidate(entryName: 'Some Anime Series', name: name);
 
   Future<void> pumpDialog(
     WidgetTester tester,
@@ -27,21 +25,23 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: Builder(builder: (BuildContext ctx) {
-            return ElevatedButton(
-              onPressed: () => showDialog<String>(
-                context: ctx,
-                builder: (_) => JimakuSubtitleDialog(
-                  initialQuery: 'Some Anime',
-                  initialApiKey: 'TEST_KEY',
-                  onApiKeyChanged: (_) async {},
-                  saveDirectory: '/tmp/jimaku',
-                  debugInitialCandidates: candidates,
+          body: Builder(
+            builder: (BuildContext ctx) {
+              return ElevatedButton(
+                onPressed: () => showDialog<String>(
+                  context: ctx,
+                  builder: (_) => JimakuSubtitleDialog(
+                    initialQuery: 'Some Anime',
+                    initialApiKey: 'TEST_KEY',
+                    onApiKeyChanged: (_) async {},
+                    saveDirectory: '/tmp/jimaku',
+                    debugInitialCandidates: candidates,
+                  ),
                 ),
-              ),
-              child: const Text('open'),
-            );
-          }),
+                child: const Text('open'),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -59,9 +59,9 @@ void main() {
       .first;
 
   Finder formatChip(String label) => find.descendant(
-        of: formatSection(),
-        matching: find.widgetWithText(ChoiceChip, label),
-      );
+    of: formatSection(),
+    matching: find.widgetWithText(ChoiceChip, label),
+  );
 
   final List<JimakuCandidate> mixed = <JimakuCandidate>[
     cand('Show - 01.ja.srt'),
@@ -86,15 +86,21 @@ void main() {
 
     await tester.tap(formatChip('ASS'));
     await tester.pumpAndSettle();
-    expect(find.text('Show - 01.ja.srt'), findsNothing,
-        reason: '选了 ass 之后 srt 候选必须从列表里消失');
+    expect(
+      find.text('Show - 01.ja.srt'),
+      findsNothing,
+      reason: '选了 ass 之后 srt 候选必须从列表里消失',
+    );
     expect(find.text('Show - 01.ja.ass'), findsOneWidget);
     expect(find.text('Show - 02.ja.ass'), findsOneWidget);
 
     await tester.tap(formatChip(t.video_jimaku_format_all));
     await tester.pumpAndSettle();
-    expect(find.text('Show - 01.ja.srt'), findsOneWidget,
-        reason: '「全部」必须把被筛掉的候选放回来');
+    expect(
+      find.text('Show - 01.ja.srt'),
+      findsOneWidget,
+      reason: '「全部」必须把被筛掉的候选放回来',
+    );
   });
 
   testWidgets('只有一种类型时不渲染类型筛选区', (WidgetTester tester) async {
@@ -102,7 +108,10 @@ void main() {
       cand('Show - 01.ja.srt'),
       cand('Show - 02.ja.srt'),
     ]);
-    expect(find.text(t.video_jimaku_format), findsNothing,
-        reason: '所有候选都是同一种类型时，类型筛选器无从筛起，不该占版面');
+    expect(
+      find.text(t.video_jimaku_format),
+      findsNothing,
+      reason: '所有候选都是同一种类型时，类型筛选器无从筛起，不该占版面',
+    );
   });
 }

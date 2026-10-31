@@ -22,81 +22,85 @@ Map<String, Object?> _episodeJson({
   String id = 'ep1',
   int? positionTicks,
   List<Map<String, Object?>> subtitleStreams = const <Map<String, Object?>>[],
-}) =>
+}) => <String, Object?>{
+  'Id': id,
+  'Name': 'The Pilot',
+  'Type': 'Episode',
+  'SeriesName': 'Show A',
+  'ParentIndexNumber': 1,
+  'IndexNumber': 2,
+  'RunTimeTicks': 90 * 60 * 1000 * kTicksPerMs,
+  'ImageTags': <String, Object?>{'Primary': 'tag'},
+  'UserData': <String, Object?>{'PlaybackPositionTicks': positionTicks ?? 0},
+  'MediaSources': <Object?>[
     <String, Object?>{
-      'Id': id,
-      'Name': 'The Pilot',
-      'Type': 'Episode',
-      'SeriesName': 'Show A',
-      'ParentIndexNumber': 1,
-      'IndexNumber': 2,
-      'RunTimeTicks': 90 * 60 * 1000 * kTicksPerMs,
-      'ImageTags': <String, Object?>{'Primary': 'tag'},
-      'UserData': <String, Object?>{
-        'PlaybackPositionTicks': positionTicks ?? 0,
-      },
-      'MediaSources': <Object?>[
-        <String, Object?>{
-          'Id': 'src1',
-          'MediaStreams': <Object?>[
-            <String, Object?>{'Type': 'Video', 'Index': 0},
-            ...subtitleStreams,
-          ],
-        },
+      'Id': 'src1',
+      'MediaStreams': <Object?>[
+        <String, Object?>{'Type': 'Video', 'Index': 0},
+        ...subtitleStreams,
       ],
-    };
+    },
+  ],
+};
 
 void main() {
   group('JellyfinApi.normalizeServerUrl', () {
     test('补 scheme、去尾斜杠', () {
-      expect(JellyfinApi.normalizeServerUrl('nas.local:8096/'),
-          'http://nas.local:8096');
-      expect(JellyfinApi.normalizeServerUrl('https://jf.example.com//'),
-          'https://jf.example.com');
+      expect(
+        JellyfinApi.normalizeServerUrl('nas.local:8096/'),
+        'http://nas.local:8096',
+      );
+      expect(
+        JellyfinApi.normalizeServerUrl('https://jf.example.com//'),
+        'https://jf.example.com',
+      );
       expect(JellyfinApi.normalizeServerUrl('  '), '');
     });
   });
 
   group('解析（纯函数）', () {
     test('parseAuthResult 取令牌与用户 id', () {
-      final JellyfinAuthResult r =
-          JellyfinApi.parseAuthResult(<String, Object?>{
-        'AccessToken': 'tok',
-        'ServerName': 'NAS',
-        'User': <String, Object?>{'Id': 'u1'},
-      });
+      final JellyfinAuthResult r = JellyfinApi.parseAuthResult(
+        <String, Object?>{
+          'AccessToken': 'tok',
+          'ServerName': 'NAS',
+          'User': <String, Object?>{'Id': 'u1'},
+        },
+      );
       expect(r.accessToken, 'tok');
       expect(r.userId, 'u1');
       expect(r.serverName, 'NAS');
     });
 
     test('parseAuthResult：Emby 只在 User.ServerName 给服务器名时回落', () {
-      final JellyfinAuthResult r =
-          JellyfinApi.parseAuthResult(<String, Object?>{
-        'AccessToken': 'tok',
-        'ServerId': 'UHD',
-        'User': <String, Object?>{'Id': 'u1', 'ServerName': 'UHD'},
-      });
+      final JellyfinAuthResult r = JellyfinApi.parseAuthResult(
+        <String, Object?>{
+          'AccessToken': 'tok',
+          'ServerId': 'UHD',
+          'User': <String, Object?>{'Id': 'u1', 'ServerName': 'UHD'},
+        },
+      );
       expect(r.serverName, 'UHD');
     });
 
     test('parseViews 保留 collectionType；isVideoish 滤掉音乐/图书', () {
-      final List<JellyfinLibraryView> views =
-          JellyfinApi.parseViews(<String, Object?>{
-        'Items': <Object?>[
-          <String, Object?>{
-            'Id': 'v1',
-            'Name': '电影',
-            'CollectionType': 'movies'
-          },
-          <String, Object?>{
-            'Id': 'v2',
-            'Name': '音乐',
-            'CollectionType': 'music'
-          },
-          <String, Object?>{'Id': 'v3', 'Name': '混合'},
-        ],
-      });
+      final List<JellyfinLibraryView> views = JellyfinApi.parseViews(
+        <String, Object?>{
+          'Items': <Object?>[
+            <String, Object?>{
+              'Id': 'v1',
+              'Name': '电影',
+              'CollectionType': 'movies',
+            },
+            <String, Object?>{
+              'Id': 'v2',
+              'Name': '音乐',
+              'CollectionType': 'music',
+            },
+            <String, Object?>{'Id': 'v3', 'Name': '混合'},
+          ],
+        },
+      );
       expect(views, hasLength(3));
       expect(views[0].isVideoish, isTrue);
       expect(views[1].isVideoish, isFalse);
@@ -104,19 +108,21 @@ void main() {
     });
 
     test('parseItem：tick→ms、字幕流、单集展示标题', () {
-      final JellyfinItem item = JellyfinApi.parseItem(_episodeJson(
-        positionTicks: 5000 * kTicksPerMs,
-        subtitleStreams: <Map<String, Object?>>[
-          <String, Object?>{
-            'Type': 'Subtitle',
-            'Index': 2,
-            'Codec': 'subrip',
-            'Language': 'jpn',
-            'IsExternal': true,
-            'IsTextSubtitleStream': true,
-          },
-        ],
-      ));
+      final JellyfinItem item = JellyfinApi.parseItem(
+        _episodeJson(
+          positionTicks: 5000 * kTicksPerMs,
+          subtitleStreams: <Map<String, Object?>>[
+            <String, Object?>{
+              'Type': 'Subtitle',
+              'Index': 2,
+              'Codec': 'subrip',
+              'Language': 'jpn',
+              'IsExternal': true,
+              'IsTextSubtitleStream': true,
+            },
+          ],
+        ),
+      );
       expect(item.durationMs, 90 * 60 * 1000);
       expect(item.positionMs, 5000);
       expect(item.hasPrimaryImage, isTrue);
@@ -143,27 +149,36 @@ void main() {
         fail('expected JellyfinApiException');
       }
 
-      final JellyfinApiException denied = await failWith(http.Response.bytes(
-          utf8.encode('请使用群公告中允许的客户端进行访问'), 403));
+      final JellyfinApiException denied = await failWith(
+        http.Response.bytes(utf8.encode('请使用群公告中允许的客户端进行访问'), 403),
+      );
       expect(denied.statusCode, 403);
       expect(denied.isAccessDenied, isTrue);
       expect(denied.serverMessage, '请使用群公告中允许的客户端进行访问');
       expect(denied.toString(), contains('请使用群公告中允许的客户端进行访问'));
 
-      final JellyfinApiException json = await failWith(http.Response(
-          jsonEncode(<String, Object?>{'message': 'Forbidden client'}), 403));
+      final JellyfinApiException json = await failWith(
+        http.Response(
+          jsonEncode(<String, Object?>{'message': 'Forbidden client'}),
+          403,
+        ),
+      );
       expect(json.serverMessage, 'Forbidden client');
 
       final JellyfinApiException html = await failWith(
-          http.Response('<html><body>Cloudflare</body></html>', 403));
+        http.Response('<html><body>Cloudflare</body></html>', 403),
+      );
       expect(html.serverMessage, isNull);
       expect(html.toString(), 'JellyfinApiException(403, /System/Info/Public)');
 
-      final JellyfinApiException long =
-          await failWith(http.Response('x' * 500, 500));
+      final JellyfinApiException long = await failWith(
+        http.Response('x' * 500, 500),
+      );
       expect(long.isAccessDenied, isFalse);
-      expect(long.serverMessage!.length,
-          JellyfinApiException.kMaxServerMessageLength + 1);
+      expect(
+        long.serverMessage!.length,
+        JellyfinApiException.kMaxServerMessageLength + 1,
+      );
     });
 
     test('authenticateByName 带 MediaBrowser 头并回填令牌', () async {
@@ -186,9 +201,14 @@ void main() {
       expect(seen.headers['Authorization'], contains('MediaBrowser'));
       // BUG-2254：飞牛影视等兼容层只认 X-Emby-Authorization，必须双头并发。
       expect(seen.headers['X-Emby-Authorization'], contains('MediaBrowser'));
-      expect(seen.headers['X-Emby-Authorization'], seen.headers['Authorization']);
       expect(
-          jsonDecode(seen.body), <String, Object?>{'Username': 'u', 'Pw': 'p'});
+        seen.headers['X-Emby-Authorization'],
+        seen.headers['Authorization'],
+      );
+      expect(jsonDecode(seen.body), <String, Object?>{
+        'Username': 'u',
+        'Pw': 'p',
+      });
       expect(r.userId, 'u1');
       expect(api.accessToken, 'tok', reason: '认证成功必须回填令牌供后续 URL 构造');
     });
@@ -200,8 +220,13 @@ void main() {
       );
       await expectLater(
         api.authenticateByName('u', 'bad'),
-        throwsA(isA<JellyfinApiException>()
-            .having((JellyfinApiException e) => e.statusCode, 'status', 401)),
+        throwsA(
+          isA<JellyfinApiException>().having(
+            (JellyfinApiException e) => e.statusCode,
+            'status',
+            401,
+          ),
+        ),
       );
     });
 
@@ -228,17 +253,18 @@ void main() {
 
   group('JellyfinVideoClient (RemoteVideoClient 适配)', () {
     JellyfinVideoClient clientWith(MockClient mock) => JellyfinVideoClient(
-          api: JellyfinApi(
-            serverUrl: 'http://nas:8096',
-            accessToken: 'tok',
-            client: mock,
-          ),
-          userId: 'u1',
-        );
+      api: JellyfinApi(
+        serverUrl: 'http://nas:8096',
+        accessToken: 'tok',
+        client: mock,
+      ),
+      userId: 'u1',
+    );
 
     test('remoteLibrarySourceId 按服务器 + 用户细分', () {
-      final JellyfinVideoClient c =
-          clientWith(MockClient((_) async => http.Response('{}', 200)));
+      final JellyfinVideoClient c = clientWith(
+        MockClient((_) async => http.Response('{}', 200)),
+      );
       expect(c.remoteLibrarySourceId, 'jellyfin:http://nas:8096|u1');
     });
 
@@ -260,8 +286,9 @@ void main() {
     });
 
     test('coverCacheNamespace 按服务器+用户稳定细分（BUG-1693 口径）', () {
-      final JellyfinVideoClient a =
-          clientWith(MockClient((_) async => http.Response('{}', 200)));
+      final JellyfinVideoClient a = clientWith(
+        MockClient((_) async => http.Response('{}', 200)),
+      );
       final JellyfinVideoClient b = JellyfinVideoClient(
         api: JellyfinApi(
           serverUrl: 'http://other:8096',
@@ -271,18 +298,25 @@ void main() {
         userId: 'u1',
       );
       expect(a.coverCacheNamespace, startsWith('jellyfin-'));
-      expect(a.coverCacheNamespace, isNot(b.coverCacheNamespace),
-          reason: '换服务器必须换封面缓存命名空间（防串味）');
-      final JellyfinVideoClient a2 =
-          clientWith(MockClient((_) async => http.Response('{}', 200)));
-      expect(a.coverCacheNamespace, a2.coverCacheNamespace,
-          reason: '同服务器同用户跨实例稳定（换令牌不重下封面）');
+      expect(
+        a.coverCacheNamespace,
+        isNot(b.coverCacheNamespace),
+        reason: '换服务器必须换封面缓存命名空间（防串味）',
+      );
+      final JellyfinVideoClient a2 = clientWith(
+        MockClient((_) async => http.Response('{}', 200)),
+      );
+      expect(
+        a.coverCacheNamespace,
+        a2.coverCacheNamespace,
+        reason: '同服务器同用户跨实例稳定（换令牌不重下封面）',
+      );
     });
 
     test('listRemoteVideos 映射标题/时长/封面 URL（自带 api_key）/断点', () async {
-      final JellyfinVideoClient c =
-          clientWith(MockClient((http.Request req) async {
-        // BUG-1891：默认枚举先问 Views（只递归视频域媒体库），再逐库列条目。
+      final JellyfinVideoClient c = clientWith(
+        MockClient((http.Request req) async {
+          // BUG-1891：默认枚举先问 Views（只递归视频域媒体库），再逐库列条目。
           if (req.url.path == '/Users/u1/Views') {
             return http.Response(
               jsonEncode(<String, Object?>{
@@ -342,49 +376,55 @@ void main() {
       // 「显示视频库」结构表达：单集按剧名折叠成 playlist 合集卡。
       expect(info.collection?.collectionName, 'Show A');
       expect(info.collection?.collectionType, 'playlist');
-      expect(info.collection?.sortIndex, 1 * 10000 + 2,
-          reason: '组内序 = 季×10000+集，跨季自然有序');
+      expect(
+        info.collection?.sortIndex,
+        1 * 10000 + 2,
+        reason: '组内序 = 季×10000+集，跨季自然有序',
+      );
     });
 
     test('remoteVideoStreamUrls：直连流自带 api_key，外挂文本字幕优先', () async {
-      final JellyfinVideoClient c =
-          clientWith(MockClient((http.Request req) async {
-        // 兼容层没有 PlaybackInfo 端点 → 回落手拼直出 URL（协商路径见
-        // jellyfin_playback_negotiation_test.dart）。
-        if (req.url.path == '/Items/ep1/PlaybackInfo') {
-          return http.Response('', 404);
-        }
-        expect(req.url.path, '/Users/u1/Items/ep1');
-        return http.Response(
-          jsonEncode(_episodeJson(
-            subtitleStreams: <Map<String, Object?>>[
-              <String, Object?>{
-                'Type': 'Subtitle',
-                'Index': 1,
-                'Codec': 'ass',
-                'IsExternal': false,
-                'IsTextSubtitleStream': true,
-              },
-              <String, Object?>{
-                'Type': 'Subtitle',
-                'Index': 3,
-                'Codec': 'subrip',
-                'Language': 'jpn',
-                'IsExternal': true,
-                'IsTextSubtitleStream': true,
-              },
-              <String, Object?>{
-                'Type': 'Subtitle',
-                'Index': 4,
-                'Codec': 'pgssub',
-                'IsExternal': false,
-                'IsTextSubtitleStream': false,
-              },
-            ],
-          )),
-          200,
-        );
-      }));
+      final JellyfinVideoClient c = clientWith(
+        MockClient((http.Request req) async {
+          // 兼容层没有 PlaybackInfo 端点 → 回落手拼直出 URL（协商路径见
+          // jellyfin_playback_negotiation_test.dart）。
+          if (req.url.path == '/Items/ep1/PlaybackInfo') {
+            return http.Response('', 404);
+          }
+          expect(req.url.path, '/Users/u1/Items/ep1');
+          return http.Response(
+            jsonEncode(
+              _episodeJson(
+                subtitleStreams: <Map<String, Object?>>[
+                  <String, Object?>{
+                    'Type': 'Subtitle',
+                    'Index': 1,
+                    'Codec': 'ass',
+                    'IsExternal': false,
+                    'IsTextSubtitleStream': true,
+                  },
+                  <String, Object?>{
+                    'Type': 'Subtitle',
+                    'Index': 3,
+                    'Codec': 'subrip',
+                    'Language': 'jpn',
+                    'IsExternal': true,
+                    'IsTextSubtitleStream': true,
+                  },
+                  <String, Object?>{
+                    'Type': 'Subtitle',
+                    'Index': 4,
+                    'Codec': 'pgssub',
+                    'IsExternal': false,
+                    'IsTextSubtitleStream': false,
+                  },
+                ],
+              ),
+            ),
+            200,
+          );
+        }),
+      );
       final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
       // BUG-2254 ③：MediaSourceId 必带（飞牛缺它 400；条目 id 不能充数）。
       expect(
@@ -468,8 +508,8 @@ void main() {
           );
         }),
       );
-      final ({int positionMs, int updatedAtMs}) pos =
-          await c.remoteVideoPosition('ep1');
+      final ({int positionMs, int updatedAtMs}) pos = await c
+          .remoteVideoPosition('ep1');
       expect(pos.positionMs, 42000);
       expect(
         pos.updatedAtMs,

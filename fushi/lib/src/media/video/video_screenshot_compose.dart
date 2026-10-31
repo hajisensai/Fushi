@@ -52,8 +52,9 @@ Future<Uint8List?> composeScreenshotWithOverlays({
     final ui.Picture picture = recorder.endRecording();
     final ui.Image composed = await picture.toImage(base.width, base.height);
     try {
-      final ByteData? png =
-          await composed.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? png = await composed.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       return png?.buffer.asUint8List();
     } finally {
       composed.dispose();
@@ -74,7 +75,8 @@ Future<Uint8List?> composeScreenshotWithOverlays({
 /// 字幕排版要按**画面像素**算（[computeClipSubtitleLayout] 的 scale = 画面高 /
 /// 屏幕上视频显示区高），所以合成前必须先知道这一帧多大。
 Future<({int width, int height})?> screenshotFrameSize(
-    Uint8List frameBytes) async {
+  Uint8List frameBytes,
+) async {
   final ui.Image? image = await _decodeImage(frameBytes);
   if (image == null) return null;
   try {

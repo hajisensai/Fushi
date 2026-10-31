@@ -50,8 +50,9 @@ void main() {
   }
 
   Future<TestGesture> hoverOnto(WidgetTester tester) async {
-    final TestGesture mouse =
-        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
     await mouse.addPointer(location: Offset.zero);
     addTearDown(mouse.removePointer);
     await tester.pump();
@@ -98,27 +99,32 @@ void main() {
     expect(seenHover.last, isTrue, reason: '静态 hover 反馈（阴影/描边）必须保留，只去掉动效');
   });
 
-  testWidgets('墨水屏：不缩放（持续缩放会不停刷屏），hover 态仍传给 builder',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(harness(
-      theme: ThemeData(
-        extensions: const <ThemeExtension<dynamic>>[
-          FushiEinkTheme(true),
-        ],
+  testWidgets('墨水屏：不缩放（持续缩放会不停刷屏），hover 态仍传给 builder', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(
+        theme: ThemeData(
+          extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(true)],
+        ),
       ),
-    ));
+    );
     await hoverOnto(tester);
     expect(currentScale(tester), isNull, reason: '墨水屏上连续缩放会不断触发整屏重绘/残影');
     expect(seenHover.last, isTrue, reason: 'hover 反馈本身要留着（墨水屏上通常改成描边）');
   });
 
-  testWidgets('enabled=false 时不建 MouseRegion，builder 恒拿到 false',
-      (WidgetTester tester) async {
+  testWidgets('enabled=false 时不建 MouseRegion，builder 恒拿到 false', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(enabled: false));
     expect(currentScale(tester), isNull);
     await hoverOnto(tester);
-    expect(seenHover, everyElement(isFalse),
-        reason: '禁用时不得有任何 hover 态泄漏给 builder');
+    expect(
+      seenHover,
+      everyElement(isFalse),
+      reason: '禁用时不得有任何 hover 态泄漏给 builder',
+    );
   });
 
   // BUG-2124 的压制位必须**自己**会落下，不能把落位挂在某条 build 分支上。
@@ -135,37 +141,40 @@ void main() {
     bool enabled = true;
     seenHover = <bool>[];
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: ScrollNotificationObserver(
-          child: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              setOuter = setState;
-              return ListView(
-                controller: scrollController,
-                children: <Widget>[
-                  FushiHoverLift(
-                    enabled: enabled,
-                    builder: (BuildContext context, bool hovering) {
-                      seenHover.add(hovering);
-                      return const ColoredBox(
-                        key: contentKey,
-                        color: Color(0xFF335577),
-                        child: SizedBox(width: 80, height: 60),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 2000),
-                ],
-              );
-            },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScrollNotificationObserver(
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                setOuter = setState;
+                return ListView(
+                  controller: scrollController,
+                  children: <Widget>[
+                    FushiHoverLift(
+                      enabled: enabled,
+                      builder: (BuildContext context, bool hovering) {
+                        seenHover.add(hovering);
+                        return const ColoredBox(
+                          key: contentKey,
+                          color: Color(0xFF335577),
+                          child: SizedBox(width: 80, height: 60),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 2000),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
-    ));
+    );
 
-    final TestGesture mouse =
-        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
     await mouse.addPointer(location: Offset.zero);
     addTearDown(mouse.removePointer);
     await tester.pump();
@@ -213,7 +222,8 @@ void main() {
       expect(
         src.contains(banned),
         isFalse,
-        reason: '$banned 不保证配对；压制只能认 ScrollUpdateNotification '
+        reason:
+            '$banned 不保证配对；压制只能认 ScrollUpdateNotification '
             '（它同时覆盖滚轮、拖拽与 SmoothWheelScrollScope 的补间）',
       );
     }

@@ -4,10 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 
 List<Map<String, dynamic>> _assets(List<String> names) => names
-    .map((String n) => <String, dynamic>{
-          'name': n,
-          'browser_download_url': 'https://example.com/$n',
-        })
+    .map(
+      (String n) => <String, dynamic>{
+        'name': n,
+        'browser_download_url': 'https://example.com/$n',
+      },
+    )
     .toList();
 
 Future<String?> _urlOf(Future<UpdateAsset?> selection) async =>
@@ -17,30 +19,37 @@ void main() {
   group('WindowsUpdater.selectAsset', () {
     test('picks the -windows-setup.exe asset', () async {
       final WindowsUpdater u = WindowsUpdater();
-      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-arm64-v8a.apk',
-        'fushi-0.4.2-windows-setup.exe',
-        'fushi-0.4.2-linux-x86_64.AppImage',
-      ])));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.4.2-arm64-v8a.apk',
+            'fushi-0.4.2-windows-setup.exe',
+            'fushi-0.4.2-linux-x86_64.AppImage',
+          ]),
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.4.2-windows-setup.exe');
     });
 
     test('returns null when no windows asset present', () async {
       final WindowsUpdater u = WindowsUpdater();
-      final UpdateAsset? url =
-          await u.selectAsset(_assets(<String>['fushi-0.4.2-arm64-v8a.apk']));
+      final UpdateAsset? url = await u.selectAsset(
+        _assets(<String>['fushi-0.4.2-arm64-v8a.apk']),
+      );
       expect(url, isNull);
     });
 
     test('debug channel selects a debug Windows setup asset', () async {
       final WindowsUpdater u = WindowsUpdater();
-      final String? url = await _urlOf(u.selectAsset(
-        _assets(<String>[
-          'fushi-0.5.1-windows-setup.exe',
-          'fushi-0.5.1-debug.412-windows-setup.exe',
-        ]),
-        channel: UpdateChannel.debug,
-      ));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.5.1-windows-setup.exe',
+            'fushi-0.5.1-debug.412-windows-setup.exe',
+          ]),
+          channel: UpdateChannel.debug,
+        ),
+      );
       expect(
         url,
         'https://example.com/fushi-0.5.1-debug.412-windows-setup.exe',
@@ -76,10 +85,7 @@ void main() {
         await u.selectAsset(assets, channel: UpdateChannel.stable),
         isNull,
       );
-      expect(
-        await u.selectAsset(assets, channel: UpdateChannel.beta),
-        isNull,
-      );
+      expect(await u.selectAsset(assets, channel: UpdateChannel.beta), isNull);
     });
 
     test('supports update check and in-app install', () {
@@ -94,11 +100,15 @@ void main() {
       final AndroidUpdater u = AndroidUpdater(
         abiProvider: () async => <String>['arm64-v8a'],
       );
-      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-armeabi-v7a.apk',
-        'fushi-0.4.2-arm64-v8a.apk',
-        'fushi-0.4.2-windows-setup.exe',
-      ])));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.4.2-armeabi-v7a.apk',
+            'fushi-0.4.2-arm64-v8a.apk',
+            'fushi-0.4.2-windows-setup.exe',
+          ]),
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.4.2-arm64-v8a.apk');
     });
 
@@ -127,13 +137,15 @@ void main() {
       );
 
       expect(
-        await _urlOf(u.selectAsset(
-          _assets(<String>[
-            'fushi-0.5.1-arm64-v8a.apk',
-            'fushi-0.5.1-debug.412-abc1234-debug.apk',
-          ]),
-          channel: UpdateChannel.debug,
-        )),
+        await _urlOf(
+          u.selectAsset(
+            _assets(<String>[
+              'fushi-0.5.1-arm64-v8a.apk',
+              'fushi-0.5.1-debug.412-abc1234-debug.apk',
+            ]),
+            channel: UpdateChannel.debug,
+          ),
+        ),
         'https://example.com/fushi-0.5.1-debug.412-abc1234-debug.apk',
       );
       expect(
@@ -145,39 +157,47 @@ void main() {
       );
     });
 
-    test('returns null when per-ABI apks exist but none fits this device',
-        () async {
-      // 曾经这里会兜底返回列表首个 apk。那是错的：设备只报 x86_64（没有 ARM 翻译层），
-      // 装 armeabi-v7a 包必然 INSTALL_FAILED_NO_MATCHING_ABIS——白下几百 MB 再失败。
-      // release 明明提供了分架构包却没有本机这一档时，返回 null 让上层退化成
-      // 「打开发布页」。兜底只保留给「整批候选都没有架构标记」的 universal 单包
-      // （下一条用例）。
-      final AndroidUpdater u = AndroidUpdater(
-        abiProvider: () async => <String>['x86_64'],
-      );
-      final UpdateAsset? picked = await u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-armeabi-v7a.apk',
-        'fushi-0.4.2-arm64-v8a.apk',
-      ]));
-      expect(picked, isNull);
-    });
+    test(
+      'returns null when per-ABI apks exist but none fits this device',
+      () async {
+        // 曾经这里会兜底返回列表首个 apk。那是错的：设备只报 x86_64（没有 ARM 翻译层），
+        // 装 armeabi-v7a 包必然 INSTALL_FAILED_NO_MATCHING_ABIS——白下几百 MB 再失败。
+        // release 明明提供了分架构包却没有本机这一档时，返回 null 让上层退化成
+        // 「打开发布页」。兜底只保留给「整批候选都没有架构标记」的 universal 单包
+        // （下一条用例）。
+        final AndroidUpdater u = AndroidUpdater(
+          abiProvider: () async => <String>['x86_64'],
+        );
+        final UpdateAsset? picked = await u.selectAsset(
+          _assets(<String>[
+            'fushi-0.4.2-armeabi-v7a.apk',
+            'fushi-0.4.2-arm64-v8a.apk',
+          ]),
+        );
+        expect(picked, isNull);
+      },
+    );
 
-    test('universal apk (no ABI marker at all) is still served as fallback',
-        () async {
-      final AndroidUpdater u = AndroidUpdater(
-        abiProvider: () async => <String>['x86_64'],
-      );
-      final String? url = await _urlOf(u.selectAsset(
-        _assets(<String>['fushi-0.4.2-universal.apk']),
-      ));
-      expect(url, 'https://example.com/fushi-0.4.2-universal.apk');
-    });
+    test(
+      'universal apk (no ABI marker at all) is still served as fallback',
+      () async {
+        final AndroidUpdater u = AndroidUpdater(
+          abiProvider: () async => <String>['x86_64'],
+        );
+        final String? url = await _urlOf(
+          u.selectAsset(_assets(<String>['fushi-0.4.2-universal.apk'])),
+        );
+        expect(url, 'https://example.com/fushi-0.4.2-universal.apk');
+      },
+    );
 
     test('returns null when no apk asset', () async {
-      final AndroidUpdater u =
-          AndroidUpdater(abiProvider: () async => <String>[]);
-      final UpdateAsset? url = await u
-          .selectAsset(_assets(<String>['fushi-0.4.2-windows-setup.exe']));
+      final AndroidUpdater u = AndroidUpdater(
+        abiProvider: () async => <String>[],
+      );
+      final UpdateAsset? url = await u.selectAsset(
+        _assets(<String>['fushi-0.4.2-windows-setup.exe']),
+      );
       expect(url, isNull);
     });
   });
@@ -214,34 +234,40 @@ void main() {
 
   group('windowsInstallerArgs', () {
     test('runs installer very-silently and skips initial prompt', () {
-      final List<String> args =
-          windowsInstallerArgs(r'C:\tmp\fushi-0.4.2-windows-setup.exe');
+      final List<String> args = windowsInstallerArgs(
+        r'C:\tmp\fushi-0.4.2-windows-setup.exe',
+      );
       expect(args, contains('/VERYSILENT'));
       expect(args, contains('/SP-'));
     });
 
-    test('does not ask Inno to close, force-close, or restart applications',
-        () {
-      final List<String> args =
-          windowsInstallerArgs(r'C:\tmp\fushi-0.4.2-windows-setup.exe');
+    test(
+      'does not ask Inno to close, force-close, or restart applications',
+      () {
+        final List<String> args = windowsInstallerArgs(
+          r'C:\tmp\fushi-0.4.2-windows-setup.exe',
+        );
 
-      expect(args, isNot(contains('/CLOSEAPPLICATIONS')));
-      expect(args, isNot(contains('/FORCECLOSEAPPLICATIONS')));
-      expect(args, isNot(contains('/RESTARTAPPLICATIONS')));
-      expect(args, contains('/NOCLOSEAPPLICATIONS'));
-      expect(args, contains('/NOFORCECLOSEAPPLICATIONS'));
-      expect(args, contains('/NORESTARTAPPLICATIONS'));
-      expect(args, contains('/NORESTART'));
-    });
+        expect(args, isNot(contains('/CLOSEAPPLICATIONS')));
+        expect(args, isNot(contains('/FORCECLOSEAPPLICATIONS')));
+        expect(args, isNot(contains('/RESTARTAPPLICATIONS')));
+        expect(args, contains('/NOCLOSEAPPLICATIONS'));
+        expect(args, contains('/NOFORCECLOSEAPPLICATIONS'));
+        expect(args, contains('/NORESTARTAPPLICATIONS'));
+        expect(args, contains('/NORESTART'));
+      },
+    );
 
     test('suppresses Inno action dialogs and writes one install log', () {
-      final List<String> args =
-          windowsInstallerArgs(r'C:\tmp\fushi-0.4.2-windows-setup.exe');
+      final List<String> args = windowsInstallerArgs(
+        r'C:\tmp\fushi-0.4.2-windows-setup.exe',
+      );
 
       expect(args, contains('/SUPPRESSMSGBOXES'));
 
-      final Iterable<String> logArgs =
-          args.where((String arg) => arg.startsWith('/LOG='));
+      final Iterable<String> logArgs = args.where(
+        (String arg) => arg.startsWith('/LOG='),
+      );
       expect(logArgs, hasLength(1));
       expect(logArgs.single, contains('fushi-0.4.2-windows-setup.install.log'));
     });
@@ -269,19 +295,16 @@ void main() {
         installerArgs: installerArgs,
       );
 
-      expect(
-        launcherArgs,
-        <String>[
-          '--marker',
-          r'C:\Users\wrds\Downloads\marker & one.json',
-          '--parent-pid',
-          '1234',
-          '--installer',
-          r'C:\Users\wrds\Downloads\new "folder"&x\hibiki setup.exe',
-          '--',
-          ...installerArgs,
-        ],
-      );
+      expect(launcherArgs, <String>[
+        '--marker',
+        r'C:\Users\wrds\Downloads\marker & one.json',
+        '--parent-pid',
+        '1234',
+        '--installer',
+        r'C:\Users\wrds\Downloads\new "folder"&x\hibiki setup.exe',
+        '--',
+        ...installerArgs,
+      ]);
       expect(launcherArgs.join(' '), isNot(contains('powershell')));
       expect(launcherArgs.join(' '), isNot(contains('cmd.exe')));
       expect(launcherArgs.join(' '), isNot(contains('/c ')));
@@ -311,8 +334,7 @@ void main() {
       expect(script, contains('fushi_update_launcher.exe'));
     });
 
-    test(
-        '[Code] InitializeSetup kills Hibiki and polls the mutex before '
+    test('[Code] InitializeSetup kills Hibiki and polls the mutex before '
         'Inno does its AppMutex check', () {
       // TODO-549 root-cause layer. Inno runs the [Code] InitializeSetup
       // event BEFORE the built-in AppMutex CheckForMutexes loop (see Inno
@@ -345,53 +367,57 @@ void main() {
     });
 
     test(
-        'BUG-2203: 强杀只沿 msedgewebview2.exe 往下扩 —— 安装器自己就在 fushi.exe 的后代进程树里',
-        () {
-      // 应用内静默更新时进程链是
-      //   fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
-      // 旧实现的 `taskkill /T` 递归杀整条后代树，把 launcher 和安装器自己一并杀掉：
-      // 安装器自杀、日志停在启动段、磁盘留在旧版，且 BUG-1708 的「安装失败把 app
-      // 拉回来」兜底也随 launcher 一起没了。
-      //
-      // 现在的 FushiTerminateAppProcessTree 自己沿父 PID 往下扩目标集。不变式：扩展
-      // 条件里**必须**同时要求镜像名是 msedgewebview2.exe —— 只看「父进程在目标集里」
-      // 就等于重新发明了 /T（2026-10-16 探针实测：launcher 子进程存活）。
-      final String control = File(
-        'windows/installer/process_control.iss',
-      ).readAsStringSync();
-      final int at =
-          control.indexOf('procedure FushiTerminateAppProcessTree();');
-      expect(at, greaterThan(0));
-      final int end = control.indexOf('\nend;', at);
-      expect(end, greaterThan(at));
-      final String body = control.substring(at, end);
+      'BUG-2203: 强杀只沿 msedgewebview2.exe 往下扩 —— 安装器自己就在 fushi.exe 的后代进程树里',
+      () {
+        // 应用内静默更新时进程链是
+        //   fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
+        // 旧实现的 `taskkill /T` 递归杀整条后代树，把 launcher 和安装器自己一并杀掉：
+        // 安装器自杀、日志停在启动段、磁盘留在旧版，且 BUG-1708 的「安装失败把 app
+        // 拉回来」兜底也随 launcher 一起没了。
+        //
+        // 现在的 FushiTerminateAppProcessTree 自己沿父 PID 往下扩目标集。不变式：扩展
+        // 条件里**必须**同时要求镜像名是 msedgewebview2.exe —— 只看「父进程在目标集里」
+        // 就等于重新发明了 /T（2026-10-16 探针实测：launcher 子进程存活）。
+        final String control = File(
+          'windows/installer/process_control.iss',
+        ).readAsStringSync();
+        final int at = control.indexOf(
+          'procedure FushiTerminateAppProcessTree();',
+        );
+        expect(at, greaterThan(0));
+        final int end = control.indexOf('\nend;', at);
+        expect(end, greaterThan(at));
+        final String body = control.substring(at, end);
 
-      final List<RegExpMatch> expansions = RegExp(
-        r'if\s+([\s\S]*?)\s+then\s+begin\s+FushiAppendPid\(Targets, Pids\[I\]\);\s+Grew := True;',
-      ).allMatches(body).toList(growable: false);
-      expect(
-        expansions,
-        hasLength(1),
-        reason: '没找到唯一的「往下扩目标集」分支 —— 形状变了就必须有人重新审一遍 BUG-2203',
-      );
-      final String condition = expansions.single.group(1)!;
-      expect(
-        condition,
-        contains("(Names[I] = 'msedgewebview2.exe') and"),
-        reason: '往下扩必须限定 WebView2 镜像名，否则 launcher / 安装器会被一并杀掉（BUG-2203）',
-      );
-      expect(condition, contains('FushiPidInList(ParentPids[I], Targets)'));
-    });
+        final List<RegExpMatch> expansions = RegExp(
+          r'if\s+([\s\S]*?)\s+then\s+begin\s+FushiAppendPid\(Targets, Pids\[I\]\);\s+Grew := True;',
+        ).allMatches(body).toList(growable: false);
+        expect(
+          expansions,
+          hasLength(1),
+          reason: '没找到唯一的「往下扩目标集」分支 —— 形状变了就必须有人重新审一遍 BUG-2203',
+        );
+        final String condition = expansions.single.group(1)!;
+        expect(
+          condition,
+          contains("(Names[I] = 'msedgewebview2.exe') and"),
+          reason: '往下扩必须限定 WebView2 镜像名，否则 launcher / 安装器会被一并杀掉（BUG-2203）',
+        );
+        expect(condition, contains('FushiPidInList(ParentPids[I], Targets)'));
+      },
+    );
 
-    test('update launcher is not the Flutter runner and does not take mutex',
-        () {
+    test('update launcher is not the Flutter runner and does not take mutex', () {
       final String main = File('windows/runner/main.cpp').readAsStringSync();
-      final String launcher =
-          File('windows/runner/update_launcher.cpp').readAsStringSync();
-      final String cmake =
-          File('windows/runner/CMakeLists.txt').readAsStringSync();
-      final String rootCmake =
-          File('windows/CMakeLists.txt').readAsStringSync();
+      final String launcher = File(
+        'windows/runner/update_launcher.cpp',
+      ).readAsStringSync();
+      final String cmake = File(
+        'windows/runner/CMakeLists.txt',
+      ).readAsStringSync();
+      final String rootCmake = File(
+        'windows/CMakeLists.txt',
+      ).readAsStringSync();
 
       expect(main, contains('FushiSingleInstanceMutex'));
       expect(main, contains('CreateMutexW'));
@@ -410,14 +436,16 @@ void main() {
         isNot(contains('fushi_update_launcher WIN32\n  "main.cpp"')),
       );
       expect(
-          cmake,
-          contains('target_link_libraries(fushi_update_launcher '
-              'PRIVATE shell32 bcrypt)'));
+        cmake,
+        contains(
+          'target_link_libraries(fushi_update_launcher '
+          'PRIVATE shell32 bcrypt)',
+        ),
+      );
       expect(rootCmake, contains('fushi_update_launcher'));
     });
 
-    test(
-        'update launcher never abandons the install on an OpenProcess(parent) '
+    test('update launcher never abandons the install on an OpenProcess(parent) '
         'failure (TODO-600)', () {
       // Root cause (TODO-600, 551 audit): WaitForParentExit only tolerated
       // ERROR_INVALID_PARAMETER and treated every other OpenProcess failure as
@@ -427,8 +455,9 @@ void main() {
       // provides a wait handle; the launcher is detached and its exit code is
       // unread, so the install must proceed regardless and let the downstream
       // mutex-release poll + AppMutex-guarded installer be the real gate.
-      final String launcher =
-          File('windows/runner/update_launcher.cpp').readAsStringSync();
+      final String launcher = File(
+        'windows/runner/update_launcher.cpp',
+      ).readAsStringSync();
 
       // The failure-classification policy is a named, pure function.
       expect(
@@ -450,13 +479,19 @@ void main() {
       // only for the real fatal failure (the installer refusing to spawn).
       expect(
         launcher,
-        contains('MarkLaunchFailed(args.marker_path, '
-            'LastErrorMessage("CreateProcess Inno"))'),
+        contains(
+          'MarkLaunchFailed(args.marker_path, '
+          'LastErrorMessage("CreateProcess Inno"))',
+        ),
       );
       expect(
         launcher,
-        isNot(contains('MarkLaunchFailed(args.marker_path, '
-            'LastErrorMessage("OpenProcess parent"))')),
+        isNot(
+          contains(
+            'MarkLaunchFailed(args.marker_path, '
+            'LastErrorMessage("OpenProcess parent"))',
+          ),
+        ),
       );
 
       // Non-fatal failures are recorded as diagnostics, not as a launch failure.
@@ -486,28 +521,31 @@ void main() {
   });
 
   group('WindowsInstaller.runAndExit validation', () {
-    test('throws instead of launching when the file is not an executable',
-        () async {
-      // Regression for "Windows auto-update crash": a corrupt / proxy-HTML
-      // download must surface an error (caught upstream -> SnackBar) rather
-      // than being fed to Process.start (and then exit(0) vanishing the app).
-      final Directory tmp =
-          await Directory.systemTemp.createTemp('fushi-update-test');
-      addTearDown(() async {
-        if (tmp.existsSync()) await tmp.delete(recursive: true);
-      });
-      final File bogus = File('${tmp.path}/fushi-0.4.2-windows-setup.exe');
-      await bogus.writeAsString('<html>rate limited</html>');
+    test(
+      'throws instead of launching when the file is not an executable',
+      () async {
+        // Regression for "Windows auto-update crash": a corrupt / proxy-HTML
+        // download must surface an error (caught upstream -> SnackBar) rather
+        // than being fed to Process.start (and then exit(0) vanishing the app).
+        final Directory tmp = await Directory.systemTemp.createTemp(
+          'fushi-update-test',
+        );
+        addTearDown(() async {
+          if (tmp.existsSync()) await tmp.delete(recursive: true);
+        });
+        final File bogus = File('${tmp.path}/fushi-0.4.2-windows-setup.exe');
+        await bogus.writeAsString('<html>rate limited</html>');
 
-      await expectLater(
-        WindowsInstaller.runAndExit(bogus.path),
-        throwsA(isA<UpdateInstallerException>()),
-      );
-      // The corrupt download is cleaned up so it can't be re-run later, and
-      // crucially the process is still alive here -- exit(0) was NOT reached
-      // (otherwise this assertion would never run).
-      expect(bogus.existsSync(), isFalse);
-    });
+        await expectLater(
+          WindowsInstaller.runAndExit(bogus.path),
+          throwsA(isA<UpdateInstallerException>()),
+        );
+        // The corrupt download is cleaned up so it can't be re-run later, and
+        // crucially the process is still alive here -- exit(0) was NOT reached
+        // (otherwise this assertion would never run).
+        expect(bogus.existsSync(), isFalse);
+      },
+    );
 
     test('throws when the installer file is missing', () async {
       await expectLater(
@@ -516,16 +554,16 @@ void main() {
       );
     });
 
-    test('never collects diagnostics for a download that fails validation',
-        () async {
+    test('never collects diagnostics for a download that fails validation', () async {
       // BUG-1179: diagnostics shell out to `reg`, `powershell Get-CimInstance`
       // and `tasklist /M libmpv-2.dll` (a whole-machine module enumeration that
       // costs seconds). Running that BEFORE the exists/MZ-header checks made
       // real users wait ~10s just to be told the download was corrupt, and made
       // the two tests above race the 30s default test timeout on a busy box.
       // Validation must come first, so diagnostics are never collected at all.
-      final Directory tmp =
-          await Directory.systemTemp.createTemp('fushi-update-nodiag');
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'fushi-update-nodiag',
+      );
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });
@@ -542,9 +580,13 @@ void main() {
         WindowsInstaller.runAndExit(bogus.path, collectDiagnostics: collect),
         throwsA(isA<UpdateInstallerException>()),
       );
-      expect(diagnosticsCalls, 0,
-          reason: 'a corrupt download must be rejected before any '
-              'whole-machine process enumeration');
+      expect(
+        diagnosticsCalls,
+        0,
+        reason:
+            'a corrupt download must be rejected before any '
+            'whole-machine process enumeration',
+      );
 
       await expectLater(
         WindowsInstaller.runAndExit(
@@ -561,11 +603,11 @@ void main() {
     test('parses Inno DeleteFile code 5 failures from installer logs', () {
       final List<WindowsInnoDeleteFileFailure> failures =
           parseWindowsInnoDeleteFileFailures(
-        [
-          r'2026-06-18 10:00:00.000   DeleteFile failed; code 5.',
-          r'2026-06-18 10:00:00.001   C:\Program Files\Hibiki\libmpv-2.dll',
-        ].join('\n'),
-      );
+            [
+              r'2026-06-18 10:00:00.000   DeleteFile failed; code 5.',
+              r'2026-06-18 10:00:00.001   C:\Program Files\Hibiki\libmpv-2.dll',
+            ].join('\n'),
+          );
 
       expect(failures, hasLength(1));
       expect(failures.single.code, 5);
@@ -577,15 +619,16 @@ void main() {
     // `windows_process_query.dart`），那个解析器随之删除，用例也不再有对象。
     // 但同一个用例里搭着的**不变式**依然要守：更新器只观察占用者，永不杀进程。
     test('更新器只观察占用者，永不终结任何进程', () {
-      final String source =
-          File('lib/src/utils/misc/platform_updater.dart').readAsStringSync();
+      final String source = File(
+        'lib/src/utils/misc/platform_updater.dart',
+      ).readAsStringSync();
       expect(source, isNot(contains('kill')));
       expect(source, isNot(contains('taskkill')));
       expect(source, isNot(contains('TerminateProcess')));
       // 占用者查询本身也不得越权：RM 只做只读查询，不注册 restart/shutdown。
-      final String query =
-          File('../packages/fushi_engine/lib/platform/desktop/windows_process_query.dart')
-              .readAsStringSync();
+      final String query = File(
+        '../packages/fushi_engine/lib/platform/desktop/windows_process_query.dart',
+      ).readAsStringSync();
       expect(query, isNot(contains('RmShutdown')));
       expect(query, isNot(contains('RmRestart')));
       expect(query, isNot(contains('TerminateProcess')));
@@ -595,22 +638,30 @@ void main() {
   group('MacUpdater.selectAsset', () {
     test('picks the -macos-arm64.zip asset (stable)', () async {
       final MacUpdater u = MacUpdater();
-      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-arm64-v8a.apk',
-        'fushi-0.4.2-windows-setup.exe',
-        'fushi-0.4.2-macos-arm64.zip',
-        'fushi-0.4.2-ios.ipa',
-      ])));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.4.2-arm64-v8a.apk',
+            'fushi-0.4.2-windows-setup.exe',
+            'fushi-0.4.2-macos-arm64.zip',
+            'fushi-0.4.2-ios.ipa',
+          ]),
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.4.2-macos-arm64.zip');
     });
 
     // 改名前（universal 时代）的 `-macos.zip` 在 arm64 上照常能跑，仍然认。
     test('still accepts the legacy -macos.zip asset', () async {
       final MacUpdater u = MacUpdater();
-      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-windows-setup.exe',
-        'fushi-0.4.2-macos.zip',
-      ])));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.4.2-windows-setup.exe',
+            'fushi-0.4.2-macos.zip',
+          ]),
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.4.2-macos.zip');
     });
 
@@ -618,45 +669,56 @@ void main() {
     // zip 解包，dmg 排在前面也绝不能被选中；只有 dmg 时宁可不更新。
     test('never selects the -macos-arm64.dmg first-install download', () async {
       final MacUpdater u = MacUpdater();
-      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-macos-arm64.dmg',
-        'fushi-0.4.2-macos-arm64.zip',
-      ])));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.4.2-macos-arm64.dmg',
+            'fushi-0.4.2-macos-arm64.zip',
+          ]),
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.4.2-macos-arm64.zip');
-      final UpdateAsset? dmgOnly = await u
-          .selectAsset(_assets(<String>['fushi-0.4.2-macos-arm64.dmg']));
+      final UpdateAsset? dmgOnly = await u.selectAsset(
+        _assets(<String>['fushi-0.4.2-macos-arm64.dmg']),
+      );
       expect(dmgOnly, isNull);
     });
 
     test('returns null when no macOS asset present', () async {
       final MacUpdater u = MacUpdater();
-      final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-arm64-v8a.apk',
-        'fushi-0.4.2-windows-setup.exe',
-      ]));
+      final UpdateAsset? asset = await u.selectAsset(
+        _assets(<String>[
+          'fushi-0.4.2-arm64-v8a.apk',
+          'fushi-0.4.2-windows-setup.exe',
+        ]),
+      );
       expect(asset, isNull);
     });
 
     test('debug channel selects the debug macOS zip', () async {
       final MacUpdater u = MacUpdater();
-      final String? url = await _urlOf(u.selectAsset(
-        _assets(<String>[
-          'fushi-0.5.1-macos-arm64.zip',
-          'fushi-0.5.1-debug.412-macos-arm64.zip',
-        ]),
-        channel: UpdateChannel.debug,
-      ));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.5.1-macos-arm64.zip',
+            'fushi-0.5.1-debug.412-macos-arm64.zip',
+          ]),
+          channel: UpdateChannel.debug,
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.5.1-debug.412-macos-arm64.zip');
     });
 
     test('stable channel ignores the debug macOS zip', () async {
       final MacUpdater u = MacUpdater();
-      final String? url = await _urlOf(u.selectAsset(
-        _assets(<String>[
-          'fushi-0.5.1-debug.412-macos-arm64.zip',
-          'fushi-0.5.1-macos-arm64.zip',
-        ]),
-      ));
+      final String? url = await _urlOf(
+        u.selectAsset(
+          _assets(<String>[
+            'fushi-0.5.1-debug.412-macos-arm64.zip',
+            'fushi-0.5.1-macos-arm64.zip',
+          ]),
+        ),
+      );
       expect(url, 'https://example.com/fushi-0.5.1-macos-arm64.zip');
     });
 
@@ -670,10 +732,9 @@ void main() {
   group('IosUpdater', () {
     test('never selects an asset (info-only, opens release page)', () async {
       final IosUpdater u = IosUpdater();
-      final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
-        'fushi-0.4.2-ios.ipa',
-        'fushi-0.4.2-macos.zip',
-      ]));
+      final UpdateAsset? asset = await u.selectAsset(
+        _assets(<String>['fushi-0.4.2-ios.ipa', 'fushi-0.4.2-macos.zip']),
+      );
       expect(asset, isNull);
     });
 
@@ -738,14 +799,14 @@ void main() {
 
   group('buildMacSwapScript', () {
     String script() => buildMacSwapScript(
-          parentPid: 4321,
-          newAppPath: '/tmp/updates/mac-update-1.2.0.extracted/hibiki.app',
-          targetAppPath: '/Applications/fushi.app',
-          backupPath: '/tmp/updates/mac-update-1.2.0.backup',
-          extractDir: '/tmp/updates/mac-update-1.2.0.extracted',
-          resultPath: '/tmp/updates/mac-update-result.json',
-          logPath: '/tmp/updates/mac-update-1.2.0.log',
-        );
+      parentPid: 4321,
+      newAppPath: '/tmp/updates/mac-update-1.2.0.extracted/hibiki.app',
+      targetAppPath: '/Applications/fushi.app',
+      backupPath: '/tmp/updates/mac-update-1.2.0.backup',
+      extractDir: '/tmp/updates/mac-update-1.2.0.extracted',
+      resultPath: '/tmp/updates/mac-update-result.json',
+      logPath: '/tmp/updates/mac-update-1.2.0.log',
+    );
 
     test('waits for the parent pid via a non-terminating ps probe', () {
       final String s = script();

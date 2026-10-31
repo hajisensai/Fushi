@@ -22,30 +22,43 @@ void main() {
   });
 
   test('State 持有专用 FocusNode 并在 dispose 释放', () {
-    expect(src, contains('FocusNode _videoFocusNode'),
-        reason: '应有 State 级别的 _videoFocusNode 供覆盖层关闭后归还焦点');
-    expect(src, contains('_videoFocusNode.dispose()'),
-        reason: 'FocusNode 必须在 dispose 释放，避免泄漏');
+    expect(
+      src,
+      contains('FocusNode _videoFocusNode'),
+      reason: '应有 State 级别的 _videoFocusNode 供覆盖层关闭后归还焦点',
+    );
+    expect(
+      src,
+      contains('_videoFocusNode.dispose()'),
+      reason: 'FocusNode 必须在 dispose 释放，避免泄漏',
+    );
   });
 
   test('Video widget 接上 _videoFocusNode（替换内置匿名节点）', () {
-    expect(src, contains('focusNode: _videoFocusNode'),
-        reason: 'Video 必须用本页持有的 FocusNode，否则覆盖层关闭后无法归还焦点');
+    expect(
+      src,
+      contains('focusNode: _videoFocusNode'),
+      reason: 'Video 必须用本页持有的 FocusNode，否则覆盖层关闭后无法归还焦点',
+    );
   });
 
   test('视频首次 load 完成后主动把焦点交给 Video', () {
     final int applyLoad = src.indexOf('Future<void> _applyLoad({');
-    final int persist =
-        src.indexOf('Future<void> _persistPosition(', applyLoad);
+    final int persist = src.indexOf(
+      'Future<void> _persistPosition(',
+      applyLoad,
+    );
     expect(applyLoad, greaterThanOrEqualTo(0));
     expect(persist, greaterThan(applyLoad));
     final String body = src.substring(applyLoad, persist);
 
     expect(
-        body,
-        contains(
-            '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)'),
-        reason: '非全屏进入视频页后若没有主动聚焦，空格会冒泡到全局 DoNothingIntent 而不是播放/暂停');
+      body,
+      contains(
+        '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)',
+      ),
+      reason: '非全屏进入视频页后若没有主动聚焦，空格会冒泡到全局 DoNothingIntent 而不是播放/暂停',
+    );
   });
 
   test('慢路径挂载 Video 后必须补一次焦点回收（BUG-1266）', () {
@@ -56,26 +69,40 @@ void main() {
     // 手柄按键不冒泡经过本页，所有手柄绑定失灵，且没人消费的 B 会被 Android 合成成
     // BACK 直接退页（用户报「必须先按一下暂停才能正常上下句」「进视频想回退两句却退回桌面」）。
     final int start = src.indexOf('void _promoteVideoReady() {');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '慢路径提升汇聚点 _promoteVideoReady 应存在');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '慢路径提升汇聚点 _promoteVideoReady 应存在',
+    );
     final int end = src.indexOf('Future<void> _init() async {', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
 
     expect(
-        body,
-        contains(
-            '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)'),
-        reason: '慢路径把 Video 挂上后必须补一次焦点回收，否则本页整段没有键盘所有者');
+      body,
+      contains(
+        '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)',
+      ),
+      reason: '慢路径把 Video 挂上后必须补一次焦点回收，否则本页整段没有键盘所有者',
+    );
   });
 
   test('存在统一的焦点所有者与判据', () {
-    expect(src, contains('PageFocusOwnership _focusOwnership'),
-        reason: '归还焦点必须走单一所有者 _focusOwnership，不再各处手写 requestFocus');
-    expect(src, contains('node: _videoFocusNode'),
-        reason: '所有者必须持有本页的 _videoFocusNode');
-    expect(src, contains('bool _canOwnVideoFocus(FocusReclaimCause cause)'),
-        reason: '应有统一的「视频此刻应当持有键盘」判据，按 cause 分流');
+    expect(
+      src,
+      contains('PageFocusOwnership _focusOwnership'),
+      reason: '归还焦点必须走单一所有者 _focusOwnership，不再各处手写 requestFocus',
+    );
+    expect(
+      src,
+      contains('node: _videoFocusNode'),
+      reason: '所有者必须持有本页的 _videoFocusNode',
+    );
+    expect(
+      src,
+      contains('bool _canOwnVideoFocus(FocusReclaimCause cause)'),
+      reason: '应有统一的「视频此刻应当持有键盘」判据，按 cause 分流',
+    );
   });
 
   test('可导航浮层面板打开期间，页面不得抢回焦点（手柄重设计 P3）', () {
@@ -87,11 +114,14 @@ void main() {
     // 必须先屏蔽注释：本条断言的 token 也出现在上面那段说明里，直接扫原文的话，
     // 代码被删而注释留着仍然绿——「断言塞注释」的假绿。
     final String masked = maskComments(src);
-    final int start =
-        masked.indexOf('bool _canOwnVideoFocus(FocusReclaimCause cause)');
+    final int start = masked.indexOf(
+      'bool _canOwnVideoFocus(FocusReclaimCause cause)',
+    );
     expect(start, greaterThan(0));
     final String body = masked.substring(
-        start, masked.indexOf('${String.fromCharCode(10)}  }', start));
+      start,
+      masked.indexOf('${String.fromCharCode(10)}  }', start),
+    );
     expect(
       body.contains('_videoNavigablePanelOpen'),
       isTrue,
@@ -104,18 +134,26 @@ void main() {
     // _canOwnVideoFocus 的全部判据，也绕过只扫 video_fushi* / reader_fushi* 目录的
     // 焦点所有权守卫——「把节点递出去让别人代调」正是那条守卫防不住的形状。
     final String maskedSrc = maskComments(src);
-    expect(maskedSrc, isNot(contains('restoreFocus: _videoFocusNode')),
-        reason: 'restoreFocus 必须传经 _focusOwnership 的回调，不能传裸节点');
-    expect(maskedSrc, contains('restoreFocus: () =>'),
-        reason: '三处面板都应传回调形式的 restoreFocus');
+    expect(
+      maskedSrc,
+      isNot(contains('restoreFocus: _videoFocusNode')),
+      reason: 'restoreFocus 必须传经 _focusOwnership 的回调，不能传裸节点',
+    );
+    expect(
+      maskedSrc,
+      contains('restoreFocus: () =>'),
+      reason: '三处面板都应传回调形式的 restoreFocus',
+    );
   });
 
   test('页面不得绕过 _focusOwnership 直接抢焦点', () {
     // 一旦有人重新在页面里裸调 requestFocus，判据（播放器就绪 / 查词浮层可见 /
     // 所有者路由 isCurrent）就被绕过——这正是统一前每个补丁互相漂移的老路。
-    expect(src, isNot(contains('_videoFocusNode.requestFocus()')),
-        reason:
-            '焦点请求必须经 _focusOwnership.reclaim/reclaimAfterFrame/guardOverlay');
+    expect(
+      src,
+      isNot(contains('_videoFocusNode.requestFocus()')),
+      reason: '焦点请求必须经 _focusOwnership.reclaim/reclaimAfterFrame/guardOverlay',
+    );
   });
 
   test('每个会夺焦的覆盖层关闭后都归还焦点', () {
@@ -124,30 +162,43 @@ void main() {
     // modal bottom sheet。统计所有回收点覆盖 side panel / push-aside 列表关闭 + 各
     // 对话框/picker。
     final int reclaimCalls = '_focusOwnership.reclaim'.allMatches(src).length;
-    expect(reclaimCalls, greaterThanOrEqualTo(6),
-        reason:
-            '所有夺焦覆盖层（side panel + push-aside 列表 + 着色器/Jimaku/picker）关闭后都应归还焦点');
+    expect(
+      reclaimCalls,
+      greaterThanOrEqualTo(6),
+      reason:
+          '所有夺焦覆盖层（side panel + push-aside 列表 + 着色器/Jimaku/picker）关闭后都应归还焦点',
+    );
     // side panel 关闭汇聚点 [_hideVideoSidePanel] 必须归还键盘焦点。
     final int hideIdx = src.indexOf('void _hideVideoSidePanel() {');
-    expect(hideIdx, greaterThanOrEqualTo(0),
-        reason: 'side panel 菜单需有统一关闭汇聚点 _hideVideoSidePanel');
+    expect(
+      hideIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'side panel 菜单需有统一关闭汇聚点 _hideVideoSidePanel',
+    );
     final int hideEnd = src.indexOf('\n  }', hideIdx);
     expect(
-        src.substring(hideIdx, hideEnd).contains(
-            '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
-        isTrue,
-        reason: 'side panel 关闭后必须归还键盘焦点');
+      src
+          .substring(hideIdx, hideEnd)
+          .contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
+      isTrue,
+      reason: 'side panel 关闭后必须归还键盘焦点',
+    );
     // TODO-638：剧集列表 push-aside 关闭汇聚点 [_closeEpisodeList] 也必须归还键盘焦点
     // （取代旧 modal sheet whenComplete 的 _videoSheetOpen 复位 + refocus 闭包）。
     final int epIdx = src.indexOf('void _closeEpisodeList() {');
-    expect(epIdx, greaterThanOrEqualTo(0),
-        reason: '剧集列表 push-aside 需有统一关闭汇聚点 _closeEpisodeList');
+    expect(
+      epIdx,
+      greaterThanOrEqualTo(0),
+      reason: '剧集列表 push-aside 需有统一关闭汇聚点 _closeEpisodeList',
+    );
     final int epEnd = src.indexOf('\n  }', epIdx);
     expect(
-        src.substring(epIdx, epEnd).contains(
-            '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
-        isTrue,
-        reason: '剧集列表 push-aside 关闭后必须归还键盘焦点');
+      src
+          .substring(epIdx, epEnd)
+          .contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
+      isTrue,
+      reason: '剧集列表 push-aside 关闭后必须归还键盘焦点',
+    );
   });
 
   // ── TODO-040/042：三类「快捷键失灵」的统一修复接线 ────────────────────────
@@ -156,52 +207,83 @@ void main() {
     // 根因：窗口/全屏两套 controls 共用 _videoFocusNode，退全屏时全屏侧 Focus
     // dispose 把节点摘成永久孤儿 → 此后所有归还静默失效（行为复现见
     // video_fullscreen_focus_gate_test.dart）。
-    expect(src, contains('VideoControlsFocusGate('),
-        reason: 'controls builder 必须包 VideoControlsFocusGate');
-    expect(src, contains('fullscreenRouteActive: _videoFullscreenActive'),
-        reason: 'gate 必须吃页面级 _videoFullscreenActive 标记');
-    expect(src, contains('bool _videoFullscreenActive = false;'),
-        reason: '页面必须维护「全屏路由在栈上」标记');
+    expect(
+      src,
+      contains('VideoControlsFocusGate('),
+      reason: 'controls builder 必须包 VideoControlsFocusGate',
+    );
+    expect(
+      src,
+      contains('fullscreenRouteActive: _videoFullscreenActive'),
+      reason: 'gate 必须吃页面级 _videoFullscreenActive 标记',
+    );
+    expect(
+      src,
+      contains('bool _videoFullscreenActive = false;'),
+      reason: '页面必须维护「全屏路由在栈上」标记',
+    );
   });
 
   test('全屏路由关闭走唯一汇聚点：whenComplete 复位标记 + 归还焦点', () {
-    expect(src, contains('.whenComplete(_onVideoFullscreenRouteClosed)'),
-        reason: 'Esc/F/按钮/双击/系统返回全部经路由 future 完成，必须单点收口');
+    expect(
+      src,
+      contains('.whenComplete(_onVideoFullscreenRouteClosed)'),
+      reason: 'Esc/F/按钮/双击/系统返回全部经路由 future 完成，必须单点收口',
+    );
     final int handler = src.indexOf('void _onVideoFullscreenRouteClosed()');
     expect(handler, greaterThanOrEqualTo(0));
     final String body = src.substring(
-        handler, src.indexOf('Future<void> _exitVideoFullscreen', handler));
-    expect(body, contains('_videoFullscreenActive = false'),
-        reason: '退全屏必须复位标记让窗口侧 controls 重挂（节点重新 attach）');
+      handler,
+      src.indexOf('Future<void> _exitVideoFullscreen', handler),
+    );
+    expect(
+      body,
+      contains('_videoFullscreenActive = false'),
+      reason: '退全屏必须复位标记让窗口侧 controls 重挂（节点重新 attach）',
+    );
     // 必须是 post-frame：窗口侧 controls 要先重挂、节点重新 reparent，同步请求会落空。
     expect(
-        body,
-        contains(
-            '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.surfaceRemounted)'),
-        reason: '重挂后必须在下一帧归还键盘焦点');
+      body,
+      contains(
+        '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.surfaceRemounted)',
+      ),
+      reason: '重挂后必须在下一帧归还键盘焦点',
+    );
   });
 
   test('查词浮层栈全空时在关栈汇聚点归还焦点（点遮罩/返回/Esc 全路径）', () {
     final int pop = src.indexOf('void _popNestedPopupAt(int index)');
     expect(pop, greaterThanOrEqualTo(0));
-    final String body =
-        src.substring(pop, src.indexOf('Widget _buildNestedPopupLayer', pop));
+    final String body = src.substring(
+      pop,
+      src.indexOf('Widget _buildNestedPopupLayer', pop),
+    );
     // TODO-270 E：关栈汇聚点的 stackEmpty 分支扩成块体（清未制卡草稿 + 归还焦点）；
     // 焦点归还仍在同一汇聚点，覆盖点遮罩/返回/Esc/滑动全部关闭路径。
-    expect(body, contains('if (stackEmpty) {'),
-        reason: '浮层全关后必须在关栈汇聚点处理（清草稿 + 归还焦点）');
-    expect(body,
-        contains('_focusOwnership.reclaim(FocusReclaimCause.popupDismissed)'),
-        reason: '浮层全关后键盘所有权必须回到视频，否则查词一次后空格失灵');
+    expect(
+      body,
+      contains('if (stackEmpty) {'),
+      reason: '浮层全关后必须在关栈汇聚点处理（清草稿 + 归还焦点）',
+    );
+    expect(
+      body,
+      contains('_focusOwnership.reclaim(FocusReclaimCause.popupDismissed)'),
+      reason: '浮层全关后键盘所有权必须回到视频，否则查词一次后空格失灵',
+    );
   });
 
   test('点视频区收回键盘焦点（焦点意外丢失后的恢复路径）', () {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final String body = src.substring(
-        handler, src.indexOf('void _handleVideoWheelSignal(', handler));
-    expect(body, contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
-        reason: '点视频画面必须收回键盘（与原生播放器一致）');
+      handler,
+      src.indexOf('void _handleVideoWheelSignal(', handler),
+    );
+    expect(
+      body,
+      contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
+      reason: '点视频画面必须收回键盘（与原生播放器一致）',
+    );
     // 「查词浮层期间除外」现在由 _canOwnVideoFocus 的统一门控保证，不再由调用点手写。
     expect(src, contains('_hasVisiblePopup'), reason: '判据必须仍然考虑查词浮层可见性');
   });
@@ -210,14 +292,21 @@ void main() {
     final int lifecycle = src.indexOf('void didChangeAppLifecycleState(');
     expect(lifecycle, greaterThanOrEqualTo(0));
     final String body = src.substring(
-        lifecycle, src.indexOf('Future<void> _init()', lifecycle));
+      lifecycle,
+      src.indexOf('Future<void> _init()', lifecycle),
+    );
     expect(
-        body, contains('_focusOwnership.reclaim(FocusReclaimCause.appResumed)'),
-        reason: 'resumed 时若键盘所有权属本页必须收回焦点（TODO-040 ①切窗返回）');
+      body,
+      contains('_focusOwnership.reclaim(FocusReclaimCause.appResumed)'),
+      reason: 'resumed 时若键盘所有权属本页必须收回焦点（TODO-040 ①切窗返回）',
+    );
     // appResumed 是全局回调，判据里必须有「所有者路由 isCurrent」这一层，
     // 否则会夺走压在本页上方对话框的键盘。
-    expect(src, contains('owner.isCurrent'),
-        reason: 'appResumed 判据必须确认本页仍是当前路由');
+    expect(
+      src,
+      contains('owner.isCurrent'),
+      reason: 'appResumed 判据必须确认本页仍是当前路由',
+    );
   });
 
   test('图形字幕 OCR 的询问框（LLM 默认 / Lens 披露）都在焦点守卫里弹', () {
@@ -228,13 +317,21 @@ void main() {
       'ensureMangaAiOcrDefaultDecided(',
       'ensureGoogleLensDisclosure(',
     ]) {
-      final List<int> calls =
-          dialog.allMatches(masked).map((Match m) => m.start).toList();
+      final List<int> calls = dialog
+          .allMatches(masked)
+          .map((Match m) => m.start)
+          .toList();
       expect(calls, isNotEmpty, reason: '$dialog 的调用点不见了，守卫需要跟着改');
       for (final int at in calls) {
-        final int guard = masked.lastIndexOf('_focusOwnership.guardOverlay(', at);
-        expect(guard >= 0 && at - guard < 80, isTrue,
-            reason: '$dialog 必须直接包在 _focusOwnership.guardOverlay 里');
+        final int guard = masked.lastIndexOf(
+          '_focusOwnership.guardOverlay(',
+          at,
+        );
+        expect(
+          guard >= 0 && at - guard < 80,
+          isTrue,
+          reason: '$dialog 必须直接包在 _focusOwnership.guardOverlay 里',
+        );
       }
     }
     // 引擎装配里的 decideAiDefault 也会弹同一个框（prepareMangaStreamOcr 内部调）。
@@ -255,7 +352,8 @@ void main() {
       expect(
         guarded.hasMatch(masked.substring(at, at + 400)),
         isTrue,
-        reason: '视频页装配的引擎必须把 decideAiDefault 套进焦点守卫'
+        reason:
+            '视频页装配的引擎必须把 decideAiDefault 套进焦点守卫'
             '（仅 CLI 无头同意分支可换成不弹框的 consent.decideAiDefault）',
       );
     }

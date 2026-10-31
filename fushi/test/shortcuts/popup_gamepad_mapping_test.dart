@@ -42,23 +42,31 @@ void main() {
 
     test('dpad下/上=词条导航、X=制卡、Y=发音', () {
       expect(
-        registry.resolveGamepad(GamepadButton.dpadDown,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.dpadDown,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupNextEntry,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.dpadUp,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.dpadUp,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupPrevEntry,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.x,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.x,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupMineEntry,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.y,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.y,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupPlayAudio,
       );
     });
@@ -67,9 +75,13 @@ void main() {
       final Map<ShortcutAction, ShortcutBindingSet> mobile =
           ShortcutDefaults.forPlatform(TargetPlatform.android);
       expect(
-          mobile[ShortcutAction.popupNextEntry]!.gamepadBindings, isNotEmpty);
+        mobile[ShortcutAction.popupNextEntry]!.gamepadBindings,
+        isNotEmpty,
+      );
       expect(
-          mobile[ShortcutAction.popupPlayAudio]!.gamepadBindings, isNotEmpty);
+        mobile[ShortcutAction.popupPlayAudio]!.gamepadBindings,
+        isNotEmpty,
+      );
     });
   });
 
@@ -84,14 +96,22 @@ void main() {
     test('弹窗可见：四个默认按钮各自派发到对应钩子', () {
       final List<String> calls = <String>[];
       DictionaryPopupGamepadRegistry.push(recordingHooks(calls));
-      expect(tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadDown),
-          isTrue);
-      expect(tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadUp),
-          isTrue);
       expect(
-          tryDictionaryPopupGamepadButton(registry, GamepadButton.x), isTrue);
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadDown),
+        isTrue,
+      );
       expect(
-          tryDictionaryPopupGamepadButton(registry, GamepadButton.y), isTrue);
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadUp),
+        isTrue,
+      );
+      expect(
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.x),
+        isTrue,
+      );
+      expect(
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.y),
+        isTrue,
+      );
       expect(calls, <String>['entry:next', 'entry:prev', 'mine', 'audio']);
     });
 
@@ -99,20 +119,29 @@ void main() {
       final List<String> calls = <String>[];
       DictionaryPopupGamepadRegistry.push(recordingHooks(calls));
       expect(
-          tryDictionaryPopupGamepadButton(registry, GamepadButton.a), isFalse);
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.a),
+        isFalse,
+      );
       expect(
-          tryDictionaryPopupGamepadButton(registry, GamepadButton.b), isFalse);
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.b),
+        isFalse,
+      );
       expect(
-          tryDictionaryPopupGamepadButton(registry, GamepadButton.rb), isFalse);
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.rb),
+        isFalse,
+      );
       expect(calls, isEmpty);
     });
 
     test('无可见弹窗：登记了钩子也不吃任何按钮', () {
       final List<String> calls = <String>[];
       DictionaryPopupGamepadRegistry.push(
-          recordingHooks(calls, visible: false));
-      expect(tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadDown),
-          isFalse);
+        recordingHooks(calls, visible: false),
+      );
+      expect(
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadDown),
+        isFalse,
+      );
       expect(calls, isEmpty);
     });
 
@@ -120,18 +149,23 @@ void main() {
       final List<String> homeCalls = <String>[];
       final List<String> videoCalls = <String>[];
       DictionaryPopupGamepadRegistry.push(
-          recordingHooks(homeCalls, visible: false));
+        recordingHooks(homeCalls, visible: false),
+      );
       DictionaryPopupGamepadRegistry.push(recordingHooks(videoCalls));
-      expect(tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadDown),
-          isTrue);
+      expect(
+        tryDictionaryPopupGamepadButton(registry, GamepadButton.dpadDown),
+        isTrue,
+      );
       expect(homeCalls, isEmpty);
       expect(videoCalls, <String>['entry:next']);
     });
 
     test('registry 为 null（测试宿主）时安全返回 false', () {
       DictionaryPopupGamepadRegistry.push(recordingHooks(<String>[]));
-      expect(tryDictionaryPopupGamepadButton(null, GamepadButton.dpadDown),
-          isFalse);
+      expect(
+        tryDictionaryPopupGamepadButton(null, GamepadButton.dpadDown),
+        isFalse,
+      );
     });
   });
 
@@ -197,15 +231,17 @@ void main() {
     });
   });
 
-  group(
-      '派发接线源码守卫（单测只测 tryDictionaryPopupGamepadButton 本体，'
+  group('派发接线源码守卫（单测只测 tryDictionaryPopupGamepadButton 本体，'
       '接线被删时它们照样绿——这两条钉住两条真实调用链）', () {
     test('桌面轮询：_dispatchButton 在页面 Actions 之后调弹窗兜底', () {
       final String code = maskComments(
-          File('lib/src/shortcuts/gamepad_service.dart').readAsStringSync());
+        File('lib/src/shortcuts/gamepad_service.dart').readAsStringSync(),
+      );
       expect(
-        code.contains('if (tryDictionaryPopupGamepadButton(registry, button)) '
-            'return;'),
+        code.contains(
+          'if (tryDictionaryPopupGamepadButton(registry, button)) '
+          'return;',
+        ),
         isTrue,
         reason: '桌面轮询链丢失弹窗兜底：手柄在弹窗上只剩焦点/滚动兜底',
       );
@@ -213,10 +249,12 @@ void main() {
 
     test('Android 键事件链：全局 wrapper 调同一入口', () {
       final String code = maskComments(
-          File('lib/src/shortcuts/global_navigation.dart').readAsStringSync());
+        File('lib/src/shortcuts/global_navigation.dart').readAsStringSync(),
+      );
       expect(
         code.contains(
-            'tryDictionaryPopupGamepadButton(registry, nativeButton)'),
+          'tryDictionaryPopupGamepadButton(registry, nativeButton)',
+        ),
         isTrue,
         reason: 'Android 链丢失弹窗兜底：手柄弹窗操作变桌面 only',
       );
@@ -244,8 +282,8 @@ void main() {
         }
         final List<GamepadBinding> gamepad =
             action.scope == ShortcutScope.dictionaryPopup
-                ? const <GamepadBinding>[]
-                : entry.value.gamepadBindings;
+            ? const <GamepadBinding>[]
+            : entry.value.gamepadBindings;
         json[action.key] = ShortcutBindingSet(
           keyboardBindings: entry.value.keyboardBindings,
           gamepadBindings: gamepad,
@@ -263,18 +301,24 @@ void main() {
         TargetPlatform.windows,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.dpadDown,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.dpadDown,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupNextEntry,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.x,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.x,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupMineEntry,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.y,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.y,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupPlayAudio,
       );
     });
@@ -303,8 +347,10 @@ void main() {
         <WheelBinding>[userWheel],
       );
       expect(
-        registry.resolveGamepad(GamepadButton.dpadDown,
-            scope: ShortcutScope.dictionaryPopup),
+        registry.resolveGamepad(
+          GamepadButton.dpadDown,
+          scope: ShortcutScope.dictionaryPopup,
+        ),
         ShortcutAction.popupNextEntry,
       );
     });

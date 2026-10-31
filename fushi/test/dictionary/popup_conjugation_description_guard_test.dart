@@ -71,7 +71,10 @@ void main() {
 
     final int closeStart = js.indexOf('function hideGrammarTooltip()');
     expect(closeStart, greaterThanOrEqualTo(0));
-    final int closeEnd = js.indexOf('function createFuriganaSegment', closeStart);
+    final int closeEnd = js.indexOf(
+      'function createFuriganaSegment',
+      closeStart,
+    );
     expect(closeEnd, greaterThan(closeStart));
     final String closeBody = js.substring(closeStart, closeEnd);
     expect(closeBody, contains("tooltip.style.display = 'none';"));

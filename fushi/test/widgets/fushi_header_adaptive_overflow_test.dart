@@ -24,38 +24,36 @@ void main() {
   ];
   const List<String> names = <String>['A', 'B', 'C', 'D', 'E'];
 
-  List<Widget> buildActions(List<String> tapped, {bool disableD = false}) =>
-      <Widget>[
-        FushiIconButton(
-          icon: icons[0],
-          tooltip: 'A',
-          onTap: () => tapped.add('A'),
-        ),
-        FushiIconButton(
-          icon: icons[1],
-          tooltip: 'B',
-          overflowPriority: 2,
-          onTap: () => tapped.add('B'),
-        ),
-        FushiIconButton(
-          icon: icons[2],
-          tooltip: 'C',
-          alwaysVisible: true,
-          onTap: () => tapped.add('C'),
-        ),
-        FushiIconButton(
-          icon: icons[3],
-          tooltip: 'D',
-          enabled: !disableD,
-          onTap: () => tapped.add('D'),
-        ),
-        FushiIconButton(
-          icon: icons[4],
-          tooltip: 'E',
-          overflowPriority: -1,
-          onTap: () => tapped.add('E'),
-        ),
-      ];
+  List<Widget> buildActions(
+    List<String> tapped, {
+    bool disableD = false,
+  }) => <Widget>[
+    FushiIconButton(icon: icons[0], tooltip: 'A', onTap: () => tapped.add('A')),
+    FushiIconButton(
+      icon: icons[1],
+      tooltip: 'B',
+      overflowPriority: 2,
+      onTap: () => tapped.add('B'),
+    ),
+    FushiIconButton(
+      icon: icons[2],
+      tooltip: 'C',
+      alwaysVisible: true,
+      onTap: () => tapped.add('C'),
+    ),
+    FushiIconButton(
+      icon: icons[3],
+      tooltip: 'D',
+      enabled: !disableD,
+      onTap: () => tapped.add('D'),
+    ),
+    FushiIconButton(
+      icon: icons[4],
+      tooltip: 'E',
+      overflowPriority: -1,
+      onTap: () => tapped.add('E'),
+    ),
+  ];
 
   Widget host({required double width, required List<Widget> actions}) {
     return MaterialApp(
@@ -72,9 +70,9 @@ void main() {
   }
 
   Set<String> visibleNames() => <String>{
-        for (int i = 0; i < icons.length; i++)
-          if (find.byIcon(icons[i]).evaluate().isNotEmpty) names[i],
-      };
+    for (int i = 0; i < icons.length; i++)
+      if (find.byIcon(icons[i]).evaluate().isNotEmpty) names[i],
+  };
 
   bool hasOverflow() =>
       find.byKey(kFushiHeaderOverflowMenuKey).evaluate().isNotEmpty;
@@ -99,17 +97,26 @@ void main() {
       double widthWith(int k) => <double>[200, 170, 140, 110][k];
       expect(
         fushiHeaderCollapseCount(
-            collapsible: 3, widthWith: widthWith, budget: 500),
+          collapsible: 3,
+          widthWith: widthWith,
+          budget: 500,
+        ),
         0,
       );
       expect(
         fushiHeaderCollapseCount(
-            collapsible: 3, widthWith: widthWith, budget: 150),
+          collapsible: 3,
+          widthWith: widthWith,
+          budget: 150,
+        ),
         2,
       );
       expect(
         fushiHeaderCollapseCount(
-            collapsible: 3, widthWith: widthWith, budget: 50),
+          collapsible: 3,
+          widthWith: widthWith,
+          budget: 50,
+        ),
         3,
       );
       // 只有一颗可收：收了换成等宽的 ⋯，省不出宽度 → 不收。
@@ -167,9 +174,7 @@ void main() {
     });
   });
 
-  testWidgets('逐档缩小行宽：外露数单调递减、按优先级从低到高逐颗进 ⋯', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('逐档缩小行宽：外露数单调递减、按优先级从低到高逐颗进 ⋯', (WidgetTester tester) async {
     final List<Set<String>> history = <Set<String>>[];
     final List<bool> overflowHistory = <bool>[];
     for (double width = 800; width >= 160; width -= 8) {
@@ -213,7 +218,8 @@ void main() {
       expect(
         gone,
         expectedOrder.sublist(next, next + gone.length).toSet(),
-        reason: '从最低优先级起逐颗收：E(-1) → D(0,靠后) → A(0) → B(2)'
+        reason:
+            '从最低优先级起逐颗收：E(-1) → D(0,靠后) → A(0) → B(2)'
             '（第 $i 档收走 $gone）',
       );
       next += gone.length;
@@ -237,11 +243,13 @@ void main() {
 
     await tester.tap(find.byKey(kFushiHeaderOverflowMenuKey));
     await tester.pumpAndSettle();
-    final PopupMenuItem<FushiIconButton> disabled =
-        tester.widget<PopupMenuItem<FushiIconButton>>(find.ancestor(
-      of: find.text('D'),
-      matching: find.byType(PopupMenuItem<FushiIconButton>),
-    ));
+    final PopupMenuItem<FushiIconButton> disabled = tester
+        .widget<PopupMenuItem<FushiIconButton>>(
+          find.ancestor(
+            of: find.text('D'),
+            matching: find.byType(PopupMenuItem<FushiIconButton>),
+          ),
+        );
     expect(disabled.enabled, isFalse, reason: '禁用态同步置灰');
 
     await tester.tap(find.text('E'));
@@ -314,40 +322,38 @@ void main() {
     }
   });
 
-  testWidgets('宽窗：药丸放得下就带字；文字放大到放不下时先降成纯图标', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('宽窗：药丸放得下就带字；文字放大到放不下时先降成纯图标', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     Widget labeled({required double textScale}) => MaterialApp(
-          home: MediaQuery(
-            data: MediaQueryData(
-              size: const Size(1200, 800),
-              textScaler: TextScaler.linear(textScale),
-            ),
-            child: Scaffold(
-              body: Align(
-                alignment: Alignment.topLeft,
-                child: SizedBox(
-                  width: 1000,
-                  child: FushiPageHeader(
-                    title: '标题',
-                    actions: <Widget>[
-                      for (int i = 0; i < 3; i++)
-                        FushiIconButton(
-                          icon: icons[i],
-                          tooltip: 'tip$i',
-                          label: '动作标签文字$i',
-                          onTap: () {},
-                        ),
-                    ],
-                  ),
-                ),
+      home: MediaQuery(
+        data: MediaQueryData(
+          size: const Size(1200, 800),
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 1000,
+              child: FushiPageHeader(
+                title: '标题',
+                actions: <Widget>[
+                  for (int i = 0; i < 3; i++)
+                    FushiIconButton(
+                      icon: icons[i],
+                      tooltip: 'tip$i',
+                      label: '动作标签文字$i',
+                      onTap: () {},
+                    ),
+                ],
               ),
             ),
           ),
-        );
+        ),
+      ),
+    );
 
     await tester.pumpWidget(labeled(textScale: 1));
     await tester.pump();
@@ -392,8 +398,11 @@ void main() {
     final Set<String> mid = await at(160);
     expect(hasOverflow(), isTrue);
     expect(mid, contains('C'));
-    expect(mid.length, inExclusiveRange(1, names.length),
-        reason: '逐颗收，而不是全有或全无');
+    expect(
+      mid.length,
+      inExclusiveRange(1, names.length),
+      reason: '逐颗收，而不是全有或全无',
+    );
     expect(mid.contains('E'), isFalse, reason: '最低优先级先收');
   });
 }

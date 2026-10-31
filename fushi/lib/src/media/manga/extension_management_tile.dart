@@ -25,8 +25,9 @@ String mangaSourceHostLabel(String value) {
   if (raw.isEmpty) return '';
   final Uri? uri = Uri.tryParse(raw);
   if (uri == null || uri.host.isEmpty) return raw;
-  final String host =
-      uri.host.startsWith('www.') ? uri.host.substring(4) : uri.host;
+  final String host = uri.host.startsWith('www.')
+      ? uri.host.substring(4)
+      : uri.host;
   final String path = uri.path == '/' ? '' : uri.path;
   return '$host$path';
 }
@@ -121,11 +122,10 @@ class MangaExtensionManagementTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) =>
-          _buildTile(
-            context,
-            narrow: constraints.maxWidth < compactActionsBreakpoint,
-          ),
+      builder: (BuildContext context, BoxConstraints constraints) => _buildTile(
+        context,
+        narrow: constraints.maxWidth < compactActionsBreakpoint,
+      ),
     );
   }
 
@@ -143,7 +143,8 @@ class MangaExtensionManagementTile extends StatelessWidget {
           bottom: index >= count - 1 ? tokens.spacing.gap : 0,
         ),
         // Apple 分隔线从标题起点开始：行内边距 + 图标 + 图标与文字间距。
-        separatorIndent: tokens.spacing.rowHorizontal -
+        separatorIndent:
+            tokens.spacing.rowHorizontal -
             4 +
             _ExtensionIcon._size +
             FushiAppleMetrics.of(context).leadingGap,
@@ -209,9 +210,8 @@ class MangaExtensionManagementTile extends StatelessWidget {
         FushiSwitch.adaptive(value: enabled!, onChanged: onEnabledChanged),
       if (!narrow) ...actions,
     ];
-    final bool structured = metaChips.isNotEmpty ||
-        downloadsLabel != null ||
-        details != null;
+    final bool structured =
+        metaChips.isNotEmpty || downloadsLabel != null || details != null;
     final bool compactActions = narrow && actions.isNotEmpty;
     final Widget? subtitleBlock = structured || compactActions
         ? Column(
@@ -351,9 +351,9 @@ class _ExtensionMetaWrap extends StatelessWidget {
                 Text(
                   downloads,
                   maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: base.color,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: base.color),
                 ),
               ],
             ),
@@ -369,7 +369,10 @@ class _ExtensionMetaWrap extends StatelessWidget {
 /// 一组。漫画 / 视频（Mihon）与小说（LNReader）的扩展目录共用。
 List<(int, int)> extensionGroupSlots(Iterable<bool> isHeader) {
   final List<bool> headers = isHeader.toList(growable: false);
-  final List<(int, int)> slots = List<(int, int)>.filled(headers.length, (0, 1));
+  final List<(int, int)> slots = List<(int, int)>.filled(headers.length, (
+    0,
+    1,
+  ));
   int start = 0;
   while (start < headers.length) {
     int end = start + 1;
@@ -455,10 +458,7 @@ class ExtensionStoreGroupHeader extends StatelessWidget {
         child: row,
       );
     }
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      child: row,
-    );
+    return FushiCard(padding: EdgeInsets.zero, child: row);
   }
 }
 
@@ -584,13 +584,15 @@ class MangaExtensionFilters extends StatelessWidget {
   Widget build(BuildContext context) {
     final ValueChanged<String>? onStoreChanged = this.onStoreChanged;
     final bool showStores = onStoreChanged != null && stores.length > 1;
-    final String effectiveStore = stores.any(
-      (ExtensionFilterOption<String> store) => store.value == selectedStore,
-    )
+    final String effectiveStore =
+        stores.any(
+          (ExtensionFilterOption<String> store) => store.value == selectedStore,
+        )
         ? selectedStore
         : '*';
-    final String effectiveLanguage =
-        languages.contains(selectedLanguage) ? selectedLanguage : '*';
+    final String effectiveLanguage = languages.contains(selectedLanguage)
+        ? selectedLanguage
+        : '*';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,

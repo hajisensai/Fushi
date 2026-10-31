@@ -12,22 +12,23 @@ enum AnidbHashIdentityStatus {
   notFound,
   matched,
   failed,
-  cancelled
+  cancelled,
 }
 
 class AnidbHashIdentityResult {
-  const AnidbHashIdentityResult(
-      {required this.status,
-      this.hash,
-      this.identity,
-      this.matchedEd2k,
-      this.mapping,
-      this.error,
-      this.mappingError,
-      this.episodeInfoError,
-      this.fromStore = false,
-      this.missAttempts = 0,
-      this.missExhausted = false});
+  const AnidbHashIdentityResult({
+    required this.status,
+    this.hash,
+    this.identity,
+    this.matchedEd2k,
+    this.mapping,
+    this.error,
+    this.mappingError,
+    this.episodeInfoError,
+    this.fromStore = false,
+    this.missAttempts = 0,
+    this.missExhausted = false,
+  });
   final AnidbHashIdentityStatus status;
   final AnidbEd2kHash? hash;
   final AnidbFileIdentity? identity;
@@ -52,17 +53,27 @@ class AnidbHashIdentityResult {
   final bool missExhausted;
 }
 
-typedef AnidbFileHasher = Future<AnidbEd2kHash> Function(String path,
-    {bool Function()? isCancelled, void Function(int, int)? onProgress});
-typedef AnidbIdentityLookup = Future<AnidbFileIdentity?> Function(
-    {required int size, required String ed2k});
-typedef AnidbEpisodeLookup = Future<AnidbEpisodeInfo?> Function(
-    {required int episodeId});
+typedef AnidbFileHasher =
+    Future<AnidbEd2kHash> Function(
+      String path, {
+      bool Function()? isCancelled,
+      void Function(int, int)? onProgress,
+    });
+typedef AnidbIdentityLookup =
+    Future<AnidbFileIdentity?> Function({
+      required int size,
+      required String ed2k,
+    });
+typedef AnidbEpisodeLookup =
+    Future<AnidbEpisodeInfo?> Function({required int episodeId});
 
 /// 按 (aid, eid) 取集信息的**首选**来源——AniDB HTTP anime XML（Shoko 路径：
 /// 一次拿全集播出日 / 集名，本地缓存 24h）。返回 null / 抛错 → 退到 UDP `EPISODE`。
-typedef AnidbEpisodeInfoSource = Future<AnidbEpisodeInfo?> Function(
-    {required int animeId, required int episodeId});
+typedef AnidbEpisodeInfoSource =
+    Future<AnidbEpisodeInfo?> Function({
+      required int animeId,
+      required int episodeId,
+    });
 
 /// Hashing is strictly opt-in and requires a registered, configured UDP client.
 /// A positive FILE response remains a match even if MAL mapping is unavailable.
@@ -71,28 +82,28 @@ typedef AnidbEpisodeInfoSource = Future<AnidbEpisodeInfo?> Function(
 /// mtime 命中免哈希；哈希后按内容键命中免 FILE），只有真正没见过的内容才算
 /// ED2K、发 FILE，结果（含 320 未收录）写回持久层。
 class AnidbHashIdentityService {
-  AnidbHashIdentityService(
-      {required this.enabled,
-      required this.config,
-      AnimeIdentityMapping? mapping,
-      AnidbUdpFileClient? client,
-      AnidbFileHasher? hasher,
-      AnidbIdentityLookup? lookup,
-      AnidbEpisodeLookup? episodeLookup,
-      AnidbEpisodeInfoSource? episodeInfoSource,
-      AnidbFileIdentityStore? store,
-      DateTime Function()? now,
-      this.maxCachedHashes = 512})
-      : assert(maxCachedHashes > 0),
-        _mapping = mapping ?? AnimeIdentityMapping(),
-        _ownsMapping = mapping == null,
-        _client = client ?? AnidbUdpFileClient(config: config),
-        _hasher = hasher ?? hashAnidbFile,
-        _lookup = lookup,
-        _episodeLookup = episodeLookup,
-        _episodeInfoSource = episodeInfoSource,
-        _store = store,
-        _now = now ?? DateTime.now;
+  AnidbHashIdentityService({
+    required this.enabled,
+    required this.config,
+    AnimeIdentityMapping? mapping,
+    AnidbUdpFileClient? client,
+    AnidbFileHasher? hasher,
+    AnidbIdentityLookup? lookup,
+    AnidbEpisodeLookup? episodeLookup,
+    AnidbEpisodeInfoSource? episodeInfoSource,
+    AnidbFileIdentityStore? store,
+    DateTime Function()? now,
+    this.maxCachedHashes = 512,
+  }) : assert(maxCachedHashes > 0),
+       _mapping = mapping ?? AnimeIdentityMapping(),
+       _ownsMapping = mapping == null,
+       _client = client ?? AnidbUdpFileClient(config: config),
+       _hasher = hasher ?? hashAnidbFile,
+       _lookup = lookup,
+       _episodeLookup = episodeLookup,
+       _episodeInfoSource = episodeInfoSource,
+       _store = store,
+       _now = now ?? DateTime.now;
 
   final bool enabled;
   final AnidbUdpConfig config;
@@ -110,16 +121,20 @@ class AnidbHashIdentityService {
       LinkedHashMap<String, AnidbEd2kHash>();
   bool get isConfigured => config.isAvailable;
 
-  Future<AnidbHashIdentityResult> identifyFile(String path,
-      {bool Function()? isCancelled,
-      void Function(int, int)? onProgress}) async {
+  Future<AnidbHashIdentityResult> identifyFile(
+    String path, {
+    bool Function()? isCancelled,
+    void Function(int, int)? onProgress,
+  }) async {
     if (!enabled) {
       return const AnidbHashIdentityResult(
-          status: AnidbHashIdentityStatus.disabled);
+        status: AnidbHashIdentityStatus.disabled,
+      );
     }
     if (!isConfigured) {
       return const AnidbHashIdentityResult(
-          status: AnidbHashIdentityStatus.unavailable);
+        status: AnidbHashIdentityStatus.unavailable,
+      );
     }
     AnidbEd2kHash? hash;
     try {
@@ -133,13 +148,22 @@ class AnidbHashIdentityService {
       // 持久层快路径：同路径、同大小、同 mtime 就是上次那份内容，直接复用。
       if (store != null && stat.type == FileSystemEntityType.file) {
         final AnidbFileIdentityRecord? known = await store.findForFile(
-            filePath: absolutePath, size: stat.size, modifiedAt: stat.modified);
+          filePath: absolutePath,
+          size: stat.size,
+          modifiedAt: stat.modified,
+        );
         if (known != null && (known.isMatch || known.isFreshMiss(now))) {
           onProgress?.call(stat.size, stat.size);
-          final _BackfilledRecord filled =
-              await _backfillEpisodeAirDate(known, store);
-          return await _fromRecord(filled.record, stat, isCancelled,
-              episodeInfoError: filled.error);
+          final _BackfilledRecord filled = await _backfillEpisodeAirDate(
+            known,
+            store,
+          );
+          return await _fromRecord(
+            filled.record,
+            stat,
+            isCancelled,
+            episodeInfoError: filled.error,
+          );
         }
         if (known != null) missAttempts = known.missAttempts;
       }
@@ -149,8 +173,11 @@ class AnidbHashIdentityService {
           stat.size != hash.size ||
           stat.modified != hash.modifiedAt ||
           stat.changed != hash.changedAt) {
-        hash = await _hasher(absolutePath,
-            isCancelled: isCancelled, onProgress: onProgress);
+        hash = await _hasher(
+          absolutePath,
+          isCancelled: isCancelled,
+          onProgress: onProgress,
+        );
       } else {
         onProgress?.call(hash.size, hash.size);
       }
@@ -161,23 +188,37 @@ class AnidbHashIdentityService {
       }
       // 文件搬家 / 改名：内容键照样命中，只把路径提示更新到新位置。
       if (store != null) {
-        final AnidbFileIdentityRecord? known =
-            await store.findByHash(ed2k: hash.ed2k, size: hash.size);
+        final AnidbFileIdentityRecord? known = await store.findByHash(
+          ed2k: hash.ed2k,
+          size: hash.size,
+        );
         if (known != null && (known.isMatch || known.isFreshMiss(now))) {
           final AnidbFileIdentityRecord moved = _recordFor(
-              hash, known.identity, absolutePath,
-              resolvedAt: known.resolvedAt, missAttempts: known.missAttempts);
+            hash,
+            known.identity,
+            absolutePath,
+            resolvedAt: known.resolvedAt,
+            missAttempts: known.missAttempts,
+          );
           await store.save(moved);
-          final _BackfilledRecord filled =
-              await _backfillEpisodeAirDate(moved, store);
-          return await _fromRecord(filled.record, stat, isCancelled,
-              episodeInfoError: filled.error);
+          final _BackfilledRecord filled = await _backfillEpisodeAirDate(
+            moved,
+            store,
+          );
+          return await _fromRecord(
+            filled.record,
+            stat,
+            isCancelled,
+            episodeInfoError: filled.error,
+          );
         }
         if (known != null) missAttempts = known.missAttempts;
       }
       final AnidbIdentityLookup lookup = _lookup ?? _client.lookup;
-      AnidbFileIdentity? identity =
-          await lookup(size: hash.size, ed2k: hash.ed2k);
+      AnidbFileIdentity? identity = await lookup(
+        size: hash.size,
+        ed2k: hash.ed2k,
+      );
       String? matchedEd2k = identity == null ? null : hash.ed2k;
       _checkCancelled(isCancelled);
       final String? alternate = hash.alternativeEd2k;
@@ -187,12 +228,20 @@ class AnidbHashIdentityService {
         _checkCancelled(isCancelled);
       }
       if (identity == null) {
-        await store?.save(_recordFor(hash, null, absolutePath,
-            resolvedAt: now, missAttempts: missAttempts + 1));
+        await store?.save(
+          _recordFor(
+            hash,
+            null,
+            absolutePath,
+            resolvedAt: now,
+            missAttempts: missAttempts + 1,
+          ),
+        );
         return AnidbHashIdentityResult(
-            status: AnidbHashIdentityStatus.notFound,
-            hash: hash,
-            missAttempts: missAttempts + 1);
+          status: AnidbHashIdentityStatus.notFound,
+          hash: hash,
+          missAttempts: missAttempts + 1,
+        );
       }
       // Shoko 集级链接要 AniDB 集播出日，FILE 应答里没有，紧接着按 eid 问一次
       // EPISODE 再落库；一文件多集时其余集的集号 / 集名 / 播出日也只有 EPISODE
@@ -204,8 +253,9 @@ class AnidbHashIdentityService {
       } on Object catch (error) {
         episodeInfoError = error;
       }
-      await store
-          ?.save(_recordFor(hash, resolved, absolutePath, resolvedAt: now));
+      await store?.save(
+        _recordFor(hash, resolved, absolutePath, resolvedAt: now),
+      );
       AnimeIdentityMappingResult? mapping;
       Object? mappingError;
       try {
@@ -221,22 +271,30 @@ class AnidbHashIdentityService {
           current.changed != hash.changedAt) {
         _hashes.remove(absolutePath);
         throw FileSystemException(
-            'File changed while resolving AniDB identity', absolutePath);
+          'File changed while resolving AniDB identity',
+          absolutePath,
+        );
       }
       return AnidbHashIdentityResult(
-          status: AnidbHashIdentityStatus.matched,
-          hash: hash,
-          identity: resolved,
-          matchedEd2k: matchedEd2k,
-          mapping: mapping,
-          mappingError: mappingError,
-          episodeInfoError: episodeInfoError);
+        status: AnidbHashIdentityStatus.matched,
+        hash: hash,
+        identity: resolved,
+        matchedEd2k: matchedEd2k,
+        mapping: mapping,
+        mappingError: mappingError,
+        episodeInfoError: episodeInfoError,
+      );
     } on AnidbHashCancelled {
       return AnidbHashIdentityResult(
-          status: AnidbHashIdentityStatus.cancelled, hash: hash);
+        status: AnidbHashIdentityStatus.cancelled,
+        hash: hash,
+      );
     } catch (error) {
       return AnidbHashIdentityResult(
-          status: AnidbHashIdentityStatus.failed, hash: hash, error: error);
+        status: AnidbHashIdentityStatus.failed,
+        hash: hash,
+        error: error,
+      );
     }
   }
 
@@ -245,7 +303,9 @@ class AnidbHashIdentityService {
   /// 就没登记播出日（`aired` = 0）的集仍是 null，客户端寿命内不会重复问同一个
   /// eid。
   Future<_BackfilledRecord> _backfillEpisodeAirDate(
-      AnidbFileIdentityRecord record, AnidbFileIdentityStore store) async {
+    AnidbFileIdentityRecord record,
+    AnidbFileIdentityStore store,
+  ) async {
     final AnidbFileIdentity? identity = record.identity;
     if (identity == null ||
         (identity.episodeAiredAt != null &&
@@ -260,13 +320,14 @@ class AnidbHashIdentityService {
     }
     if (identical(filled, identity)) return _BackfilledRecord(record);
     final AnidbFileIdentityRecord updated = AnidbFileIdentityRecord(
-        ed2k: record.ed2k,
-        size: record.size,
-        identity: filled,
-        filePath: record.filePath,
-        fileModifiedAt: record.fileModifiedAt,
-        resolvedAt: record.resolvedAt,
-        missAttempts: record.missAttempts);
+      ed2k: record.ed2k,
+      size: record.size,
+      identity: filled,
+      filePath: record.filePath,
+      fileModifiedAt: record.fileModifiedAt,
+      resolvedAt: record.resolvedAt,
+      missAttempts: record.missAttempts,
+    );
     await store.save(updated);
     return _BackfilledRecord(updated);
   }
@@ -287,8 +348,10 @@ class AnidbHashIdentityService {
     Future<AnidbEpisodeInfo?> lookup({required int episodeId}) async {
       if (xml != null) {
         try {
-          final AnidbEpisodeInfo? fromXml =
-              await xml(animeId: identity.animeId, episodeId: episodeId);
+          final AnidbEpisodeInfo? fromXml = await xml(
+            animeId: identity.animeId,
+            episodeId: episodeId,
+          );
           if (fromXml != null) return fromXml;
         } on Object {
           // XML 链失败不影响 UDP 兜底。
@@ -299,8 +362,9 @@ class AnidbHashIdentityService {
 
     AnidbFileIdentity result = identity;
     if (needMain) {
-      final AnidbEpisodeInfo? info =
-          await lookup(episodeId: identity.episodeId);
+      final AnidbEpisodeInfo? info = await lookup(
+        episodeId: identity.episodeId,
+      );
       if (info?.airedAt case final DateTime aired) {
         result = result.copyWith(episodeAiredAt: aired);
       }
@@ -328,22 +392,27 @@ class AnidbHashIdentityService {
 
   /// 持久层记录 → 与在线路径同形的结果；Fribb 映射照查（本地表，便宜），
   /// 这样调用方不用区分「刚问的」与「早就知道的」。
-  Future<AnidbHashIdentityResult> _fromRecord(AnidbFileIdentityRecord record,
-      FileStat stat, bool Function()? isCancelled,
-      {Object? episodeInfoError}) async {
+  Future<AnidbHashIdentityResult> _fromRecord(
+    AnidbFileIdentityRecord record,
+    FileStat stat,
+    bool Function()? isCancelled, {
+    Object? episodeInfoError,
+  }) async {
     final AnidbEd2kHash hash = AnidbEd2kHash(
-        ed2k: record.ed2k,
-        size: record.size,
-        modifiedAt: stat.modified,
-        changedAt: stat.changed);
+      ed2k: record.ed2k,
+      size: record.size,
+      modifiedAt: stat.modified,
+      changedAt: stat.changed,
+    );
     final AnidbFileIdentity? identity = record.identity;
     if (identity == null) {
       return AnidbHashIdentityResult(
-          status: AnidbHashIdentityStatus.notFound,
-          hash: hash,
-          fromStore: true,
-          missAttempts: record.missAttempts,
-          missExhausted: record.isExhaustedMiss);
+        status: AnidbHashIdentityStatus.notFound,
+        hash: hash,
+        fromStore: true,
+        missAttempts: record.missAttempts,
+        missExhausted: record.isExhaustedMiss,
+      );
     }
     AnimeIdentityMappingResult? mapping;
     Object? mappingError;
@@ -354,27 +423,32 @@ class AnidbHashIdentityService {
     }
     _checkCancelled(isCancelled);
     return AnidbHashIdentityResult(
-        status: AnidbHashIdentityStatus.matched,
-        hash: hash,
-        identity: identity,
-        matchedEd2k: record.ed2k,
-        mapping: mapping,
-        mappingError: mappingError,
-        episodeInfoError: episodeInfoError,
-        fromStore: true);
+      status: AnidbHashIdentityStatus.matched,
+      hash: hash,
+      identity: identity,
+      matchedEd2k: record.ed2k,
+      mapping: mapping,
+      mappingError: mappingError,
+      episodeInfoError: episodeInfoError,
+      fromStore: true,
+    );
   }
 
   static AnidbFileIdentityRecord _recordFor(
-          AnidbEd2kHash hash, AnidbFileIdentity? identity, String absolutePath,
-          {required DateTime resolvedAt, int missAttempts = 0}) =>
-      AnidbFileIdentityRecord(
-          ed2k: hash.ed2k,
-          size: hash.size,
-          identity: identity,
-          filePath: absolutePath,
-          fileModifiedAt: hash.modifiedAt,
-          resolvedAt: resolvedAt,
-          missAttempts: identity == null ? missAttempts : 0);
+    AnidbEd2kHash hash,
+    AnidbFileIdentity? identity,
+    String absolutePath, {
+    required DateTime resolvedAt,
+    int missAttempts = 0,
+  }) => AnidbFileIdentityRecord(
+    ed2k: hash.ed2k,
+    size: hash.size,
+    identity: identity,
+    filePath: absolutePath,
+    fileModifiedAt: hash.modifiedAt,
+    resolvedAt: resolvedAt,
+    missAttempts: identity == null ? missAttempts : 0,
+  );
 
   static void _checkCancelled(bool Function()? isCancelled) {
     if (isCancelled?.call() ?? false) throw const AnidbHashCancelled();

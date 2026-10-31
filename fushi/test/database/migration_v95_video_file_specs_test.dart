@@ -27,8 +27,10 @@ void main() {
   /// 建一个真实的 v94 形状库：当前 schema 建满、塞一行存量视频书，
   /// 再把新表整个 DROP 掉、版本写回 94。
   Future<void> seedV94() async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await fresh.customStatement(
       'INSERT INTO video_books (book_uid, title, video_path, imported_at) '
       "VALUES ('vid-1', '某电影', 'D:\\media\\movie.mkv', 1700000000)",
@@ -55,8 +57,10 @@ void main() {
   test('v94 库确实没有 video_file_specs（前提自检）', () async {
     await seedV94();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 94);
       expect(hasTable(probe, 'video_file_specs'), isFalse);
@@ -69,24 +73,29 @@ void main() {
   test('v94 -> v95：建表、初始为空、存量视频书无损', () async {
     await seedV94();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
 
-    final List<VideoBookRow> books =
-        await migrated.select(migrated.videoBooks).get();
+    final List<VideoBookRow> books = await migrated
+        .select(migrated.videoBooks)
+        .get();
     expect(books, hasLength(1), reason: '迁移丢一行就是丢一部片子');
     expect(books.single.title, '某电影');
     expect(books.single.videoPath, r'D:\media\movie.mkv');
 
-    final List<VideoFileSpecRow> specs =
-        await migrated.select(migrated.videoFileSpecs).get();
-    expect(specs, isEmpty,
-        reason: '新表初始为空 = 旧库升级后不显示规格角标，与升级前逐像素一致');
+    final List<VideoFileSpecRow> specs = await migrated
+        .select(migrated.videoFileSpecs)
+        .get();
+    expect(specs, isEmpty, reason: '新表初始为空 = 旧库升级后不显示规格角标，与升级前逐像素一致');
 
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
       expect(hasTable(probe, 'video_file_specs'), isTrue);
@@ -98,8 +107,10 @@ void main() {
   test('迁移后新表可正常读写，主键是文件路径', () async {
     await seedV94();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await migrated.customStatement(
       'INSERT INTO video_file_specs (file_path, file_size_bytes, '
       'file_modified_at, probed_at, probe_version, width, height, '
@@ -125,8 +136,9 @@ void main() {
       r"VALUES ('D:\media\movie.mkv', 999, 1700000000, 1700000002, 2, "
       '1920, 1080)',
     );
-    final List<VideoFileSpecRow> after =
-        await migrated.select(migrated.videoFileSpecs).get();
+    final List<VideoFileSpecRow> after = await migrated
+        .select(migrated.videoFileSpecs)
+        .get();
     expect(after, hasLength(1), reason: '同一文件只该有一行');
     expect(after.single.width, 1920);
 
@@ -136,11 +148,15 @@ void main() {
   test('重复打开幂等：第二次开库不因表已存在而报错', () async {
     await seedV94();
 
-    final FushiDatabase first =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase first = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await first.close();
-    final FushiDatabase second =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase second = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     expect(await second.select(second.videoBooks).get(), hasLength(1));
     expect(await second.select(second.videoFileSpecs).get(), isEmpty);
     await second.close();

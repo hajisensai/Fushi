@@ -14,10 +14,10 @@ String formatUpdateDownloadSpeed(double? bytesPerSecond) =>
 /// 用户点了「下载」结果跳出 App Store / TestFlight 会以为是误触。
 @visibleForTesting
 String updateLandingActionLabel(UpdateLandingKind kind) => switch (kind) {
-      UpdateLandingKind.releasePage => t.update_download,
-      UpdateLandingKind.testFlight => t.update_testflight_open,
-      UpdateLandingKind.appStore => t.update_app_store_open,
-    };
+  UpdateLandingKind.releasePage => t.update_download,
+  UpdateLandingKind.testFlight => t.update_testflight_open,
+  UpdateLandingKind.appStore => t.update_app_store_open,
+};
 
 @visibleForTesting
 double? updateDownloadBytesPerSecond({
@@ -95,8 +95,12 @@ class UpdateAvailableDialog extends StatelessWidget {
                 // TODO-966: flutter_markdown 0.6.23 在 selectable 时会无条件
                 // 解引用 onSelectionChanged!（builder.dart:957），不传则选中文本即崩；
                 // 补一个空回调保留可选能力。
-                onSelectionChanged: (String? text, TextSelection selection,
-                    SelectionChangedCause? cause) {},
+                onSelectionChanged:
+                    (
+                      String? text,
+                      TextSelection selection,
+                      SelectionChangedCause? cause,
+                    ) {},
                 onTapLink: (_, href, __) {
                   if (href == null) return;
                   launchUrl(
@@ -108,9 +112,7 @@ class UpdateAvailableDialog extends StatelessWidget {
                 // LegacyDesignCompatibility 桥出来的旧主题（与 app 主题同色同字）。
                 styleSheet: MarkdownStyleSheet.fromTheme(
                   legacy.Theme.of(context),
-                ).copyWith(
-                  p: tokens.type.listSubtitle,
-                ),
+                ).copyWith(p: tokens.type.listSubtitle),
               ),
             ],
           ],
@@ -204,10 +206,7 @@ class InstallPermissionRetryDialog extends StatelessWidget {
 }
 
 class WindowsUpdateHandoffResultDialog extends StatelessWidget {
-  const WindowsUpdateHandoffResultDialog({
-    required this.result,
-    super.key,
-  });
+  const WindowsUpdateHandoffResultDialog({required this.result, super.key});
 
   final WindowsUpdateHandoffResult result;
 
@@ -223,8 +222,9 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
         t.update_install_launch_failed_title,
     };
     final String message = switch (result.status) {
-      WindowsUpdateHandoffStatus.installed =>
-        t.update_install_success_message(version: record.targetVersion),
+      WindowsUpdateHandoffStatus.installed => t.update_install_success_message(
+        version: record.targetVersion,
+      ),
       WindowsUpdateHandoffStatus.incomplete =>
         t.update_install_incomplete_message,
       WindowsUpdateHandoffStatus.launchFailed =>
@@ -261,10 +261,7 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              message,
-              style: tokens.type.listSubtitle,
-            ),
+            Text(message, style: tokens.type.listSubtitle),
             if (result.status != WindowsUpdateHandoffStatus.installed) ...[
               if (record.installerFailureSummary != null) ...[
                 SizedBox(height: tokens.spacing.gap),
@@ -525,10 +522,9 @@ class _DownloadOverlay extends StatelessWidget {
                       // M3E：状态行 titleLarge emphasized。
                       builder: (_, s, __) => Text(
                         s,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -560,9 +556,7 @@ class _DownloadOverlay extends StatelessWidget {
                             // 下方波浪进度条（MD3 下 Fushi 包装画波浪）。
                             Text(
                               '${(clamped * 100).toStringAsFixed(0)}%',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .displaySmall
+                              style: Theme.of(context).textTheme.displaySmall
                                   ?.copyWith(
                                     fontWeight: FontWeight.w600,
                                     color: isGlassDesign(context)

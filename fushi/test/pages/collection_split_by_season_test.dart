@@ -29,14 +29,18 @@ void main() {
       ('video/s2e1', 'Show S02E01'),
       ('video/pv', 'Show Fan Disc'),
     ]) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(title),
-        videoPath: Value('/v/$title.mkv'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(title),
+          videoPath: Value('/v/$title.mkv'),
+        ),
+      );
     }
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     for (final String uid in <String>[
       'video/s1e1',
       'video/s1e2',
@@ -50,8 +54,9 @@ void main() {
   tearDown(() => db.close());
 
   Future<List<VideoBookRow>> loadMembers() async {
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     final List<VideoBookRow> all = await db.allVideoBooks();
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow r in all) r.bookUid: r,
@@ -63,29 +68,29 @@ void main() {
   }
 
   Widget buildApp() => TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: MediaCollectionRow(
-              origin: 'user',
-              organizeAliases: '',
-              id: collectionId,
-              name: 'Show',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await (loadMembers)())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (VideoBookRow _) {},
-            onChanged: () {},
-          ),
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Show',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
-      );
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (VideoBookRow _) {},
+        onChanged: () {},
+      ),
+    ),
+  );
 
   Future<void> pumpWide(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1600);
@@ -105,9 +110,9 @@ void main() {
   }
 
   Future<List<String>> membersOf(int id) async => <String>[
-        for (final MediaCollectionItemRow it in await db.getCollectionItems(id))
-          it.entryKey,
-      ];
+    for (final MediaCollectionItemRow it in await db.getCollectionItems(id))
+      it.entryKey,
+  ];
 
   // 管理动作默认平铺成顶栏图标钮（label 在 tooltip，放不下才收进「⋯」）。
   Future<void> openSplitDialog(WidgetTester tester) async {
@@ -115,24 +120,30 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('拆分（保留原合集）：逐季建合集 + 成员按季映射 + 前传/续作链，原合集成员不动',
-      (WidgetTester tester) async {
+  testWidgets('拆分（保留原合集）：逐季建合集 + 成员按季映射 + 前传/续作链，原合集成员不动', (
+    WidgetTester tester,
+  ) async {
     await pumpWide(tester);
 
     await openSplitDialog(tester);
     // 预览：三个名字输入框（第1/第2季/PV·特典），默认「原名 组名」。
-    expect(find.byKey(const ValueKey<String>('collection-split-name-0')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('collection-split-name-2')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('collection-split-name-0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection-split-name-2')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text(t.collection_split_confirm));
     await tester.pumpAndSettle();
 
     final MediaCollectionRow? s1 = await collectionByName('Show 第 1 季');
     final MediaCollectionRow? s2 = await collectionByName('Show 第 2 季');
-    final MediaCollectionRow? extras =
-        await collectionByName('Show ${t.collection_group_extras}');
+    final MediaCollectionRow? extras = await collectionByName(
+      'Show ${t.collection_group_extras}',
+    );
     expect(s1, isNotNull, reason: '第 1 季新合集必须建出');
     expect(s2, isNotNull);
     expect(extras, isNotNull);
@@ -141,43 +152,56 @@ void main() {
     expect(await membersOf(extras!.id), <String>['video/pv']);
 
     // 原合集保留且成员不动（成员多归属，拆分只是新增映射）。
-    expect(await membersOf(collectionId),
-        <String>['video/s1e1', 'video/s1e2', 'video/s2e1', 'video/pv']);
+    expect(await membersOf(collectionId), <String>[
+      'video/s1e1',
+      'video/s1e2',
+      'video/s2e1',
+      'video/pv',
+    ]);
 
     // 关系链：S1 有 sequel→S2；S2 有 prequel→S1；extras 不入链。
-    final List<CollectionRelationRow> r1 =
-        await db.getCollectionRelations(s1.id);
+    final List<CollectionRelationRow> r1 = await db.getCollectionRelations(
+      s1.id,
+    );
     expect(r1.length, 1);
     expect(r1.single.relationType, 'sequel');
     expect(r1.single.targetCollectionId, s2.id);
     expect(r1.single.source, 'local');
-    final List<CollectionRelationRow> r2 =
-        await db.getCollectionRelations(s2.id);
+    final List<CollectionRelationRow> r2 = await db.getCollectionRelations(
+      s2.id,
+    );
     expect(r2.single.relationType, 'prequel');
     expect(r2.single.targetCollectionId, s1.id);
-    expect(await db.getCollectionRelations(extras.id), isEmpty,
-        reason: 'PV·特典组无先后语义，不入前传/续作链');
+    expect(
+      await db.getCollectionRelations(extras.id),
+      isEmpty,
+      reason: 'PV·特典组无先后语义，不入前传/续作链',
+    );
   });
 
   testWidgets('拆分（不保留原合集）：原合集被删除', (WidgetTester tester) async {
     await pumpWide(tester);
 
     await openSplitDialog(tester);
-    await tester.tap(find.byKey(
-      const ValueKey<String>('collection-split-keep-original'),
-    ));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('collection-split-keep-original')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.collection_split_confirm));
     await tester.pumpAndSettle();
 
-    expect(await db.getMediaCollectionById(collectionId), isNull,
-        reason: '取消「保留原合集」→ 原合集删除（只解链，条目仍在）');
+    expect(
+      await db.getMediaCollectionById(collectionId),
+      isNull,
+      reason: '取消「保留原合集」→ 原合集删除（只解链，条目仍在）',
+    );
     expect((await db.allVideoBooks()).length, 4, reason: '删合集绝不删条目本身');
     expect(await collectionByName('Show 第 1 季'), isNotNull);
   });
 
-  testWidgets('手动调整：勾选集 → 移动到另一组 → 按调整后的归属落盘（BUG-1543）',
-      (WidgetTester tester) async {
+  testWidgets('手动调整：勾选集 → 移动到另一组 → 按调整后的归属落盘（BUG-1543）', (
+    WidgetTester tester,
+  ) async {
     await pumpWide(tester);
     await openSplitDialog(tester);
 
@@ -188,8 +212,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.collection_split_selected(n: 1)), findsOneWidget);
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('collection-split-move-to')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('collection-split-move-to')),
+    );
     await tester.pumpAndSettle();
     // 弹出菜单项与组名输入框同文本，菜单在最上层 → 取 last。
     await tester.tap(find.text('Show 第 2 季').last);
@@ -200,10 +225,13 @@ void main() {
 
     final MediaCollectionRow? s1 = await collectionByName('Show 第 1 季');
     final MediaCollectionRow? s2 = await collectionByName('Show 第 2 季');
-    expect(await membersOf(s1!.id), <String>['video/s1e1'],
-        reason: '被挪走的集不能还留在原组');
-    expect(await membersOf(s2!.id), <String>['video/s2e1', 'video/s1e2'],
-        reason: '手动移动的集追加到目标组尾部');
+    expect(await membersOf(s1!.id), <String>[
+      'video/s1e1',
+    ], reason: '被挪走的集不能还留在原组');
+    expect(await membersOf(s2!.id), <String>[
+      'video/s2e1',
+      'video/s1e2',
+    ], reason: '手动移动的集追加到目标组尾部');
   });
 
   testWidgets('手动调整：整组被搬空 → 该组不建合集（空合集在数据模型上不存在）', (WidgetTester tester) async {
@@ -215,8 +243,9 @@ void main() {
       find.byKey(const ValueKey<String>('collection-split-member-video/s2e1')),
     );
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey<String>('collection-split-move-to')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('collection-split-move-to')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Show 第 1 季').last);
     await tester.pumpAndSettle();
@@ -226,8 +255,11 @@ void main() {
 
     expect(await collectionByName('Show 第 2 季'), isNull, reason: '空组不该建出合集');
     final MediaCollectionRow? s1 = await collectionByName('Show 第 1 季');
-    expect(await membersOf(s1!.id),
-        <String>['video/s1e1', 'video/s1e2', 'video/s2e1']);
+    expect(await membersOf(s1!.id), <String>[
+      'video/s1e1',
+      'video/s1e2',
+      'video/s2e1',
+    ]);
     // 只剩一个真实季 → 无前传/续作可连。
     expect(await db.getCollectionRelations(s1.id), isEmpty);
   });

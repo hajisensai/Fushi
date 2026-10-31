@@ -28,10 +28,8 @@ String _downloadingText(int? percent) => percent == null
 /// 队列里只要有未结束的任务（排队 / 执行中 / 退避等重试——重试定时器也在本
 /// 进程里）就保活；全部结束（完成 / 失败 / 取消 / 被移除）即撤。
 class DiscoveryDownloadKeepAliveBinding {
-  DiscoveryDownloadKeepAliveBinding(
-    this._queue, {
-    DownloadKeepAlive? keepAlive,
-  }) : _keepAlive = keepAlive ?? downloadKeepAliveHub.lease('discovery') {
+  DiscoveryDownloadKeepAliveBinding(this._queue, {DownloadKeepAlive? keepAlive})
+    : _keepAlive = keepAlive ?? downloadKeepAliveHub.lease('discovery') {
     _queue.addListener(_sync);
     _sync();
   }
@@ -57,15 +55,17 @@ class DiscoveryDownloadKeepAliveBinding {
         ? (running.receivedBytes.clamp(0, total) * 100 ~/ total)
         : null;
     _active = true;
-    unawaited(_keepAlive.update(
-      title: pending.length == 1
-          ? pending.single.item.title
-          : t.download_keep_alive_multiple_title(count: pending.length),
-      text: running == null
-          ? t.download_task_status_queued
-          : _downloadingText(percent),
-      percent: pending.length == 1 ? percent : null,
-    ));
+    unawaited(
+      _keepAlive.update(
+        title: pending.length == 1
+            ? pending.single.item.title
+            : t.download_keep_alive_multiple_title(count: pending.length),
+        text: running == null
+            ? t.download_task_status_queued
+            : _downloadingText(percent),
+        percent: pending.length == 1 ? percent : null,
+      ),
+    );
   }
 
   void _stop() {
@@ -133,13 +133,15 @@ class VideoDownloadJobsKeepAliveBinding {
       }
     }
     _active = true;
-    unawaited(_keepAlive.update(
-      title: working.length == 1
-          ? working.single.title
-          : t.download_keep_alive_multiple_title(count: working.length),
-      text: _downloadingText(percent),
-      percent: percent,
-    ));
+    unawaited(
+      _keepAlive.update(
+        title: working.length == 1
+            ? working.single.title
+            : t.download_keep_alive_multiple_title(count: working.length),
+        text: _downloadingText(percent),
+        percent: percent,
+      ),
+    );
   }
 
   void _stop() {

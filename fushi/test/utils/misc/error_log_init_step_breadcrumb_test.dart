@@ -48,13 +48,18 @@ void main() {
     // 下次启动重新 init（同一目录）→ 恢复分支应读到残留并折进错误日志。
     await ErrorLogService.instance.init(directoryOverride: tmp);
 
-    final bool recovered = ErrorLogService.instance.entries
-        .any((e) => e.source == 'AppInit.hangRecovered');
+    final bool recovered = ErrorLogService.instance.entries.any(
+      (e) => e.source == 'AppInit.hangRecovered',
+    );
     expect(recovered, isTrue, reason: '残留步进面包屑必须折成 AppInit.hangRecovered');
-    final entry = ErrorLogService.instance.entries
-        .firstWhere((e) => e.source == 'AppInit.hangRecovered');
-    expect(entry.error, contains('create-runtime-dirs'),
-        reason: '错误日志须记下卡在哪一步');
+    final entry = ErrorLogService.instance.entries.firstWhere(
+      (e) => e.source == 'AppInit.hangRecovered',
+    );
+    expect(
+      entry.error,
+      contains('create-runtime-dirs'),
+      reason: '错误日志须记下卡在哪一步',
+    );
 
     // 折入后残留文件应被清掉（readAndClearBreadcrumb 语义），不重复上报。
     expect(File('${tmp.path}/init_step_breadcrumb.txt').existsSync(), isFalse);
@@ -62,8 +67,9 @@ void main() {
 
   test('无残留 → 不产生 hangRecovered 误报', () async {
     await ErrorLogService.instance.init(directoryOverride: tmp);
-    final bool any = ErrorLogService.instance.entries
-        .any((e) => e.source == 'AppInit.hangRecovered');
+    final bool any = ErrorLogService.instance.entries.any(
+      (e) => e.source == 'AppInit.hangRecovered',
+    );
     expect(any, isFalse, reason: '正常启动（无残留）不得误报 hang');
   });
 }

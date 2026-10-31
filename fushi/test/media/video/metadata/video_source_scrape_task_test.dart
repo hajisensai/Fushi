@@ -10,21 +10,21 @@ import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart
 
 void main() {
   SourceLibraryRow source(int id) => SourceLibraryRow(
-        id: id,
-        label: 'source-$id',
-        mediaKind: 'video',
-        transport: 'local',
-        rootPath: 'D:/source-$id',
-        recursive: true,
-        videoGroupingMode: 'series',
-        isPrivate: false,
-        configJson: null,
-        mediaCount: 0,
-        lastScannedAt: null,
-        lastScanError: null,
-        sortOrder: 0,
-        createdAt: 1,
-      );
+    id: id,
+    label: 'source-$id',
+    mediaKind: 'video',
+    transport: 'local',
+    rootPath: 'D:/source-$id',
+    recursive: true,
+    videoGroupingMode: 'series',
+    isPrivate: false,
+    configJson: null,
+    mediaCount: 0,
+    lastScannedAt: null,
+    lastScanError: null,
+    sortOrder: 0,
+    createdAt: 1,
+  );
 
   test('哈希字节进度只节流通知，阶段/作品变化立即通知，尾沿补上最后一条', () async {
     final _HashProgressRunner runner = _HashProgressRunner();
@@ -34,14 +34,12 @@ void main() {
     final List<String?> seen = <String?>[];
     controller.addListener(() => seen.add(controller.progress.message));
 
-    final Future<SourceScrapeReport> task =
-        controller.scrapeSource(source(1));
+    final Future<SourceScrapeReport> task = controller.scrapeSource(source(1));
     await runner.hashed.future;
     // ED2K 每读 1 MiB 一条：外壳页面监听这个 controller，不节流就是每条一次
     // 整棵保活 tab 树重建（刮削期间卡顿的主因）。
     final int afterBurst = seen.length;
-    expect(afterBurst, lessThan(10),
-        reason: '200 条只变文案的进度不能各发一次通知');
+    expect(afterBurst, lessThan(10), reason: '200 条只变文案的进度不能各发一次通知');
     await Future<void>.delayed(
       VideoSourceScrapeTaskController.progressMessageInterval * 2,
     );
@@ -63,10 +61,12 @@ void main() {
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(runner);
 
-    final Future<SourceScrapeReport> first =
-        controller.scrapeAllSources(<SourceLibraryRow>[source(1), source(2)]);
-    final Future<SourceScrapeReport> duplicate =
-        controller.scrapeSource(source(9));
+    final Future<SourceScrapeReport> first = controller.scrapeAllSources(
+      <SourceLibraryRow>[source(1), source(2)],
+    );
+    final Future<SourceScrapeReport> duplicate = controller.scrapeSource(
+      source(9),
+    );
     expect(identical(first, duplicate), isTrue);
     expect(controller.isRunning, isTrue);
 
@@ -85,8 +85,9 @@ void main() {
     final List<bool> busySnapshots = <bool>[];
     controller.addListener(() => busySnapshots.add(controller.isBusy));
 
-    final Future<SourceScrapeReport> future =
-        controller.scrapeSource(source(1));
+    final Future<SourceScrapeReport> future = controller.scrapeSource(
+      source(1),
+    );
     expect(busySnapshots, isNotEmpty);
     expect(busySnapshots.first, isTrue);
 
@@ -98,8 +99,9 @@ void main() {
     final _BlockingRunner runner = _BlockingRunner();
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(runner);
-    final Future<SourceScrapeReport> future =
-        controller.scrapeSource(source(1));
+    final Future<SourceScrapeReport> future = controller.scrapeSource(
+      source(1),
+    );
     controller.cancel();
     runner.release();
     final SourceScrapeReport report = await future;
@@ -126,8 +128,9 @@ void main() {
     scanGate.complete();
     await scan;
 
-    final Future<SourceScrapeReport> scrape =
-        controller.scrapeSource(source(1));
+    final Future<SourceScrapeReport> scrape = controller.scrapeSource(
+      source(1),
+    );
     expect(controller.isRunning, isTrue);
     await expectLater(
       controller.runSourceScan<void>(2, () async {}),
@@ -143,12 +146,9 @@ void main() {
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(runner);
 
-    final Future<SourceScrapeReport> future =
-        controller.scrapeAllSources(<SourceLibraryRow>[
-      source(1),
-      source(2),
-      source(3),
-    ]);
+    final Future<SourceScrapeReport> future = controller.scrapeAllSources(
+      <SourceLibraryRow>[source(1), source(2), source(3)],
+    );
     runner.release();
     await future;
 
@@ -188,34 +188,42 @@ void main() {
 
   // ── 手动指定作品的排队语义（早先第二条请求直接被拒，UI 只好把整屏按钮灰掉）──
 
-  test('same titles retain separate stable identities through the queue',
-      () async {
-    final _ManualRunner runner = _ManualRunner();
-    final VideoSourceScrapeTaskController controller =
-        VideoSourceScrapeTaskController(runner);
-    addTearDown(controller.dispose);
-    final Future<SourceScrapeReport> first = controller.rescrapeWorkWithLookup(
-      source: source(1),
-      workTitle: 'same',
-      workStableKey: 'book:a',
-      lookup: _lookup('1'),
-    );
-    expect(
+  test(
+    'same titles retain separate stable identities through the queue',
+    () async {
+      final _ManualRunner runner = _ManualRunner();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+      final Future<SourceScrapeReport> first = controller
+          .rescrapeWorkWithLookup(
+            source: source(1),
+            workTitle: 'same',
+            workStableKey: 'book:a',
+            lookup: _lookup('1'),
+          );
+      expect(
         controller.isManualRequestPending(
-            sourceId: 1, workTitle: 'same', workStableKey: 'book:b'),
-        isFalse);
-    final Future<SourceScrapeReport> second = controller.rescrapeWorkWithLookup(
-      source: source(1),
-      workTitle: 'same',
-      workStableKey: 'book:b',
-      lookup: _lookup('2'),
-    );
-    expect(controller.queuedManualRequests.single.workStableKey, 'book:b');
-    runner.release('same');
-    await first;
-    await second;
-    expect(runner.stableKeys, <String?>['book:a', 'book:b']);
-  });
+          sourceId: 1,
+          workTitle: 'same',
+          workStableKey: 'book:b',
+        ),
+        isFalse,
+      );
+      final Future<SourceScrapeReport> second = controller
+          .rescrapeWorkWithLookup(
+            source: source(1),
+            workTitle: 'same',
+            workStableKey: 'book:b',
+            lookup: _lookup('2'),
+          );
+      expect(controller.queuedManualRequests.single.workStableKey, 'book:b');
+      runner.release('same');
+      await first;
+      await second;
+      expect(runner.stableKeys, <String?>['book:a', 'book:b']);
+    },
+  );
 
   test('连续提交的手动重刮按提交顺序串行执行，不再拒绝第二条', () async {
     final _ManualRunner runner = _ManualRunner();
@@ -319,11 +327,7 @@ void main() {
     runner.releaseBatch();
     await batch;
     await pumpEventQueue();
-    expect(
-      runner.started,
-      <String>['work-a'],
-      reason: '门一空就接棒，不该等到下一次用户交互',
-    );
+    expect(runner.started, <String>['work-a'], reason: '门一空就接棒，不该等到下一次用户交互');
 
     runner.release('work-a');
     await manual;
@@ -355,11 +359,7 @@ void main() {
     runner.release('work-a');
     await first.then<void>((_) {}, onError: (_, __) {});
     await pumpEventQueue();
-    expect(
-      runner.started,
-      <String>['work-a'],
-      reason: '被取消的那条永远不该开跑',
-    );
+    expect(runner.started, <String>['work-a'], reason: '被取消的那条永远不该开跑');
   });
 
   test('控制器释放时挂着的手动重刮以错误结束，不会永远等下去', () async {
@@ -367,13 +367,15 @@ void main() {
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(runner);
 
-    unawaited(controller
-        .rescrapeWorkWithLookup(
-          source: source(1),
-          workTitle: 'work-a',
-          lookup: _lookup('1'),
-        )
-        .then<void>((_) {}, onError: (_, __) {}));
+    unawaited(
+      controller
+          .rescrapeWorkWithLookup(
+            source: source(1),
+            workTitle: 'work-a',
+            lookup: _lookup('1'),
+          )
+          .then<void>((_) {}, onError: (_, __) {}),
+    );
     final Future<SourceScrapeReport> queued = controller.rescrapeWorkWithLookup(
       source: source(1),
       workTitle: 'work-b',
@@ -395,12 +397,12 @@ void main() {
       workTitle: 'first',
       lookup: _lookup('1'),
     );
-    final Future<SourceScrapeReport> removed =
-        controller.rescrapeWorkWithLookup(
-      source: source(1),
-      workTitle: 'removed',
-      lookup: _lookup('2'),
-    );
+    final Future<SourceScrapeReport> removed = controller
+        .rescrapeWorkWithLookup(
+          source: source(1),
+          workTitle: 'removed',
+          lookup: _lookup('2'),
+        );
     final Future<SourceScrapeReport> last = controller.rescrapeWorkWithLookup(
       source: source(1),
       workTitle: 'last',
@@ -417,8 +419,9 @@ void main() {
     expect(controller.cancelQueuedManualRequest(request), isFalse);
     expect(controller.queuedManualRequests.single.workTitle, 'last');
     expect(
-        controller.cancelQueuedManualRequest(controller.activeManualRequest!),
-        isFalse);
+      controller.cancelQueuedManualRequest(controller.activeManualRequest!),
+      isFalse,
+    );
     runner.release('first');
     await first;
     await pumpEventQueue();
@@ -464,10 +467,10 @@ void main() {
 }
 
 VideoMetadataLookup _lookup(String externalId) => VideoMetadataLookup(
-      provider: VideoMetadataProviderKind.anidb,
-      externalId: externalId,
-      mediaKind: VideoMetadataMediaKind.tv,
-    );
+  provider: VideoMetadataProviderKind.anidb,
+  externalId: externalId,
+  mediaKind: VideoMetadataMediaKind.tv,
+);
 
 /// 既是批次 runner 又支持手动绑定：手动重刮按 workTitle 单独开闸，
 /// 这样测试能精确观察「谁开跑了、谁还在队列里」。
@@ -479,8 +482,10 @@ class _ManualRunner
   final Completer<void> _batchGate = Completer<void>();
 
   void release(String workTitle) {
-    final Completer<void> gate =
-        _gates.putIfAbsent(workTitle, Completer<void>.new);
+    final Completer<void> gate = _gates.putIfAbsent(
+      workTitle,
+      Completer<void>.new,
+    );
     if (!gate.isCompleted) gate.complete();
   }
 
@@ -515,8 +520,7 @@ class _ManualRunner
     required String query,
     VideoMetadataProviderKind? provider,
     VideoMetadataMediaKind? mediaKind,
-  }) async =>
-      const <VideoSourceScrapeConfirmationCandidate>[];
+  }) async => const <VideoSourceScrapeConfirmationCandidate>[];
 
   @override
   Future<VideoMetadataWork?> fetchWorkForLookup(VideoMetadataLookup lookup) =>
@@ -560,22 +564,26 @@ class _HashProgressRunner implements VideoSourceScrapeRunner {
     String runScope = 'source',
   }) async {
     for (int i = 0; i < 200; i++) {
-      onProgress(VideoSourceScrapeProgress(
-        phase: VideoSourceScrapePhase.recognizing,
-        sourceId: source.id,
-        currentWorkTitle: 'Show',
-        total: 1,
-        message: 'bytes $i',
-      ));
+      onProgress(
+        VideoSourceScrapeProgress(
+          phase: VideoSourceScrapePhase.recognizing,
+          sourceId: source.id,
+          currentWorkTitle: 'Show',
+          total: 1,
+          message: 'bytes $i',
+        ),
+      );
     }
     hashed.complete();
     await nextPhase.future;
-    onProgress(VideoSourceScrapeProgress(
-      phase: VideoSourceScrapePhase.applying,
-      sourceId: source.id,
-      currentWorkTitle: 'Show',
-      total: 1,
-    ));
+    onProgress(
+      VideoSourceScrapeProgress(
+        phase: VideoSourceScrapePhase.applying,
+        sourceId: source.id,
+        currentWorkTitle: 'Show',
+        total: 1,
+      ),
+    );
     phaseSent.complete();
     await finish.future;
     return SourceScrapeReport(sourceIds: <int>[source.id]);
@@ -606,10 +614,12 @@ class _BlockingRunner implements VideoSourceScrapeRunner {
     batchContexts.add(batchContext);
     await _gate.future;
     cancellationToken.throwIfCancelled();
-    onProgress(VideoSourceScrapeProgress(
-      phase: VideoSourceScrapePhase.applying,
-      sourceId: source.id,
-    ));
+    onProgress(
+      VideoSourceScrapeProgress(
+        phase: VideoSourceScrapePhase.applying,
+        sourceId: source.id,
+      ),
+    );
     return SourceScrapeReport(
       sourceIds: <int>[source.id],
       totalWorks: 1,
@@ -620,21 +630,21 @@ class _BlockingRunner implements VideoSourceScrapeRunner {
 
 class _ConfirmationRunner implements VideoSourceScrapeRunner {
   _ConfirmationRunner()
-      : candidate = VideoSourceScrapeConfirmationCandidate(
-          lookup: const VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.tmdb,
-            externalId: '42',
-            mediaKind: VideoMetadataMediaKind.movie,
-          ),
-          work: VideoMetadataWork(
-            provider: VideoMetadataProviderKind.tmdb,
-            kind: VideoMetadataMediaKind.movie,
-            title: 'Confirmed movie',
-            ids: const <VideoMetadataId>[
-              VideoMetadataId(type: 'tmdb', value: '42'),
-            ],
-          ),
-        );
+    : candidate = VideoSourceScrapeConfirmationCandidate(
+        lookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.movie,
+        ),
+        work: VideoMetadataWork(
+          provider: VideoMetadataProviderKind.tmdb,
+          kind: VideoMetadataMediaKind.movie,
+          title: 'Confirmed movie',
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'tmdb', value: '42'),
+          ],
+        ),
+      );
 
   final VideoSourceScrapeConfirmationCandidate candidate;
   VideoSourceScrapeConfirmationCandidate? selected;

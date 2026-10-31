@@ -81,18 +81,17 @@ void main() {
   CollectionShelfRow buildRow({
     void Function(MediaRef ref)? onMediaDropped,
     void Function(BookTagRow tag)? onTagDropped,
-  }) =>
-      CollectionShelfRow(
-        title: 'コレクション',
-        countLabel: '3',
-        itemCount: 1,
-        itemWidth: 200,
-        rowHeight: 160,
-        onOpenDetail: () {},
-        onMediaDropped: onMediaDropped,
-        onTagDropped: onTagDropped,
-        itemBuilder: (BuildContext _, int __) => const Text('EP0'),
-      );
+  }) => CollectionShelfRow(
+    title: 'コレクション',
+    countLabel: '3',
+    itemCount: 1,
+    itemWidth: 200,
+    rowHeight: 160,
+    onOpenDetail: () {},
+    onMediaDropped: onMediaDropped,
+    onTagDropped: onTagDropped,
+    itemBuilder: (BuildContext _, int __) => const Text('EP0'),
+  );
 
   /// 从 [handleKey] 起拖，落到行头标题上。
   Future<void> dragOntoHeader(WidgetTester tester, String handleKey) async {
@@ -109,13 +108,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('把媒体卡拖到合集行头触发 onMediaDropped（自动加入该合集）',
-      (WidgetTester tester) async {
+  testWidgets('把媒体卡拖到合集行头触发 onMediaDropped（自动加入该合集）', (
+    WidgetTester tester,
+  ) async {
     MediaRef? dropped;
-    await pump(
-      tester,
-      buildRow(onMediaDropped: (MediaRef r) => dropped = r),
-    );
+    await pump(tester, buildRow(onMediaDropped: (MediaRef r) => dropped = r));
 
     await dragOntoHeader(tester, 'media_handle');
 
@@ -123,14 +120,16 @@ void main() {
     expect(dropped, bookRef, reason: '回调必须收到被拖条目的 (kind, entryKey)');
   });
 
-  testWidgets('onMediaDropped 非 null 时行头是 DragTarget<MediaRef>',
-      (WidgetTester tester) async {
+  testWidgets('onMediaDropped 非 null 时行头是 DragTarget<MediaRef>', (
+    WidgetTester tester,
+  ) async {
     await pump(tester, buildRow(onMediaDropped: (_) {}));
     expect(find.byType(DragTarget<MediaRef>), findsOneWidget);
   });
 
-  testWidgets('onMediaDropped 为 null 时行头不建 DragTarget（守卫调用点漏接线退回静默）',
-      (WidgetTester tester) async {
+  testWidgets('onMediaDropped 为 null 时行头不建 DragTarget（守卫调用点漏接线退回静默）', (
+    WidgetTester tester,
+  ) async {
     await pump(tester, buildRow(onMediaDropped: null));
     expect(find.byType(DragTarget<MediaRef>), findsNothing);
   });
@@ -243,8 +242,9 @@ void main() {
       final Size cardSize = tester.getSize(find.byKey(cardVisualKey));
       expect(cardSize, const Size(60, 80));
 
-      final TestGesture gesture = await tester
-          .startGesture(tester.getCenter(find.byKey(cardVisualKey)));
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(cardVisualKey)),
+      );
       await tester.pump();
       // 先小步过 slop 让 recognizer onStart，再移动（同 dragOntoHeader 范式）。
       await gesture.moveBy(const Offset(0, 30));
@@ -253,16 +253,23 @@ void main() {
       await tester.pump();
 
       // 卡片被渲染了两份：原位（childWhenDragging）+ 浮层。
-      expect(find.byKey(cardVisualKey), findsNWidgets(2),
-          reason: '浮层必须是卡片本体，而不是只有条目名的 chip');
+      expect(
+        find.byKey(cardVisualKey),
+        findsNWidgets(2),
+        reason: '浮层必须是卡片本体，而不是只有条目名的 chip',
+      );
       final List<Size> sizes = find
           .byKey(cardVisualKey)
           .evaluate()
           .map((Element e) => (e.renderObject! as RenderBox).size)
           .toList();
-      expect(sizes, everyElement(const Size(60, 80)),
-          reason: '浮层尺寸必须等于原卡真实尺寸；'
-              '若改用父约束（常是宽松的 0..屏宽）会把浮层撑成整屏');
+      expect(
+        sizes,
+        everyElement(const Size(60, 80)),
+        reason:
+            '浮层尺寸必须等于原卡真实尺寸；'
+            '若改用父约束（常是宽松的 0..屏宽）会把浮层撑成整屏',
+      );
 
       await gesture.up();
       await tester.pumpAndSettle();
@@ -270,11 +277,15 @@ void main() {
 
     testWidgets('浮层不注册焦点：拖动前中后真卡的焦点条目始终有效', (WidgetTester tester) async {
       final FushiFocusController controller = await pumpFocusableCard(tester);
-      expect(controller.requestById(cardFocusId), isTrue,
-          reason: '前置条件：真卡本来就注册了焦点条目');
+      expect(
+        controller.requestById(cardFocusId),
+        isTrue,
+        reason: '前置条件：真卡本来就注册了焦点条目',
+      );
 
-      final TestGesture gesture = await tester
-          .startGesture(tester.getCenter(find.byKey(cardVisualKey)));
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(cardVisualKey)),
+      );
       await tester.pump();
       // 先小步过 slop 让 recognizer onStart，再移动（同 dragOntoHeader 范式）。
       await gesture.moveBy(const Offset(0, 30));
@@ -282,15 +293,22 @@ void main() {
       await gesture.moveBy(const Offset(0, 40));
       await tester.pump();
 
-      expect(controller.requestById(cardFocusId), isTrue,
-          reason: '浮层里的第二份 FushiFocusTarget 不得覆盖真卡的 entry');
+      expect(
+        controller.requestById(cardFocusId),
+        isTrue,
+        reason: '浮层里的第二份 FushiFocusTarget 不得覆盖真卡的 entry',
+      );
 
       await gesture.up();
       await tester.pumpAndSettle();
 
-      expect(controller.requestById(cardFocusId), isTrue,
-          reason: '浮层消失时不得把真卡的 entry 一起注销——'
-              '这正是原实现不敢复用卡片的那个失效模式');
+      expect(
+        controller.requestById(cardFocusId),
+        isTrue,
+        reason:
+            '浮层消失时不得把真卡的 entry 一起注销——'
+            '这正是原实现不敢复用卡片的那个失效模式',
+      );
     });
   });
 
@@ -320,8 +338,9 @@ void main() {
       TargetPlatform.linux,
       TargetPlatform.macOS,
     ]) {
-      testWidgets('$platform 建 Draggable（按下即拖，不与长按菜单抢手势）',
-          (WidgetTester tester) async {
+      testWidgets('$platform 建 Draggable（按下即拖，不与长按菜单抢手势）', (
+        WidgetTester tester,
+      ) async {
         await pumpCard(tester, platform);
         expect(find.byType(Draggable<MediaRef>), findsOneWidget);
         // 必须**不是** LongPressDraggable：卡片长按已绑定上下文菜单，
@@ -335,15 +354,17 @@ void main() {
       TargetPlatform.iOS,
       TargetPlatform.fuchsia,
     ]) {
-      testWidgets('$platform 不建拖拽源（触屏按下即拖会吞掉列表滚动）',
-          (WidgetTester tester) async {
+      testWidgets('$platform 不建拖拽源（触屏按下即拖会吞掉列表滚动）', (
+        WidgetTester tester,
+      ) async {
         await pumpCard(tester, platform);
         expect(find.byType(Draggable<MediaRef>), findsNothing);
       });
     }
 
-    testWidgets('enabled=false 不建拖拽源（多选态卡片点击是切换选中，不应能拖走）',
-        (WidgetTester tester) async {
+    testWidgets('enabled=false 不建拖拽源（多选态卡片点击是切换选中，不应能拖走）', (
+      WidgetTester tester,
+    ) async {
       await pumpCard(tester, TargetPlatform.windows, enabled: false);
       expect(find.byType(Draggable<MediaRef>), findsNothing);
     });

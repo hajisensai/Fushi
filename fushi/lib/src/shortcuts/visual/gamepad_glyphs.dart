@@ -33,10 +33,7 @@ enum GamepadBrand {
 /// 一个手柄按钮在某品牌下的显示外观：符号文本 + 可选强调色（面键的品牌色）。
 @immutable
 class GamepadButtonGlyph {
-  const GamepadButtonGlyph({
-    required this.symbol,
-    this.accent,
-  });
+  const GamepadButtonGlyph({required this.symbol, this.accent});
 
   /// 显示文本（Xbox 面键为字母 A/B/X/Y，PS 面键为 ✕○□△，肩键/方向键沿用 enum label）。
   final String symbol;

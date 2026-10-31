@@ -27,10 +27,16 @@ void main() {
       // PR #1542 起 dispose 先把 Player 拷进局部 `disposing` 再 `.dispose()`（释放
       // Future 留给下一个控制器等待），锚点跟着走。
       final int playerDisposeAt = b.indexOf('disposing.dispose()');
-      expect(saveAt, greaterThanOrEqualTo(0),
-          reason: 'dispose 必须强制保存当前位置（退出 flush）');
-      expect(playerDisposeAt, greaterThan(saveAt),
-          reason: '强制保存必须在释放 player 之前（之后 positionMs 读不到）');
+      expect(
+        saveAt,
+        greaterThanOrEqualTo(0),
+        reason: 'dispose 必须强制保存当前位置（退出 flush）',
+      );
+      expect(
+        playerDisposeAt,
+        greaterThan(saveAt),
+        reason: '强制保存必须在释放 player 之前（之后 positionMs 读不到）',
+      );
     });
 
     test('a public flushPosition() awaits the persistence write', () {
@@ -39,19 +45,34 @@ void main() {
         dotAll: true,
       ).firstMatch(src);
       expect(body, isNotNull, reason: '找不到 flushPosition 方法体');
-      expect(body!.group(1), contains('await onPositionWrite?.call('),
-          reason: 'flushPosition 必须 await 到真正落库（durability）');
+      expect(
+        body!.group(1),
+        contains('await onPositionWrite?.call('),
+        reason: 'flushPosition 必须 await 到真正落库（durability）',
+      );
     });
 
     test('exposes video width/height and subscribes to stream (BUG-105)', () {
-      expect(src.contains('get videoWidth'), isTrue,
-          reason: 'overlay 的 \\pos 映射需要视频原始宽度');
-      expect(src.contains('get videoHeight'), isTrue,
-          reason: 'overlay 的 \\pos 映射需要视频原始高度');
-      expect(src.contains('stream.width'), isTrue,
-          reason: '分辨率到位后须 notify 让 overlay 重定位 \\pos');
-      expect(src.contains('stream.height'), isTrue,
-          reason: '分辨率到位后须 notify 让 overlay 重定位 \\pos');
+      expect(
+        src.contains('get videoWidth'),
+        isTrue,
+        reason: 'overlay 的 \\pos 映射需要视频原始宽度',
+      );
+      expect(
+        src.contains('get videoHeight'),
+        isTrue,
+        reason: 'overlay 的 \\pos 映射需要视频原始高度',
+      );
+      expect(
+        src.contains('stream.width'),
+        isTrue,
+        reason: '分辨率到位后须 notify 让 overlay 重定位 \\pos',
+      );
+      expect(
+        src.contains('stream.height'),
+        isTrue,
+        reason: '分辨率到位后须 notify 让 overlay 重定位 \\pos',
+      );
     });
   });
 
@@ -71,8 +92,10 @@ void main() {
       // load() 体很长且含嵌套闭包，非贪婪匹配到 `\n  }` 会停在参数列表收尾；改为
       // 从方法体开头（`}) async {`）截到「关闭 libmpv 画面字幕渲染」这段注释——
       // open + 注入都在此段内，足够断言注入位置。
-      final int bodyStart =
-          src.indexOf('}) async {', src.indexOf('Future<void> load({'));
+      final int bodyStart = src.indexOf(
+        '}) async {',
+        src.indexOf('Future<void> load({'),
+      );
       expect(bodyStart, greaterThanOrEqualTo(0), reason: '找不到 load 方法体');
       final int bodyEnd = src.indexOf('关闭 libmpv 画面字幕渲染', bodyStart);
       expect(bodyEnd, greaterThan(bodyStart), reason: '找不到 load 体内的注入段尾界标');
@@ -81,13 +104,18 @@ void main() {
       final int injectAt = b.indexOf('applyNetworkCachePropertiesToPlayer(');
       expect(openAt, greaterThanOrEqualTo(0), reason: 'load 必须 open 媒体');
       expect(injectAt, greaterThanOrEqualTo(0), reason: 'load 必须注入网络缓存调优');
-      expect(injectAt, lessThan(openAt),
-          reason: '网络缓存调优必须在 player.open 之前下发——`network-timeout` 要在 '
-              'loadfile 的第一个请求发出前就生效，否则首开恒吃 media_kit 钉死的 5s');
       expect(
-          b.contains('applyNetworkCachePropertiesToPlayer(player, sourceUri)'),
-          isTrue,
-          reason: '必须把 sourceUri 透传给注入函数，由其按 scheme 决定是否生效');
+        injectAt,
+        lessThan(openAt),
+        reason:
+            '网络缓存调优必须在 player.open 之前下发——`network-timeout` 要在 '
+            'loadfile 的第一个请求发出前就生效，否则首开恒吃 media_kit 钉死的 5s',
+      );
+      expect(
+        b.contains('applyNetworkCachePropertiesToPlayer(player, sourceUri)'),
+        isTrue,
+        reason: '必须把 sourceUri 透传给注入函数，由其按 scheme 决定是否生效',
+      );
     });
   });
 
@@ -95,14 +123,19 @@ void main() {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
     test('load() does not persist synthetic initialPositionMs', () {
-      final int bodyStart =
-          src.indexOf('}) async {', src.indexOf('Future<void> load({'));
+      final int bodyStart = src.indexOf(
+        '}) async {',
+        src.indexOf('Future<void> load({'),
+      );
       expect(bodyStart, greaterThanOrEqualTo(0), reason: '找不到 load 方法体');
       final int bodyEnd = src.indexOf('订阅播放态翻转', bodyStart);
       expect(bodyEnd, greaterThan(bodyStart), reason: '找不到 load 恢复段尾界标');
       final String b = src.substring(bodyStart, bodyEnd);
-      expect(b, isNot(contains('updateCueForPosition(initialPositionMs)')),
-          reason: 'initialPositionMs 是 load 合成的恢复目标，不是真实 player tick，不能走持久化路径');
+      expect(
+        b,
+        isNot(contains('updateCueForPosition(initialPositionMs)')),
+        reason: 'initialPositionMs 是 load 合成的恢复目标，不是真实 player tick，不能走持久化路径',
+      );
       expect(
         b,
         contains('resolvedStartMs = resolveEpisodeStart('),
@@ -130,14 +163,20 @@ void main() {
   // 覆盖硬杀进程（dispose 不跑）。这两条无法纯单测（需真实 libmpv），
   // 故在源码层钉死结构。
   group('VideoFushiPage exit/background flush wiring (问题 1)', () {
-    final String page =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String page = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
-    test('PopScope intercepts the route pop (canPop:false) to start the flush',
-        () {
-      expect(page, contains('canPop: false'),
-          reason: '页面必须自管退出（canPop:false），才能在 pop 前启动落库');
-    });
+    test(
+      'PopScope intercepts the route pop (canPop:false) to start the flush',
+      () {
+        expect(
+          page,
+          contains('canPop: false'),
+          reason: '页面必须自管退出（canPop:false），才能在 pop 前启动落库',
+        );
+      },
+    );
 
     test('pop handler delegates to _handleBackOrExit (PopScope/Esc 共用汇聚点)', () {
       // PopScope 与 Escape 快捷键共用 _handleBackOrExit，保证两条退出路径一致。
@@ -146,43 +185,68 @@ void main() {
         dotAll: true,
       ).firstMatch(page);
       expect(body, isNotNull, reason: '找不到 onPopInvokedWithResult 异步处理体');
-      expect(body!.group(1), contains('_handleBackOrExit()'),
-          reason: 'onPop 必须委托给退出汇聚点 _handleBackOrExit');
+      expect(
+        body!.group(1),
+        contains('_handleBackOrExit()'),
+        reason: 'onPop 必须委托给退出汇聚点 _handleBackOrExit',
+      );
     });
 
-    test('_handleBackOrExit starts flushPosition() via exitAfterPersist, no await',
-        () {
-      // BUG-2119：旧契约「pop 前 await flushPosition()」把退出押在一次落库成功上，
-      // 连接被毒化时四条退出通道一起失灵。新契约：经 exitAfterPersist 同步发起
-      // 落库、无条件 pop，方法体里不得再有任何 await。
-      final RegExpMatch? body = RegExp(
-        r'Future<void> _handleBackOrExit\(\) async \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(body, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
-      final String b = body!.group(1)!;
-      expect(b, contains('exitAfterPersist('),
-          reason: '退出必须走 exitAfterPersist 原语');
-      expect(b, contains('_flushPositionAndReportRemotePlaybackStopped('),
-          reason: '退出前仍必须发起位置 flush 与远端停止上报');
-      expect(b, contains('exit: nav.pop'),
-          reason: 'pop 由 exitAfterPersist 无条件执行');
-      expect(b, isNot(contains('await ')),
-          reason: '退出路径不得 await 任何东西（BUG-2119）');
-      expect(page, contains('await controller?.flushPosition();'),
-          reason: '后台退出回调仍必须 flush 播放位置（进度落库不能丢）');
-    });
+    test(
+      '_handleBackOrExit starts flushPosition() via exitAfterPersist, no await',
+      () {
+        // BUG-2119：旧契约「pop 前 await flushPosition()」把退出押在一次落库成功上，
+        // 连接被毒化时四条退出通道一起失灵。新契约：经 exitAfterPersist 同步发起
+        // 落库、无条件 pop，方法体里不得再有任何 await。
+        final RegExpMatch? body = RegExp(
+          r'Future<void> _handleBackOrExit\(\) async \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(body, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
+        final String b = body!.group(1)!;
+        expect(
+          b,
+          contains('exitAfterPersist('),
+          reason: '退出必须走 exitAfterPersist 原语',
+        );
+        expect(
+          b,
+          contains('_flushPositionAndReportRemotePlaybackStopped('),
+          reason: '退出前仍必须发起位置 flush 与远端停止上报',
+        );
+        expect(
+          b,
+          contains('exit: nav.pop'),
+          reason: 'pop 由 exitAfterPersist 无条件执行',
+        );
+        expect(
+          b,
+          isNot(contains('await ')),
+          reason: '退出路径不得 await 任何东西（BUG-2119）',
+        );
+        expect(
+          page,
+          contains('await controller?.flushPosition();'),
+          reason: '后台退出回调仍必须 flush 播放位置（进度落库不能丢）',
+        );
+      },
+    );
 
-    test('background lifecycle flushes the playback position (hard-kill cover)',
-        () {
-      final RegExpMatch? body = RegExp(
-        r'void didChangeAppLifecycleState\(AppLifecycleState state\) \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(body, isNotNull, reason: '找不到 didChangeAppLifecycleState 方法体');
-      expect(body!.group(1), contains('_controller?.flushPosition()'),
-          reason: '退到后台时必须 flush 播放位置（dispose 在硬杀时不跑）');
-    });
+    test(
+      'background lifecycle flushes the playback position (hard-kill cover)',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'void didChangeAppLifecycleState\(AppLifecycleState state\) \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(body, isNotNull, reason: '找不到 didChangeAppLifecycleState 方法体');
+        expect(
+          body!.group(1),
+          contains('_controller?.flushPosition()'),
+          reason: '退到后台时必须 flush 播放位置（dispose 在硬杀时不跑）',
+        );
+      },
+    );
   });
 
   // BUG-344: video_player_controller 多处异步 mpv FFI 下发用方法开头捕获的局部
@@ -195,8 +259,7 @@ void main() {
   //   - A 层：[selectEmbeddedGraphicTrack]（选内嵌图形字幕轨，PGS/DVD 位图）3 处下发。
   //   - load() 主路径：[load] 开头 8 处早期 await FFI 下发（更高频，与用户崩溃更贴合）
   //     + autoPlay 的 play() 守卫用双判据。
-  group('VideoPlayerController guards against libmpv UAF on dispose (BUG-344)',
-      () {
+  group('VideoPlayerController guards against libmpv UAF on dispose (BUG-344)', () {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
     // 索引式提取（非灾难性正则）：先定位 header，再在其后定位最近的 trailer，取二者之间。
@@ -208,75 +271,107 @@ void main() {
       final RegExpMatch? h = RegExp(headerRegex, dotAll: true).firstMatch(src);
       expect(h, isNotNull, reason: '找不到方法头: header=$headerRegex');
       final int start = h!.end;
-      final RegExpMatch? tr =
-          RegExp(trailerRegex, dotAll: true).firstMatch(src.substring(start));
-      expect(tr, isNotNull,
-          reason: '找不到方法尾: header=$headerRegex trailer=$trailerRegex');
+      final RegExpMatch? tr = RegExp(
+        trailerRegex,
+        dotAll: true,
+      ).firstMatch(src.substring(start));
+      expect(
+        tr,
+        isNotNull,
+        reason: '找不到方法尾: header=$headerRegex trailer=$trailerRegex',
+      );
       return src.substring(start, start + tr!.start);
     }
 
     // ---- A 层：selectEmbeddedGraphicTrack ----
     String graphicBody() => methodBody(
-          // BUG-3276 起多了命名参数 timingInput：只锚方法名 + 首个参数，签名再加参数不翻车。
-          r'Future<bool> selectEmbeddedGraphicTrack\(\s*int streamIndex[^)]*\) async \{',
-          r'\n  \}',
-        );
-
-    test('A: selectEmbeddedGraphicTrack captures loadToken before first await',
-        () {
-      final String b = graphicBody();
-      final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
-      // TODO-1295 给这条首 await 加了 `minTrackCount: streamIndex + 1`（等目标序号
-      // 那条轨真正就绪，不再「任意一条」早退）。守卫的语义不变量没变——loadToken 仍
-      // 在第一条 await **之前**捕获（源码实测 tokenAt < 此 await）——变的只是 await
-      // 的参数列表。故锚点从写死的整条调用 `...(player);` 收敛到稳定前缀
-      // `await _waitUntilSubtitleTracksReady(player`（不含参数），与本文件 BUG-528
-      // 把锚点收敛到 `await player.open(` 同法，避免合法加参把守卫误红（TODO-1311）。
-      final int firstAwaitAt =
-          b.indexOf('await _waitUntilSubtitleTracksReady(player');
-      expect(tokenAt, greaterThanOrEqualTo(0),
-          reason: '必须在第一个 await 前捕获 loadToken 快照');
-      expect(firstAwaitAt, greaterThan(tokenAt),
-          reason: 'loadToken 必须在第一条 await 语句之前捕获');
-    });
+      // BUG-3276 起多了命名参数 timingInput：只锚方法名 + 首个参数，签名再加参数不翻车。
+      r'Future<bool> selectEmbeddedGraphicTrack\(\s*int streamIndex[^)]*\) async \{',
+      r'\n  \}',
+    );
 
     test(
-        'A: selectEmbeddedGraphicTrack re-checks _isCurrentLoad after every '
+      'A: selectEmbeddedGraphicTrack captures loadToken before first await',
+      () {
+        final String b = graphicBody();
+        final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
+        // TODO-1295 给这条首 await 加了 `minTrackCount: streamIndex + 1`（等目标序号
+        // 那条轨真正就绪，不再「任意一条」早退）。守卫的语义不变量没变——loadToken 仍
+        // 在第一条 await **之前**捕获（源码实测 tokenAt < 此 await）——变的只是 await
+        // 的参数列表。故锚点从写死的整条调用 `...(player);` 收敛到稳定前缀
+        // `await _waitUntilSubtitleTracksReady(player`（不含参数），与本文件 BUG-528
+        // 把锚点收敛到 `await player.open(` 同法，避免合法加参把守卫误红（TODO-1311）。
+        final int firstAwaitAt = b.indexOf(
+          'await _waitUntilSubtitleTracksReady(player',
+        );
+        expect(
+          tokenAt,
+          greaterThanOrEqualTo(0),
+          reason: '必须在第一个 await 前捕获 loadToken 快照',
+        );
+        expect(
+          firstAwaitAt,
+          greaterThan(tokenAt),
+          reason: 'loadToken 必须在第一条 await 语句之前捕获',
+        );
+      },
+    );
+
+    test('A: selectEmbeddedGraphicTrack re-checks _isCurrentLoad after every '
         'native await (>=3, no bare _player!=player)', () {
       final String b = graphicBody();
-      final int rechecks =
-          RegExp(r'_isCurrentLoad\(player, loadToken\)').allMatches(b).length;
-      expect(rechecks, greaterThanOrEqualTo(3),
-          reason:
-              '三处原生下发（setSubtitleTrack + 两次 setProperty）后都必须重校验 _isCurrentLoad，'
-              '否则退出/换集期间向已释放 libmpv handle 下发 → 原生 UAF');
-      expect(b.contains('if (_player != player) return false;'), isFalse,
-          reason:
-              'BUG-344: 禁止回退到只比 _player!=player 的单次校验（漏 loadToken 且后续 await 不重校验）');
+      final int rechecks = RegExp(
+        r'_isCurrentLoad\(player, loadToken\)',
+      ).allMatches(b).length;
+      expect(
+        rechecks,
+        greaterThanOrEqualTo(3),
+        reason:
+            '三处原生下发（setSubtitleTrack + 两次 setProperty）后都必须重校验 _isCurrentLoad，'
+            '否则退出/换集期间向已释放 libmpv handle 下发 → 原生 UAF',
+      );
+      expect(
+        b.contains('if (_player != player) return false;'),
+        isFalse,
+        reason:
+            'BUG-344: 禁止回退到只比 _player!=player 的单次校验（漏 loadToken 且后续 await 不重校验）',
+      );
     });
 
-    test(
-        'A: selectEmbeddedGraphicTrack inserts a recheck between each native '
+    test('A: selectEmbeddedGraphicTrack inserts a recheck between each native '
         'send', () {
       final String b = graphicBody();
       final int setTrackAt = b.indexOf('await player.setSubtitleTrack(real[');
-      final int firstApplyAt =
-          b.indexOf('await applySubtitleMpvPropertiesToPlayer(');
+      final int firstApplyAt = b.indexOf(
+        'await applySubtitleMpvPropertiesToPlayer(',
+      );
       final int secondApplyAt = b.indexOf(
-          'await applySubtitleMpvPropertiesToPlayer(', firstApplyAt + 1);
+        'await applySubtitleMpvPropertiesToPlayer(',
+        firstApplyAt + 1,
+      );
       expect(setTrackAt, greaterThanOrEqualTo(0));
       expect(firstApplyAt, greaterThan(setTrackAt));
       expect(secondApplyAt, greaterThan(firstApplyAt));
-      final int recheckAfterSetTrack =
-          b.indexOf('_isCurrentLoad(player, loadToken)', setTrackAt);
+      final int recheckAfterSetTrack = b.indexOf(
+        '_isCurrentLoad(player, loadToken)',
+        setTrackAt,
+      );
       expect(recheckAfterSetTrack, greaterThan(setTrackAt));
-      expect(recheckAfterSetTrack, lessThan(firstApplyAt),
-          reason: 'setSubtitleTrack 后、下一次原生下发前必须重校验');
-      final int recheckAfterFirstApply =
-          b.indexOf('_isCurrentLoad(player, loadToken)', firstApplyAt);
+      expect(
+        recheckAfterSetTrack,
+        lessThan(firstApplyAt),
+        reason: 'setSubtitleTrack 后、下一次原生下发前必须重校验',
+      );
+      final int recheckAfterFirstApply = b.indexOf(
+        '_isCurrentLoad(player, loadToken)',
+        firstApplyAt,
+      );
       expect(recheckAfterFirstApply, greaterThan(firstApplyAt));
-      expect(recheckAfterFirstApply, lessThan(secondApplyAt),
-          reason: '第一次 setProperty 后、第二次原生下发前必须重校验');
+      expect(
+        recheckAfterFirstApply,
+        lessThan(secondApplyAt),
+        reason: '第一次 setProperty 后、第二次原生下发前必须重校验',
+      );
     });
 
     // ---- selectSubtitleTrack（TODO-409 / BUG-430）----
@@ -284,50 +379,71 @@ void main() {
     // await 期间退出/换集触发 dispose → 向已释放 handle 下发 = 原生 UAF。必须与
     // selectEmbeddedGraphicTrack 同范式：await 前捕获 loadToken，await 后重校验。
     String selectSubtitleBody() => methodBody(
-          r'Future<void> selectSubtitleTrack\(SubtitleTrack track\) async \{',
-          r'\n  \}',
-        );
+      r'Future<void> selectSubtitleTrack\(SubtitleTrack track\) async \{',
+      r'\n  \}',
+    );
 
-    test(
-        'selectSubtitleTrack captures loadToken before the native await and '
+    test('selectSubtitleTrack captures loadToken before the native await and '
         'rechecks _isCurrentLoad after it (TODO-409 UAF guard)', () {
       final String b = selectSubtitleBody();
       final int tokenAt = b.indexOf('final int loadToken = _loadToken;');
       final int sendAt = b.indexOf('await player.setSubtitleTrack(track);');
-      final int recheckAt =
-          b.indexOf('_isCurrentLoad(player, loadToken)', sendAt);
-      expect(tokenAt, greaterThanOrEqualTo(0),
-          reason: 'await 前必须捕获 loadToken 快照（与 selectEmbeddedGraphicTrack 一致）');
-      expect(sendAt, greaterThan(tokenAt),
-          reason: 'setSubtitleTrack 原生下发必须在 loadToken 捕获之后');
-      expect(recheckAt, greaterThan(sendAt),
-          reason: 'setSubtitleTrack 后必须重校验 _isCurrentLoad，否则退出/换集期间向已释放 '
-              'libmpv handle 下发 → 原生 UAF（回退字幕闪退，TODO-409）');
+      final int recheckAt = b.indexOf(
+        '_isCurrentLoad(player, loadToken)',
+        sendAt,
+      );
       expect(
-          b.contains('if (!_isCurrentLoad(player, loadToken)) return;'), isTrue,
-          reason: '过期一律干净 return 放弃下发，不触野 handle');
+        tokenAt,
+        greaterThanOrEqualTo(0),
+        reason: 'await 前必须捕获 loadToken 快照（与 selectEmbeddedGraphicTrack 一致）',
+      );
+      expect(
+        sendAt,
+        greaterThan(tokenAt),
+        reason: 'setSubtitleTrack 原生下发必须在 loadToken 捕获之后',
+      );
+      expect(
+        recheckAt,
+        greaterThan(sendAt),
+        reason:
+            'setSubtitleTrack 后必须重校验 _isCurrentLoad，否则退出/换集期间向已释放 '
+            'libmpv handle 下发 → 原生 UAF（回退字幕闪退，TODO-409）',
+      );
+      expect(
+        b.contains('if (!_isCurrentLoad(player, loadToken)) return;'),
+        isTrue,
+        reason: '过期一律干净 return 放弃下发，不触野 handle',
+      );
     });
 
-    test('selectSubtitleTrack snapshots _player into a local before the await',
-        () {
-      final String b = selectSubtitleBody();
-      // 局部化 player（与 selectEmbeddedGraphicTrack 同），杜绝 await 后 `_player?.` 解到
-      // 已被 dispose 置 null / 已被新 load 接管的字段。
-      expect(b.contains('final Player? player = _player;'), isTrue,
+    test(
+      'selectSubtitleTrack snapshots _player into a local before the await',
+      () {
+        final String b = selectSubtitleBody();
+        // 局部化 player（与 selectEmbeddedGraphicTrack 同），杜绝 await 后 `_player?.` 解到
+        // 已被 dispose 置 null / 已被新 load 接管的字段。
+        expect(
+          b.contains('final Player? player = _player;'),
+          isTrue,
           reason:
-              '必须把 _player 提为局部 player，禁止 await 后裸用 _player?.setSubtitleTrack');
-      expect(b.contains('await _player?.setSubtitleTrack'), isFalse,
+              '必须把 _player 提为局部 player，禁止 await 后裸用 _player?.setSubtitleTrack',
+        );
+        expect(
+          b.contains('await _player?.setSubtitleTrack'),
+          isFalse,
           reason:
-              'TODO-409: 禁止回退到无守卫的 `await _player?.setSubtitleTrack(track)`（原生 UAF 窗口）');
-    });
+              'TODO-409: 禁止回退到无守卫的 `await _player?.setSubtitleTrack(track)`（原生 UAF 窗口）',
+        );
+      },
+    );
 
     // ---- load() 主路径（本轮核心）----
     // load() 紧跟着 `bool _isCurrentLoad(...)` getter，用它锚定方法体结束（方法体内
     // 含多处 4/6 空格缩进的 `}`，非贪婪到 `\n  }\n\n  bool _isCurrentLoad` 精确收口）。
     String loadBody() => methodBody(
-          r'Future<void> load\(\{',
-          r'\n  \}\n\n  bool _isCurrentLoad',
-        );
+      r'Future<void> load\(\{',
+      r'\n  \}\n\n  bool _isCurrentLoad',
+    );
 
     test('load() captures loadToken before the first native FFI send', () {
       final String b = loadBody();
@@ -335,14 +451,19 @@ void main() {
       // BUG-528：open 现随 Media(httpHeaders:) 多行下发（防盗链 header 须在 open 前设），
       // 锚点收敛到唯一的 `await player.open(`。
       final int firstOpenAt = b.indexOf('await player.open(');
-      expect(tokenAt, greaterThanOrEqualTo(0),
-          reason: 'load 必须在第一处原生下发前捕获 loadToken（开头 ++_loadToken）');
-      expect(firstOpenAt, greaterThan(tokenAt),
-          reason: 'player.open 必须在 loadToken 捕获之后');
+      expect(
+        tokenAt,
+        greaterThanOrEqualTo(0),
+        reason: 'load 必须在第一处原生下发前捕获 loadToken（开头 ++_loadToken）',
+      );
+      expect(
+        firstOpenAt,
+        greaterThan(tokenAt),
+        reason: 'player.open 必须在 loadToken 捕获之后',
+      );
     });
 
-    test(
-        'load() re-checks _isCurrentLoad after every early native await '
+    test('load() re-checks _isCurrentLoad after every early native await '
         '(open / network / setSubtitleTrack(no) / suppression / shaders / '
         'mpvConfig / volume / rate)', () {
       final String b = loadBody();
@@ -366,48 +487,71 @@ void main() {
       ];
       for (int i = 0; i < sends.length; i++) {
         final int sendAt = b.indexOf(sends[i]);
-        expect(sendAt, greaterThanOrEqualTo(0),
-            reason: '找不到早期原生下发语句: ${sends[i]}');
-        final int recheckAt =
-            b.indexOf('_isCurrentLoad(player, loadToken)', sendAt);
-        expect(recheckAt, greaterThan(sendAt),
-            reason: '「${sends[i]}」之后必须紧跟 _isCurrentLoad 重校验（BUG-344 主路径）');
+        expect(
+          sendAt,
+          greaterThanOrEqualTo(0),
+          reason: '找不到早期原生下发语句: ${sends[i]}',
+        );
+        final int recheckAt = b.indexOf(
+          '_isCurrentLoad(player, loadToken)',
+          sendAt,
+        );
+        expect(
+          recheckAt,
+          greaterThan(sendAt),
+          reason: '「${sends[i]}」之后必须紧跟 _isCurrentLoad 重校验（BUG-344 主路径）',
+        );
         // 重校验必须落在下一个早期下发语句之前（不能整段共用一处）。
         if (i + 1 < sends.length) {
           final int nextSendAt = b.indexOf(sends[i + 1], sendAt + 1);
           expect(nextSendAt, greaterThan(sendAt));
-          expect(recheckAt, lessThan(nextSendAt),
-              reason:
-                  '「${sends[i]}」的重校验必须落在下一处下发「${sends[i + 1]}」之前——每个 await 独立守卫');
+          expect(
+            recheckAt,
+            lessThan(nextSendAt),
+            reason:
+                '「${sends[i]}」的重校验必须落在下一处下发「${sends[i + 1]}」之前——每个 await 独立守卫',
+          );
         }
       }
       // 早期下发后的重校验过期一律 `return`（干净放弃，不留半初始化）。至少 8 处。
       final int returnGuards = RegExp(
         r'if \(!_isCurrentLoad\(player, loadToken\)\) return;',
       ).allMatches(b).length;
-      expect(returnGuards, greaterThanOrEqualTo(8),
-          reason:
-              'load 主路径 8 处早期 await 后都要 `if (!_isCurrentLoad(...)) return;` 干净放弃');
+      expect(
+        returnGuards,
+        greaterThanOrEqualTo(8),
+        reason:
+            'load 主路径 8 处早期 await 后都要 `if (!_isCurrentLoad(...)) return;` 干净放弃',
+      );
     });
 
-    test('load() autoPlay play() uses the dual predicate, not bare identity',
-        () {
-      final String b = loadBody();
-      expect(b.contains('if (autoPlay && _isCurrentLoad(player, loadToken))'),
+    test(
+      'load() autoPlay play() uses the dual predicate, not bare identity',
+      () {
+        final String b = loadBody();
+        expect(
+          b.contains('if (autoPlay && _isCurrentLoad(player, loadToken))'),
           isTrue,
-          reason: 'autoPlay 守卫必须用 _isCurrentLoad 双判据——换集复用同一 player 时单判 '
-              '`_player == player` 会误向被新 load 接管的 player 发 play()');
-      expect(b.contains('if (autoPlay && _player == player)'), isFalse,
-          reason: 'BUG-344: 禁止回退到 autoPlay 单判据 `_player == player`');
-    });
+          reason:
+              'autoPlay 守卫必须用 _isCurrentLoad 双判据——换集复用同一 player 时单判 '
+              '`_player == player` 会误向被新 load 接管的 player 发 play()',
+        );
+        expect(
+          b.contains('if (autoPlay && _player == player)'),
+          isFalse,
+          reason: 'BUG-344: 禁止回退到 autoPlay 单判据 `_player == player`',
+        );
+      },
+    );
   });
 
   // TODO-099: video page forces landscape on enter, restores on exit.
   // Mobile-only; desktop is no-op. Source-level guard (needs a real device
   // orientation system, cannot be exercised in a pure unit test).
   group('VideoFushiPage forced landscape wiring (TODO-099)', () {
-    final String page =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String page = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     test('initState locks landscape on entering the video page', () {
       final RegExpMatch? body = RegExp(
@@ -415,8 +559,11 @@ void main() {
         dotAll: true,
       ).firstMatch(page);
       expect(body, isNotNull, reason: 'initState method body not found');
-      expect(body!.group(1), contains('_lockLandscapeForVideo()'),
-          reason: 'initState must lock landscape on entering the page');
+      expect(
+        body!.group(1),
+        contains('_lockLandscapeForVideo()'),
+        reason: 'initState must lock landscape on entering the page',
+      );
     });
 
     test('the lock method is mobile-gated and locks only landscape', () {
@@ -424,19 +571,37 @@ void main() {
         r'Future<void> _lockLandscapeForVideo\(\) async \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
-      expect(body, isNotNull,
-          reason: '_lockLandscapeForVideo method body not found');
+      expect(
+        body,
+        isNotNull,
+        reason: '_lockLandscapeForVideo method body not found',
+      );
       final String b = body!.group(1)!;
-      expect(b, contains('if (!isMobilePlatform) return;'),
-          reason: 'must be mobile-gated (desktop no-op)');
-      expect(b, contains('setPreferredOrientations'),
-          reason: 'must lock via SystemChrome.setPreferredOrientations');
-      expect(b, contains('DeviceOrientation.landscapeLeft'),
-          reason: 'landscape lock must include landscapeLeft');
-      expect(b, contains('DeviceOrientation.landscapeRight'),
-          reason: 'landscape lock must include landscapeRight');
-      expect(b.contains('DeviceOrientation.portraitUp'), isFalse,
-          reason: 'landscape lock must not re-allow portrait');
+      expect(
+        b,
+        contains('if (!isMobilePlatform) return;'),
+        reason: 'must be mobile-gated (desktop no-op)',
+      );
+      expect(
+        b,
+        contains('setPreferredOrientations'),
+        reason: 'must lock via SystemChrome.setPreferredOrientations',
+      );
+      expect(
+        b,
+        contains('DeviceOrientation.landscapeLeft'),
+        reason: 'landscape lock must include landscapeLeft',
+      );
+      expect(
+        b,
+        contains('DeviceOrientation.landscapeRight'),
+        reason: 'landscape lock must include landscapeRight',
+      );
+      expect(
+        b.contains('DeviceOrientation.portraitUp'),
+        isFalse,
+        reason: 'landscape lock must not re-allow portrait',
+      );
     });
 
     test('initState claims display ownership before the three (BUG-2105)', () {
@@ -447,8 +612,11 @@ void main() {
       expect(body, isNotNull, reason: 'initState method body not found');
       final String b = body!.group(1)!;
       final int claim = b.indexOf('VideoDisplayClaim.claim(this)');
-      expect(claim, greaterThanOrEqualTo(0),
-          reason: 'initState 必须经 VideoDisplayClaim.claim 登记本页持有进程级显示态');
+      expect(
+        claim,
+        greaterThanOrEqualTo(0),
+        reason: 'initState 必须经 VideoDisplayClaim.claim 登记本页持有进程级显示态',
+      );
       // 登记必须早于设置动作：先登记再设，换集期间新旧两页同时在册，旧页释放时才
       // 看得到「还有人持有」。
       // macOS 交通灯已不在此列：改用自绘 MD3 顶栏后它们是启动即永久隐藏，
@@ -459,8 +627,11 @@ void main() {
       ]) {
         final int at = b.indexOf(action);
         expect(at, greaterThanOrEqualTo(0), reason: 'initState 应仍认领 $action');
-        expect(claim, lessThan(at),
-            reason: 'VideoDisplayClaim.claim 必须排在 $action 之前');
+        expect(
+          claim,
+          lessThan(at),
+          reason: 'VideoDisplayClaim.claim 必须排在 $action 之前',
+        );
       }
     });
 
@@ -471,8 +642,11 @@ void main() {
       ).firstMatch(maskComments(page));
       expect(body, isNotNull, reason: 'dispose method body not found');
       final String b = body!.group(1)!;
-      expect(b, contains('_releaseVideoDisplayClaim()'),
-          reason: 'dispose 必须经 _releaseVideoDisplayClaim 释放进程级显示态');
+      expect(
+        b,
+        contains('_releaseVideoDisplayClaim()'),
+        reason: 'dispose 必须经 _releaseVideoDisplayClaim 释放进程级显示态',
+      );
       // BUG-2105：换集的窗口模式分支用 pushReplacement，旧页 dispose 晚于新页
       // initState。dispose 里任何**无条件**还原都会掀掉新页刚设好的显示态（方向集被
       // 放宽成含竖屏 → 旋转锁定下当即翻竖屏 = 掉出全屏；系统栏回调被置空）。
@@ -480,52 +654,82 @@ void main() {
         '_restoreOrientationOnExit()',
         'setSystemUIChangeCallback(null)',
       ]) {
-        expect(b.contains(unconditional), isFalse,
-            reason: 'dispose 不得直接调 $unconditional（须经 VideoDisplayClaim 记账门控）');
+        expect(
+          b.contains(unconditional),
+          isFalse,
+          reason: 'dispose 不得直接调 $unconditional（须经 VideoDisplayClaim 记账门控）',
+        );
       }
     });
 
-    test('_releaseVideoDisplayClaim restores only for the last owner (BUG-2105)',
-        () {
-      final RegExpMatch? body = RegExp(
-        r'void _releaseVideoDisplayClaim\(\) \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(maskComments(page));
-      expect(body, isNotNull,
-          reason: '_releaseVideoDisplayClaim method body not found');
-      final String b = body!.group(1)!;
-      final int gate =
-          b.indexOf('if (!VideoDisplayClaim.release(this)) return;');
-      expect(gate, greaterThanOrEqualTo(0),
-          reason: '还原前必须先过 VideoDisplayClaim.release(this) 的记账门（早退即不还原）');
-      for (final String restore in <String>[
-        'setSystemUIChangeCallback(null)',
-        'setHomeShellSystemUiMode()',
-        '_restoreOrientationOnExit()',
-      ]) {
-        final int at = b.indexOf(restore);
-        expect(at, greaterThanOrEqualTo(0),
-            reason: '最后一个持有者离开时必须还原 $restore');
-        expect(gate, lessThan(at), reason: '$restore 必须在记账门之后');
-      }
-    });
+    test(
+      '_releaseVideoDisplayClaim restores only for the last owner (BUG-2105)',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'void _releaseVideoDisplayClaim\(\) \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(maskComments(page));
+        expect(
+          body,
+          isNotNull,
+          reason: '_releaseVideoDisplayClaim method body not found',
+        );
+        final String b = body!.group(1)!;
+        final int gate = b.indexOf(
+          'if (!VideoDisplayClaim.release(this)) return;',
+        );
+        expect(
+          gate,
+          greaterThanOrEqualTo(0),
+          reason: '还原前必须先过 VideoDisplayClaim.release(this) 的记账门（早退即不还原）',
+        );
+        for (final String restore in <String>[
+          'setSystemUIChangeCallback(null)',
+          'setHomeShellSystemUiMode()',
+          '_restoreOrientationOnExit()',
+        ]) {
+          final int at = b.indexOf(restore);
+          expect(
+            at,
+            greaterThanOrEqualTo(0),
+            reason: '最后一个持有者离开时必须还原 $restore',
+          );
+          expect(gate, lessThan(at), reason: '$restore 必须在记账门之后');
+        }
+      },
+    );
 
     test('the restore method is mobile-gated and re-allows portrait', () {
       final RegExpMatch? body = RegExp(
         r'Future<void> _restoreOrientationOnExit\(\) async \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
-      expect(body, isNotNull,
-          reason: '_restoreOrientationOnExit method body not found');
+      expect(
+        body,
+        isNotNull,
+        reason: '_restoreOrientationOnExit method body not found',
+      );
       final String b = body!.group(1)!;
-      expect(b, contains('if (!isMobilePlatform) return;'),
-          reason: 'must be mobile-gated (desktop no-op)');
-      expect(b, contains('DeviceOrientation.portraitUp'),
-          reason: 'restore must re-allow portrait (so novels can be portrait)');
-      expect(b, contains('DeviceOrientation.landscapeLeft'),
-          reason: 'restore to app default must include landscapeLeft');
-      expect(b, contains('DeviceOrientation.landscapeRight'),
-          reason: 'restore to app default must include landscapeRight');
+      expect(
+        b,
+        contains('if (!isMobilePlatform) return;'),
+        reason: 'must be mobile-gated (desktop no-op)',
+      );
+      expect(
+        b,
+        contains('DeviceOrientation.portraitUp'),
+        reason: 'restore must re-allow portrait (so novels can be portrait)',
+      );
+      expect(
+        b,
+        contains('DeviceOrientation.landscapeLeft'),
+        reason: 'restore to app default must include landscapeLeft',
+      );
+      expect(
+        b,
+        contains('DeviceOrientation.landscapeRight'),
+        reason: 'restore to app default must include landscapeRight',
+      );
     });
   });
 }

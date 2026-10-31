@@ -32,8 +32,9 @@ void main() {
         targetAppPath: '/Applications/hibiki.app',
         startedAt: DateTime.utc(2026, 7, 21),
       );
-      final MacUpdateHandoffRecord? record =
-          await MacUpdateHandoff.read(marker());
+      final MacUpdateHandoffRecord? record = await MacUpdateHandoff.read(
+        marker(),
+      );
       expect(record, isNotNull);
       expect(record!.targetVersion, '1.2.0');
       expect(record.targetAppPath, '/Applications/hibiki.app');
@@ -66,8 +67,9 @@ void main() {
         targetAppPath: '/Applications/hibiki.app',
         startedAt: DateTime.utc(2026, 7, 22),
       );
-      final MacUpdateHandoffRecord? record =
-          await MacUpdateHandoff.read(marker());
+      final MacUpdateHandoffRecord? record = await MacUpdateHandoff.read(
+        marker(),
+      );
       expect(record!.lastPromptedAppVersion, '1.1.0');
     });
 
@@ -90,8 +92,9 @@ void main() {
         targetAppPath: '/Applications/hibiki.app',
         startedAt: DateTime.utc(2026, 7, 22),
       );
-      final MacUpdateHandoffRecord? record =
-          await MacUpdateHandoff.read(marker());
+      final MacUpdateHandoffRecord? record = await MacUpdateHandoff.read(
+        marker(),
+      );
       expect(record!.lastPromptedAppVersion, isNull);
     });
   });
@@ -133,28 +136,30 @@ void main() {
       expect(r!.status, MacUpdateHandoffStatus.installed);
     });
 
-    test('incomplete: still on old version keeps the marker for backoff',
-        () async {
-      await MacUpdateHandoff.writePending(
-        markerFile: marker(),
-        targetVersion: '1.2.0',
-        targetAppPath: '/Applications/hibiki.app',
-        startedAt: DateTime.utc(2026, 7, 21),
-      );
-      await writeResult('failed', 'copy new app failed');
-      final MacUpdateHandoffResult? r = await MacUpdateHandoff.reconcile(
-        markerFile: marker(),
-        resultFile: result(),
-        currentVersion: '1.1.0',
-        now: DateTime.utc(2026, 7, 21),
-      );
-      expect(r, isNotNull);
-      expect(r!.status, MacUpdateHandoffStatus.incomplete);
-      expect(r.message, 'copy new app failed');
-      // Marker kept (drives backoff); result consumed.
-      expect(await marker().exists(), isTrue);
-      expect(await result().exists(), isFalse);
-    });
+    test(
+      'incomplete: still on old version keeps the marker for backoff',
+      () async {
+        await MacUpdateHandoff.writePending(
+          markerFile: marker(),
+          targetVersion: '1.2.0',
+          targetAppPath: '/Applications/hibiki.app',
+          startedAt: DateTime.utc(2026, 7, 21),
+        );
+        await writeResult('failed', 'copy new app failed');
+        final MacUpdateHandoffResult? r = await MacUpdateHandoff.reconcile(
+          markerFile: marker(),
+          resultFile: result(),
+          currentVersion: '1.1.0',
+          now: DateTime.utc(2026, 7, 21),
+        );
+        expect(r, isNotNull);
+        expect(r!.status, MacUpdateHandoffStatus.incomplete);
+        expect(r.message, 'copy new app failed');
+        // Marker kept (drives backoff); result consumed.
+        expect(await marker().exists(), isTrue);
+        expect(await result().exists(), isFalse);
+      },
+    );
 
     test('incomplete idempotency: same version prompts only once', () async {
       await MacUpdateHandoff.writePending(
@@ -190,22 +195,24 @@ void main() {
   });
 
   group('shouldBackOffAutoInstall', () {
-    test('true when the same target failed last round (marker still present)',
-        () async {
-      await MacUpdateHandoff.writePending(
-        markerFile: marker(),
-        targetVersion: '1.2.0',
-        targetAppPath: '/Applications/hibiki.app',
-        startedAt: DateTime.utc(2026, 7, 21),
-      );
-      expect(
-        await MacUpdateHandoff.shouldBackOffAutoInstall(
+    test(
+      'true when the same target failed last round (marker still present)',
+      () async {
+        await MacUpdateHandoff.writePending(
           markerFile: marker(),
-          candidateVersion: '1.2.0',
-        ),
-        isTrue,
-      );
-    });
+          targetVersion: '1.2.0',
+          targetAppPath: '/Applications/hibiki.app',
+          startedAt: DateTime.utc(2026, 7, 21),
+        );
+        expect(
+          await MacUpdateHandoff.shouldBackOffAutoInstall(
+            markerFile: marker(),
+            candidateVersion: '1.2.0',
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('false for a different (newer) candidate version', () async {
       await MacUpdateHandoff.writePending(
@@ -223,15 +230,17 @@ void main() {
       );
     });
 
-    test('false when no marker (fail-open, never permanently blocks updates)',
-        () async {
-      expect(
-        await MacUpdateHandoff.shouldBackOffAutoInstall(
-          markerFile: marker(),
-          candidateVersion: '1.2.0',
-        ),
-        isFalse,
-      );
-    });
+    test(
+      'false when no marker (fail-open, never permanently blocks updates)',
+      () async {
+        expect(
+          await MacUpdateHandoff.shouldBackOffAutoInstall(
+            markerFile: marker(),
+            candidateVersion: '1.2.0',
+          ),
+          isFalse,
+        );
+      },
+    );
   });
 }

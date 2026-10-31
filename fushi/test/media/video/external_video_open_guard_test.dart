@@ -22,38 +22,59 @@ void main() {
     final String src = readMain();
     const String marker = 'Future<void> _openExternalVideo(';
     final int start = src.indexOf(marker);
-    expect(start, isNonNegative,
-        reason: '_openExternalVideo must exist in lib/main.dart');
+    expect(
+      start,
+      isNonNegative,
+      reason: '_openExternalVideo must exist in lib/main.dart',
+    );
     // Grab a generous window covering the whole method body.
-    final int end =
-        src.indexOf('\n  void _scheduleWindowsUpdateHandoff', start);
+    final int end = src.indexOf(
+      '\n  void _scheduleWindowsUpdateHandoff',
+      start,
+    );
     return end > start ? src.substring(start, end) : src.substring(start);
   }
 
   group('TODO-903 external "open with" video entry', () {
     test('① extracts a cover for newly-created external video rows', () {
-      expect(openExternalVideoBody(), contains('extractVideoCover('),
-          reason: 'file-open path must reuse the import dialog cover extractor '
-              'so externally-opened videos are not coverless');
+      expect(
+        openExternalVideoBody(),
+        contains('extractVideoCover('),
+        reason:
+            'file-open path must reuse the import dialog cover extractor '
+            'so externally-opened videos are not coverless',
+      );
     });
 
     test('② dedups by videoPath via the repository single source', () {
       final String body = openExternalVideoBody();
-      expect(body, contains('findByVideoPath('),
-          reason: 'must reuse the repository videoPath comparison (same source '
-              'as isDuplicateVideoPath) to reuse an already-imported bookUid '
-              'instead of inserting a second video/ext/<sha1> row');
+      expect(
+        body,
+        contains('findByVideoPath('),
+        reason:
+            'must reuse the repository videoPath comparison (same source '
+            'as isDuplicateVideoPath) to reuse an already-imported bookUid '
+            'instead of inserting a second video/ext/<sha1> row',
+      );
     });
 
     test('③ validates the file exists before inserting', () {
       final String body = openExternalVideoBody();
-      expect(body, contains('File(videoPath).exists('),
-          reason: 'the cold-start argv existsSync in main() can go stale '
-              'before this first-frame insert; the entry must re-verify '
-              'existence and not silently swallow a missing file');
-      expect(body, contains('video_file_not_found'),
-          reason: 'a missing file must surface user feedback, consistent with '
-              'other failure paths');
+      expect(
+        body,
+        contains('File(videoPath).exists('),
+        reason:
+            'the cold-start argv existsSync in main() can go stale '
+            'before this first-frame insert; the entry must re-verify '
+            'existence and not silently swallow a missing file',
+      );
+      expect(
+        body,
+        contains('video_file_not_found'),
+        reason:
+            'a missing file must surface user feedback, consistent with '
+            'other failure paths',
+      );
     });
   });
 }

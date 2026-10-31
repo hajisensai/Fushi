@@ -131,9 +131,9 @@ class _EpisodeRenameConfirmDialogState
           onPressed: _checked.isEmpty
               ? null
               : () => Navigator.of(context).pop(<EpisodeRenameProposal>[
-                    for (final EpisodeRenameProposal p in widget.proposals)
-                      if (_checked.contains(p.bookUid)) p,
-                  ]),
+                  for (final EpisodeRenameProposal p in widget.proposals)
+                    if (_checked.contains(p.bookUid)) p,
+                ]),
           child: Text(t.collection_episode_rename_apply(n: _checked.length)),
         ),
       ],

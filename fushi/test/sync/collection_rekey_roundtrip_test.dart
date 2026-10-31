@@ -27,22 +27,29 @@ void main() {
   }
 
   Future<String> insertBook(FushiDatabase db, String bookKey) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: bookKey,
-      epubPath: '/tmp/$bookKey.epub',
-      extractDir: '/tmp/$bookKey',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1000,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: '/tmp/$bookKey.epub',
+        extractDir: '/tmp/$bookKey',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+      ),
+    );
     return (await db.resolveEpubBookUid(bookKey))!;
   }
 
   Future<Set<String>> memberKeysOf(
-      FushiDatabase db, String name, String type) async {
-    final MediaCollectionRow? row =
-        await db.getMediaCollectionByNaturalKey(name, type);
+    FushiDatabase db,
+    String name,
+    String type,
+  ) async {
+    final MediaCollectionRow? row = await db.getMediaCollectionByNaturalKey(
+      name,
+      type,
+    );
     if (row == null) return const <String>{};
     return (await db.getCollectionItems(row.id))
         .map((MediaCollectionItemRow m) => '${m.mediaType}|${m.entryKey}')
@@ -52,8 +59,10 @@ void main() {
   test('发布口：本地 uid 成员出 wire 变 bookKey；透传行照抄；墓碑 bookKey 域零换算直发', () async {
     final FushiDatabase db = memDb();
     final String uid = await insertBook(db, 'booka-key');
-    final int cid =
-        await db.createMediaCollection('C', collectionType: 'playlist');
+    final int cid = await db.createMediaCollection(
+      'C',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(cid, MediaKind.epub, uid); // 本地书 = uid 行
     await db.addToCollection(cid, MediaKind.epub, 'remote-only-key'); // 透传行
     await db.addToCollection(cid, MediaKind.srt, 's1'); // 非 epub 域
@@ -67,8 +76,9 @@ void main() {
     );
 
     final CollectionManifest manifest = await loadLocalCollectionManifest(db);
-    final CollectionManifestEntry entry = manifest.collections
-        .singleWhere((CollectionManifestEntry e) => e.name == 'C');
+    final CollectionManifestEntry entry = manifest.collections.singleWhere(
+      (CollectionManifestEntry e) => e.name == 'C',
+    );
 
     expect(
       entry.members
@@ -101,20 +111,32 @@ void main() {
       orderUpdatedAt: 10,
       members: <CollectionManifestMember>[
         CollectionManifestMember(
-            mediaType: 'epub', entryKey: 'bookb-key', sortIndex: 0),
+          mediaType: 'epub',
+          entryKey: 'bookb-key',
+          sortIndex: 0,
+        ),
         CollectionManifestMember(
-            mediaType: 'epub', entryKey: 'nolocal-key', sortIndex: 1),
+          mediaType: 'epub',
+          entryKey: 'nolocal-key',
+          sortIndex: 1,
+        ),
         CollectionManifestMember(
-            mediaType: 'srt', entryKey: 's2', sortIndex: 2),
+          mediaType: 'srt',
+          entryKey: 's2',
+          sortIndex: 2,
+        ),
       ],
     );
     await applyCollectionLocalChanges(
-        db, const CollectionLocalChanges(<CollectionManifestEntry>[entry]));
+      db,
+      const CollectionLocalChanges(<CollectionManifestEntry>[entry]),
+    );
 
     expect(
       await memberKeysOf(db, 'C', 'playlist'),
       <String>{'epub|$uidB', 'epub|nolocal-key', 'srt|s2'},
-      reason: '本地有书 → uid 行；本地无书 → 照抄 wire bookKey 的透传行'
+      reason:
+          '本地有书 → uid 行；本地无书 → 照抄 wire bookKey 的透传行'
           '（union 语义：替对端转发本机没有的书的归属，不得丢弃）',
     );
   });
@@ -129,15 +151,25 @@ void main() {
       orderUpdatedAt: 10,
       members: <CollectionManifestMember>[
         CollectionManifestMember(
-            mediaType: 'epub', entryKey: 'bookb-key', sortIndex: 0),
+          mediaType: 'epub',
+          entryKey: 'bookb-key',
+          sortIndex: 0,
+        ),
         CollectionManifestMember(
-            mediaType: 'epub', entryKey: 'nolocal-key', sortIndex: 1),
+          mediaType: 'epub',
+          entryKey: 'nolocal-key',
+          sortIndex: 1,
+        ),
       ],
     );
     await applyCollectionLocalChanges(
-        db, const CollectionLocalChanges(<CollectionManifestEntry>[round1]));
-    expect(await memberKeysOf(db, 'C', 'playlist'),
-        <String>{'epub|$uidB', 'epub|nolocal-key'});
+      db,
+      const CollectionLocalChanges(<CollectionManifestEntry>[round1]),
+    );
+    expect(await memberKeysOf(db, 'C', 'playlist'), <String>{
+      'epub|$uidB',
+      'epub|nolocal-key',
+    });
 
     // 「下载落地」：这本书现在有本地行（新 uid）。
     final String uidN = await insertBook(db, 'nolocal-key');
@@ -154,11 +186,20 @@ void main() {
           orderUpdatedAt: 10,
           members: <CollectionManifestMember>[
             CollectionManifestMember(
-                mediaType: 'epub', entryKey: 'bookb-key', sortIndex: 0),
+              mediaType: 'epub',
+              entryKey: 'bookb-key',
+              sortIndex: 0,
+            ),
             CollectionManifestMember(
-                mediaType: 'epub', entryKey: 'nolocal-key', sortIndex: 1),
+              mediaType: 'epub',
+              entryKey: 'nolocal-key',
+              sortIndex: 1,
+            ),
             CollectionManifestMember(
-                mediaType: 'srt', entryKey: 's3', sortIndex: 2),
+              mediaType: 'srt',
+              entryKey: 's3',
+              sortIndex: 2,
+            ),
           ],
         ),
       ],
@@ -174,7 +215,8 @@ void main() {
     expect(
       await memberKeysOf(db, 'C', 'playlist'),
       <String>{'epub|$uidB', 'epub|$uidN', 'srt|s3'},
-      reason: 'bookKey 可解析后 desiredKeys 变 uid：diff 删透传 bookKey 行、'
+      reason:
+          'bookKey 可解析后 desiredKeys 变 uid：diff 删透传 bookKey 行、'
           '插 uid 行，归属收敛（透传行不残留）',
     );
   });

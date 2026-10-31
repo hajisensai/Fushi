@@ -6,9 +6,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {

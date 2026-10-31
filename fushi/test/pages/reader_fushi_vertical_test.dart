@@ -10,8 +10,7 @@ void main() {
   // follow back to chapter-start granularity (symptom 1: "音频跟随只能到章节").
   // ReaderPositionRepository.save owns the same-section-keep / cross-section-clear
   // decision when charOffset is null.
-  test(
-      'position save preserves the precise same-section anchor when the '
+  test('position save preserves the precise same-section anchor when the '
       'current char offset is unavailable (-1 → null, not raw -1)', () {
     final String source = readReaderPageSource();
 
@@ -27,7 +26,8 @@ void main() {
     expect(
       persist,
       contains('readerPositionSaveArgs(progress: progress'),
-      reason: '_persistPosition 必须经 readerPositionSaveArgs 归一化落库参数——'
+      reason:
+          '_persistPosition 必须经 readerPositionSaveArgs 归一化落库参数——'
           '绕开它手写 charOffset 正是 BUG-285 的回归入口。',
     );
     expect(
@@ -38,39 +38,43 @@ void main() {
     expect(
       persist,
       isNot(contains('charOffset: charOffset,')),
-      reason: 'Passing the raw charOffset (which may be -1) overwrites the '
+      reason:
+          'Passing the raw charOffset (which may be -1) overwrites the '
           'precise same-section anchor and is exactly the BUG-285 regression.',
     );
   });
 
-  test('continuous paginate refreshes progress after a successful JS scroll',
-      () {
-    final String source = readReaderPageSource();
+  test(
+    'continuous paginate refreshes progress after a successful JS scroll',
+    () {
+      final String source = readReaderPageSource();
 
-    final String paginate = _between(
-      source,
-      // TODO-737: _paginate 签名改多行（加 {int throttleMs = 0}），标记收窄到方法首行。
-      '  Future<void> _paginate(',
-      '  File? _readerImageFileForUrl(String imgUrl)',
-    );
-    final String continuousBranch = _between(
-      paginate,
-      'if (_settings?.isContinuousMode == true)',
-      '\n    final dynamic result = await _controller!.evaluateJavascript(',
-    );
+      final String paginate = _between(
+        source,
+        // TODO-737: _paginate 签名改多行（加 {int throttleMs = 0}），标记收窄到方法首行。
+        '  Future<void> _paginate(',
+        '  File? _readerImageFileForUrl(String imgUrl)',
+      );
+      final String continuousBranch = _between(
+        paginate,
+        'if (_settings?.isContinuousMode == true)',
+        '\n    final dynamic result = await _controller!.evaluateJavascript(',
+      );
 
-    expect(
-      continuousBranch,
-      contains('await _refreshProgress();'),
-      reason: 'Continuous-mode programmatic page turns must update the cached '
-          'reader position immediately, not wait for a later scroll debounce.',
-    );
-    expect(
-      continuousBranch,
-      contains('await _caretReanchor(direction);'),
-      reason: 'Caret reanchor should remain after the position refresh.',
-    );
-  });
+      expect(
+        continuousBranch,
+        contains('await _refreshProgress();'),
+        reason:
+            'Continuous-mode programmatic page turns must update the cached '
+            'reader position immediately, not wait for a later scroll debounce.',
+      );
+      expect(
+        continuousBranch,
+        contains('await _caretReanchor(direction);'),
+        reason: 'Caret reanchor should remain after the position refresh.',
+      );
+    },
+  );
 }
 
 String _between(String source, String start, String end) {

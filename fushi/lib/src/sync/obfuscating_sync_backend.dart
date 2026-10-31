@@ -49,7 +49,9 @@ class ObfuscatingSyncBackend extends SyncBackend
   /// 把 [obfuscated] 文件经 [SyncObfuscator.deobfuscateFile] 还原到 [destination]
   /// （混读：无魔数的旧明文原样复制）。整段在 Rust 里流式读写。
   Future<void> _deobfuscateToDestination(
-      File obfuscated, File destination) async {
+    File obfuscated,
+    File destination,
+  ) async {
     await destination.parent.create(recursive: true);
     await SyncObfuscator.deobfuscateFile(obfuscated, destination);
   }
@@ -105,15 +107,15 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _inner.ensureBookFolder(
-        bookTitle: bookTitle,
-        rootFolderId: rootFolderId,
-        // 封面是小数据，整块混淆。null 原样透传。混淆包在惰性回调「里面」，
-        // 所以内层后端缓存命中不调用回调时，既不读磁盘也不做混淆（TODO-2657）。
-        readCoverData:
-            readCoverData == null ? null : _obfuscateCover(readCoverData),
-      );
+  }) => _inner.ensureBookFolder(
+    bookTitle: bookTitle,
+    rootFolderId: rootFolderId,
+    // 封面是小数据，整块混淆。null 原样透传。混淆包在惰性回调「里面」，
+    // 所以内层后端缓存命中不调用回调时，既不读磁盘也不做混淆（TODO-2657）。
+    readCoverData: readCoverData == null
+        ? null
+        : _obfuscateCover(readCoverData),
+  );
 
   /// 把惰性封面来源 [inner] 包一层混淆，保持惰性（只在被调用时才读+混淆）。
   static SyncCoverDataProvider _obfuscateCover(SyncCoverDataProvider inner) =>
@@ -156,9 +158,11 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) =>
-      _inner.updateProgressFile(
-          folderId: folderId, fileId: fileId, progress: progress);
+  }) => _inner.updateProgressFile(
+    folderId: folderId,
+    fileId: fileId,
+    progress: progress,
+  );
 
   @override
   Future<void> updateStatsFile({
@@ -173,9 +177,11 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) =>
-      _inner.updateAudioBookFile(
-          folderId: folderId, fileId: fileId, audioBook: audioBook);
+  }) => _inner.updateAudioBookFile(
+    folderId: folderId,
+    fileId: fileId,
+    audioBook: audioBook,
+  );
 
   // ── Content file sync（混淆插入点） ───────────────────────────────
 
@@ -231,9 +237,10 @@ class ObfuscatingSyncBackend extends SyncBackend
   void restoreCache({
     String? rootFolderId,
     Map<String, String>? titleToFolderId,
-  }) =>
-      _inner.restoreCache(
-          rootFolderId: rootFolderId, titleToFolderId: titleToFolderId);
+  }) => _inner.restoreCache(
+    rootFolderId: rootFolderId,
+    titleToFolderId: titleToFolderId,
+  );
 
   @override
   String? get cachedRootFolderId => _inner.cachedRootFolderId;

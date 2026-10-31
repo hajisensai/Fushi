@@ -21,8 +21,11 @@ void main() {
           title: 'MyBook',
           format: format,
         );
-        expect(opened.mediaIdentifier, 'fushi://book/MyBook',
-            reason: '身份是 bookKey，转化前后必须一致（$format）');
+        expect(
+          opened.mediaIdentifier,
+          'fushi://book/MyBook',
+          reason: '身份是 bookKey，转化前后必须一致（$format）',
+        );
         expect(opened.title, 'MyBook');
       }
     });
@@ -71,10 +74,14 @@ void main() {
 
   group('ReaderFushiSource.mediaSourceKeyFor', () {
     test('三种 format 各自映射到不同的源键（不得出现两态合并）', () {
-      final Set<String> keys =
-          BookFormat.values.map(ReaderFushiSource.mediaSourceKeyFor).toSet();
-      expect(keys.length, BookFormat.values.length,
-          reason: '任意两种 format 共用一个源键 = 其中一种被用错阅读器打开');
+      final Set<String> keys = BookFormat.values
+          .map(ReaderFushiSource.mediaSourceKeyFor)
+          .toSet();
+      expect(
+        keys.length,
+        BookFormat.values.length,
+        reason: '任意两种 format 共用一个源键 = 其中一种被用错阅读器打开',
+      );
     });
   });
 }

@@ -165,11 +165,17 @@ Future<void> _dragBarrier(
   PointerDeviceKind kind = PointerDeviceKind.touch,
 }) async {
   final Finder barrier = _barrierFinder();
-  expect(barrier, findsOneWidget,
-      reason: 'buildDictionary should render exactly one full-screen barrier '
-          'while a popup is visible');
-  final TestGesture gesture =
-      await tester.startGesture(_bareBarrierPoint, kind: kind);
+  expect(
+    barrier,
+    findsOneWidget,
+    reason:
+        'buildDictionary should render exactly one full-screen barrier '
+        'while a popup is visible',
+  );
+  final TestGesture gesture = await tester.startGesture(
+    _bareBarrierPoint,
+    kind: kind,
+  );
   const int steps = 12;
   final double step = dx / steps;
   for (int i = 0; i < steps; i++) {
@@ -198,54 +204,68 @@ void main() {
   });
 
   testWidgets(
-      'switch ON: horizontal drag past threshold on the barrier closes ONE '
-      'layer (keeps parent)', (WidgetTester tester) async {
-    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
-    final appModel = BarrierSwipeAppModel();
-    final hostKey = GlobalKey<BarrierSwipeHostPageState>();
-    await tester.pumpWidget(
-      buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
-    );
-    await tester.pump();
-    await tester.pump();
+    'switch ON: horizontal drag past threshold on the barrier closes ONE '
+    'layer (keeps parent)',
+    (WidgetTester tester) async {
+      await ReaderFushiSource.instance.setEnableSwipeToClose(true);
+      final appModel = BarrierSwipeAppModel();
+      final hostKey = GlobalKey<BarrierSwipeHostPageState>();
+      await tester.pumpWidget(
+        buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    final host = hostKey.currentState!;
-    await _seedTwoVisibleLayers(tester, host);
-    expect(host.debugPopupStack, hasLength(2));
-    expect(host.debugPopupStack.every((e) => e.visible), isTrue);
+      final host = hostKey.currentState!;
+      await _seedTwoVisibleLayers(tester, host);
+      expect(host.debugPopupStack, hasLength(2));
+      expect(host.debugPopupStack.every((e) => e.visible), isTrue);
 
-    await _dragBarrier(tester, dx: 240);
+      await _dragBarrier(tester, dx: 240);
 
-    expect(host.debugPopupStack, hasLength(1),
-        reason: 'an over-threshold drag closes only the top layer');
-    expect(host.debugPopupStack.single.visible, isTrue,
-        reason: 'parent layer stays visible');
-  });
+      expect(
+        host.debugPopupStack,
+        hasLength(1),
+        reason: 'an over-threshold drag closes only the top layer',
+      );
+      expect(
+        host.debugPopupStack.single.visible,
+        isTrue,
+        reason: 'parent layer stays visible',
+      );
+    },
+  );
 
   testWidgets(
-      'switch ON: leftward (negative) drag past threshold also closes one '
-      'layer (bidirectional like mobile)', (WidgetTester tester) async {
-    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
-    final appModel = BarrierSwipeAppModel();
-    final hostKey = GlobalKey<BarrierSwipeHostPageState>();
-    await tester.pumpWidget(
-      buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
-    );
-    await tester.pump();
-    await tester.pump();
+    'switch ON: leftward (negative) drag past threshold also closes one '
+    'layer (bidirectional like mobile)',
+    (WidgetTester tester) async {
+      await ReaderFushiSource.instance.setEnableSwipeToClose(true);
+      final appModel = BarrierSwipeAppModel();
+      final hostKey = GlobalKey<BarrierSwipeHostPageState>();
+      await tester.pumpWidget(
+        buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    final host = hostKey.currentState!;
-    await _seedTwoVisibleLayers(tester, host);
-    expect(host.debugPopupStack, hasLength(2));
+      final host = hostKey.currentState!;
+      await _seedTwoVisibleLayers(tester, host);
+      expect(host.debugPopupStack, hasLength(2));
 
-    await _dragBarrier(tester, dx: -240);
+      await _dragBarrier(tester, dx: -240);
 
-    expect(host.debugPopupStack, hasLength(1),
-        reason: 'a leftward over-threshold drag also closes one layer');
-  });
+      expect(
+        host.debugPopupStack,
+        hasLength(1),
+        reason: 'a leftward over-threshold drag also closes one layer',
+      );
+    },
+  );
 
-  testWidgets('switch ON: drag below threshold does NOT close any layer',
-      (WidgetTester tester) async {
+  testWidgets('switch ON: drag below threshold does NOT close any layer', (
+    WidgetTester tester,
+  ) async {
     await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
@@ -261,46 +281,59 @@ void main() {
 
     await _dragBarrier(tester, dx: 40);
 
-    expect(host.debugPopupStack, hasLength(2),
-        reason: 'a below-threshold drag must spring back, closing nothing');
-  });
-
-  testWidgets(
-      'switch OFF: horizontal drag past threshold does NOT close (no swipe), '
-      'tap clears the whole stack (TODO-834)', (WidgetTester tester) async {
-    await ReaderFushiSource.instance.setEnableSwipeToClose(false);
-    final appModel = BarrierSwipeAppModel();
-    final hostKey = GlobalKey<BarrierSwipeHostPageState>();
-    await tester.pumpWidget(
-      buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+    expect(
+      host.debugPopupStack,
+      hasLength(2),
+      reason: 'a below-threshold drag must spring back, closing nothing',
     );
-    await tester.pump();
-    await tester.pump();
-
-    final host = hostKey.currentState!;
-    await _seedTwoVisibleLayers(tester, host);
-    expect(host.debugPopupStack, hasLength(2));
-
-    await _dragBarrier(tester, dx: 240, kind: PointerDeviceKind.mouse);
-    expect(host.debugPopupStack, hasLength(2),
-        reason: 'with the switch off the barrier only taps, drag is inert');
-
-    // TODO-834：点 barrier（所有弹窗外真空白）一次性清整栈，保留隐藏热槽。
-    await tester.tapAt(_bareBarrierPoint);
-    await tester.pump();
-    expect(host.dictionaryPopupShown, isFalse,
-        reason:
-            'tap-barrier clears the whole stack regardless of swipe switch');
-    expect(host.debugPopupStack, hasLength(1),
-        reason: 'the hidden warm slot survives (BUG-092)');
-    expect(host.debugPopupStack.single.visible, isFalse);
-    expect(host.debugPopupStack.single.isWarmSlot, isTrue);
   });
 
   testWidgets(
-      'switch ON: a tap (not a drag) clears the whole stack (TODO-834; '
-      'tap/drag arena does not swallow each other)',
-      (WidgetTester tester) async {
+    'switch OFF: horizontal drag past threshold does NOT close (no swipe), '
+    'tap clears the whole stack (TODO-834)',
+    (WidgetTester tester) async {
+      await ReaderFushiSource.instance.setEnableSwipeToClose(false);
+      final appModel = BarrierSwipeAppModel();
+      final hostKey = GlobalKey<BarrierSwipeHostPageState>();
+      await tester.pumpWidget(
+        buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final host = hostKey.currentState!;
+      await _seedTwoVisibleLayers(tester, host);
+      expect(host.debugPopupStack, hasLength(2));
+
+      await _dragBarrier(tester, dx: 240, kind: PointerDeviceKind.mouse);
+      expect(
+        host.debugPopupStack,
+        hasLength(2),
+        reason: 'with the switch off the barrier only taps, drag is inert',
+      );
+
+      // TODO-834：点 barrier（所有弹窗外真空白）一次性清整栈，保留隐藏热槽。
+      await tester.tapAt(_bareBarrierPoint);
+      await tester.pump();
+      expect(
+        host.dictionaryPopupShown,
+        isFalse,
+        reason: 'tap-barrier clears the whole stack regardless of swipe switch',
+      );
+      expect(
+        host.debugPopupStack,
+        hasLength(1),
+        reason: 'the hidden warm slot survives (BUG-092)',
+      );
+      expect(host.debugPopupStack.single.visible, isFalse);
+      expect(host.debugPopupStack.single.isWarmSlot, isTrue);
+    },
+  );
+
+  testWidgets('switch ON: a tap (not a drag) clears the whole stack (TODO-834; '
+      'tap/drag arena does not swallow each other)', (
+    WidgetTester tester,
+  ) async {
     await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
@@ -318,17 +351,23 @@ void main() {
     await tester.pump();
 
     // TODO-834：tap 经手势竞技场仍走 onTap → clearDictionaryResult 清整栈。
-    expect(host.dictionaryPopupShown, isFalse,
-        reason: 'a tap still routes through onTap and clears the whole stack');
-    expect(host.debugPopupStack, hasLength(1),
-        reason: 'the hidden warm slot survives');
+    expect(
+      host.dictionaryPopupShown,
+      isFalse,
+      reason: 'a tap still routes through onTap and clears the whole stack',
+    );
+    expect(
+      host.debugPopupStack,
+      hasLength(1),
+      reason: 'the hidden warm slot survives',
+    );
     expect(host.debugPopupStack.single.visible, isFalse);
   });
 
-  testWidgets(
-      'switch ON: pointer hover on the barrier still reaches '
-      'onDismissBarrierHover (drag handlers do not swallow hover)',
-      (WidgetTester tester) async {
+  testWidgets('switch ON: pointer hover on the barrier still reaches '
+      'onDismissBarrierHover (drag handlers do not swallow hover)', (
+    WidgetTester tester,
+  ) async {
     await ReaderFushiSource.instance.setEnableSwipeToClose(true);
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
@@ -343,20 +382,25 @@ void main() {
     expect(host.debugPopupStack, hasLength(2));
     host.barrierHoverCalls = 0;
 
-    final TestGesture mouse =
-        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
     await mouse.addPointer(location: _bareBarrierPoint + const Offset(-5, -5));
     await mouse.moveTo(_bareBarrierPoint);
     await tester.pump();
     await mouse.removePointer();
 
-    expect(host.barrierHoverCalls, greaterThan(0),
-        reason: 'the drag handlers must not swallow onPointerHover');
+    expect(
+      host.barrierHoverCalls,
+      greaterThan(0),
+      reason: 'the drag handlers must not swallow onPointerHover',
+    );
     expect(host.debugPopupStack, hasLength(2));
   });
 
-  testWidgets('wheel on the bare popup barrier reaches the source hook',
-      (WidgetTester tester) async {
+  testWidgets('wheel on the bare popup barrier reaches the source hook', (
+    WidgetTester tester,
+  ) async {
     final appModel = BarrierSwipeAppModel();
     final hostKey = GlobalKey<BarrierSwipeHostPageState>();
     await tester.pumpWidget(
@@ -370,53 +414,69 @@ void main() {
     await tester.pump();
     host.barrierPointerSignalCalls = 0;
 
-    await tester.sendEventToBinding(const PointerScrollEvent(
-      position: _bareBarrierPoint,
-      scrollDelta: Offset(0, 120),
-    ));
+    await tester.sendEventToBinding(
+      const PointerScrollEvent(
+        position: _bareBarrierPoint,
+        scrollDelta: Offset(0, 120),
+      ),
+    );
     await tester.pump();
 
-    expect(host.barrierPointerSignalCalls, 1,
-        reason: 'the full-screen barrier must not swallow the reader wheel');
-    expect(host.dictionaryPopupShown, isTrue,
-        reason: 'the generic hook does not dismiss; the source owns semantics');
+    expect(
+      host.barrierPointerSignalCalls,
+      1,
+      reason: 'the full-screen barrier must not swallow the reader wheel',
+    );
+    expect(
+      host.dictionaryPopupShown,
+      isTrue,
+      reason: 'the generic hook does not dismiss; the source owns semantics',
+    );
   });
 
   testWidgets(
-      'TODO-880 switch ON: horizontal drag on the TOP popup BODY closes only '
-      'the top layer (keeps parent)', (WidgetTester tester) async {
-    await ReaderFushiSource.instance.setEnableSwipeToClose(true);
-    final appModel = BarrierSwipeAppModel();
-    final hostKey = GlobalKey<BarrierSwipeHostPageState>();
-    await tester.pumpWidget(
-      buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    final host = hostKey.currentState!;
-    await _seedTwoVisibleLayers(tester, host);
-    expect(host.debugPopupStack, hasLength(2));
-
-    // The top (nested) layer is the last DictionaryPopupLayer; drag across its
-    // own body, not the bare barrier.
-    final Finder topLayer = find.byType(DictionaryPopupLayer).last;
-    final Offset topCenter = tester.getCenter(topLayer);
-    final TestGesture g = await tester.startGesture(topCenter);
-    for (int i = 0; i < 12; i++) {
-      await g.moveBy(const Offset(20, 0));
+    'TODO-880 switch ON: horizontal drag on the TOP popup BODY closes only '
+    'the top layer (keeps parent)',
+    (WidgetTester tester) async {
+      await ReaderFushiSource.instance.setEnableSwipeToClose(true);
+      final appModel = BarrierSwipeAppModel();
+      final hostKey = GlobalKey<BarrierSwipeHostPageState>();
+      await tester.pumpWidget(
+        buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+      );
       await tester.pump();
-    }
-    await g.up();
-    // TODO-890: the top layer slides out before the host removes it; settle
-    // the 200ms tween so the dismiss completes.
-    await tester.pumpAndSettle();
+      await tester.pump();
 
-    expect(host.debugPopupStack, hasLength(1),
-        reason: 'a body drag on the top layer closes only the top layer');
-    expect(host.debugPopupStack.single.visible, isTrue,
-        reason: 'the parent layer survives');
-  });
+      final host = hostKey.currentState!;
+      await _seedTwoVisibleLayers(tester, host);
+      expect(host.debugPopupStack, hasLength(2));
+
+      // The top (nested) layer is the last DictionaryPopupLayer; drag across its
+      // own body, not the bare barrier.
+      final Finder topLayer = find.byType(DictionaryPopupLayer).last;
+      final Offset topCenter = tester.getCenter(topLayer);
+      final TestGesture g = await tester.startGesture(topCenter);
+      for (int i = 0; i < 12; i++) {
+        await g.moveBy(const Offset(20, 0));
+        await tester.pump();
+      }
+      await g.up();
+      // TODO-890: the top layer slides out before the host removes it; settle
+      // the 200ms tween so the dismiss completes.
+      await tester.pumpAndSettle();
+
+      expect(
+        host.debugPopupStack,
+        hasLength(1),
+        reason: 'a body drag on the top layer closes only the top layer',
+      );
+      expect(
+        host.debugPopupStack.single.visible,
+        isTrue,
+        reason: 'the parent layer survives',
+      );
+    },
+  );
 
   group('swipeDismissThreshold pure function', () {
     test('default sensitivity 0.6 yields ~94px', () {

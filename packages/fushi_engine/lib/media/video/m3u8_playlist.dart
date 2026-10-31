@@ -36,8 +36,8 @@ double? videoWatchFraction({
 }) {
   if (completed) return 1.0;
   if (episodeCount >= 2) {
-    final double f =
-        (currentEpisode.clamp(0, episodeCount) / episodeCount).clamp(0.0, 1.0);
+    final double f = (currentEpisode.clamp(0, episodeCount) / episodeCount)
+        .clamp(0.0, 1.0);
     return f > 0 ? f : null;
   }
   return null;
@@ -64,23 +64,23 @@ class PlaylistEntry {
 
   /// 返回一个仅 [positionMs] 改变的副本（不可变更新）。
   PlaylistEntry copyWith({int? positionMs}) => PlaylistEntry(
-        title: title,
-        path: path,
-        positionMs: positionMs ?? this.positionMs,
-      );
+    title: title,
+    path: path,
+    positionMs: positionMs ?? this.positionMs,
+  );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'title': title,
-        'path': path,
-        'positionMs': positionMs,
-      };
+    'title': title,
+    'path': path,
+    'positionMs': positionMs,
+  };
 
   factory PlaylistEntry.fromJson(Map<String, dynamic> json) => PlaylistEntry(
-        title: json['title'] as String,
-        path: json['path'] as String,
-        // 兼容旧 playlistJson（无 positionMs 字段）：缺省回退 0。
-        positionMs: (json['positionMs'] as int?) ?? 0,
-      );
+    title: json['title'] as String,
+    path: json['path'] as String,
+    // 兼容旧 playlistJson（无 positionMs 字段）：缺省回退 0。
+    positionMs: (json['positionMs'] as int?) ?? 0,
+  );
 }
 
 /// 把 [entries] 中第 [index] 集的播放进度更新为 [positionMs]，返回新列表
@@ -119,8 +119,10 @@ String? nextPlaylistPathToPrewarm({
   required int currentIndex,
   required String? lastPrewarmedPath,
 }) {
-  final int? nextIndex =
-      nextPlaylistIndexAfterCompletion(entries, currentIndex);
+  final int? nextIndex = nextPlaylistIndexAfterCompletion(
+    entries,
+    currentIndex,
+  );
   if (nextIndex == null) return null;
   final String path = entries[nextIndex].path;
   return path == lastPrewarmedPath ? null : path;
@@ -323,8 +325,9 @@ class M3uExtinf {
   final String displayName;
 }
 
-final RegExp _m3uAttrPattern =
-    RegExp(r'([A-Za-z0-9_\-]+)\s*=\s*(?:"([^"]*)"|([^\s",]+))');
+final RegExp _m3uAttrPattern = RegExp(
+  r'([A-Za-z0-9_\-]+)\s*=\s*(?:"([^"]*)"|([^\s",]+))',
+);
 
 /// **纯函数**：解析一行 `#EXTINF:`（容错：缺逗号 / 缺时长 / 未闭合引号都不抛）。
 M3uExtinf parseM3uExtinf(String line) {
@@ -345,10 +348,12 @@ M3uExtinf parseM3uExtinf(String line) {
   final String head = split >= 0 ? body.substring(0, split) : body;
   final String displayName = split >= 0 ? body.substring(split + 1).trim() : '';
   final String headTrimmed = head.trimLeft();
-  final Match? durationMatch =
-      RegExp(r'^-?\d+(?:\.\d+)?').firstMatch(headTrimmed);
-  final double? duration =
-      durationMatch == null ? null : double.tryParse(durationMatch.group(0)!);
+  final Match? durationMatch = RegExp(
+    r'^-?\d+(?:\.\d+)?',
+  ).firstMatch(headTrimmed);
+  final double? duration = durationMatch == null
+      ? null
+      : double.tryParse(durationMatch.group(0)!);
   final String attrText = durationMatch == null
       ? headTrimmed
       : headTrimmed.substring(durationMatch.end);
@@ -453,17 +458,20 @@ List<M3uChannel> parseM3uChannels({
     final Map<String, String> attrs =
         pending?.attributes ?? const <String, String>{};
     final String? tvgName = _nonEmpty(attrs['tvg-name']);
-    final String title = _nonEmpty(pending?.displayName) ??
+    final String title =
+        _nonEmpty(pending?.displayName) ??
         tvgName ??
         decodedSourceBasename(url);
-    channels.add(M3uChannel(
-      title: title,
-      url: url,
-      tvgId: _nonEmpty(attrs['tvg-id']),
-      tvgName: tvgName,
-      tvgLogo: _nonEmpty(attrs['tvg-logo']),
-      groupTitle: _nonEmpty(attrs['group-title']) ?? pendingGroup,
-    ));
+    channels.add(
+      M3uChannel(
+        title: title,
+        url: url,
+        tvgId: _nonEmpty(attrs['tvg-id']),
+        tvgName: tvgName,
+        tvgLogo: _nonEmpty(attrs['tvg-logo']),
+        groupTitle: _nonEmpty(attrs['group-title']) ?? pendingGroup,
+      ),
+    );
     pending = null;
     pendingGroup = null;
   }
@@ -625,13 +633,15 @@ List<HlsVariant> parseM3u8Master({
     final String resolvedUrl = _resolveHlsUri(base, baseUrl, line);
     final String? bw = attrs['BANDWIDTH'];
     final String? avgBw = attrs['AVERAGE-BANDWIDTH'];
-    variants.add(HlsVariant(
-      url: resolvedUrl,
-      bandwidth: int.tryParse(bw ?? avgBw ?? ''),
-      resolution: attrs['RESOLUTION'],
-      codecs: attrs['CODECS'],
-      frameRate: double.tryParse(attrs['FRAME-RATE'] ?? ''),
-    ));
+    variants.add(
+      HlsVariant(
+        url: resolvedUrl,
+        bandwidth: int.tryParse(bw ?? avgBw ?? ''),
+        resolution: attrs['RESOLUTION'],
+        codecs: attrs['CODECS'],
+        frameRate: double.tryParse(attrs['FRAME-RATE'] ?? ''),
+      ),
+    );
   }
 
   return variants;

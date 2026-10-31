@@ -17,53 +17,74 @@ import 'package:flutter_test/flutter_test.dart';
 ///    cache 路径会悬空——这是 board 1112/TODO-949 的真实修复，不能连同字幕一起回退）。
 void main() {
   group('BUG-677 subtitle import reverts to system file picker', () {
-    test('video _pickSubtitle uses pickSystemFilePath, not pickRealFilePath',
-        () {
-      final String body = _methodBody(
-        File('lib/src/media/video/video_import_dialog.dart').readAsStringSync(),
-        'Future<void> _pickSubtitle()',
-      );
-      expect(body, isNotEmpty, reason: '找不到 video _pickSubtitle');
-      expect(
-        body.contains('pickSystemFilePath('),
-        isTrue,
-        reason: '视频外挂字幕导入必须走系统文件选择器（board 1360）',
-      );
-      expect(
-        body.contains('pickRealFilePath('),
-        isFalse,
-        reason: '不得再走真实路径浏览器（board 1360 回退）',
-      );
-    });
-
-    test('book _pickSubtitle uses pickSystemFilePath, not pickRealFilePath',
-        () {
-      final String body = _methodBody(
-        File('lib/src/media/audiobook/book_import_dialog.dart')
-            .readAsStringSync(),
-        'Future<void> _pickSubtitle()',
-      );
-      expect(body, isNotEmpty, reason: '找不到 book _pickSubtitle');
-      expect(body.contains('pickSystemFilePath('), isTrue,
-          reason: '书籍/有声书字幕导入必须走系统文件选择器（board 1360）');
-      expect(body.contains('pickRealFilePath('), isFalse,
-          reason: '不得再走真实路径浏览器（board 1360 回退）');
-    });
+    test(
+      'video _pickSubtitle uses pickSystemFilePath, not pickRealFilePath',
+      () {
+        final String body = _methodBody(
+          File(
+            'lib/src/media/video/video_import_dialog.dart',
+          ).readAsStringSync(),
+          'Future<void> _pickSubtitle()',
+        );
+        expect(body, isNotEmpty, reason: '找不到 video _pickSubtitle');
+        expect(
+          body.contains('pickSystemFilePath('),
+          isTrue,
+          reason: '视频外挂字幕导入必须走系统文件选择器（board 1360）',
+        );
+        expect(
+          body.contains('pickRealFilePath('),
+          isFalse,
+          reason: '不得再走真实路径浏览器（board 1360 回退）',
+        );
+      },
+    );
 
     test(
-        'audiobook _pickAlignment uses pickSystemFilePath, not pickRealFilePath',
-        () {
-      final String body = _methodBody(
-        File('lib/src/media/audiobook/audiobook_import_dialog.dart')
-            .readAsStringSync(),
-        'Future<void> _pickAlignment()',
-      );
-      expect(body, isNotEmpty, reason: '找不到 audiobook _pickAlignment');
-      expect(body.contains('pickSystemFilePath('), isTrue,
-          reason: '有声书对齐字幕/SMIL/JSON 导入必须走系统文件选择器（board 1360）');
-      expect(body.contains('pickRealFilePath('), isFalse,
-          reason: '不得再走真实路径浏览器（board 1360 回退）');
-    });
+      'book _pickSubtitle uses pickSystemFilePath, not pickRealFilePath',
+      () {
+        final String body = _methodBody(
+          File(
+            'lib/src/media/audiobook/book_import_dialog.dart',
+          ).readAsStringSync(),
+          'Future<void> _pickSubtitle()',
+        );
+        expect(body, isNotEmpty, reason: '找不到 book _pickSubtitle');
+        expect(
+          body.contains('pickSystemFilePath('),
+          isTrue,
+          reason: '书籍/有声书字幕导入必须走系统文件选择器（board 1360）',
+        );
+        expect(
+          body.contains('pickRealFilePath('),
+          isFalse,
+          reason: '不得再走真实路径浏览器（board 1360 回退）',
+        );
+      },
+    );
+
+    test(
+      'audiobook _pickAlignment uses pickSystemFilePath, not pickRealFilePath',
+      () {
+        final String body = _methodBody(
+          File(
+            'lib/src/media/audiobook/audiobook_import_dialog.dart',
+          ).readAsStringSync(),
+          'Future<void> _pickAlignment()',
+        );
+        expect(body, isNotEmpty, reason: '找不到 audiobook _pickAlignment');
+        expect(
+          body.contains('pickSystemFilePath('),
+          isTrue,
+          reason: '有声书对齐字幕/SMIL/JSON 导入必须走系统文件选择器（board 1360）',
+        );
+        expect(
+          body.contains('pickRealFilePath('),
+          isFalse,
+          reason: '不得再走真实路径浏览器（board 1360 回退）',
+        );
+      },
+    );
 
     test('video _pickVideo still keeps pickRealFilePath (must NOT revert)', () {
       final String body = _methodBody(
@@ -74,30 +95,36 @@ void main() {
       expect(
         body.contains('pickRealFilePath('),
         isTrue,
-        reason: '视频本体以绝对路径引用不复制，SAF cache 路径会悬空——必须保留真实路径'
+        reason:
+            '视频本体以绝对路径引用不复制，SAF cache 路径会悬空——必须保留真实路径'
             '浏览器（board 1112/TODO-949），不能连同字幕一起回退成系统选择器',
       );
     });
 
-    test('pickSystemFilePath entry exists and routes to system file picker',
-        () {
-      final String src =
-          File('lib/src/media/import/real_path_directory_picker.dart')
-              .readAsStringSync();
-      expect(
-        src.contains('Future<String?> pickSystemFilePath('),
-        isTrue,
-        reason: '必须存在系统文件选择器入口 pickSystemFilePath',
-      );
-      final String body =
-          _methodBody(src, 'Future<String?> pickSystemFilePath(');
-      expect(
-        body.contains('_fallbackPickFile('),
-        isTrue,
-        reason: 'pickSystemFilePath 必须走系统文件选择器（复用 _fallbackPickFile），'
-            '不弹自建真实路径浏览器',
-      );
-    });
+    test(
+      'pickSystemFilePath entry exists and routes to system file picker',
+      () {
+        final String src = File(
+          'lib/src/media/import/real_path_directory_picker.dart',
+        ).readAsStringSync();
+        expect(
+          src.contains('Future<String?> pickSystemFilePath('),
+          isTrue,
+          reason: '必须存在系统文件选择器入口 pickSystemFilePath',
+        );
+        final String body = _methodBody(
+          src,
+          'Future<String?> pickSystemFilePath(',
+        );
+        expect(
+          body.contains('_fallbackPickFile('),
+          isTrue,
+          reason:
+              'pickSystemFilePath 必须走系统文件选择器（复用 _fallbackPickFile），'
+              '不弹自建真实路径浏览器',
+        );
+      },
+    );
   });
 }
 

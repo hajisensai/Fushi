@@ -33,11 +33,11 @@ class _TestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'jp.fushi.test',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'jp.fushi.test',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   QbConnectionConfig? get qbConnectionConfig => _config;
@@ -68,9 +68,7 @@ Widget _harness(QbConnectionConfig config) {
   });
 
   return ProviderScope(
-    overrides: <Override>[
-      appProvider.overrideWith((Ref ref) => appModel),
-    ],
+    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
     child: MaterialApp(
       theme: ThemeData(
         useMaterial3: true,
@@ -101,8 +99,9 @@ void main() {
       'full speed.';
   const String included = 'Also applies within your local network.';
 
-  testWidgets('tracker subscription controls show the configured default URL',
-      (WidgetTester tester) async {
+  testWidgets('tracker subscription controls show the configured default URL', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1000, 3200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -136,14 +135,18 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester
-        .pumpWidget(_harness(_embedded.copyWith(limitLocalPeers: true)));
+    await tester.pumpWidget(
+      _harness(_embedded.copyWith(limitLocalPeers: true)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(included), findsWidgets);
     // 这条是整个文案改动的靶心：开关开着还显示「不作用于局域网」= 界面撒谎。
-    expect(find.text(exempt), findsNothing,
-        reason: 'helper must not assert LAN is exempt while the toggle is on');
+    expect(
+      find.text(exempt),
+      findsNothing,
+      reason: 'helper must not assert LAN is exempt while the toggle is on',
+    );
   });
 
   testWidgets('开关默认关，且渲染出来了', (WidgetTester tester) async {
@@ -156,10 +159,13 @@ void main() {
 
     expect(find.text('Apply limits to LAN peers'), findsOneWidget);
     expect(
-        find.text('Off by default: transfers with peers on your local network '
-            'ignore the limits above.'),
-        findsOneWidget,
-        reason: '副标题要讲清默认行为，用户才知道翻开关会改变什么');
+      find.text(
+        'Off by default: transfers with peers on your local network '
+        'ignore the limits above.',
+      ),
+      findsOneWidget,
+      reason: '副标题要讲清默认行为，用户才知道翻开关会改变什么',
+    );
   });
 
   test('AppModel 把 limitLocalPeers 透传给 EmbeddedTorrentHost.applyLimits', () {
@@ -170,11 +176,16 @@ void main() {
     expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
     final String src = f.readAsStringSync();
     final int call = src.indexOf('host.applyLimits(');
-    expect(call, greaterThanOrEqualTo(0),
-        reason: 'AppModel must still apply limits to the embedded host');
+    expect(
+      call,
+      greaterThanOrEqualTo(0),
+      reason: 'AppModel must still apply limits to the embedded host',
+    );
     final String block = src.substring(call, src.indexOf(');', call));
-    expect(block, contains('limitLocalPeers:'),
-        reason:
-            'the LAN toggle must reach native, or it silently does nothing');
+    expect(
+      block,
+      contains('limitLocalPeers:'),
+      reason: 'the LAN toggle must reach native, or it silently does nothing',
+    );
   });
 }

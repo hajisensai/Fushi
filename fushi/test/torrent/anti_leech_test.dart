@@ -53,10 +53,7 @@ void main() {
 
     test('IPv6 默认 /60（非整字节掩码）', () {
       // /60 = 前 7 字节 + 第 8 字节高 4 位：0xf5 → 0xf0。
-      expect(
-        cidrOf('2001:db8:aaaa:bbf5::1'),
-        '2001:db8:aaaa:bbf0:0:0:0:0/60',
-      );
+      expect(cidrOf('2001:db8:aaaa:bbf5::1'), '2001:db8:aaaa:bbf0:0:0:0:0/60');
     });
 
     test('IPv6 自定义前缀 /64', () {
@@ -122,46 +119,70 @@ void main() {
     const int t1 = t0 + 60000;
 
     test('differenceTest：喂出 50% 却自报 5% → ban', () {
-      final PeerSnapshot p =
-          peer(totalUpload: 50 * kMiB, reportedProgress: 0.05);
+      final PeerSnapshot p = peer(
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
+      );
       // 首轮在宽限窗口内 → allow。
-      final Map<String, BanVerdict> r0 =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
+      final Map<String, BanVerdict> r0 = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t0,
+      );
       expect(r0['1.2.3.4']!.banned, isFalse);
       // 出宽限后 → ban(progressCheat)。
-      final Map<String, BanVerdict> r1 =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r1 = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r1['1.2.3.4']!.banned, isTrue);
       expect(r1['1.2.3.4']!.reason, BanReason.progressCheat);
       expect(r1['1.2.3.4']!.cidr, isNull);
     });
 
     test('自报与计算一致 → allow', () {
-      final PeerSnapshot p =
-          peer(totalUpload: 50 * kMiB, reportedProgress: 0.5);
+      final PeerSnapshot p = peer(
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.5,
+      );
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
     test('宽限窗口内即使作弊数值也 allow', () {
-      final PeerSnapshot p =
-          peer(totalUpload: 50 * kMiB, reportedProgress: 0.05);
-      final Map<String, BanVerdict> r0 =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
+      final PeerSnapshot p = peer(
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
+      );
+      final Map<String, BanVerdict> r0 = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t0,
+      );
       expect(r0['1.2.3.4']!.banned, isFalse);
       // 仍在窗口内（差 1ms 到期）。
-      final Map<String, BanVerdict> r1 =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1 - 1);
+      final Map<String, BanVerdict> r1 = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1 - 1,
+      );
       expect(r1['1.2.3.4']!.banned, isFalse);
     });
 
     test('totalUpload==0 且无峰值 → allow（无从判定）', () {
       final PeerSnapshot p = peer(totalUpload: 0, reportedProgress: 0);
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
@@ -169,8 +190,11 @@ void main() {
       final TorrentContext small = ctx(totalSize: 10 * kMiB);
       final PeerSnapshot p = peer(totalUpload: 5 * kMiB, reportedProgress: 0);
       engine.evaluate(<PeerSnapshot>[p], small, nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], small, nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        small,
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
@@ -205,11 +229,16 @@ void main() {
     });
 
     test('excessiveDownload：单 peer 上传 3.5x 种子 → ban', () {
-      final PeerSnapshot p =
-          peer(totalUpload: 350 * kMiB, reportedProgress: 1.0);
+      final PeerSnapshot p = peer(
+        totalUpload: 350 * kMiB,
+        reportedProgress: 1.0,
+      );
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isTrue);
       expect(r['1.2.3.4']!.reason, BanReason.excessiveDownload);
     });
@@ -218,11 +247,16 @@ void main() {
       // completedSize=50MiB，上传 160MiB > 50*3=150MiB → ban；
       // 若按 totalSize=100MiB 则 160 < 300 不会 ban。
       final TorrentContext partial = ctx(completedSize: 50 * kMiB);
-      final PeerSnapshot p =
-          peer(totalUpload: 160 * kMiB, reportedProgress: 1.0);
+      final PeerSnapshot p = peer(
+        totalUpload: 160 * kMiB,
+        reportedProgress: 1.0,
+      );
       engine.evaluate(<PeerSnapshot>[p], partial, nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], partial, nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        partial,
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isTrue);
       expect(r['1.2.3.4']!.reason, BanReason.excessiveDownload);
     });
@@ -253,10 +287,17 @@ void main() {
     test('ignoreEmptyPeer：peerId+client 全空 → allow（不误判）', () {
       final AntiLeechEngine engine = AntiLeechEngine();
       final PeerSnapshot p = peer(
-          peerId: '', client: '', totalUpload: 50 * kMiB, reportedProgress: 0);
+        peerId: '',
+        client: '',
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0,
+      );
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
@@ -269,8 +310,11 @@ void main() {
         totalDownload: 200 * kMiB,
       );
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
@@ -284,8 +328,11 @@ void main() {
       );
       final PeerSnapshot p = peer(totalUpload: 30 * kMiB, reportedProgress: 0);
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.reason, BanReason.progressUploadedCheat);
     });
 
@@ -295,8 +342,11 @@ void main() {
       );
       final PeerSnapshot p = peer(totalUpload: 30 * kMiB, reportedProgress: 0);
       engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t0);
-      final Map<String, BanVerdict> r =
-          engine.evaluate(<PeerSnapshot>[p], ctx(), nowMs: t1);
+      final Map<String, BanVerdict> r = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(),
+        nowMs: t1,
+      );
       expect(r['1.2.3.4']!.banned, isFalse);
     });
 
@@ -323,8 +373,9 @@ void main() {
     });
 
     test('maxIpPortCount（opt-in）：同 IP 端口数超容忍 → ban(multiPort)', () {
-      final AntiLeechEngine engine =
-          AntiLeechEngine(config: const AntiLeechConfig(maxIpPortCount: 2));
+      final AntiLeechEngine engine = AntiLeechEngine(
+        config: const AntiLeechConfig(maxIpPortCount: 2),
+      );
       final Map<String, BanVerdict> r = engine.evaluate(
         <PeerSnapshot>[
           peer(ip: '5.5.5.5', port: 1001),
@@ -398,8 +449,13 @@ void main() {
       // 契约变更（BUG-1274）：thunder 关键词命中普通 clientBlacklist。
       final PeerSnapshot p = peer(client: 'Thunder 11.3.1');
       expect(
-        engine.evaluate(<PeerSnapshot>[p], ctx(isSeeding: false),
-            nowMs: 0)['1.2.3.4']!.banned,
+        engine
+            .evaluate(
+              <PeerSnapshot>[p],
+              ctx(isSeeding: false),
+              nowMs: 0,
+            )['1.2.3.4']!
+            .banned,
         isFalse,
       );
       final Map<String, BanVerdict> r = engine.evaluate(
@@ -487,10 +543,16 @@ void main() {
       final List<PeerSnapshot> five = <PeerSnapshot>[
         for (int i = 1; i <= 5; i++) peer(ip: '8.8.8.$i'),
       ];
-      final Map<String, BanVerdict> rA =
-          engine.evaluate(five, ctx(infoHash: 'hash-a'), nowMs: 0);
-      final Map<String, BanVerdict> rB =
-          engine.evaluate(five, ctx(infoHash: 'hash-b'), nowMs: 0);
+      final Map<String, BanVerdict> rA = engine.evaluate(
+        five,
+        ctx(infoHash: 'hash-a'),
+        nowMs: 0,
+      );
+      final Map<String, BanVerdict> rB = engine.evaluate(
+        five,
+        ctx(infoHash: 'hash-b'),
+        nowMs: 0,
+      );
       expect(rA.values.every((BanVerdict v) => !v.banned), isTrue);
       expect(rB.values.every((BanVerdict v) => !v.banned), isTrue);
     });
@@ -502,11 +564,17 @@ void main() {
     setUp(() => engine = AntiLeechEngine());
 
     test('一个 IP 被 PCB ban 后，同 /24 另一 IP 下轮直接连坐', () {
-      final PeerSnapshot cheat =
-          peer(ip: '1.2.3.4', totalUpload: 50 * kMiB, reportedProgress: 0.05);
+      final PeerSnapshot cheat = peer(
+        ip: '1.2.3.4',
+        totalUpload: 50 * kMiB,
+        reportedProgress: 0.05,
+      );
       engine.evaluate(<PeerSnapshot>[cheat], ctx(), nowMs: 0);
-      final Map<String, BanVerdict> r1 =
-          engine.evaluate(<PeerSnapshot>[cheat], ctx(), nowMs: 60000);
+      final Map<String, BanVerdict> r1 = engine.evaluate(
+        <PeerSnapshot>[cheat],
+        ctx(),
+        nowMs: 60000,
+      );
       expect(r1['1.2.3.4']!.reason, BanReason.progressCheat);
       expect(engine.bannedCidrs, contains('1.2.3.0/24'));
 
@@ -562,8 +630,11 @@ void main() {
         reportedProgress: 0.05,
       );
       engine.evaluate(<PeerSnapshot>[cheat], ctx(), nowMs: 0);
-      final Map<String, BanVerdict> r0 =
-          engine.evaluate(<PeerSnapshot>[cheat], ctx(), nowMs: 60000);
+      final Map<String, BanVerdict> r0 = engine.evaluate(
+        <PeerSnapshot>[cheat],
+        ctx(),
+        nowMs: 60000,
+      );
       expect(r0['2001:db8:aaaa:bbf5::1']!.reason, BanReason.progressCheat);
       final Map<String, BanVerdict> r = engine.evaluate(
         <PeerSnapshot>[peer(ip: '2001:db8:aaaa:bbf9::2')],
@@ -586,11 +657,17 @@ void main() {
         totalUpload: 50 * kMiB,
         reportedProgress: 0.05,
       );
-      final Map<String, BanVerdict> r0 =
-          engine.evaluate(<PeerSnapshot>[p], ctx(isSeeding: false), nowMs: t0);
+      final Map<String, BanVerdict> r0 = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(isSeeding: false),
+        nowMs: t0,
+      );
       expect(r0['1.2.3.4']!.banned, isFalse);
-      final Map<String, BanVerdict> r1 =
-          engine.evaluate(<PeerSnapshot>[p], ctx(isSeeding: false), nowMs: t1);
+      final Map<String, BanVerdict> r1 = engine.evaluate(
+        <PeerSnapshot>[p],
+        ctx(isSeeding: false),
+        nowMs: t1,
+      );
       expect(r1['1.2.3.4']!.reason, BanReason.progressCheat);
     });
 
@@ -698,11 +775,17 @@ void main() {
         totalUpload: 50 * kMiB,
         reportedProgress: 0.05,
       );
-      final Map<String, BanVerdict> r0 =
-          engine.evaluate(<PeerSnapshot>[xl], ctx(isSeeding: false), nowMs: t0);
+      final Map<String, BanVerdict> r0 = engine.evaluate(
+        <PeerSnapshot>[xl],
+        ctx(isSeeding: false),
+        nowMs: t0,
+      );
       expect(r0['1.2.3.4']!.banned, isFalse);
-      final Map<String, BanVerdict> r1 =
-          engine.evaluate(<PeerSnapshot>[xl], ctx(isSeeding: false), nowMs: t1);
+      final Map<String, BanVerdict> r1 = engine.evaluate(
+        <PeerSnapshot>[xl],
+        ctx(isSeeding: false),
+        nowMs: t1,
+      );
       expect(r1['1.2.3.4']!.reason, BanReason.progressCheat);
 
       // 做种期封（原特例语义），reason 从 xunleiSeeding 变为统一黑名单值。

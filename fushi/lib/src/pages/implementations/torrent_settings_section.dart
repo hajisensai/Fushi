@@ -182,7 +182,10 @@ class _TorrentSettingsSectionState
     if (url.isEmpty) return '';
     // 按所属 host 匹配：偏好里存的那条地址可能是该 host 的另一条（旧版本存的、
     // 或 host 换过 IP），只要那台 host 还在清单里就显示它。
-    final FushiClientUrl? host = interconnectPeerRepresentativeOf(_pairedUrls, url);
+    final FushiClientUrl? host = interconnectPeerRepresentativeOf(
+      _pairedUrls,
+      url,
+    );
     if (host != null) return host.url;
     unawaited(appModel.prefsRepo.setDownloadExecutionHostUrl(''));
     return '';
@@ -283,9 +286,9 @@ class _TorrentSettingsSectionState
           .setDownloadSaveRoot(picked);
       if (!mounted) return;
       if (issue != null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(FushiSnackBar(content: Text(_saveRootIssueMessage(issue))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          FushiSnackBar(content: Text(_saveRootIssueMessage(issue))),
+        );
       }
     } finally {
       if (mounted) setState(() => _pickingFolder = false);

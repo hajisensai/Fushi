@@ -34,8 +34,7 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_partition_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync('fushi_partition_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -72,18 +71,22 @@ void main() {
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
 
     // 合集（2 集，成员 recent = importedAt 1/4）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/ep1'),
-      title: const Value('第1集'),
-      videoPath: const Value('/abs/ep1.mp4'),
-      importedAt: Value(DateTime(2026, 1, 4).millisecondsSinceEpoch),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/ep2'),
-      title: const Value('第2集'),
-      videoPath: const Value('/abs/ep2.mp4'),
-      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/ep1'),
+        title: const Value('第1集'),
+        videoPath: const Value('/abs/ep1.mp4'),
+        importedAt: Value(DateTime(2026, 1, 4).millisecondsSinceEpoch),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/ep2'),
+        title: const Value('第2集'),
+        videoPath: const Value('/abs/ep2.mp4'),
+        importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
+      ),
+    );
     final int collectionId = await createSeriesCollection(
       db,
       '某番剧',
@@ -94,36 +97,42 @@ void main() {
 
     // 散卡 A：最近观看 = now（「最近」序里排最前，旧布局会压在合集行之上）。
     // 不设 lastPositionMs——带进度行的卡标题 y 会比无进度卡低，干扰同行断言。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/looseA'),
-      title: const Value('Loose New'),
-      videoPath: const Value('/abs/loose_a.mp4'),
-      importedAt: Value(DateTime(2026, 1, 5).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/looseA'),
+        title: const Value('Loose New'),
+        videoPath: const Value('/abs/loose_a.mp4'),
+        importedAt: Value(DateTime(2026, 1, 5).millisecondsSinceEpoch),
+      ),
+    );
     // v92：观看只写 `study_segments`，「最近观看」时刻取该 uid 段的 max(endAt)。
     final DateTime watchedAt = DateTime.now();
-    await db.upsertStudySegment(StudySegmentsCompanion.insert(
-      uid: FushiDatabase.newStudySegmentUid(),
-      deviceId: await db.getOrCreateStudyDeviceId(),
-      mediaKind: kActivityMediaVideo,
-      mediaKey: 'video/looseA',
-      title: 'Loose New',
-      startAt: watchedAt.millisecondsSinceEpoch - 1000,
-      endAt: watchedAt.millisecondsSinceEpoch,
-      dateKey: FushiDatabase.statDateKeyOf(watchedAt),
-      hour: watchedAt.hour,
-      durationMs: const Value(1000),
-      chars: const Value(1),
-      updatedAt: watchedAt.millisecondsSinceEpoch,
-    ));
+    await db.upsertStudySegment(
+      StudySegmentsCompanion.insert(
+        uid: FushiDatabase.newStudySegmentUid(),
+        deviceId: await db.getOrCreateStudyDeviceId(),
+        mediaKind: kActivityMediaVideo,
+        mediaKey: 'video/looseA',
+        title: 'Loose New',
+        startAt: watchedAt.millisecondsSinceEpoch - 1000,
+        endAt: watchedAt.millisecondsSinceEpoch,
+        dateKey: FushiDatabase.statDateKeyOf(watchedAt),
+        hour: watchedAt.hour,
+        durationMs: const Value(1000),
+        chars: const Value(1),
+        updatedAt: watchedAt.millisecondsSinceEpoch,
+      ),
+    );
     // 散卡 B：importedAt 1/3（「最近」序里排在合集 1/4 之后——旧交错布局下
     // A 与 B 被合集行切成两个残段）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/looseB'),
-      title: const Value('Loose Old'),
-      videoPath: const Value('/abs/loose_b.mp4'),
-      importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/looseB'),
+        title: const Value('Loose Old'),
+        videoPath: const Value('/abs/loose_b.mp4'),
+        importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
+      ),
+    );
     // 「系列」墙只收有 AniDB 主身份的条目。本文件测的是「合集封面卡排在所有散卡
     // 之前、二者合成单一混排墙」——散卡不种身份就根本不进墙，混排顺序无从断言。
     await seedAniDbLooseIdentity(db, 'video/looseA', title: 'Loose New');
@@ -138,24 +147,24 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            // #792 分区化后「合集卡+散卡单一混排墙」（_buildLocalVideoSlivers）
-            // 只在 series 分区渲染，钉住该分区。
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.series,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        // #792 分区化后「合集卡+散卡单一混排墙」（_buildLocalVideoSlivers）
+        // 只在 series 分区渲染，钉住该分区。
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.series,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('合集封面卡排在所有散卡之前；合集卡+散卡合成单一混排墙', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
@@ -172,8 +181,11 @@ void main() {
     final Offset looseBPos = tester.getTopLeft(find.text('Loose Old').last);
     bool cellBefore(Offset a, Offset b) =>
         a.dy < b.dy || (a.dy == b.dy && a.dx < b.dx);
-    expect(cellBefore(collectionPos, looseAPos), isTrue,
-        reason: '合集卡必须排在散卡之前——即使散卡「更最近」');
+    expect(
+      cellBefore(collectionPos, looseAPos),
+      isTrue,
+      reason: '合集卡必须排在散卡之前——即使散卡「更最近」',
+    );
     expect(cellBefore(collectionPos, looseBPos), isTrue);
     // 单一混排墙 = 主滚动区里恰好一个 SliverGrid（合集卡与散卡同墙；旧横排行形态是
     // 「行 slivers + 网格」两段式，更旧的交错布局把散卡切成两个网格段）。

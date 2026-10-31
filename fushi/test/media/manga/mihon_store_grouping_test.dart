@@ -50,7 +50,9 @@ MihonAvailableExtension _ext(
 }
 
 MangaExtensionStoreRow _store(String indexUrl, String name, int sortOrder) {
-  return MangaExtensionStoreRow(mediaKind: 'manga', indexUrl: indexUrl,
+  return MangaExtensionStoreRow(
+    mediaKind: 'manga',
+    indexUrl: indexUrl,
     name: name,
     badgeLabel: null,
     format: MihonStoreFormat.currentJson.name,
@@ -157,8 +159,10 @@ void main() {
         expanded: (_, __) => true,
       );
 
-      expect(rows.whereType<MihonStoreHeaderRow>().map((r) => r.label).toList(),
-          <String>['Repo A', 'Repo B']);
+      expect(
+        rows.whereType<MihonStoreHeaderRow>().map((r) => r.label).toList(),
+        <String>['Repo A', 'Repo B'],
+      );
       final MihonStoreHeaderRow first = rows.first as MihonStoreHeaderRow;
       expect(first.count, 2);
       expect(rows.length, 5, reason: '2 个表头 + 3 个扩展');
@@ -284,8 +288,9 @@ void main() {
 
       // 按 indexUrl 定位分组表头：页面顶部的仓库**管理**卡也画着同一个 name，
       // 按名字找会先撞上那张卡（它没有 onTap，点了什么都不会发生）。
-      final Finder header =
-          find.byKey(const ValueKey<String>('mihon-store-group-$kStoreA'));
+      final Finder header = find.byKey(
+        const ValueKey<String>('mihon-store-group-$kStoreA'),
+      );
       expect(header, findsOneWidget);
       await tester.tap(header);
       await tester.pump();
@@ -314,15 +319,21 @@ void main() {
       await pump(tester);
       // 断言用条目**独有**的文本：搜索框自己也画着 'ext1'，find.text('ext1')
       // 会连 EditableText 一起命中（2 个），把断言变成一道谜题。
-      expect(find.textContaining('ext1 source 0'), findsOneWidget,
-          reason: '前置：小仓库默认展开');
+      expect(
+        find.textContaining('ext1 source 0'),
+        findsOneWidget,
+        reason: '前置：小仓库默认展开',
+      );
 
       await tester.tap(
         find.byKey(const ValueKey<String>('mihon-store-group-$kStoreA')),
       );
       await tester.pump();
-      expect(find.textContaining('ext1 source 0'), findsNothing,
-          reason: '前置：用户手动收起，override=false 已写下');
+      expect(
+        find.textContaining('ext1 source 0'),
+        findsNothing,
+        reason: '前置：用户手动收起，override=false 已写下',
+      );
 
       await tester.enterText(
         find.byKey(const ValueKey<String>('mihon_extension_search_field')),
@@ -330,8 +341,11 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.textContaining('ext1 source 0'), findsOneWidget,
-          reason: '搜索必须盖过用户的收起，否则结果躲在收起的分组里等于搜索失效');
+      expect(
+        find.textContaining('ext1 source 0'),
+        findsOneWidget,
+        reason: '搜索必须盖过用户的收起，否则结果躲在收起的分组里等于搜索失效',
+      );
     });
 
     testWidgets('「包含的源」默认只露前 3 条，可展开全部', (WidgetTester tester) async {
@@ -342,8 +356,11 @@ void main() {
 
       expect(find.textContaining('many source 0'), findsOneWidget);
       expect(find.textContaining('many source 2'), findsOneWidget);
-      expect(find.textContaining('many source 3'), findsNothing,
-          reason: '截图里那一屏的主因就是这里：一个扩展铺了几十行源。');
+      expect(
+        find.textContaining('many source 3'),
+        findsNothing,
+        reason: '截图里那一屏的主因就是这里：一个扩展铺了几十行源。',
+      );
 
       final Finder toggle = find.byKey(
         const ValueKey<String>('mihon-sources-toggle-org.example.many'),
@@ -355,8 +372,7 @@ void main() {
       expect(find.textContaining('many source 11'), findsOneWidget);
     });
 
-    testWidgets('「展开全部源」的状态不得随行表位移串到别的扩展上',
-        (WidgetTester tester) async {
+    testWidgets('「展开全部源」的状态不得随行表位移串到别的扩展上', (WidgetTester tester) async {
       // `_AvailableExtensionTile` 是 StatefulWidget，自己持有 `_showAllSources`；
       // 而 SliverChildBuilderDelegate 按**位置槽**复用 Element，没有
       // findChildIndexCallback。两者都没有 key 时 `Widget.canUpdate` 恒真，同一个
@@ -369,13 +385,18 @@ void main() {
       await pump(tester);
 
       // 展开第一条（它占着 aaa 之后的那个位置槽）。
-      await tester.tap(find.byKey(
-        const ValueKey<String>('mihon-sources-toggle-org.example.aaa'),
-      ));
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('mihon-sources-toggle-org.example.aaa'),
+        ),
+      );
       await tester.pump();
       expect(find.textContaining('aaa source 11'), findsOneWidget);
-      expect(find.textContaining('bbb source 3'), findsNothing,
-          reason: '前置：bbb 仍是默认的只露前 3 条');
+      expect(
+        find.textContaining('bbb source 3'),
+        findsNothing,
+        reason: '前置：bbb 仍是默认的只露前 3 条',
+      );
 
       // 搜索把 aaa 过滤掉 → bbb 上移，落进 aaa 刚才那个位置槽。
       await tester.enterText(
@@ -384,10 +405,16 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.textContaining('bbb source 0'), findsOneWidget,
-          reason: '前置：搜到 bbb 了');
-      expect(find.textContaining('bbb source 3'), findsNothing,
-          reason: 'bbb 没被展开过，不该继承 aaa 的「已展开全部源」状态');
+      expect(
+        find.textContaining('bbb source 0'),
+        findsOneWidget,
+        reason: '前置：搜到 bbb 了',
+      );
+      expect(
+        find.textContaining('bbb source 3'),
+        findsNothing,
+        reason: 'bbb 没被展开过，不该继承 aaa 的「已展开全部源」状态',
+      );
     });
 
     testWidgets('源数不超过 3 条时不出「展开全部」按钮', (WidgetTester tester) async {

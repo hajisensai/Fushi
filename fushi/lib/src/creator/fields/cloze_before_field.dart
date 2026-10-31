@@ -7,13 +7,14 @@ import 'package:fushi/models.dart';
 class ClozeBeforeField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ClozeBeforeField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Cloze Before',
-          description: 'Text before highlighted text in a sentence. '
-              'Empty if nothing is highlighted.',
-          icon: Icons.keyboard_double_arrow_left,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Cloze Before',
+        description:
+            'Text before highlighted text in a sentence. '
+            'Empty if nothing is highlighted.',
+        icon: Icons.keyboard_double_arrow_left,
+      );
 
   /// Get the singleton instance of this field.
   static ClozeBeforeField get instance => _instance;

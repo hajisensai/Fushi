@@ -83,9 +83,10 @@ class MokuroMoeVolumeDownloader {
     HttpClient Function()? createClient,
     Directory? stagingRoot,
     this.progressByteInterval = kMokuroMoeProgressInterval,
-  })  : _createClient = createClient ?? _defaultClient,
-        _stagingRoot = stagingRoot ??
-            Directory(p.join(Directory.systemTemp.path, 'fushi_mokuro_moe'));
+  }) : _createClient = createClient ?? _defaultClient,
+       _stagingRoot =
+           stagingRoot ??
+           Directory(p.join(Directory.systemTemp.path, 'fushi_mokuro_moe'));
 
   final MokuroMoeClient client;
   final HttpClient Function() _createClient;
@@ -125,12 +126,18 @@ class MokuroMoeVolumeDownloader {
     final StreamController<MokuroMoeVolumeDownloadEvent> controller =
         StreamController<MokuroMoeVolumeDownloadEvent>();
     controller.onListen = () {
-      _run(controller, db: db, seriesName: seriesName, volumeName: volumeName)
-          .then((void _) => controller.close(),
-              onError: (Object e, StackTrace stack) {
-        controller.addError(e, stack);
-        controller.close();
-      });
+      _run(
+        controller,
+        db: db,
+        seriesName: seriesName,
+        volumeName: volumeName,
+      ).then(
+        (void _) => controller.close(),
+        onError: (Object e, StackTrace stack) {
+          controller.addError(e, stack);
+          controller.close();
+        },
+      );
     };
     return controller.stream;
   }
@@ -141,11 +148,13 @@ class MokuroMoeVolumeDownloader {
     required String seriesName,
     required String volumeName,
   }) async {
-    final Directory staging = Directory(p.join(
-      _stagingRoot.path,
-      sanitizeTtuFilename(seriesName),
-      sanitizeTtuFilename(volumeName),
-    ));
+    final Directory staging = Directory(
+      p.join(
+        _stagingRoot.path,
+        sanitizeTtuFilename(seriesName),
+        sanitizeTtuFilename(volumeName),
+      ),
+    );
     await staging.create(recursive: true);
     final File mokuroFile = File(p.join(staging.path, 'volume.mokuro'));
     final File cbzFile = File(p.join(staging.path, 'volume.cbz'));
@@ -154,9 +163,11 @@ class MokuroMoeVolumeDownloader {
     try {
       // 1. `.mokuro`（小 JSON）：每次重下覆盖（保证与站点最新 OCR 一致）。
       _checkCancelled();
-      controller.add(const MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.downloadingMokuro,
-      ));
+      controller.add(
+        const MokuroMoeVolumeDownloadEvent(
+          stage: MokuroMoeDownloadStage.downloadingMokuro,
+        ),
+      );
       await _downloadSmall(
         client.mokuroUrl(seriesName, volumeName),
         mokuroFile,
@@ -179,31 +190,38 @@ class MokuroMoeVolumeDownloader {
         extractDir.deleteSync(recursive: true);
       }
       extractDir.createSync(recursive: true);
-      controller.add(const MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.extracting,
-      ));
+      controller.add(
+        const MokuroMoeVolumeDownloadEvent(
+          stage: MokuroMoeDownloadStage.extracting,
+        ),
+      );
       await _extractInIsolate(
         zipPath: cbzFile.path,
         destDirPath: extractDir.path,
         onBytes: _throttled(
-          (int received) => controller.add(MokuroMoeVolumeDownloadEvent(
-            stage: MokuroMoeDownloadStage.extracting,
-            receivedBytes: received,
-          )),
+          (int received) => controller.add(
+            MokuroMoeVolumeDownloadEvent(
+              stage: MokuroMoeDownloadStage.extracting,
+              receivedBytes: received,
+            ),
+          ),
         ),
       );
 
       // 4. `.mokuro` 放到解包目录同级（`T/<卷名>.mokuro` 配 `T/<卷名>/` 图片目录；
       // img_path 自带 `<卷名>/` 前缀，故页图根解析成「就地」，相对 T 解析）。
       _checkCancelled();
-      final File placedMokuro =
-          File(p.join(extractDir.path, '$volumeName.mokuro'));
+      final File placedMokuro = File(
+        p.join(extractDir.path, '$volumeName.mokuro'),
+      );
       mokuroFile.copySync(placedMokuro.path);
 
       // 5. 现有导入链落库（DuplicatePolicy.skip()：同名卷静默跳过，不复制成 `X (2)`）。
-      controller.add(const MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.importing,
-      ));
+      controller.add(
+        const MokuroMoeVolumeDownloadEvent(
+          stage: MokuroMoeDownloadStage.importing,
+        ),
+      );
       String? bookKey;
       bool skipped = false;
       try {
@@ -212,22 +230,25 @@ class MokuroMoeVolumeDownloader {
           mokuroPath: placedMokuro.path,
           title: volumeTitle(seriesName, volumeName),
           policy: const DuplicatePolicy.skip(),
-          onProgress: (int done, int total) =>
-              controller.add(MokuroMoeVolumeDownloadEvent(
-            stage: MokuroMoeDownloadStage.importing,
-            pagesDone: done,
-            pagesTotal: total,
-          )),
+          onProgress: (int done, int total) => controller.add(
+            MokuroMoeVolumeDownloadEvent(
+              stage: MokuroMoeDownloadStage.importing,
+              pagesDone: done,
+              pagesTotal: total,
+            ),
+          ),
         );
       } on DuplicateImportCancelledException {
         skipped = true;
       }
 
-      controller.add(MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.done,
-        bookKey: bookKey,
-        skippedExisting: skipped,
-      ));
+      controller.add(
+        MokuroMoeVolumeDownloadEvent(
+          stage: MokuroMoeDownloadStage.done,
+          bookKey: bookKey,
+          skippedExisting: skipped,
+        ),
+      );
 
       // 成功/已在库：整个 staging 目录（含 cbz/.mokuro）不再需要，清掉。
       _tryDelete(staging);
@@ -256,10 +277,7 @@ class MokuroMoeVolumeDownloader {
       final HttpClientResponse response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
-        throw MokuroMoeHttpException(
-          response.statusCode,
-          uri: Uri.parse(url),
-        );
+        throw MokuroMoeHttpException(response.statusCode, uri: Uri.parse(url));
       }
       final File part = File('${target.path}.part');
       final IOSink sink = part.openWrite();
@@ -321,8 +339,9 @@ class MokuroMoeVolumeDownloader {
       int? total;
       if (offset > 0 && response.statusCode == HttpStatus.partialContent) {
         received = offset;
-        total =
-            response.contentLength > 0 ? offset + response.contentLength : null;
+        total = response.contentLength > 0
+            ? offset + response.contentLength
+            : null;
         sink = part.openWrite(mode: FileMode.append);
       } else if (response.statusCode == HttpStatus.ok) {
         // 服务器不支持 Range（或本就无残留）：整文件重下，截断旧残留。
@@ -331,18 +350,17 @@ class MokuroMoeVolumeDownloader {
         sink = part.openWrite();
       } else {
         await response.drain<void>();
-        throw MokuroMoeHttpException(
-          response.statusCode,
-          uri: Uri.parse(url),
-        );
+        throw MokuroMoeHttpException(response.statusCode, uri: Uri.parse(url));
       }
 
       int lastEmitted = received;
-      controller.add(MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.downloadingCbz,
-        receivedBytes: received,
-        totalBytes: total,
-      ));
+      controller.add(
+        MokuroMoeVolumeDownloadEvent(
+          stage: MokuroMoeDownloadStage.downloadingCbz,
+          receivedBytes: received,
+          totalBytes: total,
+        ),
+      );
       try {
         await for (final List<int> chunk in response) {
           // 取消：先落已到的 chunk 再停，`.part` 保持前缀完整可续传。
@@ -350,11 +368,13 @@ class MokuroMoeVolumeDownloader {
           received += chunk.length;
           _checkCancelled();
           if (received - lastEmitted >= progressByteInterval) {
-            controller.add(MokuroMoeVolumeDownloadEvent(
-              stage: MokuroMoeDownloadStage.downloadingCbz,
-              receivedBytes: received,
-              totalBytes: total,
-            ));
+            controller.add(
+              MokuroMoeVolumeDownloadEvent(
+                stage: MokuroMoeDownloadStage.downloadingCbz,
+                receivedBytes: received,
+                totalBytes: total,
+              ),
+            );
             lastEmitted = received;
           }
         }
@@ -363,11 +383,13 @@ class MokuroMoeVolumeDownloader {
         await sink.close();
       }
 
-      controller.add(MokuroMoeVolumeDownloadEvent(
-        stage: MokuroMoeDownloadStage.downloadingCbz,
-        receivedBytes: received,
-        totalBytes: total,
-      ));
+      controller.add(
+        MokuroMoeVolumeDownloadEvent(
+          stage: MokuroMoeDownloadStage.downloadingCbz,
+          receivedBytes: received,
+          totalBytes: total,
+        ),
+      );
       if (!_zipParses(part.path)) {
         // 坏档不可信（续传基底错位/传输损坏），删掉避免下次在坏偏移上加码。
         try {
@@ -502,6 +524,9 @@ List<String> _safeEntrySegments(String entryName) {
 /// 单 entry 流式落盘：STORE 分块拷贝、DEFLATE 原生 zlib 分块解压（与备份导入
 /// 共用 [extractZipEntryToFile]），逐块回报字节。
 void _streamArchiveFileToDisk(
-    ArchiveFile file, String destPath, SendPort port) {
+  ArchiveFile file,
+  String destPath,
+  SendPort port,
+) {
   extractZipEntryToFile(file, destPath, onBytes: port.send);
 }

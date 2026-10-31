@@ -67,8 +67,11 @@ void main() {
     test('BUG-765 续：下发选区手柄主题色变量 --fushi-sel-handle', () {
       // 移动端自绘选区起/止手柄用 var(--fushi-sel-handle) 上色，须由本 CSS 从主题
       // linkColor 下发，主题切换重注入时手柄自动跟随。
-      expect(css, contains('--fushi-sel-handle:'),
-          reason: '注入 CSS 必须定义 --fushi-sel-handle 供手柄引用');
+      expect(
+        css,
+        contains('--fushi-sel-handle:'),
+        reason: '注入 CSS 必须定义 --fushi-sel-handle 供手柄引用',
+      );
     });
   });
 
@@ -174,8 +177,9 @@ void main() {
 
   group('ReaderContentStyles.css with custom settings', () {
     test('horizontal writing mode produces horizontal-tb', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -187,8 +191,9 @@ void main() {
     });
 
     test('continuous mode produces different layout', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -209,37 +214,40 @@ void main() {
       expect(css, contains('TestFont'));
     });
 
-    test('settings custom fonts use Apple custom scheme in produced CSS',
-        () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      addTearDown(() {
-        debugDefaultTargetPlatformOverride = null;
-      });
-      final Directory tempDir =
-          await Directory.systemTemp.createTemp('fushi_reader_css_font_');
-      addTearDown(() async {
-        await tempDir.delete(recursive: true);
-      });
-      final File fontFile = File('${tempDir.path}/body.ttf')
-        ..writeAsBytesSync(<int>[0, 1, 0, 0]);
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setCustomFonts(<Map<String, dynamic>>[
-        <String, dynamic>{
-          'name': 'Body Font',
-          'path': fontFile.path,
-          'enabled': true,
-        },
-      ]);
+    test(
+      'settings custom fonts use Apple custom scheme in produced CSS',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+        });
+        final Directory tempDir = await Directory.systemTemp.createTemp(
+          'fushi_reader_css_font_',
+        );
+        addTearDown(() async {
+          await tempDir.delete(recursive: true);
+        });
+        final File fontFile = File('${tempDir.path}/body.ttf')
+          ..writeAsBytesSync(<int>[0, 1, 0, 0]);
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setCustomFonts(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': 'Body Font',
+            'path': fontFile.path,
+            'enabled': true,
+          },
+        ]);
 
-      final String css = ReaderContentStyles.css(settings: settings);
+        final String css = ReaderContentStyles.css(settings: settings);
 
-      expect(css, contains('@font-face'));
-      expect(
-        css,
-        contains('${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'),
-      );
-      expect(css, isNot(contains('https://fushi.local/fonts/')));
-    });
+        expect(css, contains('@font-face'));
+        expect(
+          css,
+          contains('${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'),
+        );
+        expect(css, isNot(contains('https://fushi.local/fonts/')));
+      },
+    );
 
     test('selection color override (opaque) appears verbatim in css', () async {
       // BUG-125：查词高亮预合成成不透明色；alpha=1 的覆盖色原样透传，故仍逐字出现。
@@ -251,17 +259,22 @@ void main() {
       expect(css, contains('rgb(1, 2, 3)'));
     });
 
-    test('translucent selection override is blended to opaque (not verbatim)',
-        () async {
-      // 半透明覆盖色会被合成到背景色 → 不再逐字出现原 rgba，且查词高亮处不含半透明。
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        selectionColor: 'rgba(255, 0, 0, 0.5)',
-      );
-      expect(css, isNot(contains('rgba(255, 0, 0, 0.5)')),
-          reason: '半透明查词色须被预合成成不透明 rgb()，不能原样进 CSS');
-    });
+    test(
+      'translucent selection override is blended to opaque (not verbatim)',
+      () async {
+        // 半透明覆盖色会被合成到背景色 → 不再逐字出现原 rgba，且查词高亮处不含半透明。
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          selectionColor: 'rgba(255, 0, 0, 0.5)',
+        );
+        expect(
+          css,
+          isNot(contains('rgba(255, 0, 0, 0.5)')),
+          reason: '半透明查词色须被预合成成不透明 rgb()，不能原样进 CSS',
+        );
+      },
+    );
   });
 
   group('ReaderContentStyles.composeOpaqueColor (BUG-125)', () {
@@ -274,7 +287,9 @@ void main() {
       // over white: r=255, g=128, b=128
       expect(
         ReaderContentStyles.composeOpaqueColor(
-            'rgba(255, 0, 0, 0.5)', '#ffffff'),
+          'rgba(255, 0, 0, 0.5)',
+          '#ffffff',
+        ),
         'rgb(255, 128, 128)',
       );
     });
@@ -322,26 +337,34 @@ void main() {
       expect(css, isNot(contains('rt, rtc { display: none !important; }')));
     });
 
-    test('hidden mode renders display:none for rt/rtc (legacy value "hide" too)',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setFuriganaMode('hidden');
-      expect(ReaderContentStyles.css(settings: settings),
-          contains('rt, rtc { display: none !important; }'));
-      await settings.setFuriganaMode('hide');
-      expect(settings.furiganaMode, 'hidden');
-      expect(ReaderContentStyles.css(settings: settings),
-          contains('rt, rtc { display: none !important; }'));
-    });
+    test(
+      'hidden mode renders display:none for rt/rtc (legacy value "hide" too)',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setFuriganaMode('hidden');
+        expect(
+          ReaderContentStyles.css(settings: settings),
+          contains('rt, rtc { display: none !important; }'),
+        );
+        await settings.setFuriganaMode('hide');
+        expect(settings.furiganaMode, 'hidden');
+        expect(
+          ReaderContentStyles.css(settings: settings),
+          contains('rt, rtc { display: none !important; }'),
+        );
+      },
+    );
 
     test('toggle mode: CSS-owned hide + per-ruby reveal + dotted hint + '
         'whole-page reveal (Hoshi Reader iOS Toggle)', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -349,20 +372,34 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
       // 未揭示的 ruby：注音 visibility:hidden（占位保留，行高不抖），不是 display:none。
       expect(
-          css,
-          contains('ruby:not(.furigana-revealed) > rt,\n'
-              'ruby:not(.furigana-revealed) > rtc,\n'
-              'ruby:not(.furigana-revealed) > rp {\n'
-              '  visibility: hidden !important;\n}'));
+        css,
+        contains(
+          'ruby:not(.furigana-revealed) > rt,\n'
+          'ruby:not(.furigana-revealed) > rtc,\n'
+          'ruby:not(.furigana-revealed) > rp {\n'
+          '  visibility: hidden !important;\n}',
+        ),
+      );
       expect(css, isNot(contains('rt, rtc { display: none !important; }')));
       // 显示态仍强制 rt 为 ruby-text（TODO-1308），rtc 接管照旧。
-      expect(css, contains('rt { display: ruby-text !important; font-size: 0.45em; }'));
+      expect(
+        css,
+        contains('rt { display: ruby-text !important; font-size: 0.45em; }'),
+      );
       // 灰色虚线下划线提示可点（与 Hoshi iOS 同款）。
       expect(css, contains('ruby:not(.furigana-revealed):has(rt) {'));
       expect(css, contains('text-decoration-style: dotted !important;'));
-      expect(css, contains('text-decoration-color: rgba(160, 160, 160, 0.8) !important;'));
+      expect(
+        css,
+        contains('text-decoration-color: rgba(160, 160, 160, 0.8) !important;'),
+      );
       // readerToggleFurigana 快捷键的整页揭示。
-      expect(css, contains('body.show-all-rt ruby > rt,\nbody.show-all-rt ruby > rtc {\n  visibility: visible !important;\n}'));
+      expect(
+        css,
+        contains(
+          'body.show-all-rt ruby > rt,\nbody.show-all-rt ruby > rtc {\n  visibility: visible !important;\n}',
+        ),
+      );
       // 旧四态残留不得复活。
       expect(css, isNot(contains('show-rt rt')));
       // 历史值 partial 归到 toggle。
@@ -372,8 +409,9 @@ void main() {
 
     test('dimmed mode: rt stays ruby-text but is faded via opacity; '
         'show-all-rt restores full opacity', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -395,20 +433,29 @@ void main() {
         ),
       );
       expect(css, isNot(contains('rt, rtc { display: none !important; }')));
-      expect(css, isNot(contains('furigana-revealed')),
-          reason: 'dimmed 不走 toggle 的逐个揭示机制');
+      expect(
+        css,
+        isNot(contains('furigana-revealed')),
+        reason: 'dimmed 不走 toggle 的逐个揭示机制',
+      );
       // 淡显只用 opacity（不改 color）：深浅主题 / 自定义正文色都成立。
       expect(
-          css,
-          contains('ruby > rt,\n'
-              'ruby > rtc {\n'
-              '  opacity: 0.45 !important;\n}'));
+        css,
+        contains(
+          'ruby > rt,\n'
+          'ruby > rtc {\n'
+          '  opacity: 0.45 !important;\n}',
+        ),
+      );
       // readerToggleFurigana 快捷键在 dimmed 下 = 临时恢复全亮。
       expect(
-          css,
-          contains('body.show-all-rt ruby > rt,\n'
-              'body.show-all-rt ruby > rtc {\n'
-              '  opacity: 1 !important;\n}'));
+        css,
+        contains(
+          'body.show-all-rt ruby > rt,\n'
+          'body.show-all-rt ruby > rtc {\n'
+          '  opacity: 1 !important;\n}',
+        ),
+      );
       // off 态不得漏出淡显规则（否则四态互相污染）。
       await settings.setFuriganaMode('off');
       final String offCss = ReaderContentStyles.css(settings: settings);
@@ -422,23 +469,36 @@ void main() {
     // 或 <ruby> 盒含注音轨时把条画偏（竖排往基字左侧偏移、有无振假名两种宽度不一），
     // 用户实机确认有声书与查词的注音高亮都错位。回到整句 background-color 填充：
     // 按元素 class 只刷一遍背景，注音轨天然在 ruby 元素背景盒外（BUG-110/643 不回归）。
-    test('narrow-lane mechanism is fully removed in both writing modes',
-        () async {
-      for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
-        final ReaderSettings settings = await _defaultSettings();
-        await settings.setWritingMode(mode);
-        final String css = ReaderContentStyles.css(settings: settings);
-        expect(css, isNot(contains('--fushi-highlight-lane-color')),
-            reason: '[$mode] BUG-716：高亮不再落到 lane 变量');
-        expect(css,
+    test(
+      'narrow-lane mechanism is fully removed in both writing modes',
+      () async {
+        for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
+          final ReaderSettings settings = await _defaultSettings();
+          await settings.setWritingMode(mode);
+          final String css = ReaderContentStyles.css(settings: settings);
+          expect(
+            css,
+            isNot(contains('--fushi-highlight-lane-color')),
+            reason: '[$mode] BUG-716：高亮不再落到 lane 变量',
+          );
+          expect(
+            css,
             isNot(contains('linear-gradient(var(--fushi-highlight-lane-color')),
-            reason: '[$mode] BUG-716：不再用窄条渐变绘制高亮');
-        expect(css, isNot(contains('background-size: 1em 100%')),
-            reason: '[$mode] BUG-716：竖排不再有 1em 窄条');
-        expect(css, isNot(contains('background-size: 100% 1em')),
-            reason: '[$mode] BUG-716：横排不再有 1em 窄条');
-      }
-    });
+            reason: '[$mode] BUG-716：不再用窄条渐变绘制高亮',
+          );
+          expect(
+            css,
+            isNot(contains('background-size: 1em 100%')),
+            reason: '[$mode] BUG-716：竖排不再有 1em 窄条',
+          );
+          expect(
+            css,
+            isNot(contains('background-size: 100% 1em')),
+            reason: '[$mode] BUG-716：横排不再有 1em 窄条',
+          );
+        }
+      },
+    );
 
     test(
       'sentenceAudioHighlight ruby class paints no box of its own; the lane layer colours it',
@@ -446,7 +506,7 @@ void main() {
         final ReaderSettings settings = await _defaultSettings();
         await settings.setWritingMode('vertical-rl');
 
-      final String css = ReaderContentStyles.css(settings: settings);
+        final String css = ReaderContentStyles.css(settings: settings);
 
         final int sentenceAudioStart = css.indexOf(
           'ruby.fushi-sentence-audio-ruby-active {',
@@ -481,13 +541,13 @@ void main() {
         final ReaderSettings settings = await _defaultSettings();
         await settings.setWritingMode('vertical-rl');
 
-      final String css = ReaderContentStyles.css(settings: settings);
+        final String css = ReaderContentStyles.css(settings: settings);
 
-      expect(
-        css,
-        contains('.fushi-sentence-audio-cue.fushi-sentence-audio-active'),
-        reason: '普通正文 cue 也必须有 active span 样式，不能只靠 CSS Highlight',
-      );
+        expect(
+          css,
+          contains('.fushi-sentence-audio-cue.fushi-sentence-audio-active'),
+          reason: '普通正文 cue 也必须有 active span 样式，不能只靠 CSS Highlight',
+        );
 
         final int activeStart = css.indexOf(
           '.fushi-sentence-audio-cue.fushi-sentence-audio-active {',
@@ -514,22 +574,29 @@ void main() {
     );
 
     test(
-        'selection (lookup) ruby highlight also fills with full background-color',
-        () async {
-      // 用户 re-report：查词的注音高亮也因 narrow-lane 错位。查词 ruby 同样回填充。
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setWritingMode('vertical-rl');
+      'selection (lookup) ruby highlight also fills with full background-color',
+      () async {
+        // 用户 re-report：查词的注音高亮也因 narrow-lane 错位。查词 ruby 同样回填充。
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode('vertical-rl');
 
-      final String css = ReaderContentStyles.css(settings: settings);
+        final String css = ReaderContentStyles.css(settings: settings);
 
-      final int start = css.indexOf('ruby.fushi-selection-ruby-active {');
-      expect(start, isNonNegative);
-      final String block = css.substring(start, css.indexOf('}', start));
-      expect(block, contains('background-color:'),
-          reason: 'BUG-716：查词 ruby 高亮回到整句填充');
-      expect(block, isNot(contains('--fushi-highlight-lane-color')),
-          reason: 'BUG-716：查词 ruby 不再走窄 lane');
-    });
+        final int start = css.indexOf('ruby.fushi-selection-ruby-active {');
+        expect(start, isNonNegative);
+        final String block = css.substring(start, css.indexOf('}', start));
+        expect(
+          block,
+          contains('background-color:'),
+          reason: 'BUG-716：查词 ruby 高亮回到整句填充',
+        );
+        expect(
+          block,
+          isNot(contains('--fushi-highlight-lane-color')),
+          reason: 'BUG-716：查词 ruby 不再走窄 lane',
+        );
+      },
+    );
 
     test(
       'audio wrapper inside a lookup ruby yields to the lookup highlight (BUG-2806)',
@@ -551,8 +618,8 @@ void main() {
           return blocks;
         }
 
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setWritingMode('vertical-rl');
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode('vertical-rl');
 
         // 底色的「查词优先」由窄条层的叠放顺序保证（查词组在最上，见
         // highlight_lanes_test）；wrapper 自己不铺底，这里只让出字色。
@@ -561,40 +628,45 @@ void main() {
         ).first;
         expect(normal, contains('color: inherit !important'));
 
-      final String eink =
-          blocksOf(ReaderContentStyles.css(settings: settings, einkMode: true))
-              .last;
-      expect(eink, contains('text-decoration-line: none !important'),
-          reason: '墨水屏只留查词的粗实线');
-      expect(eink, contains('box-shadow: none !important'));
-    });
+        final String eink = blocksOf(
+          ReaderContentStyles.css(settings: settings, einkMode: true),
+        ).last;
+        expect(
+          eink,
+          contains('text-decoration-line: none !important'),
+          reason: '墨水屏只留查词的粗实线',
+        );
+        expect(eink, contains('box-shadow: none !important'));
+      },
+    );
 
-    test('active highlight blocks are paint-only in both writing modes',
-        () async {
-      // TODO-1371/BUG-690 守卫：跟随句/查词/收藏的运行时 toggle 高亮（-active 类、
-      // ::highlight、dict-highlight）只允许绘制层属性。任何盒模型/排版属性
-      // （line-height/margin/padding/font/…）都会让「高亮激活」改变文字位置。
-      const Set<String> paintOnlyAllowlist = <String>{
-        'color',
-        'background-color',
-        'background-image',
-        'background-repeat',
-        'background-size',
-        'background-position',
-        'text-decoration-line',
-        'text-decoration-color',
-        'text-decoration-thickness',
-        'text-underline-offset',
-        'box-decoration-break',
-        '-webkit-box-decoration-break',
-        // BUG-2806：box-shadow 不占盒、不改排版；补缝就是靠它做到「只画不排」。
-        'box-shadow',
-        // 用户 10-09（#2019）：高亮条圆角。border-radius 只裁背景的绘制形状，不改盒
-        // 尺寸与排版（这些规则不带 padding / border）。
-        'border-radius',
-      };
-      final RegExp blockPattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
-      final RegExp declPattern = RegExp(r'^\s*([a-zA-Z-]+)\s*:');
+    test(
+      'active highlight blocks are paint-only in both writing modes',
+      () async {
+        // TODO-1371/BUG-690 守卫：跟随句/查词/收藏的运行时 toggle 高亮（-active 类、
+        // ::highlight、dict-highlight）只允许绘制层属性。任何盒模型/排版属性
+        // （line-height/margin/padding/font/…）都会让「高亮激活」改变文字位置。
+        const Set<String> paintOnlyAllowlist = <String>{
+          'color',
+          'background-color',
+          'background-image',
+          'background-repeat',
+          'background-size',
+          'background-position',
+          'text-decoration-line',
+          'text-decoration-color',
+          'text-decoration-thickness',
+          'text-underline-offset',
+          'box-decoration-break',
+          '-webkit-box-decoration-break',
+          // BUG-2806：box-shadow 不占盒、不改排版；补缝就是靠它做到「只画不排」。
+          'box-shadow',
+          // 用户 10-09（#2019）：高亮条圆角。border-radius 只裁背景的绘制形状，不改盒
+          // 尺寸与排版（这些规则不带 padding / border）。
+          'border-radius',
+        };
+        final RegExp blockPattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
+        final RegExp declPattern = RegExp(r'^\s*([a-zA-Z-]+)\s*:');
 
         for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
           final ReaderSettings settings = await _defaultSettings();
@@ -665,20 +737,23 @@ void main() {
   group('ReaderLayoutDefaults', () {
     test('constants are consistent', () {
       expect(ReaderLayoutDefaults.fontSizePx, 22);
-      expect(ReaderLayoutDefaults.bottomOverlapPx,
-          ReaderLayoutDefaults.fontSizePx);
+      expect(
+        ReaderLayoutDefaults.bottomOverlapPx,
+        ReaderLayoutDefaults.fontSizePx,
+      );
       expect(ReaderLayoutDefaults.imageWidthViewportRatio, 0.95);
     });
   });
 
   group('ReaderContentStyles chrome inset CSS variables', () {
-    test('BUG-1812 reader margins use Dart-sized CSS vars, never raw vh/vw',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setMarginTop(1.3);
-      await settings.setMarginBottom(2.7);
-      await settings.setMarginLeft(3.1);
-      await settings.setMarginRight(4.2);
+    test(
+      'BUG-1812 reader margins use Dart-sized CSS vars, never raw vh/vw',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setMarginTop(1.3);
+        await settings.setMarginBottom(2.7);
+        await settings.setMarginLeft(3.1);
+        await settings.setMarginRight(4.2);
 
         for (final String mode in <String>['paginated', 'continuous', 'vn']) {
           await settings.setViewMode(mode);
@@ -731,103 +806,124 @@ void main() {
         expect(
           css,
           contains(
-              'padding-top: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px))'));
-    });
+            'padding-top: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px))',
+          ),
+        );
+      },
+    );
 
     test(
-        'paginated layout padding-bottom uses calc with vh, fontSize, and var fallback 0px',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(
+      'paginated layout padding-bottom uses calc with vh, fontSize, and var fallback 0px',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
-    });
+            'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))',
+          ),
+        );
+      },
+    );
 
-    test('continuous layout contains --chrome-top-inset in padding-top',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setViewMode('continuous');
+    test(
+      'continuous layout contains --chrome-top-inset in padding-top',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setViewMode('continuous');
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('--chrome-top-inset'));
-      expect(css, contains('padding-top:'));
-    });
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('--chrome-top-inset'));
+        expect(css, contains('padding-top:'));
+      },
+    );
 
-    test('continuous layout contains --chrome-bottom-inset in padding-bottom',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setViewMode('continuous');
+    test(
+      'continuous layout contains --chrome-bottom-inset in padding-bottom',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setViewMode('continuous');
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('--chrome-bottom-inset'));
-      expect(css, contains('padding-bottom:'));
-    });
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('--chrome-bottom-inset'));
+        expect(css, contains('padding-bottom:'));
+      },
+    );
 
     // TODO-788：连续模式无 multicol pitch，那份独立的 fontSize px 项只是底部预留，
     // 与几何无关（不像分页 :507 的 F 要镜像 column-width/contentBox 维持翻页周期）。
     // 去掉它后「下边距」真正控制底部空白：用户调下边距=0 时不再残留约一份字号高的空白，
     // 末行下方仍由 --chrome-bottom-inset 给底栏预留。分页 :507 的 F 不动（见上方分页守卫）。
     test(
-        'continuous layout padding-bottom is only marginBottom + chrome-bottom-inset (no independent fontSize term)',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setViewMode('continuous');
+      'continuous layout padding-bottom is only marginBottom + chrome-bottom-inset (no independent fontSize term)',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setViewMode('continuous');
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
-    });
+            'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))',
+          ),
+        );
+      },
+    );
 
     // TODO-729：单一量纲。column-gap 固定为常量（22px），inset/margin/fontSize 不再
     // 塞进 gap——它们由 column-width(content-box) 与 padding 承载。竖排 turn 轴=scrollTop，
     // content-box 高 = page-height 扣上下 padding(margin + fontSize + 两 chrome inset)，
     // 使列周期(column-width + 22px gap) == JS pageStep，maxScroll 与对齐量同源，杜绝
     // 「翻一半跳章」（旧实现把 inset 塞进 gap 致 pitch 随 inset 漂移失配）。
-    test('vertical paginated column-gap is a fixed constant (no insets)',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      // Default writing-mode is vertical-rl.
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('column-gap: 22px !important;'));
-      // gap 绝不再含 inset/margin/fontSize 的 calc。
-      expect(css, isNot(contains('column-gap: calc(')));
-    });
+    test(
+      'vertical paginated column-gap is a fixed constant (no insets)',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        // Default writing-mode is vertical-rl.
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('column-gap: 22px !important;'));
+        // gap 绝不再含 inset/margin/fontSize 的 calc。
+        expect(css, isNot(contains('column-gap: calc(')));
+      },
+    );
 
     test(
-        'vertical paginated column-width is content-box carrying turn-axis insets',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(settings: settings);
-      // TODO-734：竖排 content-box 高 = reader-viewport-height(纯 V) − 上下 padding
-      // （margin + chrome insets），与 padding-top/padding-bottom 逐项镜像（BUG-2469：
-      // 不再多扣一个字号）。基准是 --reader-viewport-height 不是 --page-height。
-      // TODO-743：竖排 column-width 现包一层 max(<F>px, calc(...)) 坍塌地板。
-      expect(
+      'vertical paginated column-width is content-box carrying turn-axis insets',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(settings: settings);
+        // TODO-734：竖排 content-box 高 = reader-viewport-height(纯 V) − 上下 padding
+        // （margin + chrome insets），与 padding-top/padding-bottom 逐项镜像（BUG-2469：
+        // 不再多扣一个字号）。基准是 --reader-viewport-height 不是 --page-height。
+        // TODO-743：竖排 column-width 现包一层 max(<F>px, calc(...)) 坍塌地板。
+        expect(
           css,
           contains(
-              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
-    });
+            'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))',
+          ),
+        );
+      },
+    );
 
-    test('horizontal paginated column-gap is the same fixed constant',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+    test('horizontal paginated column-gap is the same fixed constant', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -839,9 +935,11 @@ void main() {
       // 横排 turn 轴=scrollLeft；content-box 宽 = page-width 扣左右 padding(margin)，
       // perpendicular 的 padding-top/bottom(含 chrome inset)不入列宽。
       expect(
-          css,
-          contains(
-              'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw))'));
+        css,
+        contains(
+          'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw))',
+        ),
+      );
     });
 
     // TODO-1285：每页列数（pageColumns）根因修复。旧实现（TODO-729 遗留）只发
@@ -853,8 +951,9 @@ void main() {
     // 22px（单量纲）。与 JS getScrollContext 的 pageStep = columnCount·(usedColW+gap) 成对，
     // N·(subW+gap) == content-box+gap，翻页网格不动（保 TODO-729/753/792 不变式）。
     test('TODO-1285 每页 N 列：column-count:N + column-width 均分成子列宽（横排）', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -862,8 +961,11 @@ void main() {
       await settings.setPageColumns(2);
 
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('column-count: 2 !important;'),
-          reason: '每页列数 N 必须发 column-count:N');
+      expect(
+        css,
+        contains('column-count: 2 !important;'),
+        reason: '每页列数 N 必须发 column-count:N',
+      );
       // gap 仍固定常量（单量纲不变式）。
       expect(css, contains('column-gap: 22px !important;'));
       // 根因修复断言：column-width 必须均分成子列宽 (content-box − (N−1)·22px)/N，
@@ -871,40 +973,53 @@ void main() {
       final String base =
           'calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw))';
       expect(
-          css,
-          contains(
-              'column-width: max(1px, calc(($base - 22px) / 2)) !important;'),
-          reason: 'N=2：子列宽 = (content-box − 22px)/2，浏览器才排下 2 列');
+        css,
+        contains(
+          'column-width: max(1px, calc(($base - 22px) / 2)) !important;',
+        ),
+        reason: 'N=2：子列宽 = (content-box − 22px)/2，浏览器才排下 2 列',
+      );
       // 防回归：绝不能退回「整页 content-box 当 column-width」的坏结构。
       expect(
-          css,
-          isNot(contains(
-              'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw)) !important;')),
-          reason: '整页列宽会把 column-count:N 压成 1 列 → 每页列数失效（旧 bug）');
+        css,
+        isNot(
+          contains(
+            'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw)) !important;',
+          ),
+        ),
+        reason: '整页列宽会把 column-count:N 压成 1 列 → 每页列数失效（旧 bug）',
+      );
     });
 
     test('TODO-1285 每页列数=0（自动/单列）：无 column-count、列宽仍整页（字节等价）', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       await settings.setWritingMode('horizontal-tb');
       // 默认 pageColumns=0。
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, isNot(contains('column-count:')),
-          reason: 'pageColumns=0 不发 column-count');
+      expect(
+        css,
+        isNot(contains('column-count:')),
+        reason: 'pageColumns=0 不发 column-count',
+      );
       // 单列列宽仍是整页 content-box（不被 max(1px,...) 包裹）——零回归。
       expect(
-          css,
-          contains(
-              'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw)) !important;'));
+        css,
+        contains(
+          'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw)) !important;',
+        ),
+      );
       expect(css, isNot(contains('max(1px, calc(')));
     });
 
     test('TODO-1285 竖排每页 3 列：子列宽 = (竖排 content-box − 2·22px)/3', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -921,10 +1036,12 @@ void main() {
       );
       // totalGap = (3-1)*22 = 44。
       expect(
-          css,
-          contains(
-              'column-width: max(1px, calc(($base - 44px) / 3)) !important;'),
-          reason: '竖排 N=3：子列高 = (content-box − 44px)/3');
+        css,
+        contains(
+          'column-width: max(1px, calc(($base - 44px) / 3)) !important;',
+        ),
+        reason: '竖排 N=3：子列高 = (content-box − 44px)/3',
+      );
     });
 
     // 直接单测 helper 的均分代数（不经整条 css 组装）。
@@ -932,23 +1049,39 @@ void main() {
       const String base = 'calc(100px)';
       // N=0/1：原样返回（零行为变化）。
       expect(
-          ReaderContentStyles.columnWidthForColumns(
-              baseContentBoxCss: base, pageColumns: 0, columnGapPx: 22),
-          base);
+        ReaderContentStyles.columnWidthForColumns(
+          baseContentBoxCss: base,
+          pageColumns: 0,
+          columnGapPx: 22,
+        ),
+        base,
+      );
       expect(
-          ReaderContentStyles.columnWidthForColumns(
-              baseContentBoxCss: base, pageColumns: 1, columnGapPx: 22),
-          base);
+        ReaderContentStyles.columnWidthForColumns(
+          baseContentBoxCss: base,
+          pageColumns: 1,
+          columnGapPx: 22,
+        ),
+        base,
+      );
       // N=2：(base − 22px)/2。
       expect(
-          ReaderContentStyles.columnWidthForColumns(
-              baseContentBoxCss: base, pageColumns: 2, columnGapPx: 22),
-          'max(1px, calc((calc(100px) - 22px) / 2))');
+        ReaderContentStyles.columnWidthForColumns(
+          baseContentBoxCss: base,
+          pageColumns: 2,
+          columnGapPx: 22,
+        ),
+        'max(1px, calc((calc(100px) - 22px) / 2))',
+      );
       // N=4：(base − 66px)/4。
       expect(
-          ReaderContentStyles.columnWidthForColumns(
-              baseContentBoxCss: base, pageColumns: 4, columnGapPx: 22),
-          'max(1px, calc((calc(100px) - 66px) / 4))');
+        ReaderContentStyles.columnWidthForColumns(
+          baseContentBoxCss: base,
+          pageColumns: 4,
+          columnGapPx: 22,
+        ),
+        'max(1px, calc((calc(100px) - 66px) / 4))',
+      );
     });
 
     // TODO-1285（相邻页/列泄露根因修复）：headless Blink 实测 pageStep/列几何均正确、
@@ -961,17 +1094,21 @@ void main() {
         (mode: 'vertical-rl', cols: 3),
         (mode: 'horizontal-tb', cols: 0),
       ]) {
-        final FushiDatabase db =
-            FushiDatabase.forTesting(NativeDatabase.memory());
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
         addTearDown(db.close);
         final ReaderSettings settings = ReaderSettings(db);
         await settings.refreshFromDb();
         await settings.setWritingMode(c.mode);
         await settings.setPageColumns(c.cols);
         final String css = ReaderContentStyles.css(settings: settings);
-        expect(css, contains('column-fill: auto !important;'),
-            reason:
-                '分页 multicol（${c.mode} pageColumns=${c.cols}）必须显式 column-fill:auto');
+        expect(
+          css,
+          contains('column-fill: auto !important;'),
+          reason:
+              '分页 multicol（${c.mode} pageColumns=${c.cols}）必须显式 column-fill:auto',
+        );
       }
     });
 
@@ -981,8 +1118,9 @@ void main() {
     // 兜底：在未被 body clip-path 裁剪的 html 上加 ::before 覆盖条，四边 border 宽 == body
     // 四边 padding、border-color=背景色、pointer-events:none、z-index 压正文之上但低于 caret。
     test('TODO-1285 分页 html::before 覆盖条：引擎无关遮 padding 泄露带', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -990,27 +1128,43 @@ void main() {
       await settings.setPageColumns(2);
       final String css = ReaderContentStyles.css(settings: settings);
 
-      expect(css, contains('html::before {'),
-          reason: '分页必须发 html::before 覆盖条兜底 padding 泄露');
+      expect(
+        css,
+        contains('html::before {'),
+        reason: '分页必须发 html::before 覆盖条兜底 padding 泄露',
+      );
       expect(css, contains('position: fixed !important;'));
-      expect(css, contains('pointer-events: none !important;'),
-          reason: '覆盖条不得拦截选词/点按');
+      expect(
+        css,
+        contains('pointer-events: none !important;'),
+        reason: '覆盖条不得拦截选词/点按',
+      );
       // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）；BUG-3518：行尾一侧（横排右）
       // 让出一个列间距给悬挂标点，与 body clip-path 同一表达式。
       expect(
-          css,
-          contains(
-              'border-top-width: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px)) !important;'));
+        css,
+        contains(
+          'border-top-width: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px)) !important;',
+        ),
+      );
       expect(
-          css,
-          contains(
-              'border-right-width: max(0px, calc(var(--reader-margin-right, ${settings.marginRight}vw) - ${ReaderLayoutDefaults.columnGapPx}px)) !important;'));
+        css,
+        contains(
+          'border-right-width: max(0px, calc(var(--reader-margin-right, ${settings.marginRight}vw) - ${ReaderLayoutDefaults.columnGapPx}px)) !important;',
+        ),
+      );
       expect(
-          css,
-          contains(
-              'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px)) !important;'));
-      expect(css,
-          contains('border-left-width: var(--reader-margin-left, ${settings.marginLeft}vw) !important;'));
+        css,
+        contains(
+          'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px)) !important;',
+        ),
+      );
+      expect(
+        css,
+        contains(
+          'border-left-width: var(--reader-margin-left, ${settings.marginLeft}vw) !important;',
+        ),
+      );
       // 覆盖条色 == 页背景色（不透明覆盖泄露文字）。
       expect(css, contains('html::before {'));
       // z-index 必须低于 caret（2147483646）以免遮住焦点/查词 caret。
@@ -1020,8 +1174,9 @@ void main() {
     // BUG-3518：悬挂标点（两端对齐关时注入 hanging-punctuation）挂在栏尾之外，落在被裁的页边距带里。
     // 行尾一侧（竖排下、横排右）的裁边与遮罩条都让出一个列间距；两端对齐开（不悬挂）时照旧裁满。
     test('BUG-3518 行尾一侧让出一个列间距给悬挂标点', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1033,33 +1188,45 @@ void main() {
       String css = ReaderContentStyles.css(settings: settings);
       expect(css, contains('hanging-punctuation: allow-end'));
       expect(css, contains('border-bottom-width: $revealed !important;'));
-      expect(css, contains('$revealed var(--reader-margin-left'),
-          reason: 'body clip-path 的下边与遮罩条一致');
       expect(
-          css,
-          contains(
-              'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;'),
-          reason: '竖排右侧不是行尾，照旧裁满');
+        css,
+        contains('$revealed var(--reader-margin-left'),
+        reason: 'body clip-path 的下边与遮罩条一致',
+      );
+      expect(
+        css,
+        contains(
+          'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;',
+        ),
+        reason: '竖排右侧不是行尾，照旧裁满',
+      );
 
       await settings.setEnableTextJustification(true);
       css = ReaderContentStyles.css(settings: settings);
       expect(css, isNot(contains('hanging-punctuation: allow-end')));
-      expect(css, contains('border-bottom-width: $bottom !important;'),
-          reason: '不悬挂时行尾一侧照旧裁满');
+      expect(
+        css,
+        contains('border-bottom-width: $bottom !important;'),
+        reason: '不悬挂时行尾一侧照旧裁满',
+      );
     });
 
     // 覆盖条只属分页：连续模式不发 html::before（避免连续滚动被 padding 条错遮）。
     test('TODO-1285 连续模式不发 html::before 覆盖条', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
       await settings.setWritingMode('horizontal-tb');
       await settings.setViewMode('continuous');
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, isNot(contains('html::before {')),
-          reason: '连续模式不是分页 padding 泄露模型，不应发覆盖条');
+      expect(
+        css,
+        isNot(contains('html::before {')),
+        reason: '连续模式不是分页 padding 泄露模型，不应发覆盖条',
+      );
     });
   });
 
@@ -1074,37 +1241,37 @@ void main() {
     });
 
     test(
-        'thumb colour follows the theme text colour (dark theme → light thumb)',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'dark-theme',
-      );
-      // dark-theme textColor is rgba(255, 255, 255, 0.6); the thumb must reuse it.
-      expect(
-        css,
-        contains('scrollbar-color: rgba(255, 255, 255, 0.6) transparent;'),
-      );
-      expect(
-        css,
-        contains('background-color: rgba(255, 255, 255, 0.6);'),
-      );
-    });
+      'thumb colour follows the theme text colour (dark theme → light thumb)',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'dark-theme',
+        );
+        // dark-theme textColor is rgba(255, 255, 255, 0.6); the thumb must reuse it.
+        expect(
+          css,
+          contains('scrollbar-color: rgba(255, 255, 255, 0.6) transparent;'),
+        );
+        expect(css, contains('background-color: rgba(255, 255, 255, 0.6);'));
+      },
+    );
 
-    test('thumb colour follows a light theme text colour (ecru → dark thumb)',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'ecru-theme',
-      );
-      // ecru-theme textColor is rgba(0, 0, 0, 0.87).
-      expect(
-        css,
-        contains('scrollbar-color: rgba(0, 0, 0, 0.87) transparent;'),
-      );
-    });
+    test(
+      'thumb colour follows a light theme text colour (ecru → dark thumb)',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'ecru-theme',
+        );
+        // ecru-theme textColor is rgba(0, 0, 0, 0.87).
+        expect(
+          css,
+          contains('scrollbar-color: rgba(0, 0, 0, 0.87) transparent;'),
+        );
+      },
+    );
 
     // The native WebView2 Fluent overlay scrollbar ignores ::-webkit-scrollbar
     // and follows the UA color-scheme. Pin it to the reader theme so it flips
@@ -1135,31 +1302,34 @@ void main() {
       }
     });
 
-    test('custom theme derives color-scheme from background luminance',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String darkCss = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'custom-theme',
-        customBg: '#101015',
-        customFg: '#eeeeee',
-      );
-      expect(darkCss, contains('color-scheme: dark;'));
+    test(
+      'custom theme derives color-scheme from background luminance',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String darkCss = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'custom-theme',
+          customBg: '#101015',
+          customFg: '#eeeeee',
+        );
+        expect(darkCss, contains('color-scheme: dark;'));
 
-      final String lightCss = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'custom-theme',
-        customBg: '#FAF0E6',
-        customFg: '#222222',
-      );
-      expect(lightCss, contains('color-scheme: light;'));
-    });
+        final String lightCss = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'custom-theme',
+          customBg: '#FAF0E6',
+          customFg: '#222222',
+        );
+        expect(lightCss, contains('color-scheme: light;'));
+      },
+    );
   });
 
   group('ReaderContentStyles negative margin clamping', () {
     test('negative margins are clamped to 0 in padding CSS', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1178,9 +1348,13 @@ void main() {
       // column-width(content-box) 也不得出现负 padding 项（margin 已 clamp 到 0）。
       // TODO-734：竖排基准现为 --reader-viewport-height。
       expect(
-          css,
-          isNot(contains(
-              'column-width: calc(var(--reader-viewport-height, 100vh) - -')));
+        css,
+        isNot(
+          contains(
+            'column-width: calc(var(--reader-viewport-height, 100vh) - -',
+          ),
+        ),
+      );
     });
 
     test('overflow-wrap: anywhere is present in body', () async {
@@ -1194,26 +1368,28 @@ void main() {
   // ②竖排/横排底部预留必须跟随 settings.fontSize，禁止退化成硬编码常量（防止大字号
   // 正文被底栏遮挡的回归）。
   group('TODO-362 responsive page margins', () {
-    test('default left/right margin is 2%, top/bottom 0% (single source)',
-        () async {
-      // ReaderSettings 默认是单一真相，source 的 fallback 默认引用它。
-      expect(ReaderSettings.defaultMarginLeftPercent, 2);
-      expect(ReaderSettings.defaultMarginRightPercent, 2);
-      expect(ReaderSettings.defaultMarginTopPercent, 0);
-      expect(ReaderSettings.defaultMarginBottomPercent, 0);
-
-      final ReaderSettings settings = await _defaultSettings();
-      expect(settings.marginLeft, 2);
-      expect(settings.marginRight, 2);
-      expect(settings.marginTop, 0);
-      expect(settings.marginBottom, 0);
-    });
-
     test(
-        'reading a default margin writes the 2% default through to the DB '
+      'default left/right margin is 2%, top/bottom 0% (single source)',
+      () async {
+        // ReaderSettings 默认是单一真相，source 的 fallback 默认引用它。
+        expect(ReaderSettings.defaultMarginLeftPercent, 2);
+        expect(ReaderSettings.defaultMarginRightPercent, 2);
+        expect(ReaderSettings.defaultMarginTopPercent, 0);
+        expect(ReaderSettings.defaultMarginBottomPercent, 0);
+
+        final ReaderSettings settings = await _defaultSettings();
+        expect(settings.marginLeft, 2);
+        expect(settings.marginRight, 2);
+        expect(settings.marginTop, 0);
+        expect(settings.marginBottom, 0);
+      },
+    );
+
+    test('reading a default margin writes the 2% default through to the DB '
         '(existing users get 2% on first open)', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1227,34 +1403,41 @@ void main() {
       expect(prefs['src:reader_fushi:margin_right'], '2.0');
     });
 
-    test('default css emits viewport-backed margin vars on all four sides',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(
+    test(
+      'default css emits viewport-backed margin vars on all four sides',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(
           css,
           contains(
-              'padding: var(--reader-margin-top, 0.0vh) '
-              'var(--reader-margin-right, 2.0vw) '
-              'var(--reader-margin-bottom, 0.0vh) '
-              'var(--reader-margin-left, 2.0vw) !important;'));
-    });
+            'padding: var(--reader-margin-top, 0.0vh) '
+            'var(--reader-margin-right, 2.0vw) '
+            'var(--reader-margin-bottom, 0.0vh) '
+            'var(--reader-margin-left, 2.0vw) !important;',
+          ),
+        );
+      },
+    );
 
-    test('normalizeMarginPercent clamps to [0, 50] and maps non-finite to 0',
-        () {
-      expect(ReaderSettings.normalizeMarginPercent(-3), 0);
-      expect(ReaderSettings.normalizeMarginPercent(60), 50);
-      expect(ReaderSettings.normalizeMarginPercent(12), 12);
-      expect(ReaderSettings.normalizeMarginPercent(double.nan), 0);
-      expect(ReaderSettings.normalizeMarginPercent(double.infinity), 0);
-    });
+    test(
+      'normalizeMarginPercent clamps to [0, 50] and maps non-finite to 0',
+      () {
+        expect(ReaderSettings.normalizeMarginPercent(-3), 0);
+        expect(ReaderSettings.normalizeMarginPercent(60), 50);
+        expect(ReaderSettings.normalizeMarginPercent(12), 12);
+        expect(ReaderSettings.normalizeMarginPercent(double.nan), 0);
+        expect(ReaderSettings.normalizeMarginPercent(double.infinity), 0);
+      },
+    );
 
     // ② 回归守卫（BUG-2469 改写）：底部 padding 只含页边距 + chrome inset，**不再**
     // 多留一个字号或旧的 22px 常量——那是 TODO-734 之前列高建在 V+O 上的配对项，基准
     // 改纯 V 后只剩一条空带。把字号抬到 128 断言 padding-bottom / column-width 都不含它。
     test('vertical bottom reserve has no font-size band (BUG-2469)', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1264,44 +1447,54 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
       // 分页竖排 padding-bottom = 页边距 + chrome inset，不含字号。
       expect(
-          css,
-          contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
+        css,
+        contains(
+          'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))',
+        ),
+      );
       expect(css, isNot(contains('+ 128px + var(--chrome-bottom-inset')));
       // TODO-729：gap 固定 22px。TODO-734：基准改为 --reader-viewport-height(纯 V)。
       // 列高 = V − 上下页边距 − chrome inset；128px 只作 TODO-743 坍塌地板。
       // TODO-743：max(128px, calc(...)) 坍塌地板；宽裕视口下 max 取 calc，零变化。
       expect(
-          css,
-          contains(
-              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+        css,
+        contains(
+          'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))',
+        ),
+      );
       // column-gap 固定常量，不再把 fontSize 塞进去。
       expect(css, contains('column-gap: 22px !important;'));
       // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。
       expect(css, isNot(contains('+ 22px + var(--chrome-bottom-inset')));
     });
 
-    test('horizontal bottom reserve has no font-size band either (BUG-2469)',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setWritingMode('horizontal-tb');
-      await settings.setFontSize(96);
+    test(
+      'horizontal bottom reserve has no font-size band either (BUG-2469)',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setWritingMode('horizontal-tb');
+        await settings.setFontSize(96);
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
-      expect(css, isNot(contains('+ 96px + var(--chrome-bottom-inset')));
-    });
+            'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))',
+          ),
+        );
+        expect(css, isNot(contains('+ 96px + var(--chrome-bottom-inset')));
+      },
+    );
 
     test('source margin getters fall back to the 2% defaults', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1315,8 +1508,9 @@ void main() {
     });
 
     test('source margin setters normalize out-of-range input', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1332,8 +1526,9 @@ void main() {
 
   group('ReaderFushiSource live settings callbacks', () {
     test('style setting writes trigger the live callback', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1354,8 +1549,9 @@ void main() {
 
   group('ReaderContentStyles vertical-only CSS probes (T1)', () {
     Future<ReaderSettings> verticalSettings() async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1364,8 +1560,9 @@ void main() {
     }
 
     Future<ReaderSettings> horizontalSettings() async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1373,14 +1570,16 @@ void main() {
       return settings;
     }
 
-    test('vertical upright orientation emits text-orientation: upright',
-        () async {
-      final ReaderSettings settings = await verticalSettings();
-      await settings.setVerticalTextOrientation('upright');
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('text-orientation: upright;'));
-      expect(css, isNot(contains('text-orientation: mixed;')));
-    });
+    test(
+      'vertical upright orientation emits text-orientation: upright',
+      () async {
+        final ReaderSettings settings = await verticalSettings();
+        await settings.setVerticalTextOrientation('upright');
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('text-orientation: upright;'));
+        expect(css, isNot(contains('text-orientation: mixed;')));
+      },
+    );
 
     test('vertical mixed orientation emits text-orientation: mixed', () async {
       final ReaderSettings settings = await verticalSettings();
@@ -1418,19 +1617,21 @@ void main() {
       expect(css, isNot(contains('vpal')));
     });
 
-    test('horizontal-tb gates out all three even with every toggle ON',
-        () async {
-      final ReaderSettings settings = await horizontalSettings();
-      await settings.setVerticalTextOrientation('upright');
-      await settings.setEnableVerticalFontKerning(true);
-      await settings.setEnableFontVPAL(true);
+    test(
+      'horizontal-tb gates out all three even with every toggle ON',
+      () async {
+        final ReaderSettings settings = await horizontalSettings();
+        await settings.setVerticalTextOrientation('upright');
+        await settings.setEnableVerticalFontKerning(true);
+        await settings.setEnableFontVPAL(true);
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('horizontal-tb'));
-      expect(css, isNot(contains('text-orientation')));
-      expect(css, isNot(contains('font-kerning')));
-      expect(css, isNot(contains('vpal')));
-    });
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('horizontal-tb'));
+        expect(css, isNot(contains('text-orientation')));
+        expect(css, isNot(contains('font-kerning')));
+        expect(css, isNot(contains('vpal')));
+      },
+    );
   });
   // TODO-810：手机竖排书顶部 notch（摄像头）区漏出上一页文字。根因=WebView 是 Positioned.fill
   // 全铺 edge-to-edge，notch 遮挡只靠 body 透明 padding-top（=var(--chrome-top-inset)）腾出物理区，
@@ -1439,52 +1640,71 @@ void main() {
   // 横排顶带本无字故无副作用；不动高度/pageStep/column-width/scrollTop 几何）。
   // 此守卫锁住分页+连续两模式 body 块都含 clip-path 且引用 --chrome-top-inset（撤回即红）。
   group('TODO-810 notch clip-path guards', () {
-    test('paginated body clips top/bottom inset bands via clip-path inset',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      // Default is paginated mode.
-      final String css = ReaderContentStyles.css(settings: settings);
-      // TODO-792：分页 clip-path 从「只裁 chrome inset」扩成「裁到正文内容盒(=全 padding，四边
-      // 各含 margin/chrome/F)」，一举裁掉 notch 滚入文字 + 相邻页/列在留白区的露出(bleed)。
-      expect(css, contains('clip-path: inset(calc('),
-          reason: '分页 body clip-path 必须裁到正文内容盒（inset 用 calc 含 padding 表达式）');
-      expect(css, contains('var(--chrome-top-inset, 0px))'),
-          reason: 'clip 顶边须含 chrome-top（防 notch 滚入），且并入 margin（裁相邻页露出）');
-      expect(css, contains('var(--chrome-bottom-inset, 0px))'),
-          reason: 'clip 底边须含 chrome-bottom');
-    });
+    test(
+      'paginated body clips top/bottom inset bands via clip-path inset',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        // Default is paginated mode.
+        final String css = ReaderContentStyles.css(settings: settings);
+        // TODO-792：分页 clip-path 从「只裁 chrome inset」扩成「裁到正文内容盒(=全 padding，四边
+        // 各含 margin/chrome/F)」，一举裁掉 notch 滚入文字 + 相邻页/列在留白区的露出(bleed)。
+        expect(
+          css,
+          contains('clip-path: inset(calc('),
+          reason: '分页 body clip-path 必须裁到正文内容盒（inset 用 calc 含 padding 表达式）',
+        );
+        expect(
+          css,
+          contains('var(--chrome-top-inset, 0px))'),
+          reason: 'clip 顶边须含 chrome-top（防 notch 滚入），且并入 margin（裁相邻页露出）',
+        );
+        expect(
+          css,
+          contains('var(--chrome-bottom-inset, 0px))'),
+          reason: 'clip 底边须含 chrome-bottom',
+        );
+      },
+    );
 
-    test('continuous body clips top/bottom inset bands via clip-path inset',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setViewMode('continuous');
+    test(
+      'continuous body clips top/bottom inset bands via clip-path inset',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setViewMode('continuous');
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(
           css,
           contains(
-              'clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;'),
-          reason: '连续 body 同样在顶/底 inset 带硬裁');
-    });
+            'clip-path: inset(var(--chrome-top-inset, 0px) 0 var(--chrome-bottom-inset, 0px) 0) !important;',
+          ),
+          reason: '连续 body 同样在顶/底 inset 带硬裁',
+        );
+      },
+    );
 
-    test('vertical paginated still clips (notch leak path is vertical)',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      await settings.setWritingMode('vertical-rl');
+    test(
+      'vertical paginated still clips (notch leak path is vertical)',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        await settings.setWritingMode('vertical-rl');
 
-      final String css = ReaderContentStyles.css(settings: settings);
-      // TODO-792：竖排分页 clip 现裁到内容盒（inset(calc(...)）——仍含 chrome inset 防 notch。
-      expect(css, contains('clip-path: inset(calc('));
-      expect(css, contains('var(--chrome-top-inset, 0px))'));
-    });
+        final String css = ReaderContentStyles.css(settings: settings);
+        // TODO-792：竖排分页 clip 现裁到内容盒（inset(calc(...)）——仍含 chrome inset 防 notch。
+        expect(css, contains('clip-path: inset(calc('));
+        expect(css, contains('var(--chrome-top-inset, 0px))'));
+      },
+    );
   });
 
   // TODO-718（真机铁证·2026-06-25）：连续模式隐藏溢出轴只能放 html，不能放 body。
@@ -1493,8 +1713,9 @@ void main() {
   // 竖排恢复(scrollToCharOffset 写 root.scrollLeft)幽灵→视口留章首。守卫两种写向。
   group('TODO-718 连续溢出轴只放 html（防 body 成滚动容器回归）', () {
     Future<String> continuousCss(String writingMode) async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1505,18 +1726,30 @@ void main() {
 
     test('横排连续：overflow-x:hidden 在 html{}、不在 html, body{}', () async {
       final String css = await continuousCss('horizontal-tb');
-      expect(css, contains('html {\n  overflow-x: hidden !important;\n}'),
-          reason: 'overflow-x:hidden 必须只放 html');
-      expect(css, isNot(contains('html, body {\n  overflow-x: hidden')),
-          reason: 'overflow-x:hidden 绝不能放 body（否则 body 成滚动容器→滚轮跳章/进度卡）');
+      expect(
+        css,
+        contains('html {\n  overflow-x: hidden !important;\n}'),
+        reason: 'overflow-x:hidden 必须只放 html',
+      );
+      expect(
+        css,
+        isNot(contains('html, body {\n  overflow-x: hidden')),
+        reason: 'overflow-x:hidden 绝不能放 body（否则 body 成滚动容器→滚轮跳章/进度卡）',
+      );
     });
 
     test('竖排连续：overflow-y:hidden 在 html{}、不在 html, body{}', () async {
       final String css = await continuousCss('vertical-rl');
-      expect(css, contains('html {\n  overflow-y: hidden !important;\n}'),
-          reason: 'overflow-y:hidden 必须只放 html');
-      expect(css, isNot(contains('html, body {\n  overflow-y: hidden')),
-          reason: 'overflow-y:hidden 绝不能放 body（否则恢复 root.scrollLeft 幽灵→视口留章首）');
+      expect(
+        css,
+        contains('html {\n  overflow-y: hidden !important;\n}'),
+        reason: 'overflow-y:hidden 必须只放 html',
+      );
+      expect(
+        css,
+        isNot(contains('html, body {\n  overflow-y: hidden')),
+        reason: 'overflow-y:hidden 绝不能放 body（否则恢复 root.scrollLeft 幽灵→视口留章首）',
+      );
     });
   });
 
@@ -1601,8 +1834,9 @@ void main() {
   // ReaderSettings.setPageColumns → preferences 表 `ttu_page_columns`。getter 反读一致。
   group('TODO-1285 每页列数写穿 DB', () {
     test('setPageColumns 写穿 preferences 且 getter 反读一致', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
@@ -1612,8 +1846,11 @@ void main() {
       expect(settings.pageColumns, 3, reason: 'getter 立即反读新值');
 
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs['src:reader_fushi:page_columns'], '3',
-          reason: '每页列数必须落到 preferences 表（写穿）');
+      expect(
+        prefs['src:reader_fushi:page_columns'],
+        '3',
+        reason: '每页列数必须落到 preferences 表（写穿）',
+      );
 
       // 独立实例重新从 DB 加载，仍读到 3（真持久化，非内存态）。
       final ReaderSettings reloaded = ReaderSettings(db);
@@ -1622,8 +1859,9 @@ void main() {
     });
 
     test('source.setReaderPageColumns 经 ReaderSettings 写穿并反读', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();

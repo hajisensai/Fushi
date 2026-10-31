@@ -20,8 +20,10 @@ void main() {
     final String source = readSyncSettingsSchemaSource();
     final int start = source.indexOf('Future<void> _testAll() async {');
     expect(start, greaterThanOrEqualTo(0), reason: '_testAll 丢失');
-    final int end =
-        source.indexOf('Widget build(BuildContext context) {', start);
+    final int end = source.indexOf(
+      'Widget build(BuildContext context) {',
+      start,
+    );
     expect(end, greaterThan(start));
     final String testAll = source.substring(start, end);
     expect(
@@ -36,8 +38,11 @@ void main() {
     // 「测试连接」按钮多个后端都有（WebDav/FTP/SFTP/互联客户端），只切互联客户端
     // 配置 widget 的类区块来断言，避免误伤其它后端的同名按钮。
     final int start = source.indexOf('class _FushiServerConfigWidgetState');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '_FushiServerConfigWidgetState 丢失');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '_FushiServerConfigWidgetState 丢失',
+    );
     final int end = source.indexOf('mixin _PairingV2FlowMixin', start);
     expect(end, greaterThan(start));
     final String widgetSrc = source.substring(start, end);
@@ -45,12 +50,16 @@ void main() {
     final int buttonIdx = widgetSrc.indexOf('t.sync_test_connection');
     expect(buttonIdx, greaterThanOrEqualTo(0), reason: '互联客户端配置区应有「测试连接」按钮');
     final int guardIdx = widgetSrc.indexOf('if (!lockedByServer) ...<Widget>[');
-    expect(guardIdx, greaterThanOrEqualTo(0),
-        reason: '缺 if (!lockedByServer) 门控——服务端模式会重现测试连接按钮（BUG-725）。');
+    expect(
+      guardIdx,
+      greaterThanOrEqualTo(0),
+      reason: '缺 if (!lockedByServer) 门控——服务端模式会重现测试连接按钮（BUG-725）。',
+    );
     expect(
       guardIdx < buttonIdx,
       isTrue,
-      reason: '「测试连接」按钮未被 !lockedByServer 门控——本机作为服务端时不应显示出站测试'
+      reason:
+          '「测试连接」按钮未被 !lockedByServer 门控——本机作为服务端时不应显示出站测试'
           '按钮（BUG-725，与 BUG-084 隐藏 sync now/compare 同一设计）。',
     );
   });
@@ -70,13 +79,14 @@ void main() {
   });
 
   test('BUG-617：控制器审批弹窗对 pinRequired 会话常驻显示 PIN 到 confirm', () {
-    final String controller = File('lib/src/sync/fushi_server_controller.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    final String controller = File(
+      'lib/src/sync/fushi_server_controller.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     // server 的 confirm 到达信号接进控制器（收起常驻 PIN 弹窗）。
     expect(
-      controller
-          .contains('..onPairSessionResolved = _dismissPendingPairPinDialog'),
+      controller.contains(
+        '..onPairSessionResolved = _dismissPendingPairPinDialog',
+      ),
       isTrue,
       reason: 'onPairSessionResolved 未接线——client 提交 confirm 后无法收起 host PIN 弹窗。',
     );

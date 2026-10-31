@@ -135,8 +135,9 @@ void main() {
         layout: MangaPageLayout.double,
         spreadOffset: 1,
       );
-      final List<int> flat =
-          entries.expand((MangaSpreadEntry e) => e.pageIndices).toList();
+      final List<int> flat = entries
+          .expand((MangaSpreadEntry e) => e.pageIndices)
+          .toList();
       expect(flat, <int>[0, 1, 2, 3, 4, 5, 6]);
     });
   });

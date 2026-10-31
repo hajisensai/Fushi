@@ -14,7 +14,7 @@ class _FakeRunner implements MokuroProcessRunner {
   });
 
   final Future<MokuroProcessResult> Function(String exe, List<String> args)?
-      onRunToCompletion;
+  onRunToCompletion;
   final List<String> startLines;
   final int startExitCode;
   final bool throwOnStart = false;
@@ -39,7 +39,9 @@ class _FakeRunner implements MokuroProcessRunner {
 
   @override
   Future<MokuroProcessHandle> start(
-      String executable, List<String> args) async {
+    String executable,
+    List<String> args,
+  ) async {
     if (throwOnStart) {
       throw const ProcessException('mokuro', <String>[], 'boom', 2);
     }
@@ -64,7 +66,8 @@ void main() {
   group('parseProgressLine', () {
     test('parses tqdm N/M', () {
       final MokuroRunEvent? e = ExternalMokuroRunner.parseProgressLine(
-          '  50%|█████     | 5/10 [00:03<00:03, 1.5it/s]');
+        '  50%|█████     | 5/10 [00:03<00:03, 1.5it/s]',
+      );
       expect(e, isNotNull);
       expect(e!.done, 5);
       expect(e.total, 10);
@@ -74,7 +77,9 @@ void main() {
 
     test('returns null when no N/M present', () {
       expect(
-          ExternalMokuroRunner.parseProgressLine('Loading model...'), isNull);
+        ExternalMokuroRunner.parseProgressLine('Loading model...'),
+        isNull,
+      );
     });
 
     test('rejects done > total', () {
@@ -109,10 +114,10 @@ void main() {
       final _FakeRunner runner = _FakeRunner(
         onRunToCompletion: (String exe, List<String> args) async =>
             const MokuroProcessResult(
-          exitCode: 0,
-          stdout: '/usr/local/bin/mokuro\n',
-          stderr: '',
-        ),
+              exitCode: 0,
+              stdout: '/usr/local/bin/mokuro\n',
+              stderr: '',
+            ),
       );
       final ExternalMokuroRunner ext = ExternalMokuroRunner(
         processRunner: runner,
@@ -128,10 +133,10 @@ void main() {
       final _FakeRunner runner = _FakeRunner(
         onRunToCompletion: (String exe, List<String> args) async =>
             const MokuroProcessResult(
-          exitCode: 0,
-          stdout: 'mokuro 0.2.1\n',
-          stderr: '',
-        ),
+              exitCode: 0,
+              stdout: 'mokuro 0.2.1\n',
+              stderr: '',
+            ),
       );
       final ExternalMokuroRunner ext = ExternalMokuroRunner(
         configuredPath: 'mokuro',
@@ -162,40 +167,49 @@ void main() {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     });
 
-    test('emits running + progress then finished with located .mokuro',
-        () async {
-      // mokuro 惯例：<卷名>.mokuro 落在图片目录同级（此处即 tmp 内的同名文件）。
-      final Directory imageDir = Directory(p.join(tmp.path, 'vol1'))
-        ..createSync();
-      File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1]);
-      final String mokuroPath = p.join(tmp.path, 'vol1.mokuro');
-      File(mokuroPath).writeAsStringSync('{}');
+    test(
+      'emits running + progress then finished with located .mokuro',
+      () async {
+        // mokuro 惯例：<卷名>.mokuro 落在图片目录同级（此处即 tmp 内的同名文件）。
+        final Directory imageDir = Directory(p.join(tmp.path, 'vol1'))
+          ..createSync();
+        File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1]);
+        final String mokuroPath = p.join(tmp.path, 'vol1.mokuro');
+        File(mokuroPath).writeAsStringSync('{}');
 
-      final _FakeRunner runner = _FakeRunner(
-        startLines: <String>['Processing', '1/2', '2/2', 'done'],
-        startExitCode: 0,
-      );
-      final ExternalMokuroRunner ext = ExternalMokuroRunner(
-        configuredPath: 'mokuro',
-        processRunner: runner,
-      );
+        final _FakeRunner runner = _FakeRunner(
+          startLines: <String>['Processing', '1/2', '2/2', 'done'],
+          startExitCode: 0,
+        );
+        final ExternalMokuroRunner ext = ExternalMokuroRunner(
+          configuredPath: 'mokuro',
+          processRunner: runner,
+        );
 
-      final List<MokuroRunEvent> events = await ext.run(imageDir.path).toList();
-      expect(events.first.isRunning, isTrue);
-      final Iterable<MokuroRunEvent> progress =
-          events.where((MokuroRunEvent e) => !e.isRunning && !e.finished);
-      expect(progress.map((MokuroRunEvent e) => '${e.done}/${e.total}'),
-          contains('2/2'));
-      final MokuroRunEvent last = events.last;
-      expect(last.finished, isTrue);
-      expect(last.mokuroPath, mokuroPath);
-    });
+        final List<MokuroRunEvent> events = await ext
+            .run(imageDir.path)
+            .toList();
+        expect(events.first.isRunning, isTrue);
+        final Iterable<MokuroRunEvent> progress = events.where(
+          (MokuroRunEvent e) => !e.isRunning && !e.finished,
+        );
+        expect(
+          progress.map((MokuroRunEvent e) => '${e.done}/${e.total}'),
+          contains('2/2'),
+        );
+        final MokuroRunEvent last = events.last;
+        expect(last.finished, isTrue);
+        expect(last.mokuroPath, mokuroPath);
+      },
+    );
 
     test('errors on non-zero exit code', () async {
       final Directory imageDir = Directory(p.join(tmp.path, 'v'))..createSync();
       File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1]);
-      final _FakeRunner runner =
-          _FakeRunner(startLines: <String>['boom'], startExitCode: 3);
+      final _FakeRunner runner = _FakeRunner(
+        startLines: <String>['boom'],
+        startExitCode: 3,
+      );
       final ExternalMokuroRunner ext = ExternalMokuroRunner(
         configuredPath: 'mokuro',
         processRunner: runner,

@@ -95,16 +95,13 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
       errorBuilder: widget.errorBuilder == null
           ? null
           : (BuildContext context, Object error, StackTrace? stackTrace) =>
-              widget.errorBuilder!(context),
+                widget.errorBuilder!(context),
     );
     if (!mismatch) return foreground;
     return ClipRect(
       child: Stack(
         fit: StackFit.expand,
-        children: <Widget>[
-          ..._backdropLayers(context),
-          foreground,
-        ],
+        children: <Widget>[..._backdropLayers(context), foreground],
       ),
     );
   }

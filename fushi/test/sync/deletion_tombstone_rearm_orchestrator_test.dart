@@ -49,22 +49,25 @@ void main() {
   });
 
   SyncOrchestrator orchestrator() => SyncOrchestrator(
-        db: db,
-        backend: backend,
-        dictionaryResourceRoot: tmp,
-        audioDatabaseRoot: tmp,
-        tempDir: tmp,
-        syncStats: false,
-        syncAudioBookPosition: false,
-        syncContent: false,
-        syncMangaContent: false,
-        syncAudioBookFiles: false,
-        syncDictionary: false,
-      );
+    db: db,
+    backend: backend,
+    dictionaryResourceRoot: tmp,
+    audioDatabaseRoot: tmp,
+    tempDir: tmp,
+    syncStats: false,
+    syncAudioBookPosition: false,
+    syncContent: false,
+    syncMangaContent: false,
+    syncAudioBookFiles: false,
+    syncDictionary: false,
+  );
 
   /// 造一条「对端删了这个 itemKey」的远端标记（与云通道消费端读的是同一批文件）。
   Future<void> putRemoteTombstone(
-      String mediaType, String itemKey, int deletedAt) async {
+    String mediaType,
+    String itemKey,
+    int deletedAt,
+  ) async {
     final String ns = await backend.ensureNamespace(kSyncTombstonesNamespace);
     await backend.putJsonAsset(
       ns,
@@ -74,13 +77,13 @@ void main() {
   }
 
   FavoriteSentence sentence(int createdAtMs) => FavoriteSentence(
-        text: 'いつか君と話したい',
-        bookTitle: 'Some Book',
-        bookKey: 'BookA',
-        sectionIndex: 3,
-        normCharOffset: 42,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
-      );
+    text: 'いつか君と話したい',
+    bookTitle: 'Some Book',
+    bookKey: 'BookA',
+    sectionIndex: 3,
+    normCharOffset: 42,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
+  );
 
   Future<String> addSentence(int createdAtMs) async {
     final FavoriteSentence s = sentence(createdAtMs);
@@ -91,54 +94,73 @@ void main() {
   /// [localAddedAt] = 本机开始拥有的时刻（仲裁读它）；[importedAt] = 原始入库时刻，
   /// 缺省与之相同（本地导入的书两者同义）。
   Future<String> addBook(String bookKey, int localAddedAt, {int? importedAt}) =>
-      db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: bookKey,
-        title: bookKey,
-        epubPath: '/tmp/$bookKey.epub',
-        extractDir: '/tmp/$bookKey',
-        chapterCount: 1,
-        chaptersJson: '["ch1"]',
-        importedAt: importedAt ?? localAddedAt,
-        localAddedAt: Value<int?>(localAddedAt),
-      ));
+      db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: bookKey,
+          epubPath: '/tmp/$bookKey.epub',
+          extractDir: '/tmp/$bookKey',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: importedAt ?? localAddedAt,
+          localAddedAt: Value<int?>(localAddedAt),
+        ),
+      );
 
   group('favoritesentence（BUG-2044 用户实报的资产类）', () {
     test('重加晚于墓碑 → 不产候选（墓碑管不着这条新收藏）', () async {
       final String key = await addSentence(9000);
       await putRemoteTombstone(
-          SyncTombstoneKind.favoritesentence.dbValue, key, 5000);
+        SyncTombstoneKind.favoritesentence.dbValue,
+        key,
+        5000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
 
-      expect(report.deletionCandidates, isEmpty,
-          reason: '取消收藏写的远端墓碑永不 GC；重新收藏后它必须被 createdAt 仲裁掉，'
-              '否则用户会被问「其他设备已删除，要不要删掉你刚收藏的句子」。'
-              '在库时刻源接不上（退化成 null）时这里会产出 1 条候选。');
+      expect(
+        report.deletionCandidates,
+        isEmpty,
+        reason:
+            '取消收藏写的远端墓碑永不 GC；重新收藏后它必须被 createdAt 仲裁掉，'
+            '否则用户会被问「其他设备已删除，要不要删掉你刚收藏的句子」。'
+            '在库时刻源接不上（退化成 null）时这里会产出 1 条候选。',
+      );
     });
 
     test('本地早于墓碑 → 仍产 deleteLocal 候选（真实跨端删除不被压制）', () async {
       final String key = await addSentence(5000);
       await putRemoteTombstone(
-          SyncTombstoneKind.favoritesentence.dbValue, key, 9000);
+        SyncTombstoneKind.favoritesentence.dbValue,
+        key,
+        9000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
 
-      expect(report.deletionCandidates, hasLength(1),
-          reason: '仲裁只该挡「删后重加」，不该把真实的对端删除一起挡掉');
+      expect(
+        report.deletionCandidates,
+        hasLength(1),
+        reason: '仲裁只该挡「删后重加」，不该把真实的对端删除一起挡掉',
+      );
       final DeletionPropagationCandidate c = report.deletionCandidates.single;
       expect(c.mediaType, SyncTombstoneKind.favoritesentence.dbValue);
       expect(c.itemKey, key);
       expect(c.direction, DeletionPropagationDirection.deleteLocal);
-      expect(report.deletionTombstonesHighWaterMsByScope,
-          <String, int>{SyncChannelScope.unscoped.id: 9000});
+      expect(report.deletionTombstonesHighWaterMsByScope, <String, int>{
+        SyncChannelScope.unscoped.id: 9000,
+      });
     });
 
     test('时刻相等 → 判给重加，不产候选（判据是严格大于，与 aggregate 侧同律）', () async {
       final String key = await addSentence(7000);
       await putRemoteTombstone(
-          SyncTombstoneKind.favoritesentence.dbValue, key, 7000);
+        SyncTombstoneKind.favoritesentence.dbValue,
+        key,
+        7000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
@@ -151,13 +173,19 @@ void main() {
     test('重新导入晚于墓碑 → 不产候选', () async {
       await addBook('BookRearmed', 9000);
       await putRemoteTombstone(
-          SyncTombstoneKind.book.dbValue, 'BookRearmed', 5000);
+        SyncTombstoneKind.book.dbValue,
+        'BookRearmed',
+        5000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
 
-      expect(report.deletionCandidates, isEmpty,
-          reason: 'localAddedAt 接不上（退化成 null）时这里会产出 1 条候选');
+      expect(
+        report.deletionCandidates,
+        isEmpty,
+        reason: 'localAddedAt 接不上（退化成 null）时这里会产出 1 条候选',
+      );
     });
 
     test('对端入库早于墓碑、本机落地晚于墓碑（互联下载）→ 不产候选', () async {
@@ -165,21 +193,30 @@ void main() {
       // 「从所有设备删除」：用户是在那之后才把书取到本机的，墓碑管不着它。
       await addBook('PeerDownloaded', 9000, importedAt: 1000);
       await putRemoteTombstone(
-          SyncTombstoneKind.book.dbValue, 'PeerDownloaded', 5000);
+        SyncTombstoneKind.book.dbValue,
+        'PeerDownloaded',
+        5000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
 
-      expect(report.deletionCandidates, isEmpty,
-          reason: '仲裁若读 importedAt（对端入库时刻 1000），本机刚下载完就会弹'
-              '「其他设备已删除，本地也删？」');
+      expect(
+        report.deletionCandidates,
+        isEmpty,
+        reason:
+            '仲裁若读 importedAt（对端入库时刻 1000），本机刚下载完就会弹'
+            '「其他设备已删除，本地也删？」',
+      );
     });
 
-    test('importedAt 晚于墓碑、本机拥有早于墓碑 → 仍产候选（读的是本机拥有时刻）',
-        () async {
+    test('importedAt 晚于墓碑、本机拥有早于墓碑 → 仍产候选（读的是本机拥有时刻）', () async {
       await addBook('OwnedBefore', 3000, importedAt: 9000);
       await putRemoteTombstone(
-          SyncTombstoneKind.book.dbValue, 'OwnedBefore', 5000);
+        SyncTombstoneKind.book.dbValue,
+        'OwnedBefore',
+        5000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
@@ -191,96 +228,131 @@ void main() {
     test('导入早于墓碑 → 仍产 deleteLocal 候选', () async {
       await addBook('BookStale', 5000);
       await putRemoteTombstone(
-          SyncTombstoneKind.book.dbValue, 'BookStale', 9000);
+        SyncTombstoneKind.book.dbValue,
+        'BookStale',
+        9000,
+      );
 
       final SyncRunReport report = SyncRunReport();
       await orchestrator().syncDeletionTombstones(report);
 
       expect(report.deletionCandidates, hasLength(1));
       expect(report.deletionCandidates.single.itemKey, 'BookStale');
-      expect(report.deletionCandidates.single.direction,
-          DeletionPropagationDirection.deleteLocal);
+      expect(
+        report.deletionCandidates.single.direction,
+        DeletionPropagationDirection.deleteLocal,
+      );
     });
   });
 
-  test('video：对端入库早于墓碑、本机落地晚于墓碑 → 不产候选（时刻源 = localAddedAt）',
-      () async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value<String>('vid-peer'),
-      title: Value<String>('Vid'),
-      videoPath: Value<String>('/tmp/vid.mp4'),
-      importedAt: Value<int?>(1000),
-      localAddedAt: Value<int?>(9000),
-    ));
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value<String>('vid-stale'),
-      title: Value<String>('Stale'),
-      videoPath: Value<String>('/tmp/stale.mp4'),
-      importedAt: Value<int?>(9000),
-      localAddedAt: Value<int?>(3000),
-    ));
+  test('video：对端入库早于墓碑、本机落地晚于墓碑 → 不产候选（时刻源 = localAddedAt）', () async {
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('vid-peer'),
+        title: Value<String>('Vid'),
+        videoPath: Value<String>('/tmp/vid.mp4'),
+        importedAt: Value<int?>(1000),
+        localAddedAt: Value<int?>(9000),
+      ),
+    );
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('vid-stale'),
+        title: Value<String>('Stale'),
+        videoPath: Value<String>('/tmp/stale.mp4'),
+        importedAt: Value<int?>(9000),
+        localAddedAt: Value<int?>(3000),
+      ),
+    );
     await putRemoteTombstone(SyncTombstoneKind.video.dbValue, 'vid-peer', 5000);
     await putRemoteTombstone(
-        SyncTombstoneKind.video.dbValue, 'vid-stale', 5000);
+      SyncTombstoneKind.video.dbValue,
+      'vid-stale',
+      5000,
+    );
 
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
     expect(
-        report.deletionCandidates
-            .map((DeletionPropagationCandidate c) => c.itemKey),
-        <String>['vid-stale']);
+      report.deletionCandidates.map(
+        (DeletionPropagationCandidate c) => c.itemKey,
+      ),
+      <String>['vid-stale'],
+    );
   });
 
-  test('srtbook：对端入库早于墓碑、本机落地晚于墓碑 → 不产候选（时刻源 = localAddedAt）',
-      () async {
-    await db.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: 'srt-peer',
-      title: 'Srt',
-      srtPath: '/tmp/a.srt',
-      importedAt: 1000,
-      localAddedAt: const Value<int?>(9000),
-    ));
-    await db.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: 'srt-stale',
-      title: 'Stale',
-      srtPath: '/tmp/b.srt',
-      importedAt: 9000,
-      localAddedAt: const Value<int?>(3000),
-    ));
+  test('srtbook：对端入库早于墓碑、本机落地晚于墓碑 → 不产候选（时刻源 = localAddedAt）', () async {
+    await db.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: 'srt-peer',
+        title: 'Srt',
+        srtPath: '/tmp/a.srt',
+        importedAt: 1000,
+        localAddedAt: const Value<int?>(9000),
+      ),
+    );
+    await db.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: 'srt-stale',
+        title: 'Stale',
+        srtPath: '/tmp/b.srt',
+        importedAt: 9000,
+        localAddedAt: const Value<int?>(3000),
+      ),
+    );
     await putRemoteTombstone(
-        SyncTombstoneKind.srtbook.dbValue, 'srt-peer', 5000);
+      SyncTombstoneKind.srtbook.dbValue,
+      'srt-peer',
+      5000,
+    );
     await putRemoteTombstone(
-        SyncTombstoneKind.srtbook.dbValue, 'srt-stale', 5000);
+      SyncTombstoneKind.srtbook.dbValue,
+      'srt-stale',
+      5000,
+    );
 
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
     expect(
-        report.deletionCandidates
-            .map((DeletionPropagationCandidate c) => c.itemKey),
-        <String>['srt-stale']);
+      report.deletionCandidates.map(
+        (DeletionPropagationCandidate c) => c.itemKey,
+      ),
+      <String>['srt-stale'],
+    );
   });
 
   test('audiobook 无自身时刻列 → 保持旧的纯集合语义（缺时刻宁可多问一次）', () async {
     await addBook('BookWithAudio', 9000);
-    await db.upsertAudiobook(AudiobooksCompanion.insert(
-      bookKey: 'BookWithAudio',
-      alignmentFormat: 'srt',
-      alignmentPath: '/tmp/BookWithAudio/align.srt',
-    ));
+    await db.upsertAudiobook(
+      AudiobooksCompanion.insert(
+        bookKey: 'BookWithAudio',
+        alignmentFormat: 'srt',
+        alignmentPath: '/tmp/BookWithAudio/align.srt',
+      ),
+    );
     await putRemoteTombstone(
-        SyncTombstoneKind.audiobook.dbValue, 'BookWithAudio', 5000);
+      SyncTombstoneKind.audiobook.dbValue,
+      'BookWithAudio',
+      5000,
+    );
 
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
-    expect(report.deletionCandidates, hasLength(1),
-        reason: '有声书表没有导入时刻列，绝不能借同 bookKey 的 epub importedAt '
-            '编造一个时刻——那会把「书早就在、有声书是后加的」记成前者，'
-            '静默压制一次真实的跨端删除');
-    expect(report.deletionCandidates.single.mediaType,
-        SyncTombstoneKind.audiobook.dbValue);
+    expect(
+      report.deletionCandidates,
+      hasLength(1),
+      reason:
+          '有声书表没有导入时刻列，绝不能借同 bookKey 的 epub importedAt '
+          '编造一个时刻——那会把「书早就在、有声书是后加的」记成前者，'
+          '静默压制一次真实的跨端删除',
+    );
+    expect(
+      report.deletionCandidates.single.mediaType,
+      SyncTombstoneKind.audiobook.dbValue,
+    );
   });
 }
 

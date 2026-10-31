@@ -33,13 +33,14 @@ void main() {
   test('platform failures keep their code, message and native stack', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      throw PlatformException(
-        code: 'RUNTIME_FAILURE',
-        message: 'Mihon invoke/getDetailsManga failed: '
-            'NoClassDefFoundError: kotlin.LazyKt',
-        details: 'java.lang.NoClassDefFoundError\n\tat fixture.Stack',
-      );
-    });
+          throw PlatformException(
+            code: 'RUNTIME_FAILURE',
+            message:
+                'Mihon invoke/getDetailsManga failed: '
+                'NoClassDefFoundError: kotlin.LazyKt',
+            details: 'java.lang.NoClassDefFoundError\n\tat fixture.Stack',
+          );
+        });
 
     final AndroidMihonRuntime runtime = AndroidMihonRuntime();
     await expectLater(
@@ -51,20 +52,34 @@ void main() {
       throwsA(
         isA<MihonRuntimeException>()
             .having(
-                (MihonRuntimeException e) => e.code, 'code', 'RUNTIME_FAILURE')
-            .having((MihonRuntimeException e) => e.message, 'message',
-                contains('getDetailsManga'))
-            .having((MihonRuntimeException e) => e.details, 'details',
-                contains('at fixture.Stack'))
-            .having((MihonRuntimeException e) => e.diagnostics, 'diagnostics',
-                allOf(contains('kotlin.LazyKt'), contains('at fixture.Stack'))),
+              (MihonRuntimeException e) => e.code,
+              'code',
+              'RUNTIME_FAILURE',
+            )
+            .having(
+              (MihonRuntimeException e) => e.message,
+              'message',
+              contains('getDetailsManga'),
+            )
+            .having(
+              (MihonRuntimeException e) => e.details,
+              'details',
+              contains('at fixture.Stack'),
+            )
+            .having(
+              (MihonRuntimeException e) => e.diagnostics,
+              'diagnostics',
+              allOf(contains('kotlin.LazyKt'), contains('at fixture.Stack')),
+            ),
       ),
     );
   });
 
   test('a failure without native details still renders its message', () {
-    const MihonRuntimeException error =
-        MihonRuntimeException('IMAGE_HTTP', 'Source image request failed');
+    const MihonRuntimeException error = MihonRuntimeException(
+      'IMAGE_HTTP',
+      'Source image request failed',
+    );
     expect(error.details, isNull);
     expect(error.diagnostics, error.toString());
     expect(

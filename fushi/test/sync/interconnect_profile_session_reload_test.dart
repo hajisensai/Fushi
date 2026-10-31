@@ -17,21 +17,18 @@ void main() {
       <({String url, String token})>[];
 
   setUp(() {
-    db = FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory()),
-    );
+    db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     repo = SyncRepository(db);
     probed.clear();
   });
 
   tearDown(() => db.close());
 
-  InterconnectSyncBackend backend() => InterconnectSyncBackend.withProbe(
-        (String url, String token) async {
-          probed.add((url: url, token: token));
-          return true;
-        },
-      );
+  InterconnectSyncBackend backend() =>
+      InterconnectSyncBackend.withProbe((String url, String token) async {
+        probed.add((url: url, token: token));
+        return true;
+      });
 
   Future<void> pair(String url, String token) async {
     await repo.setFushiClientUrls(<FushiClientUrl>[

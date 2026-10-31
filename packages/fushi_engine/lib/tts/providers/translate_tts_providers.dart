@@ -33,22 +33,22 @@ class MicrosoftTranslatorTtsDescriptor extends TtsProviderDescriptor {
 
   @override
   TtsCapabilities get capabilities => const TtsCapabilities(
-        timing: TtsTimingGranularity.sentence,
-        online: true,
-        needsCredential: false,
-        maxConcurrency: 1,
-        maxInputLength: 300,
-      );
+    timing: TtsTimingGranularity.sentence,
+    online: true,
+    needsCredential: false,
+    maxConcurrency: 1,
+    maxInputLength: 300,
+  );
 
   @override
   List<TtsParamSpec> get params => const <TtsParamSpec>[
-        TtsParamSpec(
-          key: voiceKey,
-          kind: TtsParamKind.voice,
-          required: true,
-          defaultValue: defaultVoice,
-        ),
-      ];
+    TtsParamSpec(
+      key: voiceKey,
+      kind: TtsParamKind.voice,
+      required: true,
+      defaultValue: defaultVoice,
+    ),
+  ];
 
   @override
   TtsProvider create(TtsVoicePreset preset, TtsHost host) =>
@@ -81,7 +81,7 @@ class _TranslatorSession {
 
 class MicrosoftTranslatorTtsProvider extends TtsProvider {
   MicrosoftTranslatorTtsProvider({required this.voice, required TtsHost host})
-      : _host = host;
+    : _host = host;
 
   final String voice;
   final TtsHost _host;
@@ -96,7 +96,7 @@ class MicrosoftTranslatorTtsProvider extends TtsProvider {
 
   /// 从翻译页 HTML 里取会话参数；页面改版取不到返回 null。
   static ({String ig, String iid, String key, String token, int ttlMs})?
-      parseTranslatorPage(String html) {
+  parseTranslatorPage(String html) {
     final RegExpMatch? ig = RegExp(r'IG:"([^"]+)"').firstMatch(html);
     final RegExpMatch? iid = RegExp(r'data-iid="([^"]+)"').firstMatch(html);
     final RegExpMatch? ap = RegExp(
@@ -125,15 +125,16 @@ class MicrosoftTranslatorTtsProvider extends TtsProvider {
       final HttpClientRequest req = await client
           .getUrl(Uri.parse('https://www.bing.com/translator'))
           .timeout(const Duration(seconds: 20));
-      final HttpClientResponse res =
-          await req.close().timeout(const Duration(seconds: 20));
+      final HttpClientResponse res = await req.close().timeout(
+        const Duration(seconds: 20),
+      );
       if (res.statusCode != 200) {
         await res.drain<void>().catchError((Object _) {});
         throw ttsFailureForStatus(res.statusCode);
       }
       final String html = await res.transform(utf8.decoder).join();
       final ({String ig, String iid, String key, String token, int ttlMs})?
-          parsed = parseTranslatorPage(html);
+      parsed = parseTranslatorPage(html);
       if (parsed == null) {
         throw const TtsFailure(TtsFailureCode.badResponse, 'translator page');
       }
@@ -141,8 +142,8 @@ class MicrosoftTranslatorTtsProvider extends TtsProvider {
       final String host = res.redirects.isEmpty
           ? 'www.bing.com'
           : res.redirects.last.location.host.isEmpty
-              ? 'www.bing.com'
-              : res.redirects.last.location.host;
+          ? 'www.bing.com'
+          : res.redirects.last.location.host;
       // 提前一分钟过期，避免临界时刻失效。
       final Duration ttl =
           Duration(milliseconds: parsed.ttlMs) - const Duration(minutes: 1);
@@ -215,11 +216,13 @@ class MicrosoftTranslatorTtsProvider extends TtsProvider {
         'IID': '${session.iid}.${++_requestCount}',
       });
       final List<int> body = utf8.encode(
-        Uri(queryParameters: <String, String>{
-          'ssml': _ssml(voice, text),
-          'token': session.token,
-          'key': session.key,
-        }).query,
+        Uri(
+          queryParameters: <String, String>{
+            'ssml': _ssml(voice, text),
+            'token': session.token,
+            'key': session.key,
+          },
+        ).query,
       );
       await ttsSendToFile(
         client: client,
@@ -264,45 +267,45 @@ class GoogleTranslateTtsDescriptor extends TtsProviderDescriptor {
   /// 谷歌翻译朗读支持的常用语言（每种语言只有一个声音）。
   static const List<({String code, String name})> languages =
       <({String code, String name})>[
-    (code: 'ja', name: '日本語'),
-    (code: 'en', name: 'English (US)'),
-    (code: 'en-GB', name: 'English (UK)'),
-    (code: 'zh-CN', name: '中文（普通话）'),
-    (code: 'zh-TW', name: '中文（台灣）'),
-    (code: 'yue', name: '粵語'),
-    (code: 'ko', name: '한국어'),
-    (code: 'fr', name: 'Français'),
-    (code: 'de', name: 'Deutsch'),
-    (code: 'es', name: 'Español'),
-    (code: 'it', name: 'Italiano'),
-    (code: 'pt-BR', name: 'Português (Brasil)'),
-    (code: 'ru', name: 'Русский'),
-    (code: 'th', name: 'ไทย'),
-    (code: 'vi', name: 'Tiếng Việt'),
-    (code: 'id', name: 'Bahasa Indonesia'),
-  ];
+        (code: 'ja', name: '日本語'),
+        (code: 'en', name: 'English (US)'),
+        (code: 'en-GB', name: 'English (UK)'),
+        (code: 'zh-CN', name: '中文（普通话）'),
+        (code: 'zh-TW', name: '中文（台灣）'),
+        (code: 'yue', name: '粵語'),
+        (code: 'ko', name: '한국어'),
+        (code: 'fr', name: 'Français'),
+        (code: 'de', name: 'Deutsch'),
+        (code: 'es', name: 'Español'),
+        (code: 'it', name: 'Italiano'),
+        (code: 'pt-BR', name: 'Português (Brasil)'),
+        (code: 'ru', name: 'Русский'),
+        (code: 'th', name: 'ไทย'),
+        (code: 'vi', name: 'Tiếng Việt'),
+        (code: 'id', name: 'Bahasa Indonesia'),
+      ];
 
   @override
   String get id => providerId;
 
   @override
   TtsCapabilities get capabilities => const TtsCapabilities(
-        timing: TtsTimingGranularity.sentence,
-        online: true,
-        needsCredential: false,
-        maxConcurrency: 1,
-        maxInputLength: 180,
-      );
+    timing: TtsTimingGranularity.sentence,
+    online: true,
+    needsCredential: false,
+    maxConcurrency: 1,
+    maxInputLength: 180,
+  );
 
   @override
   List<TtsParamSpec> get params => const <TtsParamSpec>[
-        TtsParamSpec(
-          key: voiceKey,
-          kind: TtsParamKind.voice,
-          required: true,
-          defaultValue: defaultVoice,
-        ),
-      ];
+    TtsParamSpec(
+      key: voiceKey,
+      kind: TtsParamKind.voice,
+      required: true,
+      defaultValue: defaultVoice,
+    ),
+  ];
 
   @override
   TtsProvider create(TtsVoicePreset preset, TtsHost host) =>
@@ -314,7 +317,7 @@ class GoogleTranslateTtsDescriptor extends TtsProviderDescriptor {
 
 class GoogleTranslateTtsProvider extends TtsProvider {
   GoogleTranslateTtsProvider({required this.language, required TtsHost host})
-      : _client = host.httpClientFactory()..userAgent = _browserUserAgent;
+    : _client = host.httpClientFactory()..userAgent = _browserUserAgent;
 
   final String language;
   final HttpClient _client;

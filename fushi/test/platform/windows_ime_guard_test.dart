@@ -53,14 +53,14 @@ void main() {
       WindowsImeGuard.debugForceEnabled = true;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('app.fushi/windows_ime_guard'),
-        (MethodCall call) async {
-          if (call.method == 'setImeEnabled') {
-            calls.add(call.arguments as bool);
-          }
-          return null;
-        },
-      );
+            const MethodChannel('app.fushi/windows_ime_guard'),
+            (MethodCall call) async {
+              if (call.method == 'setImeEnabled') {
+                calls.add(call.arguments as bool);
+              }
+              return null;
+            },
+          );
     });
 
     tearDown(() {
@@ -68,9 +68,9 @@ void main() {
       WindowsImeGuard.debugReset();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('app.fushi/windows_ime_guard'),
-        null,
-      );
+            const MethodChannel('app.fushi/windows_ime_guard'),
+            null,
+          );
     });
 
     testWidgets('冷启动无文本框焦点：立刻解除关联', (WidgetTester tester) async {
@@ -113,8 +113,9 @@ void main() {
       expect(calls, <bool>[false, true, false], reason: '离开文本框应重新让快捷键可用');
     });
 
-    testWidgets('点击 SelectableText 不会重新关联 IME，快捷键保持可用',
-        (WidgetTester tester) async {
+    testWidgets('点击 SelectableText 不会重新关联 IME，快捷键保持可用', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(body: SelectableText('click to select')),
@@ -127,16 +128,15 @@ void main() {
       await tester.tap(find.byType(SelectableText));
       await tester.pump();
 
-      expect(
-        calls,
-        <bool>[false],
-        reason: 'SelectableText 的只读 EditableText 焦点不能冒充输入焦点',
-      );
+      expect(calls, <bool>[
+        false,
+      ], reason: 'SelectableText 的只读 EditableText 焦点不能冒充输入焦点');
       expect(WindowsImeGuard.debugLastSent, isFalse);
     });
 
-    testWidgets('SelectableText 与真文本框来回切焦只在输入能力变化时切换',
-        (WidgetTester tester) async {
+    testWidgets('SelectableText 与真文本框来回切焦只在输入能力变化时切换', (
+      WidgetTester tester,
+    ) async {
       final FocusNode editableNode = FocusNode();
       addTearDown(editableNode.dispose);
 

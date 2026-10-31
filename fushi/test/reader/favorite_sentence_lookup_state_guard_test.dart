@@ -19,19 +19,28 @@ void main() {
   setUpAll(() => src = readReaderPageSource());
 
   test('存在共享 helper：原生选区写穿 currentSentence（非空契约）', () {
-    final int defIdx = src
-        .indexOf('ReaderSelectionData?> _fillLookupStateFromNativeSelection');
+    final int defIdx = src.indexOf(
+      'ReaderSelectionData?> _fillLookupStateFromNativeSelection',
+    );
     expect(defIdx, greaterThan(0), reason: '必须有共享 helper 把原生选区解析为查词状态');
     // helper 体内必须写 currentSentence，并用 resolveCurrentSentenceText 保非空
     // （句子优先、派生不出退回选中词）。切到下一个方法定义为界，抗方法体增长漂移。
-    final int endIdx =
-        src.indexOf('Future<void> _exportAudiobookClipFromSelection()', defIdx);
+    final int endIdx = src.indexOf(
+      'Future<void> _exportAudiobookClipFromSelection()',
+      defIdx,
+    );
     expect(endIdx, greaterThan(defIdx));
     final String body = src.substring(defIdx, endIdx);
-    expect(body.contains('setCurrentSentence'), isTrue,
-        reason: 'helper 必须写 currentSentence');
-    expect(body.contains('resolveCurrentSentenceText'), isTrue,
-        reason: 'helper 必须用非空契约（句子优先、退回选中词）');
+    expect(
+      body.contains('setCurrentSentence'),
+      isTrue,
+      reason: 'helper 必须写 currentSentence',
+    );
+    expect(
+      body.contains('resolveCurrentSentenceText'),
+      isTrue,
+      reason: 'helper 必须用非空契约（句子优先、退回选中词）',
+    );
   });
 
   test('Windows 右键「查词」先把原生选区写穿 currentSentence 再弹查词', () {
@@ -40,12 +49,18 @@ void main() {
     final int endIdx = src.indexOf("case 'copy':", caseIdx);
     expect(endIdx, greaterThan(caseIdx));
     final String block = src.substring(caseIdx, endIdx);
-    expect(block.contains('_fillLookupStateFromNativeSelection'), isTrue,
-        reason: '右键查词必须先把原生选区解析进查词状态');
+    expect(
+      block.contains('_fillLookupStateFromNativeSelection'),
+      isTrue,
+      reason: '右键查词必须先把原生选区解析进查词状态',
+    );
     expect(block.contains('searchDictionaryResult'), isTrue);
     // 句级解析失败（helper 返回 null）也要满足契约：退回 selectedText。
-    expect(block.contains('setCurrentSentence'), isTrue,
-        reason: '解析失败时退回 selectedText，仍保证 currentSentence 非空');
+    expect(
+      block.contains('setCurrentSentence'),
+      isTrue,
+      reason: '解析失败时退回 selectedText，仍保证 currentSentence 非空',
+    );
   });
 
   test('移动端原生菜单「查词」也经共享 helper 写穿 currentSentence', () {
@@ -55,23 +70,33 @@ void main() {
     final int nextItem = src.indexOf('ContextMenuItem(', idx);
     expect(nextItem, greaterThan(idx));
     final String block = src.substring(idx, nextItem);
-    expect(block.contains('_fillLookupStateFromNativeSelection'), isTrue,
-        reason: '移动端原生「查词」也必须把原生选区写进查词状态');
+    expect(
+      block.contains('_fillLookupStateFromNativeSelection'),
+      isTrue,
+      reason: '移动端原生「查词」也必须把原生选区写进查词状态',
+    );
     expect(block.contains('searchDictionaryResult'), isTrue);
-    expect(block.contains('setCurrentSentence'), isTrue,
-        reason: '解析失败时退回选中文本，保证 currentSentence 非空');
+    expect(
+      block.contains('setCurrentSentence'),
+      isTrue,
+      reason: '解析失败时退回选中文本，保证 currentSentence 非空',
+    );
   });
 
   test('导出片段路径复用同一 helper（无重复的原生选区解析）', () {
     // _exportAudiobookClipFromSelection 不再自己解析 native selection JSON，
     // 而是复用共享 helper —— 避免两套解析漂移。
-    final int exportIdx =
-        src.indexOf('Future<void> _exportAudiobookClipFromSelection()');
+    final int exportIdx = src.indexOf(
+      'Future<void> _exportAudiobookClipFromSelection()',
+    );
     expect(exportIdx, greaterThan(0));
     final int nextMethod = src.indexOf('Future<void> _showReaderImageActions(');
     expect(nextMethod, greaterThan(exportIdx));
     final String body = src.substring(exportIdx, nextMethod);
-    expect(body.contains('_fillLookupStateFromNativeSelection'), isTrue,
-        reason: '导出路径必须复用共享 helper');
+    expect(
+      body.contains('_fillLookupStateFromNativeSelection'),
+      isTrue,
+      reason: '导出路径必须复用共享 helper',
+    );
   });
 }

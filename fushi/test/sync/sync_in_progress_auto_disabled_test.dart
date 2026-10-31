@@ -107,11 +107,14 @@ void main() {
       final SyncRepository repo = SyncRepository(db);
       await repo.setAutoSyncEnabled(true);
       final Completer<void> release = Completer<void>();
-      final Future<void> holder =
-          runExclusiveWithSync<void>(() => release.future);
+      final Future<void> holder = runExclusiveWithSync<void>(
+        () => release.future,
+      );
       final Future<void> queued = run();
-      await _waitFor(() => syncInProgress.value,
-          what: 'auto sync to pass the gate and queue on the mutex');
+      await _waitFor(
+        () => syncInProgress.value,
+        what: 'auto sync to pass the gate and queue on the mutex',
+      );
       await repo.setAutoSyncEnabled(false);
       release.complete();
       await holder;
@@ -119,13 +122,18 @@ void main() {
     }
 
     test('退出书单本', () async {
-      await runQueuedThenDisabled(() => runAutoSyncForBookForTest(
-            db: db,
-            mediaIdentifier: 'fushi://book/abc',
-          ));
+      await runQueuedThenDisabled(
+        () => runAutoSyncForBookForTest(
+          db: db,
+          mediaIdentifier: 'fushi://book/abc',
+        ),
+      );
       expect(lastSyncOutcome.value?.kind, SyncActivityKind.singleBook);
-      expect(lastSyncOutcome.value?.reason, SyncOutcomeReason.autoDisabled,
-          reason: '排锁期间开关被关，拿到锁后必须不跑');
+      expect(
+        lastSyncOutcome.value?.reason,
+        SyncOutcomeReason.autoDisabled,
+        reason: '排锁期间开关被关，拿到锁后必须不跑',
+      );
       expect(lastSyncOutcome.value?.channelsRun, 0);
       expect(syncInProgress.value, isFalse);
     });
@@ -139,19 +147,24 @@ void main() {
     });
 
     test('自动全量 sweep', () async {
-      await runQueuedThenDisabled(() => runAutoSyncAllForTest(
-            db: db,
-            dictionaryResourceRoot: work,
-            audioDatabaseRoot: work,
-            tempDir: work,
-          ));
+      await runQueuedThenDisabled(
+        () => runAutoSyncAllForTest(
+          db: db,
+          dictionaryResourceRoot: work,
+          audioDatabaseRoot: work,
+          tempDir: work,
+        ),
+      );
       expect(
         lastFullSweepOutcome.value?.reason,
         SyncOutcomeReason.autoDisabled,
       );
       expect(lastFullSweepOutcome.value?.channelsRun, 0);
-      expect(autoSweepFailureBackoffUntilMsForTest, isNull,
-          reason: 'autoDisabled 不触碰失败退避戳');
+      expect(
+        autoSweepFailureBackoffUntilMsForTest,
+        isNull,
+        reason: 'autoDisabled 不触碰失败退避戳',
+      );
       expect(syncInProgress.value, isFalse);
     });
   });
@@ -175,10 +188,16 @@ void main() {
     });
 
     void expectUntouched() {
-      expect(lastSyncOutcome.value, same(previous),
-          reason: '在飞的那轮 sweep 自己会公布真结局，门这里不得抢写 autoDisabled');
-      expect(lastFullSweepOutcome.value, same(previous),
-          reason: '设置页 / 桌面控制通道在手动同步期间不得读到「自动同步已关」');
+      expect(
+        lastSyncOutcome.value,
+        same(previous),
+        reason: '在飞的那轮 sweep 自己会公布真结局，门这里不得抢写 autoDisabled',
+      );
+      expect(
+        lastFullSweepOutcome.value,
+        same(previous),
+        reason: '设置页 / 桌面控制通道在手动同步期间不得读到「自动同步已关」',
+      );
     }
 
     test('定时 sweep', () async {
@@ -203,13 +222,11 @@ void main() {
         mediaIdentifier: 'fushi://book/abc',
       );
       expectUntouched();
-      expect(pendingBookSyncCountForTest, 0,
-          reason: '开关关着的触发不记补跑账');
+      expect(pendingBookSyncCountForTest, 0, reason: '开关关着的触发不记补跑账');
     });
   });
 
-  test('开关关着、没有 sweep 在飞：照旧公布 autoDisabled（不公布只限 sweep 在飞时）',
-      () async {
+  test('开关关着、没有 sweep 在飞：照旧公布 autoDisabled（不公布只限 sweep 在飞时）', () async {
     lastFullSweepOutcome.value = null;
     await runAutoSyncAllForTest(
       db: db,

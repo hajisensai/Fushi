@@ -15,12 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
 import 'package:collection/collection.dart';
 
-typedef _NetworkDiscoveryState = ({
-  bool dht,
-  bool lsd,
-  bool upnp,
-  bool natpmp,
-});
+typedef _NetworkDiscoveryState = ({bool dht, bool lsd, bool upnp, bool natpmp});
 
 /// 内置 libtorrent 引擎的 app 侧宿主：拥有**常驻**引擎 + 单个 session
 /// （所有内置下载共享），按需派发短命 [EmbeddedTorrentBackend] 适配器给
@@ -47,17 +42,17 @@ class EmbeddedTorrentHost {
     required String resumeDir,
     required int Function() clockMs,
     required bool initialDhtEnabled,
-  })  : _engine = engine,
-        _session = session,
-        _saveRoots = saveRoots,
-        _resumeDir = resumeDir,
-        _clockMs = clockMs,
-        _appliedNetworkDiscovery = (
-          dht: initialDhtEnabled,
-          lsd: false,
-          upnp: false,
-          natpmp: false,
-        );
+  }) : _engine = engine,
+       _session = session,
+       _saveRoots = saveRoots,
+       _resumeDir = resumeDir,
+       _clockMs = clockMs,
+       _appliedNetworkDiscovery = (
+         dht: initialDhtEnabled,
+         lsd: false,
+         upnp: false,
+         natpmp: false,
+       );
 
   final EmbeddedTorrentEngine _engine;
   final EmbeddedTorrentSession _session;
@@ -198,10 +193,7 @@ class EmbeddedTorrentHost {
 
   /// 用户暂停集的唯一写盘出口（[_userPaused] ∪ [_pausedAwaitingRestore]）。
   void _persistUserPaused() {
-    writeUserPausedFile(
-      _resumeDir,
-      _userPaused.union(_pausedAwaitingRestore),
-    );
+    writeUserPausedFile(_resumeDir, _userPaused.union(_pausedAwaitingRestore));
   }
 
   /// 是否已做过一次性「清 upload_mode 残留」治愈（BUG-1293：旧版本给种子打上
@@ -249,8 +241,10 @@ class EmbeddedTorrentHost {
     final EmbeddedTorrentHost host = EmbeddedTorrentHost._(
       engine: engine,
       session: session,
-      saveRoots:
-          TorrentSaveRoots(active: baseSavePath, legacy: legacySavePaths),
+      saveRoots: TorrentSaveRoots(
+        active: baseSavePath,
+        legacy: legacySavePaths,
+      ),
       resumeDir: resumeDir,
       clockMs: clockMs ?? _defaultClockMs,
       initialDhtEnabled: enableDht,
@@ -316,8 +310,9 @@ class EmbeddedTorrentHost {
     if (cached != null) return cached ? _capabilitiesCache : null;
     bool ok;
     try {
-      final EmbeddedTorrentEngine engine =
-          EmbeddedTorrentEngine.open(libraryPath: libraryPath);
+      final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.open(
+        libraryPath: libraryPath,
+      );
       _capabilitiesCache = EmbeddedTorrentHostCapabilities.ofEngine(engine);
       ok = true;
       _lastProbeFailure = null;
@@ -360,7 +355,9 @@ class EmbeddedTorrentHost {
   /// `AppModel._restoreEmbeddedTorrentSession` 看着 [hasRestored] 补一次。
   int restoreFromResume(Set<String>? keepIds) {
     if (keepIds == null) {
-      fushiDebugPrint('[torrent] resume restore skipped: plan ids not loaded yet');
+      fushiDebugPrint(
+        '[torrent] resume restore skipped: plan ids not loaded yet',
+      );
       return 0;
     }
     _pruneResumeFiles(keepIds);
@@ -374,7 +371,9 @@ class EmbeddedTorrentHost {
     try {
       final List<String> ids = _session.loadResumeDir(_resumeDir);
       if (ids.isNotEmpty) {
-        fushiDebugPrint('[torrent] restored ${ids.length} torrent(s) from resume');
+        fushiDebugPrint(
+          '[torrent] restored ${ids.length} torrent(s) from resume',
+        );
       }
       _restoreUserPaused(ids);
       return ids.length;
@@ -446,23 +445,30 @@ class EmbeddedTorrentHost {
     try {
       final FtResumeSaveResult result = _session.saveResumeData(
         _resumeDir,
-        timeoutMs: timeoutMs ??
+        timeoutMs:
+            timeoutMs ??
             (force ? shutdownSaveTimeoutMs : periodicSaveTimeoutMs),
       );
       sw.stop();
       _lastResumeSaveResult = result;
       if (result.failed > 0 || result.timedOut > 0) {
-        fushiDebugPrint('[torrent] resume save: ${result.saved} saved, '
-            '${result.failed} failed, ${result.timedOut} timed out '
-            '(${sw.elapsedMilliseconds}ms)');
+        fushiDebugPrint(
+          '[torrent] resume save: ${result.saved} saved, '
+          '${result.failed} failed, ${result.timedOut} timed out '
+          '(${sw.elapsedMilliseconds}ms)',
+        );
       } else if (!_loggedFirstResumeSave && result.saved > 0) {
         _loggedFirstResumeSave = true;
-        fushiDebugPrint('[torrent] resume save: ${result.saved} saved '
-            '(${sw.elapsedMilliseconds}ms)');
+        fushiDebugPrint(
+          '[torrent] resume save: ${result.saved} saved '
+          '(${sw.elapsedMilliseconds}ms)',
+        );
       } else if (sw.elapsedMilliseconds >= 500) {
         // 工作 isolate 里卡这么久不冻 UI，但会顺延后面排队的命令，留痕。
-        fushiDebugPrint('[torrent] resume save took '
-            '${sw.elapsedMilliseconds}ms (${result.saved} saved)');
+        fushiDebugPrint(
+          '[torrent] resume save took '
+          '${sw.elapsedMilliseconds}ms (${result.saved} saved)',
+        );
       }
       _pruneResumeFiles(keepIds);
       return result.saved;
@@ -578,8 +584,10 @@ class EmbeddedTorrentHost {
     if (effectiveMixed && !_session.supportsProxyMode) {
       // 老 DLL 无 ht_apply_proxy_mode：engine 会降级全代理。说清降级而不是
       // 假装混合生效。
-      fushiDebugPrint('[torrent] mixed proxy mode unsupported by loaded library; '
-          'falling back to full proxy');
+      fushiDebugPrint(
+        '[torrent] mixed proxy mode unsupported by loaded library; '
+        'falling back to full proxy',
+      );
     }
     final bool ok = _session.applyProxy(hostPort: target, mixed: mixed);
     if (ok) {
@@ -587,8 +595,10 @@ class EmbeddedTorrentHost {
       _appliedProxyHostPort = target;
       _appliedProxyMixed = effectiveMixed;
     } else {
-      fushiDebugPrint('[torrent] proxy apply failed (${target ?? 'direct'}): '
-          '${_session.supportsProxy ? 'native rejected' : 'library lacks ht_apply_proxy'}');
+      fushiDebugPrint(
+        '[torrent] proxy apply failed (${target ?? 'direct'}): '
+        '${_session.supportsProxy ? 'native rejected' : 'library lacks ht_apply_proxy'}',
+      );
     }
     return ok;
   }
@@ -624,14 +634,18 @@ class EmbeddedTorrentHost {
   /// 条数；库不支持 / session 已关 / 列表为空返回 -1。
   int addDhtNodes(List<String> hostPorts) {
     if (!_session.supportsAddDhtNodes) {
-      fushiDebugPrint('[torrent] loaded library lacks ht_add_dht_nodes; '
-          'cannot inject ${hostPorts.length} DHT node(s)');
+      fushiDebugPrint(
+        '[torrent] loaded library lacks ht_add_dht_nodes; '
+        'cannot inject ${hostPorts.length} DHT node(s)',
+      );
       return -1;
     }
     final int added = _session.addDhtNodes(hostPorts);
     if (added < 0 && hostPorts.isNotEmpty) {
-      fushiDebugPrint('[torrent] add DHT nodes failed '
-          '(${hostPorts.length} candidate(s))');
+      fushiDebugPrint(
+        '[torrent] add DHT nodes failed '
+        '(${hostPorts.length} candidate(s))',
+      );
     }
     return added;
   }
@@ -702,7 +716,8 @@ class EmbeddedTorrentHost {
         } else {
           // 首次读取就失败时没有依据把协议从关切到开；保留当前状态，并只允许
           // 用户配置把某项进一步关闭。add/resume 会由 wakeDepth 明确保持开启。
-          final _NetworkDiscoveryState applied = _appliedNetworkDiscovery ??
+          final _NetworkDiscoveryState applied =
+              _appliedNetworkDiscovery ??
               const (dht: false, lsd: false, upnp: false, natpmp: false);
           return (
             dht: applied.dht && _sessionConfig.enableDht,
@@ -780,8 +795,10 @@ class EmbeddedTorrentHost {
   void _logNetworkDiscoveryApplyFailure([Object? error]) {
     if (_loggedNetworkDiscoveryApplyFailure) return;
     _loggedNetworkDiscoveryApplyFailure = true;
-    fushiDebugPrint('[torrent] network discovery settings apply failed'
-        '${error == null ? '' : ': $error'}; will retry');
+    fushiDebugPrint(
+      '[torrent] network discovery settings apply failed'
+      '${error == null ? '' : ': $error'}; will retry',
+    );
   }
 
   /// 用配置里的反吸血开关/阈值重建反吸血引擎（丢弃旧封禁状态，会自然重建）。
@@ -793,8 +810,9 @@ class EmbeddedTorrentHost {
         banByProgressUploaded: config.banProgressCheat,
         banByRelativeProgressUploaded: config.banRelativeProgressCheat,
         maxIpPortCount: config.maxIpPortCount,
-        banTimeMs:
-            config.banTimeMinutes > 0 ? config.banTimeMinutes * 60 * 1000 : 0,
+        banTimeMs: config.banTimeMinutes > 0
+            ? config.banTimeMinutes * 60 * 1000
+            : 0,
       ),
     );
   }
@@ -922,8 +940,11 @@ class EmbeddedTorrentHost {
               peerInterested: pi.remoteInterested,
             ),
         ];
-        final Map<String, BanVerdict> verdicts =
-            _antiLeech.evaluate(snapshots, ctx, nowMs: nowMs);
+        final Map<String, BanVerdict> verdicts = _antiLeech.evaluate(
+          snapshots,
+          ctx,
+          nowMs: nowMs,
+        );
         newlyBanned += verdicts.values.where((BanVerdict v) => v.banned).length;
       }
       // 抄 ClientBlocker banTime：清理到期封段（banTimeMs>0 时生效）→ 变化随
@@ -986,9 +1007,11 @@ class EmbeddedTorrentHost {
       if (!_session.supportsUploadControl) {
         if (!_loggedUploadControlUnsupported) {
           _loggedUploadControlUnsupported = true;
-          fushiDebugPrint('[torrent] upload policy skipped: bundled DLL lacks '
-              'ht_set_unchoke_slots/ht_pause_torrent (upload stays enabled; '
-              'downloads unaffected)');
+          fushiDebugPrint(
+            '[torrent] upload policy skipped: bundled DLL lacks '
+            'ht_set_unchoke_slots/ht_pause_torrent (upload stays enabled; '
+            'downloads unaffected)',
+          );
         }
         return 0;
       }
@@ -998,8 +1021,8 @@ class EmbeddedTorrentHost {
       if (_appliedSessionUploadEnabled != uploadEnabled) {
         final int slots = uploadEnabled
             ? (_uploadConfig.maxUploadSlots > 0
-                ? _uploadConfig.maxUploadSlots
-                : -1)
+                  ? _uploadConfig.maxUploadSlots
+                  : -1)
             : 0;
         if (_session.setUnchokeSlots(slots)) {
           _appliedSessionUploadEnabled = uploadEnabled;
@@ -1045,8 +1068,9 @@ class EmbeddedTorrentHost {
       }
       // 清理已移除种子的残留状态。
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
-      _appliedUploadBlocked
-          .removeWhere((String k, bool v) => !live.contains(k));
+      _appliedUploadBlocked.removeWhere(
+        (String k, bool v) => !live.contains(k),
+      );
       final int pausedBefore = _userPaused.length;
       _userPaused.removeWhere((String k) => !live.contains(k));
       // TODO-2526：awaiting 记录的种子出现在 live 里 = 用户本会话把它重新
@@ -1082,9 +1106,11 @@ class EmbeddedTorrentHost {
     if (!_session.supportsTorrentUploadBlock) {
       if (!_loggedTorrentUploadBlockUnsupported) {
         _loggedTorrentUploadBlockUnsupported = true;
-        fushiDebugPrint('[torrent] per-torrent upload block skipped: bundled '
-            'DLL lacks ht_set_torrent_upload_blocked (ratio limit only stops '
-            'seeding, not uploads during download)');
+        fushiDebugPrint(
+          '[torrent] per-torrent upload block skipped: bundled '
+          'DLL lacks ht_set_torrent_upload_blocked (ratio limit only stops '
+          'seeding, not uploads during download)',
+        );
       }
       return 0;
     }
@@ -1105,10 +1131,10 @@ class EmbeddedTorrentHost {
   /// 进程马上 `exit(0)`，libtorrent 析构还会等 tracker 的 stopped announce，
   /// 白白吃掉退出预算；要的只是把最新 resume 写穿。
   int? flushResumeForExit(Set<String>? keepIds) => saveResumeSnapshot(
-        keepIds,
-        force: true,
-        timeoutMs: exitFlushSaveTimeoutMs,
-      );
+    keepIds,
+    force: true,
+    timeoutMs: exitFlushSaveTimeoutMs,
+  );
 
   /// 释放常驻 session（数据根迁移 / AppModel 释放时）。
   ///

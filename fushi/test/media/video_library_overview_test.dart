@@ -106,13 +106,15 @@ void main() {
     final VideoLibraryOverview byImport = computeVideoLibraryOverview(
       entries: <VideoOverviewEntry>[
         entry(
-            uid: 'x',
-            positionMs: 1,
-            importedAt: now.subtract(const Duration(days: 2))),
+          uid: 'x',
+          positionMs: 1,
+          importedAt: now.subtract(const Duration(days: 2)),
+        ),
         entry(
-            uid: 'y',
-            positionMs: 1,
-            importedAt: now.subtract(const Duration(days: 1))),
+          uid: 'y',
+          positionMs: 1,
+          importedAt: now.subtract(const Duration(days: 1)),
+        ),
       ],
       lastWatchedByUid: const <String, DateTime>{},
       now: now,
@@ -191,7 +193,10 @@ void main() {
 
   test('合集：整季无任何观看痕迹 → 不进继续观看（不劝从头开始）', () {
     final VideoLibraryOverview o = computeVideoLibraryOverview(
-      entries: <VideoOverviewEntry>[entry(uid: 'c1'), entry(uid: 'c2')],
+      entries: <VideoOverviewEntry>[
+        entry(uid: 'c1'),
+        entry(uid: 'c2'),
+      ],
       lastWatchedByUid: const <String, DateTime>{},
       collectionByUid: const <String, int>{'c1': 1, 'c2': 1},
       sortIndexByUid: const <String, int>{'c1': 1, 'c2': 2},
@@ -253,13 +258,12 @@ void main() {
       int positionMs = 0,
       bool completed = false,
       int updatedAtMs = 0,
-    }) =>
-        RemoteContinueEntry(
-          id: id,
-          positionMs: positionMs,
-          completed: completed,
-          updatedAtMs: updatedAtMs,
-        );
+    }) => RemoteContinueEntry(
+      id: id,
+      positionMs: positionMs,
+      completed: completed,
+      updatedAtMs: updatedAtMs,
+    );
 
     test('空列表 → null', () {
       expect(pickRemoteContinueEntry(const <RemoteContinueEntry>[]), isNull);
@@ -276,13 +280,12 @@ void main() {
     });
 
     test('有断点未看完中取 updatedAtMs 最新者', () {
-      final RemoteContinueEntry? best = pickRemoteContinueEntry(
-        <RemoteContinueEntry>[
-          rc('old', positionMs: 100, updatedAtMs: 1000),
-          rc('newest', positionMs: 200, updatedAtMs: 3000),
-          rc('mid', positionMs: 300, updatedAtMs: 2000),
-        ],
-      );
+      final RemoteContinueEntry? best =
+          pickRemoteContinueEntry(<RemoteContinueEntry>[
+            rc('old', positionMs: 100, updatedAtMs: 1000),
+            rc('newest', positionMs: 200, updatedAtMs: 3000),
+            rc('mid', positionMs: 300, updatedAtMs: 2000),
+          ]);
       expect(best?.id, 'newest');
     });
 

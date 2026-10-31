@@ -35,7 +35,8 @@ void main() {
       expect(
         at,
         greaterThan(-1),
-        reason: '没有 exit-request 监听 ⇒ ⌘Q / 菜单退出 / Dock 退出全都不 flush，'
+        reason:
+            '没有 exit-request 监听 ⇒ ⌘Q / 菜单退出 / Dock 退出全都不 flush，'
             '阅读位置与有声书进度停在最后一次去抖落库（BUG-2259 回归）',
       );
       expect(
@@ -62,7 +63,8 @@ void main() {
       expect(
         body.contains('await _flushAndExitForWindowClose()'),
         isTrue,
-        reason: '退出请求必须复用关窗口那条链（几何落盘 + ExitFlushRegistry + 关书同步 '
+        reason:
+            '退出请求必须复用关窗口那条链（几何落盘 + ExitFlushRegistry + 关书同步 '
             'drain + close database），否则「关窗口能保住的数据，⌘Q 保不住」又会成立',
       );
       expect(

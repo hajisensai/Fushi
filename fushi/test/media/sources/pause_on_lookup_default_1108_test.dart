@@ -14,8 +14,9 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   group('pauseOnLookup default (TODO-1108)', () {
     test('defaults to true when never set', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -25,31 +26,35 @@ void main() {
       expect(source.pauseOnLookup, isTrue, reason: '未设过时默认开启（TODO-1108 用户诉求）');
     });
 
-    test('an explicit stored false wins over the new default (userspace)',
-        () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
+    test(
+      'an explicit stored false wins over the new default (userspace)',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
 
-      final ReaderFushiSource source = ReaderFushiSource.instance;
-      await source.refreshPreferencesFromDb();
+        final ReaderFushiSource source = ReaderFushiSource.instance;
+        await source.refreshPreferencesFromDb();
 
-      // 老用户曾显式关闭：写穿存储再从 DB 重载，模拟应用重启后的读取路径。
-      await source.setPauseOnLookup(value: false);
-      await source.refreshPreferencesFromDb();
+        // 老用户曾显式关闭：写穿存储再从 DB 重载，模拟应用重启后的读取路径。
+        await source.setPauseOnLookup(value: false);
+        await source.refreshPreferencesFromDb();
 
-      expect(source.pauseOnLookup, isFalse,
-          reason: '显式设过的存储值必须覆盖默认，改默认值不得翻转老用户选择');
-      expect(
-        await db.getPref('src:reader_fushi:pause_on_lookup'),
-        'b:false',
-      );
-    });
+        expect(
+          source.pauseOnLookup,
+          isFalse,
+          reason: '显式设过的存储值必须覆盖默认，改默认值不得翻转老用户选择',
+        );
+        expect(await db.getPref('src:reader_fushi:pause_on_lookup'), 'b:false');
+      },
+    );
 
     test('an explicit stored true round-trips', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -60,10 +65,7 @@ void main() {
       await source.refreshPreferencesFromDb();
 
       expect(source.pauseOnLookup, isTrue);
-      expect(
-        await db.getPref('src:reader_fushi:pause_on_lookup'),
-        'b:true',
-      );
+      expect(await db.getPref('src:reader_fushi:pause_on_lookup'), 'b:true');
     });
   });
 }

@@ -15,18 +15,14 @@ void main() {
         textValues: {TermField.instance: '猫'},
       );
 
-      final copy = original.copyWith(
-        textValues: {TermField.instance: '犬'},
-      );
+      final copy = original.copyWith(textValues: {TermField.instance: '犬'});
 
       expect(copy.textValues[TermField.instance], '犬');
       expect(original.textValues[TermField.instance], '猫');
     });
 
     test('copyWith replaces extraValues', () {
-      final original = CreatorFieldValues(
-        extraValues: {'key': 'old'},
-      );
+      final original = CreatorFieldValues(extraValues: {'key': 'old'});
 
       final copy = original.copyWith(extraValues: {'key': 'new'});
 
@@ -34,9 +30,7 @@ void main() {
     });
 
     test('isExportable is true when textValues is non-empty', () {
-      final values = CreatorFieldValues(
-        textValues: {TermField.instance: '猫'},
-      );
+      final values = CreatorFieldValues(textValues: {TermField.instance: '猫'});
 
       expect(values.isExportable, isTrue);
     });

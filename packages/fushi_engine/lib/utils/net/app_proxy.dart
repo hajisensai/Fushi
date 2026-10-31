@@ -322,10 +322,13 @@ Map<String, String> androidSystemProxyEnvironment({
   if (h.isEmpty || port == null || port <= 0 || port > 65535) {
     return const <String, String>{};
   }
-  final String hostPort =
-      h.contains(':') && !h.startsWith('[') ? '[$h]:$port' : '$h:$port';
-  final Map<String, String> env =
-      _buildProxyEnv(https: hostPort, http: hostPort);
+  final String hostPort = h.contains(':') && !h.startsWith('[')
+      ? '[$h]:$port'
+      : '$h:$port';
+  final Map<String, String> env = _buildProxyEnv(
+    https: hostPort,
+    http: hostPort,
+  );
   final List<String> noProxy = <String>[
     for (final String raw in (exclusionList ?? '').split(RegExp('[,|]')))
       if (raw.trim().isNotEmpty)
@@ -787,9 +790,7 @@ Future<Map<String, String>> resolveMacSystemProxyEnvironment() async {
       stdout,
     );
     if (pacDowngraded) {
-      fushiDebugPrint(
-        '[AppProxy] 检测到 macOS PAC 自动代理，降级直连（不解析 PAC）',
-      );
+      fushiDebugPrint('[AppProxy] 检测到 macOS PAC 自动代理，降级直连（不解析 PAC）');
     }
     return proxy;
   } catch (e) {
@@ -898,9 +899,7 @@ Future<Map<String, String>> resolveLinuxSystemProxyEnvironment() async {
       httpPort: httpPort,
     );
     if (pacDowngraded) {
-      fushiDebugPrint(
-        '[AppProxy] 检测到 Linux PAC 自动代理，降级直连（不解析 PAC）',
-      );
+      fushiDebugPrint('[AppProxy] 检测到 Linux PAC 自动代理，降级直连（不解析 PAC）');
     }
     return proxy;
   } catch (e) {

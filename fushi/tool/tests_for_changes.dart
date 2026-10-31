@@ -119,8 +119,10 @@ class RepoFs {
         try {
           return dir
               .listSync(followLinks: false)
-              .map((FileSystemEntity e) =>
-                  e.path.replaceAll('\\', '/').split('/').last)
+              .map(
+                (FileSystemEntity e) =>
+                    e.path.replaceAll('\\', '/').split('/').last,
+              )
               .toSet();
         } on FileSystemException {
           return const <String>{};
@@ -134,19 +136,21 @@ class RepoFs {
   /// `fushi/Linux` 存在——**在 Linux CI 上却不存在**，同一份索引两个平台两个样。
   /// 逐段比对目录列表把这两类幽灵一次性掐掉。
   bool exists(RepoPath repoPath) => _existsCache.putIfAbsent(repoPath, () {
-        final List<String> segments = repoPath.split('/');
-        RepoPath cursor = '';
-        for (final String seg in segments) {
-          if (seg.isEmpty) return false;
-          if (!_entriesOf(cursor).contains(seg)) return false;
-          cursor = cursor.isEmpty ? seg : '$cursor/$seg';
-        }
-        return true;
-      });
+    final List<String> segments = repoPath.split('/');
+    RepoPath cursor = '';
+    for (final String seg in segments) {
+      if (seg.isEmpty) return false;
+      if (!_entriesOf(cursor).contains(seg)) return false;
+      cursor = cursor.isEmpty ? seg : '$cursor/$seg';
+    }
+    return true;
+  });
 
   /// 这个路径是不是目录。
-  bool isDirectory(RepoPath repoPath) => _isDirCache.putIfAbsent(repoPath,
-      () => exists(repoPath) && Directory(_abs(repoPath)).existsSync());
+  bool isDirectory(RepoPath repoPath) => _isDirCache.putIfAbsent(
+    repoPath,
+    () => exists(repoPath) && Directory(_abs(repoPath)).existsSync(),
+  );
 
   /// 仓库根下的一级目录名（含 `.github`）。**运行时枚举，不硬编码。**
   Set<RepoPath> topLevelDirs() => _topLevelCache ??= root
@@ -168,8 +172,10 @@ Directory locateRepoRoot(Directory start) {
     if (parent.path == dir.path) break;
     dir = parent;
   }
-  throw StateError('定位不到仓库根（找不到 fushi/pubspec.yaml + native/）：'
-      '${start.absolute.path}');
+  throw StateError(
+    '定位不到仓库根（找不到 fushi/pubspec.yaml + native/）：'
+    '${start.absolute.path}',
+  );
 }
 
 /// 把任意写法的路径候选归一成仓库根相对路径；无法归一则返回 `null`。
@@ -226,15 +232,17 @@ RepoPath? normalizeRepoPath(String candidate, RepoFs fs) {
 final RegExp _illegalPathChar = RegExp(r'[:*?<>|"]');
 
 /// 任意含 `/` 的路径形 token。故意不认 `$`/`{`，插值前缀会在后缀匹配里被丢掉。
-final RegExp _slashPathToken =
-    RegExp(r'[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+');
+final RegExp _slashPathToken = RegExp(
+  r'[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+',
+);
 
 /// `join(` / `p.join(` / `path.join(` 调用起点。
 final RegExp _joinCall = RegExp(r'\b(?:p|path)?\.?join\s*\(');
 
 /// 单/双引号里的简单字面量（不含转义与插值，够用了：路径段本来就不该有）。
-final RegExp _simpleQuoted =
-    RegExp("'([^'\\\\\\\$\\n]*)'|\"([^\"\\\\\\\$\\n]*)\"");
+final RegExp _simpleQuoted = RegExp(
+  "'([^'\\\\\\\$\\n]*)'|\"([^\"\\\\\\\$\\n]*)\"",
+);
 
 /// 从一段 Dart 源码里提取它引用到的仓库路径。
 ///
@@ -264,8 +272,10 @@ Set<RepoPath> extractRepoPathReferences(String source, RepoFs fs) {
     }
     if (segments.isEmpty) continue;
     for (int start = 0; start < segments.length; start++) {
-      final RepoPath? p =
-          normalizeRepoPath(segments.sublist(start).join('/'), fs);
+      final RepoPath? p = normalizeRepoPath(
+        segments.sublist(start).join('/'),
+        fs,
+      );
       if (p != null) {
         refs.add(p);
         break;
@@ -404,8 +414,10 @@ List<RepoPath> listAppTestFiles(RepoFs fs) {
     throw StateError('fushi/test 不存在，扫描面是空的');
   }
   final List<RepoPath> out = <RepoPath>[];
-  for (final FileSystemEntity e
-      in testDir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity e in testDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (e is! File) continue;
     final String rel = e.path
         .replaceAll('\\', '/')
@@ -469,7 +481,8 @@ Map<RepoPath, Set<String>> selectTestsForChanges({
   final List<RepoPath> effective = changedFiles
       .map((RepoPath c) => c.replaceAll('\\', '/'))
       .where(
-          (RepoPath c) => includeDartTrees || !isDefaultBatchCoveredChange(c))
+        (RepoPath c) => includeDartTrees || !isDefaultBatchCoveredChange(c),
+      )
       .toList();
   final Map<RepoPath, Set<String>> hits = <RepoPath, Set<String>>{};
   for (final MapEntry<RepoPath, TestTriggerFace> entry in index.entries) {
@@ -529,21 +542,28 @@ Iterable<String> _lines(String input) =>
 /// 这些我根本没碰的树。基准必须是 `git merge-base HEAD <base>`。
 List<RepoPath> _changedFromGit(Directory root, String base) {
   final List<RepoPath> out = <RepoPath>[];
-  final ProcessResult mergeBase = Process.runSync(
-      'git', <String>['merge-base', 'HEAD', base],
-      workingDirectory: root.path);
-  final String diffBase =
-      mergeBase.exitCode == 0 ? (mergeBase.stdout as String).trim() : base;
-  final ProcessResult diff = Process.runSync(
-      'git', <String>['diff', '--name-only', diffBase],
-      workingDirectory: root.path);
+  final ProcessResult mergeBase = Process.runSync('git', <String>[
+    'merge-base',
+    'HEAD',
+    base,
+  ], workingDirectory: root.path);
+  final String diffBase = mergeBase.exitCode == 0
+      ? (mergeBase.stdout as String).trim()
+      : base;
+  final ProcessResult diff = Process.runSync('git', <String>[
+    'diff',
+    '--name-only',
+    diffBase,
+  ], workingDirectory: root.path);
   if (diff.exitCode != 0) {
     throw StateError('git diff --name-only $diffBase 失败：${diff.stderr}');
   }
   out.addAll(_lines(diff.stdout as String));
-  final ProcessResult untracked = Process.runSync(
-      'git', <String>['ls-files', '--others', '--exclude-standard'],
-      workingDirectory: root.path);
+  final ProcessResult untracked = Process.runSync('git', <String>[
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+  ], workingDirectory: root.path);
   if (untracked.exitCode == 0) {
     out.addAll(_lines(untracked.stdout as String));
   }
@@ -565,15 +585,21 @@ void main(List<String> args) {
         perTree.putIfAbsent(treeOf(ref), () => <RepoPath>{}).add(e.key);
       }
     }
-    final List<MapEntry<RepoPath, Set<RepoPath>>> sorted = perTree.entries
-        .toList()
-      ..sort((MapEntry<RepoPath, Set<RepoPath>> a,
-              MapEntry<RepoPath, Set<RepoPath>> b) =>
-          b.value.length.compareTo(a.value.length));
-    print('索引：${index.length} 个测试文件，'
-        '${index.values.where((TestTriggerFace f) => !f.isEmpty).length} 个有触发面');
-    print('（下表是**引用该树的测试文件数**，不是实际触发数——'
-        '实际触发要看改的是树里哪个文件）');
+    final List<MapEntry<RepoPath, Set<RepoPath>>> sorted =
+        perTree.entries.toList()..sort(
+          (
+            MapEntry<RepoPath, Set<RepoPath>> a,
+            MapEntry<RepoPath, Set<RepoPath>> b,
+          ) => b.value.length.compareTo(a.value.length),
+        );
+    print(
+      '索引：${index.length} 个测试文件，'
+      '${index.values.where((TestTriggerFace f) => !f.isEmpty).length} 个有触发面',
+    );
+    print(
+      '（下表是**引用该树的测试文件数**，不是实际触发数——'
+      '实际触发要看改的是树里哪个文件）',
+    );
     for (final MapEntry<RepoPath, Set<RepoPath>> e in sorted) {
       if (e.value.length < 2) continue;
       print('${e.value.length.toString().padLeft(4)}  ${e.key}');
@@ -610,12 +636,15 @@ void main(List<String> args) {
 
   if (explain) {
     final int filtered = changed.where(isDefaultBatchCoveredChange).length;
-    stderr.writeln('改动 ${changed.length} 个文件，其中 $filtered 个落在默认整批'
-        '已覆盖的 Dart 树（不再重复输出，用 --include-dart 关掉）。');
+    stderr.writeln(
+      '改动 ${changed.length} 个文件，其中 $filtered 个落在默认整批'
+      '已覆盖的 Dart 树（不再重复输出，用 --include-dart 关掉）。',
+    );
     stderr.writeln('推导出 ${selected.length} 个必须加跑的测试：');
     for (final RepoPath t in selected) {
-      stderr
-          .writeln('  ${toFlutterTestArg(t)}  ← ${hits[t]!.toList()..sort()}');
+      stderr.writeln(
+        '  ${toFlutterTestArg(t)}  ← ${hits[t]!.toList()..sort()}',
+      );
     }
   }
   for (final RepoPath t in selected) {

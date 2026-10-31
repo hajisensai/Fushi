@@ -78,16 +78,15 @@ void main() {
     String? readyBackend = 'embedded',
     bool pipelineUp = true,
     int? sourceId,
-  }) =>
-      AppDownloadHost(
-        database: () => db,
-        pipeline: () => pipelineUp ? pipeline : null,
-        backendTarget: () async => _target,
-        readyBackend: () => readyBackend,
-        targetSourceId: () async => sourceId,
-        resourceRegistry: () => null,
-        subscriptionService: () => null,
-      );
+  }) => AppDownloadHost(
+    database: () => db,
+    pipeline: () => pipelineUp ? pipeline : null,
+    backendTarget: () async => _target,
+    readyBackend: () => readyBackend,
+    targetSourceId: () async => sourceId,
+    resourceRegistry: () => null,
+    subscriptionService: () => null,
+  );
 
   Future<FushiSyncServer> startHost(AppDownloadHost downloads) async {
     final FushiSyncServer server = FushiSyncServer(
@@ -114,8 +113,10 @@ void main() {
     expect(target, isNotNull, reason: 'app 当 host 必须像无头服务端一样宣告代下载');
     expect(target!.deviceName, 'PC');
     expect(target.backend, 'embedded');
-    expect(target.kinds,
-        containsAll(<String>['video', 'novel', 'manga', 'audiobook', 'game']));
+    expect(
+      target.kinds,
+      containsAll(<String>['video', 'novel', 'manga', 'audiobook', 'game']),
+    );
     expect(target.supportsKind(null), isTrue);
     expect(target.supportsKind('novel'), isTrue);
     await server.stop();
@@ -130,17 +131,23 @@ void main() {
     final InterconnectDownloadClient c = client();
     final String url = 'http://127.0.0.1:${server.port}';
     expect((await c.probeUrl(url))?.baseUrl, url);
-    expect(await c.probeUrl('http://192.0.2.1:1'), isNull,
-        reason: '用户点名的设备不在清单 / 连不上时不能悄悄换成别的 host');
-    expect((await c.probeAll()).map((HostDownloadTarget t) => t.baseUrl),
-        <String>[url]);
+    expect(
+      await c.probeUrl('http://192.0.2.1:1'),
+      isNull,
+      reason: '用户点名的设备不在清单 / 连不上时不能悄悄换成别的 host',
+    );
+    expect(
+      (await c.probeAll()).map((HostDownloadTarget t) => t.baseUrl),
+      <String>[url],
+    );
   });
 
   test('非视频域磁链 → 本机管线的按域入库行；无头式 kinds 校验走 400', () async {
     final FushiSyncServer server = await startHost(host());
     final InterconnectDownloadClient c = client();
-    final HostDownloadTarget target =
-        (await c.probeUrl('http://127.0.0.1:${server.port}'))!;
+    final HostDownloadTarget target = (await c.probeUrl(
+      'http://127.0.0.1:${server.port}',
+    ))!;
     final String jobId = await c.addMagnet(
       target,
       magnetUri: _magnet,
@@ -150,17 +157,31 @@ void main() {
     final VideoDownloadJobRow? job = await db.getVideoDownloadJob(jobId);
     expect(job, isNotNull);
     expect(job!.title, 'A Novel');
-    expect(job.organizationPolicy,
-        manualDiscoveryOrganizationPolicy(DiscoveryMediaKind.novel));
+    expect(
+      job.organizationPolicy,
+      manualDiscoveryOrganizationPolicy(DiscoveryMediaKind.novel),
+    );
     expect(job.targetSourceId, isNull, reason: '非视频域不需要受管视频来源');
-    expect(job.fingerprint, _identity.fingerprint,
-        reason: '后端落点是 host 自己的，不信客户端');
+    expect(
+      job.fingerprint,
+      _identity.fingerprint,
+      reason: '后端落点是 host 自己的，不信客户端',
+    );
 
     await expectLater(
-      c.addMagnet(target,
-          magnetUri: _magnet, title: 'x', discoveryKind: 'bogus'),
-      throwsA(isA<HostDownloadException>()
-          .having((HostDownloadException e) => e.code, 'code', 'http_400')),
+      c.addMagnet(
+        target,
+        magnetUri: _magnet,
+        title: 'x',
+        discoveryKind: 'bogus',
+      ),
+      throwsA(
+        isA<HostDownloadException>().having(
+          (HostDownloadException e) => e.code,
+          'code',
+          'http_400',
+        ),
+      ),
     );
   });
 
@@ -170,10 +191,19 @@ void main() {
     final String url = 'http://127.0.0.1:${server.port}';
     final HostDownloadTarget target = (await c.probeUrl(url))!;
     await expectLater(
-      c.addMagnet(target,
-          magnetUri: _magnet, title: 'Frieren', mediaKind: 'tv'),
-      throwsA(isA<HostDownloadException>()
-          .having((HostDownloadException e) => e.code, 'code', 'http_409')),
+      c.addMagnet(
+        target,
+        magnetUri: _magnet,
+        title: 'Frieren',
+        mediaKind: 'tv',
+      ),
+      throwsA(
+        isA<HostDownloadException>().having(
+          (HostDownloadException e) => e.code,
+          'code',
+          'http_409',
+        ),
+      ),
     );
     await server.stop();
 
@@ -188,16 +218,23 @@ void main() {
       ),
     );
     final FushiSyncServer second = await startHost(host(sourceId: sourceId));
-    final HostDownloadTarget t2 =
-        (await c.probeUrl('http://127.0.0.1:${second.port}'))!;
-    final String jobId = await c.addMagnet(t2,
-        magnetUri: _magnet, title: 'Frieren', mediaKind: 'tv');
+    final HostDownloadTarget t2 = (await c.probeUrl(
+      'http://127.0.0.1:${second.port}',
+    ))!;
+    final String jobId = await c.addMagnet(
+      t2,
+      magnetUri: _magnet,
+      title: 'Frieren',
+      mediaKind: 'tv',
+    );
     final VideoDownloadJobRow job = (await db.getVideoDownloadJob(jobId))!;
     expect(job.organizationPolicy, 'library');
     expect(job.mediaKind, VideoMetadataMediaKind.tv.name);
     expect(job.targetSourceId, sourceId);
-    expect((await c.listJobs(t2)).map((HostDownloadJob j) => j.jobId),
-        contains(jobId));
+    expect(
+      (await c.listJobs(t2)).map((HostDownloadJob j) => j.jobId),
+      contains(jobId),
+    );
   });
 
   test('管线没起来 → 能力位不支持、投递 409，而不是 500', () async {
@@ -212,8 +249,13 @@ void main() {
     );
     await expectLater(
       c.addMagnet(forced, magnetUri: _magnet, title: 'x'),
-      throwsA(isA<HostDownloadException>()
-          .having((HostDownloadException e) => e.code, 'code', 'http_409')),
+      throwsA(
+        isA<HostDownloadException>().having(
+          (HostDownloadException e) => e.code,
+          'code',
+          'http_409',
+        ),
+      ),
     );
   });
 
@@ -256,8 +298,11 @@ void main() {
 
     await host().deleteJob('job-remote-1');
 
-    expect(await db.getVideoDownloadJob('job-remote-1'), isNull,
-        reason: '行要删掉');
+    expect(
+      await db.getVideoDownloadJob('job-remote-1'),
+      isNull,
+      reason: '行要删掉',
+    );
     expect(
       downloaded.existsSync(),
       isTrue,
@@ -304,8 +349,9 @@ void main() {
     test('能力位宣告 deleteFilesParam；勾选 → 经协议真删文件，不勾 → 保留', () async {
       final FushiSyncServer server = await startHost(host());
       final InterconnectDownloadClient c = client();
-      final HostDownloadTarget target =
-          (await c.probeUrl('http://127.0.0.1:${server.port}'))!;
+      final HostDownloadTarget target = (await c.probeUrl(
+        'http://127.0.0.1:${server.port}',
+      ))!;
       expect(target.deleteFilesParam, isTrue);
 
       final File kept = await seedCompletedJob('job-keep');
@@ -322,16 +368,16 @@ void main() {
     test('老客户端不带参数：app host 保持历史缺省（只移出列表）', () async {
       final FushiSyncServer server = await startHost(host());
       final InterconnectDownloadClient c = client();
-      final HostDownloadTarget target =
-          (await c.probeUrl('http://127.0.0.1:${server.port}'))!;
+      final HostDownloadTarget target = (await c.probeUrl(
+        'http://127.0.0.1:${server.port}',
+      ))!;
       final File file = await seedCompletedJob('job-legacy');
       await c.delete(target, 'job-legacy');
       expect(await db.getVideoDownloadJob('job-legacy'), isNull);
       expect(file.existsSync(), isTrue);
     });
 
-    test('老 host（不宣告 deleteFilesParam）：客户端拒绝带 deleteFiles，不让选择被静默丢弃',
-        () async {
+    test('老 host（不宣告 deleteFilesParam）：客户端拒绝带 deleteFiles，不让选择被静默丢弃', () async {
       final FushiSyncServer server = await startHost(host());
       final HostDownloadTarget legacy = HostDownloadTarget(
         baseUrl: 'http://127.0.0.1:${server.port}',
@@ -341,11 +387,13 @@ void main() {
       expect(legacy.deleteFilesParam, isFalse);
       expect(
         () => client().delete(legacy, 'x', deleteFiles: true),
-        throwsA(isA<HostDownloadException>().having(
-          (HostDownloadException e) => e.code,
-          'code',
-          'delete_files_unsupported',
-        )),
+        throwsA(
+          isA<HostDownloadException>().having(
+            (HostDownloadException e) => e.code,
+            'code',
+            'delete_files_unsupported',
+          ),
+        ),
       );
     });
   });
@@ -369,8 +417,8 @@ void main() {
         createdAt: 1,
       ),
     );
-    final VideoDownloadPipelineService withTorrents =
-        VideoDownloadPipelineService(
+    final VideoDownloadPipelineService
+    withTorrents = VideoDownloadPipelineService(
       database: db,
       resourceRegistry: VideoResourceRegistry(const <VideoResourceProvider>[]),
       backendResolver: (_) async => throw StateError('pipeline not started'),
@@ -382,22 +430,27 @@ void main() {
       workerId: 'app-host-torrent-test',
     );
     addTearDown(() => withTorrents.dispose(drainTimeout: Duration.zero));
-    final FushiSyncServer server = await startHost(AppDownloadHost(
-      database: () => db,
-      pipeline: () => withTorrents,
-      backendTarget: () async => _target,
-      readyBackend: () => 'embedded',
-      targetSourceId: () async => sourceId,
-      resourceRegistry: () => null,
-      subscriptionService: () => null,
-    ));
+    final FushiSyncServer server = await startHost(
+      AppDownloadHost(
+        database: () => db,
+        pipeline: () => withTorrents,
+        backendTarget: () async => _target,
+        readyBackend: () => 'embedded',
+        targetSourceId: () async => sourceId,
+        resourceRegistry: () => null,
+        subscriptionService: () => null,
+      ),
+    );
     final HttpClient http = HttpClient();
     addTearDown(() => http.close(force: true));
     Future<(int, Map<String, Object?>)> post(Map<String, Object?> body) async {
       final HttpClientRequest req = await http.postUrl(
-          Uri.parse('http://127.0.0.1:${server.port}/api/downloads'));
-      req.headers.set(HttpHeaders.authorizationHeader,
-          'Basic ${base64Encode(utf8.encode('fushi:tok'))}');
+        Uri.parse('http://127.0.0.1:${server.port}/api/downloads'),
+      );
+      req.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Basic ${base64Encode(utf8.encode('fushi:tok'))}',
+      );
       req.write(jsonEncode(body));
       final HttpClientResponse res = await req.close();
       final String text = await res.transform(utf8.decoder).join();
@@ -409,19 +462,23 @@ void main() {
       );
     }
 
-    final (int status, Map<String, Object?> body) = await post(<String, Object?>{
-      'torrent': base64Encode(utf8.encode(
-        'd4:infod5:filesld6:lengthi5e4:pathl6:op.mkveed6:lengthi9e4:pathl'
-        '9:movie.mkveee4:name4:pack12:piece lengthi16384e6:pieces20:'
-        'aaaaaaaaaaaaaaaaaaaaee',
-      )),
-      'title': 'Doraemon Movie 10',
-      'files': <int>[1],
-      'year': 1989,
-      'metadataProvider': 'tmdb',
-      'externalId': '12345',
-      'subtitlePolicy': 'bestEffort',
-    });
+    final (int status, Map<String, Object?> body) = await post(
+      <String, Object?>{
+        'torrent': base64Encode(
+          utf8.encode(
+            'd4:infod5:filesld6:lengthi5e4:pathl6:op.mkveed6:lengthi9e4:pathl'
+            '9:movie.mkveee4:name4:pack12:piece lengthi16384e6:pieces20:'
+            'aaaaaaaaaaaaaaaaaaaaee',
+          ),
+        ),
+        'title': 'Doraemon Movie 10',
+        'files': <int>[1],
+        'year': 1989,
+        'metadataProvider': 'tmdb',
+        'externalId': '12345',
+        'subtitlePolicy': 'bestEffort',
+      },
+    );
     expect(status, 200, reason: '$body');
     final String jobId = body['jobId']! as String;
     final VideoDownloadJobRow job = (await db.getVideoDownloadJob(jobId))!;
@@ -447,10 +504,12 @@ void main() {
 
     // 选择越界：管线不建任务、路由 400 带原因。
     final (int bad, Map<String, Object?> why) = await post(<String, Object?>{
-      'torrent': base64Encode(utf8.encode(
-        'd4:infod6:lengthi5e4:name6:op.mkv12:piece lengthi16384e6:pieces20:'
-        'aaaaaaaaaaaaaaaaaaaaee',
-      )),
+      'torrent': base64Encode(
+        utf8.encode(
+          'd4:infod6:lengthi5e4:name6:op.mkv12:piece lengthi16384e6:pieces20:'
+          'aaaaaaaaaaaaaaaaaaaaee',
+        ),
+      ),
       'title': 'x',
       'files': <int>[1],
     });

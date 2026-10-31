@@ -13,10 +13,10 @@ import 'package:fushi/src/sync/backup_service.dart';
 /// codes (non-Windows or non-transient rethrows immediately).
 void main() {
   FileSystemException winError(int code) => FileSystemException(
-        'Rename failed',
-        r'D:\APP\FUSHI_date\documents\fushi_books.import-tmp',
-        OSError('拒绝访问。', code),
-      );
+    'Rename failed',
+    r'D:\APP\FUSHI_date\documents\fushi_books.import-tmp',
+    OSError('拒绝访问。', code),
+  );
 
   group('renameDirectoryWithRetry', () {
     test('happy path: 一次成功，不重试', () async {

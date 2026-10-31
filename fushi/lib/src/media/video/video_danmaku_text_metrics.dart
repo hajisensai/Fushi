@@ -45,8 +45,10 @@ TextStyle videoDanmakuTextStyle({
       Shadow(
         color: Colors.black,
         blurRadius: _kVideoDanmakuShadowBlur,
-        offset:
-            Offset(-_kVideoDanmakuShadowOffset, -_kVideoDanmakuShadowOffset),
+        offset: Offset(
+          -_kVideoDanmakuShadowOffset,
+          -_kVideoDanmakuShadowOffset,
+        ),
       ),
     ],
   );

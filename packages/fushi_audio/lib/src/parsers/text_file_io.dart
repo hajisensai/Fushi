@@ -129,7 +129,9 @@ UnicodeTextEncoding? detectBomlessUtf16(List<int> bytes) {
 /// Dart 的 `String` 内部就是 UTF-16 code unit 序列，因此代理对（surrogate pair）
 /// 原样透传即可，不需要额外拼接。
 String decodeWithUnicodeEncoding(
-    Uint8List bytes, UnicodeTextEncoding encoding) {
+  Uint8List bytes,
+  UnicodeTextEncoding encoding,
+) {
   final int offset = encoding.bomLength;
   switch (encoding) {
     case UnicodeTextEncoding.utf8Bom:
@@ -147,8 +149,11 @@ String decodeWithUnicodeEncoding(
   }
 }
 
-String _decodeUtf16(Uint8List bytes,
-    {required int offset, required Endian endian}) {
+String _decodeUtf16(
+  Uint8List bytes, {
+  required int offset,
+  required Endian endian,
+}) {
   final ByteData view = ByteData.sublistView(bytes, offset);
   final int units = view.lengthInBytes ~/ 2; // 末尾落单字节按截断文件忽略
   final Uint16List codeUnits = Uint16List(units);
@@ -158,8 +163,11 @@ String _decodeUtf16(Uint8List bytes,
   return String.fromCharCodes(codeUnits);
 }
 
-String _decodeUtf32(Uint8List bytes,
-    {required int offset, required Endian endian}) {
+String _decodeUtf32(
+  Uint8List bytes, {
+  required int offset,
+  required Endian endian,
+}) {
   final ByteData view = ByteData.sublistView(bytes, offset);
   final int units = view.lengthInBytes ~/ 4;
   final List<int> runes = <int>[];

@@ -29,9 +29,10 @@ class TtsPronunciationRule {
 String applyTtsPronunciation(String text, List<TtsPronunciationRule> rules) {
   if (rules.isEmpty || text.isEmpty) return text;
   final List<TtsPronunciationRule> ordered =
-      List<TtsPronunciationRule>.of(rules)
-        ..sort((TtsPronunciationRule a, TtsPronunciationRule b) =>
-            b.written.length.compareTo(a.written.length));
+      List<TtsPronunciationRule>.of(rules)..sort(
+        (TtsPronunciationRule a, TtsPronunciationRule b) =>
+            b.written.length.compareTo(a.written.length),
+      );
   // 分段：已替换的片段不再参与后续规则匹配。
   List<({String text, bool fixed})> parts = <({String text, bool fixed})>[
     (text: text, fixed: false),
@@ -80,10 +81,10 @@ class TtsPronunciationStore {
   }
 
   Future<void> save(List<TtsPronunciationRule> rules) => _prefs.setPref(
-        key,
-        jsonEncode(<Object?>[
-          for (final TtsPronunciationRule r in rules)
-            if (r.written.trim().isNotEmpty) r.toJson(),
-        ]),
-      );
+    key,
+    jsonEncode(<Object?>[
+      for (final TtsPronunciationRule r in rules)
+        if (r.written.trim().isNotEmpty) r.toJson(),
+    ]),
+  );
 }

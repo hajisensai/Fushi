@@ -27,11 +27,11 @@ void main() {
     test('exchangeCode：写入两个 token、取邮箱、把 refresh token 落库', () async {
       flow.onExchange =
           (String code, String redirectUri, String verifier) async {
-        expect(code, 'code-1');
-        expect(redirectUri, 'fushi://auth/test');
-        expect(verifier, 'v-1');
-        return const PkceTokens(accessToken: 'a1', refreshToken: 'r1');
-      };
+            expect(code, 'code-1');
+            expect(redirectUri, 'fushi://auth/test');
+            expect(verifier, 'v-1');
+            return const PkceTokens(accessToken: 'a1', refreshToken: 'r1');
+          };
 
       await backend.exchangeForTest(
         code: 'code-1',
@@ -48,34 +48,37 @@ void main() {
       expect(jsonDecode(backend.stored!), {'refresh_token': 'r1'});
     });
 
-    test('restoreAuth：用落库 refresh token 换新 access；响应缺 refresh_token 时保留旧值',
-        () async {
-      backend.stored = jsonEncode({'refresh_token': 'r-stored'});
-      flow.onRefresh = (String refreshToken) async {
-        expect(refreshToken, 'r-stored');
-        return const PkceTokens(accessToken: 'a-new');
-      };
+    test(
+      'restoreAuth：用落库 refresh token 换新 access；响应缺 refresh_token 时保留旧值',
+      () async {
+        backend.stored = jsonEncode({'refresh_token': 'r-stored'});
+        flow.onRefresh = (String refreshToken) async {
+          expect(refreshToken, 'r-stored');
+          return const PkceTokens(accessToken: 'a-new');
+        };
 
-      expect(await backend.restoreAuth(repo), isTrue);
-      expect(backend.access, 'a-new');
-      expect(backend.refresh, 'r-stored');
-      expect(backend.emailFetches, 1);
-      expect(flow.refreshCalls, 1);
-    });
+        expect(await backend.restoreAuth(repo), isTrue);
+        expect(backend.access, 'a-new');
+        expect(backend.refresh, 'r-stored');
+        expect(backend.emailFetches, 1);
+        expect(flow.refreshCalls, 1);
+      },
+    );
 
     test(
-        'restoreAuth：刷新失败必须清空两个 token，isAuthenticated 如实报 false（HBK-AUDIT-159）',
-        () async {
-      backend.stored = jsonEncode({'refresh_token': 'r-stale'});
-      backend.seedAccess('a-stale');
-      flow.onRefresh = (_) async => throw SyncAuthError('invalid_grant');
+      'restoreAuth：刷新失败必须清空两个 token，isAuthenticated 如实报 false（HBK-AUDIT-159）',
+      () async {
+        backend.stored = jsonEncode({'refresh_token': 'r-stale'});
+        backend.seedAccess('a-stale');
+        flow.onRefresh = (_) async => throw SyncAuthError('invalid_grant');
 
-      expect(await backend.restoreAuth(repo), isFalse);
-      expect(backend.access, isNull);
-      expect(backend.refresh, isNull);
-      expect(await backend.isAuthenticated, isFalse);
-      expect(backend.emailFetches, 0);
-    });
+        expect(await backend.restoreAuth(repo), isFalse);
+        expect(backend.access, isNull);
+        expect(backend.refresh, isNull);
+        expect(await backend.isAuthenticated, isFalse);
+        expect(backend.emailFetches, 0);
+      },
+    );
 
     test('restoreAuth：没落库 / 落库缺 refresh_token 都直接 false，不打 token 端点', () async {
       flow.onRefresh = (_) async => fail('must not refresh');
@@ -89,20 +92,19 @@ void main() {
     });
 
     test(
-        'refreshAuth：provider 回了新 refresh token 就替换；没有 refresh token 时抛 SyncAuthError',
-        () async {
-      await expectLater(backend.refreshAuth(), throwsA(isA<SyncAuthError>()));
+      'refreshAuth：provider 回了新 refresh token 就替换；没有 refresh token 时抛 SyncAuthError',
+      () async {
+        await expectLater(backend.refreshAuth(), throwsA(isA<SyncAuthError>()));
 
-      backend.stored = jsonEncode({'refresh_token': 'r1'});
-      flow.onRefresh =
-          (_) async => const PkceTokens(accessToken: 'a2', refreshToken: 'r2');
-      expect(await backend.restoreAuth(repo), isTrue);
-      expect(backend.refresh, 'r2');
-    });
+        backend.stored = jsonEncode({'refresh_token': 'r1'});
+        flow.onRefresh = (_) async =>
+            const PkceTokens(accessToken: 'a2', refreshToken: 'r2');
+        expect(await backend.restoreAuth(repo), isTrue);
+        expect(backend.refresh, 'r2');
+      },
+    );
 
-    test(
-        'BUG-2647：restoreAuth 刷新拿到轮换后的 refresh token 必须落库，下一轮恢复用新值',
-        () async {
+    test('BUG-2647：restoreAuth 刷新拿到轮换后的 refresh token 必须落库，下一轮恢复用新值', () async {
       backend.stored = jsonEncode({'refresh_token': 'r-login'});
       final List<String> presented = <String>[];
       int n = 0;
@@ -116,17 +118,20 @@ void main() {
       expect(jsonDecode(backend.stored!), {'refresh_token': 'r-rot1'});
 
       // 模拟进程重启：内存态全丢，只剩落库那枚。
-      final _TestBackend restarted = _TestBackend(flow)..stored = backend.stored;
+      final _TestBackend restarted = _TestBackend(flow)
+        ..stored = backend.stored;
       expect(await restarted.restoreAuth(repo), isTrue);
-      expect(presented, <String>['r-login', 'r-rot1'],
-          reason: '第二轮必须出示上一轮轮换出的 token，而不是登录那一刻的旧 token');
+      expect(presented, <String>[
+        'r-login',
+        'r-rot1',
+      ], reason: '第二轮必须出示上一轮轮换出的 token，而不是登录那一刻的旧 token');
       expect(jsonDecode(restarted.stored!), {'refresh_token': 'r-rot2'});
     });
 
     test('BUG-2647：provider 没轮换（缺省或原值）时不写库', () async {
       backend.stored = jsonEncode({'refresh_token': 'r1'});
-      flow.onRefresh =
-          (_) async => const PkceTokens(accessToken: 'a1', refreshToken: 'r1');
+      flow.onRefresh = (_) async =>
+          const PkceTokens(accessToken: 'a1', refreshToken: 'r1');
       expect(await backend.restoreAuth(repo), isTrue);
       flow.onRefresh = (_) async => const PkceTokens(accessToken: 'a2');
       await backend.refreshAuth();
@@ -143,8 +148,8 @@ void main() {
         redirectUri: 'fushi://auth/test',
         repo: repo,
       );
-      flow.onRefresh =
-          (_) async => const PkceTokens(accessToken: 'a2', refreshToken: 'r2');
+      flow.onRefresh = (_) async =>
+          const PkceTokens(accessToken: 'a2', refreshToken: 'r2');
       await backend.refreshAuth();
       expect(jsonDecode(backend.stored!), {'refresh_token': 'r2'});
     });
@@ -214,24 +219,39 @@ void main() {
         expect(classAt, isNonNegative, reason: '$path 的类声明变了，守卫需更新');
         final int braceAt = src.indexOf('{', classAt);
         expect(braceAt, greaterThan(classAt), reason: '$path 扫不到类头结尾');
-        expect(src.substring(classAt, braceAt),
-            contains('PkceOAuthBackendMixin'),
-            reason: '$path 的 with 列表里必须有 PkceOAuthBackendMixin');
+        expect(
+          src.substring(classAt, braceAt),
+          contains('PkceOAuthBackendMixin'),
+          reason: '$path 的 with 列表里必须有 PkceOAuthBackendMixin',
+        );
 
         for (final String needle in banned) {
-          expect(src, isNot(contains(needle)),
-              reason: '$path 里出现 `$needle`——认证外壳应只在 mixin 里有一份');
+          expect(
+            src,
+            isNot(contains(needle)),
+            reason: '$path 里出现 `$needle`——认证外壳应只在 mixin 里有一份',
+          );
         }
 
         final String own = ownProvider[path]!;
         final String other = own == 'Dropbox' ? 'OneDrive' : 'Dropbox';
-        expect(src, contains('repo.get${own}Token()'),
-            reason: '$path 的 readStoredToken 必须读自己那把存储键');
-        expect(src, contains('repo.set${own}Token('),
-            reason: '$path 的 writeStoredToken 必须写自己那把存储键');
-        expect(src, isNot(contains('${other}Token')),
-            reason: '$path 碰了对家的凭据键：两个后端会共用一份 token，'
-                '登录一边顶掉另一边');
+        expect(
+          src,
+          contains('repo.get${own}Token()'),
+          reason: '$path 的 readStoredToken 必须读自己那把存储键',
+        );
+        expect(
+          src,
+          contains('repo.set${own}Token('),
+          reason: '$path 的 writeStoredToken 必须写自己那把存储键',
+        );
+        expect(
+          src,
+          isNot(contains('${other}Token')),
+          reason:
+              '$path 碰了对家的凭据键：两个后端会共用一份 token，'
+              '登录一边顶掉另一边',
+        );
       });
     }
 
@@ -242,7 +262,8 @@ void main() {
       // 而线上会拿 `Bearer null` 去 revoke——请求静默失败，服务端 token 永不撤销。
       const String path = 'lib/src/sync/dropbox_sync_backend.dart';
       final String src = File(path).readAsStringSync();
-      const String anchor = 'Future<void> signOut({required SyncRepository repo';
+      const String anchor =
+          'Future<void> signOut({required SyncRepository repo';
       final int at = src.indexOf(anchor);
       expect(at, isNonNegative, reason: 'signOut 签名变了，守卫需更新');
       final int end = src.indexOf('\n  }', at);
@@ -253,9 +274,13 @@ void main() {
       final int superAt = body.indexOf('super.signOut(');
       expect(revokeAt, isNonNegative, reason: 'Dropbox 登出必须撤销服务端 token');
       expect(superAt, isNonNegative, reason: '清空本地凭据必须复用 mixin 的 signOut');
-      expect(revokeAt, lessThan(superAt),
-          reason: 'super.signOut 会把 accessToken 置空；顺序反了就是拿 '
-              '`Bearer null` 去 revoke——静默失败，服务端 token 永不撤销');
+      expect(
+        revokeAt,
+        lessThan(superAt),
+        reason:
+            'super.signOut 会把 accessToken 置空；顺序反了就是拿 '
+            '`Bearer null` 去 revoke——静默失败，服务端 token 永不撤销',
+      );
     });
   });
 }
@@ -263,13 +288,13 @@ void main() {
 /// 把 token 端点两次交换换成可编程的桩；未设置的回调一律 fail，避免静默通过。
 class _FakeFlow extends PkceOAuthFlow {
   _FakeFlow()
-      : super(
-          clientId: 'real-client-id',
-          tokenEndpoint: 'https://example.invalid/token',
-        );
+    : super(
+        clientId: 'real-client-id',
+        tokenEndpoint: 'https://example.invalid/token',
+      );
 
   Future<PkceTokens> Function(String code, String redirectUri, String verifier)?
-      onExchange;
+  onExchange;
   Future<PkceTokens> Function(String refreshToken)? onRefresh;
   int refreshCalls = 0;
 
@@ -314,7 +339,8 @@ class _TestBackend extends SyncBackend with PkceOAuthBackendMixin {
 
   @override
   Uri buildAuthUrl(String challenge, String redirectUri) => Uri.parse(
-      'https://example.invalid/authorize?c=$challenge&r=$redirectUri');
+    'https://example.invalid/authorize?c=$challenge&r=$redirectUri',
+  );
 
   @override
   Future<String?> readStoredToken(SyncRepository repo) async => stored;
@@ -347,17 +373,17 @@ class _TestBackend extends SyncBackend with PkceOAuthBackendMixin {
     required String verifier,
     required String redirectUri,
     required SyncRepository repo,
-  }) =>
-      exchangeCode(
-        code: code,
-        verifier: verifier,
-        redirectUri: redirectUri,
-        repo: repo,
-      );
+  }) => exchangeCode(
+    code: code,
+    verifier: verifier,
+    redirectUri: redirectUri,
+    repo: repo,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
-      '${invocation.memberName} not used in this test');
+    '${invocation.memberName} not used in this test',
+  );
 }
 
 /// mixin 的存取钩子已被 [_TestBackend] 截住，repo 只是个占位。

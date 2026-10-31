@@ -35,13 +35,15 @@ void main() {
     expect(controller.totalDuration, const Duration(milliseconds: 20000));
   });
 
-  test('totalDuration falls back to zero when no cues and no player duration',
-      () {
-    final controller = AudiobookPlayerController();
-    addTearDown(controller.dispose);
+  test(
+    'totalDuration falls back to zero when no cues and no player duration',
+    () {
+      final controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
 
-    expect(controller.totalDuration, Duration.zero);
-  });
+      expect(controller.totalDuration, Duration.zero);
+    },
+  );
 
   test('globalPosition is zero before any file is loaded', () {
     final controller = AudiobookPlayerController();

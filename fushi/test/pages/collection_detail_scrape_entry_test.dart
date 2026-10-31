@@ -66,33 +66,32 @@ void main() {
   Widget buildApp({
     Future<void> Function(MediaCollectionRow collection)? onRescrapeCollection,
     Future<File?> Function(String workTitle)? onPickOnlineCover,
-  }) =>
-      TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: MediaCollectionRow(
-              origin: 'user',
-              organizeAliases: '',
-              id: collectionId,
-              name: 'Show',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await loadMembers())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (VideoBookRow _) {},
-            onChanged: () {},
-            onRescrapeCollection: onRescrapeCollection,
-            onPickOnlineCover: onPickOnlineCover,
-          ),
+  }) => TranslationProvider(
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Show',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
-      );
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await loadMembers())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (VideoBookRow _) {},
+        onChanged: () {},
+        onRescrapeCollection: onRescrapeCollection,
+        onPickOnlineCover: onPickOnlineCover,
+      ),
+    ),
+  );
 
   void useSurface(WidgetTester tester) {
     tester.view.physicalSize = const Size(1280, 1600);
@@ -132,14 +131,17 @@ void main() {
     expect(find.byTooltip(t.collection_sort_by_season), findsOneWidget);
   });
 
-  testWidgets('注入 controller 后管理菜单必须有 canonical 重刮入口',
-      (WidgetTester tester) async {
+  testWidgets('注入 controller 后管理菜单必须有 canonical 重刮入口', (
+    WidgetTester tester,
+  ) async {
     useSurface(tester);
     final List<int> rescraped = <int>[];
-    await tester.pumpWidget(buildApp(
-      onRescrapeCollection: (MediaCollectionRow collection) async =>
-          rescraped.add(collection.id),
-    ));
+    await tester.pumpWidget(
+      buildApp(
+        onRescrapeCollection: (MediaCollectionRow collection) async =>
+            rescraped.add(collection.id),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
@@ -152,8 +154,9 @@ void main() {
 
     await tester.tap(find.byTooltip(t.collection_rescrape));
     await tester.pumpAndSettle();
-    expect(rescraped, <int>[collectionId],
-        reason: '菜单项必须真的把当前合集交给注入的重刮实现，不能只是长得像');
+    expect(rescraped, <int>[
+      collectionId,
+    ], reason: '菜单项必须真的把当前合集交给注入的重刮实现，不能只是长得像');
   });
 
   testWidgets('管理菜单提供合集封面设置，且未设封面时不显示恢复默认', (WidgetTester tester) async {
@@ -163,8 +166,11 @@ void main() {
 
     // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
-    expect(find.byTooltip(t.collection_cover_set), findsOneWidget,
-        reason: '合集封面此前没有任何用户入口，只有刮削和下载导入会写');
+    expect(
+      find.byTooltip(t.collection_cover_set),
+      findsOneWidget,
+      reason: '合集封面此前没有任何用户入口，只有刮削和下载导入会写',
+    );
     expect(
       find.byTooltip(t.collection_cover_reset),
       findsNothing,
@@ -190,24 +196,33 @@ void main() {
     );
   });
 
-  testWidgets('BUG-2999 注入在线选图后管理菜单提供在线搜索封面并按合集名搜索',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2999 注入在线选图后管理菜单提供在线搜索封面并按合集名搜索', (
+    WidgetTester tester,
+  ) async {
     useSurface(tester);
     final List<String> searched = <String>[];
-    await tester.pumpWidget(buildApp(
-      onPickOnlineCover: (String workTitle) async {
-        searched.add(workTitle);
-        return null; // 用户在搜索框里取消
-      },
-    ));
+    await tester.pumpWidget(
+      buildApp(
+        onPickOnlineCover: (String workTitle) async {
+          searched.add(workTitle);
+          return null; // 用户在搜索框里取消
+        },
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
-    expect(find.byTooltip(t.collection_cover_set), findsOneWidget,
-        reason: '本地选图入口照旧在场');
-    expect(find.byTooltip(t.video_cover_online_search), findsOneWidget,
-        reason: '设置封面不能只剩本地文件');
+    expect(
+      find.byTooltip(t.collection_cover_set),
+      findsOneWidget,
+      reason: '本地选图入口照旧在场',
+    );
+    expect(
+      find.byTooltip(t.video_cover_online_search),
+      findsOneWidget,
+      reason: '设置封面不能只剩本地文件',
+    );
 
     await tester.tap(find.byTooltip(t.video_cover_online_search));
     await tester.pumpAndSettle();
@@ -219,9 +234,7 @@ void main() {
     );
   });
 
-  testWidgets('管理动作默认展开：宽屏平铺不画「⋯」，窄屏放不下才收进「⋯」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('管理动作默认展开：宽屏平铺不画「⋯」，窄屏放不下才收进「⋯」', (WidgetTester tester) async {
     const Key moreKey = ValueKey<String>('collection-detail-manage-more');
     useSurface(tester);
     await tester.pumpWidget(buildApp());

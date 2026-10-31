@@ -32,13 +32,18 @@ void main() {
   group('BUG-1745 分页滚轮手势桥单一真值源', () {
     test('正文引擎与 spread 双页文档拼的是同一份常量（逐字包含）', () {
       expect(
-          kPagedWheelGestureHelperJs, contains('function _isTrackpadWheel(e)'),
-          reason: '常量本体就是那份 JS，空壳常量骗不过后两条断言但先在这里挡一道');
+        kPagedWheelGestureHelperJs,
+        contains('function _isTrackpadWheel(e)'),
+        reason: '常量本体就是那份 JS，空壳常量骗不过后两条断言但先在这里挡一道',
+      );
 
       // 正文引擎：取压缩**之前**那份（压缩器会删整行注释，逐字比对必须在压缩前做）。
       final String engine = readerFushiEngineSourceUncompacted();
-      expect(engine, contains(kPagedWheelGestureHelperJs),
-          reason: '正文引擎必须拼常量本体，而不是自己再写一份');
+      expect(
+        engine,
+        contains(kPagedWheelGestureHelperJs),
+        reason: '正文引擎必须拼常量本体，而不是自己再写一份',
+      );
 
       final String spread = buildSpreadPageHtml(
         navigationGeneration: 1,
@@ -48,8 +53,11 @@ void main() {
         swipeFastDistThreshold: 22,
         swipeFastVelocity: 300,
       );
-      expect(spread, contains(kPagedWheelGestureHelperJs),
-          reason: 'spread 文档必须拼同一份常量；手抄第二遍正是 BUG-1745 漏改的根因');
+      expect(
+        spread,
+        contains(kPagedWheelGestureHelperJs),
+        reason: 'spread 文档必须拼同一份常量；手抄第二遍正是 BUG-1745 漏改的根因',
+      );
     });
 
     test('全语料里没有第二份实现', () {
@@ -66,13 +74,23 @@ void main() {
         return n;
       }
 
-      expect(countOf('function _isTrackpadWheel(e)'), 1,
-          reason: '触摸板判据只能有一份定义（第二份 = BUG-1745 的复发形状）');
-      expect(countOf('function _handlePagedWheelTick(e)'), 1,
-          reason: '分页 wheel tick 只能有一份定义');
-      expect(countOf("callHandler('onWheelPaginate'"), 1,
-          reason: '滚轮桥的回传点只能有一处；spread 若再自己 callHandler 一次，'
-              '参数漏传就又会落进 Dart 侧的 2 参兼容回落');
+      expect(
+        countOf('function _isTrackpadWheel(e)'),
+        1,
+        reason: '触摸板判据只能有一份定义（第二份 = BUG-1745 的复发形状）',
+      );
+      expect(
+        countOf('function _handlePagedWheelTick(e)'),
+        1,
+        reason: '分页 wheel tick 只能有一份定义',
+      );
+      expect(
+        countOf("callHandler('onWheelPaginate'"),
+        1,
+        reason:
+            '滚轮桥的回传点只能有一处；spread 若再自己 callHandler 一次，'
+            '参数漏传就又会落进 Dart 侧的 2 参兼容回落',
+      );
     });
 
     test('spread 生产 HTML 真跑：四条触摸板判据 + 主轴抖动余量（行为级）', () {
@@ -84,8 +102,9 @@ void main() {
         swipeFastDistThreshold: 22,
         swipeFastVelocity: 300,
       );
-      final Directory temp =
-          Directory.systemTemp.createTempSync('fushi-pr912-wheel-js-');
+      final Directory temp = Directory.systemTemp.createTempSync(
+        'fushi-pr912-wheel-js-',
+      );
       final File payload = File('${temp.path}/payload.json')
         ..writeAsStringSync(jsonEncode(<String, String>{'html': html}));
       late final ProcessResult result;
@@ -102,7 +121,8 @@ void main() {
       expect(
         result.exitCode,
         0,
-        reason: 'paged wheel kind runner failed:\n'
+        reason:
+            'paged wheel kind runner failed:\n'
             'stdout=${result.stdout}\nstderr=${result.stderr}',
       );
       expect(result.stdout.toString().trim(), 'OK');

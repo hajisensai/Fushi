@@ -43,8 +43,9 @@ part 'backup_service/table_rules.part.dart';
 /// 推荐词典包 `fushi-recommended.fushi.zip` 这类同后缀、但绝不该被当成备份清掉的文件。
 /// 这条理由必须住在真相源这里——它以前留在 `backup.part.dart` 的清扫函数头上，正则搬
 /// 过来时被落下了，于是唯一定义这个口径的地方反而不知道自己为什么长这样。
-final RegExp backupArchiveNamePattern =
-    RegExp(r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$');
+final RegExp backupArchiveNamePattern = RegExp(
+  r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$',
+);
 
 bool isBackupArchiveName(String name) =>
     backupArchiveNamePattern.hasMatch(name);
@@ -190,8 +191,9 @@ String rebasePath(String oldPath, String oldRoot, String newRoot) {
   if (!npOld.startsWith('$nrOld/')) return oldPath;
   final String target = stripTrailing(newRoot);
   final bool posixTarget = !target.contains('\\');
-  final String suffix = (posixTarget ? npOld : oldPath)
-      .substring(nrOld.length); // keeps leading sep
+  final String suffix = (posixTarget ? npOld : oldPath).substring(
+    nrOld.length,
+  ); // keeps leading sep
   return target + suffix;
 }
 
@@ -205,8 +207,12 @@ String rebasePath(String oldPath, String oldRoot, String newRoot) {
 /// importing device's root differs, so the stored absolute paths would not
 /// resolve and the fonts (shown as imported & enabled) would silently never
 /// apply (BUG-183). Import rebases them so the reader/AppFontLoader find them.
-String rebaseFontListJson(String json, String oldRoot, String newRoot,
-    {String Function(String path)? rewritePath}) {
+String rebaseFontListJson(
+  String json,
+  String oldRoot,
+  String newRoot, {
+  String Function(String path)? rewritePath,
+}) {
   String rewrite(String path) => rewritePath == null
       ? rebasePath(path, oldRoot, newRoot)
       : rewritePath(path);
@@ -233,8 +239,12 @@ String rebaseFontListJson(String json, String oldRoot, String newRoot,
 /// Target rows (`font_targets`) refer to catalog entries by id and do not carry
 /// paths, so preserving ids while rebasing catalog paths keeps targets valid.
 /// Malformed values are returned verbatim so a corrupt pref never aborts import.
-String rebaseFontCatalogJson(String json, String oldRoot, String newRoot,
-    {String Function(String path)? rewritePath}) {
+String rebaseFontCatalogJson(
+  String json,
+  String oldRoot,
+  String newRoot, {
+  String Function(String path)? rewritePath,
+}) {
   String rewrite(String path) => rewritePath == null
       ? rebasePath(path, oldRoot, newRoot)
       : rewritePath(path);
@@ -249,10 +259,7 @@ String rebaseFontCatalogJson(String json, String oldRoot, String newRoot,
       final Map<String, dynamic> row = Map<String, dynamic>.from(e);
       final Object? path = row['path'];
       if (path is! String) return row;
-      return <String, dynamic>{
-        ...row,
-        'path': rewrite(path),
-      };
+      return <String, dynamic>{...row, 'path': rewrite(path)};
     }).toList();
     return jsonEncode(root);
   } catch (_) {
@@ -456,59 +463,60 @@ class BackupMeta {
   final Set<String> excludedCategories;
 
   Map<String, dynamic> toJson() => {
-        'appVersion': appVersion,
-        'schemaVersion': schemaVersion,
-        'createdAt': createdAt.toIso8601String(),
-        'bookCount': bookCount,
-        'statsCount': statsCount,
-        if (booksRoot != null) 'booksRoot': booksRoot,
-        if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
-        if (fontsRoot != null) 'fontsRoot': fontsRoot,
-        if (localAudioRoot != null) 'localAudioRoot': localAudioRoot,
-        if (gameCoversRoot != null) 'gameCoversRoot': gameCoversRoot,
-        if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
-        if (excludedCategories.isNotEmpty)
-          'excludedCategories': excludedCategories.toList(),
-        if (videoBookCount != null) 'videoBookCount': videoBookCount,
-        if (audiobookCount != null) 'audiobookCount': audiobookCount,
-        if (gameCount != null) 'gameCount': gameCount,
-        if (progressCount != null) 'progressCount': progressCount,
-        if (srsNoteCount != null) 'srsNoteCount': srsNoteCount,
-        if (musicCount != null) 'musicCount': musicCount,
-      };
+    'appVersion': appVersion,
+    'schemaVersion': schemaVersion,
+    'createdAt': createdAt.toIso8601String(),
+    'bookCount': bookCount,
+    'statsCount': statsCount,
+    if (booksRoot != null) 'booksRoot': booksRoot,
+    if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
+    if (fontsRoot != null) 'fontsRoot': fontsRoot,
+    if (localAudioRoot != null) 'localAudioRoot': localAudioRoot,
+    if (gameCoversRoot != null) 'gameCoversRoot': gameCoversRoot,
+    if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
+    if (excludedCategories.isNotEmpty)
+      'excludedCategories': excludedCategories.toList(),
+    if (videoBookCount != null) 'videoBookCount': videoBookCount,
+    if (audiobookCount != null) 'audiobookCount': audiobookCount,
+    if (gameCount != null) 'gameCount': gameCount,
+    if (progressCount != null) 'progressCount': progressCount,
+    if (srsNoteCount != null) 'srsNoteCount': srsNoteCount,
+    if (musicCount != null) 'musicCount': musicCount,
+  };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
-        appVersion: json['appVersion'] as String,
-        schemaVersion: json['schemaVersion'] as int,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        // Optional for backward compatibility with older backups.
-        bookCount: json['bookCount'] as int? ?? 0,
-        statsCount: json['statsCount'] as int? ?? 0,
-        booksRoot: json['booksRoot'] as String?,
-        audiobooksRoot: json['audiobooksRoot'] as String?,
-        fontsRoot: json['fontsRoot'] as String?,
-        localAudioRoot: json['localAudioRoot'] as String?,
-        gameCoversRoot: json['gameCoversRoot'] as String?,
-        videoFiles: (json['videoFiles'] as Map?)?.map(
-                (dynamic k, dynamic v) => MapEntry(k as String, v as String)) ??
-            const <String, String>{},
-        excludedCategories: (json['excludedCategories'] as List?)
-                ?.map((dynamic e) => e as String)
-                .toSet() ??
-            const <String>{},
-        videoBookCount: json['videoBookCount'] as int?,
-        audiobookCount: json['audiobookCount'] as int?,
-        gameCount: json['gameCount'] as int?,
-        progressCount: json['progressCount'] as int?,
-        srsNoteCount: json['srsNoteCount'] as int?,
-        musicCount: json['musicCount'] as int?,
-      );
+    appVersion: json['appVersion'] as String,
+    schemaVersion: json['schemaVersion'] as int,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    // Optional for backward compatibility with older backups.
+    bookCount: json['bookCount'] as int? ?? 0,
+    statsCount: json['statsCount'] as int? ?? 0,
+    booksRoot: json['booksRoot'] as String?,
+    audiobooksRoot: json['audiobooksRoot'] as String?,
+    fontsRoot: json['fontsRoot'] as String?,
+    localAudioRoot: json['localAudioRoot'] as String?,
+    gameCoversRoot: json['gameCoversRoot'] as String?,
+    videoFiles:
+        (json['videoFiles'] as Map?)?.map(
+          (dynamic k, dynamic v) => MapEntry(k as String, v as String),
+        ) ??
+        const <String, String>{},
+    excludedCategories:
+        (json['excludedCategories'] as List?)
+            ?.map((dynamic e) => e as String)
+            .toSet() ??
+        const <String>{},
+    videoBookCount: json['videoBookCount'] as int?,
+    audiobookCount: json['audiobookCount'] as int?,
+    gameCount: json['gameCount'] as int?,
+    progressCount: json['progressCount'] as int?,
+    srsNoteCount: json['srsNoteCount'] as int?,
+    musicCount: json['musicCount'] as int?,
+  );
 
   static BackupMeta? tryParse(String source) {
     try {
-      return BackupMeta.fromJson(
-        jsonDecode(source) as Map<String, dynamic>,
-      );
+      return BackupMeta.fromJson(jsonDecode(source) as Map<String, dynamic>);
     } catch (_) {
       return null;
     }
@@ -871,14 +879,16 @@ Future<void> _stripExcludedDataCategories(
       await db.customStatement('DELETE FROM reader_positions');
       await db.customStatement('DELETE FROM bookmarks');
       await db.customStatement(
-          "DELETE FROM preferences WHERE key LIKE 'audiobook_pos_%'");
+        "DELETE FROM preferences WHERE key LIKE 'audiobook_pos_%'",
+      );
       // v128 内置浏览器历史 / 书签随「进度」走；它们的删除墓碑（逻辑键，不随表
       // cascade）同样只在勾了进度时出境——否则「没导出浏览数据」的备份仍带着删过的网址。
       await db.customStatement('DELETE FROM web_browser_history');
       await db.customStatement('DELETE FROM web_browser_bookmarks');
       await db.customStatement(
-          'DELETE FROM sync_deletion_tombstones WHERE media_type IN '
-          "('webhistory', 'webbookmark')");
+        'DELETE FROM sync_deletion_tombstones WHERE media_type IN '
+        "('webhistory', 'webbookmark')",
+      );
     }
     if (stripStatistics) {
       for (final String table in _statisticsTables) {
@@ -887,7 +897,8 @@ Future<void> _stripExcludedDataCategories(
     }
     if (stripSettings) {
       await db.customStatement(
-          'DELETE FROM preferences WHERE $settingsPrefPredicate');
+        'DELETE FROM preferences WHERE $settingsPrefPredicate',
+      );
     }
     // 档案 uid 要在删老形态 SRS 表之前读（老形态下归属只记在那几张表里）。
     final Set<String> keepUids = stripProfiles && !stripSrs
@@ -932,10 +943,7 @@ Future<void> _stripExcludedDataCategories(
 /// restore/merge then inserted book rows with no content = un-openable books.
 /// Filtering the rows here makes the "book content" switch / per-book
 /// selection consistent: a book that isn't packed never appears after import.
-Future<void> _retainBooks(
-  String dbDirectory,
-  Set<String> keep,
-) async {
+Future<void> _retainBooks(String dbDirectory, Set<String> keep) async {
   final FushiDatabase db = FushiDatabase(dbDirectory);
   try {
     for (final EpubBookRow b in await db.getAllEpubBooks()) {
@@ -960,10 +968,7 @@ Future<void> _retainBooks(
 /// export). Same root fix as books: without stripping the row a restore/merge
 /// would insert a video record whose file never travelled = an un-openable
 /// "ghost video".
-Future<void> _retainVideos(
-  String dbDirectory,
-  Set<String> keep,
-) async {
+Future<void> _retainVideos(String dbDirectory, Set<String> keep) async {
   final FushiDatabase db = FushiDatabase(dbDirectory);
   try {
     for (final VideoBookRow v in await db.allVideoBooks()) {
@@ -987,10 +992,7 @@ Future<void> _retainVideos(
 /// NOT touch standalone `srt_books` rows — those are their own shelf items, not
 /// counted in the audiobooks category (which is `getAllAudiobooks()` = the
 /// epub-attached `Audiobooks` table).
-Future<void> _retainAudiobooks(
-  String dbDirectory,
-  Set<String> keep,
-) async {
+Future<void> _retainAudiobooks(String dbDirectory, Set<String> keep) async {
   final FushiDatabase db = FushiDatabase(dbDirectory);
   try {
     for (final AudiobookRow a in await db.getAllAudiobooks()) {
@@ -1014,44 +1016,47 @@ Future<void> _retainAudiobooks(
 /// `media_kind`/`media_type` = 'game'). [keep]
 /// empty strips every game (the games category was unticked). Shared by the
 /// export strip and the overwrite-import strip so the two never diverge.
-Future<void> _retainGames(
-  String dbDirectory,
-  Set<String> keep,
-) async {
+Future<void> _retainGames(String dbDirectory, Set<String> keep) async {
   final FushiDatabase db = FushiDatabase(dbDirectory);
   try {
     final String notKept = keep.isEmpty
         ? ''
         : ' WHERE id NOT IN '
-            '(${List<String>.filled(keep.length, '?').join(', ')})';
+              '(${List<String>.filled(keep.length, '?').join(', ')})';
     // v113：game_id 不再 FK cascade——先按「即将被删的游戏」删会话，与旧 cascade
     // 逐行等价（早已是孤儿的会话不在 galgames 里，不受影响）。
     await db.customStatement(
-        'DELETE FROM galgame_sessions WHERE game_id IN '
-        '(SELECT id FROM galgames$notKept)',
-        keep.toList());
+      'DELETE FROM galgame_sessions WHERE game_id IN '
+      '(SELECT id FROM galgames$notKept)',
+      keep.toList(),
+    );
     await db.customStatement('DELETE FROM galgames$notKept', keep.toList());
     // Logical (non-FK) game references: orphaned once their host is gone.
     await db.customStatement(
-        'DELETE FROM tag_assignments WHERE media_kind = ? AND entry_key '
-        'NOT IN (SELECT id FROM galgames)',
-        <Object>[TagHostKind.game.dbValue]);
+      'DELETE FROM tag_assignments WHERE media_kind = ? AND entry_key '
+      'NOT IN (SELECT id FROM galgames)',
+      <Object>[TagHostKind.game.dbValue],
+    );
     await db.customStatement(
-        'DELETE FROM media_collection_items WHERE media_type = ? AND '
-        'entry_key NOT IN (SELECT id FROM galgames)',
-        <Object>[MediaKind.game.dbValue]);
+      'DELETE FROM media_collection_items WHERE media_type = ? AND '
+      'entry_key NOT IN (SELECT id FROM galgames)',
+      <Object>[MediaKind.game.dbValue],
+    );
     await db.customStatement(
-        'DELETE FROM study_segments WHERE media_kind = ? AND media_key '
-        'NOT IN (SELECT id FROM galgames)',
-        <Object>[kActivityMediaGame]);
+      'DELETE FROM study_segments WHERE media_kind = ? AND media_key '
+      'NOT IN (SELECT id FROM galgames)',
+      <Object>[kActivityMediaGame],
+    );
     await db.customStatement(
-        'DELETE FROM study_segment_tombstones WHERE media_kind = ? AND '
-        'media_key NOT IN (SELECT id FROM galgames)',
-        <Object>[kActivityMediaGame]);
+      'DELETE FROM study_segment_tombstones WHERE media_kind = ? AND '
+      'media_key NOT IN (SELECT id FROM galgames)',
+      <Object>[kActivityMediaGame],
+    );
     await db.customStatement(
-        'DELETE FROM activity_events WHERE media_type = ? AND '
-        '(media_key IS NULL OR media_key NOT IN (SELECT id FROM galgames))',
-        <Object>[kActivityMediaGame]);
+      'DELETE FROM activity_events WHERE media_type = ? AND '
+      '(media_key IS NULL OR media_key NOT IN (SELECT id FROM galgames))',
+      <Object>[kActivityMediaGame],
+    );
     await db.customStatement('VACUUM');
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
   } finally {
@@ -1075,8 +1080,8 @@ class _DictionaryPackPlan {
   const _DictionaryPackPlan({required this.packable, required this.ghosts});
 
   const _DictionaryPackPlan.empty()
-      : packable = const <String>[],
-        ghosts = const <String>[];
+    : packable = const <String>[],
+      ghosts = const <String>[];
 
   /// 磁盘上确有文件、这次会被打进 zip 的词典名。
   final List<String> packable;
@@ -1153,8 +1158,9 @@ class BackupService {
 
   /// COUNT(*) of a table on the live DB (used to report honest export totals).
   Future<int> _countRows(String table) async {
-    final row =
-        await _db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
+    final row = await _db
+        .customSelect('SELECT COUNT(*) AS c FROM $table')
+        .getSingle();
     return row.data['c'] as int;
   }
 
@@ -1208,11 +1214,10 @@ class BackupService {
     // 与打包判据不同源，于是勾选框显示「词典 (12)」、导出后一本都没有，用户完全
     // 无从察觉。与下面字体那一条同一条纪律：预览计数 = 实际打包内容。
     final int dictionaries = (await _planDictionaryPack(
-            _dictionaryResourceDirectory == null
-                ? null
-                : Directory(_dictionaryResourceDirectory)))
-        .packable
-        .length;
+      _dictionaryResourceDirectory == null
+          ? null
+          : Directory(_dictionaryResourceDirectory),
+    )).packable.length;
     // Count the fonts the USER manages (catalog entries whose file lives under
     // custom_fonts/), not every file in the tree: failed `_tmp_*` downloads and
     // replaced-but-unreferenced old files inflated the count (a user with 2
@@ -1296,10 +1301,10 @@ class BackupService {
     }
     final Iterable<dynamic>? entries =
         decoded is Map && decoded['fonts'] is List
-            ? decoded['fonts'] as List<dynamic>
-            : decoded is List
-                ? decoded
-                : null;
+        ? decoded['fonts'] as List<dynamic>
+        : decoded is List
+        ? decoded
+        : null;
     if (entries == null) return;
     for (final dynamic e in entries) {
       if (e is Map && e['path'] is String) yield e['path'] as String;
@@ -1430,15 +1435,18 @@ class BackupService {
     try {
       final cleanDbPath = p.join(tmpDir.path, _dbName);
       try {
-        final safePath =
-            cleanDbPath.replaceAll(r'\', '/').replaceAll("'", "''");
+        final safePath = cleanDbPath
+            .replaceAll(r'\', '/')
+            .replaceAll("'", "''");
         await _db.customStatement("VACUUM INTO '$safePath'");
       } catch (e, st) {
         // HBK-AUDIT-028: do NOT swallow the VACUUM INTO failure. The original
         // reason (disk full, locked, read-only temp, unsupported SQLite) is
         // the only diagnostic we have, so surface it before falling back.
-        debugPrint('BackupService: VACUUM INTO failed, '
-            'falling back to checkpoint+copy: $e\n$st');
+        debugPrint(
+          'BackupService: VACUUM INTO failed, '
+          'falling back to checkpoint+copy: $e\n$st',
+        );
         // Best-effort fallback: flush the WAL into the main DB file, then copy.
         // A raw copy of a still-open WAL database cannot be made fully torn-free
         // from Dart (that needs the SQLite C backup API or a closed DB); the
@@ -1471,8 +1479,8 @@ class BackupService {
       // (HBK-AUDIT-012)
       final Directory? dictionaryResourceRoot =
           _dictionaryResourceDirectory == null
-              ? null
-              : Directory(_dictionaryResourceDirectory);
+          ? null
+          : Directory(_dictionaryResourceDirectory);
       // Full-data backup includes dictionary resources whenever they exist on
       // disk — no longer gated on dictionary-sync being enabled (the user asked
       // for everything). Still strip dictionary DB rows when the resource files
@@ -1518,8 +1526,9 @@ class BackupService {
       //  - book content unticked      → keep NONE (strip every epub_books row).
       //  - a per-book selection given  → keep ONLY the selected book_keys.
       //  - otherwise                   → keep all (null = legacy full export).
-      final Set<String>? retainBookKeys =
-          !includeBooks ? const <String>{} : bookKeys; // null = every book
+      final Set<String>? retainBookKeys = !includeBooks
+          ? const <String>{}
+          : bookKeys; // null = every book
       if (retainBookKeys != null) {
         await _retainBooks(tmpDir.path, retainBookKeys);
       }
@@ -1530,8 +1539,9 @@ class BackupService {
       // Stripping the row (not just skipping the file) is what stops a restore
       // from resurrecting a "ghost video" whose file never travelled.
       final bool includeVideos = wants(BackupCategory.videos);
-      final Set<String>? retainVideoKeys =
-          !includeVideos ? const <String>{} : videoKeys; // null = every video
+      final Set<String>? retainVideoKeys = !includeVideos
+          ? const <String>{}
+          : videoKeys; // null = every video
       if (retainVideoKeys != null) {
         await _retainVideos(tmpDir.path, retainVideoKeys);
       }
@@ -1602,13 +1612,10 @@ class BackupService {
       // 统一兜底：schema 里每张表都在 [backupTableRules] 登记了归属，归属类别全没
       // 勾的表整表清空。以前没被任何剥离逻辑点名的表（剪贴板历史、最近打开流、
       // 视频刮削缓存与本地路径……）无论勾什么都随包出境。
-      await _stripTablesOfExcludedCategories(
-        tmpDir.path,
-        <BackupCategory>{
-          for (final BackupCategory c in BackupCategory.values)
-            if (wants(c)) c,
-        },
-      );
+      await _stripTablesOfExcludedCategories(tmpDir.path, <BackupCategory>{
+        for (final BackupCategory c in BackupCategory.values)
+          if (wants(c)) c,
+      });
 
       // BUG-816: content-registry preference rows follow their OWNING content
       // category, not `settings` — strip favorites when `books` is unticked,
@@ -1628,8 +1635,8 @@ class BackupService {
       final int exportedBookCount = retainBookKeys == null
           ? books.length
           : books
-              .where((EpubBookRow b) => retainBookKeys.contains(b.bookKey))
-              .length;
+                .where((EpubBookRow b) => retainBookKeys.contains(b.bookKey))
+                .length;
 
       // Build the flat "zip-path → disk-path" map, then stream every file into
       // the ZIP off the UI isolate. The old path read each file fully into a
@@ -1673,28 +1680,32 @@ class BackupService {
       final int blobVideoBookCount = retainVideoKeys == null
           ? allVideos.length
           : allVideos
-              .where((VideoBookRow v) => retainVideoKeys.contains(v.bookUid))
-              .length;
+                .where((VideoBookRow v) => retainVideoKeys.contains(v.bookUid))
+                .length;
       // Audiobook rows remaining in the exported DB blob after [_retainAudiobooks]
       // (0 when unticked → all stripped). Recorded so import can offer the
       // audiobooks toggle even with no packed audiobook files (BUG-781).
-      final int blobAudiobookCount =
-          includeAudiobooks ? (await _db.getAllAudiobooks()).length : 0;
+      final int blobAudiobookCount = includeAudiobooks
+          ? (await _db.getAllAudiobooks()).length
+          : 0;
 
       // "Statistics records" spans reading + video + mining buckets + the v92
       // study-segment facts, not reading alone, so a video-watcher's (or any
       // post-v92) backup no longer reports "0 statistics".
-      final int totalStatsCount =
-          includeStatistics ? await _countStatisticsRows() : 0;
+      final int totalStatsCount = includeStatistics
+          ? await _countStatisticsRows()
+          : 0;
       // Rows remaining in the exported DB blob for the DB-only categories, so
       // the import dialog can offer their toggles without peeking the blob.
       final int blobGameCount = includeGames ? await _countRows('galgames') : 0;
-      final int blobProgressCount =
-          includeProgress ? await _countProgressRows() : 0;
+      final int blobProgressCount = includeProgress
+          ? await _countProgressRows()
+          : 0;
       final int blobSrsNoteCount = includeSrs ? await _countSrsNotes() : 0;
       // 音乐用户表的导出裁剪走 backupTableRules 的统一兜底（follows music）。
-      final int blobMusicCount =
-          wants(BackupCategory.music) ? await _countMusicRows() : 0;
+      final int blobMusicCount = wants(BackupCategory.music)
+          ? await _countMusicRows()
+          : 0;
 
       // Record the SOURCE-device content roots so import can rebase the stored
       // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
@@ -1712,8 +1723,9 @@ class BackupService {
         // carried (a no-op for the missing tree either way, but keeping the
         // meta honest avoids surprising the restore code).
         booksRoot: wants(BackupCategory.books) ? _booksRootDirectory : null,
-        audiobooksRoot:
-            wants(BackupCategory.audiobooks) ? _audiobooksRootDirectory : null,
+        audiobooksRoot: wants(BackupCategory.audiobooks)
+            ? _audiobooksRootDirectory
+            : null,
         fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
         localAudioRoot: wants(BackupCategory.localAudio) ? _dbDirectory : null,
         gameCoversRoot: includeGames ? _gameCoversRootDirectory : null,
@@ -1735,40 +1747,57 @@ class BackupService {
 
       if (includeDictionary) {
         await _collectDictionaryTrees(
-            dictionaryResourceRoot!, dictionaryPlan.packable, files);
+          dictionaryResourceRoot!,
+          dictionaryPlan.packable,
+          files,
+        );
       }
       if (_booksRootDirectory != null && includeBooks) {
         if (bookKeys == null) {
           // Legacy full export: pack the whole books tree.
           await _collectTreeFiles(
-              Directory(_booksRootDirectory), _booksPrefix, files);
+            Directory(_booksRootDirectory),
+            _booksPrefix,
+            files,
+          );
         } else {
           // Per-book export (TODO-1195 part A): pack ONLY the selected books'
           // content, keyed by each file's path relative to the books root so
           // the archive layout matches the full-tree export (import restores
           // the whole hoshi_books/ prefix onto this device's root either way).
           await _collectSelectedBookFiles(
-              bookKeys, books, _booksRootDirectory, files);
+            bookKeys,
+            books,
+            _booksRootDirectory,
+            files,
+          );
         }
       }
       if (_audiobooksRootDirectory != null &&
           wants(BackupCategory.audiobooks)) {
         await _collectTreeFiles(
-            Directory(_audiobooksRootDirectory), _audiobooksPrefix, files);
+          Directory(_audiobooksRootDirectory),
+          _audiobooksPrefix,
+          files,
+        );
       }
       if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
         await _collectReferencedFontFiles(files);
       }
       if (_gameCoversRootDirectory != null && includeGames) {
         await _collectTreeFiles(
-            Directory(_gameCoversRootDirectory), _gameCoversPrefix, files);
+          Directory(_gameCoversRootDirectory),
+          _gameCoversPrefix,
+          files,
+        );
       }
       if (includeSrs) {
         await _collectSrsMediaFiles(files);
       }
 
-      final String metaJson =
-          const JsonEncoder.withIndent('  ').convert(meta.toJson());
+      final String metaJson = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(meta.toJson());
       // 分母：files 已经是一张平铺的 archivePath→磁盘路径表，逐项求大小即可。
       final int totalBytes = _totalSourceBytes(files);
       int writtenBytes = 0;
@@ -1852,12 +1881,13 @@ class BackupService {
     final db = FushiDatabase(dbDirectory);
     try {
       final Map<String, String> allPrefs = await db.getAllPrefs();
-      final List<String> redactedPrefKeys =
-          allPrefs.keys.where(_isDeviceLocalPrefKey).toList(growable: false);
+      final List<String> redactedPrefKeys = allPrefs.keys
+          .where(_isDeviceLocalPrefKey)
+          .toList(growable: false);
       if (redactedPrefKeys.isNotEmpty) {
-        await (db.delete(db.preferences)
-              ..where((t) => t.key.isIn(redactedPrefKeys)))
-            .go();
+        await (db.delete(
+          db.preferences,
+        )..where((t) => t.key.isIn(redactedPrefKeys))).go();
       }
       await _stripCredentialRowsFromProfileSnapshots(db);
       // BUG-816: device-local tables (LAN pairing token + sync baselines) live
@@ -1893,17 +1923,21 @@ class BackupService {
   static Future<void> _stripCredentialRowsFromProfileSnapshots(
     FushiDatabase db,
   ) async {
-    final List<QueryRow> rows = await db.customSelect(
-      'SELECT DISTINCT key FROM profile_settings WHERE category = ?',
-      variables: <Variable<Object>>[Variable<String>(profilePrefCategory)],
-    ).get();
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT DISTINCT key FROM profile_settings WHERE category = ?',
+          variables: <Variable<Object>>[Variable<String>(profilePrefCategory)],
+        )
+        .get();
     final List<String> redacted = rows
         .map((QueryRow row) => row.read<String>('key'))
         .where(_isDeviceLocalPrefKey)
         .toList(growable: false);
     if (redacted.isEmpty) return;
-    final String placeholders =
-        List<String>.filled(redacted.length, '?').join(', ');
+    final String placeholders = List<String>.filled(
+      redacted.length,
+      '?',
+    ).join(', ');
     await db.customStatement(
       'DELETE FROM profile_settings '
       'WHERE category = ? AND key IN ($placeholders)',
@@ -2001,10 +2035,12 @@ class BackupService {
       // tag-only collection).
       final hadMembersRows = await db
           .customSelect(
-              'SELECT DISTINCT collection_id AS id FROM media_collection_items')
+            'SELECT DISTINCT collection_id AS id FROM media_collection_items',
+          )
           .get();
-      final List<int> hadMembers =
-          hadMembersRows.map((r) => r.data['id'] as int).toList();
+      final List<int> hadMembers = hadMembersRows
+          .map((r) => r.data['id'] as int)
+          .toList();
 
       // (2) Category-gated content rows. Each unticked content category drops
       // its own `media_type`-keyed rows across the shared tables (collection
@@ -2017,8 +2053,9 @@ class BackupService {
           'book_tag_membership_tombstones',
           'sync_deletion_tombstones',
         ]) {
-          await db.customStatement(
-              'DELETE FROM $table WHERE media_type = ?', [mediaType.dbValue]);
+          await db.customStatement('DELETE FROM $table WHERE media_type = ?', [
+            mediaType.dbValue,
+          ]);
         }
       }
 
@@ -2032,11 +2069,13 @@ class BackupService {
       // already stripped when the category is excluded, so this is FK-safe.
       if (!includeBooks) {
         await db.customStatement(
-            "DELETE FROM media_sources WHERE media_kind = 'book'");
+          "DELETE FROM media_sources WHERE media_kind = 'book'",
+        );
       }
       if (!includeVideos) {
         await db.customStatement(
-            "DELETE FROM media_sources WHERE media_kind = 'video'");
+          "DELETE FROM media_sources WHERE media_kind = 'video'",
+        );
       }
       // srt has no category checkbox, but `srt_books` is never category-stripped,
       // so a srt member/shelf row whose `entry_key` has no `srt_books.uid` match
@@ -2046,13 +2085,17 @@ class BackupService {
       // the merge-union still propagates cross-device srt memberships.
       if (!includeBooks || !includeVideos) {
         // P5：'srt' 改参数绑定（值来自 MediaKind.srt.dbValue，串不变）。
-        const String srtDangling = 'media_type = ? AND entry_key NOT IN '
+        const String srtDangling =
+            'media_type = ? AND entry_key NOT IN '
             '(SELECT uid FROM srt_books WHERE uid IS NOT NULL)';
         await db.customStatement(
-            'DELETE FROM media_collection_items WHERE $srtDangling',
-            [MediaKind.srt.dbValue]);
-        await db.customStatement('DELETE FROM shelf_entries WHERE $srtDangling',
-            [MediaKind.srt.dbValue]);
+          'DELETE FROM media_collection_items WHERE $srtDangling',
+          [MediaKind.srt.dbValue],
+        );
+        await db.customStatement(
+          'DELETE FROM shelf_entries WHERE $srtDangling',
+          [MediaKind.srt.dbValue],
+        );
       }
       // Drop collections the strip emptied — but keep always-empty tag-only
       // collections (a member-less collection is a valid tag-union carrier).
@@ -2142,7 +2185,8 @@ class BackupService {
     try {
       if (stripFavorites) {
         await db.customStatement(
-            "DELETE FROM preferences WHERE key = '$_favoriteSentencesPrefKey'");
+          "DELETE FROM preferences WHERE key = '$_favoriteSentencesPrefKey'",
+        );
       }
       if (stripFonts) {
         for (final String k in <String>[
@@ -2154,7 +2198,8 @@ class BackupService {
       }
       if (stripLocalAudio) {
         await db.customStatement(
-            "DELETE FROM preferences WHERE key = '$_localAudioDbsPrefKey'");
+          "DELETE FROM preferences WHERE key = '$_localAudioDbsPrefKey'",
+        );
         await _filterLocalAudioFromAudioSourceConfigs(db);
       }
       await db.customStatement('VACUUM');
@@ -2170,10 +2215,13 @@ class BackupService {
   /// on write. No-op if the pref is absent, unparseable, or has no local-audio
   /// entry.
   static Future<void> _filterLocalAudioFromAudioSourceConfigs(
-      FushiDatabase db) async {
+    FushiDatabase db,
+  ) async {
     final rows = await db
-        .customSelect('SELECT value FROM preferences '
-            "WHERE key = '$_audioSourceConfigsPrefKey'")
+        .customSelect(
+          'SELECT value FROM preferences '
+          "WHERE key = '$_audioSourceConfigsPrefKey'",
+        )
         .get();
     if (rows.isEmpty) return;
     final String? raw = rows.first.read<String?>('value');
@@ -2185,8 +2233,10 @@ class BackupService {
         .toList();
     if (kept.length == decoded.length) return; // no local-audio entry to strip
     if (kept.isEmpty) {
-      await db.customStatement('DELETE FROM preferences '
-          "WHERE key = '$_audioSourceConfigsPrefKey'");
+      await db.customStatement(
+        'DELETE FROM preferences '
+        "WHERE key = '$_audioSourceConfigsPrefKey'",
+      );
       return;
     }
     await db.customStatement(
@@ -2207,8 +2257,10 @@ class BackupService {
     await for (final FileSystemEntity entity in root.list(recursive: true)) {
       if (entity is! File) continue;
       final String relativePath = p.relative(entity.path, from: root.path);
-      final String archivePath =
-          p.posix.join(archivePrefix, relativePath.replaceAll(r'\', '/'));
+      final String archivePath = p.posix.join(
+        archivePrefix,
+        relativePath.replaceAll(r'\', '/'),
+      );
       into[archivePath] = entity.path;
     }
   }
@@ -2235,14 +2287,26 @@ class BackupService {
       // The book's extracted directory subtree (epub + html/images/fonts +
       // in-tree cover) — the bulk of its content.
       await _collectSubtreeUnderRoot(
-          b.extractDir, booksRootDirectory, rootNorm, into);
+        b.extractDir,
+        booksRootDirectory,
+        rootNorm,
+        into,
+      );
       // The epub file and cover file explicitly, in case either lives directly
       // under the books root rather than inside extractDir.
       await _collectSingleFileUnderRoot(
-          b.epubPath, booksRootDirectory, rootNorm, into);
+        b.epubPath,
+        booksRootDirectory,
+        rootNorm,
+        into,
+      );
       if (b.coverPath != null) {
         await _collectSingleFileUnderRoot(
-            b.coverPath!, booksRootDirectory, rootNorm, into);
+          b.coverPath!,
+          booksRootDirectory,
+          rootNorm,
+          into,
+        );
       }
     }
   }
@@ -2300,8 +2364,10 @@ class BackupService {
     Map<String, String> into,
   ) {
     final String relativePath = p.relative(filePath, from: booksRootDirectory);
-    final String archivePath =
-        p.posix.join(_booksPrefix, relativePath.replaceAll(r'\', '/'));
+    final String archivePath = p.posix.join(
+      _booksPrefix,
+      relativePath.replaceAll(r'\', '/'),
+    );
     into[archivePath] = filePath;
   }
 
@@ -2505,8 +2571,8 @@ class BackupService {
   ///
   /// 资源根不存在 = 这台设备一本词典的文件都没有，所有行都是幽灵。
   Future<_DictionaryPackPlan> _planDictionaryPack(Directory? root) async {
-    final List<DictionaryMetaRow> dictionaries =
-        await _db.getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> dictionaries = await _db
+        .getAllDictionaryMetadata();
     if (root == null || !await root.exists()) {
       return _DictionaryPackPlan(
         packable: const <String>[],
@@ -2573,8 +2639,9 @@ class BackupService {
 
   static Future<bool> _directoryHasFiles(Directory directory) async {
     if (!await directory.exists()) return false;
-    await for (final FileSystemEntity entity
-        in directory.list(recursive: true)) {
+    await for (final FileSystemEntity entity in directory.list(
+      recursive: true,
+    )) {
       if (entity is File) return true;
     }
     return false;

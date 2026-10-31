@@ -19,8 +19,9 @@ import 'package:flutter_test/flutter_test.dart';
 Directory _repoRoot() {
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
-    if (File('${dir.path}/.github/workflows/release-desktop.yml')
-        .existsSync()) {
+    if (File(
+      '${dir.path}/.github/workflows/release-desktop.yml',
+    ).existsSync()) {
       return dir;
     }
     final parent = dir.parent;
@@ -36,8 +37,9 @@ Directory _repoRoot() {
 void main() {
   final root = _repoRoot();
   final workflow = File('${root.path}/.github/workflows/release-desktop.yml');
-  final String content =
-      workflow.existsSync() ? workflow.readAsStringSync() : '';
+  final String content = workflow.existsSync()
+      ? workflow.readAsStringSync()
+      : '';
 
   const String crtStepName = 'Bundle VC++ CRT runtime into Windows bundle';
   const String isccStepName = 'Compile installer (Inno Setup)';
@@ -50,7 +52,8 @@ void main() {
     expect(
       content.contains(crtStepName),
       isTrue,
-      reason: '缺 "$crtStepName" 步骤：安装包不打包 CRT，旧 redist 机器会以 '
+      reason:
+          '缺 "$crtStepName" 步骤：安装包不打包 CRT，旧 redist 机器会以 '
           'MSVCP140.dll / c0000005 启动崩溃（BUG-570 / TODO-1242）。',
     );
   });
@@ -64,7 +67,8 @@ void main() {
       expect(
         content.contains(dll),
         isTrue,
-        reason: '缺 $dll：vcruntime140_1 提供旧 14.24 redist 缺失的 '
+        reason:
+            '缺 $dll：vcruntime140_1 提供旧 14.24 redist 缺失的 '
             '__CxxFrameHandler4 EH 导出，三者缺一仍会崩（BUG-570）。',
       );
     }
@@ -74,7 +78,8 @@ void main() {
     expect(
       content.contains('vswhere'),
       isTrue,
-      reason: 'CRT redist 路径应经 vswhere 定位并对版本目录通配，'
+      reason:
+          'CRT redist 路径应经 vswhere 定位并对版本目录通配，'
           '避免硬编码具体 VS/CRT 版本号（BUG-570）。',
     );
   });
@@ -87,7 +92,8 @@ void main() {
     expect(
       crtIdx < isccIdx,
       isTrue,
-      reason: 'CRT DLL 必须在 ISCC 打包（Source: {#SourceDir}\\*）之前落进 Release '
+      reason:
+          'CRT DLL 必须在 ISCC 打包（Source: {#SourceDir}\\*）之前落进 Release '
           '目录，否则打进安装包时 DLL 还不存在，等于没修（BUG-570）。',
     );
   });

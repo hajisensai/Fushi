@@ -43,13 +43,15 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // M3E 浮动工具栏：顶栏胶囊离播放区上沿留一点呼吸（左右沿用 fork 默认 16）。
       // 桌面自绘顶栏在播放页悬停才浮出、画面铺满整窗：胶囊再让出它的高度，
       // 浮出的窗口按钮不压住顶栏（用户 2026-10-30）。
-      topButtonBarMargin: (apple
-              ? fork.topButtonBarMargin
-              : const EdgeInsets.fromLTRB(16, 8, 16, 0))
-          .copyWith(
-        top: (apple ? fork.topButtonBarMargin.top : 8) +
-            FushiDesktopTitleBar.immersiveCaptionInset,
-      ),
+      topButtonBarMargin:
+          (apple
+                  ? fork.topButtonBarMargin
+                  : const EdgeInsets.fromLTRB(16, 8, 16, 0))
+              .copyWith(
+                top:
+                    (apple ? fork.topButtonBarMargin.top : 8) +
+                    FushiDesktopTitleBar.immersiveCaptionInset,
+              ),
       // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
       bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
         readSpeed: _networkReadSpeedOf(controller),
@@ -111,9 +113,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 但构造本 theme 的 builder（layout.part.dart :_buildVideoControlsInner）必须同时监听这三个
       // notifier、否则其翻转时 theme 不重建 = 改了值也白改（见 layout.part.dart 的
       // ListenableBuilder.merge）。仅桌面 theme，移动端不动。
-      hideMouseOnControlsRemoval: !(_subtitleListVisible.value ||
-          _episodeListVisible.value ||
-          _lookupOverlayActive.value),
+      hideMouseOnControlsRemoval:
+          !(_subtitleListVisible.value ||
+              _episodeListVisible.value ||
+              _lookupOverlayActive.value),
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
@@ -144,9 +147,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       touchVolumeGesture: _asbConfig.volumeSwipeGesture,
       onVolumeChanged: _onMediaKitVolumeChanged,
       currentVolume: () =>
-          (controller.volume / controller.maxVolume)
-              .clamp(0.0, 1.0)
-              .toDouble(),
+          (controller.volume / controller.maxVolume).clamp(0.0, 1.0).toDouble(),
       touchBrightnessGesture:
           _brightness.canControl && _asbConfig.brightnessSwipeGesture,
       onBrightnessChanged: _onMediaKitBrightnessChanged,
@@ -173,13 +174,15 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarHeight: apple ? _videoSeekBarTrackHeight : fork.seekBarHeight,
       seekBarHoverHeight: apple
           ? _VideoFushiPageState._videoAppleSeekBarActiveHeightBase *
-              _videoUiScale
+                _videoUiScale
           : fork.seekBarHoverHeight,
       seekBarColor: apple ? const Color(0x40FFFFFF) : fork.seekBarColor,
-      seekBarHoverColor:
-          apple ? const Color(0x1FFFFFFF) : fork.seekBarHoverColor,
-      seekBarBufferColor:
-          apple ? const Color(0x66FFFFFF) : fork.seekBarBufferColor,
+      seekBarHoverColor: apple
+          ? const Color(0x1FFFFFFF)
+          : fork.seekBarHoverColor,
+      seekBarBufferColor: apple
+          ? const Color(0x66FFFFFF)
+          : fork.seekBarBufferColor,
       seekBarThumbSize: apple ? 0 : fork.seekBarThumbSize,
       // 两套设计系统都内缩到浮动底栏里（Apple 玻璃胶囊 / M3E 轨道槽对齐胶囊外缘）。
       seekBarMargin: EdgeInsets.symmetric(horizontal: _videoSeekBarSideInset),
@@ -188,7 +191,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarTrackBuilder: apple
           ? null
           : (BuildContext _, VideoSeekBarVisual visual) =>
-              _m3eSeekTrack(controller, visual),
+                _m3eSeekTrack(controller, visual),
       bottomButtonBarMargin: apple
           ? EdgeInsets.fromLTRB(
               _videoAppleButtonBarSideInset,
@@ -212,10 +215,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 恰好压住那条带 → 点进度条上缘被字幕 glyph 命中层吸走成查词（seek 收不到指针）。
       seekBarContainerHeight:
           _VideoFushiPageState._videoDesktopSeekBarContainerHeight *
-              _controlsDensityScale,
+          _controlsDensityScale,
       seekBarBottomButtonBarOverlap:
           _VideoFushiPageState._videoDesktopSeekBarButtonBarOverlap *
-              _controlsDensityScale,
+          _controlsDensityScale,
       // mini 档（桌面小窗 / 被拖到 480 逻辑像素以下的窗口）收掉整条进度条：那点宽度
       // 里一条可拖的 seek bar 既难命中又把画面压没了，进度改由视频最下方那条细线
       // 承担（[VideoSlimProgressBar]，要拖进度请退出小窗）。fork 早有这个旋钮
@@ -254,37 +257,37 @@ extension _VideoControlsTheme on _VideoFushiPageState {
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, -24 * _videoUiScale),
               child: VideoTopBarSlots(
-              leftLead: _topBarSlotGroup(
-                VideoControlSlot.topLeft,
-                controller,
-                layout: layout,
-                desktop: true,
-                segment: VideoTopBarSegment.lead,
+                leftLead: _topBarSlotGroup(
+                  VideoControlSlot.topLeft,
+                  controller,
+                  layout: layout,
+                  desktop: true,
+                  segment: VideoTopBarSegment.lead,
+                ),
+                leftTail: _topBarSlotGroup(
+                  VideoControlSlot.topLeft,
+                  controller,
+                  layout: layout,
+                  desktop: true,
+                  segment: VideoTopBarSegment.tail,
+                ),
+                title: _topBarTitle(),
+                titlePlacement: _topBarTitlePlacement(),
+                rightLead: _topBarSlotGroup(
+                  VideoControlSlot.topRight,
+                  controller,
+                  layout: layout,
+                  desktop: true,
+                  segment: VideoTopBarSegment.lead,
+                ),
+                rightTail: _topBarSlotGroup(
+                  VideoControlSlot.topRight,
+                  controller,
+                  layout: layout,
+                  desktop: true,
+                  segment: VideoTopBarSegment.tail,
+                ),
               ),
-              leftTail: _topBarSlotGroup(
-                VideoControlSlot.topLeft,
-                controller,
-                layout: layout,
-                desktop: true,
-                segment: VideoTopBarSegment.tail,
-              ),
-              title: _topBarTitle(),
-              titlePlacement: _topBarTitlePlacement(),
-              rightLead: _topBarSlotGroup(
-                VideoControlSlot.topRight,
-                controller,
-                layout: layout,
-                desktop: true,
-                segment: VideoTopBarSegment.lead,
-              ),
-              rightTail: _topBarSlotGroup(
-                VideoControlSlot.topRight,
-                controller,
-                layout: layout,
-                desktop: true,
-                segment: VideoTopBarSegment.tail,
-              ),
-            ),
             ),
           ),
       ],
@@ -318,14 +321,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     required double surfaceWidth,
     required Duration duration,
     required Duration position,
-  }) =>
-      VideoHorizontalSeekGesture.resolveDelta(
-        dragDx: dragDx,
-        surfaceWidth: surfaceWidth,
-        duration: duration,
-        position: position,
-        sensitivity: _asbConfig.dragSeekSensitivity,
-      );
+  }) => VideoHorizontalSeekGesture.resolveDelta(
+    dragDx: dragDx,
+    surfaceWidth: surfaceWidth,
+    duration: duration,
+    position: position,
+    sensitivity: _asbConfig.dragSeekSensitivity,
+  );
 
   /// media_kit 移动控制主题（Android/iOS）：[AdaptiveVideoControls] 在移动端渲染
   /// [MaterialVideoControls]（读本主题），桌面端渲染 [MaterialDesktopVideoControls]
@@ -348,11 +350,12 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // Apple：底栏玻璃胶囊把整组控件再抬一点（[_floatingChromeBottomLift]，MD3 恒 0）。
     final double bottomChromeInset =
         _VideoFushiPageState._videoBottomChromeBaseline +
-            _videoBottomSystemInset() +
-            _floatingChromeBottomLift;
+        _videoBottomSystemInset() +
+        _floatingChromeBottomLift;
     // 同桌面 theme：Apple 分支只覆盖外观字段，MD3 回填 fork 构造器默认值。
     final bool apple = _appleChrome;
-    const MaterialVideoControlsThemeData fork = MaterialVideoControlsThemeData();
+    const MaterialVideoControlsThemeData fork =
+        MaterialVideoControlsThemeData();
     // 进度条抬到底部按钮条上方（TODO-156/BUG-217）：media_kit 把进度条与按钮条放同一
     // 个 bottomCenter Stack、都按 bottom 对齐，进度条 bottom 必须 = 按钮条底部基线 +
     // 按钮条高 + 间距，否则两者落同一基线重叠。保留 [bottomChromeInset]（BUG-184 抬离
@@ -508,17 +511,18 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarRadius: apple ? 999 : fork.seekBarRadius,
       seekBarActiveHeight: apple
           ? _VideoFushiPageState._videoAppleSeekBarActiveHeightBase *
-              _videoUiScale *
-              density
+                _videoUiScale *
+                density
           : fork.seekBarActiveHeight,
       seekBarColor: apple ? const Color(0x40FFFFFF) : fork.seekBarColor,
-      seekBarBufferColor:
-          apple ? const Color(0x66FFFFFF) : fork.seekBarBufferColor,
+      seekBarBufferColor: apple
+          ? const Color(0x66FFFFFF)
+          : fork.seekBarBufferColor,
       // MD3 Expressive 轨道（同桌面 theme）。
       seekBarTrackBuilder: apple
           ? null
           : (BuildContext _, VideoSeekBarVisual visual) =>
-              _m3eSeekTrack(controller, visual),
+                _m3eSeekTrack(controller, visual),
       // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
       // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
       buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
@@ -545,37 +549,37 @@ extension _VideoControlsTheme on _VideoFushiPageState {
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, -24 * _videoUiScale),
               child: VideoTopBarSlots(
-              leftLead: _topBarSlotGroup(
-                VideoControlSlot.topLeft,
-                controller,
-                layout: layout,
-                desktop: false,
-                segment: VideoTopBarSegment.lead,
+                leftLead: _topBarSlotGroup(
+                  VideoControlSlot.topLeft,
+                  controller,
+                  layout: layout,
+                  desktop: false,
+                  segment: VideoTopBarSegment.lead,
+                ),
+                leftTail: _topBarSlotGroup(
+                  VideoControlSlot.topLeft,
+                  controller,
+                  layout: layout,
+                  desktop: false,
+                  segment: VideoTopBarSegment.tail,
+                ),
+                title: _topBarTitle(),
+                titlePlacement: _topBarTitlePlacement(),
+                rightLead: _topBarSlotGroup(
+                  VideoControlSlot.topRight,
+                  controller,
+                  layout: layout,
+                  desktop: false,
+                  segment: VideoTopBarSegment.lead,
+                ),
+                rightTail: _topBarSlotGroup(
+                  VideoControlSlot.topRight,
+                  controller,
+                  layout: layout,
+                  desktop: false,
+                  segment: VideoTopBarSegment.tail,
+                ),
               ),
-              leftTail: _topBarSlotGroup(
-                VideoControlSlot.topLeft,
-                controller,
-                layout: layout,
-                desktop: false,
-                segment: VideoTopBarSegment.tail,
-              ),
-              title: _topBarTitle(),
-              titlePlacement: _topBarTitlePlacement(),
-              rightLead: _topBarSlotGroup(
-                VideoControlSlot.topRight,
-                controller,
-                layout: layout,
-                desktop: false,
-                segment: VideoTopBarSegment.lead,
-              ),
-              rightTail: _topBarSlotGroup(
-                VideoControlSlot.topRight,
-                controller,
-                layout: layout,
-                desktop: false,
-                segment: VideoTopBarSegment.tail,
-              ),
-            ),
             ),
           ),
       ],
@@ -607,10 +611,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
   /// [VideoSeekIndicatorLabel.deltaSigned] 算出「目标时间」与「±增量」
   /// 两行。fork 把本 widget 套在居中 `IgnorePointer + AnimatedOpacity` 里，故这里只画
   /// 圆角半透明盒，不再处理定位/淡入淡出。
-  Widget _buildSeekIndicator(
-    VideoPlayerController controller,
-    Duration delta,
-  ) {
+  Widget _buildSeekIndicator(VideoPlayerController controller, Duration delta) {
     // 与 fork 横滑落点同一基准（relativeSeekBasePosition，BUG-2731 后续）：fork 在横滑
     // 开始时取一次快照（经 captureRelativeSeekBaseMs 记下），HUD 读同一快照——在途 seek
     // 未落地时从那次 seek 的目标算起，拖动途中目标落地 / 清掉也不跳。
@@ -618,10 +619,14 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       milliseconds:
           controller.lastRelativeSeekBaseMs ?? controller.resumePositionMs ?? 0,
     );
-    final Duration duration =
-        Duration(milliseconds: controller.durationMs ?? 0);
-    final String targetLabel =
-        VideoSeekIndicatorLabel.target(position, delta, duration);
+    final Duration duration = Duration(
+      milliseconds: controller.durationMs ?? 0,
+    );
+    final String targetLabel = VideoSeekIndicatorLabel.target(
+      position,
+      delta,
+      duration,
+    );
     final String deltaLabel = VideoSeekIndicatorLabel.deltaSigned(delta);
     // UI 巡检 PR-4：HUD 表面 / 前景与页内其余 OSD 同源（[_osdSurfaceColor] /
     // [_osdTextColor]，inverseSurface 自配对），字号 / 内边距吃 [_videoUiScale]
@@ -631,7 +636,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // Apple：横滑跳转提示是一枚深色液态玻璃胶囊（与音量 HUD / 通知同一材质），
     // 目标时间用等宽数字白字、增量降一级透明度。
     final bool apple = _appleChrome;
-    final Color textColor = apple ? videoChromeNeutralForeground : _osdTextColor(cs);
+    final Color textColor = apple
+        ? videoChromeNeutralForeground
+        : _osdTextColor(cs);
     final Widget labels = Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -660,15 +667,19 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     if (apple) {
       return VideoGlassHud(
         radius: 22 * scale,
-        padding:
-            EdgeInsets.symmetric(horizontal: 22 * scale, vertical: 12 * scale),
+        padding: EdgeInsets.symmetric(
+          horizontal: 22 * scale,
+          vertical: 12 * scale,
+        ),
         child: labels,
       );
     }
     return Container(
       alignment: Alignment.center,
-      padding:
-          EdgeInsets.symmetric(horizontal: 20 * scale, vertical: 12 * scale),
+      padding: EdgeInsets.symmetric(
+        horizontal: 20 * scale,
+        vertical: 12 * scale,
+      ),
       decoration: BoxDecoration(
         color: _osdSurfaceColor(cs),
         borderRadius: BorderRadius.circular(12),
@@ -692,8 +703,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       cueDensity: _m3eCueDensity(controller, visual.duration),
       // 不画轨道槽：细轨直接压在画面上（底部只有一条很矮的暗角垫着）。桌面把轨道
       // 抬到底栏小胶囊上方（热区容器骑按钮行上沿，轨道离容器底缘 overlap + 10）。
-      trackBottomInset:
-          _isDesktopVideoControls ? _videoM3eDesktopTrackBottomInset : null,
+      trackBottomInset: _isDesktopVideoControls
+          ? _videoM3eDesktopTrackBottomInset
+          : null,
     );
   }
 
@@ -709,9 +721,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoPlayerController controller, {
     required bool desktop,
   }) {
-    if (desktop ||
-        _appleChrome ||
-        !_controlsDensity.showBottomButtonBar) {
+    if (desktop || _appleChrome || !_controlsDensity.showBottomButtonBar) {
       return const <Widget>[];
     }
     // compact 档（窄窗 / 小屏）缩到 0.72，与底栏同一密度口径。

@@ -30,74 +30,115 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String p) => File(p).readAsStringSync();
 
-  group('Dart controller: overwriteTargetNoteId + updateEntry bridge branches',
-      () {
-    late String src;
-    setUpAll(() {
-      // spec 2026-07-10: 桥 handler 抽到 overlay_bridge_handlers.dart 与剪贴板
-      // 面板共享（红线：两表面不复制不漂移）；守卫扫 controller+共享实现拼接。
-      src = read('lib/src/lookup/global_lookup_controller.dart') +
-          read('lib/src/lookup/overlay_bridge_handlers.dart');
-    });
+  group(
+    'Dart controller: overwriteTargetNoteId + updateEntry bridge branches',
+    () {
+      late String src;
+      setUpAll(() {
+        // spec 2026-07-10: 桥 handler 抽到 overlay_bridge_handlers.dart 与剪贴板
+        // 面板共享（红线：两表面不复制不漂移）；守卫扫 controller+共享实现拼接。
+        src =
+            read('lib/src/lookup/global_lookup_controller.dart') +
+            read('lib/src/lookup/overlay_bridge_handlers.dart');
+      });
 
-    test('_onJsMessage routes overwriteTargetNoteId / updateEntry to handlers',
+      test(
+        '_onJsMessage routes overwriteTargetNoteId / updateEntry to handlers',
         () {
-      expect(src.contains("case 'overwriteTargetNoteId':"), isTrue,
-          reason: '_onJsMessage 必须有覆写目标探测分支（否则已存在卡永不进 ✓↩）');
-      expect(src.contains('_handleOverwriteTargetBridge('), isTrue,
-          reason: '覆写目标探测走独立 deferred 处理器');
-      expect(src.contains("case 'updateEntry':"), isTrue,
-          reason: '_onJsMessage 必须有覆写执行分支（否则点 ✓↩ 覆写静默失败）');
-      expect(src.contains('_handleUpdateBridge('), isTrue,
-          reason: '覆写执行走独立 deferred 处理器');
-    });
+          expect(
+            src.contains("case 'overwriteTargetNoteId':"),
+            isTrue,
+            reason: '_onJsMessage 必须有覆写目标探测分支（否则已存在卡永不进 ✓↩）',
+          );
+          expect(
+            src.contains('_handleOverwriteTargetBridge('),
+            isTrue,
+            reason: '覆写目标探测走独立 deferred 处理器',
+          );
+          expect(
+            src.contains("case 'updateEntry':"),
+            isTrue,
+            reason: '_onJsMessage 必须有覆写执行分支（否则点 ✓↩ 覆写静默失败）',
+          );
+          expect(
+            src.contains('_handleUpdateBridge('),
+            isTrue,
+            reason: '覆写执行走独立 deferred 处理器',
+          );
+        },
+      );
 
-    test('overwrite handlers reuse the in-app Anki repo contract', () {
-      // 真走 AnkiConnect/AnkiDroid repo，与 in-app findOverwriteTargetNoteId /
-      // onUpdateEntry 同路径（复用契约，别发明新协议）。
-      expect(src.contains('repo.findOverwriteTargetNoteId('), isTrue,
-          reason: '覆写目标探测走 repo.findOverwriteTargetNoteId（与 in-app 同路径）');
-      expect(src.contains('repo.updateMinedNote('), isTrue,
-          reason: '覆写执行走 repo.updateMinedNote 按 id 覆盖（不新增卡、不查重）');
-      // 覆写前同样落盘词典 gaiji 媒体字节（与新建 mineEntry 一致，外字不退化）。
-      expect(src.contains('writeDictionaryMediaCache('), isTrue,
-          reason: '覆写前必须落盘词典外字媒体缓存');
-      // 覆写不记账：不得在覆写路径调 _recordMinedStats（与 in-app overwrite=true 一致）。
-      final int updateStart =
-          src.indexOf('Future<Map<String, Object?>> _updateEntry(');
-      expect(updateStart, greaterThan(0), reason: '必须有 _updateEntry 覆写辅助方法');
-      final int updateEnd = src.indexOf('\n  }', updateStart);
-      final String updateBody = src.substring(updateStart, updateEnd);
-      expect(updateBody.contains('_recordMinedStats('), isFalse,
-          reason: '覆写不得计入制卡统计（overwrite 修正已存在卡，不记账）');
-    });
+      test('overwrite handlers reuse the in-app Anki repo contract', () {
+        // 真走 AnkiConnect/AnkiDroid repo，与 in-app findOverwriteTargetNoteId /
+        // onUpdateEntry 同路径（复用契约，别发明新协议）。
+        expect(
+          src.contains('repo.findOverwriteTargetNoteId('),
+          isTrue,
+          reason: '覆写目标探测走 repo.findOverwriteTargetNoteId（与 in-app 同路径）',
+        );
+        expect(
+          src.contains('repo.updateMinedNote('),
+          isTrue,
+          reason: '覆写执行走 repo.updateMinedNote 按 id 覆盖（不新增卡、不查重）',
+        );
+        // 覆写前同样落盘词典 gaiji 媒体字节（与新建 mineEntry 一致，外字不退化）。
+        expect(
+          src.contains('writeDictionaryMediaCache('),
+          isTrue,
+          reason: '覆写前必须落盘词典外字媒体缓存',
+        );
+        // 覆写不记账：不得在覆写路径调 _recordMinedStats（与 in-app overwrite=true 一致）。
+        final int updateStart = src.indexOf(
+          'Future<Map<String, Object?>> _updateEntry(',
+        );
+        expect(updateStart, greaterThan(0), reason: '必须有 _updateEntry 覆写辅助方法');
+        final int updateEnd = src.indexOf('\n  }', updateStart);
+        final String updateBody = src.substring(updateStart, updateEnd);
+        expect(
+          updateBody.contains('_recordMinedStats('),
+          isFalse,
+          reason: '覆写不得计入制卡统计（overwrite 修正已存在卡，不记账）',
+        );
+      });
 
-    test('overwrite bridge replies are pushed back via resolveBridge', () {
-      // overwriteTargetNoteId 回裸 int?，updateEntry 回 {ankiConnect,noteId}，都必须
-      // resolveBridge 回传 iframe（popup.js 据此升 ✓↩ / 刷新覆写结果）。
+      test('overwrite bridge replies are pushed back via resolveBridge', () {
+        // overwriteTargetNoteId 回裸 int?，updateEntry 回 {ankiConnect,noteId}，都必须
+        // resolveBridge 回传 iframe（popup.js 据此升 ✓↩ / 刷新覆写结果）。
+        expect(
+          src.contains('overwriteTargetNoteId -> reply=\$reply (id=\$id)'),
+          isTrue,
+          reason: '覆写目标探测结果必须 resolveBridge 回传',
+        );
+        expect(
+          src.contains('updateEntry -> reply=\$reply (id=\$id)'),
+          isTrue,
+          reason: '覆写执行结果必须 resolveBridge 回传',
+        );
+      });
+    },
+  );
+
+  test(
+    'C++ overlay DEFERS overwriteTargetNoteId / updateEntry (not sheet)',
+    () {
+      final String cpp = read('windows/runner/global_lookup_window.cpp');
+      // 否则 C++ 即时 null-resolve → Dart 真回复被忽略 → 已存在卡不进 ✓↩、覆写不落。
       expect(
-        src.contains('overwriteTargetNoteId -> reply=\$reply (id=\$id)'),
+        cpp.contains('body.find("\\"overwriteTargetNoteId\\"")'),
         isTrue,
-        reason: '覆写目标探测结果必须 resolveBridge 回传',
+        reason: 'overwriteTargetNoteId 必须纳入 deferred（不即时 null-resolve）',
       );
       expect(
-        src.contains('updateEntry -> reply=\$reply (id=\$id)'),
+        cpp.contains('body.find("\\"updateEntry\\"")'),
         isTrue,
-        reason: '覆写执行结果必须 resolveBridge 回传',
+        reason: 'updateEntry 必须纳入 deferred',
       );
-    });
-  });
-
-  test('C++ overlay DEFERS overwriteTargetNoteId / updateEntry (not sheet)',
-      () {
-    final String cpp = read('windows/runner/global_lookup_window.cpp');
-    // 否则 C++ 即时 null-resolve → Dart 真回复被忽略 → 已存在卡不进 ✓↩、覆写不落。
-    expect(cpp.contains('body.find("\\"overwriteTargetNoteId\\"")'), isTrue,
-        reason: 'overwriteTargetNoteId 必须纳入 deferred（不即时 null-resolve）');
-    expect(cpp.contains('body.find("\\"updateEntry\\"")'), isTrue,
-        reason: 'updateEntry 必须纳入 deferred');
-    // minedCardAction 仍保持即时 null（需前台底栏，后台主窗无法呈现）——不得纳入 deferred。
-    expect(cpp.contains('body.find("\\"minedCardAction\\"")'), isFalse,
-        reason: 'minedCardAction 动作面板需前台 Flutter 底栏，app 外保持即时 null 降级');
-  });
+      // minedCardAction 仍保持即时 null（需前台底栏，后台主窗无法呈现）——不得纳入 deferred。
+      expect(
+        cpp.contains('body.find("\\"minedCardAction\\"")'),
+        isFalse,
+        reason: 'minedCardAction 动作面板需前台 Flutter 底栏，app 外保持即时 null 降级',
+      );
+    },
+  );
 }

@@ -9,30 +9,36 @@ VideoMediaReference _reference({
   String provider = 'anilist',
   VideoMetadataMediaKind kind = VideoMetadataMediaKind.tv,
   Map<String, String> ids = const <String, String>{},
-}) =>
-    VideoMediaReference(
-      providerId: provider,
-      mediaId: '86',
-      mediaKind: kind,
-      discoveryCategory: VideoDiscoveryCategory.anime,
-      title: '86',
-      externalIds: ids,
-    );
+}) => VideoMediaReference(
+  providerId: provider,
+  mediaId: '86',
+  mediaKind: kind,
+  discoveryCategory: VideoDiscoveryCategory.anime,
+  title: '86',
+  externalIds: ids,
+);
 
 void main() {
-  test('AniList MAL cross ID survives download snapshot and wins over TMDB',
-      () {
-    final VideoMediaReference reference = _reference(ids: <String, String>{
-      'mal': '41457',
-      'tmdb': '100565',
-      'anidb': '15441',
-    });
-    final VideoMediaReference restored =
-        decodeVideoMediaReference(encodeVideoMediaReference(reference))!;
-    final VideoMetadataLookup lookup = videoDiscoveryMetadataLookup(restored)!;
-    expect(lookup.provider, VideoMetadataProviderKind.mal);
-    expect(lookup.externalId, '41457');
-  });
+  test(
+    'AniList MAL cross ID survives download snapshot and wins over TMDB',
+    () {
+      final VideoMediaReference reference = _reference(
+        ids: <String, String>{
+          'mal': '41457',
+          'tmdb': '100565',
+          'anidb': '15441',
+        },
+      );
+      final VideoMediaReference restored = decodeVideoMediaReference(
+        encodeVideoMediaReference(reference),
+      )!;
+      final VideoMetadataLookup lookup = videoDiscoveryMetadataLookup(
+        restored,
+      )!;
+      expect(lookup.provider, VideoMetadataProviderKind.mal);
+      expect(lookup.externalId, '41457');
+    },
+  );
 
   test('TMDB fallback retains movie and TV namespaces', () {
     for (final VideoMetadataMediaKind kind in <VideoMetadataMediaKind>[
@@ -51,11 +57,14 @@ void main() {
   test('numeric title and AniDB ID cannot masquerade as MAL work identity', () {
     expect(videoDiscoveryMetadataLookup(_reference()), isNull);
     expect(
-        videoDiscoveryMetadataLookup(
-            _reference(ids: <String, String>{'anidb': '42', 'mal': '0'})),
-        isNull);
+      videoDiscoveryMetadataLookup(
+        _reference(ids: <String, String>{'anidb': '42', 'mal': '0'}),
+      ),
+      isNull,
+    );
     expect(
-        videoDiscoveryMetadataLookup(_reference(provider: 'mal'))?.externalId,
-        '86');
+      videoDiscoveryMetadataLookup(_reference(provider: 'mal'))?.externalId,
+      '86',
+    );
   });
 }

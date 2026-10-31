@@ -54,13 +54,16 @@ void main() {
       expect(dir(deltaY: 1, deltaX: 0), 'forward');
       final String? continuousForward =
           ReaderPaginationScripts.continuousWheelBoundaryDirection(
-        vertical: false,
-        delta: 1,
-        atStart: false,
-        atEnd: true,
+            vertical: false,
+            delta: 1,
+            atStart: false,
+            atEnd: true,
+          );
+      expect(
+        continuousForward,
+        'forward',
+        reason: '分页与连续滚轮的 forward 判据必须同号（delta>0）',
       );
-      expect(continuousForward, 'forward',
-          reason: '分页与连续滚轮的 forward 判据必须同号（delta>0）');
     });
   });
 }

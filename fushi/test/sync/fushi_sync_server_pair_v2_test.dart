@@ -25,22 +25,23 @@ void main() {
     approvalPinRequired = <bool>[];
     sessionResolvedCount = 0;
     tempDir = Directory.systemTemp.createTempSync('fushi_pair_v2_test');
-    server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: 'super-secret-token',
-      allowLan: true,
-    )
-      ..onPairRequest = ((FushiPairRequest r) async {
-        approvalPinRequired.add(r.pinRequired);
-        return approve;
-      })
-      ..onPairPinGenerated = ((FushiPairSession s) {
-        shownPin = '482913';
-        return shownPin!;
-      })
-      ..onPairSessionResolved = (() => sessionResolvedCount++)
-      ..lanRequiresPinProvider = (() async => lanRequiresPin);
+    server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: 'super-secret-token',
+            allowLan: true,
+          )
+          ..onPairRequest = ((FushiPairRequest r) async {
+            approvalPinRequired.add(r.pinRequired);
+            return approve;
+          })
+          ..onPairPinGenerated = ((FushiPairSession s) {
+            shownPin = '482913';
+            return shownPin!;
+          })
+          ..onPairSessionResolved = (() => sessionResolvedCount++)
+          ..lanRequiresPinProvider = (() async => lanRequiresPin);
     await server.start();
   }
 
@@ -67,16 +68,18 @@ void main() {
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  test('LAN auto-discovery + host allows PIN-free yields pinRequired false',
-      () async {
-    await startServer(lanRequiresPin: false);
-    final Map<String, dynamic> body = await startSession('cn-1');
-    expect(body['pinRequired'], isFalse);
-    expect(body['sessionId'], isA<String>());
-    expect(body['hostNonce'], isA<String>());
-    expect(body.containsKey('pin'), isFalse);
-    expect(jsonEncode(body).contains('482913'), isFalse);
-  });
+  test(
+    'LAN auto-discovery + host allows PIN-free yields pinRequired false',
+    () async {
+      await startServer(lanRequiresPin: false);
+      final Map<String, dynamic> body = await startSession('cn-1');
+      expect(body['pinRequired'], isFalse);
+      expect(body['sessionId'], isA<String>());
+      expect(body['hostNonce'], isA<String>());
+      expect(body.containsKey('pin'), isFalse);
+      expect(jsonEncode(body).contains('482913'), isFalse);
+    },
+  );
 
   test('LAN but host requires PIN yields pinRequired true', () async {
     await startServer(lanRequiresPin: true);
@@ -90,8 +93,9 @@ void main() {
     final http.Response resp = await http.post(
       confirmUri(),
       headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(
-          <String, String>{'sessionId': start['sessionId'] as String}),
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+      }),
     );
     expect(resp.statusCode, 200);
     final Map<String, dynamic> body =
@@ -117,8 +121,10 @@ void main() {
       }),
     );
     expect(resp.statusCode, 200);
-    expect((jsonDecode(resp.body) as Map<String, dynamic>)['token'],
-        'super-secret-token');
+    expect(
+      (jsonDecode(resp.body) as Map<String, dynamic>)['token'],
+      'super-secret-token',
+    );
   });
 
   test('PIN required wrong proof yields 401 pin', () async {
@@ -142,28 +148,32 @@ void main() {
     expect((jsonDecode(resp.body) as Map<String, dynamic>)['reason'], 'pin');
   });
 
-  test('PIN-required host declines at CREATE yields 403 declined (BUG-592)',
-      () async {
-    // TODO-1296 / BUG-592: for a PIN-required session the host approval (which
-    // shows the PIN) moved to the /api/pair/v2 CREATE step, so a decline now
-    // surfaces there — the client never gets a session/hostNonce to even ask for
-    // a PIN. This is what makes the PIN visible before the client must type it.
-    await startServer(lanRequiresPin: true, approve: false);
-    final http.Response resp = await http.post(
-      v2Uri(),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{
-        'name': 'Galaxy S21',
-        'clientNonce': 'cn-6',
-      }),
-    );
-    expect(resp.statusCode, 403);
-    expect(
-        (jsonDecode(resp.body) as Map<String, dynamic>)['reason'], 'declined');
-    // Approval was consulted exactly once, at create, with pinRequired=true
-    // (i.e. the host was given the chance to display the PIN).
-    expect(approvalPinRequired, <bool>[true]);
-  });
+  test(
+    'PIN-required host declines at CREATE yields 403 declined (BUG-592)',
+    () async {
+      // TODO-1296 / BUG-592: for a PIN-required session the host approval (which
+      // shows the PIN) moved to the /api/pair/v2 CREATE step, so a decline now
+      // surfaces there — the client never gets a session/hostNonce to even ask for
+      // a PIN. This is what makes the PIN visible before the client must type it.
+      await startServer(lanRequiresPin: true, approve: false);
+      final http.Response resp = await http.post(
+        v2Uri(),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, String>{
+          'name': 'Galaxy S21',
+          'clientNonce': 'cn-6',
+        }),
+      );
+      expect(resp.statusCode, 403);
+      expect(
+        (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+        'declined',
+      );
+      // Approval was consulted exactly once, at create, with pinRequired=true
+      // (i.e. the host was given the chance to display the PIN).
+      expect(approvalPinRequired, <bool>[true]);
+    },
+  );
 
   // TODO-1296 / BUG-592 regression: the PIN-showing host approval must fire at
   // CREATE for a PIN-required session, so the host displays the PIN before the
@@ -174,8 +184,9 @@ void main() {
     const String clientNonce = 'cn-create';
     // After CREATE the host has already been asked to approve+show the PIN.
     final Map<String, dynamic> start = await startSession(clientNonce);
-    expect(approvalPinRequired, <bool>[true],
-        reason: 'host approval (PIN display) must happen during /api/pair/v2');
+    expect(approvalPinRequired, <bool>[
+      true,
+    ], reason: 'host approval (PIN display) must happen during /api/pair/v2');
     // Confirm with the correct proof must NOT trigger a second approval prompt.
     final String pinProof = FushiPairingProtocol.computePinProof(
       pin: shownPin!,
@@ -191,10 +202,13 @@ void main() {
       }),
     );
     expect(resp.statusCode, 200);
-    expect((jsonDecode(resp.body) as Map<String, dynamic>)['token'],
-        'super-secret-token');
-    expect(approvalPinRequired, <bool>[true],
-        reason: 'confirm must not re-prompt: approval already done at create');
+    expect(
+      (jsonDecode(resp.body) as Map<String, dynamic>)['token'],
+      'super-secret-token',
+    );
+    expect(approvalPinRequired, <bool>[
+      true,
+    ], reason: 'confirm must not re-prompt: approval already done at create');
   });
 
   // PIN-free (LAN auto-discovery) sessions keep the old behavior: no approval at
@@ -202,17 +216,22 @@ void main() {
   test('PIN-free approval fires at CONFIRM not create (BUG-592)', () async {
     await startServer(lanRequiresPin: false);
     final Map<String, dynamic> start = await startSession('cn-free-phase');
-    expect(approvalPinRequired, isEmpty,
-        reason: 'PIN-free create must not prompt the host (no PIN to show)');
+    expect(
+      approvalPinRequired,
+      isEmpty,
+      reason: 'PIN-free create must not prompt the host (no PIN to show)',
+    );
     final http.Response resp = await http.post(
       confirmUri(),
       headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(
-          <String, String>{'sessionId': start['sessionId'] as String}),
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+      }),
     );
     expect(resp.statusCode, 200);
-    expect(approvalPinRequired, <bool>[false],
-        reason: 'PIN-free approval happens at confirm');
+    expect(approvalPinRequired, <bool>[
+      false,
+    ], reason: 'PIN-free approval happens at confirm');
   });
 
   // TODO-1330 / BUG-617: 公网 PIN 时序修复的服务端契约——pinRequired 会话一旦 client
@@ -222,8 +241,11 @@ void main() {
     await startServer(lanRequiresPin: true);
     const String clientNonce = 'cn-resolve';
     final Map<String, dynamic> start = await startSession(clientNonce);
-    expect(sessionResolvedCount, 0,
-        reason: 'CREATE 阶段不算「已解决」——client 还没读到 PIN。');
+    expect(
+      sessionResolvedCount,
+      0,
+      reason: 'CREATE 阶段不算「已解决」——client 还没读到 PIN。',
+    );
     final String pinProof = FushiPairingProtocol.computePinProof(
       pin: shownPin!,
       clientNonce: clientNonce,
@@ -238,32 +260,37 @@ void main() {
       }),
     );
     expect(resp.statusCode, 200);
-    expect(sessionResolvedCount, 1,
-        reason: 'client 提交 confirm 后必须收起 host 常驻 PIN 弹窗一次。');
+    expect(
+      sessionResolvedCount,
+      1,
+      reason: 'client 提交 confirm 后必须收起 host 常驻 PIN 弹窗一次。',
+    );
   });
 
-  test('pinRequired 错 PIN 的 confirm 也触发 onPairSessionResolved（PIN 已消费）',
-      () async {
-    await startServer(lanRequiresPin: true);
-    const String clientNonce = 'cn-resolve-wrong';
-    final Map<String, dynamic> start = await startSession(clientNonce);
-    final String wrongProof = FushiPairingProtocol.computePinProof(
-      pin: '000000',
-      clientNonce: clientNonce,
-      hostNonce: start['hostNonce'] as String,
-    );
-    final http.Response resp = await http.post(
-      confirmUri(),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{
-        'sessionId': start['sessionId'] as String,
-        'pinProof': wrongProof,
-      }),
-    );
-    expect(resp.statusCode, 401);
-    // PIN 已被读到并一次性消费，host 常驻弹窗照样收起（重试走新会话拿新 PIN）。
-    expect(sessionResolvedCount, 1);
-  });
+  test(
+    'pinRequired 错 PIN 的 confirm 也触发 onPairSessionResolved（PIN 已消费）',
+    () async {
+      await startServer(lanRequiresPin: true);
+      const String clientNonce = 'cn-resolve-wrong';
+      final Map<String, dynamic> start = await startSession(clientNonce);
+      final String wrongProof = FushiPairingProtocol.computePinProof(
+        pin: '000000',
+        clientNonce: clientNonce,
+        hostNonce: start['hostNonce'] as String,
+      );
+      final http.Response resp = await http.post(
+        confirmUri(),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, String>{
+          'sessionId': start['sessionId'] as String,
+          'pinProof': wrongProof,
+        }),
+      );
+      expect(resp.statusCode, 401);
+      // PIN 已被读到并一次性消费，host 常驻弹窗照样收起（重试走新会话拿新 PIN）。
+      expect(sessionResolvedCount, 1);
+    },
+  );
 
   test('免 PIN 会话 confirm 不触发 onPairSessionResolved（无常驻弹窗）', () async {
     await startServer(lanRequiresPin: false);
@@ -271,8 +298,9 @@ void main() {
     final http.Response resp = await http.post(
       confirmUri(),
       headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(
-          <String, String>{'sessionId': start['sessionId'] as String}),
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+      }),
     );
     expect(resp.statusCode, 200);
     expect(sessionResolvedCount, 0, reason: '免 PIN 会话没有常驻 PIN 弹窗，绝不触发收起回调。');
@@ -294,8 +322,10 @@ void main() {
       body: jsonEncode(<String, String>{'sessionId': sid}),
     );
     expect(second.statusCode, 403);
-    expect((jsonDecode(second.body) as Map<String, dynamic>)['reason'],
-        'declined');
+    expect(
+      (jsonDecode(second.body) as Map<String, dynamic>)['reason'],
+      'declined',
+    );
   });
 
   test('unknown sessionId yields 403', () async {
@@ -333,38 +363,48 @@ void main() {
       body: jsonEncode(<String, String>{'clientNonce': 'cn'}),
     );
     expect(resp.statusCode, 403);
-    expect((jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
-        'unavailable');
+    expect(
+      (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+      'unavailable',
+    );
   });
 
   // BUG-1555 前这条断言的是「lanRequiresPin=true 时 v1 仍照常发 token」——那正是
   // 漏洞本身：本会话明明已被判定必须 PIN，改发 v1 就能绕过去。现在分两半：
   // 要 PIN 的会话拒 v1，免 PIN 的 LAN 会话 v1 行为逐字不变。
-  test('legacy api pair refused when this session must use a PIN (BUG-1555)',
-      () async {
-    await startServer(lanRequiresPin: true);
-    final http.Response resp = await http.post(
-      Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{'name': 'legacy'}),
-    );
-    expect(resp.statusCode, 403);
-    expect((jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
-        'upgrade_required');
-  });
+  test(
+    'legacy api pair refused when this session must use a PIN (BUG-1555)',
+    () async {
+      await startServer(lanRequiresPin: true);
+      final http.Response resp = await http.post(
+        Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, String>{'name': 'legacy'}),
+      );
+      expect(resp.statusCode, 403);
+      expect(
+        (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+        'upgrade_required',
+      );
+    },
+  );
 
-  test('legacy api pair unchanged backward compat (pin-free LAN session)',
-      () async {
-    await startServer(lanRequiresPin: false);
-    final http.Response resp = await http.post(
-      Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{'name': 'legacy'}),
-    );
-    expect(resp.statusCode, 200);
-    expect((jsonDecode(resp.body) as Map<String, dynamic>)['token'],
-        'super-secret-token');
-  });
+  test(
+    'legacy api pair unchanged backward compat (pin-free LAN session)',
+    () async {
+      await startServer(lanRequiresPin: false);
+      final http.Response resp = await http.post(
+        Uri.parse('http://127.0.0.1:${server.port}/api/pair'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, String>{'name': 'legacy'}),
+      );
+      expect(resp.statusCode, 200);
+      expect(
+        (jsonDecode(resp.body) as Map<String, dynamic>)['token'],
+        'super-secret-token',
+      );
+    },
+  );
 
   test('GET pair v2 yields 405', () async {
     await startServer(lanRequiresPin: false);

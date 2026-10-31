@@ -15,10 +15,12 @@ void main() {
   test('network image constructors must use the app proxy-aware providers', () {
     final List<String> violations = <String>[];
     final RegExp rawImage = RegExp(
-        r'\b(?:Image\s*\.\s*network|NetworkImage|CachedNetworkImageProvider|CachedNetworkImage|FadeInImage\s*\.\s*(?:assetNetwork|memoryNetwork)|ExtendedImage\s*\.\s*network|SvgPicture\s*\.\s*network|SvgNetworkLoader|DefaultCacheManager)\s*\(');
+      r'\b(?:Image\s*\.\s*network|NetworkImage|CachedNetworkImageProvider|CachedNetworkImage|FadeInImage\s*\.\s*(?:assetNetwork|memoryNetwork)|ExtendedImage\s*\.\s*network|SvgPicture\s*\.\s*network|SvgNetworkLoader|DefaultCacheManager)\s*\(',
+    );
     int scanned = 0;
-    for (final File file
-        in Directory('lib').listSync(recursive: true).whereType<File>()) {
+    for (final File file in Directory(
+      'lib',
+    ).listSync(recursive: true).whereType<File>()) {
       if (!file.path.endsWith('.dart')) continue;
       final String path = file.path.replaceAll(r'\', '/');
       if (path.endsWith('/utils/net/app_http_image.dart')) continue;
@@ -26,18 +28,25 @@ void main() {
       final String text = maskComments(file.readAsStringSync());
       if (rawImage.hasMatch(text)) violations.add(path);
       // Existing NetworkToFileImage calls are strictly local-file providers.
-      if (RegExp(r'NetworkToFileImage\([^)]*\burl\s*:', dotAll: true)
-          .hasMatch(text)) {
+      if (RegExp(
+        r'NetworkToFileImage\([^)]*\burl\s*:',
+        dotAll: true,
+      ).hasMatch(text)) {
         violations.add(path);
       }
     }
     // 禁止型断言全绿 ≠ 它在工作：扫描根改名 / 过滤写反都长成「零违规」。
-    expectScanScale(scanned,
-        what: 'lib/ 下参与远端图片 provider 扫描的 dart 文件',
-        atLeast: 1050,
-        measured: 1318);
-    expect(violations, isEmpty,
-        reason:
-            'Use AppHttpImage or AppCachedHttpImage; preserve headers and disk caching.');
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下参与远端图片 provider 扫描的 dart 文件',
+      atLeast: 1050,
+      measured: 1318,
+    );
+    expect(
+      violations,
+      isEmpty,
+      reason:
+          'Use AppHttpImage or AppCachedHttpImage; preserve headers and disk caching.',
+    );
   });
 }

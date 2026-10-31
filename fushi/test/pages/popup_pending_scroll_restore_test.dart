@@ -19,19 +19,21 @@ void main() {
     }
 
     final File jsTest = File('test/pages/popup_pending_scroll_restore_test.js');
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
-
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
     );
+
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
 
     expect(
       result.exitCode,
       0,
-      reason: 'popup pending-scroll JS behavior test failed.\n'
+      reason:
+          'popup pending-scroll JS behavior test failed.\n'
           'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
     expect(result.stdout.toString(), contains('all assertions passed'));
@@ -40,8 +42,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

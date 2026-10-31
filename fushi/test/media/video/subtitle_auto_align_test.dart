@@ -90,25 +90,29 @@ void main() {
     });
 
     test('flat input (degenerate range) returns all zero', () {
-      expect(
-        normalizeAudioEnergyEnvelope(<double>[-30, -30, -30]),
-        <double>[0, 0, 0],
-      );
+      expect(normalizeAudioEnergyEnvelope(<double>[-30, -30, -30]), <double>[
+        0,
+        0,
+        0,
+      ]);
     });
 
     test('energy threshold yields 0/1 VAD', () {
-      final List<double> out = normalizeAudioEnergyEnvelope(
-        <double>[-60, -50, -40, -20],
-        voiceThreshold: 0.5,
-      );
+      final List<double> out = normalizeAudioEnergyEnvelope(<double>[
+        -60,
+        -50,
+        -40,
+        -20,
+      ], voiceThreshold: 0.5);
       expect(out, <double>[0, 0, 1, 1]);
     });
 
     test('NaN bins treated as 0 and do not pollute min/max', () {
-      final List<double> out = normalizeAudioEnergyEnvelope(
-        <double>[double.nan, -60, -20],
-        voiceThreshold: 0.5,
-      );
+      final List<double> out = normalizeAudioEnergyEnvelope(<double>[
+        double.nan,
+        -60,
+        -20,
+      ], voiceThreshold: 0.5);
       expect(out[0], 0.0);
       expect(out[1], 0.0);
       expect(out[2], 1.0);
@@ -244,8 +248,11 @@ void main() {
       final int tIdx = args.indexOf('-t');
       expect(tIdx, greaterThanOrEqualTo(0));
       expect(args[tIdx + 1], '1200');
-      expect(tIdx, lessThan(args.indexOf('-i')),
-          reason: '-t 须在 -i 之前（输入端截断，包络帧数 = 上界 / 窗口）');
+      expect(
+        tIdx,
+        lessThan(args.indexOf('-i')),
+        reason: '-t 须在 -i 之前（输入端截断，包络帧数 = 上界 / 窗口）',
+      );
     });
 
     test('limitSeconds null/non-positive omits -t', () {
@@ -254,8 +261,10 @@ void main() {
         isFalse,
       );
       expect(
-        buildFfmpegPcmEnvelopeArgs(inputPath: '/tmp/v.mkv', limitSeconds: 0)
-            .contains('-t'),
+        buildFfmpegPcmEnvelopeArgs(
+          inputPath: '/tmp/v.mkv',
+          limitSeconds: 0,
+        ).contains('-t'),
         isFalse,
       );
     });
@@ -268,8 +277,11 @@ void main() {
         audioStreamIndex: 3,
         audioStreamCount: 2,
       );
-      expect(args.contains('-map'), isFalse,
-          reason: 'index>=count 应回退默认轨，不加 -map');
+      expect(
+        args.contains('-map'),
+        isFalse,
+        reason: 'index>=count 应回退默认轨，不加 -map',
+      );
     });
 
     test('in-bounds audioStreamIndex with count keeps -map', () {
@@ -288,19 +300,25 @@ void main() {
     // 编码它——旧桌面捆绑的最小 ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→
     // 空包络→「对轴界面波形完全不显示」。统一 FFmpeg 已有该编码器；`-vn` 保留，
     // 仍让最小构建的外部 ffmpeg 也能只抽音频能量。
-    test('always drops video with -vn (no-map default path) — minimal-build safe',
-        () {
-      // 无音轨参数 => 无 -map（默认轨回退路径），这正是最小 ffmpeg 会踩视频编码器的场景。
-      final List<String> noMap =
-          buildFfmpegPcmEnvelopeArgs(inputPath: '/tmp/v.mkv');
-      expect(noMap.contains('-map'), isFalse);
-      expect(noMap.contains('-vn'), isTrue,
-          reason: '无 -map 时若不丢视频，最小 ffmpeg 会 Encoder not found → 波形空');
-      // -vn 是输出选项，须在输入之后、`-f null -` 之前。
-      final int vnIdx = noMap.indexOf('-vn');
-      expect(vnIdx, greaterThan(noMap.indexOf('/tmp/v.mkv')));
-      expect(vnIdx, lessThan(noMap.indexOf('-f')));
-    });
+    test(
+      'always drops video with -vn (no-map default path) — minimal-build safe',
+      () {
+        // 无音轨参数 => 无 -map（默认轨回退路径），这正是最小 ffmpeg 会踩视频编码器的场景。
+        final List<String> noMap = buildFfmpegPcmEnvelopeArgs(
+          inputPath: '/tmp/v.mkv',
+        );
+        expect(noMap.contains('-map'), isFalse);
+        expect(
+          noMap.contains('-vn'),
+          isTrue,
+          reason: '无 -map 时若不丢视频，最小 ffmpeg 会 Encoder not found → 波形空',
+        );
+        // -vn 是输出选项，须在输入之后、`-f null -` 之前。
+        final int vnIdx = noMap.indexOf('-vn');
+        expect(vnIdx, greaterThan(noMap.indexOf('/tmp/v.mkv')));
+        expect(vnIdx, lessThan(noMap.indexOf('-f')));
+      },
+    );
 
     test('-vn also present when -map is added (in-bounds track)', () {
       final List<String> args = buildFfmpegPcmEnvelopeArgs(
@@ -327,8 +345,11 @@ void main() {
       // 字幕：窗内一条 [200,500)（bins 2..4，比音频早 3 格）+ 一条整段越界
       // [1200,1500)（必须被过滤，否则在末格堆假活动改变互相关结果）。
       final List<AudioCue> cues = <AudioCue>[_cue(200, 500), _cue(1200, 1500)];
-      final List<double> cueActivity =
-          buildCueActivityEnvelope(cues, limitMs, binMs: binMs);
+      final List<double> cueActivity = buildCueActivityEnvelope(
+        cues,
+        limitMs,
+        binMs: binMs,
+      );
       // 越界 cue 被丢弃：只剩 bins 2..4。
       expect(cueActivity, <double>[0, 0, 1, 1, 1, 0, 0, 0, 0, 0]);
 
@@ -338,15 +359,19 @@ void main() {
         binMs: binMs,
       );
       expect(r.status, SubtitleAutoAlignStatus.aligned);
-      expect(r.offsetMs, 3 * binMs,
-          reason: '字幕早 3 格 → 正 offset 300ms（截断不改变窗内相位）');
+      expect(
+        r.offsetMs,
+        3 * binMs,
+        reason: '字幕早 3 格 → 正 offset 300ms（截断不改变窗内相位）',
+      );
       expect(r.confidence, 1.0);
     });
   });
 
   group('parseAudioRmsEnvelopeFromFfmpegLog', () {
     test('parses per-frame RMS_level (-inf -> silenceDb)', () {
-      const String stderr = 'frame:0    pts:0       pts_time:0\n'
+      const String stderr =
+          'frame:0    pts:0       pts_time:0\n'
           'lavfi.astats.Overall.RMS_level=-30.123456\n'
           'frame:1    pts:800     pts_time:0.1\n'
           'lavfi.astats.Overall.RMS_level=-inf\n'

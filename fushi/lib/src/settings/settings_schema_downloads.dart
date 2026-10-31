@@ -99,8 +99,7 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
   // 常用控件（执行设备 / 后端 / 下载目录 / 限速 / 上传做种）是多个独立分组，
   // 经 body 逃生口排在导航分组之前——塞进一个 SettingsCustomItem 会让这些分组
   // 整块嵌进外层分组的一张卡里（卡中卡 + 自绘小节标题）。
-  body: (_) =>
-      const TorrentSettingsSection(scope: TorrentSettingsScope.common),
+  body: (_) => const TorrentSettingsSection(scope: TorrentSettingsScope.common),
   bodyBeforeSections: true,
   sections: <SettingsSection>[
     SettingsSection(

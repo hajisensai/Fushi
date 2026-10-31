@@ -26,11 +26,11 @@ class _FakeOcrService implements MangaOcrService {
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
-        detectorReady: ready,
-        recognizerReady: ready,
-        diskBytes: ready ? 50 : 0,
-        totalBytes: 50,
-      );
+    detectorReady: ready,
+    recognizerReady: ready,
+    diskBytes: ready ? 50 : 0,
+    totalBytes: 50,
+  );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -69,131 +69,144 @@ void main() {
   });
 
   testWidgets(
-      'builtin OCR: progress stream → finished → import called → pops bookKey',
-      (WidgetTester tester) async {
-    final _FakeOcrService service = _FakeOcrService();
-    String? importedPath;
-    bool? importedExternal;
+    'builtin OCR: progress stream → finished → import called → pops bookKey',
+    (WidgetTester tester) async {
+      final _FakeOcrService service = _FakeOcrService();
+      String? importedPath;
+      bool? importedExternal;
 
-    String? poppedResult;
-    await tester.pumpWidget(
-      ProviderScope(
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: Builder(
-                builder: (BuildContext ctx) => ElevatedButton(
-                  onPressed: () async {
-                    poppedResult = await showDialog<String>(
+      String? poppedResult;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (BuildContext ctx) => ElevatedButton(
+                    onPressed: () async {
+                      poppedResult = await showDialog<String>(
+                        context: ctx,
+                        builder: (_) => MangaOcrWizardDialog(
+                          engines: MangaOcrWizardEngines(service: service),
+                          db: db,
+                          initialImageDir: imageDir.path,
+                          importOverride:
+                              ({
+                                required String path,
+                                required bool external,
+                                String? title,
+                              }) async {
+                                importedPath = path;
+                                importedExternal = external;
+                                return 'bookkey1';
+                              },
+                        ),
+                      );
+                    },
+                    child: const Text('open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // configure 阶段：Run 按钮可用。
+      final Finder runBtn = find.widgetWithText(
+        FilledButton,
+        t.manga_ocr_wizard_run,
+      );
+      expect(runBtn, findsOneWidget);
+      await tester.tap(runBtn);
+      await tester.pump();
+
+      // 喂逐页进度。
+      service.volumeController!.add(
+        const MangaOcrVolumeEvent.page(pagesDone: 1, pagesTotal: 2),
+      );
+      await tester.pump();
+      expect(
+        find.text(t.manga_ocr_wizard_page_progress(done: 1, total: 2)),
+        findsOneWidget,
+      );
+
+      // 完成 → 触发落库 → pop。
+      final String jsonPath = p.join(imageDir.path, 'manga.json');
+      service.volumeController!.add(
+        MangaOcrVolumeEvent.finished(pagesTotal: 2, mangaJsonPath: jsonPath),
+      );
+      await tester.pumpAndSettle();
+
+      expect(importedPath, jsonPath);
+      expect(importedExternal, isFalse);
+      expect(poppedResult, 'bookkey1');
+    },
+  );
+
+  testWidgets(
+    'cancel during run: cancels stream, no import, back to configure',
+    (WidgetTester tester) async {
+      final _FakeOcrService service = _FakeOcrService();
+      bool importCalled = false;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (BuildContext ctx) => ElevatedButton(
+                    onPressed: () => showDialog<String>(
                       context: ctx,
                       builder: (_) => MangaOcrWizardDialog(
                         engines: MangaOcrWizardEngines(service: service),
                         db: db,
                         initialImageDir: imageDir.path,
-                        importOverride: ({
-                          required String path,
-                          required bool external,
-                          String? title,
-                        }) async {
-                          importedPath = path;
-                          importedExternal = external;
-                          return 'bookkey1';
-                        },
+                        importOverride:
+                            ({
+                              required String path,
+                              required bool external,
+                              String? title,
+                            }) async {
+                              importCalled = true;
+                              return 'x';
+                            },
                       ),
-                    );
-                  },
-                  child: const Text('open'),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    // configure 阶段：Run 按钮可用。
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(runBtn, findsOneWidget);
-    await tester.tap(runBtn);
-    await tester.pump();
-
-    // 喂逐页进度。
-    service.volumeController!.add(
-      const MangaOcrVolumeEvent.page(pagesDone: 1, pagesTotal: 2),
-    );
-    await tester.pump();
-    expect(find.text(t.manga_ocr_wizard_page_progress(done: 1, total: 2)),
-        findsOneWidget);
-
-    // 完成 → 触发落库 → pop。
-    final String jsonPath = p.join(imageDir.path, 'manga.json');
-    service.volumeController!.add(
-      MangaOcrVolumeEvent.finished(pagesTotal: 2, mangaJsonPath: jsonPath),
-    );
-    await tester.pumpAndSettle();
-
-    expect(importedPath, jsonPath);
-    expect(importedExternal, isFalse);
-    expect(poppedResult, 'bookkey1');
-  });
-
-  testWidgets('cancel during run: cancels stream, no import, back to configure',
-      (WidgetTester tester) async {
-    final _FakeOcrService service = _FakeOcrService();
-    bool importCalled = false;
-
-    await tester.pumpWidget(
-      ProviderScope(
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: Builder(
-                builder: (BuildContext ctx) => ElevatedButton(
-                  onPressed: () => showDialog<String>(
-                    context: ctx,
-                    builder: (_) => MangaOcrWizardDialog(
-                      engines: MangaOcrWizardEngines(service: service),
-                      db: db,
-                      initialImageDir: imageDir.path,
-                      importOverride: ({
-                        required String path,
-                        required bool external,
-                        String? title,
-                      }) async {
-                        importCalled = true;
-                        return 'x';
-                      },
                     ),
+                    child: const Text('open'),
                   ),
-                  child: const Text('open'),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, t.manga_ocr_wizard_run));
-    await tester.pump();
-    service.volumeController!.add(
-      const MangaOcrVolumeEvent.page(pagesDone: 1, pagesTotal: 3),
-    );
-    await tester.pump();
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
+      );
+      await tester.pump();
+      service.volumeController!.add(
+        const MangaOcrVolumeEvent.page(pagesDone: 1, pagesTotal: 3),
+      );
+      await tester.pump();
 
-    // running 阶段只有一个 Cancel 按钮。
-    await tester.tap(find.widgetWithText(TextButton, t.dialog_cancel));
-    await tester.pumpAndSettle();
+      // running 阶段只有一个 Cancel 按钮。
+      await tester.tap(find.widgetWithText(TextButton, t.dialog_cancel));
+      await tester.pumpAndSettle();
 
-    expect(service.ocrCancelled, isTrue);
-    expect(importCalled, isFalse);
-    // 回到 configure：Run 按钮再次出现。
-    expect(find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
-        findsOneWidget);
-  });
+      expect(service.ocrCancelled, isTrue);
+      expect(importCalled, isFalse);
+      // 回到 configure：Run 按钮再次出现。
+      expect(
+        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
+        findsOneWidget,
+      );
+    },
+  );
 }

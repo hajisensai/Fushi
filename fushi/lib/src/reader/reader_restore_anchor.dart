@@ -49,8 +49,10 @@ class ReaderRestoreAnchor {
   /// 章首：无精确字符锚、无句尾锚、无片段，分数 0。
   ///
   /// 这正是修复前重建会落到的地方——测试用它当「丢进度」的反例基准。
-  static const ReaderRestoreAnchor chapterStart =
-      ReaderRestoreAnchor(progress: 0, charOffset: -1);
+  static const ReaderRestoreAnchor chapterStart = ReaderRestoreAnchor(
+    progress: 0,
+    charOffset: -1,
+  );
 
   /// 章内进度分数 [0,1]。精确字符锚存在时它只是兜底（JS 侧 `C.initialCharOffset >= 0`
   /// 优先走 `restoreToCharOffset`）。
@@ -83,7 +85,8 @@ class ReaderRestoreAnchor {
       Object.hash(progress, charOffset, charOffsetEnd, fragment);
 
   @override
-  String toString() => 'ReaderRestoreAnchor(progress: $progress, '
+  String toString() =>
+      'ReaderRestoreAnchor(progress: $progress, '
       'charOffset: $charOffset, charOffsetEnd: $charOffsetEnd, '
       'fragment: $fragment)';
 }

@@ -132,43 +132,56 @@ void main() {
     WidgetTester tester,
   ) async {
     // 停驻空闲（seed）：占位单例，层在屏外。
-    await tester.pumpWidget(_host(
-      visible: false,
-      isSearching: false,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: false,
+        isSearching: false,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), false);
     final State<DictionaryPopupWebView>? seeded = _webViewKey.currentState;
 
     // 复用热槽激活查词：结果对象仍是同一个占位单例，只有查询状态与可见性在变。
-    await tester.pumpWidget(_host(
-      visible: true,
-      isSearching: true,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: true,
+        isSearching: true,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), true);
-    expect(identical(_webViewKey.currentState, seeded), true,
-        reason: '同一个热槽 WebView，靠 lookupPending 独立比较触发重推');
+    expect(
+      identical(_webViewKey.currentState, seeded),
+      true,
+      reason: '同一个热槽 WebView，靠 lookupPending 独立比较触发重推',
+    );
 
-    await tester.pumpWidget(_host(visible: true, isSearching: false, result: hit));
+    await tester.pumpWidget(
+      _host(visible: true, isSearching: false, result: hit),
+    );
     expect(_injectedPending(tester), false, reason: '结果到达即 pending=false');
 
-    await tester.pumpWidget(_host(
-      visible: false,
-      isSearching: false,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: false,
+        isSearching: false,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), false, reason: '关栈复位回停驻空闲');
   });
 
   testWidgets('查询中但层被挪到屏外（对话框 / 就绪才显示）：pending=false', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(_host(
-      visible: false,
-      isSearching: true,
-      result: kPopupSearchingPlaceholderResult,
-    ));
+    await tester.pumpWidget(
+      _host(
+        visible: false,
+        isSearching: true,
+        result: kPopupSearchingPlaceholderResult,
+      ),
+    );
     expect(_injectedPending(tester), false);
   });
 
@@ -182,10 +195,7 @@ void main() {
       buildPopupEntriesJs(kPopupSearchingPlaceholderResult, pending: true),
       contains('window.lookupPending = true;'),
     );
-    expect(
-      buildPopupEntriesJs(hit),
-      contains('window.lookupPending = false;'),
-    );
+    expect(buildPopupEntriesJs(hit), contains('window.lookupPending = false;'));
   });
 
   // BUG-3274：换词时隐藏的热槽层先收到搜索期占位（pending=false），popup.js 曾把它画成
@@ -206,9 +216,7 @@ void main() {
     ).readAsStringSync();
     expect(
       webView,
-      contains(
-        'identical(widget.result, kPopupSearchingPlaceholderResult);',
-      ),
+      contains('identical(widget.result, kPopupSearchingPlaceholderResult);'),
       reason: 'in-app 推送必须按占位单例身份下发 lookupIdle',
     );
     // P1-B：字面量与拦截取回两条投递路径都必须带上同一个 idle（缺一条就会在大结果
@@ -216,7 +224,8 @@ void main() {
     expect(
       RegExp(r'idle: idle,').allMatches(webView).length,
       greaterThanOrEqualTo(2),
-      reason: '字面量（buildPopupEntriesJs）与取回（buildPopupFetchedEntriesJs）'
+      reason:
+          '字面量（buildPopupEntriesJs）与取回（buildPopupFetchedEntriesJs）'
           '两条路径都要下发 lookupIdle',
     );
   });

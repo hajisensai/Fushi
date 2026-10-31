@@ -26,51 +26,58 @@ void main() {
         TargetPlatform.iOS,
       ]) {
         final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-            p)[ShortcutAction.readerToggleStudyClock]!;
+          p,
+        )[ShortcutAction.readerToggleStudyClock]!;
         expect(
           set.keyboardBindings,
           contains(const InputBinding(key: LogicalKeyboardKey.keyP)),
           reason: 'P on $p',
         );
-        expect(set.gamepadBindings, isEmpty,
-            reason: 'no gamepad default on $p');
+        expect(
+          set.gamepadBindings,
+          isEmpty,
+          reason: 'no gamepad default on $p',
+        );
       }
     });
 
-    test('registry resolves P to readerToggleStudyClock in the reader scope',
-        () {
-      final FushiShortcutRegistry registry = FushiShortcutRegistry();
-      registry.loadDefaults(TargetPlatform.windows);
-      expect(
-        registry.resolveKeyboard(
-          LogicalKeyboardKey.keyP,
-          modifiers: const <ModifierKey>{},
-          scope: ShortcutScope.reader,
-        ),
-        ShortcutAction.readerToggleStudyClock,
-      );
-    });
+    test(
+      'registry resolves P to readerToggleStudyClock in the reader scope',
+      () {
+        final FushiShortcutRegistry registry = FushiShortcutRegistry();
+        registry.loadDefaults(TargetPlatform.windows);
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.keyP,
+            modifiers: const <ModifierKey>{},
+            scope: ShortcutScope.reader,
+          ),
+          ShortcutAction.readerToggleStudyClock,
+        );
+      },
+    );
 
     test('no other reader co-active action shadows P', () {
       final Map<ShortcutAction, ShortcutBindingSet> defaults =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
       const InputBinding plainP = InputBinding(key: LogicalKeyboardKey.keyP);
       for (final ShortcutScope scope in ShortcutScope.reader.coactiveScopes) {
-        for (final ShortcutAction action
-            in ShortcutAction.actionsForScope(scope)) {
+        for (final ShortcutAction action in ShortcutAction.actionsForScope(
+          scope,
+        )) {
           if (action == ShortcutAction.readerToggleStudyClock) continue;
           expect(
             defaults[action]!.keyboardBindings.map((b) => b.serialize()),
             isNot(contains(plainP.serialize())),
-            reason: '${action.key} also binds P — would shadow '
+            reason:
+                '${action.key} also binds P — would shadow '
                 'readerToggleStudyClock',
           );
         }
       }
     });
 
-    test(
-        'reader page dispatches it to the same manual-pause entry as the '
+    test('reader page dispatches it to the same manual-pause entry as the '
         'status-row clock button', () {
       final String src = File(
         'lib/src/pages/implementations/reader_fushi/caret.part.dart',
@@ -79,12 +86,16 @@ void main() {
         r'case ShortcutAction\.readerToggleStudyClock:[\s\S]*?'
         r'return KeyEventResult\.handled;',
       ).firstMatch(src);
-      expect(m, isNotNull,
-          reason: 'caret.part.dart must dispatch readerToggleStudyClock');
+      expect(
+        m,
+        isNotNull,
+        reason: 'caret.part.dart must dispatch readerToggleStudyClock',
+      );
       expect(
         m!.group(0),
         contains('_toggleStudyClockManualPause();'),
-        reason: 'the shortcut must share the button entry so stop / resume '
+        reason:
+            'the shortcut must share the button entry so stop / resume '
             'semantics (settle segment, re-anchor tick) stay in one place',
       );
       // 纯状态切换：不得像开面板动作那样先关词典弹窗再执行。

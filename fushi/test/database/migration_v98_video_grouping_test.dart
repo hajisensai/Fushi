@@ -18,7 +18,9 @@ void main() {
         path,
         isMainProcess: false,
       );
-      await original.into(original.mediaSources).insert(
+      await original
+          .into(original.mediaSources)
+          .insert(
             MediaSourcesCompanion.insert(
               label: 'Difficulty',
               mediaKind: 'video',
@@ -26,7 +28,9 @@ void main() {
               createdAt: 123,
             ),
           );
-      await original.into(original.mediaCollections).insert(
+      await original
+          .into(original.mediaCollections)
+          .insert(
             MediaCollectionsCompanion.insert(
               name: 'My lessons',
               createdAt: 456,
@@ -34,11 +38,13 @@ void main() {
           );
       await original
           .into(original.videoBooks)
-          .insert(VideoBooksCompanion.insert(
-            bookUid: 'lesson',
-            title: 'Lesson',
-            videoPath: 'D:/lessons/easy/a.mp4',
-          ));
+          .insert(
+            VideoBooksCompanion.insert(
+              bookUid: 'lesson',
+              title: 'Lesson',
+              videoPath: 'D:/lessons/easy/a.mp4',
+            ),
+          );
       await original.close();
       final sqlite3.Database raw = sqlite3.sqlite3.open(path);
       try {
@@ -58,28 +64,34 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(upgraded.close);
-      expect((await upgraded.select(upgraded.videoBooks).getSingle()).title,
-          'Lesson');
       expect(
-          (await upgraded.select(upgraded.videoBooks).getSingle())
-              .videoGroupingMode,
-          isNull);
-      await upgraded.update(upgraded.videoBooks).write(
-            const VideoBooksCompanion(videoGroupingMode: Value('folder')),
-          );
+        (await upgraded.select(upgraded.videoBooks).getSingle()).title,
+        'Lesson',
+      );
       expect(
-          (await upgraded.select(upgraded.videoBooks).getSingle())
-              .videoGroupingMode,
-          'folder');
-      final MediaSourceRow source =
-          await upgraded.select(upgraded.mediaSources).getSingle();
+        (await upgraded.select(upgraded.videoBooks).getSingle())
+            .videoGroupingMode,
+        isNull,
+      );
+      await upgraded
+          .update(upgraded.videoBooks)
+          .write(const VideoBooksCompanion(videoGroupingMode: Value('folder')));
+      expect(
+        (await upgraded.select(upgraded.videoBooks).getSingle())
+            .videoGroupingMode,
+        'folder',
+      );
+      final MediaSourceRow source = await upgraded
+          .select(upgraded.mediaSources)
+          .getSingle();
       expect(source.label, 'Difficulty');
       expect(source.rootPath, 'D:/lessons');
       expect(source.createdAt, 123);
       expect(source.videoGroupingMode, 'series');
       expect(source.configJson, isNull);
-      final MediaCollectionRow collection =
-          await upgraded.select(upgraded.mediaCollections).getSingle();
+      final MediaCollectionRow collection = await upgraded
+          .select(upgraded.mediaCollections)
+          .getSingle();
       expect(collection.name, 'My lessons');
       expect(collection.createdAt, 456);
       expect(collection.sourceFolderPath, isNull);
@@ -89,16 +101,21 @@ void main() {
         upgraded.schemaVersion,
       );
 
-      await upgraded.update(upgraded.mediaSources).write(
+      await upgraded
+          .update(upgraded.mediaSources)
+          .write(
             const MediaSourcesCompanion(videoGroupingMode: Value('folder')),
           );
-      await upgraded.update(upgraded.mediaCollections).write(
+      await upgraded
+          .update(upgraded.mediaCollections)
+          .write(
             const MediaCollectionsCompanion(
               sourceFolderPath: Value('D:/lessons/easy'),
             ),
           );
-      final MediaSourceRow updated =
-          await upgraded.select(upgraded.mediaSources).getSingle();
+      final MediaSourceRow updated = await upgraded
+          .select(upgraded.mediaSources)
+          .getSingle();
       expect(updated.videoGroupingMode, 'folder');
       expect(updated.copyWith(label: 'Renamed').videoGroupingMode, 'folder');
       expect(

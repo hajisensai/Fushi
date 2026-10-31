@@ -16,8 +16,10 @@ class _CatalogServer {
   final List<Uri> requests = <Uri>[];
 
   static Future<_CatalogServer> start() async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     return _CatalogServer(server);
   }
 
@@ -34,8 +36,11 @@ class _CatalogServer {
       return;
     }
     request.response.statusCode = HttpStatus.ok;
-    request.response.headers.contentType =
-        ContentType('application', 'json', charset: 'utf-8');
+    request.response.headers.contentType = ContentType(
+      'application',
+      'json',
+      charset: 'utf-8',
+    );
     request.response.add(utf8.encode(body));
     request.response.close();
   }
@@ -100,36 +105,35 @@ void main() {
       ],
     });
 
-    final MokuroMoeSeries series =
-        await client().fetchSeries('Comic #1 スペース入り');
+    final MokuroMoeSeries series = await client().fetchSeries(
+      'Comic #1 スペース入り',
+    );
 
     expect(series.name, 'Comic #1 スペース入り');
     expect(series.volumes.single.name, 'v1');
     // 服务器端解出的 query 参数必须逐字节还原（# 未编码会被当 fragment 截断）。
-    expect(
-      server.requests.single.queryParameters['name'],
-      'Comic #1 スペース入り',
-    );
+    expect(server.requests.single.queryParameters['name'], 'Comic #1 スペース入り');
   });
 
   test('cbzUrl / mokuroUrl / coverUrl：URL 段逐段 encodeComponent', () {
     final MokuroMoeClient c = client();
     final String cbz = c.cbzUrl('Comic #1', '第01巻 (extra)');
-    expect(cbz,
-        '${server.baseUrl}/mokuro-reader/Comic%20%231/%E7%AC%AC01%E5%B7%BB%20(extra).cbz');
+    expect(
+      cbz,
+      '${server.baseUrl}/mokuro-reader/Comic%20%231/%E7%AC%AC01%E5%B7%BB%20(extra).cbz',
+    );
     final String mokuro = c.mokuroUrl('Comic #1', '第01巻 (extra)');
     expect(mokuro, endsWith('.mokuro'));
     expect(mokuro, contains('Comic%20%231'));
     final String cover = c.coverUrl('Comic #1/cover file.webp');
-    expect(cover,
-        '${server.baseUrl}/catalog/api/cover?path=Comic%20%231%2Fcover%20file.webp');
+    expect(
+      cover,
+      '${server.baseUrl}/catalog/api/cover?path=Comic%20%231%2Fcover%20file.webp',
+    );
   });
 
   test('非 200 抛 HttpException', () async {
-    await expectLater(
-      client().fetchLibrary(),
-      throwsA(isA<HttpException>()),
-    );
+    await expectLater(client().fetchLibrary(), throwsA(isA<HttpException>()));
     await expectLater(
       client().fetchSeries('missing'),
       throwsA(isA<HttpException>()),
@@ -137,8 +141,10 @@ void main() {
   });
 
   test('base URL 归一：尾斜杠去除、空串回退默认站点', () {
-    expect(MokuroMoeClient(baseUrl: 'https://example.com///').baseUrl,
-        'https://example.com');
+    expect(
+      MokuroMoeClient(baseUrl: 'https://example.com///').baseUrl,
+      'https://example.com',
+    );
     expect(MokuroMoeClient(baseUrl: '   ').baseUrl, kMokuroMoeDefaultBaseUrl);
     expect(MokuroMoeClient().baseUrl, kMokuroMoeDefaultBaseUrl);
     expect(normalizeMokuroMoeBaseUrl(''), kMokuroMoeDefaultBaseUrl);

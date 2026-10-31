@@ -26,8 +26,10 @@ DateTime? parseLapisBackupTimestamp(String filename) {
   if (!filename.startsWith('lapis-') || !filename.endsWith('.json')) {
     return null;
   }
-  final String raw =
-      filename.substring('lapis-'.length, filename.length - '.json'.length);
+  final String raw = filename.substring(
+    'lapis-'.length,
+    filename.length - '.json'.length,
+  );
   // 时间部分的三个 '-' 还原成 ':'；日期部分的 '-' 本就是 ISO 分隔符，不能动。
   final String iso = raw.replaceFirstMapped(
     RegExp(r'T(\d{2})-(\d{2})-(\d{2})'),

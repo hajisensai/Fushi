@@ -327,8 +327,7 @@ Uint8List encodeMusicKnownFiles(Map<String, ({int mtimeMs, int size})> known) {
   out.add(head.buffer.asUint8List());
   for (final MapEntry<String, ({int mtimeMs, int size})> e in known.entries) {
     final List<int> path = utf8.encode(e.key);
-    final ByteData rec = ByteData(4)
-      ..setUint32(0, path.length, Endian.little);
+    final ByteData rec = ByteData(4)..setUint32(0, path.length, Endian.little);
     out.add(rec.buffer.asUint8List());
     out.add(path);
     final ByteData nums = ByteData(16)

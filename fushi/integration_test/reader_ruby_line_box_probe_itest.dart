@@ -77,12 +77,15 @@ Future<void> _waitFor(
     await tester.pump(step);
     if (ready()) {
       debugPrint(
-          '[ruby-line-box] $label ready after ${i * step.inMilliseconds}ms');
+        '[ruby-line-box] $label ready after ${i * step.inMilliseconds}ms',
+      );
       return;
     }
   }
-  fail('$label did not become ready within '
-      '${maxPolls * step.inMilliseconds}ms');
+  fail(
+    '$label did not become ready within '
+    '${maxPolls * step.inMilliseconds}ms',
+  );
 }
 
 Future<void> _pumpForPref(WidgetTester tester) async {
@@ -93,7 +96,8 @@ Future<void> _pumpForPref(WidgetTester tester) async {
 
 // ── 素材：纯文本段 / ruby 段交替 ────────────────────────────────────────
 
-const String _plainA = '桜の花が咲き始めた頃、少年は初めてその図書館を訪れた。古い木の扉を押し開けると、'
+const String _plainA =
+    '桜の花が咲き始めた頃、少年は初めてその図書館を訪れた。古い木の扉を押し開けると、'
     '埃の匂いと紙の香りが混ざり合った空気が流れ出てきた。窓から差し込む午後の光が、'
     '本棚の間を縫うように伸びていた。少年は息を殺して、その光の道を辿った。図書館の'
     '奥には、誰も近寄らない古びた書架があった。そこには、背表紙の文字も読めないほど'
@@ -114,7 +118,8 @@ const String _rubyA =
     '<ruby>背表紙<rt>せびょうし</rt></ruby>の<ruby>文字<rt>もじ</rt></ruby>も'
     '読めないほど古い<ruby>本<rt>ほん</rt></ruby>が並んでいた。';
 
-const String _plainB = '彼は鍵を握りしめ、図書館の中を探索し始めた。廊下の突き当たりに、見覚えのない'
+const String _plainB =
+    '彼は鍵を握りしめ、図書館の中を探索し始めた。廊下の突き当たりに、見覚えのない'
     '扉を見つけた。扉の向こうには、想像もしなかった世界が広がっていた。空は紫色で、'
     '二つの月が浮かんでいた。風が吹くたびに、木々の葉が音楽を奏でた。まるで森全体が'
     '一つの楽器のようだった。小さな川のほとりに座って、少年は持ってきた本を開いた。'
@@ -153,10 +158,13 @@ Uint8List _buildProbeEpub() {
     <String>['plain', _plainB],
   ];
   for (int i = 0; i < paragraphs.length; i++) {
-    body.writeln('  <p id="lb${i + 1}" data-kind="${paragraphs[i][0]}">'
-        '${paragraphs[i][1]}</p>');
+    body.writeln(
+      '  <p id="lb${i + 1}" data-kind="${paragraphs[i][0]}">'
+      '${paragraphs[i][1]}</p>',
+    );
   }
-  final String chapter = '''<?xml version="1.0" encoding="UTF-8"?>
+  final String chapter =
+      '''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
 <head>
@@ -184,7 +192,8 @@ $body</body>
     <itemref idref="ch1"/>
   </spine>
 </package>''';
-  const String ncx = '''<?xml version="1.0" encoding="UTF-8"?>
+  const String ncx =
+      '''<?xml version="1.0" encoding="UTF-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
     <meta name="dtb:uid" content="urn:uuid:ruby-line-box-probe-itest-001"/>
@@ -367,7 +376,8 @@ const String _measureJs = r'''
 })()
 ''';
 
-String _setProbeCssJs(String css) => '''
+String _setProbeCssJs(String css) =>
+    '''
 (function () {
   var el = document.getElementById('probe');
   if (!el) {
@@ -419,14 +429,19 @@ const List<MapEntry<String, String>> _cases = <MapEntry<String, String>>[
   MapEntry<String, String>('baseline', ''),
   MapEntry<String, String>('C1', 'ruby, rt { line-height: 1 !important; }'),
   MapEntry<String, String>(
-      'C2', 'html { -webkit-line-box-contain: block replaced !important; }'),
-  MapEntry<String, String>('C3',
-      'html { -webkit-line-box-contain: block glyphs replaced !important; }'),
+    'C2',
+    'html { -webkit-line-box-contain: block replaced !important; }',
+  ),
   MapEntry<String, String>(
-      'C4',
-      'rt { line-height: 1 !important; } '
-          'ruby { line-height: 1 !important; } '
-          'body { line-height: 1.9 !important; }'),
+    'C3',
+    'html { -webkit-line-box-contain: block glyphs replaced !important; }',
+  ),
+  MapEntry<String, String>(
+    'C4',
+    'rt { line-height: 1 !important; } '
+        'ruby { line-height: 1 !important; } '
+        'body { line-height: 1.9 !important; }',
+  ),
   MapEntry<String, String>('C5', 'rt { line-height: 1 !important; }'),
 ];
 
@@ -434,14 +449,19 @@ Future<void> _openSeededBook(WidgetTester tester, String bookKey) async {
   await openBookViaProductionPath(tester, bookKey);
   await _waitFor(tester, _webViewShown, 'reader WebView');
   await _waitFor(tester, _contentReady, 'reader content');
-  await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-      maxPolls: 20);
+  await _waitFor(
+    tester,
+    readerWebViewReady,
+    'reader debug hooks',
+    maxPolls: 20,
+  );
 }
 
 Future<void> _closeReader(WidgetTester tester) async {
   if (_readerPageGone()) return;
-  final NavigatorState nav =
-      Navigator.of(tester.element(find.byType(ReaderFushiPage)));
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(ReaderFushiPage)),
+  );
   nav.pop();
   await _waitFor(tester, _readerPageGone, 'reader closed', maxPolls: 40);
   await tester.pump(const Duration(seconds: 1));
@@ -459,8 +479,11 @@ void main() {
         label: 'ruby-line-box',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
           await readyAppModel(tester);
 
@@ -470,10 +493,12 @@ void main() {
           final String originalViewMode = source.readerViewMode;
           final double originalLineHeight = source.readerLineHeight;
           final double originalFontSize = source.readerFontSize;
-          debugPrint('[ruby-line-box] original prefs: furigana_mode='
-              '$originalMode writing_mode=$originalWritingMode '
-              'view_mode=$originalViewMode line_height=$originalLineHeight '
-              'font_size=$originalFontSize');
+          debugPrint(
+            '[ruby-line-box] original prefs: furigana_mode='
+            '$originalMode writing_mode=$originalWritingMode '
+            'view_mode=$originalViewMode line_height=$originalLineHeight '
+            'font_size=$originalFontSize',
+          );
 
           _RunJs? runJs;
           try {
@@ -496,12 +521,17 @@ void main() {
                 await tester.pump(const Duration(seconds: 2));
 
                 runJs = ReaderFushiPage.debugEvaluateJavascript;
-                expect(runJs, isNotNull,
-                    reason: 'reader must expose debugEvaluateJavascript');
+                expect(
+                  runJs,
+                  isNotNull,
+                  reason: 'reader must expose debugEvaluateJavascript',
+                );
                 expect(ReaderFushiSource.readerSettings?.furiganaMode, 'off');
                 expect(ReaderFushiSource.readerSettings?.lineHeight, 1.65);
-                expect(ReaderFushiSource.readerSettings?.isContinuousMode,
-                    isFalse);
+                expect(
+                  ReaderFushiSource.readerSettings?.isContinuousMode,
+                  isFalse,
+                );
                 expect(ReaderFushiSource.readerSettings?.writingMode, wm);
 
                 for (final MapEntry<String, String> c in _cases) {
@@ -509,54 +539,75 @@ void main() {
                     await runJs!(_removeProbeCssJs);
                   } else {
                     final Object? len = await runJs!(_setProbeCssJs(c.value));
-                    debugPrint('[ruby-line-box] case=${c.key} probe css set '
-                        '(len=$len): ${c.value}');
+                    debugPrint(
+                      '[ruby-line-box] case=${c.key} probe css set '
+                      '(len=$len): ${c.value}',
+                    );
                   }
                   await tester.pump(const Duration(milliseconds: 500));
-                  final _LineBoxResult r =
-                      _LineBoxResult.fromRaw(await runJs(_measureJs));
-                  final String line = '[ruby-line-box] engine=${r.engine} '
+                  final _LineBoxResult r = _LineBoxResult.fromRaw(
+                    await runJs(_measureJs),
+                  );
+                  final String line =
+                      '[ruby-line-box] engine=${r.engine} '
                       'pass=$pass case=${c.key} plain=${r.plain} ruby=${r.ruby} '
                       'delta=${r.delta} blockExtra plain=${r.raw['plainExtra']} '
                       'ruby=${r.raw['rubyExtra']}';
                   debugPrint(line);
                   summary.add(line);
                   debugPrint(
-                      '[ruby-line-box]   body font=${r.raw['bodyFontSize']} '
-                      'lineHeight=${r.raw['bodyLineHeight']} '
-                      'writingMode=${r.raw['bodyWritingMode']} '
-                      'rt=${r.raw['rtCss']} ruby=${r.raw['rubyCss']}');
+                    '[ruby-line-box]   body font=${r.raw['bodyFontSize']} '
+                    'lineHeight=${r.raw['bodyLineHeight']} '
+                    'writingMode=${r.raw['bodyWritingMode']} '
+                    'rt=${r.raw['rtCss']} ruby=${r.raw['rubyCss']}',
+                  );
                   for (final Map<String, dynamic> p in r.paragraphs) {
-                    debugPrint('[ruby-line-box]   ${p['id']} ${p['kind']} '
-                        'lines=${p['lineCount']} medianPitch=${p['medianPitch']} '
-                        'glyphH=${p['medianGlyphHeight']} '
-                        'block=${p['blockSize']} extra=${p['extra']} '
-                        'pitches=${p['pitches']}');
+                    debugPrint(
+                      '[ruby-line-box]   ${p['id']} ${p['kind']} '
+                      'lines=${p['lineCount']} medianPitch=${p['medianPitch']} '
+                      'glyphH=${p['medianGlyphHeight']} '
+                      'block=${p['blockSize']} extra=${p['extra']} '
+                      'pitches=${p['pitches']}',
+                    );
                   }
                   final ObserveShot web = await captureReaderWebView(
-                      'observe-b-$pass-${c.key}-webview');
+                    'observe-b-$pass-${c.key}-webview',
+                  );
                   debugPrint(
-                      '[ruby-line-box]   webview ${c.key} saved=${web.saved} '
-                      'nonBlank=${web.nonBlank} path=${web.path}');
+                    '[ruby-line-box]   webview ${c.key} saved=${web.saved} '
+                    'nonBlank=${web.nonBlank} path=${web.path}',
+                  );
 
-                  expect(r.plain, greaterThan(0),
-                      reason:
-                          'case ${c.key}: plain paragraphs must yield a pitch');
-                  expect(r.ruby, greaterThan(0),
-                      reason:
-                          'case ${c.key}: ruby paragraphs must yield a pitch');
+                  expect(
+                    r.plain,
+                    greaterThan(0),
+                    reason:
+                        'case ${c.key}: plain paragraphs must yield a pitch',
+                  );
+                  expect(
+                    r.ruby,
+                    greaterThan(0),
+                    reason: 'case ${c.key}: ruby paragraphs must yield a pitch',
+                  );
                   if (c.key == 'baseline') {
-                    expect(r.minLines('plain'), greaterThanOrEqualTo(2),
-                        reason: 'every plain paragraph must wrap to ≥2 lines '
-                            '(pitch needs two line tops)');
-                    expect(r.minLines('ruby'), greaterThanOrEqualTo(2),
-                        reason: 'every ruby paragraph must wrap to ≥2 lines');
+                    expect(
+                      r.minLines('plain'),
+                      greaterThanOrEqualTo(2),
+                      reason:
+                          'every plain paragraph must wrap to ≥2 lines '
+                          '(pitch needs two line tops)',
+                    );
+                    expect(
+                      r.minLines('ruby'),
+                      greaterThanOrEqualTo(2),
+                      reason: 'every ruby paragraph must wrap to ≥2 lines',
+                    );
                   }
                 }
                 await runJs!(_removeProbeCssJs);
-                debugPrint('[ruby-line-box] UA=${(await runJs(
-                  'navigator.userAgent',
-                ))}');
+                debugPrint(
+                  '[ruby-line-box] UA=${(await runJs('navigator.userAgent'))}',
+                );
                 await _closeReader(tester);
               }
             }
@@ -574,11 +625,13 @@ void main() {
             await source.setReaderLineHeight(originalLineHeight);
             await source.setReaderFontSize(originalFontSize);
             await _pumpForPref(tester);
-            debugPrint('[ruby-line-box] restored prefs: furigana_mode='
-                '${source.readerFuriganaMode} writing_mode='
-                '${source.readerWritingMode} view_mode=${source.readerViewMode} '
-                'line_height=${source.readerLineHeight} '
-                'font_size=${source.readerFontSize}');
+            debugPrint(
+              '[ruby-line-box] restored prefs: furigana_mode='
+              '${source.readerFuriganaMode} writing_mode='
+              '${source.readerWritingMode} view_mode=${source.readerViewMode} '
+              'line_height=${source.readerLineHeight} '
+              'font_size=${source.readerFontSize}',
+            );
           }
         },
       );

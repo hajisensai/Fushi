@@ -15,8 +15,7 @@ class _FakeMining implements FushiRemoteMiningService {
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
-  }) async =>
-      const RemoteMineResult(result: 'success');
+  }) async => const RemoteMineResult(result: 'success');
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async =>
@@ -30,20 +29,18 @@ class _FakeMining implements FushiRemoteMiningService {
   Future<bool> isDuplicate({
     required String expression,
     required String reading,
-  }) async =>
-      false;
+  }) async => false;
 
   @override
   Future<AnkiOpenWordOutcome> openWordInAnki({
     required String expression,
     required String reading,
-  }) async =>
-      AnkiOpenWordOutcome.failed;
+  }) async => AnkiOpenWordOutcome.failed;
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      null;
+    String modelName,
+  ) async => null;
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
@@ -51,8 +48,9 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) async =>
-      false;
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => false;
 
   @override
   Future<bool> probeMediaMaintenance() async => false;

@@ -313,7 +313,10 @@ void main() {
 
     final ({int status, Object? json}) unknown =
         await post('/api/library/metadata/episode-group', {
-          'key': VideoMetadataWorkKey.collection(name: 'Nope', collectionType: 'playlist').toJson(),
+          'key': VideoMetadataWorkKey.collection(
+            name: 'Nope',
+            collectionType: 'playlist',
+          ).toJson(),
           'groupId': 'x',
         });
     expect(unknown.status, 409);

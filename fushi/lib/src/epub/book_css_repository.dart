@@ -65,8 +65,9 @@ class BookCssRepository {
     final List<CssFileEntry> entries = discoverCssFiles();
     final List<CssFileSnapshot> snapshots = <CssFileSnapshot>[];
     for (final CssFileEntry entry in entries) {
-      snapshots
-          .add(CssFileSnapshot(entry: entry, content: await readCss(entry)));
+      snapshots.add(
+        CssFileSnapshot(entry: entry, content: await readCss(entry)),
+      );
     }
     return snapshots;
   }
@@ -77,8 +78,9 @@ class BookCssRepository {
   /// missing/unparseable (never true for a book that actually opened) or that
   /// declare no CSS yield an empty list rather than crashing.
   List<CssFileEntry> discoverCssFiles() {
-    final List<String> relativePaths =
-        EpubParser.discoverCssRelativePaths(extractDir);
+    final List<String> relativePaths = EpubParser.discoverCssRelativePaths(
+      extractDir,
+    );
     final List<String> cssFilePaths = relativePaths
         .map((rel) => p.join(extractDir, rel.replaceAll('/', p.separator)))
         .toList();
@@ -90,11 +92,11 @@ class BookCssRepository {
   List<CssFileEntry> _entriesFromCssPaths(List<String> cssFilePaths) {
     final List<String> relativePaths = cssFilePaths.map((path) {
       return p.relative(path, from: extractDir).replaceAll(r'\', '/');
-    }).toList()
-      ..sort();
+    }).toList()..sort();
 
-    final Map<String, String> displayTitles =
-        _shortestUniqueSuffixes(relativePaths);
+    final Map<String, String> displayTitles = _shortestUniqueSuffixes(
+      relativePaths,
+    );
 
     return relativePaths.map((rel) {
       return CssFileEntry(

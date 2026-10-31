@@ -83,9 +83,7 @@ void main() {
       expect(taps, <String>['item4']);
     });
 
-    testWidgets('宽度不够：从最低优先级起收进「⋯」，高优先级仍平铺', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('宽度不够：从最低优先级起收进「⋯」，高优先级仍平铺', (WidgetTester tester) async {
       final List<String> taps = <String>[];
       await tester.pumpWidget(
         _host(
@@ -155,9 +153,7 @@ void main() {
       expect(find.byTooltip(t.common_more_actions), findsNothing);
     });
 
-    testWidgets('显式关掉 adaptiveOverflow 时恒收进菜单', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('显式关掉 adaptiveOverflow 时恒收进菜单', (WidgetTester tester) async {
       await tester.pumpWidget(
         _host(
           MediaDetailMoreButton(
@@ -261,9 +257,7 @@ void main() {
       ),
     );
 
-    testWidgets('放得下时同一行：观看至在起始侧、规格在末端，不互相挤', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('放得下时同一行：观看至在起始侧、规格在末端，不互相挤', (WidgetTester tester) async {
       await tester.pumpWidget(
         _host(
           card(
@@ -287,9 +281,7 @@ void main() {
       );
     });
 
-    testWidgets('规格未探到（零尺寸）：观看至仍落在底部状态行，不空出一行', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('规格未探到（零尺寸）：观看至仍落在底部状态行，不空出一行', (WidgetTester tester) async {
       await tester.pumpWidget(
         _host(card(width: 420, trailing: const SizedBox.shrink())),
       );
@@ -300,9 +292,7 @@ void main() {
       );
     });
 
-    testWidgets('系统字号放大 + 无简介：两种规格状态都不溢出', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('系统字号放大 + 无简介：两种规格状态都不溢出', (WidgetTester tester) async {
       for (final Widget trailing in <Widget>[
         const SizedBox.shrink(),
         const Text('1080p · HDR10 · HEVC'),
@@ -416,7 +406,10 @@ void main() {
       );
       expect(entry.status, DownloadTaskStatus.completed);
       expect(entry.collectionTitle, t.download_method_extension);
-      expect(entry.collectionTitle, isNot(t.download_interconnect_section_title));
+      expect(
+        entry.collectionTitle,
+        isNot(t.download_interconnect_section_title),
+      );
       expect(entry.actions.clear, isNull);
       expect(entry.actions.deletesFiles, isTrue);
       await entry.actions.delete!(deleteFiles: true);
@@ -493,8 +486,7 @@ void main() {
       expect(reported!.localFiles.failures, isEmpty);
     });
 
-    test('同 bookUid 已是流媒体行 / 行已删（按路径找不到行）：只删文件，不删任何库行',
-        () async {
+    test('同 bookUid 已是流媒体行 / 行已删（按路径找不到行）：只删文件，不删任何库行', () async {
       bool rowDeleteCalled = false;
       final bool done = await deleteCompletedDownloadFile(
         destPath: file.path,
@@ -556,8 +548,7 @@ void main() {
       expect(file.existsSync(), isTrue);
     });
 
-    test('删除链没报失败但文件还在（被别的库行引用，护栏没删）：补报失败、保留任务',
-        () async {
+    test('删除链没报失败但文件还在（被别的库行引用，护栏没删）：补报失败、保留任务', () async {
       VideoLibraryDeleteResult? reported;
       final bool done = await deleteCompletedDownloadFile(
         destPath: file.path,

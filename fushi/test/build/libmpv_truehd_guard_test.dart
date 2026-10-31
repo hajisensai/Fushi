@@ -137,9 +137,13 @@ void main() {
       .toList();
 
   test('the unified FFmpeg recipe keeps the security baseline', () {
-    expect(isAtLeast(recipeVersion(), minFfmpeg), isTrue,
-        reason: 'tool/ffmpeg-unified/recipe.env cannot downgrade FFmpeg below '
-            '${minFfmpeg.join('.')} (TODO-1137)');
+    expect(
+      isAtLeast(recipeVersion(), minFfmpeg),
+      isTrue,
+      reason:
+          'tool/ffmpeg-unified/recipe.env cannot downgrade FFmpeg below '
+          '${minFfmpeg.join('.')} (TODO-1137)',
+    );
   });
 
   test(
@@ -150,8 +154,11 @@ void main() {
         for (final DarwinLibmpvSlice slice in verifiedDarwinLibmpv(platform)) {
           final String what = '$platform/${slice.identity}';
           // slice.codec is the unified FFmpeg's libavcodec (libmpv has none).
-          expect(slice.codec, contains(version),
-              reason: '$what must be the unified FFmpeg $version build');
+          expect(
+            slice.codec,
+            contains(version),
+            reason: '$what must be the unified FFmpeg $version build',
+          );
           final Iterable<RegExpMatch> configurations = RegExp(
             r'--disable-autodetect[^\x00]+',
           ).allMatches(slice.codec);
@@ -222,8 +229,11 @@ void main() {
       }
       // The codec lives in the unified FFmpeg (FFmpegKitNext AAR) now.
       for (final String marker in <String>['truehd', 'mlp', version]) {
-        expect(artifact.codec, contains(marker),
-            reason: '${artifact.abi} unified FFmpeg libavcodec.so');
+        expect(
+          artifact.codec,
+          contains(marker),
+          reason: '${artifact.abi} unified FFmpeg libavcodec.so',
+        );
       }
     }
     expect(checked, androidAbis);

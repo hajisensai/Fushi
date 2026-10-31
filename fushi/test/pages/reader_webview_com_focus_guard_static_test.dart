@@ -34,10 +34,13 @@ void main() {
     for (final String relativePath in forkEnvSites) {
       test('$relativePath calls CoInitializeEx before creating the env', () {
         final File file = File(relativePath);
-        expect(file.existsSync(), isTrue,
-            reason:
-                'guarded fork file moved or renamed: $relativePath — update '
-                'this test to keep covering every WebView2 env creation site');
+        expect(
+          file.existsSync(),
+          isTrue,
+          reason:
+              'guarded fork file moved or renamed: $relativePath — update '
+              'this test to keep covering every WebView2 env creation site',
+        );
 
         // maskComments blanks `//` line comments, trailing comments **and**
         // `/* */` blocks with equal-length whitespace, so the two indices below
@@ -46,21 +49,34 @@ void main() {
         // no longer satisfy (or reorder) the assertions.
         final String code = maskComments(file.readAsStringSync());
 
-        final int createIdx =
-            code.indexOf('CreateCoreWebView2EnvironmentWithOptions(');
-        expect(createIdx, isNonNegative,
-            reason: '$relativePath no longer creates a WebView2 environment — '
-                'remove it from forkEnvSites');
+        final int createIdx = code.indexOf(
+          'CreateCoreWebView2EnvironmentWithOptions(',
+        );
+        expect(
+          createIdx,
+          isNonNegative,
+          reason:
+              '$relativePath no longer creates a WebView2 environment — '
+              'remove it from forkEnvSites',
+        );
 
         final int coInitIdx = code.indexOf('CoInitializeEx(');
-        expect(coInitIdx, isNonNegative,
-            reason: '$relativePath dropped the CoInitializeEx guard — WebView2 '
-                'env creation will fail with CO_E_NOTINITIALIZED after '
-                'media_kit/libmpv tears down COM (blank reader on Windows)');
+        expect(
+          coInitIdx,
+          isNonNegative,
+          reason:
+              '$relativePath dropped the CoInitializeEx guard — WebView2 '
+              'env creation will fail with CO_E_NOTINITIALIZED after '
+              'media_kit/libmpv tears down COM (blank reader on Windows)',
+        );
 
-        expect(coInitIdx, lessThan(createIdx),
-            reason: '$relativePath must CoInitializeEx BEFORE '
-                'CreateCoreWebView2EnvironmentWithOptions, not after');
+        expect(
+          coInitIdx,
+          lessThan(createIdx),
+          reason:
+              '$relativePath must CoInitializeEx BEFORE '
+              'CreateCoreWebView2EnvironmentWithOptions, not after',
+        );
       });
     }
   });

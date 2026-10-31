@@ -16,58 +16,63 @@ void main() {
     int? containerBitrate,
     List<AudioTrackFacts> audio = const <AudioTrackFacts>[],
     List<SubtitleTrackFacts> subtitles = const <SubtitleTrackFacts>[],
-  }) =>
-      VideoProbeFacts(
-        containerBitrate: containerBitrate,
-        video: (width == null && codec == null && transfer == null)
-            ? null
-            : VideoStreamFacts(
-                codec: codec,
-                width: width,
-                height: height,
-                bitDepth: bitDepth,
-                frameRateMilli: frameRateMilli,
-                bitrate: videoBitrate,
-                colorPrimaries: primaries,
-                colorTransfer: transfer,
-              ),
-        audioTracks: audio,
-        subtitleTracks: subtitles,
-      );
+  }) => VideoProbeFacts(
+    containerBitrate: containerBitrate,
+    video: (width == null && codec == null && transfer == null)
+        ? null
+        : VideoStreamFacts(
+            codec: codec,
+            width: width,
+            height: height,
+            bitDepth: bitDepth,
+            frameRateMilli: frameRateMilli,
+            bitrate: videoBitrate,
+            colorPrimaries: primaries,
+            colorTransfer: transfer,
+          ),
+    audioTracks: audio,
+    subtitleTracks: subtitles,
+  );
 
   group('封面角标', () {
     test('4K + HDR10 两个', () {
       expect(
-        videoSpecsCoverBadges(factsWith(
-          width: 3840,
-          height: 2160,
-          primaries: 'bt2020',
-          transfer: 'smpte2084',
-        )),
+        videoSpecsCoverBadges(
+          factsWith(
+            width: 3840,
+            height: 2160,
+            primaries: 'bt2020',
+            transfer: 'smpte2084',
+          ),
+        ),
         <String>['4K', 'HDR10'],
       );
     });
 
     test('HLG 也出角标', () {
       expect(
-        videoSpecsCoverBadges(factsWith(
-          width: 1920,
-          height: 1080,
-          primaries: 'bt2020',
-          transfer: 'arib-std-b67',
-        )),
+        videoSpecsCoverBadges(
+          factsWith(
+            width: 1920,
+            height: 1080,
+            primaries: 'bt2020',
+            transfer: 'arib-std-b67',
+          ),
+        ),
         <String>['1080p', 'HLG'],
       );
     });
 
     test('SDR 只出清晰度——「是 SDR」不是信息，不该占角标位', () {
       expect(
-        videoSpecsCoverBadges(factsWith(
-          width: 1920,
-          height: 1080,
-          primaries: 'bt709',
-          transfer: 'bt709',
-        )),
+        videoSpecsCoverBadges(
+          factsWith(
+            width: 1920,
+            height: 1080,
+            primaries: 'bt709',
+            transfer: 'bt709',
+          ),
+        ),
         <String>['1080p'],
       );
     });
@@ -82,22 +87,32 @@ void main() {
     test('无规格 / 无视频流 → 空', () {
       expect(videoSpecsCoverBadges(null), isEmpty);
       expect(videoSpecsCoverBadges(VideoProbeFacts.empty), isEmpty);
-      expect(videoSpecsCoverBadges(factsWith(audio: const <AudioTrackFacts>[
-        AudioTrackFacts(index: 0, codec: 'flac'),
-      ])), isEmpty, reason: '纯音频没有视频流');
+      expect(
+        videoSpecsCoverBadges(
+          factsWith(
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(index: 0, codec: 'flac'),
+            ],
+          ),
+        ),
+        isEmpty,
+        reason: '纯音频没有视频流',
+      );
     });
 
     test('最多三个，编码不占角标', () {
-      final List<String> badges = videoSpecsCoverBadges(factsWith(
-        width: 3840,
-        height: 2160,
-        codec: 'hevc',
-        primaries: 'bt2020',
-        transfer: 'smpte2084',
-        audio: const <AudioTrackFacts>[
-          AudioTrackFacts(index: 1, codec: 'truehd', channels: 8),
-        ],
-      ));
+      final List<String> badges = videoSpecsCoverBadges(
+        factsWith(
+          width: 3840,
+          height: 2160,
+          codec: 'hevc',
+          primaries: 'bt2020',
+          transfer: 'smpte2084',
+          audio: const <AudioTrackFacts>[
+            AudioTrackFacts(index: 1, codec: 'truehd', channels: 8),
+          ],
+        ),
+      );
       expect(badges, <String>['4K', 'HDR10', '7.1']);
     });
   });
@@ -105,70 +120,90 @@ void main() {
   group('环绕声角标', () {
     test('Atmos 压过声道数（profile 报出 Atmos）', () {
       expect(
-        videoSpecsCoverBadges(factsWith(
-          width: 3840,
-          height: 2160,
-          primaries: 'bt2020',
-          transfer: 'smpte2084',
-          audio: const <AudioTrackFacts>[
-            AudioTrackFacts(
-              index: 1,
-              codec: 'truehd',
-              channels: 8,
-              channelLayout: '7.1',
-              profile: 'Dolby TrueHD + Dolby Atmos',
-            ),
-          ],
-        )),
+        videoSpecsCoverBadges(
+          factsWith(
+            width: 3840,
+            height: 2160,
+            primaries: 'bt2020',
+            transfer: 'smpte2084',
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(
+                index: 1,
+                codec: 'truehd',
+                channels: 8,
+                channelLayout: '7.1',
+                profile: 'Dolby TrueHD + Dolby Atmos',
+              ),
+            ],
+          ),
+        ),
         <String>['4K', 'HDR10', 'Atmos'],
       );
     });
 
     test('5.1 / 7.1 按声道布局出', () {
-      String? badge(int channels, String layout) =>
-          videoSpecsAudioBadge(factsWith(width: 1920, audio: <AudioTrackFacts>[
+      String? badge(int channels, String layout) => videoSpecsAudioBadge(
+        factsWith(
+          width: 1920,
+          audio: <AudioTrackFacts>[
             AudioTrackFacts(
               index: 1,
               codec: 'eac3',
               channels: channels,
               channelLayout: layout,
             ),
-          ]));
+          ],
+        ),
+      );
       expect(badge(6, '5.1(side)'), '5.1');
       expect(badge(7, '6.1'), '6.1');
       expect(badge(8, '7.1'), '7.1');
     });
 
     test('只按声道数出字：布局原文是英文单词时不漏进角标', () {
-      String? badge(int channels, String layout) =>
-          videoSpecsAudioBadge(factsWith(width: 1920, audio: <AudioTrackFacts>[
+      String? badge(int channels, String layout) => videoSpecsAudioBadge(
+        factsWith(
+          width: 1920,
+          audio: <AudioTrackFacts>[
             AudioTrackFacts(
-                index: 1, codec: 'pcm_s24le', channels: channels,
-                channelLayout: layout),
-          ]));
+              index: 1,
+              codec: 'pcm_s24le',
+              channels: channels,
+              channelLayout: layout,
+            ),
+          ],
+        ),
+      );
       expect(badge(6, '6 channels'), '5.1');
       expect(badge(8, 'octagonal'), '7.1');
     });
 
     test('纯音频（无视频流）不出角标也不出摘要', () {
-      final VideoProbeFacts audioOnly =
-          factsWith(audio: const <AudioTrackFacts>[
-        AudioTrackFacts(index: 0, codec: 'flac', channels: 6),
-      ]);
+      final VideoProbeFacts audioOnly = factsWith(
+        audio: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 0, codec: 'flac', channels: 6),
+        ],
+      );
       expect(videoSpecsCoverBadges(audioOnly), isEmpty);
       expect(videoSpecsInlineSummary(audioOnly), isNull);
     });
 
     test('立体声 / 单声道不出——「是立体声」不是信息', () {
       expect(
-        videoSpecsCoverBadges(factsWith(
-          width: 1920,
-          height: 1080,
-          audio: const <AudioTrackFacts>[
-            AudioTrackFacts(
-                index: 1, codec: 'aac', channels: 2, channelLayout: 'stereo'),
-          ],
-        )),
+        videoSpecsCoverBadges(
+          factsWith(
+            width: 1920,
+            height: 1080,
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(
+                index: 1,
+                codec: 'aac',
+                channels: 2,
+                channelLayout: 'stereo',
+              ),
+            ],
+          ),
+        ),
         <String>['1080p'],
       );
     });
@@ -176,11 +211,24 @@ void main() {
     test('取最好的一条：默认轨是 2.0 时照样标出另一条 5.1', () {
       expect(
         videoSpecsAudioBadge(
-            factsWith(width: 1920, audio: const <AudioTrackFacts>[
-          AudioTrackFacts(index: 1, codec: 'aac', channels: 2, isDefault: true),
-          AudioTrackFacts(
-              index: 2, codec: 'ac3', channels: 6, channelLayout: '5.1'),
-        ])),
+          factsWith(
+            width: 1920,
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(
+                index: 1,
+                codec: 'aac',
+                channels: 2,
+                isDefault: true,
+              ),
+              AudioTrackFacts(
+                index: 2,
+                codec: 'ac3',
+                channels: 6,
+                channelLayout: '5.1',
+              ),
+            ],
+          ),
+        ),
         '5.1',
       );
     });
@@ -188,15 +236,19 @@ void main() {
     test('Atmos 5.1 胜过非 Atmos 7.1', () {
       expect(
         videoSpecsAudioBadge(
-            factsWith(width: 1920, audio: const <AudioTrackFacts>[
-          AudioTrackFacts(index: 1, codec: 'dts', channels: 8),
-          AudioTrackFacts(
-            index: 2,
-            codec: 'eac3',
-            channels: 6,
-            profile: 'Dolby Digital Plus + Dolby Atmos',
+          factsWith(
+            width: 1920,
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(index: 1, codec: 'dts', channels: 8),
+              AudioTrackFacts(
+                index: 2,
+                codec: 'eac3',
+                channels: 6,
+                profile: 'Dolby Digital Plus + Dolby Atmos',
+              ),
+            ],
           ),
-        ])),
+        ),
         'Atmos',
       );
     });
@@ -204,11 +256,19 @@ void main() {
     test('评论音轨不算片子的环绕声', () {
       expect(
         videoSpecsAudioBadge(
-            factsWith(width: 1920, audio: const <AudioTrackFacts>[
-          AudioTrackFacts(index: 1, codec: 'aac', channels: 2),
-          AudioTrackFacts(
-              index: 2, codec: 'ac3', channels: 6, isCommentary: true),
-        ])),
+          factsWith(
+            width: 1920,
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(index: 1, codec: 'aac', channels: 2),
+              AudioTrackFacts(
+                index: 2,
+                codec: 'ac3',
+                channels: 6,
+                isCommentary: true,
+              ),
+            ],
+          ),
+        ),
         isNull,
       );
     });
@@ -217,61 +277,69 @@ void main() {
   group('紧凑摘要', () {
     test('清晰度 · 动态范围 · 编码', () {
       expect(
-        videoSpecsInlineSummary(factsWith(
-          width: 3840,
-          height: 2160,
-          codec: 'hevc',
-          primaries: 'bt2020',
-          transfer: 'smpte2084',
-        )),
+        videoSpecsInlineSummary(
+          factsWith(
+            width: 3840,
+            height: 2160,
+            codec: 'hevc',
+            primaries: 'bt2020',
+            transfer: 'smpte2084',
+          ),
+        ),
         '4K · HDR10 · HEVC',
       );
     });
 
     test('环绕声排在编码后面', () {
       expect(
-        videoSpecsInlineSummary(factsWith(
-          width: 3840,
-          height: 2160,
-          codec: 'hevc',
-          primaries: 'bt2020',
-          transfer: 'smpte2084',
-          audio: const <AudioTrackFacts>[
-            AudioTrackFacts(
-              index: 1,
-              codec: 'truehd',
-              channels: 8,
-              profile: 'Dolby TrueHD + Dolby Atmos',
-            ),
-          ],
-        )),
+        videoSpecsInlineSummary(
+          factsWith(
+            width: 3840,
+            height: 2160,
+            codec: 'hevc',
+            primaries: 'bt2020',
+            transfer: 'smpte2084',
+            audio: const <AudioTrackFacts>[
+              AudioTrackFacts(
+                index: 1,
+                codec: 'truehd',
+                channels: 8,
+                profile: 'Dolby TrueHD + Dolby Atmos',
+              ),
+            ],
+          ),
+        ),
         '4K · HDR10 · HEVC · Atmos',
       );
     });
 
     test('音轨详情写出 Atmos', () {
       expect(
-        audioTrackDisplay(const AudioTrackFacts(
-          index: 1,
-          codec: 'truehd',
-          channels: 8,
-          channelLayout: '7.1',
-          profile: 'Dolby TrueHD + Dolby Atmos',
-          language: 'eng',
-        )).detail,
+        audioTrackDisplay(
+          const AudioTrackFacts(
+            index: 1,
+            codec: 'truehd',
+            channels: 8,
+            channelLayout: '7.1',
+            profile: 'Dolby TrueHD + Dolby Atmos',
+            language: 'eng',
+          ),
+        ).detail,
         'TrueHD · Atmos · 7.1',
       );
     });
 
     test('SDR 时省掉动态范围', () {
       expect(
-        videoSpecsInlineSummary(factsWith(
-          width: 1920,
-          height: 1080,
-          codec: 'h264',
-          primaries: 'bt709',
-          transfer: 'bt709',
-        )),
+        videoSpecsInlineSummary(
+          factsWith(
+            width: 1920,
+            height: 1080,
+            codec: 'h264',
+            primaries: 'bt709',
+            transfer: 'bt709',
+          ),
+        ),
         '1080p · H.264',
       );
     });
@@ -284,38 +352,51 @@ void main() {
 
   group('详情字段', () {
     test('4K 后面补真实像素（档位不等于尺寸）', () {
-      final List<(VideoSpecField, String)> fields =
-          videoSpecsFields(factsWith(width: 4096, height: 1716));
+      final List<(VideoSpecField, String)> fields = videoSpecsFields(
+        factsWith(width: 4096, height: 1716),
+      );
       expect(fields.first.$1, VideoSpecField.resolution);
       expect(fields.first.$2, '4K (4096×1716)');
     });
 
     test('探不到的项整行不出现，不显示「未知」', () {
-      final List<(VideoSpecField, String)> fields =
-          videoSpecsFields(factsWith(width: 1920, height: 1080));
-      final Set<VideoSpecField> present =
-          fields.map(((VideoSpecField, String) f) => f.$1).toSet();
+      final List<(VideoSpecField, String)> fields = videoSpecsFields(
+        factsWith(width: 1920, height: 1080),
+      );
+      final Set<VideoSpecField> present = fields
+          .map(((VideoSpecField, String) f) => f.$1)
+          .toSet();
       expect(present, contains(VideoSpecField.resolution));
       expect(present, isNot(contains(VideoSpecField.bitDepth)));
       expect(present, isNot(contains(VideoSpecField.frameRate)));
-      expect(present, isNot(contains(VideoSpecField.dynamicRange)),
-          reason: 'unknown 不该被写成一行');
+      expect(
+        present,
+        isNot(contains(VideoSpecField.dynamicRange)),
+        reason: 'unknown 不该被写成一行',
+      );
     });
 
     test('码率优先流级，缺失时回退容器级（mkv 不给流级）', () {
       expect(
-        videoSpecsFields(factsWith(
-          width: 1920,
-          videoBitrate: 8000000,
-          containerBitrate: 9000000,
-        )).where((( VideoSpecField, String) f) =>
-            f.$1 == VideoSpecField.bitrate).single.$2,
+        videoSpecsFields(
+              factsWith(
+                width: 1920,
+                videoBitrate: 8000000,
+                containerBitrate: 9000000,
+              ),
+            )
+            .where(
+              ((VideoSpecField, String) f) => f.$1 == VideoSpecField.bitrate,
+            )
+            .single
+            .$2,
         '8.0 Mbps',
       );
       expect(
         videoSpecsFields(factsWith(width: 1920, containerBitrate: 15586453))
-            .where(((VideoSpecField, String) f) =>
-                f.$1 == VideoSpecField.bitrate)
+            .where(
+              ((VideoSpecField, String) f) => f.$1 == VideoSpecField.bitrate,
+            )
             .single
             .$2,
         '16 Mbps',
@@ -376,15 +457,17 @@ void main() {
 
   group('轨道展示', () {
     test('音轨：名字 · 编码 · 声道 + 标志位', () {
-      final TrackDisplay d = audioTrackDisplay(const AudioTrackFacts(
-        index: 1,
-        codec: 'flac',
-        channels: 6,
-        channelLayout: '5.1',
-        language: 'jpn',
-        title: '日本語',
-        isDefault: true,
-      ));
+      final TrackDisplay d = audioTrackDisplay(
+        const AudioTrackFacts(
+          index: 1,
+          codec: 'flac',
+          channels: 6,
+          channelLayout: '5.1',
+          language: 'jpn',
+          title: '日本語',
+          isDefault: true,
+        ),
+      );
       expect(d.headline, '日本語 · FLAC · 5.1');
       expect(d.isDefault, isTrue);
       expect(d.isCommentary, isFalse);
@@ -398,12 +481,14 @@ void main() {
     });
 
     test('字幕轨：名字 · 格式', () {
-      final TrackDisplay d = subtitleTrackDisplay(const SubtitleTrackFacts(
-        index: 4,
-        codec: 'subrip',
-        language: 'chi',
-        isForced: true,
-      ));
+      final TrackDisplay d = subtitleTrackDisplay(
+        const SubtitleTrackFacts(
+          index: 4,
+          codec: 'subrip',
+          language: 'chi',
+          isForced: true,
+        ),
+      );
       expect(d.headline, 'CHI · SRT');
       expect(d.isForced, isTrue);
     });

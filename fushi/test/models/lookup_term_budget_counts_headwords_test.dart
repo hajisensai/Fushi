@@ -46,35 +46,35 @@ void main() {
   /// 「永遠」的真实形状：えいえん 是高频读音、被一堆词典收录；とわ / とこしえ 是
   /// 同表记的另外两个读音，各只有一本词典收。
   List<FushiLookupResult> eienFixture() => <FushiLookupResult>[
-        makeResult(
-          expression: '永遠',
-          reading: 'えいえん',
-          dictNames: const <String>[
-            '明鏡国語辞典',
-            '大辞林',
-            '広辞苑',
-            '新明解国語辞典',
-            'デジタル大辞泉',
-            '日中辞典',
-            'JMdict',
-            '研究社新和英',
-            '三省堂国語辞典',
-            '岩波国語辞典',
-            '旺文社国語辞典',
-            '学研国語大辞典',
-          ],
-        ),
-        makeResult(
-          expression: '永遠',
-          reading: 'とわ',
-          dictNames: const <String>['大辞林'],
-        ),
-        makeResult(
-          expression: '永遠',
-          reading: 'とこしえ',
-          dictNames: const <String>['大辞林'],
-        ),
-      ];
+    makeResult(
+      expression: '永遠',
+      reading: 'えいえん',
+      dictNames: const <String>[
+        '明鏡国語辞典',
+        '大辞林',
+        '広辞苑',
+        '新明解国語辞典',
+        'デジタル大辞泉',
+        '日中辞典',
+        'JMdict',
+        '研究社新和英',
+        '三省堂国語辞典',
+        '岩波国語辞典',
+        '旺文社国語辞典',
+        '学研国語大辞典',
+      ],
+    ),
+    makeResult(
+      expression: '永遠',
+      reading: 'とわ',
+      dictNames: const <String>['大辞林'],
+    ),
+    makeResult(
+      expression: '永遠',
+      reading: 'とこしえ',
+      dictNames: const <String>['大辞林'],
+    ),
+  ];
 
   Set<String> readingsOf(List<DictionaryEntry> entries) =>
       entries.map((DictionaryEntry e) => e.reading).toSet();
@@ -93,7 +93,8 @@ void main() {
       expect(
         readings,
         contains('とわ'),
-        reason: '按 glossary 行计预算时，えいえん 的 12 条注释吃满 10 的上限，'
+        reason:
+            '按 glossary 行计预算时，えいえん 的 12 条注释吃满 10 的上限，'
             'とわ 的循环体一次都没进过——这就是「查永遠只出えいえん」的根因',
       );
       expect(readings, contains('とこしえ'));
@@ -109,7 +110,8 @@ void main() {
       expect(
         result.truncated,
         isTrue,
-        reason: '截断是构造结果的人才知道的事实，必须显式带出来；'
+        reason:
+            '截断是构造结果的人才知道的事实，必须显式带出来；'
             '消费方以前靠 entries.length < maximumTerms 反推，'
             '预算单位一改那个反推就彻底错位',
       );
@@ -143,16 +145,18 @@ void main() {
       int maximumTerms,
     ) {
       final String json = buildPopupJsonFromLookup(
-          results: results,
-          maximumTerms: maximumTerms,
-          hiddenDictionaries: const <String>{});
+        results: results,
+        maximumTerms: maximumTerms,
+        hiddenDictionaries: const <String>{},
+      );
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     }
 
     test('弹窗侧同样必须出全三个读音', () {
       final List<Map<String, dynamic>> cards = groups(eienFixture(), 10);
-      final Set<String> readings =
-          cards.map((Map<String, dynamic> c) => c['reading'] as String).toSet();
+      final Set<String> readings = cards
+          .map((Map<String, dynamic> c) => c['reading'] as String)
+          .toSet();
       expect(readings, containsAll(<String>['えいえん', 'とわ', 'とこしえ']));
     });
 

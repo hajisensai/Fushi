@@ -21,11 +21,7 @@ void main() {
       addTearDown(c.dispose);
       c.showTransient();
       expect(c.transientVisible, isTrue);
-      expect(
-        c.autoHideArmed,
-        isFalse,
-        reason: '点一下唤出的栏必须留着，只有下一次点击能关掉它',
-      );
+      expect(c.autoHideArmed, isFalse, reason: '点一下唤出的栏必须留着，只有下一次点击能关掉它');
     });
 
     test('showTransient 会停掉上一轮（VN 翻页）武装的计时', () {
@@ -36,11 +32,7 @@ void main() {
       c.hideTransient();
       c.showTransient();
       expect(c.transientVisible, isTrue);
-      expect(
-        c.autoHideArmed,
-        isFalse,
-        reason: '旧计时不停掉，就会把刚点出来的栏收走',
-      );
+      expect(c.autoHideArmed, isFalse, reason: '旧计时不停掉，就会把刚点出来的栏收走');
     });
 
     test('reveal 仍为 VN 路径保留自动收起', () {
@@ -58,10 +50,7 @@ void main() {
     test('_handleFloatingChromeReveal 是纯 toggle、不武装计时', () {
       final int start = src.indexOf('bool _handleFloatingChromeReveal() {');
       expect(start, isNot(-1));
-      final String body = src.substring(
-        start,
-        src.indexOf('\n  }', start) + 4,
-      );
+      final String body = src.substring(start, src.indexOf('\n  }', start) + 4);
       expect(
         body.contains('_armChromeAutoHide'),
         isFalse,
@@ -78,16 +67,17 @@ void main() {
       expect(
         '_armChromeAutoHide()'.allMatches(src).length,
         2,
-        reason: '只该剩「方法自身的定义」+「VN 推进那一次调用」。VN 空白点被翻页'
+        reason:
+            '只该剩「方法自身的定义」+「VN 推进那一次调用」。VN 空白点被翻页'
             '占死，是唯一还需要计时收起的路径；多出来的武装点意味着某条路又能'
             '不点击就关栏',
       );
       final int start = src.indexOf('void _revealFloatingChromeForVnAdvance()');
       expect(start, isNot(-1));
       expect(
-        src.substring(start, src.indexOf('\n  }', start)).contains(
-              '_armChromeAutoHide()',
-            ),
+        src
+            .substring(start, src.indexOf('\n  }', start))
+            .contains('_armChromeAutoHide()'),
         isTrue,
       );
     });

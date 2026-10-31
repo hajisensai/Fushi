@@ -16,17 +16,17 @@ class AbbyyLingvoFormat extends DictionaryFormat {
   /// Define a format with the given metadata that has its behaviour for
   /// import, search and display defined with af set of top-level helper methods.
   AbbyyLingvoFormat._privateConstructor()
-      : super(
-          uniqueKey: 'abbyy_lingvo',
-          name: 'ABBYY Lingvo (DSL)',
-          icon: Icons.auto_stories_rounded,
-          allowedExtensions: const ['dsl'],
-          isTextFormat: true,
-          fileType: FileType.any,
-          prepareDirectory: prepareDirectoryAbbyyLingvoFormat,
-          prepareName: prepareNameAbbyyLingvoFormat,
-          prepareEntries: _prepareEntriesAbbyyLingvoStub,
-        );
+    : super(
+        uniqueKey: 'abbyy_lingvo',
+        name: 'ABBYY Lingvo (DSL)',
+        icon: Icons.auto_stories_rounded,
+        allowedExtensions: const ['dsl'],
+        isTextFormat: true,
+        fileType: FileType.any,
+        prepareDirectory: prepareDirectoryAbbyyLingvoFormat,
+        prepareName: prepareNameAbbyyLingvoFormat,
+        prepareEntries: _prepareEntriesAbbyyLingvoStub,
+      );
 
   /// Get the singleton instance of this dictionary format.
   static AbbyyLingvoFormat get instance => _instance;
@@ -37,9 +37,12 @@ class AbbyyLingvoFormat extends DictionaryFormat {
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 Future<void> prepareDirectoryAbbyyLingvoFormat(
-    PrepareDirectoryParams params) async {
-  String dictionaryFilePath =
-      path.join(params.resourceDirectory.path, 'dictionary.dsl');
+  PrepareDirectoryParams params,
+) async {
+  String dictionaryFilePath = path.join(
+    params.resourceDirectory.path,
+    'dictionary.dsl',
+  );
   File originalFile = params.file;
   File newFile = File(dictionaryFilePath);
 
@@ -55,13 +58,19 @@ Future<void> prepareDirectoryAbbyyLingvoFormat(
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 Future<String> prepareNameAbbyyLingvoFormat(
-    PrepareDirectoryParams params) async {
-  String dictionaryFilePath =
-      path.join(params.resourceDirectory.path, 'dictionary.dsl');
+  PrepareDirectoryParams params,
+) async {
+  String dictionaryFilePath = path.join(
+    params.resourceDirectory.path,
+    'dictionary.dsl',
+  );
   File dictionaryFile = File(dictionaryFilePath);
 
-  String nameLine =
-      dictionaryFile.readAsLinesSync().first.replaceFirst('#NAME', '').trim();
+  String nameLine = dictionaryFile
+      .readAsLinesSync()
+      .first
+      .replaceFirst('#NAME', '')
+      .trim();
 
   String name = nameLine.substring(1, nameLine.length - 1);
   return name;

@@ -75,8 +75,9 @@ void main() {
       }
     });
 
-    testWidgets('replaces an unreferenced non-empty destination directory',
-        (WidgetTester tester) async {
+    testWidgets('replaces an unreferenced non-empty destination directory', (
+      WidgetTester tester,
+    ) async {
       const String title = '謎解きはディナーのあとで';
       final File epub = File(p.join(tempRoot.path, 'book.epub'))
         ..writeAsBytesSync(_minimalEpub(title));
@@ -98,8 +99,10 @@ void main() {
       final EpubBookRow? row = await db.getEpubBook(sanitizeTtuFilename(title));
       expect(row, isNotNull);
       expect(File(p.join(orphanDir, 'stale.txt')).existsSync(), isFalse);
-      expect(File(p.join(orphanDir, 'META-INF', 'container.xml')).existsSync(),
-          isTrue);
+      expect(
+        File(p.join(orphanDir, 'META-INF', 'container.xml')).existsSync(),
+        isTrue,
+      );
     });
   });
 }

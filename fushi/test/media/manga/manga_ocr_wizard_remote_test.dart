@@ -37,11 +37,11 @@ class _UnsupportedOcrService implements MangaOcrService {
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
-        detectorReady: false,
-        recognizerReady: false,
-        diskBytes: 0,
-        totalBytes: 1,
-      );
+    detectorReady: false,
+    recognizerReady: false,
+    diskBytes: 0,
+    totalBytes: 1,
+  );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -55,8 +55,7 @@ class _UnsupportedOcrService implements MangaOcrService {
     required String imageDirPath,
     String? volumeTitle,
     int startPage = 0,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
 }
 
 class _FakeRemoteRunner implements MangaOcrRemoteRunner {
@@ -97,16 +96,14 @@ class _NoopLensRunner implements GoogleLensMangaOcrRunner {
     bool onlyMissing = false,
     String language = 'ja',
     MangaOcrPageFocus? focus,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
 
   @override
   Future<MokuroImage> recognizePageBytes(
     Uint8List bytes, {
     required String relativeUrl,
     required String language,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<void> clearCache(String imageDirPath) async {}
@@ -185,57 +182,73 @@ void main() {
     return () => popped;
   }
 
-  testWidgets(
-      'capable host: remote is default engine, two-phase progress, '
-      'import gets manga.json with external=false',
-      (WidgetTester tester) async {
+  testWidgets('capable host: remote is default engine, two-phase progress, '
+      'import gets manga.json with external=false', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
     String? importedPath;
     bool? importedExternal;
     final String? Function() poppedResult = await pumpWizard(
       tester,
       remote: remote,
-      importOverride: ({
-        required String path,
-        required bool external,
-        String? title,
-      }) async {
-        importedPath = path;
-        importedExternal = external;
-        return 'remotebook';
-      },
+      importOverride:
+          ({
+            required String path,
+            required bool external,
+            String? title,
+          }) async {
+            importedPath = path;
+            importedExternal = external;
+            return 'remotebook';
+          },
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
     // 远程可用 → Run 可点（唯一引擎，无需分段选择器）。
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
+    final Finder runBtn = find.widgetWithText(
+      FilledButton,
+      t.manga_ocr_wizard_run,
+    );
+    expect(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed,
+      isNotNull,
+    );
     await tester.tap(runBtn);
     await tester.pump();
     expect(remote.lastImageDir, imageDir.path);
 
     // 上传阶段文案。
-    remote.controller!
-        .add(const MangaOcrRemoteEvent.uploading(done: 1, total: 3));
+    remote.controller!.add(
+      const MangaOcrRemoteEvent.uploading(done: 1, total: 3),
+    );
     await tester.pump();
-    expect(find.text(t.manga_remote_ocr_uploading(done: 1, total: 3)),
-        findsOneWidget);
+    expect(
+      find.text(t.manga_remote_ocr_uploading(done: 1, total: 3)),
+      findsOneWidget,
+    );
 
     // 远端识别阶段文案（页进度）。
-    remote.controller!
-        .add(const MangaOcrRemoteEvent.running(done: 2, total: 3));
+    remote.controller!.add(
+      const MangaOcrRemoteEvent.running(done: 2, total: 3),
+    );
     await tester.pump();
-    expect(find.text(t.manga_ocr_wizard_page_progress(done: 2, total: 3)),
-        findsOneWidget);
+    expect(
+      find.text(t.manga_ocr_wizard_page_progress(done: 2, total: 3)),
+      findsOneWidget,
+    );
 
     // finished → 落库 → pop。
-    final String jsonPath =
-        p.join(imageDir.path, 'manga_ocr_out', 'manga.json');
-    remote.controller!
-        .add(MangaOcrRemoteEvent.finished(mangaJsonPath: jsonPath));
+    final String jsonPath = p.join(
+      imageDir.path,
+      'manga_ocr_out',
+      'manga.json',
+    );
+    remote.controller!.add(
+      MangaOcrRemoteEvent.finished(mangaJsonPath: jsonPath),
+    );
     await tester.pumpAndSettle();
     expect(importedPath, jsonPath);
     expect(importedExternal, isFalse);
@@ -245,76 +258,104 @@ void main() {
   // TODO-2635：修复前，模型没下载的主机与就绪主机在选项层长得一模一样，用户要
   // 传完整卷、走到 start 才吃 `manga_remote_ocr_not_ready`。下面三条钉住新语义。
   testWidgets(
-      'host with models not downloaded: segment disabled + reason shown, '
-      'Run does not fall onto it', (WidgetTester tester) async {
-    final _FakeRemoteRunner remote =
-        _FakeRemoteRunner(target: _modelsMissingTarget);
-    await pumpWizard(tester, remote: remote, lensRunner: _NoopLensRunner());
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    'host with models not downloaded: segment disabled + reason shown, '
+    'Run does not fall onto it',
+    (WidgetTester tester) async {
+      final _FakeRemoteRunner remote = _FakeRemoteRunner(
+        target: _modelsMissingTarget,
+      );
+      await pumpWizard(tester, remote: remote, lensRunner: _NoopLensRunner());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    // 选项保留（与另外三个引擎同构），但置灰。
-    final FushiSegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
-          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
-        );
-    final ButtonSegment<MangaOcrEngineId> pairedSegment = selector.segments
-        .firstWhere((ButtonSegment<MangaOcrEngineId> s) =>
-            s.value == MangaOcrEngineId.pairedHost);
-    expect(pairedSegment.enabled, isFalse,
-        reason: '模型未下载的主机必须置灰，不能让用户选中后白传一整卷');
+      // 选项保留（与另外三个引擎同构），但置灰。
+      final FushiSegmentedButton<MangaOcrEngineId> selector = tester
+          .widget<FushiSegmentedButton<MangaOcrEngineId>>(
+            find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+          );
+      final ButtonSegment<MangaOcrEngineId> pairedSegment = selector.segments
+          .firstWhere(
+            (ButtonSegment<MangaOcrEngineId> s) =>
+                s.value == MangaOcrEngineId.pairedHost,
+          );
+      expect(
+        pairedSegment.enabled,
+        isFalse,
+        reason: '模型未下载的主机必须置灰，不能让用户选中后白传一整卷',
+      );
 
-    // 原因在选项层就说清楚，而不是等 start 阶段才报。
-    expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
+      // 原因在选项层就说清楚，而不是等 start 阶段才报。
+      expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
 
-    // auto 解析不得落到未就绪的主机上。修复前 `ready: remote != null` 会让它
-    // 正好选中 pairedHost，于是「默认引擎 = 一台传完才会报错的主机」。
-    // （Lens 被 resolveMangaOcrEngine 有意排除在 auto 之外——隐私边界只能显式选，
-    //  所以这里的落点是兜底的 localOnnx，而不是 Lens。）
-    expect(selector.selected, isNot(contains(MangaOcrEngineId.pairedHost)));
-    expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.localOnnx});
-  });
-
-  testWidgets(
-      'models-not-ready host is the only engine: engines-none plus the reason, '
-      'Run disabled', (WidgetTester tester) async {
-    final _FakeRemoteRunner remote =
-        _FakeRemoteRunner(target: _modelsMissingTarget);
-    await pumpWizard(tester, remote: remote);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    // 「没有可用引擎」旁边必须带上具体原因，否则用户无从知道该去主机上下模型。
-    expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
-    expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
-  });
+      // auto 解析不得落到未就绪的主机上。修复前 `ready: remote != null` 会让它
+      // 正好选中 pairedHost，于是「默认引擎 = 一台传完才会报错的主机」。
+      // （Lens 被 resolveMangaOcrEngine 有意排除在 auto 之外——隐私边界只能显式选，
+      //  所以这里的落点是兜底的 localOnnx，而不是 Lens。）
+      expect(selector.selected, isNot(contains(MangaOcrEngineId.pairedHost)));
+      expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.localOnnx});
+    },
+  );
 
   testWidgets(
-      'host that does not report modelsReady stays usable (old-peer skew)',
-      (WidgetTester tester) async {
-    // 缺字段 ≠ 未就绪。把未知态判成 not ready 会让这类对端上本可用的主机凭空
-    // 消失——比「白传一卷」更糟，因为用户连路都没有。
-    final _FakeRemoteRunner remote =
-        _FakeRemoteRunner(target: _unknownReadinessTarget);
-    await pumpWizard(tester, remote: remote);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    'models-not-ready host is the only engine: engines-none plus the reason, '
+    'Run disabled',
+    (WidgetTester tester) async {
+      final _FakeRemoteRunner remote = _FakeRemoteRunner(
+        target: _modelsMissingTarget,
+      );
+      await pumpWizard(tester, remote: remote);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    expect(find.text(t.manga_ocr_engine_none), findsNothing);
-    expect(find.text(t.manga_remote_ocr_not_ready), findsNothing);
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
-  });
+      // 「没有可用引擎」旁边必须带上具体原因，否则用户无从知道该去主机上下模型。
+      expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
+      expect(find.text(t.manga_remote_ocr_not_ready), findsOneWidget);
+      final Finder runBtn = find.widgetWithText(
+        FilledButton,
+        t.manga_ocr_wizard_run,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(runBtn))
+            .onPressed,
+        isNull,
+      );
+    },
+  );
 
-  testWidgets('no capable host: remote hidden, engines-none, Run disabled',
-      (WidgetTester tester) async {
+  testWidgets(
+    'host that does not report modelsReady stays usable (old-peer skew)',
+    (WidgetTester tester) async {
+      // 缺字段 ≠ 未就绪。把未知态判成 not ready 会让这类对端上本可用的主机凭空
+      // 消失——比「白传一卷」更糟，因为用户连路都没有。
+      final _FakeRemoteRunner remote = _FakeRemoteRunner(
+        target: _unknownReadinessTarget,
+      );
+      await pumpWizard(tester, remote: remote);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.manga_ocr_engine_none), findsNothing);
+      expect(find.text(t.manga_remote_ocr_not_ready), findsNothing);
+      final Finder runBtn = find.widgetWithText(
+        FilledButton,
+        t.manga_ocr_wizard_run,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(runBtn))
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  testWidgets('no capable host: remote hidden, engines-none, Run disabled', (
+    WidgetTester tester,
+  ) async {
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: null);
     await pumpWizard(tester, remote: remote);
     await tester.pumpAndSettle();
@@ -323,56 +364,72 @@ void main() {
 
     expect(find.text(t.manga_remote_ocr_engine), findsNothing);
     expect(find.text(t.manga_ocr_engine_none), findsOneWidget);
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
+    final Finder runBtn = find.widgetWithText(
+      FilledButton,
+      t.manga_ocr_wizard_run,
+    );
+    expect(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed,
+      isNull,
+    );
   });
 
   testWidgets(
-      'explicit pairedHost stays represented and disabled while host is offline',
-      (WidgetTester tester) async {
-    final _FakeRemoteRunner remote = _FakeRemoteRunner(target: null);
-    await pumpWizard(
-      tester,
-      remote: remote,
-      lensRunner: _NoopLensRunner(),
-      initialEnginePreference: MangaOcrEnginePreference.pairedHost.key,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    'explicit pairedHost stays represented and disabled while host is offline',
+    (WidgetTester tester) async {
+      final _FakeRemoteRunner remote = _FakeRemoteRunner(target: null);
+      await pumpWizard(
+        tester,
+        remote: remote,
+        lensRunner: _NoopLensRunner(),
+        initialEnginePreference: MangaOcrEnginePreference.pairedHost.key,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
 
-    final FushiSegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
-          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
-        );
-    final ButtonSegment<MangaOcrEngineId> paired = selector.segments.firstWhere(
-      (ButtonSegment<MangaOcrEngineId> segment) =>
-          segment.value == MangaOcrEngineId.pairedHost,
-    );
-    expect(paired.enabled, isFalse);
-    expect(selector.selected, <MangaOcrEngineId>{MangaOcrEngineId.pairedHost});
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNull);
-  });
+      final FushiSegmentedButton<MangaOcrEngineId> selector = tester
+          .widget<FushiSegmentedButton<MangaOcrEngineId>>(
+            find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+          );
+      final ButtonSegment<MangaOcrEngineId> paired = selector.segments
+          .firstWhere(
+            (ButtonSegment<MangaOcrEngineId> segment) =>
+                segment.value == MangaOcrEngineId.pairedHost,
+          );
+      expect(paired.enabled, isFalse);
+      expect(selector.selected, <MangaOcrEngineId>{
+        MangaOcrEngineId.pairedHost,
+      });
+      final Finder runBtn = find.widgetWithText(
+        FilledButton,
+        t.manga_ocr_wizard_run,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(runBtn))
+            .onPressed,
+        isNull,
+      );
+    },
+  );
 
-  testWidgets(
-      'cancel during remote run: cancels stream (host cleanup), '
+  testWidgets('cancel during remote run: cancels stream (host cleanup), '
       'no import, back to configure', (WidgetTester tester) async {
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
     bool importCalled = false;
     await pumpWizard(
       tester,
       remote: remote,
-      importOverride: ({
-        required String path,
-        required bool external,
-        String? title,
-      }) async {
-        importCalled = true;
-        return 'x';
-      },
+      importOverride:
+          ({
+            required String path,
+            required bool external,
+            String? title,
+          }) async {
+            importCalled = true;
+            return 'x';
+          },
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
@@ -380,8 +437,9 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, t.manga_ocr_wizard_run));
     await tester.pump();
-    remote.controller!
-        .add(const MangaOcrRemoteEvent.uploading(done: 1, total: 3));
+    remote.controller!.add(
+      const MangaOcrRemoteEvent.uploading(done: 1, total: 3),
+    );
     await tester.pump();
 
     await tester.tap(find.widgetWithText(TextButton, t.dialog_cancel));
@@ -389,40 +447,53 @@ void main() {
 
     expect(remote.runCancelled, isTrue, reason: '取消订阅须传导到 host 清理');
     expect(importCalled, isFalse);
-    expect(find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
-        findsOneWidget);
-  });
-
-  testWidgets('remote error maps to readable message and returns to configure',
-      (WidgetTester tester) async {
-    final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
-    await pumpWizard(
-      tester,
-      remote: remote,
-      importOverride: ({
-        required String path,
-        required bool external,
-        String? title,
-      }) async =>
-          'unused',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.widgetWithText(FilledButton, t.manga_ocr_wizard_run));
-    await tester.pump();
-    remote.controller!
-        .addError(const MangaOcrRemoteException('models_not_ready'));
-    await tester.pumpAndSettle();
-
     expect(
-      find.textContaining(t.manga_remote_ocr_not_ready),
+      find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
       findsOneWidget,
     );
-    // 回到 configure：Run 可再点。
-    final Finder runBtn =
-        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(runBtn)).onPressed, isNotNull);
   });
+
+  testWidgets(
+    'remote error maps to readable message and returns to configure',
+    (WidgetTester tester) async {
+      final _FakeRemoteRunner remote = _FakeRemoteRunner(
+        target: _capableTarget,
+      );
+      await pumpWizard(
+        tester,
+        remote: remote,
+        importOverride:
+            ({
+              required String path,
+              required bool external,
+              String? title,
+            }) async => 'unused',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
+      );
+      await tester.pump();
+      remote.controller!.addError(
+        const MangaOcrRemoteException('models_not_ready'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(t.manga_remote_ocr_not_ready), findsOneWidget);
+      // 回到 configure：Run 可再点。
+      final Finder runBtn = find.widgetWithText(
+        FilledButton,
+        t.manga_ocr_wizard_run,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(runBtn))
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
 }

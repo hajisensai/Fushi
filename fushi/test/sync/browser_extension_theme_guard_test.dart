@@ -18,49 +18,77 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('BUG-688 browser-extension popup theme single-source guard', () {
     test('browserExtensionThemeColors 下发 content.css 真正消费的核心色变量', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       // 这些 CSS 变量名在 app_model.dart 中仅由 browserExtensionThemeColors() 产生，
       // 故用全文断言（span 会被长注释推出方法体，反而假阴性）。
-      expect(src, contains('browserExtensionThemeColors(String? colorScheme)'),
-          reason:
-              'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)');
+      expect(
+        src,
+        contains('browserExtensionThemeColors(String? colorScheme)'),
+        reason: 'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)',
+      );
       final String body = src;
       // 正文色 / 底色：content.css `color: var(--text-color)` /
       // `background-color: var(--background-color)` 直接读，漏则回落分裂。
-      expect(body, contains("'--text-color'"),
-          reason: 'provider 必须下发 --text-color（onSurface），否则弹窗字色回落宿主页');
-      expect(body, contains("'--background-color'"),
-          reason: 'provider 必须下发 --background-color，否则弹窗底色透明露宿主页');
+      expect(
+        body,
+        contains("'--text-color'"),
+        reason: 'provider 必须下发 --text-color（onSurface），否则弹窗字色回落宿主页',
+      );
+      expect(
+        body,
+        contains("'--background-color'"),
+        reason: 'provider 必须下发 --background-color，否则弹窗底色透明露宿主页',
+      );
       // app 明暗名，供 content.js 把 data-theme 对齐 app（而非宿主页）。
-      expect(body, contains("'--fushi-color-scheme'"),
-          reason:
-              'provider 必须下发 --fushi-color-scheme 供 content.js 对齐 data-theme');
+      expect(
+        body,
+        contains("'--fushi-color-scheme'"),
+        reason: 'provider 必须下发 --fushi-color-scheme 供 content.js 对齐 data-theme',
+      );
     });
 
     test('content.js 用 --fushi-color-scheme 把 data-theme 对齐 app 主题', () {
-      final String js =
-          File('assets/browser_extension/content.js').readAsStringSync();
+      final String js = File(
+        'assets/browser_extension/content.js',
+      ).readAsStringSync();
       // 读 app 下发的主题名并设到弹窗根的 data-theme（覆盖宿主页 prefers-color-scheme 初值）。
-      expect(js, contains("theme['--fushi-color-scheme']"),
-          reason: 'content.js 应读取 app 下发的 --fushi-color-scheme');
+      expect(
+        js,
+        contains("theme['--fushi-color-scheme']"),
+        reason: 'content.js 应读取 app 下发的 --fushi-color-scheme',
+      );
       // 扩展主题设置（theme.js）显式 light/dark 可压过 app 的值——但那时 background.js 会把
       // 同一个值作为 colorScheme 提示带进查词请求，app 按它生成 --md-*，两边仍是一套；auto
       // 下照旧跟 app。data-theme 一律经 fushiResolveTheme(cs) 决议，不再裸取 cs。
-      expect(js, contains('const effective = fushiResolveTheme(cs)'),
-          reason: 'content.js 应经 fushiResolveTheme 用 app 主题名（或扩展显式主题）设 data-theme');
-      expect(js, contains("setAttribute('data-theme', effective)"),
-          reason: 'content.js 应用决议后的主题名设 data-theme，根除主题分裂');
+      expect(
+        js,
+        contains('const effective = fushiResolveTheme(cs)'),
+        reason:
+            'content.js 应经 fushiResolveTheme 用 app 主题名（或扩展显式主题）设 data-theme',
+      );
+      expect(
+        js,
+        contains("setAttribute('data-theme', effective)"),
+        reason: 'content.js 应用决议后的主题名设 data-theme，根除主题分裂',
+      );
     });
 
     test('content.css 确实读 --text-color / --background-color（契约方向自证）', () {
-      final String css = File('assets/browser_extension/vendor/content.css')
-          .readAsStringSync();
-      expect(css, contains('var(--text-color'),
-          reason: 'content.css 以 var(--text-color) 决定正文色 → provider 必须下发它');
-      expect(css, contains('var(--background-color'),
-          reason:
-              'content.css 以 var(--background-color) 决定底色 → provider 必须下发它');
+      final String css = File(
+        'assets/browser_extension/vendor/content.css',
+      ).readAsStringSync();
+      expect(
+        css,
+        contains('var(--text-color'),
+        reason: 'content.css 以 var(--text-color) 决定正文色 → provider 必须下发它',
+      );
+      expect(
+        css,
+        contains('var(--background-color'),
+        reason: 'content.css 以 var(--background-color) 决定底色 → provider 必须下发它',
+      );
     });
   });
 }

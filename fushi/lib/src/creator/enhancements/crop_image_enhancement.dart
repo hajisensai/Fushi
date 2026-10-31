@@ -14,13 +14,13 @@ import 'package:fushi/utils.dart';
 class CropImageEnhancement extends ImageEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   CropImageEnhancement()
-      : super(
-          uniqueKey: key,
-          label: 'Crop Image',
-          description: 'Crop the current selected image.',
-          icon: Icons.crop_outlined,
-          field: ImageField.instance,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Crop Image',
+        description: 'Crop the current selected image.',
+        icon: Icons.crop_outlined,
+        field: ImageField.instance,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

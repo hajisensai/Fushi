@@ -46,8 +46,10 @@ void main() {
         createdAt: 1,
       ),
     );
-    final int collectionId =
-        await db.createMediaCollection(localTitle, collectionType: 'playlist');
+    final int collectionId = await db.createMediaCollection(
+      localTitle,
+      collectionType: 'playlist',
+    );
     final int now = DateTime.now().millisecondsSinceEpoch;
     await db.upsertVideoDownloadJob(
       VideoDownloadJobsCompanion.insert(
@@ -79,8 +81,9 @@ void main() {
       ),
     );
     for (int index = 0; index < 2; index++) {
-      final File file =
-          File(p.join(directory.path, '$localTitle - 0${index + 1}.mkv'));
+      final File file = File(
+        p.join(directory.path, '$localTitle - 0${index + 1}.mkv'),
+      );
       await file.writeAsBytes(<int>[0]);
       await db.upsertVideoBook(
         VideoBooksCompanion(
@@ -116,17 +119,14 @@ void main() {
     return ((await db.getMediaSourceById(sourceId))!, collectionId);
   }
 
-  Future<SourceScrapeReport> scrape(
-    SourceLibraryRow source,
-    _MalProvider mal,
-  ) {
+  Future<SourceScrapeReport> scrape(SourceLibraryRow source, _MalProvider mal) {
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      primaryProvider: VideoMetadataProviderKind.mal,
-      database: db,
-      config: const VideoSourceScrapeGlobalConfig(),
-      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
-    );
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+        );
     addTearDown(coordinator.close);
     return coordinator.scrapeSource(
       source,
@@ -144,8 +144,8 @@ void main() {
     expect(report.succeededWorks, 1, reason: '${report.errors}');
     expect(mal.fetchedIds, contains('63337'));
     expect(mal.searchedTitles, isEmpty);
-    final VideoMetadataWorkRow work =
-        (await db.getVideoMetadataWorkByCollection(collectionId))!;
+    final VideoMetadataWorkRow work = (await db
+        .getVideoMetadataWorkByCollection(collectionId))!;
     expect(work.title, 'FX戦士くるみちゃん');
   });
 
@@ -187,16 +187,19 @@ void main() {
       externalIds: const <String, String>{'mal': '63337', 'tmdb': '311842'},
     );
     final _MalProvider mal = _MalProvider(unreachable: true);
-    final _MalProvider tmdb =
-        _MalProvider(kind: VideoMetadataProviderKind.tmdb);
+    final _MalProvider tmdb = _MalProvider(
+      kind: VideoMetadataProviderKind.tmdb,
+    );
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      primaryProvider: VideoMetadataProviderKind.mal,
-      database: db,
-      config: const VideoSourceScrapeGlobalConfig(),
-      registry:
-          VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-    );
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+        );
     addTearDown(coordinator.close);
 
     final SourceScrapeReport report = await coordinator.scrapeSource(
@@ -235,15 +238,14 @@ class _MalProvider implements VideoMetadataProvider {
   bool get isAvailable => true;
 
   VideoMetadataWork _work(String id) => VideoMetadataWork(
-        provider: kind,
-        kind: VideoMetadataMediaKind.tv,
-        title:
-            id == '63337' || id == '311842' ? 'FX戦士くるみちゃん' : 'Manually bound',
-        episodeCount: 12,
-        ids: <VideoMetadataId>[
-          VideoMetadataId(type: kind.name, value: id, isDefault: true),
-        ],
-      );
+    provider: kind,
+    kind: VideoMetadataMediaKind.tv,
+    title: id == '63337' || id == '311842' ? 'FX戦士くるみちゃん' : 'Manually bound',
+    episodeCount: 12,
+    ids: <VideoMetadataId>[
+      VideoMetadataId(type: kind.name, value: id, isDefault: true),
+    ],
+  );
 
   @override
   Future<List<VideoMetadataWork>> search(
@@ -267,25 +269,23 @@ class _MalProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      <VideoMetadataSeason>[
-        VideoMetadataSeason(seasonNumber: 1, title: 'S1', episodeCount: 12),
-      ];
+  ) async => <VideoMetadataSeason>[
+    VideoMetadataSeason(seasonNumber: 1, title: 'S1', episodeCount: 12),
+  ];
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      <VideoMetadataEpisode>[
-        for (int number = 1; number <= 12; number++)
-          VideoMetadataEpisode(
-            seasonNumber: 1,
-            episodeNumber: number,
-            absoluteNumber: number,
-            title: '#$number',
-          ),
-      ];
+  }) async => <VideoMetadataEpisode>[
+    for (int number = 1; number <= 12; number++)
+      VideoMetadataEpisode(
+        seasonNumber: 1,
+        episodeNumber: number,
+        absoluteNumber: number,
+        title: '#$number',
+      ),
+  ];
 
   @override
   void close() {}

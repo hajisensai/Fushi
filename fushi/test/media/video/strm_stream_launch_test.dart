@@ -42,12 +42,14 @@ class _PrefixResolver implements StreamUrlResolver {
 Future<VideoBookRow> _row(FushiDatabase db, String videoPath) async {
   final VideoBookRepository repo = VideoBookRepository(db);
   final String uid = 'video/${p.basename(videoPath)}';
-  await repo.saveVideoBook(VideoBooksCompanion(
-    bookUid: Value(uid),
-    title: const Value('t'),
-    videoPath: Value(videoPath),
-    importedAt: const Value(1),
-  ));
+  await repo.saveVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value(uid),
+      title: const Value('t'),
+      videoPath: Value(videoPath),
+      importedAt: const Value(1),
+    ),
+  );
   return (await repo.getByBookUid(uid))!;
 }
 
@@ -74,9 +76,12 @@ void main() {
     test('本地 .strm：读文件取首条地址', () async {
       final File f = File(p.join(tmp.path, 'Show S01E01.strm'))
         ..writeAsStringSync(
-            '\uFEFF# comment\r\nhttps://cdn.example/e1.m3u8\r\n');
+          '\uFEFF# comment\r\nhttps://cdn.example/e1.m3u8\r\n',
+        );
       expect(
-          await resolveStrmStreamTarget(f.path), 'https://cdn.example/e1.m3u8');
+        await resolveStrmStreamTarget(f.path),
+        'https://cdn.example/e1.m3u8',
+      );
     });
 
     test('本地目标 / 空文件 / 未知协议 / 文件不存在：类型化失败', () async {
@@ -92,16 +97,23 @@ void main() {
       }
 
       expect(
-          await failureOf(r'D:\Movies\a.mkv'), StrmResolveFailure.localTarget);
+        await failureOf(r'D:\Movies\a.mkv'),
+        StrmResolveFailure.localTarget,
+      );
       expect(await failureOf('# nothing\n'), StrmResolveFailure.empty);
-      expect(await failureOf('plugin://x/?id=1'),
-          StrmResolveFailure.unsupportedTarget);
+      expect(
+        await failureOf('plugin://x/?id=1'),
+        StrmResolveFailure.unsupportedTarget,
+      );
       await expectLater(
         resolveStrmStreamTarget(p.join(tmp.path, 'missing.strm')),
-        throwsA(isA<StrmResolveException>().having(
+        throwsA(
+          isA<StrmResolveException>().having(
             (StrmResolveException e) => e.failure,
             'failure',
-            StrmResolveFailure.unreadable)),
+            StrmResolveFailure.unreadable,
+          ),
+        ),
       );
     });
 
@@ -120,21 +132,29 @@ void main() {
       );
       expect(target, 'rtsp://third-party.example/live');
       expect(resolver.seen, <String>['https://nas.example/d/tv/ch.strm?x=0']);
-      expect(requests.single.url.toString(),
-          'https://nas.example/d/tv/ch.strm?x=0&signed=1');
+      expect(
+        requests.single.url.toString(),
+        'https://nas.example/d/tv/ch.strm?x=0&signed=1',
+      );
       expect(requests.single.headers['Authorization'], 'Basic abc');
     });
 
     test('远端 .strm 非 2xx：unreadable', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => http.Response('no', 404));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response('no', 404),
+      );
       await expectLater(
-        resolveStrmStreamTarget('https://nas.example/a.strm',
-            httpClient: client),
-        throwsA(isA<StrmResolveException>().having(
+        resolveStrmStreamTarget(
+          'https://nas.example/a.strm',
+          httpClient: client,
+        ),
+        throwsA(
+          isA<StrmResolveException>().having(
             (StrmResolveException e) => e.failure,
             'failure',
-            StrmResolveFailure.unreadable)),
+            StrmResolveFailure.unreadable,
+          ),
+        ),
       );
     });
   });
@@ -147,8 +167,8 @@ void main() {
     // 第三方主机拿到的是空 map。
     final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
         await buildStreamVideoLaunch(
-      strmRow.copyWith(videoPath: 'https://cdn.other.example/c.m3u8'),
-    );
+          strmRow.copyWith(videoPath: 'https://cdn.other.example/c.m3u8'),
+        );
     addTearDown(launch.client.close);
     expect(launch.client.streamUrl, 'https://cdn.other.example/c.m3u8');
     expect(launch.client.httpHeaderFields, isEmpty);
@@ -157,20 +177,32 @@ void main() {
 
   test('shouldPersistStreamPosition：只对直播频道看时长，其它远端照常写', () {
     // 直播频道（IPTV 频道行）：时长未知 / 0 不写断点。
-    expect(shouldPersistStreamPosition(isLiveChannel: true, durationMs: null),
-        isFalse);
-    expect(shouldPersistStreamPosition(isLiveChannel: true, durationMs: 0),
-        isFalse);
-    expect(shouldPersistStreamPosition(isLiveChannel: true, durationMs: 1),
-        isTrue);
+    expect(
+      shouldPersistStreamPosition(isLiveChannel: true, durationMs: null),
+      isFalse,
+    );
+    expect(
+      shouldPersistStreamPosition(isLiveChannel: true, durationMs: 0),
+      isFalse,
+    );
+    expect(
+      shouldPersistStreamPosition(isLiveChannel: true, durationMs: 1),
+      isTrue,
+    );
     // 互联转码 / Jellyfin 渐进式这类点播 mpv 暂时报不出时长：断点照写。
-    expect(shouldPersistStreamPosition(isLiveChannel: false, durationMs: null),
-        isTrue);
-    expect(shouldPersistStreamPosition(isLiveChannel: false, durationMs: 0),
-        isTrue);
+    expect(
+      shouldPersistStreamPosition(isLiveChannel: false, durationMs: null),
+      isTrue,
+    );
+    expect(
+      shouldPersistStreamPosition(isLiveChannel: false, durationMs: 0),
+      isTrue,
+    );
     // 「直播频道」按条目来源（频道行 uid 命名空间）判定，不看地址形状。
     expect(
-        isIptvChannelBookUid('video/iptv/0123456789ab-ba9876543210'), isTrue);
+      isIptvChannelBookUid('video/iptv/0123456789ab-ba9876543210'),
+      isTrue,
+    );
     expect(isIptvChannelBookUid('video/stream/0123456789ab'), isFalse);
     expect(isIptvChannelBookUid('video/index'), isFalse);
   });
@@ -182,20 +214,27 @@ void main() {
         'RTMPS://live.example/app/key',
         'rtmpe://live.example/app/key',
       ]) {
-        expect(() => ensureStreamProtocolSupported(url, isApplePlatform: true),
-            throwsA(isA<UnsupportedStreamProtocolException>()),
-            reason: url);
+        expect(
+          () => ensureStreamProtocolSupported(url, isApplePlatform: true),
+          throwsA(isA<UnsupportedStreamProtocolException>()),
+          reason: url,
+        );
         ensureStreamProtocolSupported(url, isApplePlatform: false);
       }
-      ensureStreamProtocolSupported('rtsp://cam.example/1',
-          isApplePlatform: true);
-      ensureStreamProtocolSupported('https://a.example/v.m3u8',
-          isApplePlatform: true);
+      ensureStreamProtocolSupported(
+        'rtsp://cam.example/1',
+        isApplePlatform: true,
+      );
+      ensureStreamProtocolSupported(
+        'https://a.example/v.m3u8',
+        isApplePlatform: true,
+      );
     });
 
     test('buildStreamVideoLaunch 在建客户端前拒绝', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final VideoBookRow row = await _row(db, 'rtmps://live.example/app/key');
       await expectLater(
@@ -208,8 +247,10 @@ void main() {
   group('.strm 读取边读边计数', () {
     test('远端正文超过上限：unreadable（超限即停，不读完整份正文）', () async {
       int served = 0;
-      final MockClient client =
-          MockClient.streaming((http.BaseRequest req, _) async {
+      final MockClient client = MockClient.streaming((
+        http.BaseRequest req,
+        _,
+      ) async {
         final Stream<List<int>> body = Stream<List<int>>.fromIterable(
           Iterable<List<int>>.generate(1024, (_) {
             served++;
@@ -219,12 +260,17 @@ void main() {
         return http.StreamedResponse(body, 200);
       });
       await expectLater(
-        resolveStrmStreamTarget('https://nas.example/big.strm',
-            httpClient: client),
-        throwsA(isA<StrmResolveException>().having(
+        resolveStrmStreamTarget(
+          'https://nas.example/big.strm',
+          httpClient: client,
+        ),
+        throwsA(
+          isA<StrmResolveException>().having(
             (StrmResolveException e) => e.failure,
             'failure',
-            StrmResolveFailure.unreadable)),
+            StrmResolveFailure.unreadable,
+          ),
+        ),
       );
       expect(served, lessThan(1024), reason: '超限后应当停止读取');
     });
@@ -234,10 +280,13 @@ void main() {
         ..writeAsBytesSync(List<int>.filled(kStrmMaxBytes + 1, 0x61));
       await expectLater(
         resolveStrmStreamTarget(f.path),
-        throwsA(isA<StrmResolveException>().having(
+        throwsA(
+          isA<StrmResolveException>().having(
             (StrmResolveException e) => e.failure,
             'failure',
-            StrmResolveFailure.unreadable)),
+            StrmResolveFailure.unreadable,
+          ),
+        ),
       );
     });
   });

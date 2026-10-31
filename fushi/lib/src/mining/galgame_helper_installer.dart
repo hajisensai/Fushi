@@ -89,8 +89,10 @@ List<String> galgameHelperMissingFiles(
       .map((String name) => name.replaceAll('\\', '/').toLowerCase())
       .toSet();
   return galgameHelperRequiredFiles(arch)
-      .where((String name) =>
-          !present.contains(name.replaceAll('\\', '/').toLowerCase()))
+      .where(
+        (String name) =>
+            !present.contains(name.replaceAll('\\', '/').toLowerCase()),
+      )
       .toList(growable: false);
 }
 
@@ -175,8 +177,10 @@ final RegExp kGalgameHelperStalePattern = RegExp(r'\.stale\d*$');
 /// best-effort：仍被占用的留给下轮。
 void galgameHelperSweepStaleFiles(Directory dir) {
   if (!dir.existsSync()) return;
-  for (final FileSystemEntity entity
-      in dir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in dir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is File &&
         kGalgameHelperStalePattern.hasMatch(p.basename(entity.path))) {
       try {
@@ -207,16 +211,14 @@ class GalgameHelperRollbackException implements Exception {
   final List<Object> rollbackFailures;
 
   @override
-  String toString() => 'GalgameHelperRollbackException(cause: $cause, '
+  String toString() =>
+      'GalgameHelperRollbackException(cause: $cause, '
       'rollback failures: ${rollbackFailures.join('; ')})';
 }
 
 /// 一次性读取的随包归档快照。字节列表不可修改；摘要校验和解压只能消费这一份副本。
 class _VerifiedGalgameHelperBundle {
-  const _VerifiedGalgameHelperBundle({
-    required this.sha,
-    required this.bytes,
-  });
+  const _VerifiedGalgameHelperBundle({required this.sha, required this.bytes});
 
   final String sha;
   final List<int> bytes;
@@ -325,8 +327,8 @@ class GalgameHelperInstaller {
   GalgameHelperInstaller({
     Directory? bundledDirectory,
     Directory Function(String arch)? installDirectory,
-  })  : _bundledDirectoryOverride = bundledDirectory,
-        _installDirectoryOverride = installDirectory;
+  }) : _bundledDirectoryOverride = bundledDirectory,
+       _installDirectoryOverride = installDirectory;
 
   final Directory? _bundledDirectoryOverride;
   final Directory Function(String arch)? _installDirectoryOverride;
@@ -372,8 +374,10 @@ class GalgameHelperInstaller {
     final Iterable<String> present = dir
         .listSync(recursive: true, followLinks: false)
         .whereType<File>()
-        .map((File file) =>
-            p.relative(file.path, from: dir.path).replaceAll('\\', '/'));
+        .map(
+          (File file) =>
+              p.relative(file.path, from: dir.path).replaceAll('\\', '/'),
+        );
     return galgameHelperMissingFiles(arch, present);
   }
 
@@ -445,8 +449,10 @@ class GalgameHelperInstaller {
         // 仍然留痕：便携解压 / 开发构建 / 用户误删归档也会走到这里，而那些形态下
         // 「已装组件」确实可能与本体漂开。真漂开时用户看到的是运行期
         // `protocol_mismatch`，那一刻已在游戏启动之后，只有这行日志能说清当时的依据。
-        _log('bundled archive absent ($arch): using existing install as-is '
-            '(normal for installer-provided helpers; also covers portable/dev builds)');
+        _log(
+          'bundled archive absent ($arch): using existing install as-is '
+          '(normal for installer-provided helpers; also covers portable/dev builds)',
+        );
         return true;
       }
       final String? installedSha = await _installedMarkerSha(arch);
@@ -558,13 +564,18 @@ class GalgameHelperInstaller {
   }) async {
     // 解压到 staging 临时目录（保留 x64 unity_audio_runtime/ 子目录结构），先在
     //    staging 里验完清单再换入——坏包/缺文件在触碰安装目录之前就被拒。
-    final Directory staging =
-        await Directory.systemTemp.createTemp('fushi_voice_hook_staging_');
+    final Directory staging = await Directory.systemTemp.createTemp(
+      'fushi_voice_hook_staging_',
+    );
     try {
-      final Set<String> extractedFiles =
-          await _extractVerifiedBytes(verifiedBytes, staging);
-      final List<String> missingFromPackage =
-          galgameHelperMissingFiles(arch, extractedFiles);
+      final Set<String> extractedFiles = await _extractVerifiedBytes(
+        verifiedBytes,
+        staging,
+      );
+      final List<String> missingFromPackage = galgameHelperMissingFiles(
+        arch,
+        extractedFiles,
+      );
       if (missingFromPackage.isNotEmpty) {
         // 摘要对得上但清单不全 = 发布包本身有问题（不是投毒）。仍然不换入。
         throw GalgameHelperInstallException(
@@ -575,8 +586,10 @@ class GalgameHelperInstaller {
       }
 
       // 4) 换入（失败自回滚，安装目录要么完整旧版要么完整新版）。
-      await _serializeExtraction(() =>
-          galgameHelperSwapInstall(staging: staging, target: _archDir(arch)));
+      await _serializeExtraction(
+        () =>
+            galgameHelperSwapInstall(staging: staging, target: _archDir(arch)),
+      );
 
       final List<String> missingAfterExtract = _missingInstalledFiles(arch);
       if (missingAfterExtract.isNotEmpty) {
@@ -620,8 +633,9 @@ class GalgameHelperInstaller {
     final Set<String> extractedFiles = <String>{};
     for (final ArchiveFile entry in archive) {
       if (!entry.isFile) continue;
-      final String relativePath =
-          entry.name.replaceAll('/', p.separator).replaceAll('\\', p.separator);
+      final String relativePath = entry.name
+          .replaceAll('/', p.separator)
+          .replaceAll('\\', p.separator);
       if (relativePath.isEmpty || p.isAbsolute(relativePath)) {
         _log('extract: skipped absolute/empty entry "${entry.name}"');
         continue;

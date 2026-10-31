@@ -23,51 +23,52 @@ import 'package:flutter_test/flutter_test.dart';
 /// ② 源码级——静态扫描 popup.js，保证 `postProcessRuby` 不再用「`nodeType !== TEXT_NODE`
 ///    → continue」这个单一判据把元素基字整类跳过。
 void main() {
-  test(
-    'element-base glossary ruby (<rb>/<span>/nested) still gets a per-base '
-    '.ruby-unit so furigana never collapses onto the base (executes popup.js '
-    'via node, BUG-733)',
-    () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
-        return;
-      }
+  test('element-base glossary ruby (<rb>/<span>/nested) still gets a per-base '
+      '.ruby-unit so furigana never collapses onto the base (executes popup.js '
+      'via node, BUG-733)', () async {
+    final String? nodeExe = _resolveNode();
+    if (nodeExe == null) {
+      markTestSkipped('node not found on PATH; skipping JS behavior execution');
+      return;
+    }
 
-      final File jsTest =
-          File('test/pages/popup_glossary_ruby_element_base_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
+    final File jsTest = File(
+      'test/pages/popup_glossary_ruby_element_base_test.js',
+    );
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
+    );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
 
-      expect(
-        result.exitCode,
-        0,
-        reason: 'element-base ruby JS behavior test failed.\n'
-            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-      );
-      expect(
-        result.stdout.toString(),
-        contains('all assertions passed'),
-        reason: 'behavior harness must reach its success marker',
-      );
-    },
-  );
+    expect(
+      result.exitCode,
+      0,
+      reason:
+          'element-base ruby JS behavior test failed.\n'
+          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+    );
+    expect(
+      result.stdout.toString(),
+      contains('all assertions passed'),
+      reason: 'behavior harness must reach its success marker',
+    );
+  });
 
-  test(
-      'postProcessRuby no longer skips element bases via a TEXT_NODE-only '
+  test('postProcessRuby no longer skips element bases via a TEXT_NODE-only '
       'discriminator (BUG-733)', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
 
     final int fn = js.indexOf('function postProcessRuby(');
-    expect(fn, greaterThanOrEqualTo(0),
-        reason: 'popup.js must define postProcessRuby');
+    expect(
+      fn,
+      greaterThanOrEqualTo(0),
+      reason: 'popup.js must define postProcessRuby',
+    );
     final int fnEnd = js.indexOf('\n}', fn);
     expect(fnEnd, greaterThan(fn));
     final String body = js.substring(fn, fnEnd);
@@ -78,7 +79,8 @@ void main() {
     expect(
       body.contains('node.nodeType !== Node.TEXT_NODE'),
       isFalse,
-      reason: 'postProcessRuby must not skip element bases with a '
+      reason:
+          'postProcessRuby must not skip element bases with a '
           'TEXT_NODE-only continue — element bases (明鏡 <rb>/<span>) need a '
           '.ruby-unit too (BUG-733)',
     );
@@ -86,7 +88,8 @@ void main() {
     expect(
       body.contains('unit.appendChild(node)'),
       isTrue,
-      reason: 'postProcessRuby must move an element base INTO its .ruby-unit '
+      reason:
+          'postProcessRuby must move an element base INTO its .ruby-unit '
           '(unit.appendChild(node)) so the reading anchors per-base (BUG-733)',
     );
   });
@@ -94,8 +97,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

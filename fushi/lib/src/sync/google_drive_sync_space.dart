@@ -49,7 +49,7 @@ class GoogleDriveSyncSpace {
   final String rootFolderName;
 
   /// 默认：隐藏 appDataFolder / `fushi-data`（[kSyncRootFolderName]；改名前的旧根
-/// `hibiki-data` 由首次连接时的远端改名迁移接走）。老用户云端数据原地不动。
+  /// `hibiki-data` 由首次连接时的远端改名迁移接走）。老用户云端数据原地不动。
   static const GoogleDriveSyncSpace appData = GoogleDriveSyncSpace(
     id: 'appdata',
     scope: 'https://www.googleapis.com/auth/drive.appdata',

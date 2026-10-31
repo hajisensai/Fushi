@@ -69,8 +69,9 @@ class AnkiMediaDedupRunner {
 
   Future<Directory> journalDirectory() async {
     final Directory support = await AppPaths.supportRootDirectory();
-    final Directory dir =
-        Directory(p.join(support.path, 'backups', 'media_dedup'));
+    final Directory dir = Directory(
+      p.join(support.path, 'backups', 'media_dedup'),
+    );
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
@@ -92,12 +93,17 @@ class AnkiMediaDedupRunner {
     if (!_repository.supportsMediaMaintenance) return null;
     if (dryRun) {
       return _repository.runMediaDedup(
-          dryRun: true, onProgress: onProgress, shouldCancel: shouldCancel);
+        dryRun: true,
+        onProgress: onProgress,
+        shouldCancel: shouldCancel,
+      );
     }
 
     final Directory dir = await journalDirectory();
-    final String stamp =
-        DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
+    final String stamp = DateTime.now().toUtc().toIso8601String().replaceAll(
+      ':',
+      '-',
+    );
     final File journal = File(p.join(dir.path, 'dedup-$stamp.jsonl'));
     final IOSink sink = journal.openWrite();
     bool wroteAny = false;
@@ -113,10 +119,12 @@ class AnkiMediaDedupRunner {
       // 取消的轮不算「完成过一轮」：不推进时间戳，下次自动扫描照常到期。
       if (report != null && !report.cancelled) {
         final int nowMs = DateTime.now().millisecondsSinceEpoch;
-        await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-              lastMediaDedupAtMs: nowMs,
-              lastMediaDedupScanAtMs: nowMs,
-            ));
+        await _repository.updateSettings(
+          (AnkiSettings s) => s.copyWith(
+            lastMediaDedupAtMs: nowMs,
+            lastMediaDedupScanAtMs: nowMs,
+          ),
+        );
       }
       return report;
     } finally {
@@ -150,22 +158,29 @@ class AnkiMediaDedupRunner {
     )) {
       return null;
     }
-    final AnkiMediaDedupReport? plan =
-        await _repository.runMediaDedup(dryRun: true);
+    final AnkiMediaDedupReport? plan = await _repository.runMediaDedup(
+      dryRun: true,
+    );
     if (plan == null) return null;
-    await _repository.updateSettings((AnkiSettings s) =>
-        s.copyWith(lastMediaDedupScanAtMs: at.millisecondsSinceEpoch));
+    await _repository.updateSettings(
+      (AnkiSettings s) =>
+          s.copyWith(lastMediaDedupScanAtMs: at.millisecondsSinceEpoch),
+    );
     if (plan.deletions.isEmpty) {
       return AnkiMediaDedupAutoOutcome(plan: plan);
     }
     if (!settings.mediaDedupAutoDelete) {
       // 保守路径（默认）：只给清单，删不删由用户在确认弹窗里定。
-      debugPrint('AnkiMediaDedupRunner.auto: ${plan.deletions.length} '
-          'duplicates found, awaiting user confirmation');
+      debugPrint(
+        'AnkiMediaDedupRunner.auto: ${plan.deletions.length} '
+        'duplicates found, awaiting user confirmation',
+      );
       return AnkiMediaDedupAutoOutcome(plan: plan);
     }
-    debugPrint('AnkiMediaDedupRunner.auto: auto-delete explicitly enabled, '
-        'removing ${plan.deletions.length} duplicates');
+    debugPrint(
+      'AnkiMediaDedupRunner.auto: auto-delete explicitly enabled, '
+      'removing ${plan.deletions.length} duplicates',
+    );
     return AnkiMediaDedupAutoOutcome(
       plan: plan,
       applied: await runNow(dryRun: false),

@@ -35,13 +35,22 @@ void main() {
       'FushiServerPortInUse(',
       'FushiServerStartError(',
     ]) {
-      expect(containsCodeLine(apply, branch), isTrue,
-          reason: '$branch 没有分支 = 这种失败仍然静默');
+      expect(
+        containsCodeLine(apply, branch),
+        isTrue,
+        reason: '$branch 没有分支 = 这种失败仍然静默',
+      );
     }
-    expect(containsIdentifierCall(apply, '_showSnackBar'), isTrue,
-        reason: '失败必须上屏，只改内存态用户照样看不见');
-    expect(containsCodeLine(apply, 'setServerEnabled(false)'), isTrue,
-        reason: '启动失败后开关必须回落真实状态（host 并没有在跑）');
+    expect(
+      containsIdentifierCall(apply, '_showSnackBar'),
+      isTrue,
+      reason: '失败必须上屏，只改内存态用户照样看不见',
+    );
+    expect(
+      containsCodeLine(apply, 'setServerEnabled(false)'),
+      isTrue,
+      reason: '启动失败后开关必须回落真实状态（host 并没有在跑）',
+    );
   });
 
   test('① host 的每个启动/重启调用点都消费 outcome，没有裸 await 丢弃', () {
@@ -50,52 +59,78 @@ void main() {
     // 「裸丢弃」的形态是**整条语句**就是一次 await 调用（行首起、以分号收），
     // `final ... = await _serverController.restart();` 这种把结果接住的写法不算。
     expect(
-      RegExp(r'^\s*await\s+_serverController\.restart\(\)\s*;', multiLine: true)
-          .hasMatch(masked),
+      RegExp(
+        r'^\s*await\s+_serverController\.restart\(\)\s*;',
+        multiLine: true,
+      ).hasMatch(masked),
       isFalse,
       reason: '裸 await restart() 丢掉返回值——重启失败时 host 已经停了却无人知晓',
     );
     expect(
-      RegExp(r'^\s*await\s+_serverController\.startIfEnabled\(\)\s*;',
-              multiLine: true)
-          .hasMatch(masked),
+      RegExp(
+        r'^\s*await\s+_serverController\.startIfEnabled\(\)\s*;',
+        multiLine: true,
+      ).hasMatch(masked),
       isFalse,
       reason: '裸 await startIfEnabled() 同理：开页兜底启动失败被静默吞掉',
     );
     // 三个调用点都得把结果喂进消费函数。
-    final String regen =
-        methodBody(server, '  Future<void> _regenerateToken()');
+    final String regen = methodBody(
+      server,
+      '  Future<void> _regenerateToken()',
+    );
     expect(
       containsIdentifierCall(regen, '_applyStartOutcome'),
       isTrue,
       reason: '重新生成令牌 = 一次重启，失败必须说清楚',
     );
-    final String tls =
-        methodBody(server, '  Future<void> _setTlsEnabled(bool v)');
+    final String tls = methodBody(
+      server,
+      '  Future<void> _setTlsEnabled(bool v)',
+    );
     expect(containsIdentifierCall(tls, '_applyStartOutcome'), isTrue);
-    final int outcomeAt =
-        maskComments(tls).indexOf('outcome is! FushiServerStarted');
-    final int hintAt =
-        maskComments(tls).indexOf('t.sync_server_tls_repair_hint');
+    final int outcomeAt = maskComments(
+      tls,
+    ).indexOf('outcome is! FushiServerStarted');
+    final int hintAt = maskComments(
+      tls,
+    ).indexOf('t.sync_server_tls_repair_hint');
     expect(outcomeAt, isNonNegative, reason: '开 TLS 失败必须与成功走不同出口');
-    expect(outcomeAt, lessThan(hintAt),
-        reason: '重启失败后不能再弹「需重新配对」——那台 host 已经不在了');
+    expect(
+      outcomeAt,
+      lessThan(hintAt),
+      reason: '重启失败后不能再弹「需重新配对」——那台 host 已经不在了',
+    );
     final String load = methodBody(server, '  Future<void> _loadSettings()');
     expect(containsIdentifierCall(load, '_applyStartOutcome'), isTrue);
   });
 
   test('② 「设为备份后端」有 catch，失败时回库重读真值并上屏', () {
     final String corpus = readSyncSettingsSchemaSource();
-    final String apply =
-        methodBody(corpus, '  Future<void> _useInterconnectAsBackend()');
+    final String apply = methodBody(
+      corpus,
+      '  Future<void> _useInterconnectAsBackend()',
+    );
     final String masked = maskComments(apply);
-    expect(masked.contains('} catch ('), isTrue,
-        reason: '只有 try/finally = DB 半写时 UI 停在旧值，异常逃逸成 unhandled error');
-    expect(containsCodeLine(apply, 'getBackendType()'), isTrue,
-        reason: '失败后必须回 preferences 重读真实后端，让 UI 与库一致');
-    expect(containsIdentifierCall(apply, '_showSnackBar'), isTrue,
-        reason: '失败必须上屏');
-    expect(containsCodeLine(apply, 'ErrorLogService.instance'), isTrue,
-        reason: '失败要留日志，否则事后无从定位');
+    expect(
+      masked.contains('} catch ('),
+      isTrue,
+      reason: '只有 try/finally = DB 半写时 UI 停在旧值，异常逃逸成 unhandled error',
+    );
+    expect(
+      containsCodeLine(apply, 'getBackendType()'),
+      isTrue,
+      reason: '失败后必须回 preferences 重读真实后端，让 UI 与库一致',
+    );
+    expect(
+      containsIdentifierCall(apply, '_showSnackBar'),
+      isTrue,
+      reason: '失败必须上屏',
+    );
+    expect(
+      containsCodeLine(apply, 'ErrorLogService.instance'),
+      isTrue,
+      reason: '失败要留日志，否则事后无从定位',
+    );
   });
 }

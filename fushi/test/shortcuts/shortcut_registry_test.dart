@@ -67,9 +67,7 @@ void main() {
 
     test('updateBinding replaces bindings', () {
       final newBindings = ShortcutBindingSet(
-        keyboardBindings: const [
-          InputBinding(key: LogicalKeyboardKey.keyN),
-        ],
+        keyboardBindings: const [InputBinding(key: LogicalKeyboardKey.keyN)],
       );
       registry.updateBinding(ShortcutAction.readerPageForward, newBindings);
       final result = registry.resolveKeyboard(
@@ -87,65 +85,76 @@ void main() {
     });
 
     test(
-        'updateBindingWithReassignments moves keyboard binding from old action',
-        () {
-      // 用 M（底栏开关）当「组内已被占用的键」样本。Esc 自 v8 起不属于 reader 组的
-      // 任何动作（它是 universal 的「返回上一级」），拿它做样本就测不到重分配。
-      const binding = InputBinding(key: LogicalKeyboardKey.keyM);
-      expect(
-        registry.resolveKeyboard(
-          LogicalKeyboardKey.keyM,
-          modifiers: {},
-          scope: ShortcutScope.reader,
-        ),
-        ShortcutAction.readerToggleChrome,
-      );
+      'updateBindingWithReassignments moves keyboard binding from old action',
+      () {
+        // 用 M（底栏开关）当「组内已被占用的键」样本。Esc 自 v8 起不属于 reader 组的
+        // 任何动作（它是 universal 的「返回上一级」），拿它做样本就测不到重分配。
+        const binding = InputBinding(key: LogicalKeyboardKey.keyM);
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.keyM,
+            modifiers: {},
+            scope: ShortcutScope.reader,
+          ),
+          ShortcutAction.readerToggleChrome,
+        );
 
-      registry.updateBindingWithReassignments(
-        ShortcutAction.readerToggleFurigana,
-        const ShortcutBindingSet(keyboardBindings: <InputBinding>[binding]),
-        removeKeyboardConflicts: <InputBinding>[binding],
-      );
+        registry.updateBindingWithReassignments(
+          ShortcutAction.readerToggleFurigana,
+          const ShortcutBindingSet(keyboardBindings: <InputBinding>[binding]),
+          removeKeyboardConflicts: <InputBinding>[binding],
+        );
 
-      expect(
-        registry
-            .bindingsFor(ShortcutAction.readerToggleChrome)
-            .keyboardBindings,
-        isNot(contains(binding)),
-      );
-      expect(
-        registry.resolveKeyboard(
-          LogicalKeyboardKey.keyM,
-          modifiers: {},
-          scope: ShortcutScope.reader,
-        ),
-        ShortcutAction.readerToggleFurigana,
-      );
-    });
+        expect(
+          registry
+              .bindingsFor(ShortcutAction.readerToggleChrome)
+              .keyboardBindings,
+          isNot(contains(binding)),
+        );
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.keyM,
+            modifiers: {},
+            scope: ShortcutScope.reader,
+          ),
+          ShortcutAction.readerToggleFurigana,
+        );
+      },
+    );
 
-    test('updateBindingWithReassignments moves gamepad binding from old action',
-        () {
-      const binding = GamepadBinding(GamepadButton.rb);
-      expect(
-        registry.resolveGamepad(GamepadButton.rb, scope: ShortcutScope.reader),
-        ShortcutAction.readerPageForward,
-      );
+    test(
+      'updateBindingWithReassignments moves gamepad binding from old action',
+      () {
+        const binding = GamepadBinding(GamepadButton.rb);
+        expect(
+          registry.resolveGamepad(
+            GamepadButton.rb,
+            scope: ShortcutScope.reader,
+          ),
+          ShortcutAction.readerPageForward,
+        );
 
-      registry.updateBindingWithReassignments(
-        ShortcutAction.readerToggleFurigana,
-        const ShortcutBindingSet(gamepadBindings: <GamepadBinding>[binding]),
-        removeGamepadConflicts: <GamepadBinding>[binding],
-      );
+        registry.updateBindingWithReassignments(
+          ShortcutAction.readerToggleFurigana,
+          const ShortcutBindingSet(gamepadBindings: <GamepadBinding>[binding]),
+          removeGamepadConflicts: <GamepadBinding>[binding],
+        );
 
-      expect(
-        registry.bindingsFor(ShortcutAction.readerPageForward).gamepadBindings,
-        isNot(contains(binding)),
-      );
-      expect(
-        registry.resolveGamepad(GamepadButton.rb, scope: ShortcutScope.reader),
-        ShortcutAction.readerToggleFurigana,
-      );
-    });
+        expect(
+          registry
+              .bindingsFor(ShortcutAction.readerPageForward)
+              .gamepadBindings,
+          isNot(contains(binding)),
+        );
+        expect(
+          registry.resolveGamepad(
+            GamepadButton.rb,
+            scope: ShortcutScope.reader,
+          ),
+          ShortcutAction.readerToggleFurigana,
+        );
+      },
+    );
 
     test('hasKeyboardConflict detects conflict in same scope', () {
       final binding = InputBinding(key: LogicalKeyboardKey.pageDown);
@@ -209,8 +218,7 @@ void main() {
       );
     });
 
-    test('hasKeyboardConflict detects conflict across home/global co-active',
-        () {
+    test('hasKeyboardConflict detects conflict across home/global co-active', () {
       // home + global resolve together on the home page. globalToggleFullscreen
       // default is F11; checking from the home scope must find it.
       // （globalBack 自 v8 起搬到 universal scope，不再是这条跨组用例的样本。）
@@ -328,10 +336,10 @@ void main() {
     // 通道 gating 只管到「有没有鼠标这条路」，管不到按钮号。没有这道按钮级白名单，
     // 中键 / 右键会一路录进去、保存、回显，而消费侧只认侧键 3/4——按下毫无反应。
     test('globalExternalLookup 只接受鼠标侧键 3/4', () {
-      expect(
-        ShortcutAction.globalExternalLookup.allowedMouseButtons,
-        <int>{3, 4},
-      );
+      expect(ShortcutAction.globalExternalLookup.allowedMouseButtons, <int>{
+        3,
+        4,
+      });
       for (final ShortcutAction other in <ShortcutAction>[
         ShortcutAction.globalContextMenu,
         ShortcutAction.readerPageForward,
@@ -371,13 +379,19 @@ void main() {
       reg.loadDefaults(TargetPlatform.windows);
       reg.loadFromJson(partial);
       expect(
-        reg.resolveKeyboard(LogicalKeyboardKey.keyN,
-            modifiers: {}, scope: ShortcutScope.reader),
+        reg.resolveKeyboard(
+          LogicalKeyboardKey.keyN,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
         ShortcutAction.readerPageForward,
       );
       expect(
-        reg.resolveKeyboard(LogicalKeyboardKey.pageUp,
-            modifiers: {}, scope: ShortcutScope.reader),
+        reg.resolveKeyboard(
+          LogicalKeyboardKey.pageUp,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
         ShortcutAction.readerPageBackward,
       );
     });
@@ -406,43 +420,46 @@ void main() {
       );
     });
 
-    test('resolveKeyboard Escape resolves to globalBack (universal fallback)',
-        () {
-      // Regression: Escape used to be double-bound to BOTH readerToggleChrome
-      // and readerDismissDict, and enum order made it resolve to
-      // readerToggleChrome → Esc toggled the bottom bar instead of leaving the
-      // book. readerToggleChrome moved to KeyM.
-      // v8 统一：Esc 不再属于 reader 组的任何动作，而是全 app 唯一的
-      // 「返回上一级」globalBack（universal scope），由页面在自身 scope
-      // 未命中后兜底解析。故 reader scope 里它必须解析不到。
-      expect(
-        registry.resolveKeyboard(
-          LogicalKeyboardKey.escape,
-          modifiers: {},
-          scope: ShortcutScope.reader,
-        ),
-        isNull,
-      );
-      expect(
-        registry.resolveKeyboard(
-          LogicalKeyboardKey.escape,
-          modifiers: {},
-          scope: ShortcutScope.universal,
-        ),
-        ShortcutAction.globalBack,
-      );
-    });
+    test(
+      'resolveKeyboard Escape resolves to globalBack (universal fallback)',
+      () {
+        // Regression: Escape used to be double-bound to BOTH readerToggleChrome
+        // and readerDismissDict, and enum order made it resolve to
+        // readerToggleChrome → Esc toggled the bottom bar instead of leaving the
+        // book. readerToggleChrome moved to KeyM.
+        // v8 统一：Esc 不再属于 reader 组的任何动作，而是全 app 唯一的
+        // 「返回上一级」globalBack（universal scope），由页面在自身 scope
+        // 未命中后兜底解析。故 reader scope 里它必须解析不到。
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.escape,
+            modifiers: {},
+            scope: ShortcutScope.reader,
+          ),
+          isNull,
+        );
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.escape,
+            modifiers: {},
+            scope: ShortcutScope.universal,
+          ),
+          ShortcutAction.globalBack,
+        );
+      },
+    );
 
     test(
-        'resolveKeyboard KeyM resolves to readerToggleChrome (open bottom bar)',
-        () {
-      final result = registry.resolveKeyboard(
-        LogicalKeyboardKey.keyM,
-        modifiers: {},
-        scope: ShortcutScope.reader,
-      );
-      expect(result, ShortcutAction.readerToggleChrome);
-    });
+      'resolveKeyboard KeyM resolves to readerToggleChrome (open bottom bar)',
+      () {
+        final result = registry.resolveKeyboard(
+          LogicalKeyboardKey.keyM,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        );
+        expect(result, ShortcutAction.readerToggleChrome);
+      },
+    );
 
     test('Escape is owned by exactly one action app-wide (no double-bind)', () {
       // The original bug was a silent keyboard double-bind. Guard it: no two
@@ -460,27 +477,29 @@ void main() {
       expect(owners, [ShortcutAction.globalBack]);
     });
 
-    test('loadFromJson preserves unknown action keys for forward compatibility',
-        () {
-      final jsonWithUnknown = <String, dynamic>{
-        'reader_page_forward': {
-          'keyboard': ['PageDown'],
-          'gamepad': <String>[],
-        },
-        'future_action_v99': {
-          'keyboard': ['F13'],
-          'gamepad': ['A'],
-        },
-      };
-      final reg = FushiShortcutRegistry();
-      reg.loadDefaults(TargetPlatform.windows);
-      reg.loadFromJson(jsonWithUnknown);
+    test(
+      'loadFromJson preserves unknown action keys for forward compatibility',
+      () {
+        final jsonWithUnknown = <String, dynamic>{
+          'reader_page_forward': {
+            'keyboard': ['PageDown'],
+            'gamepad': <String>[],
+          },
+          'future_action_v99': {
+            'keyboard': ['F13'],
+            'gamepad': ['A'],
+          },
+        };
+        final reg = FushiShortcutRegistry();
+        reg.loadDefaults(TargetPlatform.windows);
+        reg.loadFromJson(jsonWithUnknown);
 
-      final exported = reg.toJson();
-      expect(exported.containsKey('future_action_v99'), isTrue);
-      final preserved = exported['future_action_v99'] as Map<String, dynamic>;
-      expect((preserved['keyboard'] as List).contains('F13'), isTrue);
-    });
+        final exported = reg.toJson();
+        expect(exported.containsKey('future_action_v99'), isTrue);
+        final preserved = exported['future_action_v99'] as Map<String, dynamic>;
+        expect((preserved['keyboard'] as List).contains('F13'), isTrue);
+      },
+    );
 
     test('resetToDefaults clears unknown entries', () {
       final jsonWithUnknown = <String, dynamic>{
@@ -508,8 +527,11 @@ void main() {
       });
       registry.loadFromJsonString(profileA, TargetPlatform.windows);
       expect(
-        registry.resolveKeyboard(LogicalKeyboardKey.keyN,
-            modifiers: {}, scope: ShortcutScope.reader),
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.keyN,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
         ShortcutAction.readerPageForward,
       );
 
@@ -517,13 +539,19 @@ void main() {
       // Profile A's KeyN binding and restore defaults.
       registry.loadFromJsonString('{}', TargetPlatform.windows);
       expect(
-        registry.resolveKeyboard(LogicalKeyboardKey.keyN,
-            modifiers: {}, scope: ShortcutScope.reader),
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.keyN,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
         isNull,
       );
       expect(
-        registry.resolveKeyboard(LogicalKeyboardKey.pageDown,
-            modifiers: {}, scope: ShortcutScope.reader),
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.pageDown,
+          modifiers: {},
+          scope: ShortcutScope.reader,
+        ),
         ShortcutAction.readerPageForward,
       );
     });

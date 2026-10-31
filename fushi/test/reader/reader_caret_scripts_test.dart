@@ -10,61 +10,102 @@ import 'package:fushi/src/reader/reader_caret_scripts.dart';
 void main() {
   group('ReaderCaretScripts invocations', () {
     test('enter / exit / lookup / refresh', () {
-      expect(ReaderCaretScripts.enterInvocation(),
-          'JSON.stringify(window.fushiCaret.enter())');
-      expect(ReaderCaretScripts.exitInvocation(), 'window.fushiCaret.exit()');
-      expect(ReaderCaretScripts.suspendInvocation(),
-          'window.fushiCaret.suspend()');
-      expect(ReaderCaretScripts.resumeInvocation(),
-          'JSON.stringify(window.fushiCaret.resume())');
       expect(
-          ReaderCaretScripts.lookupInvocation(), 'window.fushiCaret.lookup()');
-      expect(ReaderCaretScripts.activateInvocation(),
-          'window.fushiCaret.activate()');
-      expect(ReaderCaretScripts.longPressInvocation(),
-          'window.fushiCaret.longPress()');
-      expect(ReaderCaretScripts.refreshInvocation(),
-          'JSON.stringify(window.fushiCaret.refresh())');
+        ReaderCaretScripts.enterInvocation(),
+        'JSON.stringify(window.fushiCaret.enter())',
+      );
+      expect(ReaderCaretScripts.exitInvocation(), 'window.fushiCaret.exit()');
+      expect(
+        ReaderCaretScripts.suspendInvocation(),
+        'window.fushiCaret.suspend()',
+      );
+      expect(
+        ReaderCaretScripts.resumeInvocation(),
+        'JSON.stringify(window.fushiCaret.resume())',
+      );
+      expect(
+        ReaderCaretScripts.lookupInvocation(),
+        'window.fushiCaret.lookup()',
+      );
+      expect(
+        ReaderCaretScripts.activateInvocation(),
+        'window.fushiCaret.activate()',
+      );
+      expect(
+        ReaderCaretScripts.longPressInvocation(),
+        'window.fushiCaret.longPress()',
+      );
+      expect(
+        ReaderCaretScripts.refreshInvocation(),
+        'JSON.stringify(window.fushiCaret.refresh())',
+      );
     });
 
     test('move passes the direction token through', () {
-      expect(ReaderCaretScripts.moveInvocation('left'),
-          "JSON.stringify(window.fushiCaret.move('left'))");
-      expect(ReaderCaretScripts.moveInvocation('forward'),
-          "JSON.stringify(window.fushiCaret.move('forward'))");
+      expect(
+        ReaderCaretScripts.moveInvocation('left'),
+        "JSON.stringify(window.fushiCaret.move('left'))",
+      );
+      expect(
+        ReaderCaretScripts.moveInvocation('forward'),
+        "JSON.stringify(window.fushiCaret.move('forward'))",
+      );
     });
 
-    test('scrollPage passes the direction boolean through (LB/RB page flip)',
-        () {
-      expect(ReaderCaretScripts.scrollPageInvocation(true),
-          'JSON.stringify(window.fushiCaret.scrollPage(true))');
-      expect(ReaderCaretScripts.scrollPageInvocation(false),
-          'JSON.stringify(window.fushiCaret.scrollPage(false))');
-      expect(ReaderCaretScripts.instantScrollInvocation(true),
-          'window.fushiCaret && window.fushiCaret.setInstantScroll(true)');
-      expect(ReaderCaretScripts.instantScrollInvocation(false),
-          'window.fushiCaret && window.fushiCaret.setInstantScroll(false)');
-    });
+    test(
+      'scrollPage passes the direction boolean through (LB/RB page flip)',
+      () {
+        expect(
+          ReaderCaretScripts.scrollPageInvocation(true),
+          'JSON.stringify(window.fushiCaret.scrollPage(true))',
+        );
+        expect(
+          ReaderCaretScripts.scrollPageInvocation(false),
+          'JSON.stringify(window.fushiCaret.scrollPage(false))',
+        );
+        expect(
+          ReaderCaretScripts.instantScrollInvocation(true),
+          'window.fushiCaret && window.fushiCaret.setInstantScroll(true)',
+        );
+        expect(
+          ReaderCaretScripts.instantScrollInvocation(false),
+          'window.fushiCaret && window.fushiCaret.setInstantScroll(false)',
+        );
+      },
+    );
 
-    test('jumpDict passes the direction boolean through (TODO-070 go-to-dict)',
-        () {
-      expect(ReaderCaretScripts.jumpDictInvocation(true),
-          'JSON.stringify(window.fushiCaret.jumpDict(true))');
-      expect(ReaderCaretScripts.jumpDictInvocation(false),
-          'JSON.stringify(window.fushiCaret.jumpDict(false))');
-    });
+    test(
+      'jumpDict passes the direction boolean through (TODO-070 go-to-dict)',
+      () {
+        expect(
+          ReaderCaretScripts.jumpDictInvocation(true),
+          'JSON.stringify(window.fushiCaret.jumpDict(true))',
+        );
+        expect(
+          ReaderCaretScripts.jumpDictInvocation(false),
+          'JSON.stringify(window.fushiCaret.jumpDict(false))',
+        );
+      },
+    );
 
     test('reanchor passes the edge token through', () {
-      expect(ReaderCaretScripts.reanchorInvocation('forward'),
-          "JSON.stringify(window.fushiCaret.reanchor('forward'))");
-      expect(ReaderCaretScripts.reanchorInvocation('backward'),
-          "JSON.stringify(window.fushiCaret.reanchor('backward'))");
+      expect(
+        ReaderCaretScripts.reanchorInvocation('forward'),
+        "JSON.stringify(window.fushiCaret.reanchor('forward'))",
+      );
+      expect(
+        ReaderCaretScripts.reanchorInvocation('backward'),
+        "JSON.stringify(window.fushiCaret.reanchor('backward'))",
+      );
     });
 
     test('init embeds colour + insets, scopeSelector defaults to null', () {
       expect(
         ReaderCaretScripts.initInvocation(
-            color: '#ff8a00', insetTop: 24.0, insetBottom: 48.0),
+          color: '#ff8a00',
+          insetTop: 24.0,
+          insetBottom: 48.0,
+        ),
         "window.fushiCaret.init({color:'#ff8a00',insetTop:24.0,"
         'insetBottom:48.0,scopeSelector:null})',
       );
@@ -87,10 +128,14 @@ void main() {
   group('ReaderCaretScripts.moveStatus', () {
     test('reads status field', () {
       expect(ReaderCaretScripts.moveStatus('{"status":"moved"}'), 'moved');
-      expect(ReaderCaretScripts.moveStatus('{"status":"pageForward"}'),
-          'pageForward');
-      expect(ReaderCaretScripts.moveStatus('{"status":"pageBackward"}'),
-          'pageBackward');
+      expect(
+        ReaderCaretScripts.moveStatus('{"status":"pageForward"}'),
+        'pageForward',
+      );
+      expect(
+        ReaderCaretScripts.moveStatus('{"status":"pageBackward"}'),
+        'pageBackward',
+      );
       expect(ReaderCaretScripts.moveStatus('{"status":"blocked"}'), 'blocked');
     });
 
@@ -117,7 +162,8 @@ void main() {
   group('ReaderCaretScripts.rectOf', () {
     test('parses a caret rect', () {
       final rect = ReaderCaretScripts.rectOf(
-          '{"status":"moved","rect":{"x":10,"y":20,"width":8,"height":16}}');
+        '{"status":"moved","rect":{"x":10,"y":20,"width":8,"height":16}}',
+      );
       expect(rect?.left, 10);
       expect(rect?.top, 20);
       expect(rect?.width, 8);
@@ -128,7 +174,8 @@ void main() {
       expect(ReaderCaretScripts.rectOf('{"status":"blocked"}'), isNull);
       expect(
         ReaderCaretScripts.rectOf(
-            '{"rect":{"x":0,"y":0,"width":0,"height":10}}'),
+          '{"rect":{"x":0,"y":0,"width":0,"height":10}}',
+        ),
         isNull,
       );
       expect(ReaderCaretScripts.rectOf(null), isNull);
@@ -159,15 +206,19 @@ void main() {
       expect(js, contains('_viewportFrame: function()'));
       expect(js, contains("getPropertyValue('--page-width')"));
       expect(js, contains("getPropertyValue('--reader-viewport-height')"));
-      expect(js, contains('document.body.getBoundingClientRect()'),
-          reason: 'vertical-rl iOS uses a negative horizontal body frame');
+      expect(
+        js,
+        contains('document.body.getBoundingClientRect()'),
+        reason: 'vertical-rl iOS uses a negative horizontal body frame',
+      );
       expect(js, contains('right: frame.left + frame.width'));
-      expect(js,
-          contains('return this._vertical() ? frame.width : frame.height'));
+      expect(
+        js,
+        contains('return this._vertical() ? frame.width : frame.height'),
+      );
     });
 
-    test(
-        'popup glossary images are caret-reachable (img in the interactive '
+    test('popup glossary images are caret-reachable (img in the interactive '
         'selector so A bubbles img.click() to open the image lightbox)', () {
       expect(js, contains('[role="link"], img'));
     });
@@ -183,8 +234,7 @@ void main() {
       expect(js, contains("physicalDir !== 'left' && physicalDir !== 'right'"));
     });
 
-    test('scrollPage reuses the line-edge scroll primitive (no new branch)',
-        () {
+    test('scrollPage reuses the line-edge scroll primitive (no new branch)', () {
       // LB/RB page flip must share _pageOrScroll with a line move that runs off
       // the page edge, so popup-scroll and paged page-turn semantics never
       // diverge. scrollPage only guards on `active` then delegates.
@@ -193,23 +243,26 @@ void main() {
     });
 
     test(
-        'jumpDict steps the caret between dictionary section headers (TODO-070)',
-        () {
-      // Yomitan-style "go to dictionary": jumpDict collects every
-      // summary.dict-label, picks the next/previous one relative to the anchor,
-      // and places it as an element stop (reusing _place/_elRect/_scrollIntoView
-      // so the ring hugs the header and A toggles its disclosure). No further
-      // dictionary → blocked; the reader (no dict-label) → blocked, a no-op.
-      expect(js, contains('jumpDict: function(forward)'));
-      expect(js, contains("querySelectorAll('summary.dict-label')"));
-      expect(js, contains('_dictHeaders:'));
-      // Reuses the element-stop placement machinery — no parallel ring code.
-      expect(js, contains('this._scrollIntoView(target.rect);'));
-      expect(js, contains('el: target.el'));
-      // No headers (single-dictionary or empty) blocks instead of throwing.
-      expect(
-          js, contains("if (!headers.length) return { status: 'blocked' };"));
-    });
+      'jumpDict steps the caret between dictionary section headers (TODO-070)',
+      () {
+        // Yomitan-style "go to dictionary": jumpDict collects every
+        // summary.dict-label, picks the next/previous one relative to the anchor,
+        // and places it as an element stop (reusing _place/_elRect/_scrollIntoView
+        // so the ring hugs the header and A toggles its disclosure). No further
+        // dictionary → blocked; the reader (no dict-label) → blocked, a no-op.
+        expect(js, contains('jumpDict: function(forward)'));
+        expect(js, contains("querySelectorAll('summary.dict-label')"));
+        expect(js, contains('_dictHeaders:'));
+        // Reuses the element-stop placement machinery — no parallel ring code.
+        expect(js, contains('this._scrollIntoView(target.rect);'));
+        expect(js, contains('el: target.el'));
+        // No headers (single-dictionary or empty) blocks instead of throwing.
+        expect(
+          js,
+          contains("if (!headers.length) return { status: 'blocked' };"),
+        );
+      },
+    );
 
     test('popup scroll can switch to instant movement for e-ink', () {
       expect(js, contains('instantScroll: false'));
@@ -219,7 +272,8 @@ void main() {
       expect(
         js,
         isNot(contains('window.scrollBy(0, forwardish ? dist : -dist)')),
-        reason: 'Viewport page scroll must go through the shared helper so the '
+        reason:
+            'Viewport page scroll must go through the shared helper so the '
             'e-ink preference controls the behavior.',
       );
     });
@@ -232,17 +286,18 @@ void main() {
       expect(js, contains("querySelectorAll('img.block-img')"));
     });
 
-    test('A on a reader illustration opens it via onImageTap (not el.click)',
-        () {
-      // Reader block images have no DOM click→lightbox listener, so activate()
-      // must call the same onImageTap handler the pointer-gesture path uses;
-      // el.click() would be a no-op.
-      expect(js, contains("window.fushiReader && this.el.tagName === 'IMG'"));
-      expect(js, contains("callHandler('onImageTap', this.el.src)"));
-    });
+    test(
+      'A on a reader illustration opens it via onImageTap (not el.click)',
+      () {
+        // Reader block images have no DOM click→lightbox listener, so activate()
+        // must call the same onImageTap handler the pointer-gesture path uses;
+        // el.click() would be a no-op.
+        expect(js, contains("window.fushiReader && this.el.tagName === 'IMG'"));
+        expect(js, contains("callHandler('onImageTap', this.el.src)"));
+      },
+    );
 
-    test('caret can enter/re-anchor a pure-illustration page (element stop)',
-        () {
+    test('caret can enter/re-anchor a pure-illustration page (element stop)', () {
       // _firstVisibleStop walks text only, so a page that is just an image needs
       // a fallback to the first visible element stop, or enter()/reanchor() would
       // refuse to place the caret.
@@ -282,10 +337,12 @@ void main() {
       expect(js, contains(':disabled, [aria-disabled="true"]'));
     });
 
-    test('popup caret skips passive term/POS tags (.glossary-tag, e.g. name)',
-        () {
-      expect(js, contains("closest('.glossary-tag')"));
-    });
+    test(
+      'popup caret skips passive term/POS tags (.glossary-tag, e.g. name)',
+      () {
+        expect(js, contains("closest('.glossary-tag')"));
+      },
+    );
 
     test('resolves writing-mode and paged vs continuous from live state', () {
       expect(js, contains('_vertical:'));
@@ -315,15 +372,17 @@ void main() {
       expect(js, contains('position:fixed'));
     });
 
-    test('ring is clamped to the viewport so it never paints outside the host',
-        () {
-      // _drawRing must intersect the drawn rect with _viewport() before
-      // painting, so a stop near the popup edge cannot draw a ring outside the
-      // popup.
-      expect(js, contains('_viewport()'));
-      expect(js, contains('Math.max(rect.left'));
-      expect(js, contains('Math.min(rect.left + rect.width'));
-    });
+    test(
+      'ring is clamped to the viewport so it never paints outside the host',
+      () {
+        // _drawRing must intersect the drawn rect with _viewport() before
+        // painting, so a stop near the popup edge cannot draw a ring outside the
+        // popup.
+        expect(js, contains('_viewport()'));
+        expect(js, contains('Math.max(rect.left'));
+        expect(js, contains('Math.min(rect.left + rect.width'));
+      },
+    );
 
     test('popup caret skips lone punctuation/symbol glyphs (e.g. " | ")', () {
       // In the popup (no fushiReader) a single punctuation/symbol char is not a
@@ -333,14 +392,16 @@ void main() {
       expect(js, contains(r'\p{S}'));
     });
 
-    test('vertical caret moves are line-aware (same-row controls not "above")',
-        () {
-      // Up/Down must cross to a DIFFERENT visual row; a same-row icon (the popup
-      // ♪ beside the headword) is a Left/Right neighbour. Up from the top row
-      // then finds nothing → blocks → Dart escapes to the Flutter header.
-      expect(js, contains('sameRow'));
-      expect(js, contains('sameCol'));
-    });
+    test(
+      'vertical caret moves are line-aware (same-row controls not "above")',
+      () {
+        // Up/Down must cross to a DIFFERENT visual row; a same-row icon (the popup
+        // ♪ beside the headword) is a Left/Right neighbour. Up from the top row
+        // then finds nothing → blocks → Dart escapes to the Flutter header.
+        expect(js, contains('sameRow'));
+        expect(js, contains('sameCol'));
+      },
+    );
 
     test('directional element moves use a cross-axis beam', () {
       // A candidate whose cross-axis overlaps the anchor (same row for L/R, same
@@ -350,11 +411,13 @@ void main() {
       expect(js, contains('beamN > bestBeam'));
     });
 
-    test('popup text moves are physical geometry, not reading-order stepping',
-        () {
-      expect(js, contains('if (!window.fushiReader) {'));
-      expect(js, contains('target = this._geomMove(physical);'));
-    });
+    test(
+      'popup text moves are physical geometry, not reading-order stepping',
+      () {
+        expect(js, contains('if (!window.fushiReader) {'));
+        expect(js, contains('target = this._geomMove(physical);'));
+      },
+    );
 
     test('Left/Right off an element-stop row end blocks (no fly-off)', () {
       // RIGHT from the rightmost control (e.g. +) has no candidate; it must
@@ -362,17 +425,20 @@ void main() {
       expect(
         js,
         contains(
-            "!window.fushiReader && (physical === 'left' || physical === 'right')"),
+          "!window.fushiReader && (physical === 'left' || physical === 'right')",
+        ),
       );
     });
 
-    test('suspend/resume hide and re-show the ring without dropping the caret',
-        () {
-      // Mouse hides the ring (suspend) but keeps `active`, so keyboard/gamepad
-      // resume keeps the caret on its surface instead of paging the reader.
-      expect(js, contains('suspend:'));
-      expect(js, contains('resume:'));
-    });
+    test(
+      'suspend/resume hide and re-show the ring without dropping the caret',
+      () {
+        // Mouse hides the ring (suspend) but keeps `active`, so keyboard/gamepad
+        // resume keeps the caret on its surface instead of paging the reader.
+        expect(js, contains('suspend:'));
+        expect(js, contains('resume:'));
+      },
+    );
 
     test('popup caret scrolls a partially-clipped stop into view', () {
       // _inViewport is intersection-based; move() must scroll an edge-clipped
@@ -380,11 +446,13 @@ void main() {
       expect(js, contains('_scrollIntoView(rect)'));
     });
 
-    test('scopeSelector restricts stops to matching elements (popup scope)',
-        () {
-      expect(js, contains('scopeSelector'));
-      expect(js, contains('closest(this.scopeSelector)'));
-    });
+    test(
+      'scopeSelector restricts stops to matching elements (popup scope)',
+      () {
+        expect(js, contains('scopeSelector'));
+        expect(js, contains('closest(this.scopeSelector)'));
+      },
+    );
 
     test('element-stop ring hugs visible ink, not the full border box', () {
       // 元素停靠点（弹窗 ♪/+ 按钮、折叠词典段 summary）必须把焦点环画在元素的
@@ -397,24 +465,26 @@ void main() {
       expect(js, contains('getClientRects'));
     });
 
-    test('element stops route ring + geometry through _elRect (no raw box)',
-        () {
+    test('element stops route ring + geometry through _elRect (no raw box)', () {
       // _stopRect 与 _anchorRect 必须经 _elRect 取元素 rect，使焦点环、命中测试、
       // 方向几何都用收紧后的可见 rect。
       expect(js, contains('if (stop.el) return this._elRect(stop.el);'));
       expect(
         js,
         contains(
-            'if (this.el && document.contains(this.el)) return this._elRect(this.el);'),
+          'if (this.el && document.contains(this.el)) return this._elRect(this.el);',
+        ),
       );
     });
 
-    test('empty clickable wrappers are not element stops (ink or image only)',
-        () {
-      // 无文字 ink 且非替换元素（图片）的 clickable 是空 wrapper，必须跳过，
-      // 焦点环不得落在空白盒子上；图片本身无文字 ink，其 border box 即内容。
-      expect(js, contains('!this._elInk(e)'));
-      expect(js, contains('picture, video, canvas, svg'));
-    });
+    test(
+      'empty clickable wrappers are not element stops (ink or image only)',
+      () {
+        // 无文字 ink 且非替换元素（图片）的 clickable 是空 wrapper，必须跳过，
+        // 焦点环不得落在空白盒子上；图片本身无文字 ink，其 border box 即内容。
+        expect(js, contains('!this._elInk(e)'));
+        expect(js, contains('picture, video, canvas, svg'));
+      },
+    );
   });
 }

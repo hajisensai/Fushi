@@ -37,8 +37,11 @@ class RemoteVideoManifest implements CanonicalJsonManifest {
   factory RemoteVideoManifest.fromJson(Object? json) {
     const String label = 'video manifest';
     final Map<String, dynamic> map = requireManifestObject(json, label);
-    final int version = requireManifestVersion(map,
-        currentVersion: currentVersion, label: label);
+    final int version = requireManifestVersion(
+      map,
+      currentVersion: currentVersion,
+      label: label,
+    );
     final List<Object?> rawVideos = requireManifestList(map, 'videos', label);
     return RemoteVideoManifest(
       version: version,
@@ -52,9 +55,10 @@ class RemoteVideoManifest implements CanonicalJsonManifest {
   @override
   Map<String, dynamic> toJson() {
     final List<RemoteVideoManifestEntry> sorted =
-        List<RemoteVideoManifestEntry>.of(videos)
-          ..sort((RemoteVideoManifestEntry a, RemoteVideoManifestEntry b) =>
-              a.uid.compareTo(b.uid));
+        List<RemoteVideoManifestEntry>.of(videos)..sort(
+          (RemoteVideoManifestEntry a, RemoteVideoManifestEntry b) =>
+              a.uid.compareTo(b.uid),
+        );
     return <String, dynamic>{
       'version': version,
       'videos': <Map<String, dynamic>>[
@@ -132,23 +136,24 @@ class RemoteVideoManifestEntry {
       videoAsset: videoAsset,
       sizeBytes: sizeBytes is int ? sizeBytes : 0,
       importedAtMs: importedAtMs is int ? importedAtMs : 0,
-      coverAsset:
-          (coverAsset is String && coverAsset.isNotEmpty) ? coverAsset : null,
+      coverAsset: (coverAsset is String && coverAsset.isNotEmpty)
+          ? coverAsset
+          : null,
       tagsAddedAt: _parseNameIntMap(json['tagsAddedAt']),
       tagTombstones: _parseNameIntMap(json['tagTombstones']),
     );
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'uid': uid,
-        'title': title,
-        'videoAsset': videoAsset,
-        'sizeBytes': sizeBytes,
-        'importedAtMs': importedAtMs,
-        if (coverAsset != null) 'coverAsset': coverAsset,
-        if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
-        if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
-      };
+    'uid': uid,
+    'title': title,
+    'videoAsset': videoAsset,
+    'sizeBytes': sizeBytes,
+    'importedAtMs': importedAtMs,
+    if (coverAsset != null) 'coverAsset': coverAsset,
+    if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
+    if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
+  };
 }
 
 /// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。

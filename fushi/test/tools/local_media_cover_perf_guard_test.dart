@@ -24,41 +24,47 @@ import 'package:flutter_test/flutter_test.dart';
 /// controller + DB + real files. The DB equivalence of `getAllCollectionItems` is
 /// covered behaviorally in `test/database/media_collections_dao_test.dart`.
 void main() {
-  final String coverImageSrc =
-      File('lib/src/utils/cover_image.dart').readAsStringSync();
+  final String coverImageSrc = File(
+    'lib/src/utils/cover_image.dart',
+  ).readAsStringSync();
   // God 拆分（2026-08）后合集 DAO 居 library part。
-  final String dbSrc =
-      File('../packages/fushi_core/lib/src/database/database_library.part.dart')
-          .readAsStringSync();
-  final String videoPageSrc =
-      File('lib/src/pages/implementations/home_video_page.dart')
-          .readAsStringSync();
-  final String historyPageSrc =
-      File('lib/src/pages/implementations/reader_fushi_history_page.dart')
-          .readAsStringSync();
-  final String mediaSourceSrc =
-      File('lib/src/media/media_source.dart').readAsStringSync();
+  final String dbSrc = File(
+    '../packages/fushi_core/lib/src/database/database_library.part.dart',
+  ).readAsStringSync();
+  final String videoPageSrc = File(
+    'lib/src/pages/implementations/home_video_page.dart',
+  ).readAsStringSync();
+  final String historyPageSrc = File(
+    'lib/src/pages/implementations/reader_fushi_history_page.dart',
+  ).readAsStringSync();
+  final String mediaSourceSrc = File(
+    'lib/src/media/media_source.dart',
+  ).readAsStringSync();
   final String cardWidgetsSrc = File(
-          'lib/src/pages/implementations/reader_history/card_widgets.part.dart')
-      .readAsStringSync();
-  final String remotePartSrc =
-      File('lib/src/pages/implementations/reader_history/remote.part.dart')
-          .readAsStringSync();
-  final String miniBarSrc =
-      File('lib/src/media/audiobook/now_listening_mini_bar.dart')
-          .readAsStringSync();
+    'lib/src/pages/implementations/reader_history/card_widgets.part.dart',
+  ).readAsStringSync();
+  final String remotePartSrc = File(
+    'lib/src/pages/implementations/reader_history/remote.part.dart',
+  ).readAsStringSync();
+  final String miniBarSrc = File(
+    'lib/src/media/audiobook/now_listening_mini_bar.dart',
+  ).readAsStringSync();
 
   /// Extracts a method body from `source` starting at `signatureNeedle`, up to the
   /// next top-level (2-space-indented) member declaration.
   String methodBody(String source, String signatureNeedle) {
     final int start = source.indexOf(signatureNeedle);
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'Method "$signatureNeedle" must exist.');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'Method "$signatureNeedle" must exist.',
+    );
     final RegExp nextMember = RegExp(
       r'\n  (Future|void|Widget|String|bool|List|int|Map)\b',
     );
-    final Match? next =
-        nextMember.firstMatch(source.substring(start + signatureNeedle.length));
+    final Match? next = nextMember.firstMatch(
+      source.substring(start + signatureNeedle.length),
+    );
     final int end = next == null
         ? source.length
         : start + signatureNeedle.length + next.start;
@@ -76,17 +82,20 @@ void main() {
       for (final String signature in signatures)
         if (source.contains(signature)) methodBody(source, signature),
     ];
-    expect(parts, isNotEmpty,
-        reason: '预取链上的方法全部消失（改名？）：$signatures');
+    expect(parts, isNotEmpty, reason: '预取链上的方法全部消失（改名？）：$signatures');
     return parts.join('\n');
   }
 
   group('BUG-959 · 降采样 helper', () {
     test('cover_image.dart 定义解码上限常量与 resizedFileImage', () {
-      expect(coverImageSrc.contains('const int kLocalCoverDecodePixelWidth'),
-          isTrue);
-      expect(coverImageSrc.contains('const int kMiniCoverDecodePixelWidth'),
-          isTrue);
+      expect(
+        coverImageSrc.contains('const int kLocalCoverDecodePixelWidth'),
+        isTrue,
+      );
+      expect(
+        coverImageSrc.contains('const int kMiniCoverDecodePixelWidth'),
+        isTrue,
+      );
       expect(coverImageSrc.contains('ImageProvider resizedFileImage('), isTrue);
       // 必须真正降采样（ResizeImage）且不放大。
       expect(coverImageSrc.contains('ResizeImage(FileImage'), isTrue);
@@ -97,40 +106,59 @@ void main() {
   group('BUG-959 · 合集 N+1 收敛为单查询', () {
     test('database.dart 提供 getAllCollectionItems 批量查询', () {
       expect(
-          dbSrc.contains(
-              'Future<List<MediaCollectionItemRow>> getAllCollectionItems()'),
-          isTrue);
+        dbSrc.contains(
+          'Future<List<MediaCollectionItemRow>> getAllCollectionItems()',
+        ),
+        isTrue,
+      );
     });
 
-    test('_loadLibraryMaps 预取链用 getAllCollectionItems，不再逐合集 getCollectionItems',
-        () {
-      final String body = chainBody(videoPageSrc, <String>[
-        'Future<void> _loadLibraryMaps() async {',
-        'Future<void> _loadLibraryMapsInner(int requestGeneration) async {',
-      ]);
-      expect(body.contains('getAllCollectionItems()'), isTrue,
-          reason: '视频页合集分组必须一次查全部成员，否则合集行渲染被 N+1 gate（BUG-959）。');
-      expect(body.contains('getCollectionItems('), isFalse,
-          reason: '不得再逐合集查询（N+1）。');
-    });
+    test(
+      '_loadLibraryMaps 预取链用 getAllCollectionItems，不再逐合集 getCollectionItems',
+      () {
+        final String body = chainBody(videoPageSrc, <String>[
+          'Future<void> _loadLibraryMaps() async {',
+          'Future<void> _loadLibraryMapsInner(int requestGeneration) async {',
+        ]);
+        expect(
+          body.contains('getAllCollectionItems()'),
+          isTrue,
+          reason: '视频页合集分组必须一次查全部成员，否则合集行渲染被 N+1 gate（BUG-959）。',
+        );
+        expect(
+          body.contains('getCollectionItems('),
+          isFalse,
+          reason: '不得再逐合集查询（N+1）。',
+        );
+      },
+    );
 
     test('_loadShelfMaps 用 getAllCollectionItems，不再逐合集 getCollectionItems', () {
       final String body = chainBody(historyPageSrc, <String>[
         'Future<void> _loadShelfMaps() async {',
         'Future<void> _loadShelfMapsInner(int requestGeneration) async {',
       ]);
-      expect(body.contains('getAllCollectionItems()'), isTrue,
-          reason: '书架页合集分组必须一次查全部成员（BUG-959）。');
-      expect(body.contains('getCollectionItems('), isFalse,
-          reason: '不得再逐合集查询（N+1）。');
+      expect(
+        body.contains('getAllCollectionItems()'),
+        isTrue,
+        reason: '书架页合集分组必须一次查全部成员（BUG-959）。',
+      );
+      expect(
+        body.contains('getCollectionItems('),
+        isFalse,
+        reason: '不得再逐合集查询（N+1）。',
+      );
     });
   });
 
   group('BUG-959 · 本地封面降采样', () {
     test('视频 _buildCover 按上限解码降采样', () {
       final String body = methodBody(videoPageSrc, 'Widget _buildCover(');
-      expect(body.contains('cacheWidth: kLocalCoverDecodePixelWidth'), isTrue,
-          reason: '视频封面必须降采样，否则原生分辨率整帧撑爆 ImageCache（BUG-959）。');
+      expect(
+        body.contains('cacheWidth: kLocalCoverDecodePixelWidth'),
+        isTrue,
+        reason: '视频封面必须降采样，否则原生分辨率整帧撑爆 ImageCache（BUG-959）。',
+      );
     });
 
     test('书籍封面 provider 走 resizedFileImage（media_source / 卡片 / 已下载书）', () {

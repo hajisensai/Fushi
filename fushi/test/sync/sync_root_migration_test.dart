@@ -115,8 +115,9 @@ void main() {
     test('旧目录存在、新目录不存在 → 整目录改名，内容原地保留', () async {
       final Directory legacy = Directory(child(kLegacySyncRootFolderName))
         ..createSync();
-      File('${legacy.path}${Platform.pathSeparator}progress_1.json')
-          .writeAsStringSync('{"p":1}');
+      File(
+        '${legacy.path}${Platform.pathSeparator}progress_1.json',
+      ).writeAsStringSync('{"p":1}');
 
       await migrateLegacySyncRootDirectory(
         syncDataDir: tmp.path,
@@ -127,8 +128,9 @@ void main() {
       final Directory renamed = Directory(child(kSyncRootFolderName));
       expect(renamed.existsSync(), isTrue);
       expect(
-        File('${renamed.path}${Platform.pathSeparator}progress_1.json')
-            .readAsStringSync(),
+        File(
+          '${renamed.path}${Platform.pathSeparator}progress_1.json',
+        ).readAsStringSync(),
         '{"p":1}',
       );
     });
@@ -192,7 +194,9 @@ void main() {
     test('段边界：子串同形的书名/新根路径不误杀', () {
       expect(syncFolderIdEmbedsLegacyRoot('/fushi-data/Title'), isFalse);
       expect(
-          syncFolderIdEmbedsLegacyRoot('/fushi-data/hibiki-database'), isFalse);
+        syncFolderIdEmbedsLegacyRoot('/fushi-data/hibiki-database'),
+        isFalse,
+      );
       expect(syncFolderIdEmbedsLegacyRoot('my-hibiki-data'), isFalse);
       // Google Drive 不透明 ID（无斜杠、非整串旧根名）不受影响。
       expect(syncFolderIdEmbedsLegacyRoot('1AbC_hibiki-dataXyZ'), isFalse);
@@ -225,8 +229,9 @@ void main() {
       );
 
       expect(host.cachedRootFolderId, '1OpaqueDriveId');
-      expect(
-          host.cachedFolderIds, <String, String>{'Book': '1AnotherOpaqueId'});
+      expect(host.cachedFolderIds, <String, String>{
+        'Book': '1AnotherOpaqueId',
+      });
     });
   });
 }

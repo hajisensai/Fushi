@@ -202,7 +202,9 @@ void main() {
     test('两者都空 → 空 Map（旧词典向后兼容）', () {
       expect(
         DictionaryImportManager.mergeSourceMetadata(
-            const <String, String>{}, null),
+          const <String, String>{},
+          null,
+        ),
         isEmpty,
       );
     });
@@ -224,8 +226,9 @@ void main() {
 
     setUp(() async {
       resourceDir = Directory.systemTemp.createTempSync('fushi_replace_');
-      db =
-          FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+      db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
       repo = DictionaryRepository(db);
       await repo.loadFromDb();
       manager = DictionaryImportManager(

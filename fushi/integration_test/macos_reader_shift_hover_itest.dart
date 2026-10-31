@@ -94,12 +94,17 @@ Future<bool> _popupShows(String needle) async {
 Future<String> _shotWindow(int windowNumber, String name) async {
   final String path = '${observeScreenshotDir().path}/$name.png';
   try {
-    final ProcessResult r = await Process.run(
-      'screencapture',
-      <String>['-x', '-o', '-l', '$windowNumber', path],
-    );
+    final ProcessResult r = await Process.run('screencapture', <String>[
+      '-x',
+      '-o',
+      '-l',
+      '$windowNumber',
+      path,
+    ]);
     final bool ok = r.exitCode == 0 && File(path).existsSync();
-    return ok ? '$path (${File(path).lengthSync()} bytes)' : 'failed: exit=${r.exitCode} ${r.stderr}';
+    return ok
+        ? '$path (${File(path).lengthSync()} bytes)'
+        : 'failed: exit=${r.exitCode} ${r.stderr}';
   } catch (e) {
     return 'failed: $e';
   }
@@ -132,8 +137,11 @@ void main() {
           expect(await waitForHome(tester), isTrue, reason: 'home must render');
           await tester.pump(const Duration(seconds: 2));
 
-          expect(await seedDictionary(tester), isTrue,
-              reason: 'generated test dictionary must be installed');
+          expect(
+            await seedDictionary(tester),
+            isTrue,
+            reason: 'generated test dictionary must be installed',
+          );
           final String bookKey = await seedReaderBook(
             tester,
             fileName: 'bug2508_mac_shift_hover.epub',
@@ -149,8 +157,12 @@ void main() {
             () => find.byKey(_kContentReadyKey).evaluate().isNotEmpty,
             'reader content',
           );
-          await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-              maxPolls: 20);
+          await _waitFor(
+            tester,
+            readerWebViewReady,
+            'reader debug hooks',
+            maxPolls: 20,
+          );
           await tester.pump(const Duration(seconds: 2));
 
           final Future<dynamic> Function(String)? runJs =
@@ -190,11 +202,14 @@ Future<void> _drive(
   void route(PointerEvent e) {
     if (e is PointerHoverEvent) hoverSeenBox.value++;
   }
+
   bool keyHandler(KeyEvent e) {
     keySeenBox.value++;
-    keySeenBox.last = '${e.runtimeType}:${e.logicalKey.debugName} synth=${e.synthesized}';
+    keySeenBox.last =
+        '${e.runtimeType}:${e.logicalKey.debugName} synth=${e.synthesized}';
     return false;
   }
+
   GestureBinding.instance.pointerRouter.addGlobalRoute(route);
   HardwareKeyboard.instance.addHandler(keyHandler);
   addTearDown(() {
@@ -208,8 +223,11 @@ Future<void> _drive(
   await tester.pump(const Duration(milliseconds: 800));
   final Map<Object?, Object?> act2 = await _call('activate');
   debugPrint('[mac-shift-hover] activate(2)=$act2');
-  expect(act2['isKey'], isTrue,
-      reason: '窗口必须是 key window，否则 tracking area 根本不激活');
+  expect(
+    act2['isKey'],
+    isTrue,
+    reason: '窗口必须是 key window，否则 tracking area 根本不激活',
+  );
 
   final Map<Object?, Object?> views = await _call('dumpViews');
   debugPrint('[mac-shift-hover] views:\n${views['views']}');
@@ -252,18 +270,24 @@ Future<void> _drive(
   final double wordY = webViewTopLeft.dy + rect['y']! + rect['h']! / 2;
   final double wordX0 = webViewTopLeft.dx + rect['x']! + 2;
   final double wordX1 = webViewTopLeft.dx + rect['x']! + rect['w']! - 2;
-  debugPrint('[mac-shift-hover] webView@$webViewTopLeft word x=[$wordX0..$wordX1] y=$wordY');
+  debugPrint(
+    '[mac-shift-hover] webView@$webViewTopLeft word x=[$wordX0..$wordX1] y=$wordY',
+  );
 
   // ── ⓪ 对照：真 NSEvent 点击 testword，看点击这条路到不到 WKWebView ──
-  await runJs("window.__md = 0; document.addEventListener('mousedown', function(){window.__md++;}, true); 'ok'");
-  expect(await _popupShows('testword'), isFalse, reason: '起点无弹窗');
-  final Map<Object?, Object?> clk = await _call(
-    'click',
-    <String, Object?>{'x': (wordX0 + wordX1) / 2, 'y': wordY},
+  await runJs(
+    "window.__md = 0; document.addEventListener('mousedown', function(){window.__md++;}, true); 'ok'",
   );
+  expect(await _popupShows('testword'), isFalse, reason: '起点无弹窗');
+  final Map<Object?, Object?> clk = await _call('click', <String, Object?>{
+    'x': (wordX0 + wordX1) / 2,
+    'y': wordY,
+  });
   final bool clickPopup = await _waitPopup(tester, 'testword', maxPolls: 20);
   final dynamic md = await runJs('window.__md');
-  debugPrint('[mac-shift-hover] ⓪ click popup=$clickPopup domMousedown=$md $clk');
+  debugPrint(
+    '[mac-shift-hover] ⓪ click popup=$clickPopup domMousedown=$md $clk',
+  );
   if (clickPopup) {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     for (int i = 0; i < 12 && await _popupShows('testword'); i++) {
@@ -278,41 +302,65 @@ Future<void> _drive(
   // 三种投递方式逐个试，直到 Flutter 侧看见 Shift（诊断投递路径）。
   Map<Object?, Object?> fc = <Object?, Object?>{};
   for (final String m in <String>['post', 'flutter']) {
-    fc = await _call('flagsChanged', <String, Object?>{'shift': true, 'mode': m});
+    fc = await _call('flagsChanged', <String, Object?>{
+      'shift': true,
+      'mode': m,
+    });
     await tester.pump(const Duration(milliseconds: 300));
-    debugPrint('[mac-shift-hover] flagsChanged(shift, mode=$m) $fc '
-        'shiftHeld=${HardwareKeyboard.instance.isShiftPressed} keySeen=${keySeenBox.value} last=${keySeenBox.last}');
+    debugPrint(
+      '[mac-shift-hover] flagsChanged(shift, mode=$m) $fc '
+      'shiftHeld=${HardwareKeyboard.instance.isShiftPressed} keySeen=${keySeenBox.value} last=${keySeenBox.last}',
+    );
     if (HardwareKeyboard.instance.isShiftPressed) break;
   }
   final List<String> hits = <String>[];
-  const String mode = String.fromEnvironment('FUSHI_TEST_INPUT_MODE',
-      defaultValue: 'flutter');
+  const String mode = String.fromEnvironment(
+    'FUSHI_TEST_INPUT_MODE',
+    defaultValue: 'flutter',
+  );
   debugPrint('[mac-shift-hover] delivery mode=$mode');
   for (double x = wordX0 - 24; x <= wordX1; x += 6) {
-    final Map<Object?, Object?> r = await _call(
-      'mouseMove',
-      <String, Object?>{'x': x, 'y': wordY, 'shift': true, 'mode': mode},
-    );
+    final Map<Object?, Object?> r = await _call('mouseMove', <String, Object?>{
+      'x': x,
+      'y': wordY,
+      'shift': true,
+      'mode': mode,
+    });
     hits.add('${r['hit']}');
-    if (hits.length == 1) debugPrint('[mac-shift-hover] hit chain: ${r['chain']}');
+    if (hits.length == 1)
+      debugPrint('[mac-shift-hover] hit chain: ${r['chain']}');
     await tester.pump(const Duration(milliseconds: 40));
   }
   final bool hoverPopup = await _waitPopup(tester, 'testword');
-  final dynamic mm = await runJs('JSON.stringify({mm: window.__mm, shift: window.__mmShift})');
-  debugPrint('[mac-shift-hover] ① popup=$hoverPopup domMousemove=$mm '
-      'shiftHeld=${HardwareKeyboard.instance.isShiftPressed} '
-      'flutterHoverSeen=${hoverSeenBox.value} keySeen=${keySeenBox.value} hits=${hits.toSet()}');
+  final dynamic mm = await runJs(
+    'JSON.stringify({mm: window.__mm, shift: window.__mmShift})',
+  );
+  debugPrint(
+    '[mac-shift-hover] ① popup=$hoverPopup domMousemove=$mm '
+    'shiftHeld=${HardwareKeyboard.instance.isShiftPressed} '
+    'flutterHoverSeen=${hoverSeenBox.value} keySeen=${keySeenBox.value} hits=${hits.toSet()}',
+  );
   final int windowNumber = (act2['windowNumber'] as num).toInt();
-  debugPrint('[mac-shift-hover] shot1=${await _shotWindow(windowNumber, 'bug2508-01-shift-hover')}');
+  debugPrint(
+    '[mac-shift-hover] shot1=${await _shotWindow(windowNumber, 'bug2508-01-shift-hover')}',
+  );
   // 正文 WebView 自己的快照（WKWebView takeSnapshot，不需要屏幕录制授权）：被查词
   // 的高亮就在里面；弹窗释义文本另抓一段进日志。
-  final ObserveShot web1 = await captureReaderWebView('bug2508-01-reader-webview');
-  final dynamic popupText = await ReaderFushiPage.debugEvaluateTopPopup
-      ?.call("(document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 160)");
-  debugPrint('[mac-shift-hover] reader-webview shot=${web1.path} nonBlank=${web1.nonBlank} '
-      'popupText="$popupText"');
-  expect(hoverPopup, isTrue,
-      reason: '按住 Shift 扫过 testword 必须弹出含 testword 的查词弹窗');
+  final ObserveShot web1 = await captureReaderWebView(
+    'bug2508-01-reader-webview',
+  );
+  final dynamic popupText = await ReaderFushiPage.debugEvaluateTopPopup?.call(
+    "(document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 160)",
+  );
+  debugPrint(
+    '[mac-shift-hover] reader-webview shot=${web1.path} nonBlank=${web1.nonBlank} '
+    'popupText="$popupText"',
+  );
+  expect(
+    hoverPopup,
+    isTrue,
+    reason: '按住 Shift 扫过 testword 必须弹出含 testword 的查词弹窗',
+  );
 
   // ── 收口：松 Shift、Esc 关弹窗 ─────────────────────────────
   await _call('flagsChanged', <String, Object?>{'shift': false, 'mode': mode});
@@ -325,30 +373,48 @@ Future<void> _drive(
 
   // ── ③ 松开 Shift 纯悬停：不查词（门没被打穿）───────────────
   for (double x = wordX1; x >= wordX0; x -= 6) {
-    await _call('mouseMove',
-        <String, Object?>{'x': x, 'y': wordY, 'shift': false, 'mode': mode});
+    await _call('mouseMove', <String, Object?>{
+      'x': x,
+      'y': wordY,
+      'shift': false,
+      'mode': mode,
+    });
     await tester.pump(const Duration(milliseconds: 40));
   }
   await tester.pump(const Duration(seconds: 1));
-  expect(await _popupShows('testword'), isFalse,
-      reason: '没按 Shift 且未开「悬停即查词」时纯悬停不得查词');
+  expect(
+    await _popupShows('testword'),
+    isFalse,
+    reason: '没按 Shift 且未开「悬停即查词」时纯悬停不得查词',
+  );
 
   // ── ② 光标停在词上、按一下 Shift（静止反查）──────────────────
-  await _call('mouseMove',
-      <String, Object?>{'x': (wordX0 + wordX1) / 2, 'y': wordY, 'shift': false, 'mode': mode});
+  await _call('mouseMove', <String, Object?>{
+    'x': (wordX0 + wordX1) / 2,
+    'y': wordY,
+    'shift': false,
+    'mode': mode,
+  });
   await tester.pump(const Duration(milliseconds: 300));
-  final Map<Object?, Object?> fc2 =
-      await _call('flagsChanged', <String, Object?>{'shift': true, 'mode': mode});
+  final Map<Object?, Object?> fc2 = await _call(
+    'flagsChanged',
+    <String, Object?>{'shift': true, 'mode': mode},
+  );
   await tester.pump(const Duration(milliseconds: 300));
-  debugPrint('[mac-shift-hover] flagsChanged(shift, stationary) $fc2 '
-      'shiftHeld=${HardwareKeyboard.instance.isShiftPressed} last=${keySeenBox.last}');
+  debugPrint(
+    '[mac-shift-hover] flagsChanged(shift, stationary) $fc2 '
+    'shiftHeld=${HardwareKeyboard.instance.isShiftPressed} last=${keySeenBox.last}',
+  );
   final bool pressPopup = await _waitPopup(tester, 'testword');
-  debugPrint('[mac-shift-hover] ② popup=$pressPopup '
-      'shiftHeld=${HardwareKeyboard.instance.isShiftPressed}');
-  debugPrint('[mac-shift-hover] shot2=${await _shotWindow(windowNumber, 'bug2508-02-shift-press')}');
+  debugPrint(
+    '[mac-shift-hover] ② popup=$pressPopup '
+    'shiftHeld=${HardwareKeyboard.instance.isShiftPressed}',
+  );
+  debugPrint(
+    '[mac-shift-hover] shot2=${await _shotWindow(windowNumber, 'bug2508-02-shift-press')}',
+  );
   await _call('flagsChanged', <String, Object?>{'shift': false, 'mode': mode});
-  expect(pressPopup, isTrue,
-      reason: '光标停在 testword 上按下 Shift 必须直接弹出查词弹窗');
+  expect(pressPopup, isTrue, reason: '光标停在 testword 上按下 Shift 必须直接弹出查词弹窗');
 
   // ── ④ 「悬停即查词」开关开着：不按 Shift 纯悬停也出词（同一条宿主腿）────
   await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -363,15 +429,20 @@ Future<void> _drive(
     await source.setHoverAutoLookup(value: true);
     await tester.pump(const Duration(milliseconds: 500));
     for (double x = wordX0 - 24; x <= wordX1; x += 6) {
-      await _call('mouseMove',
-          <String, Object?>{'x': x, 'y': wordY, 'shift': false, 'mode': mode});
+      await _call('mouseMove', <String, Object?>{
+        'x': x,
+        'y': wordY,
+        'shift': false,
+        'mode': mode,
+      });
       await tester.pump(const Duration(milliseconds: 40));
     }
     final bool autoPopup = await _waitPopup(tester, 'testword');
-    debugPrint('[mac-shift-hover] ④ hoverAutoLookup popup=$autoPopup '
-        'shiftHeld=${HardwareKeyboard.instance.isShiftPressed}');
-    expect(autoPopup, isTrue,
-        reason: '「悬停即查词」开着时纯悬停扫过 testword 必须出词');
+    debugPrint(
+      '[mac-shift-hover] ④ hoverAutoLookup popup=$autoPopup '
+      'shiftHeld=${HardwareKeyboard.instance.isShiftPressed}',
+    );
+    expect(autoPopup, isTrue, reason: '「悬停即查词」开着时纯悬停扫过 testword 必须出词');
   } finally {
     await source.setHoverAutoLookup(value: baseAuto);
   }

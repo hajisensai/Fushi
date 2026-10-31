@@ -29,10 +29,15 @@ void main() {
     Uint8List? result;
     Object? error;
     fake.run((FakeAsync async) {
-      readMihonSourceImageBytes(controller.stream, idleTimeout: idleTimeout)
-          .then((Uint8List bytes) => result = bytes, onError: (Object e) {
-        error = e;
-      });
+      readMihonSourceImageBytes(
+        controller.stream,
+        idleTimeout: idleTimeout,
+      ).then(
+        (Uint8List bytes) => result = bytes,
+        onError: (Object e) {
+          error = e;
+        },
+      );
 
       controller.add(<int>[1]);
       async.elapse(gap);
@@ -50,47 +55,56 @@ void main() {
     expect(result, Uint8List.fromList(<int>[1, 2, 3]));
   });
 
-  test('a gap longer than the idle timeout fails even after earlier chunks',
-      () async {
-    const Duration idleTimeout = Duration(milliseconds: 500);
-    final FakeAsync fake = FakeAsync();
-    final StreamController<List<int>> controller =
-        StreamController<List<int>>();
-    addTearDown(controller.close);
-    Object? error;
-    fake.run((FakeAsync async) {
-      readMihonSourceImageBytes(controller.stream, idleTimeout: idleTimeout)
-          .then((_) {}, onError: (Object e) {
-        error = e;
+  test(
+    'a gap longer than the idle timeout fails even after earlier chunks',
+    () async {
+      const Duration idleTimeout = Duration(milliseconds: 500);
+      final FakeAsync fake = FakeAsync();
+      final StreamController<List<int>> controller =
+          StreamController<List<int>>();
+      addTearDown(controller.close);
+      Object? error;
+      fake.run((FakeAsync async) {
+        readMihonSourceImageBytes(
+          controller.stream,
+          idleTimeout: idleTimeout,
+        ).then(
+          (_) {},
+          onError: (Object e) {
+            error = e;
+          },
+        );
+        controller.add(<int>[1]);
+        async.elapse(const Duration(milliseconds: 400));
+        controller.add(<int>[2]);
+        async.elapse(idleTimeout - const Duration(milliseconds: 1));
       });
+      await _drainUntil(fake, () => error != null);
+      expect(error, isNull, reason: '上一块之后还没满一个超时窗口');
+
+      fake.run((FakeAsync async) {
+        async.elapse(const Duration(milliseconds: 1));
+      });
+      await _drainUntil(fake, () => error != null);
+      expect(error, isA<TimeoutException>());
+    },
+  );
+
+  test(
+    'source image still fails after a real interval without progress',
+    () async {
+      final StreamController<List<int>> controller =
+          StreamController<List<int>>();
+      addTearDown(controller.close);
+      final Future<Uint8List> reading = readMihonSourceImageBytes(
+        controller.stream,
+        idleTimeout: const Duration(milliseconds: 80),
+      );
       controller.add(<int>[1]);
-      async.elapse(const Duration(milliseconds: 400));
-      controller.add(<int>[2]);
-      async.elapse(idleTimeout - const Duration(milliseconds: 1));
-    });
-    await _drainUntil(fake, () => error != null);
-    expect(error, isNull, reason: '上一块之后还没满一个超时窗口');
 
-    fake.run((FakeAsync async) {
-      async.elapse(const Duration(milliseconds: 1));
-    });
-    await _drainUntil(fake, () => error != null);
-    expect(error, isA<TimeoutException>());
-  });
-
-  test('source image still fails after a real interval without progress',
-      () async {
-    final StreamController<List<int>> controller =
-        StreamController<List<int>>();
-    addTearDown(controller.close);
-    final Future<Uint8List> reading = readMihonSourceImageBytes(
-      controller.stream,
-      idleTimeout: const Duration(milliseconds: 80),
-    );
-    controller.add(<int>[1]);
-
-    await expectLater(reading, throwsA(isA<TimeoutException>()));
-  });
+      await expectLater(reading, throwsA(isA<TimeoutException>()));
+    },
+  );
 }
 
 /// 把 fake-async 下已经能进行的异步收尾全部跑完（不推进虚拟时间）。

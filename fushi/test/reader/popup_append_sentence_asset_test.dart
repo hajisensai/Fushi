@@ -33,8 +33,7 @@ void main() {
     expect(js, contains('let sentenceCtxNext = 0;'));
   });
 
-  test('mining never carries an extra sentence field — context signal only',
-      () {
+  test('mining never carries an extra sentence field — context signal only', () {
     // The context entry must NOT reuse mineEntry/updateEntry field contracts; it
     // only sends the generic setSentenceContext signal. Exactly one mineEntry
     // callHandler and one updateEntry callHandler remain.

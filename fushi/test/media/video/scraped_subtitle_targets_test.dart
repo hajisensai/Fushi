@@ -9,13 +9,13 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
     show isSidecarSubtitleSuffix;
 
 VideoBookRow _book(String uid, String path) => VideoBookRow(
-      bookUid: uid,
-      title: uid,
-      videoPath: path,
-      lastPositionMs: 0,
-      delayMs: 0,
-      currentEpisode: 0,
-    );
+  bookUid: uid,
+  title: uid,
+  videoPath: path,
+  lastPositionMs: 0,
+  delayMs: 0,
+  currentEpisode: 0,
+);
 
 VideoMetadataWork _work({
   List<VideoMetadataId> ids = const <VideoMetadataId>[],
@@ -24,29 +24,30 @@ VideoMetadataWork _work({
   String? originalTitle = '葬送のフリーレン',
   int? runtimeMinutes = 24,
   List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[],
-}) =>
-    VideoMetadataWork(
-      provider: VideoMetadataProviderKind.tmdb,
-      kind: kind,
-      title: title,
-      originalTitle: originalTitle,
-      runtimeMinutes: runtimeMinutes,
-      ids: ids,
-      seasons: seasons,
-    );
+}) => VideoMetadataWork(
+  provider: VideoMetadataProviderKind.tmdb,
+  kind: kind,
+  title: title,
+  originalTitle: originalTitle,
+  runtimeMinutes: runtimeMinutes,
+  ids: ids,
+  seasons: seasons,
+);
 
 void main() {
   group('scrapedMediaReference（准确率的分水岭：身份从刮削来，不从文件名猜）', () {
     test('外部 id 全量带过去——Jimaku 按 anilist_id 直查、OpenSubtitles 按 imdb', () {
       final VideoMediaReference ref = scrapedMediaReference(
-        _work(ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anidb', value: '17617'),
-          VideoMetadataId(type: 'anilist', value: '154587'),
-          VideoMetadataId(type: 'tmdb', value: '209867'),
-          VideoMetadataId(type: 'imdb', value: 'tt22248376'),
-          VideoMetadataId(type: 'bangumi', value: '400602'),
-          VideoMetadataId(type: 'tvdb', value: '424536'),
-        ]),
+        _work(
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'anidb', value: '17617'),
+            VideoMetadataId(type: 'anilist', value: '154587'),
+            VideoMetadataId(type: 'tmdb', value: '209867'),
+            VideoMetadataId(type: 'imdb', value: 'tt22248376'),
+            VideoMetadataId(type: 'bangumi', value: '400602'),
+            VideoMetadataId(type: 'tvdb', value: '424536'),
+          ],
+        ),
         season: 1,
         episode: 5,
       );
@@ -63,19 +64,17 @@ void main() {
     test('originalTitle 必须带上：id 没命中时的回退查询词不能是中文译名', () {
       final VideoMediaReference ref = scrapedMediaReference(_work());
       expect(ref.originalTitle, '葬送のフリーレン');
-      expect(
-        ref.title,
-        '葬送的芙莉莲',
-        reason: '中文译名仍要留着（UI 显示），但它不该是唯一的查询词',
-      );
+      expect(ref.title, '葬送的芙莉莲', reason: '中文译名仍要留着（UI 显示），但它不该是唯一的查询词');
     });
 
     test('id 缺失/非数字不炸，只是那一项为 null', () {
       final VideoMediaReference ref = scrapedMediaReference(
-        _work(ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anilist', value: 'not-a-number'),
-          VideoMetadataId(type: 'tmdb', value: '  '),
-        ]),
+        _work(
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'anilist', value: 'not-a-number'),
+            VideoMetadataId(type: 'tmdb', value: '  '),
+          ],
+        ),
       );
       expect(ref.anilistId, isNull);
       expect(ref.tmdbId, isNull);
@@ -98,9 +97,13 @@ void main() {
 
     test('历史 AniList id 仍识别为 anime', () {
       expect(
-        scrapedDiscoveryCategory(_work(ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anilist', value: '154587'),
-        ])),
+        scrapedDiscoveryCategory(
+          _work(
+            ids: const <VideoMetadataId>[
+              VideoMetadataId(type: 'anilist', value: '154587'),
+            ],
+          ),
+        ),
         VideoDiscoveryCategory.anime,
       );
     });
@@ -125,10 +128,14 @@ void main() {
         metadata: _work(),
         hasExistingSubtitle: (_) => false,
       );
-      expect(targets.map((SubtitleBackfillTarget t) => t.media.episode),
-          <int>[12, 3]);
-      expect(targets.every((SubtitleBackfillTarget t) => t.media.season == 1),
-          isTrue);
+      expect(targets.map((SubtitleBackfillTarget t) => t.media.episode), <int>[
+        12,
+        3,
+      ]);
+      expect(
+        targets.every((SubtitleBackfillTarget t) => t.media.season == 1),
+        isTrue,
+      );
     });
 
     test('单文件电影不带集号：「Doraemon Movie 25」的 25 是系列序号', () {

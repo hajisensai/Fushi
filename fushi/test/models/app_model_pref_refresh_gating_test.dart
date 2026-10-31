@@ -38,8 +38,9 @@ void main() {
   // path_provider 平台通道；单测里没有插件实现，mock 一个临时目录即可。
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_path_provider');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_path_provider',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -60,9 +61,7 @@ void main() {
   late _RecordingAppModel appModel;
 
   setUp(() async {
-    db = FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory()),
-    );
+    db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     appModel = _RecordingAppModel();
@@ -92,8 +91,11 @@ void main() {
     await appModel.refreshPrefCacheIfChanged();
     await appModel.refreshPrefCacheIfChanged();
     await appModel.refreshPrefCacheIfChanged();
-    expect(appModel.refreshCount, 1,
-        reason: 'warm-reuse lookups must not reload when prefs are unchanged');
+    expect(
+      appModel.refreshCount,
+      1,
+      reason: 'warm-reuse lookups must not reload when prefs are unchanged',
+    );
   });
 
   test('a prefs_version bump triggers exactly one refresh', () async {
@@ -104,8 +106,11 @@ void main() {
     await prefs.setPref('font_size', '24');
 
     await appModel.refreshPrefCacheIfChanged();
-    expect(appModel.refreshCount, 2,
-        reason: 'a real pref change must trigger exactly one reload');
+    expect(
+      appModel.refreshCount,
+      2,
+      reason: 'a real pref change must trigger exactly one reload',
+    );
 
     // Still no further change -> no further reload.
     await appModel.refreshPrefCacheIfChanged();
@@ -120,8 +125,11 @@ void main() {
     await db.setPref(PreferencesRepository.prefsVersionKey, '5');
 
     await appModel.refreshPrefCacheIfChanged();
-    expect(appModel.refreshCount, 2,
-        reason: 'profile switch (direct DB version bump) must be detected');
+    expect(
+      appModel.refreshCount,
+      2,
+      reason: 'profile switch (direct DB version bump) must be detected',
+    );
   });
 
   // The bump now lives in FushiDatabase.setPref, so writers that bypass
@@ -129,36 +137,48 @@ void main() {
   // Both notifiers write through _db.setPref, exactly as simulated below.
 
   test(
-      'a theme / app_ui_scale change (ThemeNotifier path) triggers one refresh',
-      () async {
-    await appModel.refreshPrefCacheIfChanged(); // primes -> 1
-    expect(appModel.refreshCount, 1);
+    'a theme / app_ui_scale change (ThemeNotifier path) triggers one refresh',
+    () async {
+      await appModel.refreshPrefCacheIfChanged(); // primes -> 1
+      expect(appModel.refreshCount, 1);
 
-    // ThemeNotifier._set / _seedAppUiScale write straight through _db.setPref;
-    // previously this bypassed the bump and the warm-reuse popup stayed on the
-    // old theme / UI scale (the regression this fix closes).
-    await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
+      // ThemeNotifier._set / _seedAppUiScale write straight through _db.setPref;
+      // previously this bypassed the bump and the warm-reuse popup stayed on the
+      // old theme / UI scale (the regression this fix closes).
+      await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
 
-    await appModel.refreshPrefCacheIfChanged();
-    expect(appModel.refreshCount, 2,
-        reason: 'theme/app_ui_scale change must reload the warm-reuse cache');
+      await appModel.refreshPrefCacheIfChanged();
+      expect(
+        appModel.refreshCount,
+        2,
+        reason: 'theme/app_ui_scale change must reload the warm-reuse cache',
+      );
 
-    await appModel.refreshPrefCacheIfChanged();
-    expect(appModel.refreshCount, 2,
-        reason: 'no further change -> no further reload');
-  });
+      await appModel.refreshPrefCacheIfChanged();
+      expect(
+        appModel.refreshCount,
+        2,
+        reason: 'no further change -> no further reload',
+      );
+    },
+  );
 
-  test('a per-source font-size change (MediaSource path) triggers one refresh',
-      () async {
-    await appModel.refreshPrefCacheIfChanged(); // primes -> 1
-    expect(appModel.refreshCount, 1);
+  test(
+    'a per-source font-size change (MediaSource path) triggers one refresh',
+    () async {
+      await appModel.refreshPrefCacheIfChanged(); // primes -> 1
+      expect(appModel.refreshCount, 1);
 
-    // MediaSource.setPreference writes a namespaced key straight through
-    // _db.setPref (e.g. reader/lyrics font size); it must bump too.
-    await db.setPref('src:reader_fushi:font_size', PrefCodec.encode(22));
+      // MediaSource.setPreference writes a namespaced key straight through
+      // _db.setPref (e.g. reader/lyrics font size); it must bump too.
+      await db.setPref('src:reader_fushi:font_size', PrefCodec.encode(22));
 
-    await appModel.refreshPrefCacheIfChanged();
-    expect(appModel.refreshCount, 2,
-        reason: 'source font-size change must reload the warm-reuse cache');
-  });
+      await appModel.refreshPrefCacheIfChanged();
+      expect(
+        appModel.refreshCount,
+        2,
+        reason: 'source font-size change must reload the warm-reuse cache',
+      );
+    },
+  );
 }

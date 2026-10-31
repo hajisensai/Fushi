@@ -44,8 +44,9 @@ class CropImageDialogPage extends BasePage {
 }
 
 class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
-  late final CropController _controller =
-      CropController(aspectRatio: widget.aspectRatio);
+  late final CropController _controller = CropController(
+    aspectRatio: widget.aspectRatio,
+  );
   late final ImageProvider _provider = cropSourceImageProvider(
     widget.imageFile,
     maxDimension: widget.maxDimension,
@@ -109,10 +110,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: SizedBox(
-          width: double.maxFinite,
-          child: buildContent(),
-        ),
+        body: SizedBox(width: double.maxFinite, child: buildContent()),
         footer: Wrap(
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,
@@ -123,10 +121,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
     );
   }
 
-  List<Widget> get actions => [
-        buildCancelButton(),
-        buildCropButton(),
-      ];
+  List<Widget> get actions => [buildCancelButton(), buildCropButton()];
 
   Widget buildContent() {
     if (_decodeError != null) {
@@ -192,8 +187,9 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
     ui.Image croppedImage = await _controller.croppedBitmap(
       maxSize: widget.maxDimension?.toDouble(),
     );
-    ByteData? data =
-        await croppedImage.toByteData(format: ui.ImageByteFormat.png);
+    ByteData? data = await croppedImage.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
     Uint8List bytes = data!.buffer.asUint8List();
 
     String imagePath = '${imageDir.path}/cropped';

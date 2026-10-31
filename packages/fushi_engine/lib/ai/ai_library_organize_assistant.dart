@@ -48,15 +48,15 @@ class AiOrganizeItem {
   final int? episode;
 
   Map<String, Object?> toPromptJson(int index) => <String, Object?>{
-        'i': index,
-        'title': title,
-        if (creator != null && creator!.isNotEmpty) 'by': creator,
-        if (year != null) 'year': year,
-        if (folder != null && folder!.isNotEmpty) 'folder': folder,
-        if (season != null) 'season': season,
-        if (episode != null) 'episode': episode,
-        if (inCollection != null) 'in': inCollection,
-      };
+    'i': index,
+    'title': title,
+    if (creator != null && creator!.isNotEmpty) 'by': creator,
+    if (year != null) 'year': year,
+    if (folder != null && folder!.isNotEmpty) 'folder': folder,
+    if (season != null) 'season': season,
+    if (episode != null) 'episode': episode,
+    if (inCollection != null) 'in': inCollection,
+  };
 }
 
 /// 发给模型的一个已有合集。
@@ -81,13 +81,13 @@ class AiOrganizeCollection {
   final String? organizeKey;
 
   Map<String, Object?> toPromptJson() => <String, Object?>{
-        'id': id,
-        'name': name,
-        'members': memberCount,
-        if (sampleTitles.isNotEmpty) 'sample': sampleTitles,
-        if (organizeKey != null) 'key': organizeKey,
-        if (userOwned) 'user_owned': true,
-      };
+    'id': id,
+    'name': name,
+    'members': memberCount,
+    if (sampleTitles.isNotEmpty) 'sample': sampleTitles,
+    if (organizeKey != null) 'key': organizeKey,
+    if (userOwned) 'user_owned': true,
+  };
 }
 
 /// 一次请求的全部输入。
@@ -256,9 +256,8 @@ String buildAiLibraryOrganizeUserPrompt(AiLibraryOrganizeRequest request) {
     ..writeln('known_keys: ${jsonEncode(request.knownKeys)}')
     ..writeln(
       'rejected: ${jsonEncode(<Map<String, String>>[
-            for (final ({String key, String name}) r in request.rejected)
-              <String, String>{'key': r.key, 'name': r.name},
-          ])}',
+        for (final ({String key, String name}) r in request.rejected) <String, String>{'key': r.key, 'name': r.name},
+      ])}',
     )
     ..writeln('collections:');
   for (final AiOrganizeCollection c in request.collections) {
@@ -321,13 +320,13 @@ AiOrganizeReply? parseAiLibraryOrganizeReply(
   ];
   final List<AiOrganizeEvictionProposal> evictions =
       <AiOrganizeEvictionProposal>[
-    if (rawEvictions is List)
-      for (final Object? e in rawEvictions)
-        if (e is Map)
-          if (_eviction(e, indexes, collectionId)
-              case final AiOrganizeEvictionProposal p)
-            p,
-  ];
+        if (rawEvictions is List)
+          for (final Object? e in rawEvictions)
+            if (e is Map)
+              if (_eviction(e, indexes, collectionId)
+                  case final AiOrganizeEvictionProposal p)
+                p,
+      ];
   return AiOrganizeReply(groups: groups, merges: merges, evictions: evictions);
 }
 
@@ -337,8 +336,9 @@ AiOrganizeGroupProposal? _group(
   String? Function(Object?) collectionId,
   String? Function(Object?) text,
 ) {
-  final AiOrganizeConfidence? confidence =
-      AiOrganizeConfidence.parse(g['confidence']);
+  final AiOrganizeConfidence? confidence = AiOrganizeConfidence.parse(
+    g['confidence'],
+  );
   final List<int> members = indexes(g['members']);
   final String? into = collectionId(g['into']);
   final String? name = text(g['name']);
@@ -362,8 +362,9 @@ AiOrganizeMergeProposal? _merge(
   Map<Object?, Object?> m,
   String? Function(Object?) collectionId,
 ) {
-  final AiOrganizeConfidence? confidence =
-      AiOrganizeConfidence.parse(m['confidence']);
+  final AiOrganizeConfidence? confidence = AiOrganizeConfidence.parse(
+    m['confidence'],
+  );
   final Object? raw = m['collections'];
   if (confidence == null || raw is! List) return null;
   final List<String> ids = <String>[];
@@ -380,8 +381,9 @@ AiOrganizeEvictionProposal? _eviction(
   List<int> Function(Object?) indexes,
   String? Function(Object?) collectionId,
 ) {
-  final AiOrganizeConfidence? confidence =
-      AiOrganizeConfidence.parse(e['confidence']);
+  final AiOrganizeConfidence? confidence = AiOrganizeConfidence.parse(
+    e['confidence'],
+  );
   final String? collection = collectionId(e['collection']);
   final List<int> members = indexes(e['members']);
   if (confidence == null || collection == null || members.isEmpty) return null;

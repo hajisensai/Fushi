@@ -55,83 +55,120 @@ void main() {
         'if (_fushiReaderMouseNativeTextStart)',
         lexicon: SourceLexicon.js,
       );
-      expect(containsCodeLine(branch, '!fushiContinuousMode'), isTrue,
-          reason: '正文拖动转翻页只在分页模式，连续模式仍是拖动滚动');
       expect(
-          containsCodeLine(branch, '_fushiReaderMouseDragResolvePageDirection'),
-          isTrue,
-          reason: '复用与触摸横滑同款方向判据，达阈值才转翻页');
-      expect(containsCodeLine(branch, '_fushiReaderMouseDragClaimed = true'),
-          isTrue,
-          reason:
-              '转换后接管为拖动翻页，pointerup 经 _finishFushiReaderMouseDrag 回传 onSwipe');
+        containsCodeLine(branch, '!fushiContinuousMode'),
+        isTrue,
+        reason: '正文拖动转翻页只在分页模式，连续模式仍是拖动滚动',
+      );
       expect(
-          containsCodeLine(branch, '_fushiReaderMouseNativeTextStart = false'),
-          isTrue,
-          reason: '转翻页后必须退出原生选词态');
+        containsCodeLine(branch, '_fushiReaderMouseDragResolvePageDirection'),
+        isTrue,
+        reason: '复用与触摸横滑同款方向判据，达阈值才转翻页',
+      );
       expect(
-          containsCodeLine(branch, '_fushiReaderClearMouseSelection()'), isTrue,
-          reason: '转翻页前清掉已起的原生选区');
+        containsCodeLine(branch, '_fushiReaderMouseDragClaimed = true'),
+        isTrue,
+        reason: '转换后接管为拖动翻页，pointerup 经 _finishFushiReaderMouseDrag 回传 onSwipe',
+      );
+      expect(
+        containsCodeLine(branch, '_fushiReaderMouseNativeTextStart = false'),
+        isTrue,
+        reason: '转翻页后必须退出原生选词态',
+      );
+      expect(
+        containsCodeLine(branch, '_fushiReaderClearMouseSelection()'),
+        isTrue,
+        reason: '转翻页前清掉已起的原生选区',
+      );
       // 短拖/竖向拖（resolve 返 null）仍回退原生选词——保留划词查词。
       expect(
-          containsCodeLine(branch, 'if (totalDistSq > 36) hasStart = false;'),
-          isTrue,
-          reason: '非翻页手势仍交还原生选区，划词查词不受影响');
+        containsCodeLine(branch, 'if (totalDistSq > 36) hasStart = false;'),
+        isTrue,
+        reason: '非翻页手势仍交还原生选区，划词查词不受影响',
+      );
     });
 
-    test('pointermove still does not emit onSwipe directly (sent on pointerup)',
-        () {
-      final String pointerMove = _listenerBody(setupScript, 'pointermove');
-      expect(containsCodeLine(pointerMove, "callHandler('onSwipe'"), isFalse,
+    test(
+      'pointermove still does not emit onSwipe directly (sent on pointerup)',
+      () {
+        final String pointerMove = _listenerBody(setupScript, 'pointermove');
+        expect(
+          containsCodeLine(pointerMove, "callHandler('onSwipe'"),
+          isFalse,
           reason:
-              '方向在 move 决定，onSwipe 仍只从 pointerup/_finishFushiReaderMouseDrag 发一次');
-    });
+              '方向在 move 决定，onSwipe 仍只从 pointerup/_finishFushiReaderMouseDrag 发一次',
+        );
+      },
+    );
   });
 
   group('BUG-2015 continuous wheel boundary gesture ownership', () {
     test('trackpad inertia cannot cross; a new boundary gesture can', () {
       final String wheel = _listenerBody(setupScript, 'wheel');
       expect(
-          containsCodeLine(setupScript, 'var _continuousWheelLastTickAt = 0'),
-          isTrue,
-          reason: '必须记录连续模式 wheel 手势的尾沿');
+        containsCodeLine(setupScript, 'var _continuousWheelLastTickAt = 0'),
+        isTrue,
+        reason: '必须记录连续模式 wheel 手势的尾沿',
+      );
       expect(
-          containsCodeLine(
-              wheel, "pointerKind === 'trackpad' && !startsNewWheelGesture"),
-          isTrue,
-          reason: '同一段触摸板惯性到边界后必须停住，不能替用户确认跨章');
-      expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isFalse,
-          reason: '单事件滚轮不能再依赖第二拍 arm-then-fire，否则数位板旋钮无响应');
+        containsCodeLine(
+          wheel,
+          "pointerKind === 'trackpad' && !startsNewWheelGesture",
+        ),
+        isTrue,
+        reason: '同一段触摸板惯性到边界后必须停住，不能替用户确认跨章',
+      );
+      expect(
+        containsCodeLine(wheel, '_wheelBoundaryArmed'),
+        isFalse,
+        reason: '单事件滚轮不能再依赖第二拍 arm-then-fire，否则数位板旋钮无响应',
+      );
       final int trackpadGate = wheel.indexOf(
-          "pointerKind === 'trackpad' && !startsNewWheelGesture");
-      final int handlerCall = wheel.indexOf(
-          "'onBoundarySwipe'", trackpadGate);
-      expect(handlerCall, greaterThan(trackpadGate),
-          reason: '跨章回传必须位于触摸板旧手势早退之后');
+        "pointerKind === 'trackpad' && !startsNewWheelGesture",
+      );
+      final int handlerCall = wheel.indexOf("'onBoundarySwipe'", trackpadGate);
+      expect(
+        handlerCall,
+        greaterThan(trackpadGate),
+        reason: '跨章回传必须位于触摸板旧手势早退之后',
+      );
     });
 
-    test('wheel boundary uses real try-scroll (scrollBy + moved) (TODO-656)',
-        () {
-      final String wheel = _listenerBody(setupScript, 'wheel');
-      // TODO-656：跨章判据改为「真试滚」——真的 scrollBy 一步、读实际位移 moved。滚动了不
-      // 跨章，真滚不动才跨章。彻底弃用 scrollTop<=2 / 相邻拍 / clamp 推算（横排误翻/竖排滚不动）。
-      expect(
+    test(
+      'wheel boundary uses real try-scroll (scrollBy + moved) (TODO-656)',
+      () {
+        final String wheel = _listenerBody(setupScript, 'wheel');
+        // TODO-656：跨章判据改为「真试滚」——真的 scrollBy 一步、读实际位移 moved。滚动了不
+        // 跨章，真滚不动才跨章。彻底弃用 scrollTop<=2 / 相邻拍 / clamp 推算（横排误翻/竖排滚不动）。
+        expect(
           containsCodeLine(wheel, 'var moved = Math.abs(after - before) > 1'),
           isTrue,
-          reason: '滚轮跨章须靠真试滚的实际位移判边界');
-      expect(containsCodeLine(wheel, 'window.scrollBy'), isTrue,
-          reason: '横排/竖排都真的 window.scrollBy 一步再读位移（已验证原语）');
-      expect(containsCodeLine(wheel, 'atStart = root.scrollTop <= 2'), isFalse,
-          reason: '不得再用瞬时 scrollTop<=2 几何');
-      expect(containsCodeLine(wheel, '_wheelLastScrollPos'), isFalse,
-          reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）');
-      // 连续分支自己的主轴归一（wheelDelta 取绝对值更大的轴）。分页侧同款判据在
-      // _handlePagedWheelTick 里单独守（见下方 TODO-737 组），两处不得再互相顶包。
-      expect(
+          reason: '滚轮跨章须靠真试滚的实际位移判边界',
+        );
+        expect(
+          containsCodeLine(wheel, 'window.scrollBy'),
+          isTrue,
+          reason: '横排/竖排都真的 window.scrollBy 一步再读位移（已验证原语）',
+        );
+        expect(
+          containsCodeLine(wheel, 'atStart = root.scrollTop <= 2'),
+          isFalse,
+          reason: '不得再用瞬时 scrollTop<=2 几何',
+        );
+        expect(
+          containsCodeLine(wheel, '_wheelLastScrollPos'),
+          isFalse,
+          reason: '不得再用相邻拍位置推算（时序坏 → 横排中部误翻）',
+        );
+        // 连续分支自己的主轴归一（wheelDelta 取绝对值更大的轴）。分页侧同款判据在
+        // _handlePagedWheelTick 里单独守（见下方 TODO-737 组），两处不得再互相顶包。
+        expect(
           containsCodeLine(wheel, 'Math.abs(e.deltaY) >= Math.abs(e.deltaX)'),
           isTrue,
-          reason: '连续模式 wheelDelta 也按绝对值更大的主轴取，斜向触控板不误判方向');
-    });
+          reason: '连续模式 wheelDelta 也按绝对值更大的主轴取，斜向触控板不误判方向',
+        );
+      },
+    );
   });
 
   // TODO-737 / BUG-1342 守卫：Dart 入口仍是唯一 rate-limit；横向触控板 burst
@@ -139,28 +176,43 @@ void main() {
   // 行为变更声明：分页滚轮方向从此脱钩 invertSwipeDirection——该开关只管触摸滑动 /
   // 鼠标拖动（onSwipe 路径），不再管滚轮。滚轮翻页改走新 handler onWheelPaginate，
   // 节流闸门统一到 Dart 侧 _paginate / onBoundarySwipe 的 _lastPaginateTime 时间戳。
-  group(
-      'TODO-737 wheel input unify: direction decoupled + single throttle gate',
-      () {
+  group('TODO-737 wheel input unify: direction decoupled + single throttle gate', () {
     test('JS wheel block reports dominant axis but owns no gesture state', () {
       final String wheel = _listenerBody(setupScript, 'wheel');
       // 只锁「代码形态」（赋值/读取），不锁注释文本——注释里解释「不再自持 _wheelTimer」
       // 是允许的（生产注释真的这么写）；真正回归是 setTimeout 节流代码复活。窗口已掩码 +
       // containsCodeLine 双保险，注释怎么写都不会把这三条禁止型断言误判成红。
-      expect(containsCodeLine(wheel, '_wheelTimer = setTimeout'), isFalse,
-          reason: 'TODO-737：JS _wheelTimer setTimeout 节流双处已删，'
-              '节流统一到 Dart 侧时间戳闸门；删 _wheelTimer 不变红是盲区，这里显式锁住不复活');
-      expect(containsCodeLine(wheel, 'if (_wheelTimer)'), isFalse,
-          reason: 'TODO-737：JS _wheelTimer 读取门控已删，不得复活');
-      expect(containsCodeLine(wheel, 'var _wheelTimer'), isFalse,
-          reason: 'TODO-737：JS _wheelTimer 声明已删，不得复活');
-      expect(containsCodeLine(wheel, '_handlePagedWheelTick(e)'), isTrue,
-          reason: '分页 wheel tick 必须回传方向与主轴给跨章节 Dart 闸门');
-      expect(containsCodeLine(setupScript, '_pagedWheelGestureSettleTimer'),
-          isFalse,
-          reason: 'JS document 切章即销毁，不得持有手势 session');
       expect(
-          containsCodeLine(setupScript, '_pagedWheelGestureActive'), isFalse);
+        containsCodeLine(wheel, '_wheelTimer = setTimeout'),
+        isFalse,
+        reason:
+            'TODO-737：JS _wheelTimer setTimeout 节流双处已删，'
+            '节流统一到 Dart 侧时间戳闸门；删 _wheelTimer 不变红是盲区，这里显式锁住不复活',
+      );
+      expect(
+        containsCodeLine(wheel, 'if (_wheelTimer)'),
+        isFalse,
+        reason: 'TODO-737：JS _wheelTimer 读取门控已删，不得复活',
+      );
+      expect(
+        containsCodeLine(wheel, 'var _wheelTimer'),
+        isFalse,
+        reason: 'TODO-737：JS _wheelTimer 声明已删，不得复活',
+      );
+      expect(
+        containsCodeLine(wheel, '_handlePagedWheelTick(e)'),
+        isTrue,
+        reason: '分页 wheel tick 必须回传方向与主轴给跨章节 Dart 闸门',
+      );
+      expect(
+        containsCodeLine(setupScript, '_pagedWheelGestureSettleTimer'),
+        isFalse,
+        reason: 'JS document 切章即销毁，不得持有手势 session',
+      );
+      expect(
+        containsCodeLine(setupScript, '_pagedWheelGestureActive'),
+        isFalse,
+      );
     });
 
     test('paged wheel emits onWheelPaginate (not onSwipe)', () {
@@ -178,130 +230,199 @@ void main() {
         'function _handlePagedWheelTick(e)',
         lexicon: SourceLexicon.js,
       );
-      expect(containsCodeLine(tick, "callHandler('onWheelPaginate'"), isTrue,
-          reason: '分页滚轮翻页改走 onWheelPaginate（产语义意图 forward/backward）');
-      expect(containsCodeLine(tick, "horizontal ? 'horizontal' : 'vertical'"),
-          isTrue,
-          reason: '主轴须一并回传，Dart 侧才能只对横向触控板 burst 开跨章节手势闸门');
+      expect(
+        containsCodeLine(tick, "callHandler('onWheelPaginate'"),
+        isTrue,
+        reason: '分页滚轮翻页改走 onWheelPaginate（产语义意图 forward/backward）',
+      );
+      expect(
+        containsCodeLine(tick, "horizontal ? 'horizontal' : 'vertical'"),
+        isTrue,
+        reason: '主轴须一并回传，Dart 侧才能只对横向触控板 burst 开跨章节手势闸门',
+      );
       // 主轴判据：按绝对值更大的轴取 delta，斜向 tick 不得被次轴符号带偏。
       // BUG-1745：再加抖动余量——一次横滑里的纵向漂移拍若被判成 vertical，就会
       // 绕过闸门直接翻页（弹窗滚动路径 BUG-701 已用同一配方修过）。
       expect(
-          containsCodeLine(tick, 'var absX = Math.abs(e.deltaX)') &&
-              containsCodeLine(tick, 'var absY = Math.abs(e.deltaY)') &&
-              containsCodeLine(tick, 'absX > absY + PAGED_WHEEL_AXIS_MARGIN'),
-          isTrue,
-          reason: '分页滚轮必须按绝对值更大的主轴判横/纵（且带抖动余量），'
-              '不能任一轴为正就前进');
+        containsCodeLine(tick, 'var absX = Math.abs(e.deltaX)') &&
+            containsCodeLine(tick, 'var absY = Math.abs(e.deltaY)') &&
+            containsCodeLine(tick, 'absX > absY + PAGED_WHEEL_AXIS_MARGIN'),
+        isTrue,
+        reason:
+            '分页滚轮必须按绝对值更大的主轴判横/纵（且带抖动余量），'
+            '不能任一轴为正就前进',
+      );
       // BUG-1745：设备类型必须一并回传。闸门的判据是「触摸板惯性流 vs 鼠标离散
       // tick」，不是轴——纵向触摸板滑动此前完全没进闸门，一次滑翻 3 页。
       expect(
-          containsCodeLine(tick, "_isTrackpadWheel(e) ? 'trackpad' : 'mouse'"),
-          isTrue,
-          reason: '未回传输入设备类型，纵向触摸板惯性会绕过手势闸门连翻多页');
+        containsCodeLine(tick, "_isTrackpadWheel(e) ? 'trackpad' : 'mouse'"),
+        isTrue,
+        reason: '未回传输入设备类型，纵向触摸板惯性会绕过手势闸门连翻多页',
+      );
       expect(
-          containsCodeLine(
-              tick, 'var delta = horizontal ? e.deltaX : e.deltaY'),
-          isTrue,
-          reason: 'delta 必须取自主轴本身，而不是固定读 deltaY');
+        containsCodeLine(tick, 'var delta = horizontal ? e.deltaX : e.deltaY'),
+        isTrue,
+        reason: 'delta 必须取自主轴本身，而不是固定读 deltaY',
+      );
       // 方向归一：主轴 delta>0=forward（对齐连续滚轮 delta>0=前进），消除旧裸符号
       // deltaY<0=forward 与连续相反的方向矛盾。
       expect(
-          containsCodeLine(tick, "delta > 0 ? 'forward' : 'backward'"), isTrue,
-          reason: '方向只由主轴 delta 的符号决定');
-      expect(containsCodeLine(tick, 'e.deltaY > 0 || e.deltaX > 0'), isFalse,
-          reason: '旧的「任一轴为正就前进」裸符号判据（BUG-1342 根因）必须移除');
-      expect(containsCodeLine(tick, 'e.deltaY < 0 || e.deltaX > 0'), isFalse,
-          reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除');
-      expect(containsCodeLine(wheel, "callHandler('onSwipe'"), isFalse,
-          reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）');
+        containsCodeLine(tick, "delta > 0 ? 'forward' : 'backward'"),
+        isTrue,
+        reason: '方向只由主轴 delta 的符号决定',
+      );
+      expect(
+        containsCodeLine(tick, 'e.deltaY > 0 || e.deltaX > 0'),
+        isFalse,
+        reason: '旧的「任一轴为正就前进」裸符号判据（BUG-1342 根因）必须移除',
+      );
+      expect(
+        containsCodeLine(tick, 'e.deltaY < 0 || e.deltaX > 0'),
+        isFalse,
+        reason: '旧的 deltaY<0=forward 裸符号（方向矛盾根因）必须移除',
+      );
+      expect(
+        containsCodeLine(wheel, "callHandler('onSwipe'"),
+        isFalse,
+        reason: 'wheel 块不得再回传 onSwipe（onSwipe 专属触摸/鼠标拖动）',
+      );
     });
 
     test('连续模式按设备类型分流，不再依赖 arm-then-fire', () {
       final String wheel = _listenerBody(setupScript, 'wheel');
       expect(
-          containsCodeLine(wheel,
-              "var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel'"),
-          isTrue,
-          reason: '连续模式必须区分惯性触摸板与离散滚轮/旋钮');
-      expect(containsCodeLine(wheel, 'C.wheelGestureQuietMs'), isTrue,
-          reason: '新手势静默窗必须来自 per-nav 配置，而不是散落魔数');
+        containsCodeLine(
+          wheel,
+          "var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel'",
+        ),
+        isTrue,
+        reason: '连续模式必须区分惯性触摸板与离散滚轮/旋钮',
+      );
+      expect(
+        containsCodeLine(wheel, 'C.wheelGestureQuietMs'),
+        isTrue,
+        reason: '新手势静默窗必须来自 per-nav 配置，而不是散落魔数',
+      );
       expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isFalse);
     });
 
-    test('onWheelPaginate Dart handler 方向只经 readerWheelTickIsForward，传 throttleMs',
-        () {
-      // 行为变更：onWheelPaginate handler 直送 _paginate，并传 wheelPageTurnInterval
-      // 作 throttleMs。方向由纯谓词 readerWheelTickIsForward 一处决定——鼠标滚轮
-      // 不读 invertSwipeDirection（TODO-737 脱钩根因），只有触控板两指滑（滑动翻页
-      // 手势，BUG-3358，横纵两轴）经它折算；象限表由
-      // test/reader/reader_wheel_page_turn_direction_test.dart 锁定。Dart handler 在合并
-      // 语料的 webview.part.dart 段，setupScript 切片不含它，故读整源 [source]。
-      //
-      // 窗口由 `controller.addJavaScriptHandler(...)` 的**圆括号配对**给出。旧写法是
-      // `substring(handlerName 处, 下一个 addJavaScriptHandler 处)`：既依赖「下一个
-      // handler 恰好存在」，又把两个 handler 之间的注释块一并读进窗口——那正是
-      // `canTurnPage: ...` 这条断言差一点被注释顶包的地方。
-      final EnclosingCall handler =
-          enclosingCallOf(source, "handlerName: 'onWheelPaginate'");
-      expect(handler.name, endsWith('addJavaScriptHandler'),
-          reason: 'onWheelPaginate 必须仍以 addJavaScriptHandler 的具名实参注册');
-      final String body = handler.text;
-      expect(containsCodeLine(body, 'readerWheelTickIsForward('), isTrue,
-          reason: '滚轮翻页方向必须只经纯谓词决定，不得在 handler 里散写符号映射');
-      expect(
-          RegExp(r'invertSwipe:\s*ReaderFushiSource\.instance\.invertSwipeDirection')
-              .hasMatch(body),
+    test(
+      'onWheelPaginate Dart handler 方向只经 readerWheelTickIsForward，传 throttleMs',
+      () {
+        // 行为变更：onWheelPaginate handler 直送 _paginate，并传 wheelPageTurnInterval
+        // 作 throttleMs。方向由纯谓词 readerWheelTickIsForward 一处决定——鼠标滚轮
+        // 不读 invertSwipeDirection（TODO-737 脱钩根因），只有触控板两指滑（滑动翻页
+        // 手势，BUG-3358，横纵两轴）经它折算；象限表由
+        // test/reader/reader_wheel_page_turn_direction_test.dart 锁定。Dart handler 在合并
+        // 语料的 webview.part.dart 段，setupScript 切片不含它，故读整源 [source]。
+        //
+        // 窗口由 `controller.addJavaScriptHandler(...)` 的**圆括号配对**给出。旧写法是
+        // `substring(handlerName 处, 下一个 addJavaScriptHandler 处)`：既依赖「下一个
+        // handler 恰好存在」，又把两个 handler 之间的注释块一并读进窗口——那正是
+        // `canTurnPage: ...` 这条断言差一点被注释顶包的地方。
+        final EnclosingCall handler = enclosingCallOf(
+          source,
+          "handlerName: 'onWheelPaginate'",
+        );
+        expect(
+          handler.name,
+          endsWith('addJavaScriptHandler'),
+          reason: 'onWheelPaginate 必须仍以 addJavaScriptHandler 的具名实参注册',
+        );
+        final String body = handler.text;
+        expect(
+          containsCodeLine(body, 'readerWheelTickIsForward('),
           isTrue,
-          reason: 'invertSwipeDirection 只能作为纯谓词的实参出现（谓词保证鼠标滚轮不受它影响）');
-      expect('invertSwipeDirection'.allMatches(body).length, 1,
-          reason: 'TODO-737：handler 不得在谓词之外另读 invertSwipeDirection');
-      expect(containsCodeLine(body, 'throttleMs:'), isTrue,
-          reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）');
-      expect(containsCodeLine(body, 'wheelPageTurnInterval'), isTrue,
-          reason: '滚轮 throttleMs 源是 wheelPageTurnInterval');
-      // BUG-1745：闸门判据从「轴」改成「输入设备」。旧的 axis=='horizontal' 隐含
-      // 假设「纵向 = 鼠标滚轮」，可 macOS 触摸板上下双指滑同样是纵向——整段惯性
-      // 全部漏过闸门，一次滑动稳定翻 3 页（间隔调到下限则 10 页）。
-      expect(containsCodeLine(body, "pointerKind == 'trackpad'"), isTrue,
-          reason: '触控板手势（含纵向）必须进入跨章节 burst 闸门');
-      expect(containsCodeLine(body, "axis == 'horizontal' &&"), isFalse,
-          reason: '按轴开闸门会把纵向触摸板惯性放走（BUG-1745 根因）');
-      expect(
+          reason: '滚轮翻页方向必须只经纯谓词决定，不得在 handler 里散写符号映射',
+        );
+        expect(
+          RegExp(
+            r'invertSwipe:\s*ReaderFushiSource\.instance\.invertSwipeDirection',
+          ).hasMatch(body),
+          isTrue,
+          reason: 'invertSwipeDirection 只能作为纯谓词的实参出现（谓词保证鼠标滚轮不受它影响）',
+        );
+        expect(
+          'invertSwipeDirection'.allMatches(body).length,
+          1,
+          reason: 'TODO-737：handler 不得在谓词之外另读 invertSwipeDirection',
+        );
+        expect(
+          containsCodeLine(body, 'throttleMs:'),
+          isTrue,
+          reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）',
+        );
+        expect(
+          containsCodeLine(body, 'wheelPageTurnInterval'),
+          isTrue,
+          reason: '滚轮 throttleMs 源是 wheelPageTurnInterval',
+        );
+        // BUG-1745：闸门判据从「轴」改成「输入设备」。旧的 axis=='horizontal' 隐含
+        // 假设「纵向 = 鼠标滚轮」，可 macOS 触摸板上下双指滑同样是纵向——整段惯性
+        // 全部漏过闸门，一次滑动稳定翻 3 页（间隔调到下限则 10 页）。
+        expect(
+          containsCodeLine(body, "pointerKind == 'trackpad'"),
+          isTrue,
+          reason: '触控板手势（含纵向）必须进入跨章节 burst 闸门',
+        );
+        expect(
+          containsCodeLine(body, "axis == 'horizontal' &&"),
+          isFalse,
+          reason: '按轴开闸门会把纵向触摸板惯性放走（BUG-1745 根因）',
+        );
+        expect(
           containsCodeLine(
-              body, '_pagedWheelGestureGate.shouldStartNewGesture'),
+            body,
+            '_pagedWheelGestureGate.shouldStartNewGesture',
+          ),
           isTrue,
-          reason: '手势 session 必须属于 reader State，切章后仍在');
-      // BUG-1380：token 只能在这一 tick 真能落地翻页时消费。handler 必须把
-      // _paginationInFlight 交给闸门，否则换章加载期的首个 tick 白吃 token，
-      // 整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
-      //
-      // 这条正是 TODO-2616 的样本：紧邻的生产注释写着「canTurnPage=false 时闸门只查询
-      // 不认领」，与本 needle 只差一个字符形态；窗口不掩码时，把实参删掉、注释改成
-      // `canTurnPage: !_paginationInFlight` 的措辞即可永久骗绿。
-      expect(
-          containsCodeLine(body, 'canTurnPage: !_paginationInFlight'), isTrue,
-          reason: 'BUG-1380：闸门必须知道这一 tick 能否翻页，才决定是否消费手势 token');
-    });
+          reason: '手势 session 必须属于 reader State，切章后仍在',
+        );
+        // BUG-1380：token 只能在这一 tick 真能落地翻页时消费。handler 必须把
+        // _paginationInFlight 交给闸门，否则换章加载期的首个 tick 白吃 token，
+        // 整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
+        //
+        // 这条正是 TODO-2616 的样本：紧邻的生产注释写着「canTurnPage=false 时闸门只查询
+        // 不认领」，与本 needle 只差一个字符形态；窗口不掩码时，把实参删掉、注释改成
+        // `canTurnPage: !_paginationInFlight` 的措辞即可永久骗绿。
+        expect(
+          containsCodeLine(body, 'canTurnPage: !_paginationInFlight'),
+          isTrue,
+          reason: 'BUG-1380：闸门必须知道这一 tick 能否翻页，才决定是否消费手势 token',
+        );
+      },
+    );
 
     test(
-        'throttle gate lives at _paginate entry + onBoundarySwipe (split, 防自吞)',
-        () {
-      // _paginate 入口闸门（分页/键盘/手柄/音量键共用）。旧写法对**整份 9000 行语料**取
-      // contains，全语料任何一处（含注释）出现同名符号都能顶包；改成方法体窗口后，断言
-      // 说的才真是「闸门在 _paginate 入口」。
-      final String paginate = methodBody(source, 'Future<void> _paginate(');
-      expect(containsCodeLine(paginate, 'int throttleMs = 0'), isTrue,
-          reason: '_paginate 增加 throttleMs 入口闸门参数');
-      expect(containsCodeLine(paginate, '_lastPaginateTime'), isTrue,
-          reason: '节流时间戳真相源 _lastPaginateTime 必须落在 _paginate 入口');
-      // 闸门不放 _handlePageTurnLimit 本体（否则分页跨章经 _paginate 盖戳后自吞）。
-      // 体的右边界由花括号配对给出，不再靠「下一个方法叫 _refreshProgress」这个假设。
-      final String hpBody =
-          methodBody(source, 'void _handlePageTurnLimit(String direction');
-      expect(containsCodeLine(hpBody, '_lastPaginateTime'), isFalse,
-          reason: '4 必补点 #1：节流闸门不得放 _handlePageTurnLimit 本体（会自吞分页章末跨章）');
-    });
+      'throttle gate lives at _paginate entry + onBoundarySwipe (split, 防自吞)',
+      () {
+        // _paginate 入口闸门（分页/键盘/手柄/音量键共用）。旧写法对**整份 9000 行语料**取
+        // contains，全语料任何一处（含注释）出现同名符号都能顶包；改成方法体窗口后，断言
+        // 说的才真是「闸门在 _paginate 入口」。
+        final String paginate = methodBody(source, 'Future<void> _paginate(');
+        expect(
+          containsCodeLine(paginate, 'int throttleMs = 0'),
+          isTrue,
+          reason: '_paginate 增加 throttleMs 入口闸门参数',
+        );
+        expect(
+          containsCodeLine(paginate, '_lastPaginateTime'),
+          isTrue,
+          reason: '节流时间戳真相源 _lastPaginateTime 必须落在 _paginate 入口',
+        );
+        // 闸门不放 _handlePageTurnLimit 本体（否则分页跨章经 _paginate 盖戳后自吞）。
+        // 体的右边界由花括号配对给出，不再靠「下一个方法叫 _refreshProgress」这个假设。
+        final String hpBody = methodBody(
+          source,
+          'void _handlePageTurnLimit(String direction',
+        );
+        expect(
+          containsCodeLine(hpBody, '_lastPaginateTime'),
+          isFalse,
+          reason: '4 必补点 #1：节流闸门不得放 _handlePageTurnLimit 本体（会自吞分页章末跨章）',
+        );
+      },
+    );
   });
 }
 
@@ -323,8 +444,5 @@ String _between(String source, String start, String end) {
 /// 旧实现用 `'}, {passive:'` 当结束标记：那是「碰巧第一个出现的字面量」，回调里一旦出现
 /// 同形文本或 listener 改成 `{passive:true}` 之外的写法就整段漂掉。这里改用花括号配对，
 /// 窗口由结构决定，与长度、嵌套、options 写法无关。
-String _listenerBody(String script, String eventName) => methodBody(
-      script,
-      "'$eventName', function",
-      lexicon: SourceLexicon.js,
-    );
+String _listenerBody(String script, String eventName) =>
+    methodBody(script, "'$eventName', function", lexicon: SourceLexicon.js);

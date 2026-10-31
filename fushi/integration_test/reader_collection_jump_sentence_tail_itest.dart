@@ -100,8 +100,11 @@ void main() {
         label: 'coll-jump',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
 
           // 焦点驱动需要 FushiFocusRoot（默认 OFF；开关后 main.dart 重建装上壳）。
@@ -112,8 +115,10 @@ void main() {
           }
 
           // 播种标准日文 EPUB（含长段落，第一章 420 个标记段落）。
-          await seedReaderBook(tester,
-              fileName: 'todo982_collection_jump.epub');
+          await seedReaderBook(
+            tester,
+            fileName: 'todo982_collection_jump.epub',
+          );
           final FocusDriver driver = FocusDriver(tester);
 
           // 焦点落到书架标签后打开第一本书。
@@ -129,11 +134,17 @@ void main() {
             await tester.pump(const Duration(milliseconds: 500));
             if (bookEntries.evaluate().isNotEmpty) break;
           }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
+          expect(
+            bookEntries,
+            findsWidgets,
+            reason: 'seeded book must appear on the shelf',
+          );
           final bool focusedBook = await driver.focusWidget(bookEntries.first);
-          expect(focusedBook, isTrue,
-              reason: 'book card must be reachable by focus');
+          expect(
+            focusedBook,
+            isTrue,
+            reason: 'book card must be reachable by focus',
+          );
           await driver.activate();
           await tester.pump(const Duration(seconds: 3));
 
@@ -147,8 +158,9 @@ void main() {
           // （整章重排，CSS-only 的 onSettingsChangedLive 表达不了写排方向切换）。这里
           // 严格复刻产品同一路径：先写两个偏好，再 fire onLayoutReloadLive 触发
           // 重排，等内容重新就绪。
-          await ReaderFushiSource.instance
-              .setReaderWritingMode('horizontal-tb');
+          await ReaderFushiSource.instance.setReaderWritingMode(
+            'horizontal-tb',
+          );
           await ReaderFushiSource.instance.setReaderViewMode('continuous');
           // 设一个非零顶部正文边距：连续模式横排里 paddingTop = marginTop·vh +
           // chromeTopInset，而 BUG-461 的可见区上沿 bandTop = chromeTopInset。只有
@@ -162,22 +174,33 @@ void main() {
             await tester.pump(const Duration(milliseconds: 250));
           }
           await _waitFor(tester, _contentReady, 'continuous content');
-          expect(ReaderFushiSource.readerSettings?.isContinuousMode, isTrue,
-              reason: 'reader must be in continuous scroll mode for TODO-982');
+          expect(
+            ReaderFushiSource.readerSettings?.isContinuousMode,
+            isTrue,
+            reason: 'reader must be in continuous scroll mode for TODO-982',
+          );
 
           final Future<dynamic> Function(String source)? runJs =
               ReaderFushiPage.debugEvaluateJavascript;
-          expect(runJs, isNotNull,
-              reason: 'reader must expose debugEvaluateJavascript hook');
+          expect(
+            runJs,
+            isNotNull,
+            reason: 'reader must expose debugEvaluateJavascript hook',
+          );
 
           // 健全性：我们已强制 horizontal-tb；确认 DOM 真生效（竖排无「句尾被底栏
           // 切」语义，本守卫只覆盖横排——产品修复亦只动横排分支）。
-          final Object? verticalRaw =
-              await runJs!('window.fushiReader.isVertical();');
+          final Object? verticalRaw = await runJs!(
+            'window.fushiReader.isVertical();',
+          );
           final bool vertical = verticalRaw == true || verticalRaw == 'true';
-          expect(vertical, isFalse,
-              reason: 'after forcing horizontal-tb, the chapter must render '
-                  'horizontally so the sentence-tail band semantics apply');
+          expect(
+            vertical,
+            isFalse,
+            reason:
+                'after forcing horizontal-tb, the chapter must render '
+                'horizontally so the sentence-tail band semantics apply',
+          );
 
           // 注入非零阅读底栏内边距（模拟底栏遮挡），让可见区底沿明显高于视口底。
           // 与产品 setChromeInsets 同一 CSS 变量；连续 scrollToCharOffset 句尾区间
@@ -196,7 +219,8 @@ void main() {
           // 的句子区间。用产品同一字符寻址（章内可匹配字符计数，createWalker 跳振假名）
           // 在真实 DOM 上探：从某个起始字符往后扩，直到句尾贴顶后的可视高度落在
           // (溢出底沿, 可见区高] 之间。纯几何探测，返回 [start, end]。
-          final String pickJson = await runJs(r'''
+          final String pickJson =
+              await runJs(r'''
             (function() {
               var rr = window.fushiReader;
               var walker = rr.createWalker();
@@ -247,19 +271,25 @@ void main() {
                 band:band, bandBottom:bandBottom, pt:pt, lineH:lineH,
                 targetExtent:targetExtent});
             })();
-          ''') as String;
+          ''')
+                  as String;
           debugPrint('[coll-jump] pick=$pickJson');
           final Map<String, dynamic> pick =
               jsonDecode(pickJson) as Map<String, dynamic>;
-          expect(pick['ok'], isTrue,
-              reason: 'must find a sentence range that overflows the band but '
-                  'still fits: $pickJson');
+          expect(
+            pick['ok'],
+            isTrue,
+            reason:
+                'must find a sentence range that overflows the band but '
+                'still fits: $pickJson',
+          );
           final int startOff = (pick['start'] as num).toInt();
           final int endOff = (pick['end'] as num).toInt();
 
           // 句尾 bottom 探针（与产品同口径：句尾字符 collapsed range top + 一行高）。
           Future<Map<String, dynamic>> probe() async {
-            final String raw = await runJs('''
+            final String raw =
+                await runJs('''
               (function() {
                 var rr = window.fushiReader;
                 var rootStyle = getComputedStyle(document.documentElement);
@@ -278,7 +308,8 @@ void main() {
                   bandBottom:bandBottom, scrollTop:
                   (document.scrollingElement||document.documentElement).scrollTop});
               })();
-            ''') as String;
+            ''')
+                    as String;
             return jsonDecode(raw) as Map<String, dynamic>;
           }
 
@@ -287,45 +318,62 @@ void main() {
           await tester.pump(const Duration(milliseconds: 400));
           final Map<String, dynamic> oldProbe = await probe();
           debugPrint('[coll-jump] OLD(start-only) probe=$oldProbe');
-          expect(oldProbe['ok'], isTrue,
-              reason: 'old-path probe must resolve the sentence tail');
-          final double oldTailBottom =
-              (oldProbe['tailBottom'] as num).toDouble();
-          final double oldBandBottom =
-              (oldProbe['bandBottom'] as num).toDouble();
-          expect(oldTailBottom, greaterThan(oldBandBottom),
-              reason:
-                  'pre-fix single-point anchor must leave the sentence tail '
-                  'BELOW the visible band bottom (cut off by reader chrome) — '
-                  'tail=$oldTailBottom bandBottom=$oldBandBottom; this proves the '
-                  'fixture sentence genuinely overflows so the guard is meaningful');
+          expect(
+            oldProbe['ok'],
+            isTrue,
+            reason: 'old-path probe must resolve the sentence tail',
+          );
+          final double oldTailBottom = (oldProbe['tailBottom'] as num)
+              .toDouble();
+          final double oldBandBottom = (oldProbe['bandBottom'] as num)
+              .toDouble();
+          expect(
+            oldTailBottom,
+            greaterThan(oldBandBottom),
+            reason:
+                'pre-fix single-point anchor must leave the sentence tail '
+                'BELOW the visible band bottom (cut off by reader chrome) — '
+                'tail=$oldTailBottom bandBottom=$oldBandBottom; this proves the '
+                'fixture sentence genuinely overflows so the guard is meaningful',
+          );
 
           // ── 正向断言：产品真实路径 restoreToCharOffset(start, end) ──
-          await runJs('window.fushiReader.restoreToCharOffset('
-              '$startOff, $endOff);');
+          await runJs(
+            'window.fushiReader.restoreToCharOffset('
+            '$startOff, $endOff);',
+          );
           await tester.pump(const Duration(milliseconds: 400));
           final Map<String, dynamic> newProbe = await probe();
           debugPrint('[coll-jump] NEW(range) probe=$newProbe');
-          expect(newProbe['ok'], isTrue,
-              reason: 'range-path probe must resolve the sentence tail');
-          final double newTailBottom =
-              (newProbe['tailBottom'] as num).toDouble();
-          final double newBandBottom =
-              (newProbe['bandBottom'] as num).toDouble();
+          expect(
+            newProbe['ok'],
+            isTrue,
+            reason: 'range-path probe must resolve the sentence tail',
+          );
+          final double newTailBottom = (newProbe['tailBottom'] as num)
+              .toDouble();
+          final double newBandBottom = (newProbe['bandBottom'] as num)
+              .toDouble();
 
           // 核心几何不变量（BUG-461）：跳转后整句句尾 bottom ≤ 可见区底沿（不被底栏切）。
           // 容差 1px 吸收亚像素/行高估算误差。
-          expect(newTailBottom, lessThanOrEqualTo(newBandBottom + 1.0),
-              reason: 'TODO-982 fix: after range-aware continuous jump, the '
-                  'sentence TAIL bottom ($newTailBottom) must sit at or above the '
-                  'visible content band bottom ($newBandBottom = innerHeight − '
-                  'chromeBottomInset), i.e. the whole sentence fits and the tail '
-                  'is NOT covered by the reader bottom chrome');
+          expect(
+            newTailBottom,
+            lessThanOrEqualTo(newBandBottom + 1.0),
+            reason:
+                'TODO-982 fix: after range-aware continuous jump, the '
+                'sentence TAIL bottom ($newTailBottom) must sit at or above the '
+                'visible content band bottom ($newBandBottom = innerHeight − '
+                'chromeBottomInset), i.e. the whole sentence fits and the tail '
+                'is NOT covered by the reader bottom chrome',
+          );
 
-          debugPrint('[coll-jump] PASS: continuous favorite-sentence jump fits '
-              'the whole sentence (tail $newTailBottom <= band $newBandBottom); '
-              'pre-fix single-point anchor cut the tail (old tail $oldTailBottom '
-              '> band $oldBandBottom).');
+          debugPrint(
+            '[coll-jump] PASS: continuous favorite-sentence jump fits '
+            'the whole sentence (tail $newTailBottom <= band $newBandBottom); '
+            'pre-fix single-point anchor cut the tail (old tail $oldTailBottom '
+            '> band $oldBandBottom).',
+          );
         },
       );
     },

@@ -17,12 +17,10 @@ import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 
-typedef AniDbTitleSearch = Future<List<AniDbTitleSearchResult>> Function(
-  String query,
-);
-typedef AnimeIdentityEntryLookup = Future<AnimeIdentityEntry?> Function(
-  int anidbId,
-);
+typedef AniDbTitleSearch =
+    Future<List<AniDbTitleSearchResult>> Function(String query);
+typedef AnimeIdentityEntryLookup =
+    Future<AnimeIdentityEntry?> Function(int anidbId);
 
 enum AnimeOfflineIdentityStatus { matched, ambiguous, notFound, unavailable }
 
@@ -45,6 +43,7 @@ class AnimeOfflineIdentity {
   final String queryTitle;
   final int? malId;
   final int? tmdbId;
+
   /// 作品形态（Fribb `type` / 命名空间推断），只作类型闸门用。
   final bool isMovie;
 
@@ -100,7 +99,7 @@ class AnimeOfflineIdentityResolution {
   });
 
   const AnimeOfflineIdentityResolution.notFound()
-      : this(status: AnimeOfflineIdentityStatus.notFound);
+    : this(status: AnimeOfflineIdentityStatus.notFound);
 
   final AnimeOfflineIdentityStatus status;
   final AnimeOfflineIdentity? identity;
@@ -115,17 +114,17 @@ class AnimeOfflineIdentityResolver {
     int searchLimit = 25,
     bool ownsCatalog = false,
     bool ownsMapping = false,
-  })  : search = ((String query) => catalog.search(query, limit: searchLimit)),
-        entryForAnidb = mapping.entryForAnidb,
-        _ownedCatalog = ownsCatalog ? catalog : null,
-        _ownedMapping = ownsMapping ? mapping : null;
+  }) : search = ((String query) => catalog.search(query, limit: searchLimit)),
+       entryForAnidb = mapping.entryForAnidb,
+       _ownedCatalog = ownsCatalog ? catalog : null,
+       _ownedMapping = ownsMapping ? mapping : null;
 
   /// 测试与装配用：直接注入两个查询函数。
   const AnimeOfflineIdentityResolver.custom({
     required this.search,
     required this.entryForAnidb,
-  })  : _ownedCatalog = null,
-        _ownedMapping = null;
+  }) : _ownedCatalog = null,
+       _ownedMapping = null;
 
   final AniDbTitleSearch search;
   final AnimeIdentityEntryLookup entryForAnidb;
@@ -175,7 +174,7 @@ class AnimeOfflineIdentityResolver {
             reason: gated.isEmpty
                 ? 'AniDB title "$title" matches only entries of another media type'
                 : 'AniDB title "$title" matches ${gated.length} anime: '
-                    '${gated.map((_Candidate c) => c.result.record.animeId).join(', ')}',
+                      '${gated.map((_Candidate c) => c.result.record.animeId).join(', ')}',
           );
         }
         final _Candidate single = gated.single;

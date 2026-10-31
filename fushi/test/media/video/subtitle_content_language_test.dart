@@ -21,8 +21,10 @@ String _ass(List<String> lines) {
     ..writeln('[Script Info]')
     ..writeln('Title: x')
     ..writeln('[Events]')
-    ..writeln('Format: Layer, Start, End, Style, Name, MarginL, MarginR, '
-        'MarginV, Effect, Text');
+    ..writeln(
+      'Format: Layer, Start, End, Style, Name, MarginL, MarginR, '
+      'MarginV, Effect, Text',
+    );
   for (final String line in lines) {
     sb.writeln('Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,$line');
   }
@@ -49,33 +51,34 @@ void main() {
   group('detectSubtitleContentLanguage', () {
     test('假名足量 → 日语', () {
       expect(
-        detectSubtitleContentLanguage(_srt(<String>[
-          'こんにちは、世界',
-          '今日はいい天気ですね',
-        ])),
+        detectSubtitleContentLanguage(_srt(<String>['こんにちは、世界', '今日はいい天気ですね'])),
         SubtitleContentLanguage.japanese,
       );
     });
 
     test('日语字幕里的汉字拟声行不构成双语（行数与总量双门槛）', () {
       expect(
-        detectSubtitleContentLanguage(_srt(<String>[
-          'それでは、始めましょう',
-          'あの音は何だろう',
-          '物音', // 单个无假名汉字行：不是中文轨
-          'きっと風の音ですよ',
-        ])),
+        detectSubtitleContentLanguage(
+          _srt(<String>[
+            'それでは、始めましょう',
+            'あの音は何だろう',
+            '物音', // 单个无假名汉字行：不是中文轨
+            'きっと風の音ですよ',
+          ]),
+        ),
         SubtitleContentLanguage.japanese,
       );
     });
 
     test('逐行日文+中文（\\N 双语）→ 中日双语', () {
       expect(
-        detectSubtitleContentLanguage(_ass(<String>[
-          r'おはようございます\N早上好各位观众朋友们',
-          r'今日はいい天気ですね\N今天天气真不错啊朋友',
-          r'それでは始めましょう\N那么我们现在就开始吧',
-        ])),
+        detectSubtitleContentLanguage(
+          _ass(<String>[
+            r'おはようございます\N早上好各位观众朋友们',
+            r'今日はいい天気ですね\N今天天气真不错啊朋友',
+            r'それでは始めましょう\N那么我们现在就开始吧',
+          ]),
+        ),
         SubtitleContentLanguage.bilingualJaZh,
       );
     });
@@ -115,29 +118,27 @@ void main() {
 
     test('简体正文 → 简体中文', () {
       expect(
-        detectSubtitleContentLanguage(_srt(<String>[
-          '这个时间点我们还没开始',
-          '他们说这样也可以',
-        ])),
+        detectSubtitleContentLanguage(
+          _srt(<String>['这个时间点我们还没开始', '他们说这样也可以']),
+        ),
         SubtitleContentLanguage.simplifiedChinese,
       );
     });
 
     test('繁体正文 → 繁體中文', () {
       expect(
-        detectSubtitleContentLanguage(_srt(<String>[
-          '這個時間點我們還沒開始',
-          '他們說這樣也可以',
-        ])),
+        detectSubtitleContentLanguage(
+          _srt(<String>['這個時間點我們還沒開始', '他們說這樣也可以']),
+        ),
         SubtitleContentLanguage.traditionalChinese,
       );
     });
 
     test('拉丁字母足量 → 英语', () {
       expect(
-        detectSubtitleContentLanguage(_srt(<String>[
-          'The quick brown fox jumps over the lazy dog',
-        ])),
+        detectSubtitleContentLanguage(
+          _srt(<String>['The quick brown fox jumps over the lazy dog']),
+        ),
         SubtitleContentLanguage.english,
       );
     });

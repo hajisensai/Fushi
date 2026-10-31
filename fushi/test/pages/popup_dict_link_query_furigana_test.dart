@@ -24,64 +24,93 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2) 源码——两处调用点都经 linkVisibleBaseText、不再直接拿 textContent 当查询词；
 ///    浏览器扩展的两份 vendor 镜像带同一 helper。没有 node 也成立。
 void main() {
-  test('dict-body link with furigana sends base text as the query (node)',
-      () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS behavior execution');
-      return;
-    }
+  test(
+    'dict-body link with furigana sends base text as the query (node)',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped(
+          'node not found on PATH; skipping JS behavior execution',
+        );
+        return;
+      }
 
-    final File jsTest =
-        File('test/pages/popup_dict_link_query_furigana_test.js');
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
+      final File jsTest = File(
+        'test/pages/popup_dict_link_query_furigana_test.js',
+      );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
 
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
-    );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
-    expect(
-      result.exitCode,
-      0,
-      reason: 'BUG-2456 link query JS behavior test failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-    expect(
-      result.stdout.toString(),
-      contains('all assertions passed'),
-      reason: 'behavior harness must reach its success marker',
-    );
-  });
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'BUG-2456 link query JS behavior test failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
+    },
+  );
 
   test('both link query sites go through linkVisibleBaseText (source)', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
-    expect(js.contains('function linkVisibleBaseText('), isTrue,
-        reason: 'popup.js must define the base-text extractor');
+    expect(
+      js.contains('function linkVisibleBaseText('),
+      isTrue,
+      reason: 'popup.js must define the base-text extractor',
+    );
 
     final String anchorHandler = _functionBody(js, 'handleGlossaryAnchorClick');
-    expect(anchorHandler.contains('linkVisibleBaseText(anchor)'), isTrue,
-        reason: 'MDX anchor path must take the query from linkVisibleBaseText');
-    expect(anchorHandler.contains('anchor.textContent'), isFalse,
-        reason: 'MDX anchor path must not use raw textContent as the query '
-            '(it carries <rt> readings and the .ruby-reserve twin)');
+    expect(
+      anchorHandler.contains('linkVisibleBaseText(anchor)'),
+      isTrue,
+      reason: 'MDX anchor path must take the query from linkVisibleBaseText',
+    );
+    expect(
+      anchorHandler.contains('anchor.textContent'),
+      isFalse,
+      reason:
+          'MDX anchor path must not use raw textContent as the query '
+          '(it carries <rt> readings and the .ruby-reserve twin)',
+    );
 
     // 结构化内容链接：定位 onclick 里的 query 计算段。
     // BUG-3762 起这条分支还要先过 href 的危险 scheme 判定。
     final int hrefIdx = js.indexOf('if (node.href && ');
     expect(hrefIdx, greaterThanOrEqualTo(0));
     final int queryIdx = js.indexOf('const query = node.href.indexOf', hrefIdx);
-    expect(queryIdx, greaterThan(hrefIdx),
-        reason: 'structured-content link must still compute query from href');
+    expect(
+      queryIdx,
+      greaterThan(hrefIdx),
+      reason: 'structured-content link must still compute query from href',
+    );
     final String querySite = js.substring(queryIdx, js.indexOf(';', queryIdx));
-    expect(querySite.contains("get('query')"), isTrue,
-        reason: '?query= stays authoritative');
-    expect(querySite.contains('linkVisibleBaseText(element)'), isTrue,
-        reason: 'fallbacks must come from linkVisibleBaseText');
-    expect(querySite.contains('element.textContent'), isFalse,
-        reason: 'no raw textContent fallback for the query');
+    expect(
+      querySite.contains("get('query')"),
+      isTrue,
+      reason: '?query= stays authoritative',
+    );
+    expect(
+      querySite.contains('linkVisibleBaseText(element)'),
+      isTrue,
+      reason: 'fallbacks must come from linkVisibleBaseText',
+    );
+    expect(
+      querySite.contains('element.textContent'),
+      isFalse,
+      reason: 'no raw textContent fallback for the query',
+    );
 
     // 过滤集必须与 wrapExpressionInlineKanji 的 walker 一致。
     final String helper = _functionBody(js, 'linkVisibleBaseText');
@@ -91,8 +120,11 @@ void main() {
       "'ruby-rt'",
       "'ruby-reserve'",
     ]) {
-      expect(helper.contains(needle), isTrue,
-          reason: 'linkVisibleBaseText must skip $needle');
+      expect(
+        helper.contains(needle),
+        isTrue,
+        reason: 'linkVisibleBaseText must skip $needle',
+      );
     }
 
     for (final String vendor in <String>[
@@ -100,8 +132,11 @@ void main() {
       '../tools/browser-extension/vendor/popup.js',
     ]) {
       final String vendorJs = File(vendor).readAsStringSync();
-      expect(vendorJs.contains('function linkVisibleBaseText('), isTrue,
-          reason: '$vendor must carry the same helper (byte-locked mirror)');
+      expect(
+        vendorJs.contains('function linkVisibleBaseText('),
+        isTrue,
+        reason: '$vendor must carry the same helper (byte-locked mirror)',
+      );
     }
   });
 }
@@ -125,8 +160,9 @@ String _functionBody(String src, String name) {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

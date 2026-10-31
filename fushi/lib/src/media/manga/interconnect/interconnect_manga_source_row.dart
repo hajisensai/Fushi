@@ -77,12 +77,12 @@ class _InterconnectMangaSourceRowState
         trailing: const FushiIcon(FushiIcons.chevronRight),
         onTap: enabled
             ? () => Navigator.of(context).push(
-                  adaptivePageRoute<void>(
-                    context: context,
-                    builder: (BuildContext context) =>
-                        const InterconnectMangaBrowsePage(),
-                  ),
-                )
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (BuildContext context) =>
+                      const InterconnectMangaBrowsePage(),
+                ),
+              )
             : null,
       ),
     );

@@ -90,7 +90,8 @@ List<String> resolveShaderPathsIn(Directory dir, List<String> enabledNames) {
 
 /// 异步包装 [resolveShaderPathsIn]：用默认着色器目录解析启用集为绝对路径。
 Future<List<String>> resolveEnabledShaderPaths(
-    List<String> enabledNames) async {
+  List<String> enabledNames,
+) async {
   return resolveShaderPathsIn(await mpvShaderDirectory(), enabledNames);
 }
 
@@ -292,15 +293,18 @@ List<List<String>> buildShaderChangeListCommands(List<String> absolutePaths) {
 /// `command` 在移动端也写穿、着色器进渲染管线，**不是移动端 no-op**。best-effort：仅在
 /// `player.platform` 非 libmpv（无 `command`）或命令不被接受时静默吞掉。
 Future<void> applyShadersToPlayer(
-    Player player, List<String> absolutePaths) async {
+  Player player,
+  List<String> absolutePaths,
+) async {
   // media_kit 的原生后端是 NativePlayer（libmpv），五平台一致，暴露 command(List<String>)
   // → mpv_command。用 dynamic 避免硬耦合 media_kit 内部导出；这是外部播放器边界，失败即
   // 静默是合理降级（见上方 doc）。移动端走 vo=gpu 渲染路径，命令同样生效，不按平台门控。
   final dynamic native = player.platform;
   if (native == null) return;
   try {
-    for (final List<String> cmd
-        in buildShaderChangeListCommands(absolutePaths)) {
+    for (final List<String> cmd in buildShaderChangeListCommands(
+      absolutePaths,
+    )) {
       await native.command(cmd);
     }
   } catch (_) {

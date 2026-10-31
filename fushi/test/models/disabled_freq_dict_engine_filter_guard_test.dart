@@ -33,8 +33,11 @@ void main() {
 
   setUpAll(() {
     final File f = File('lib/src/models/app_model.dart');
-    expect(f.existsSync(), isTrue,
-        reason: 'app_model.dart not found at ${f.absolute.path}');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: 'app_model.dart not found at ${f.absolute.path}',
+    );
     src = f.readAsStringSync();
   });
 
@@ -58,33 +61,44 @@ void main() {
   }
 
   test(
-      '_rebuildDictPathsCache skips hidden dictionaries when collecting '
-      'freq/pitch paths (disabled frequency dict must not enter the engine)',
-      () {
-    final String body = bodyOf('void _rebuildDictPathsCache(');
-    expect(body.contains('isHidden'), isTrue,
-        reason: 'the sync path-cache rebuild must consult isHidden(...) so a '
+    '_rebuildDictPathsCache skips hidden dictionaries when collecting '
+    'freq/pitch paths (disabled frequency dict must not enter the engine)',
+    () {
+      final String body = bodyOf('void _rebuildDictPathsCache(');
+      expect(
+        body.contains('isHidden'),
+        isTrue,
+        reason:
+            'the sync path-cache rebuild must consult isHidden(...) so a '
             'disabled frequency/pitch dictionary is not loaded into the FFI '
-            'engine (BUG-178).');
-  });
+            'engine (BUG-178).',
+      );
+    },
+  );
 
-  test(
-      '_rebuildDictPathsCacheAsync skips hidden dictionaries when collecting '
+  test('_rebuildDictPathsCacheAsync skips hidden dictionaries when collecting '
       'freq/pitch paths', () {
     final String body = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
-    expect(body.contains('isHidden'), isTrue,
-        reason: 'the async path-cache rebuild must also consult isHidden(...) '
-            'for the same reason (BUG-178).');
+    expect(
+      body.contains('isHidden'),
+      isTrue,
+      reason:
+          'the async path-cache rebuild must also consult isHidden(...) '
+          'for the same reason (BUG-178).',
+    );
   });
 
-  test(
-      'toggleDictionaryHidden clears the dictionary result cache so a stale '
+  test('toggleDictionaryHidden clears the dictionary result cache so a stale '
       'popupJson does not keep resurfacing the disabled dictionary', () {
     final String body = bodyOf('Future<void> toggleDictionaryHidden(');
-    expect(body.contains('clearDictionaryResultsCache'), isTrue,
-        reason: 'toggling visibility must invalidate cached search results, '
-            'otherwise a cached popupJson built while the dictionary was still '
-            'enabled keeps showing its frequency/pitch values (BUG-178). This '
-            'mirrors the delete paths that already clear the cache (BUG-171).');
+    expect(
+      body.contains('clearDictionaryResultsCache'),
+      isTrue,
+      reason:
+          'toggling visibility must invalidate cached search results, '
+          'otherwise a cached popupJson built while the dictionary was still '
+          'enabled keeps showing its frequency/pitch values (BUG-178). This '
+          'mirrors the delete paths that already clear the cache (BUG-171).',
+    );
   });
 }

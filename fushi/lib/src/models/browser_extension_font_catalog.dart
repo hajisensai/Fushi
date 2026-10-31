@@ -37,8 +37,8 @@ class BrowserExtensionFontCatalog implements ExtensionFontApi {
   FontDownloadService? _service;
 
   FontDownloadService get _fontService => _service ??= FontDownloadService(
-        fontsDir: customFontsDirectory(_appModel.appDirectory),
-      );
+    fontsDir: customFontsDirectory(_appModel.appDirectory),
+  );
 
   Future<ReaderSettings> _settings() async {
     ReaderSettings? settings = ReaderFushiSource.readerSettings;
@@ -117,8 +117,9 @@ class BrowserExtensionFontCatalog implements ExtensionFontApi {
   Future<ExtensionFontDownloadOutcome> downloadRecommended(String name) {
     final Future<ExtensionFontDownloadOutcome>? running = _inFlight[name];
     if (running != null) return running;
-    final Future<ExtensionFontDownloadOutcome> job =
-        _downloadRecommended(name).whenComplete(() => _inFlight.remove(name));
+    final Future<ExtensionFontDownloadOutcome> job = _downloadRecommended(
+      name,
+    ).whenComplete(() => _inFlight.remove(name));
     _inFlight[name] = job;
     return job;
   }
@@ -172,7 +173,9 @@ class BrowserExtensionFontCatalog implements ExtensionFontApi {
     // （反馈 biLEesNqWb：那个配置的查词弹窗按它自己的字体渲染）。仍只认字体目录里的文件。
     final String canonical = p.canonicalize(safePath);
     if (!configuredDictionaryFontPaths(_appModel).contains(canonical) &&
-        !_appModel.extensionProfileViewDictionaryFontPaths.contains(canonical)) {
+        !_appModel.extensionProfileViewDictionaryFontPaths.contains(
+          canonical,
+        )) {
       return null;
     }
     final File file = File(safePath);
@@ -223,8 +226,8 @@ class BrowserExtensionFontCatalog implements ExtensionFontApi {
     final Set<String> addedPaths = <String>{
       for (final ImportedFontFile file in files) file.path,
     };
-    return _entriesOf(customFontCatalogRowsFromState(state))
-        .where((ExtensionFontEntry e) => addedPaths.contains(e.path))
-        .toList();
+    return _entriesOf(
+      customFontCatalogRowsFromState(state),
+    ).where((ExtensionFontEntry e) => addedPaths.contains(e.path)).toList();
   }
 }

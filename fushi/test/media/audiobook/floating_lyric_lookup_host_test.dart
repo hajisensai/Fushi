@@ -26,8 +26,9 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 /// 真的压一个搜索中的目标，而不是只翻一个标志位。
 DictionaryPopupController _searchingController({bool seedWarm = false}) {
   const Rect rect = Rect.fromLTWH(10, 10, 1, 1);
-  final DictionaryPopupController popup =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController popup = DictionaryPopupController(
+    lowMemory: false,
+  );
   if (seedWarm) popup.seedWarmSlot();
   final DictionaryPopupEntry target = popup.beginTop(
     term: 'テスト',
@@ -86,29 +87,41 @@ void main() {
 
   group('shouldBlockHitTest 命中拦截判据（热槽常驻后不得误拦）', () {
     test('热槽存在但无可见弹窗 → 不拦截命中（核心回归场景）', () {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false)..seedWarmSlot();
-      expect(popup.entries, isNotEmpty,
-          reason: '前置：热槽常驻后 entries 永不空（旧判据在此必然误拦）');
+      final DictionaryPopupController popup = DictionaryPopupController(
+        lowMemory: false,
+      )..seedWarmSlot();
+      expect(
+        popup.entries,
+        isNotEmpty,
+        reason: '前置：热槽常驻后 entries 永不空（旧判据在此必然误拦）',
+      );
       expect(popup.hasVisiblePopup, isFalse);
-      expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isFalse,
-          reason: '隐身热槽（停屏外预热）不得拦截底下页面/悬浮歌词的点击');
+      expect(
+        FloatingLyricLookupHost.shouldBlockHitTest(popup),
+        isFalse,
+        reason: '隐身热槽（停屏外预热）不得拦截底下页面/悬浮歌词的点击',
+      );
       popup.dispose();
     });
 
     test('搜索期占位显示 → 拦截；endSearchUi 后放行', () {
-      final DictionaryPopupController popup =
-          _searchingController(seedWarm: true);
-      expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isTrue,
-          reason: '搜索期加载占位卡在屏上，本层要参与命中');
+      final DictionaryPopupController popup = _searchingController(
+        seedWarm: true,
+      );
+      expect(
+        FloatingLyricLookupHost.shouldBlockHitTest(popup),
+        isTrue,
+        reason: '搜索期加载占位卡在屏上，本层要参与命中',
+      );
       popup.endSearchUi();
       expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isFalse);
       popup.dispose();
     });
 
     test('弹窗可见 → 拦截；dismiss 回隐身热槽 → 放行', () {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupController popup = DictionaryPopupController(
+        lowMemory: false,
+      )..seedWarmSlot();
       final DictionaryPopupEntry e = popup.beginTop(
         term: 'あ',
         rect: const Rect.fromLTWH(1, 2, 3, 4),
@@ -121,31 +134,45 @@ void main() {
       expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isTrue);
       popup.dismissAt(0);
       expect(popup.entries, isNotEmpty, reason: '热槽保留（隐身复位）');
-      expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isFalse,
-          reason: '关栈后热槽仍在但已隐身，必须立刻放行命中');
+      expect(
+        FloatingLyricLookupHost.shouldBlockHitTest(popup),
+        isFalse,
+        reason: '关栈后热槽仍在但已隐身，必须立刻放行命中',
+      );
       popup.dispose();
     });
   });
 
   group('宿主接线源码守卫（BUG-094/135 热槽预热）', () {
-    final String src =
-        File('lib/src/media/audiobook/floating_lyric_lookup_host.dart')
-            .readAsStringSync();
+    final String src = File(
+      'lib/src/media/audiobook/floating_lyric_lookup_host.dart',
+    ).readAsStringSync();
 
     test('IgnorePointer 判据走 shouldBlockHitTest，不再用 entries.isNotEmpty', () {
       expect(
-          src, contains('FloatingLyricLookupHost.shouldBlockHitTest(_popup)'),
-          reason: 'build 必须用可见性判据决定是否拦截命中');
-      expect(src.contains('_popup.entries.isNotEmpty'), isFalse,
-          reason: '热槽常驻后 entries.isNotEmpty 判据 = 永久吃掉点击（回归）');
+        src,
+        contains('FloatingLyricLookupHost.shouldBlockHitTest(_popup)'),
+        reason: 'build 必须用可见性判据决定是否拦截命中',
+      );
+      expect(
+        src.contains('_popup.entries.isNotEmpty'),
+        isFalse,
+        reason: '热槽常驻后 entries.isNotEmpty 判据 = 永久吃掉点击（回归）',
+      );
     });
 
     test('热槽 seed + 顶层查词 reuseWarmSlot + Stack Clip.none', () {
-      expect(src, contains('seedWarmSlot('),
-          reason: '本表面必须 seed 常驻热槽，否则每次查词 WebView 冷载');
+      expect(
+        src,
+        contains('seedWarmSlot('),
+        reason: '本表面必须 seed 常驻热槽，否则每次查词 WebView 冷载',
+      );
       expect(src, contains('reuseWarmSlot: true'), reason: '顶层查词必须原地复用热槽');
-      expect(src, contains('clipBehavior: Clip.none'),
-          reason: '停屏外的隐藏热槽会被默认 hardEdge 裁掉而失温');
+      expect(
+        src,
+        contains('clipBehavior: Clip.none'),
+        reason: '停屏外的隐藏热槽会被默认 hardEdge 裁掉而失温',
+      );
     });
   });
 
@@ -172,10 +199,10 @@ void main() {
       required VoidCallback onUnderTap,
     }) {
       Widget opaqueBlock(Color color) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {},
-            child: ColoredBox(color: color),
-          );
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: ColoredBox(color: color),
+      );
       return Directionality(
         textDirection: TextDirection.ltr,
         child: Stack(
@@ -224,35 +251,47 @@ void main() {
       final DictionaryPopupController popup = _searchingController();
       addTearDown(popup.dispose);
       int underTaps = 0;
-      await tester.pumpWidget(harness(
-        popup: popup,
-        childrenYielded: false,
-        onUnderTap: () => underTaps++,
-      ));
+      await tester.pumpWidget(
+        harness(
+          popup: popup,
+          childrenYielded: false,
+          onUnderTap: () => underTaps++,
+        ),
+      );
       await tester.pump();
       await tester.tapAt(const Offset(50, 50));
       await tester.pump();
       expect(underTaps, 0, reason: 'harness 若连"子项吃点击"都复现不了，下一条的穿透就证明不了任何东西');
     });
 
-    testWidgets('对话框期间：ignoring 仍为 false，但点击照常穿到底下',
-        (WidgetTester tester) async {
+    testWidgets('对话框期间：ignoring 仍为 false，但点击照常穿到底下', (
+      WidgetTester tester,
+    ) async {
       final DictionaryPopupController popup = _searchingController();
       addTearDown(popup.dispose);
-      expect(FloatingLyricLookupHost.shouldBlockHitTest(popup), isTrue,
-          reason: '前置：对话框不改变搜索状态，本判据仍为真 ⇒ ignoring == false');
+      expect(
+        FloatingLyricLookupHost.shouldBlockHitTest(popup),
+        isTrue,
+        reason: '前置：对话框不改变搜索状态，本判据仍为真 ⇒ ignoring == false',
+      );
       int underTaps = 0;
-      await tester.pumpWidget(harness(
-        popup: popup,
-        childrenYielded: true,
-        onUnderTap: () => underTaps++,
-      ));
+      await tester.pumpWidget(
+        harness(
+          popup: popup,
+          childrenYielded: true,
+          onUnderTap: () => underTaps++,
+        ),
+      );
       await tester.pump();
       await tester.tapAt(const Offset(50, 50));
       await tester.pump();
-      expect(underTaps, 1,
-          reason: '子项都已让位（占位卡零尺寸 / 弹窗层停屏外），Stack 自身 hitTestSelf '
-              '恒假 ⇒ `ignoring: false` 不拦截任何东西，给它再与一次计数是纯对称性改动');
+      expect(
+        underTaps,
+        1,
+        reason:
+            '子项都已让位（占位卡零尺寸 / 弹窗层停屏外），Stack 自身 hitTestSelf '
+            '恒假 ⇒ `ignoring: false` 不拦截任何东西，给它再与一次计数是纯对称性改动',
+      );
     });
   });
 }

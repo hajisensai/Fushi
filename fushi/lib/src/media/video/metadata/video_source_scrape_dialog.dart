@@ -26,18 +26,17 @@ Future<void> showVideoSourceScrapeTaskPanel({
   Future<SourceLibraryRow?> Function(int sourceId)? loadSource,
   Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
   bool showAiIdentify = true,
-}) =>
-    showAppDialog<void>(
-      context: context,
-      builder: (BuildContext context) => _VideoSourceScrapeTaskPanel(
-        controller: controller,
-        loadRuns: loadRuns,
-        onRetry: onRetry,
-        loadSource: loadSource,
-        loadPendingWorks: loadPendingWorks,
-        showAiIdentify: showAiIdentify,
-      ),
-    );
+}) => showAppDialog<void>(
+  context: context,
+  builder: (BuildContext context) => _VideoSourceScrapeTaskPanel(
+    controller: controller,
+    loadRuns: loadRuns,
+    onRetry: onRetry,
+    loadSource: loadSource,
+    loadPendingWorks: loadPendingWorks,
+    showAiIdentify: showAiIdentify,
+  ),
+);
 
 class _VideoSourceScrapeTaskPanel extends StatefulWidget {
   const _VideoSourceScrapeTaskPanel({
@@ -101,7 +100,8 @@ class _VideoSourceScrapeTaskPanelState
 
   void _changed() {
     final VideoSourceScrapePhase next = widget.controller.progress.phase;
-    final bool becameTerminal = next != _lastPhase &&
+    final bool becameTerminal =
+        next != _lastPhase &&
         !widget.controller.progress.isRunning &&
         next != VideoSourceScrapePhase.idle;
     _lastPhase = next;
@@ -324,7 +324,8 @@ class _VideoSourceScrapeTaskPanelState
     ];
     // 进场窗口跟着「当前在看什么」走：换到下一部待确认作品 / 批次结束出报告时
     // 重开一次，新的一屏也错峰进场；进度刷新（同一阶段）不重播。
-    final Object replayKey = confirmation ??
+    final Object replayKey =
+        confirmation ??
         report ??
         (widget.controller.isScanning ? 'scanning' : progress.phase);
     return FushiEntranceScope(
@@ -392,8 +393,9 @@ class _VideoSourceScrapeTaskPanelState
               if (percent != null)
                 Text(
                   '$percent%',
-                  style: type.headlineSmallEmphasized.tabular
-                      .copyWith(color: onCard),
+                  style: type.headlineSmallEmphasized.tabular.copyWith(
+                    color: onCard,
+                  ),
                 ),
             ],
           ),
@@ -415,10 +417,13 @@ class _VideoSourceScrapeTaskPanelState
     final double? value = total <= 0 ? null : progress.current / total;
     final String phase = _phaseLabel(progress.phase);
     // 说明行落在 [_buildStatusCard] 的饱和卡上：跟卡片配对前景。
-    final Color? onCard =
-        fushiCardToneColors(context, _phaseTone(progress.phase))?.onContainer;
-    final TextStyle detailStyle =
-        context.fushiType.bodyMedium.copyWith(color: onCard);
+    final Color? onCard = fushiCardToneColors(
+      context,
+      _phaseTone(progress.phase),
+    )?.onContainer;
+    final TextStyle detailStyle = context.fushiType.bodyMedium.copyWith(
+      color: onCard,
+    );
     return _buildStatusCard(
       icon: _phaseIcon(progress.phase),
       tone: _phaseTone(progress.phase),
@@ -532,8 +537,8 @@ class _VideoSourceScrapeTaskPanelState
                   'video-source-pending-reason-${entry.work.stableKey}',
                 ),
               ),
-              trailing: pending ||
-                      _bindingStableKeys.contains(entry.work.stableKey)
+              trailing:
+                  pending || _bindingStableKeys.contains(entry.work.stableKey)
                   ? FushiTag(
                       dense: true,
                       tone: FushiTagTone.accent,
@@ -570,13 +575,11 @@ class _VideoSourceScrapeTaskPanelState
 
   String _queuedSubtitle(
     VideoSourceScrapeManualRequest request,
-  ) =>
-      switch (request.lookup) {
-        final VideoMetadataLookup lookup =>
-          '${request.source.label} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
-        null =>
-          '${request.source.label} · ${t.video_source_scrape_ai_identify}',
-      };
+  ) => switch (request.lookup) {
+    final VideoMetadataLookup lookup =>
+      '${request.source.label} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
+    null => '${request.source.label} · ${t.video_source_scrape_ai_identify}',
+  };
 
   /// 「AI 识别」：对这一部重跑识别并强制重问 AI（歧义时在候选里挑、查无时
   /// 让 AI 给正式标题再搜）。入口对没指派 AI 的用户也可见，点了只引导去
@@ -612,12 +615,12 @@ class _VideoSourceScrapeTaskPanelState
   Future<void> _bindPendingWork(VideoPendingScrapeWork entry) async {
     final VideoSourceScrapeConfirmationCandidate? candidate =
         await showVideoSourceScrapeManualBindingDialog(
-      context: context,
-      controller: widget.controller,
-      source: entry.source,
-      workTitle: entry.work.title,
-      workStableKey: entry.work.stableKey,
-    );
+          context: context,
+          controller: widget.controller,
+          source: entry.source,
+          workTitle: entry.work.title,
+          workStableKey: entry.work.stableKey,
+        );
     if (candidate == null || !mounted) return;
     await _runPendingWork(
       entry,
@@ -705,15 +708,16 @@ class _VideoSourceScrapeTaskPanelState
               subtitle: Text(_runSubtitle(run)),
               subtitleMaxLines: 3,
               onTap: () => unawaited(_openRunDetail(run)),
-              trailing: widget.onRetry != null &&
+              trailing:
+                  widget.onRetry != null &&
                       run.sourceId != null &&
                       scrapeRunHasUnresolvedWorks(run)
                   ? FushiIconButtonControl(
                       tooltip: t.video_source_scrape_rescrape_source,
                       onPressed:
                           _retrying.contains(run.id) || widget.controller.isBusy
-                              ? null
-                              : () => unawaited(_retry(run)),
+                          ? null
+                          : () => unawaited(_retry(run)),
                       icon: _retrying.contains(run.id)
                           ? const SizedBox.square(
                               dimension: 18,
@@ -803,58 +807,57 @@ class _VideoSourceScrapeTaskPanelState
   }
 
   String _phaseLabel(VideoSourceScrapePhase phase) => switch (phase) {
-        VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
-        VideoSourceScrapePhase.recognizing =>
-          t.video_source_scrape_phase_recognizing,
-        VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
-        VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
-        VideoSourceScrapePhase.writingSidecars =>
-          t.video_source_scrape_phase_writing_sidecars,
-        VideoSourceScrapePhase.completed => t.download_task_status_completed,
-        VideoSourceScrapePhase.cancelled => t.download_status_cancelled,
-        VideoSourceScrapePhase.interrupted =>
-          t.video_source_scrape_status_interrupted,
-        VideoSourceScrapePhase.failed => t.download_task_status_error,
-        VideoSourceScrapePhase.idle => t.video_source_scrape_tasks_empty,
-      };
+    VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
+    VideoSourceScrapePhase.recognizing =>
+      t.video_source_scrape_phase_recognizing,
+    VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
+    VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
+    VideoSourceScrapePhase.writingSidecars =>
+      t.video_source_scrape_phase_writing_sidecars,
+    VideoSourceScrapePhase.completed => t.download_task_status_completed,
+    VideoSourceScrapePhase.cancelled => t.download_status_cancelled,
+    VideoSourceScrapePhase.interrupted =>
+      t.video_source_scrape_status_interrupted,
+    VideoSourceScrapePhase.failed => t.download_task_status_error,
+    VideoSourceScrapePhase.idle => t.video_source_scrape_tasks_empty,
+  };
 
   IconData _runIcon(String status) => switch (status) {
-        'completed' => FushiIcons.success,
-        'failed' => FushiIcons.error,
-        'cancelled' => FushiIcons.block,
-        'interrupted' => FushiIcons.pause,
-        _ => FushiIcons.sync,
-      };
+    'completed' => FushiIcons.success,
+    'failed' => FushiIcons.error,
+    'cancelled' => FushiIcons.block,
+    'interrupted' => FushiIcons.pause,
+    _ => FushiIcons.sync,
+  };
 
   FushiCardTone _runTone(String status) => switch (status) {
-        'completed' => FushiCardTone.primary,
-        'failed' => FushiCardTone.error,
-        'cancelled' || 'interrupted' => FushiCardTone.neutral,
-        _ => FushiCardTone.tertiary,
-      };
+    'completed' => FushiCardTone.primary,
+    'failed' => FushiCardTone.error,
+    'cancelled' || 'interrupted' => FushiCardTone.neutral,
+    _ => FushiCardTone.tertiary,
+  };
 
   IconData _phaseIcon(VideoSourceScrapePhase phase) => switch (phase) {
-        VideoSourceScrapePhase.completed => FushiIcons.success,
-        VideoSourceScrapePhase.failed => FushiIcons.error,
-        VideoSourceScrapePhase.cancelled => FushiIcons.block,
-        VideoSourceScrapePhase.interrupted => FushiIcons.pause,
-        VideoSourceScrapePhase.idle => FushiIcons.schedule,
-        VideoSourceScrapePhase.planning => FushiIcons.checklist,
-        VideoSourceScrapePhase.recognizing => FushiIcons.manageSearch,
-        VideoSourceScrapePhase.fetching => FushiIcons.cloudDownload,
-        VideoSourceScrapePhase.applying => FushiIcons.save,
-        VideoSourceScrapePhase.writingSidecars => FushiIcons.file,
-      };
+    VideoSourceScrapePhase.completed => FushiIcons.success,
+    VideoSourceScrapePhase.failed => FushiIcons.error,
+    VideoSourceScrapePhase.cancelled => FushiIcons.block,
+    VideoSourceScrapePhase.interrupted => FushiIcons.pause,
+    VideoSourceScrapePhase.idle => FushiIcons.schedule,
+    VideoSourceScrapePhase.planning => FushiIcons.checklist,
+    VideoSourceScrapePhase.recognizing => FushiIcons.manageSearch,
+    VideoSourceScrapePhase.fetching => FushiIcons.cloudDownload,
+    VideoSourceScrapePhase.applying => FushiIcons.save,
+    VideoSourceScrapePhase.writingSidecars => FushiIcons.file,
+  };
 
   FushiCardTone _phaseTone(VideoSourceScrapePhase phase) => switch (phase) {
-        VideoSourceScrapePhase.completed => FushiCardTone.primary,
-        VideoSourceScrapePhase.failed => FushiCardTone.error,
-        VideoSourceScrapePhase.cancelled ||
-        VideoSourceScrapePhase.interrupted ||
-        VideoSourceScrapePhase.idle =>
-          FushiCardTone.neutral,
-        _ => FushiCardTone.primary,
-      };
+    VideoSourceScrapePhase.completed => FushiCardTone.primary,
+    VideoSourceScrapePhase.failed => FushiCardTone.error,
+    VideoSourceScrapePhase.cancelled ||
+    VideoSourceScrapePhase.interrupted ||
+    VideoSourceScrapePhase.idle => FushiCardTone.neutral,
+    _ => FushiCardTone.primary,
+  };
 
   /// 待确认区块的行：说明卡 + 分段候选卡（AI 倾向的那条带置信度色块）。
   List<Widget> _confirmationRows(VideoSourceScrapeConfirmation confirmation) {
@@ -869,8 +872,10 @@ class _VideoSourceScrapeTaskPanelState
 
     final FushiTypography type = context.fushiType;
     // 说明卡是 tertiary 饱和色块：fushiType 自带页面前景，需显式跟卡片配对前景。
-    final Color? onCard =
-        fushiCardToneColors(context, FushiCardTone.tertiary)?.onContainer;
+    final Color? onCard = fushiCardToneColors(
+      context,
+      FushiCardTone.tertiary,
+    )?.onContainer;
     final int count = confirmation.candidates.length;
     return <Widget>[
       FushiCard(
@@ -955,8 +960,10 @@ class _VideoSourceScrapeTaskPanelState
           Text(
             _reportSummary(report),
             style: context.fushiType.bodyMedium.copyWith(
-              color:
-                  fushiCardToneColors(context, _phaseTone(phase))?.onContainer,
+              color: fushiCardToneColors(
+                context,
+                _phaseTone(phase),
+              )?.onContainer,
             ),
           ),
           // 「本批待确认」只数这一批新判出的歧义；早就在清单里的作品（后台补刮
@@ -972,16 +979,17 @@ class _VideoSourceScrapeTaskPanelState
                 'video-source-report-pending-backlog',
               ),
               style: context.fushiType.bodyMedium.copyWith(
-                color: fushiCardToneColors(context, _phaseTone(phase))
-                    ?.onContainer,
+                color: fushiCardToneColors(
+                  context,
+                  _phaseTone(phase),
+                )?.onContainer,
               ),
             ),
             const SizedBox(height: 8),
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: Builder(
-                builder: (BuildContext context) =>
-                    FushiFilledButton.tonalIcon(
+                builder: (BuildContext context) => FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>(
                     'video-source-report-pending-open',
                   ),
@@ -1016,7 +1024,7 @@ class _VideoSourceScrapeTaskPanelState
               issues[index].$1.path == null
                   ? describeVideoScrapeIssueMessage(issues[index].$1.message)
                   : '${describeVideoScrapeIssueMessage(issues[index].$1.message)}'
-                      '\n${issues[index].$1.path}',
+                        '\n${issues[index].$1.path}',
             ),
           ),
         ),

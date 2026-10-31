@@ -52,8 +52,9 @@ import '../helpers/source_guard.dart';
 // Forbidden coordinate-interaction calls. tapAt/longPress included; drag and
 // fling are deliberately excluded (legitimate scrolling).
 // ---------------------------------------------------------------------------
-final RegExp kForbiddenTap =
-    RegExp(r'(?:tester|widgetTester)\.(?:tap|tapAt|longPress)\(');
+final RegExp kForbiddenTap = RegExp(
+  r'(?:tester|widgetTester)\.(?:tap|tapAt|longPress)\(',
+);
 
 /// A `// itest-tap-allow: <reason>` marker exempts a deliberate, documented
 /// coordinate tap. A bare marker without a reason after the colon is
@@ -94,8 +95,11 @@ void main() {
 
   test('integration_test uses focus driving, never tester.tap/longPress', () {
     final Directory dir = Directory('integration_test');
-    expect(dir.existsSync(), isTrue,
-        reason: 'run from the fushi/ package root (cwd=fushi/)');
+    expect(
+      dir.existsSync(),
+      isTrue,
+      reason: 'run from the fushi/ package root (cwd=fushi/)',
+    );
 
     final List<String> hardOffenders = <String>[];
     final Map<String, int> perFileCounts = <String, int>{};
@@ -106,8 +110,9 @@ void main() {
       final String relative = entity.path.replaceAll(r'\', '/');
       scanned++;
 
-      for (final int line
-          in unexcusedCoordinateTapLines(entity.readAsStringSync())) {
+      for (final int line in unexcusedCoordinateTapLines(
+        entity.readAsStringSync(),
+      )) {
         perFileCounts[relative] = (perFileCounts[relative] ?? 0) + 1;
         if (!legacyAllowlist.containsKey(relative)) {
           hardOffenders.add('${entity.path}:$line');
@@ -115,14 +120,19 @@ void main() {
       }
     }
 
-    expectScanScale(scanned,
-        what: 'integration_test/ 下的 .dart', atLeast: 60, measured: 87);
+    expectScanScale(
+      scanned,
+      what: 'integration_test/ 下的 .dart',
+      atLeast: 60,
+      measured: 87,
+    );
 
     // 1) No coordinate taps in files outside the temporary allowlist.
     expect(
       hardOffenders,
       isEmpty,
-      reason: 'Coordinate taps are forbidden in integration tests — they break '
+      reason:
+          'Coordinate taps are forbidden in integration tests — they break '
           'on any layout/scroll/scale/platform change. Drive the app with '
           'FocusDriver (focusWidget + activate/back/adjust) from '
           'integration_test/helpers/focus_driver.dart instead. If a tap is '
@@ -137,13 +147,19 @@ void main() {
     for (final MapEntry<String, int> e in legacyAllowlist.entries) {
       final int actual = perFileCounts[e.key] ?? 0;
       if (actual > e.value) {
-        overBudget.add('${e.key}: recorded ${e.value}, found $actual '
-            '(do not add new coordinate taps to a migrating file)');
+        overBudget.add(
+          '${e.key}: recorded ${e.value}, found $actual '
+          '(do not add new coordinate taps to a migrating file)',
+        );
       }
     }
-    expect(overBudget, isEmpty,
-        reason: 'New coordinate taps added to a file pending migration:\n'
-            '${overBudget.join('\n')}');
+    expect(
+      overBudget,
+      isEmpty,
+      reason:
+          'New coordinate taps added to a file pending migration:\n'
+          '${overBudget.join('\n')}',
+    );
 
     // 3) Allowlist must stay tight: a listed file that now has *fewer* (or no)
     //    offenders means migration progressed — decrement / remove the entry so
@@ -152,14 +168,20 @@ void main() {
     for (final MapEntry<String, int> e in legacyAllowlist.entries) {
       final int actual = perFileCounts[e.key] ?? 0;
       if (actual < e.value) {
-        stale.add('${e.key}: recorded ${e.value}, found $actual — '
-            'decrement to $actual or remove the entry');
+        stale.add(
+          '${e.key}: recorded ${e.value}, found $actual — '
+          'decrement to $actual or remove the entry',
+        );
       }
     }
-    expect(stale, isEmpty,
-        reason: 'Stale allowlist entries — migration progressed but the '
-            'recorded count was not lowered. The scaffold must shrink to '
-            'empty:\n${stale.join('\n')}');
+    expect(
+      stale,
+      isEmpty,
+      reason:
+          'Stale allowlist entries — migration progressed but the '
+          'recorded count was not lowered. The scaffold must shrink to '
+          'empty:\n${stale.join('\n')}',
+    );
   });
 
   // TODO-2715: the scan above is a forbid-type assertion that is permanently
@@ -167,24 +189,34 @@ void main() {
   // hand-written sources through the same function, both directions.
   group('detector self-check (hand-written sources, no disk involved)', () {
     test('a bare coordinate tap is a violation', () {
+      expect(unexcusedCoordinateTapLines('await tester.tap(finder);'), <int>[
+        1,
+      ]);
+      expect(unexcusedCoordinateTapLines('await tester.tapAt(offset);'), <int>[
+        1,
+      ]);
       expect(
-          unexcusedCoordinateTapLines('await tester.tap(finder);'), <int>[1]);
-      expect(
-          unexcusedCoordinateTapLines('await tester.tapAt(offset);'), <int>[1]);
-      expect(unexcusedCoordinateTapLines('await widgetTester.longPress(f);'),
-          <int>[1]);
+        unexcusedCoordinateTapLines('await widgetTester.longPress(f);'),
+        <int>[1],
+      );
     });
 
     test('a commented-out tap is not a violation (false-red direction)', () {
       expect(
-          unexcusedCoordinateTapLines('// await tester.tap(finder);'), isEmpty);
-      expect(unexcusedCoordinateTapLines('/* await tester.tap(finder); */'),
-          isEmpty);
+        unexcusedCoordinateTapLines('// await tester.tap(finder);'),
+        isEmpty,
+      );
+      expect(
+        unexcusedCoordinateTapLines('/* await tester.tap(finder); */'),
+        isEmpty,
+      );
       expect(
         unexcusedCoordinateTapLines(
-            '/// Drive by focus; never `await tester.tap(finder)`.'),
+          '/// Drive by focus; never `await tester.tap(finder)`.',
+        ),
         isEmpty,
-        reason: 'this is exactly why focus_driver.dart used to need a '
+        reason:
+            'this is exactly why focus_driver.dart used to need a '
             'whole-file exemption',
       );
     });
@@ -192,7 +224,8 @@ void main() {
     test('a marker with a reason excuses the tap, a bare marker does not', () {
       expect(
         unexcusedCoordinateTapLines(
-            'await tester.tap(f); // itest-tap-allow: platform WebView'),
+          'await tester.tap(f); // itest-tap-allow: platform WebView',
+        ),
         isEmpty,
       );
       expect(
@@ -216,8 +249,10 @@ await tester.tap(
 
     test('drag/fling stay legal (scrolling has no focus equivalent)', () {
       expect(unexcusedCoordinateTapLines('await tester.drag(f, o);'), isEmpty);
-      expect(unexcusedCoordinateTapLines('await tester.fling(f, o, 300);'),
-          isEmpty);
+      expect(
+        unexcusedCoordinateTapLines('await tester.fling(f, o, 300);'),
+        isEmpty,
+      );
     });
   });
 }

@@ -41,8 +41,11 @@ Uint8List _toneWav() {
   ascii(36, 'data');
   bytes.setUint32(40, samples * 2, Endian.little);
   for (int i = 0; i < samples; i++) {
-    bytes.setInt16(44 + i * 2,
-        (4000 * math.sin(2 * math.pi * 440 * i / rate)).round(), Endian.little);
+    bytes.setInt16(
+      44 + i * 2,
+      (4000 * math.sin(2 * math.pi * 440 * i / rate)).round(),
+      Endian.little,
+    );
   }
   return bytes.buffer.asUint8List();
 }
@@ -50,20 +53,32 @@ Uint8List _toneWav() {
 void _writeAudioDb(File file, String term, Uint8List wav) {
   final sqlite.Database db = sqlite.sqlite3.open(file.path);
   try {
-    db.execute('CREATE TABLE entries '
-        '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+    db.execute(
+      'CREATE TABLE entries '
+      '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+    );
     db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
-    db.execute('INSERT INTO entries VALUES (?, ?, ?, ?)',
-        <Object?>[term, '', '$term.wav', 'cache-recovery-itest']);
-    db.execute('INSERT INTO android VALUES (?, ?, ?)',
-        <Object?>['$term.wav', 'cache-recovery-itest', wav]);
+    db.execute('INSERT INTO entries VALUES (?, ?, ?, ?)', <Object?>[
+      term,
+      '',
+      '$term.wav',
+      'cache-recovery-itest',
+    ]);
+    db.execute('INSERT INTO android VALUES (?, ?, ?)', <Object?>[
+      '$term.wav',
+      'cache-recovery-itest',
+      wav,
+    ]);
   } finally {
     db.dispose();
   }
 }
 
 Future<void> _verifyNativeAudio(
-    String term, Uint8List wav, Set<String> extractedFiles) async {
+  String term,
+  Uint8List wav,
+  Set<String> extractedFiles,
+) async {
   final TtsChannel channel = TtsChannel.instance;
   final Map<String, dynamic>? result = await channel.queryLocalAudio(term, '');
   expect(result, isNotNull, reason: 'Android native query must find fixture');
@@ -75,8 +90,11 @@ Future<void> _verifyNativeAudio(
   expect(extracted, isNotNull);
   extractedFiles.add(extracted!);
   expect(await File(extracted).readAsBytes(), orderedEquals(wav));
-  expect(await channel.playFile(extracted), isTrue,
-      reason: 'Real Android MediaPlayer must prepare and start valid WAV');
+  expect(
+    await channel.playFile(extracted),
+    isTrue,
+    reason: 'Real Android MediaPlayer must prepare and start valid WAV',
+  );
   await channel.stop();
   // 下一轮必须重新从库读取 BLOB，不能靠之前提取的文件证明恢复成功。
   await File(extracted).delete();
@@ -85,132 +103,156 @@ Future<void> _verifyNativeAudio(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-      'Android local audio survives cache removal and migrates old refs',
-      (WidgetTester tester) async {
-    expect(Platform.isAndroid, isTrue,
-        reason: 'Run this platform verification only on an Android emulator');
-    final bool previousAutoCheck = UpdateChecker.disableAutoCheckForTesting;
-    UpdateChecker.disableAutoCheckForTesting = true;
-    await launchFushiTestApp();
-    for (int i = 0;
+    'Android local audio survives cache removal and migrates old refs',
+    (WidgetTester tester) async {
+      expect(
+        Platform.isAndroid,
+        isTrue,
+        reason: 'Run this platform verification only on an Android emulator',
+      );
+      final bool previousAutoCheck = UpdateChecker.disableAutoCheckForTesting;
+      UpdateChecker.disableAutoCheckForTesting = true;
+      await launchFushiTestApp();
+      for (
+        int i = 0;
         i < 120 && find.byType(MaterialApp).evaluate().isEmpty;
-        i++) {
-      await tester.pump(const Duration(milliseconds: 500));
-    }
-    final AppModel appModel = await readyAppModel(tester);
-    final LocalAudioManager manager = LocalAudioManager(
-      prefsRepo: appModel.prefsRepo,
-      databaseDirectory: appModel.databaseDirectory,
-    );
-    final Map<String, String> snapshot = appModel.prefsRepo.prefsSnapshot;
-    const List<String> changedKeys = <String>[
-      'local_audio_dbs',
-      'local_audio_db_path',
-      'local_audio_db_display_name',
-      'audio_source_configs',
-      'audio_sources',
-    ];
-    final Directory fixture = await appModel.temporaryDirectory
-        .createTemp('local_audio_cache_recovery_itest_');
-    final Set<String> generatedDbs = <String>{};
-    final Set<String> extractedFiles = <String>{};
-    final Uint8List wav = _toneWav();
-    final String suffix = DateTime.now().microsecondsSinceEpoch.toString();
-    try {
-      // 本测试会触发生产 pruneOrphans，故仅允许干净的模拟器音频库配置。
-      expect(appModel.localAudioDbs, isEmpty,
-          reason:
-              'Use an isolated emulator with no user local audio databases');
-      final File source = File(path.join(fixture.path, 'copied.db'));
-      final String copyTerm = 'cachecopy$suffix';
-      _writeAudioDb(source, copyTerm, wav);
-      final LocalAudioDbEntry imported = await appModel.importLocalAudioDbFile(
-          source.path,
-          displayName: 'cache-copy-itest-$suffix',
-          reference: false);
-      generatedDbs.add(imported.path);
-      expect(path.isWithin(appModel.databaseDirectory.path, imported.path),
-          isTrue);
-      await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
-        AudioSourceConfig.localAudio(
-            label: imported.displayName, path: imported.path, enabled: true),
-      ]);
-      await _verifyNativeAudio(copyTerm, wav, extractedFiles);
-      await source.delete();
-      await appModel.prefsRepo.loadFromDb();
-      await manager.bindForNativeHandler();
-      await _verifyNativeAudio(copyTerm, wav, extractedFiles);
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      final AppModel appModel = await readyAppModel(tester);
+      final LocalAudioManager manager = LocalAudioManager(
+        prefsRepo: appModel.prefsRepo,
+        databaseDirectory: appModel.databaseDirectory,
+      );
+      final Map<String, String> snapshot = appModel.prefsRepo.prefsSnapshot;
+      const List<String> changedKeys = <String>[
+        'local_audio_dbs',
+        'local_audio_db_path',
+        'local_audio_db_display_name',
+        'audio_source_configs',
+        'audio_sources',
+      ];
+      final Directory fixture = await appModel.temporaryDirectory.createTemp(
+        'local_audio_cache_recovery_itest_',
+      );
+      final Set<String> generatedDbs = <String>{};
+      final Set<String> extractedFiles = <String>{};
+      final Uint8List wav = _toneWav();
+      final String suffix = DateTime.now().microsecondsSinceEpoch.toString();
+      try {
+        // 本测试会触发生产 pruneOrphans，故仅允许干净的模拟器音频库配置。
+        expect(
+          appModel.localAudioDbs,
+          isEmpty,
+          reason: 'Use an isolated emulator with no user local audio databases',
+        );
+        final File source = File(path.join(fixture.path, 'copied.db'));
+        final String copyTerm = 'cachecopy$suffix';
+        _writeAudioDb(source, copyTerm, wav);
+        final LocalAudioDbEntry imported = await appModel
+            .importLocalAudioDbFile(
+              source.path,
+              displayName: 'cache-copy-itest-$suffix',
+              reference: false,
+            );
+        generatedDbs.add(imported.path);
+        expect(
+          path.isWithin(appModel.databaseDirectory.path, imported.path),
+          isTrue,
+        );
+        await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+          AudioSourceConfig.localAudio(
+            label: imported.displayName,
+            path: imported.path,
+            enabled: true,
+          ),
+        ]);
+        await _verifyNativeAudio(copyTerm, wav, extractedFiles);
+        await source.delete();
+        await appModel.prefsRepo.loadFromDb();
+        await manager.bindForNativeHandler();
+        await _verifyNativeAudio(copyTerm, wav, extractedFiles);
 
-      final File legacy = File(path.join(fixture.path, 'legacy.db'));
-      final String legacyTerm = 'cachelegacy$suffix';
-      _writeAudioDb(legacy, legacyTerm, wav);
-      final LocalAudioDbEntry legacyEntry = LocalAudioDbEntry(
+        final File legacy = File(path.join(fixture.path, 'legacy.db'));
+        final String legacyTerm = 'cachelegacy$suffix';
+        _writeAudioDb(legacy, legacyTerm, wav);
+        final LocalAudioDbEntry legacyEntry = LocalAudioDbEntry(
           path: legacy.path,
           displayName: 'cache-legacy-itest-$suffix',
           enabled: true,
           sources: const <LocalAudioSourcePref>[
             LocalAudioSourcePref(name: 'cache-recovery-itest'),
-          ]);
-      // 直接播种旧版本持久化形状；不能用新导入函数提前消除旧缓存引用。
-      await appModel.prefsRepo.setPrefs(<String, dynamic>{
-        'local_audio_dbs': jsonEncode(<Map<String, dynamic>>[
-          imported.toJson(),
-          legacyEntry.toJson(),
-        ]),
-        'audio_source_configs': <Map<String, dynamic>>[
-          AudioSourceConfig.localAudio(
-                  label: imported.displayName,
-                  path: imported.path,
-                  enabled: true)
-              .toJson(),
-          AudioSourceConfig.localAudio(
-                  label: legacyEntry.displayName,
-                  path: legacy.path,
-                  enabled: true)
-              .toJson(),
-        ],
-      });
-      await manager.migrateTemporaryReferences(appModel.temporaryDirectory);
-      final LocalAudioDbEntry migrated = manager.entries.last;
-      generatedDbs.add(migrated.path);
-      expect(migrated.path, isNot(legacy.path));
-      expect(migrated.sources, legacyEntry.sources);
-      expect(
+          ],
+        );
+        // 直接播种旧版本持久化形状；不能用新导入函数提前消除旧缓存引用。
+        await appModel.prefsRepo.setPrefs(<String, dynamic>{
+          'local_audio_dbs': jsonEncode(<Map<String, dynamic>>[
+            imported.toJson(),
+            legacyEntry.toJson(),
+          ]),
+          'audio_source_configs': <Map<String, dynamic>>[
+            AudioSourceConfig.localAudio(
+              label: imported.displayName,
+              path: imported.path,
+              enabled: true,
+            ).toJson(),
+            AudioSourceConfig.localAudio(
+              label: legacyEntry.displayName,
+              path: legacy.path,
+              enabled: true,
+            ).toJson(),
+          ],
+        });
+        await manager.migrateTemporaryReferences(appModel.temporaryDirectory);
+        final LocalAudioDbEntry migrated = manager.entries.last;
+        generatedDbs.add(migrated.path);
+        expect(migrated.path, isNot(legacy.path));
+        expect(migrated.sources, legacyEntry.sources);
+        expect(
           appModel.audioSourceConfigs
-              .where((AudioSourceConfig source) =>
-                  source.kind == AudioSourceKind.localAudio)
+              .where(
+                (AudioSourceConfig source) =>
+                    source.kind == AudioSourceKind.localAudio,
+              )
               .last
               .path,
-          migrated.path);
-      expect(await legacy.exists(), isTrue);
-      await legacy.delete();
-      await appModel.prefsRepo.loadFromDb();
-      await manager.migrateTemporaryReferences(appModel.temporaryDirectory);
-      expect(manager.entries.last.path, migrated.path);
-      await manager.bindForNativeHandler();
-      await _verifyNativeAudio(legacyTerm, wav, extractedFiles);
-    } finally {
-      await TtsChannel.instance.stop();
-      await TtsChannel.instance.setLocalAudioDbs(const <LocalAudioDbConfig>[]);
-      await appModel.database.setPrefs(<String, String>{
-        for (final String key in changedKeys)
-          if (snapshot.containsKey(key)) key: snapshot[key]!,
-      });
-      for (final String key in changedKeys) {
-        if (!snapshot.containsKey(key)) await appModel.database.deletePref(key);
-      }
-      await appModel.prefsRepo.loadFromDb();
-      await manager.bindForNativeHandler();
-      for (final String filename in generatedDbs) {
-        if (path.isWithin(appModel.databaseDirectory.path, filename)) {
-          await LocalAudioManager.deleteFiles(filename);
+          migrated.path,
+        );
+        expect(await legacy.exists(), isTrue);
+        await legacy.delete();
+        await appModel.prefsRepo.loadFromDb();
+        await manager.migrateTemporaryReferences(appModel.temporaryDirectory);
+        expect(manager.entries.last.path, migrated.path);
+        await manager.bindForNativeHandler();
+        await _verifyNativeAudio(legacyTerm, wav, extractedFiles);
+      } finally {
+        await TtsChannel.instance.stop();
+        await TtsChannel.instance.setLocalAudioDbs(
+          const <LocalAudioDbConfig>[],
+        );
+        await appModel.database.setPrefs(<String, String>{
+          for (final String key in changedKeys)
+            if (snapshot.containsKey(key)) key: snapshot[key]!,
+        });
+        for (final String key in changedKeys) {
+          if (!snapshot.containsKey(key))
+            await appModel.database.deletePref(key);
         }
+        await appModel.prefsRepo.loadFromDb();
+        await manager.bindForNativeHandler();
+        for (final String filename in generatedDbs) {
+          if (path.isWithin(appModel.databaseDirectory.path, filename)) {
+            await LocalAudioManager.deleteFiles(filename);
+          }
+        }
+        for (final String filename in extractedFiles) {
+          if (await File(filename).exists()) await File(filename).delete();
+        }
+        if (await fixture.exists()) await fixture.delete(recursive: true);
+        UpdateChecker.disableAutoCheckForTesting = previousAutoCheck;
       }
-      for (final String filename in extractedFiles) {
-        if (await File(filename).exists()) await File(filename).delete();
-      }
-      if (await fixture.exists()) await fixture.delete(recursive: true);
-      UpdateChecker.disableAutoCheckForTesting = previousAutoCheck;
-    }
-  }, timeout: const Timeout(Duration(minutes: 4)));
+    },
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
 }

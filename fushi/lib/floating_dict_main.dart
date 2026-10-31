@@ -18,28 +18,31 @@ const _overlayChannel = MethodChannel('app.fushi.reader/floating_overlay');
 
 @pragma('vm:entry-point')
 void floatingDictMain() {
-  runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-    final platformServices = PlatformServices.forCurrentPlatform();
-    final container = ProviderContainer(
-      overrides: [
-        platformServicesProvider.overrideWithValue(platformServices),
-      ],
-    );
-    final appModel = container.read(appProvider);
+      final platformServices = PlatformServices.forCurrentPlatform();
+      final container = ProviderContainer(
+        overrides: [
+          platformServicesProvider.overrideWithValue(platformServices),
+        ],
+      );
+      final appModel = container.read(appProvider);
 
-    runApp(
-      UncontrolledProviderScope(
-        container: container,
-        child: const FloatingDictApp(channel: _overlayChannel),
-      ),
-    );
+      runApp(
+        UncontrolledProviderScope(
+          container: container,
+          child: const FloatingDictApp(channel: _overlayChannel),
+        ),
+      );
 
-    unawaited(appModel.initialiseForDictionaryPopup());
-  }, (exception, stack) {
-    debugPrint('[Fushi-floatingDict] uncaught: $exception\n$stack');
-  });
+      unawaited(appModel.initialiseForDictionaryPopup());
+    },
+    (exception, stack) {
+      debugPrint('[Fushi-floatingDict] uncaught: $exception\n$stack');
+    },
+  );
 }
 
 class FloatingDictApp extends ConsumerStatefulWidget {
@@ -111,8 +114,9 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       // （主题色 / 自定义主题 / 墨水屏 / 组件主题都跟着走）。以前这里写死默认
       // 种子色现造一份裸 ThemeData，悬浮词典因此无视用户的主题设置。
       theme: appModel.overrideDictionaryTheme ?? appModel.theme,
-      darkTheme:
-          appModel.overrideDictionaryTheme != null ? null : appModel.darkTheme,
+      darkTheme: appModel.overrideDictionaryTheme != null
+          ? null
+          : appModel.darkTheme,
       themeMode: appModel.overrideDictionaryTheme != null
           ? ThemeMode.light
           : appModel.themeMode,
@@ -120,8 +124,8 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       // 档位在这里自己挂（结构恒定，MD3 下也挂，见 [FushiGlassScope]）。
       builder: (BuildContext context, Widget? child) =>
           LegacyDesignCompatibility(
-        child: FushiGlassScope(child: child ?? const SizedBox.shrink()),
-      ),
+            child: FushiGlassScope(child: child ?? const SizedBox.shrink()),
+          ),
       home: FloatingDictPage(
         channel: widget.channel,
         pendingSearch: _pendingSearch,

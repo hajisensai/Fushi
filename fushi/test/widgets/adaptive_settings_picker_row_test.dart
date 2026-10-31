@@ -26,15 +26,17 @@ AdaptiveSettingsPickerRow<int> _row(int count, {required int selected}) {
 }
 
 void main() {
-  testWidgets('short option set stays inline (no chevron navigation row)',
-      (WidgetTester tester) async {
+  testWidgets('short option set stays inline (no chevron navigation row)', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(_harness(_row(3, selected: 0)));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
 
-  testWidgets('long option set renders a chevron row and pushes a full page',
-      (WidgetTester tester) async {
+  testWidgets('long option set renders a chevron row and pushes a full page', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(_row(kSettingsPickerInlineLimit + 1, selected: 0)),
     );
@@ -47,8 +49,9 @@ void main() {
     expect(find.text('Opt 5'), findsWidgets);
   });
 
-  testWidgets('selecting an entry on the full page reports the chosen value',
-      (WidgetTester tester) async {
+  testWidgets('selecting an entry on the full page reports the chosen value', (
+    WidgetTester tester,
+  ) async {
     int? chosen;
     await tester.pumpWidget(
       _harness(

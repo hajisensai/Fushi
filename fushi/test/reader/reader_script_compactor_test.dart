@@ -69,7 +69,9 @@ var s = 'a \` b';
 var e = 5;
 ''';
       expect(
-          ReaderScriptCompactor.compact(src), "var s = 'a \\` b';\nvar e = 5;");
+        ReaderScriptCompactor.compact(src),
+        "var s = 'a \\` b';\nvar e = 5;",
+      );
     });
   });
 
@@ -88,12 +90,13 @@ var z = 1;
 ''';
       // 模板串内部的空行必须原样留着；只有两行真注释被剥。
       expect(
-          ReaderScriptCompactor.compact(src),
-          'var css = `body {\n'
-          '\n'
-          '  color: red;\n'
-          '}`;\n'
-          'var z = 1;');
+        ReaderScriptCompactor.compact(src),
+        'var css = `body {\n'
+        '\n'
+        '  color: red;\n'
+        '}`;\n'
+        'var z = 1;',
+      );
     });
 
     test('块注释里的反引号同样不计数', () {
@@ -115,8 +118,10 @@ var t = `x
 
 y`;
 ''';
-      expect(ReaderScriptCompactor.compact(src),
-          'var a = "prefix ` suffix";\nvar t = `x\n\ny`;');
+      expect(
+        ReaderScriptCompactor.compact(src),
+        'var a = "prefix ` suffix";\nvar t = `x\n\ny`;',
+      );
     });
 
     test('正则字面量里的反引号不计数', () {
@@ -127,8 +132,10 @@ var t = `x
 
 y`;
 ''';
-      expect(ReaderScriptCompactor.compact(src),
-          'var re = /[`]/g;\nvar t = `x\n\ny`;');
+      expect(
+        ReaderScriptCompactor.compact(src),
+        'var re = /[`]/g;\nvar t = `x\n\ny`;',
+      );
     });
 
     test('模板 \${} 内是代码区：里面的整行注释该剥，模板数据行不剥', () {
@@ -142,13 +149,14 @@ var t = `head
 tail`;
 ''';
       expect(
-          ReaderScriptCompactor.compact(src),
-          'var t = `head\n'
-          '\${\n'
-          '  compute()\n'
-          '}\n'
-          '\n'
-          'tail`;');
+        ReaderScriptCompactor.compact(src),
+        'var t = `head\n'
+        '\${\n'
+        '  compute()\n'
+        '}\n'
+        '\n'
+        'tail`;',
+      );
     });
 
     test('scansCleanly 认得未闭合的模板串与块注释', () {
@@ -164,20 +172,16 @@ tail`;
     final Map<String, String> payloads = _realPayloads();
 
     test('覆盖到全部真实载荷（含体量最大的 pagination 与三种 shell）', () {
-      expect(
-        payloads.keys.toSet(),
-        <String>{
-          'selection',
-          'longPressDrag',
-          'caret',
-          'keyBridge.space',
-          'pagination.paginated',
-          'pagination.continuous',
-          'pagination.vn',
-          'engine',
-        },
-        reason: '新增参与拼装的 JS 载荷必须同时纳入本守卫，否则压缩器对它零覆盖',
-      );
+      expect(payloads.keys.toSet(), <String>{
+        'selection',
+        'longPressDrag',
+        'caret',
+        'keyBridge.space',
+        'pagination.paginated',
+        'pagination.continuous',
+        'pagination.vn',
+        'engine',
+      }, reason: '新增参与拼装的 JS 载荷必须同时纳入本守卫，否则压缩器对它零覆盖');
     });
 
     for (final MapEntry<String, String> entry in payloads.entries) {
@@ -185,24 +189,34 @@ tail`;
       final String src = entry.value;
 
       test('$name：词法扫描扫完干净', () {
-        expect(ReaderScriptCompactor.scansCleanly(src), isTrue,
-            reason: '$name 扫完后仍停在模板串 / 块注释 / \${} 内——要么脚本本身不完整，'
-                '要么有扫描器读不懂的写法。此时压缩结果不可信，禁止静默通过。');
+        expect(
+          ReaderScriptCompactor.scansCleanly(src),
+          isTrue,
+          reason:
+              '$name 扫完后仍停在模板串 / 块注释 / \${} 内——要么脚本本身不完整，'
+              '要么有扫描器读不懂的写法。此时压缩结果不可信，禁止静默通过。',
+        );
       });
 
       test('$name：只删空行与整行注释，一行代码都不许丢', () {
         final String out = ReaderScriptCompactor.compact(src);
         for (final String removed in _removedLines(src, out)) {
           final String trimmed = removed.trim();
-          expect(trimmed.isEmpty || trimmed.startsWith('//'), isTrue,
-              reason: '$name 被剥掉了非注释行：${_preview(removed)}');
+          expect(
+            trimmed.isEmpty || trimmed.startsWith('//'),
+            isTrue,
+            reason: '$name 被剥掉了非注释行：${_preview(removed)}',
+          );
         }
       });
 
       test('$name：幂等（再压一次不变）', () {
         final String once = ReaderScriptCompactor.compact(src);
-        expect(ReaderScriptCompactor.compact(once), once,
-            reason: '$name 二次压缩结果变化 = 词法状态在首次压缩后错位');
+        expect(
+          ReaderScriptCompactor.compact(once),
+          once,
+          reason: '$name 二次压缩结果变化 = 词法状态在首次压缩后错位',
+        );
       });
     }
 
@@ -217,8 +231,11 @@ tail`;
         final String src = payloads[name]!;
         final String out = ReaderScriptCompactor.compact(src);
         final double saved = 1 - out.length / src.length;
-        expect(saved, greaterThan(0.1),
-            reason: '$name 实测省 ${(saved * 100).toStringAsFixed(1)}%');
+        expect(
+          saved,
+          greaterThan(0.1),
+          reason: '$name 实测省 ${(saved * 100).toStringAsFixed(1)}%',
+        );
       }
     });
   });
@@ -249,21 +266,30 @@ tail`;
         ),
       };
       for (final MapEntry<String, String> entry in payloads.entries) {
-        expect(assembled, contains(entry.value),
-            reason: '${entry.key} 载荷没有整段出现在最终注入脚本里——'
-                '它没被拼进引擎，注入后整块功能是死的');
+        expect(
+          assembled,
+          contains(entry.value),
+          reason:
+              '${entry.key} 载荷没有整段出现在最终注入脚本里——'
+              '它没被拼进引擎，注入后整块功能是死的',
+        );
       }
       // 每种 view-mode 的引擎必须整段带上**自己那一份** shell。
       final Map<String, String> shells = <String, String>{
-        'paged':
-            _stripScriptTags(ReaderPaginationScripts.paginatedShellSource()),
-        'continuous':
-            _stripScriptTags(ReaderPaginationScripts.continuousShellSource()),
+        'paged': _stripScriptTags(
+          ReaderPaginationScripts.paginatedShellSource(),
+        ),
+        'continuous': _stripScriptTags(
+          ReaderPaginationScripts.continuousShellSource(),
+        ),
         'vn': _stripScriptTags(ReaderVisualNovelScripts.vnShellScript()),
       };
       shells.forEach((String mode, String shell) {
-        expect(assembledByMode[mode]!, contains(shell),
-            reason: '$mode 引擎没有整段带上自己那一份 shell');
+        expect(
+          assembledByMode[mode]!,
+          contains(shell),
+          reason: '$mode 引擎没有整段带上自己那一份 shell',
+        );
       });
     });
 
@@ -276,9 +302,13 @@ tail`;
         'keyBridge': "'onSpaceKey'",
       };
       for (final MapEntry<String, String> entry in sentinels.entries) {
-        expect(assembled, contains(entry.value),
-            reason: '最终注入脚本里找不到 ${entry.key} 的哨兵 ${entry.value}——'
-                '该载荷没被拼进引擎，注入后整块功能是死的');
+        expect(
+          assembled,
+          contains(entry.value),
+          reason:
+              '最终注入脚本里找不到 ${entry.key} 的哨兵 ${entry.value}——'
+              '该载荷没被拼进引擎，注入后整块功能是死的',
+        );
       }
     });
 
@@ -291,8 +321,11 @@ tail`;
         '__fushiTextSelectDragActive',
         "'onSpaceKey'",
       ]) {
-        expect(compacted, contains(sentinel),
-            reason: '压缩后 $sentinel 消失 = 压缩器剥掉了真代码');
+        expect(
+          compacted,
+          contains(sentinel),
+          reason: '压缩后 $sentinel 消失 = 压缩器剥掉了真代码',
+        );
       }
     });
   });
@@ -316,9 +349,15 @@ tail`;
           return;
         }
         final String after = await _nodeCheck(
-            nodeExe, entry.key, ReaderScriptCompactor.compact(src));
-        expect(after, isEmpty,
-            reason: '${entry.key} 压缩后解析失败 = 线上白屏。node 输出：\n$after');
+          nodeExe,
+          entry.key,
+          ReaderScriptCompactor.compact(src),
+        );
+        expect(
+          after,
+          isEmpty,
+          reason: '${entry.key} 压缩后解析失败 = 线上白屏。node 输出：\n$after',
+        );
       });
     }
   });
@@ -345,10 +384,12 @@ Map<String, String> _realPayloads() {
       handlerName: 'onSpaceKey',
       keys: const <String>[' '],
     ),
-    'pagination.paginated':
-        _stripScriptTags(ReaderPaginationScripts.paginatedShellSource()),
-    'pagination.continuous':
-        _stripScriptTags(ReaderPaginationScripts.continuousShellSource()),
+    'pagination.paginated': _stripScriptTags(
+      ReaderPaginationScripts.paginatedShellSource(),
+    ),
+    'pagination.continuous': _stripScriptTags(
+      ReaderPaginationScripts.continuousShellSource(),
+    ),
     'pagination.vn': _stripScriptTags(ReaderVisualNovelScripts.vnShellScript()),
     'engine': readerFushiEngineSourceUncompacted(),
   };
@@ -382,13 +423,16 @@ String _preview(String line) {
 
 /// 用 `node --check` 真解析一份 JS；返回空串 = 语法合法，否则返回 node 的报错。
 Future<String> _nodeCheck(String nodeExe, String label, String js) async {
-  final Directory dir =
-      await Directory.systemTemp.createTemp('fushi_js_check_');
+  final Directory dir = await Directory.systemTemp.createTemp(
+    'fushi_js_check_',
+  );
   try {
     final File file = File('${dir.path}/${label.replaceAll('.', '_')}.js');
     await file.writeAsString(js);
-    final ProcessResult result =
-        await Process.run(nodeExe, <String>['--check', file.path]);
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      '--check',
+      file.path,
+    ]);
     if (result.exitCode == 0) return '';
     final String err = result.stderr.toString().trim();
     return err.isEmpty ? 'exit=${result.exitCode}' : err;
@@ -398,8 +442,9 @@ Future<String> _nodeCheck(String nodeExe, String label, String js) async {
 }
 
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

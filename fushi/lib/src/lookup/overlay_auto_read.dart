@@ -30,9 +30,9 @@ class OverlayAutoRead {
     required OverlayScriptRunner render,
     required OverlayReadinessProbe isWebViewReady,
     required String label,
-  })  : _render = render,
-        _isWebViewReady = isWebViewReady,
-        _label = label;
+  }) : _render = render,
+       _isWebViewReady = isWebViewReady,
+       _label = label;
 
   final OverlayScriptRunner _render;
   final OverlayReadinessProbe _isWebViewReady;
@@ -68,24 +68,28 @@ class OverlayAutoRead {
     if (expression.isEmpty) {
       return;
     }
-    unawaited(LookupAutoReadCoordinator.instance.runAutomatic(
-      expression: expression,
-      reading: reading,
-      play: () => _playWordAudio(model, expression, reading),
-    ));
+    unawaited(
+      LookupAutoReadCoordinator.instance.runAutomatic(
+        expression: expression,
+        reading: reading,
+        play: () => _playWordAudio(model, expression, reading),
+      ),
+    );
   }
 
   /// 与 in-app _playAutoReadWord 同构：解析一次 ref，WebView 快路径优先、Dart
   /// 播放器兜底（autoReadWordUnified 单一真相）。返回是否真的出声，供协调器在
   /// 静默失败时释放 800ms 去重窗（BUG-1127）。
   Future<bool> _playWordAudio(
-          AppModel model, String expression, String reading) =>
-      autoReadWordUnified(
-        model,
-        expression,
-        reading,
-        playInWebView: playWordAudioUrl,
-      );
+    AppModel model,
+    String expression,
+    String reading,
+  ) => autoReadWordUnified(
+    model,
+    expression,
+    reading,
+    playInWebView: playWordAudioUrl,
+  );
 
   /// BUG-1127 — 在表面常驻 ROOT iframe 的 popup.js realm 里播放已解析的 URL，
   /// 回报 `audio.play()` 的真实结果（token + Completer + 5s 超时，镜像 in-app
@@ -108,9 +112,11 @@ class OverlayAutoRead {
     _pendingWordAudioPlays[token] = completer;
     try {
       await _render(
-          buildPlayWordAudioScript(kGlobalLookupRootFrameId, url, token));
-      final bool ok =
-          await completer.future.timeout(_kWordAudioPlayReportTimeout);
+        buildPlayWordAudioScript(kGlobalLookupRootFrameId, url, token),
+      );
+      final bool ok = await completer.future.timeout(
+        _kWordAudioPlayReportTimeout,
+      );
       glog('autoread($_label): webview play token=$token ok=$ok');
       return ok;
     } on TimeoutException {
@@ -130,15 +136,18 @@ class OverlayAutoRead {
   ///
   /// 返回 true = 已处理（调用方 `_onJsMessage` 直接 return）。
   bool maybeHandleWordAudioPlayed(
-      Object? handler, Map<String, Object?> message) {
+    Object? handler,
+    Map<String, Object?> message,
+  ) {
     if (handler != 'wordAudioPlayed') {
       return false;
     }
     final Object? args = message['args'];
     if (args is List && args.length >= 2) {
       final Object? rawToken = args[0];
-      final int? token =
-          rawToken is num ? rawToken.toInt() : int.tryParse('$rawToken');
+      final int? token = rawToken is num
+          ? rawToken.toInt()
+          : int.tryParse('$rawToken');
       if (token != null) {
         final bool ok = args[1] == true;
         // BUG-1204：失败原因（args[2]，旧 host 不带 → 空）落日志。没有它，
@@ -146,8 +155,10 @@ class OverlayAutoRead {
         // 而这三种的根因修法完全不同。成功不记，避免刷屏。
         if (!ok) {
           final String reason = (args.length >= 3 ? '${args[2]}' : '').trim();
-          glog('autoread($_label): webview play token=$token FAILED '
-              'reason=${reason.isEmpty ? 'unreported' : reason}');
+          glog(
+            'autoread($_label): webview play token=$token FAILED '
+            'reason=${reason.isEmpty ? 'unreported' : reason}',
+          );
         }
         final Completer<bool>? completer = _pendingWordAudioPlays.remove(token);
         if (completer != null && !completer.isCompleted) {

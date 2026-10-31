@@ -23,16 +23,17 @@ void main() {
   });
 
   test(
-      'missing optionals -> nulls, sentence falls back to fields, not immersion',
-      () {
-    final p = ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'sentence': 'fromfield'},
-    });
-    expect(p.timestampMs, isNull);
-    expect(p.screenshotBytes, isNull);
-    expect(p.sentence, 'fromfield');
-    expect(p.isImmersion, false);
-  });
+    'missing optionals -> nulls, sentence falls back to fields, not immersion',
+    () {
+      final p = ImmersionMinePayload.fromJson(<String, dynamic>{
+        'fields': <String, dynamic>{'sentence': 'fromfield'},
+      });
+      expect(p.timestampMs, isNull);
+      expect(p.screenshotBytes, isNull);
+      expect(p.sentence, 'fromfield');
+      expect(p.isImmersion, false);
+    },
+  );
 
   test('non-map fields throws FormatException', () {
     expect(
@@ -54,14 +55,15 @@ void main() {
   });
 
   test('parses youtubeVideoId + video-time window as immersion', () {
-    final ImmersionMinePayload p =
-        ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'sentence': 'これはテスト'},
-      'sentence': 'これはテスト',
-      'youtubeVideoId': 'dQw4w9WgXcQ',
-      'clipStartMs': 12000,
-      'clipEndMs': 15000,
-    });
+    final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+      <String, dynamic>{
+        'fields': <String, dynamic>{'sentence': 'これはテスト'},
+        'sentence': 'これはテスト',
+        'youtubeVideoId': 'dQw4w9WgXcQ',
+        'clipStartMs': 12000,
+        'clipEndMs': 15000,
+      },
+    );
     expect(p.youtubeVideoId, 'dQw4w9WgXcQ');
     expect(p.clipStartMs, 12000);
     expect(p.clipEndMs, 15000);
@@ -73,52 +75,61 @@ void main() {
   // 它不参与 isImmersion 判据（那是「有没有可裁原始流 + 时间窗」的问题），但少了它服务端就得
   // 匿名去打 playurl —— 大会员内容必然失败。
   test('parses clipSourcePlayurlBody for the bilibili-pgc path', () {
-    final ImmersionMinePayload p =
-        ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'sentence': '正道ではなく邪道'},
-      'clipSourceKind': 'bilibili-pgc',
-      'clipSourceId': '815751',
-      'clipSourcePlayurlBody': '{"code":0,"result":{"dash":{"audio":[]}}}',
-      'clipStartMs': 61000,
-      'clipEndMs': 64500,
-    });
+    final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+      <String, dynamic>{
+        'fields': <String, dynamic>{'sentence': '正道ではなく邪道'},
+        'clipSourceKind': 'bilibili-pgc',
+        'clipSourceId': '815751',
+        'clipSourcePlayurlBody': '{"code":0,"result":{"dash":{"audio":[]}}}',
+        'clipStartMs': 61000,
+        'clipEndMs': 64500,
+      },
+    );
     expect(p.clipSourceKind, 'bilibili-pgc');
     expect(p.clipSourceId, '815751');
-    expect(p.clipSourcePlayurlBody, '{"code":0,"result":{"dash":{"audio":[]}}}');
+    expect(
+      p.clipSourcePlayurlBody,
+      '{"code":0,"result":{"dash":{"audio":[]}}}',
+    );
     expect(p.isImmersion, isTrue);
   });
 
-  test('clipSourcePlayurlBody absent -> null (falls back to no clip source)',
-      () {
-    final ImmersionMinePayload p =
-        ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'sentence': 'x'},
-      'clipSourceKind': 'bilibili',
-      'clipSourceId': 'BV1Este6wExx',
-      'clipStartMs': 0,
-      'clipEndMs': 1000,
-    });
-    expect(p.clipSourcePlayurlBody, isNull);
-  });
+  test(
+    'clipSourcePlayurlBody absent -> null (falls back to no clip source)',
+    () {
+      final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+        <String, dynamic>{
+          'fields': <String, dynamic>{'sentence': 'x'},
+          'clipSourceKind': 'bilibili',
+          'clipSourceId': 'BV1Este6wExx',
+          'clipStartMs': 0,
+          'clipEndMs': 1000,
+        },
+      );
+      expect(p.clipSourcePlayurlBody, isNull);
+    },
+  );
 
   test('youtubeVideoId without a window is not immersion', () {
-    final ImmersionMinePayload p =
-        ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'sentence': 'x'},
-      'youtubeVideoId': 'abc',
-    });
+    final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+      <String, dynamic>{
+        'fields': <String, dynamic>{'sentence': 'x'},
+        'youtubeVideoId': 'abc',
+      },
+    );
     expect(p.youtubeVideoId, 'abc');
     expect(p.isImmersion, isFalse);
   });
 
   test('valid clipBase64 decodes to clipBytes', () {
     final String clip = base64Encode(<int>[10, 20, 30, 40]);
-    final ImmersionMinePayload p =
-        ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'expression': 'x'},
-      'clipBase64': clip,
-      'clipDurationMs': 8000,
-    });
+    final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+      <String, dynamic>{
+        'fields': <String, dynamic>{'expression': 'x'},
+        'clipBase64': clip,
+        'clipDurationMs': 8000,
+      },
+    );
     expect(p.clipBytes, <int>[10, 20, 30, 40]);
     expect(p.clipDurationMs, 8000);
     expect(p.isImmersion, true);
@@ -129,22 +140,23 @@ void main() {
   // 直接抛 FormatException → 整张卡 HTTP 400。根因已在 offscreen 修好；此处守卫服务端**容错**：
   // 坏的可选媒体 base64 一律降级为 null，绝不把整张卡 400 掉（只有 fields 缺失才是坏请求）。
   test(
-      'malformed clip/screenshot base64 -> null bytes, does NOT throw (no 400)',
-      () {
-    final ImmersionMinePayload p =
-        ImmersionMinePayload.fromJson(<String, dynamic>{
-      'fields': <String, dynamic>{'expression': 'x'},
-      'sentence': 's',
-      'clipBase64': 'opus;base64', // 旧 split bug 会产出的垃圾片段
-      'screenshotBase64': 'not*valid*base64!!',
-    });
-    expect(p.clipBytes, isNull);
-    expect(p.screenshotBytes, isNull);
-    expect(p.sentence, 's'); // 卡照常可组（文本），不因坏媒体失败
-  });
+    'malformed clip/screenshot base64 -> null bytes, does NOT throw (no 400)',
+    () {
+      final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+        <String, dynamic>{
+          'fields': <String, dynamic>{'expression': 'x'},
+          'sentence': 's',
+          'clipBase64': 'opus;base64', // 旧 split bug 会产出的垃圾片段
+          'screenshotBase64': 'not*valid*base64!!',
+        },
+      );
+      expect(p.clipBytes, isNull);
+      expect(p.screenshotBytes, isNull);
+      expect(p.sentence, 's'); // 卡照常可组（文本），不因坏媒体失败
+    },
+  );
 
-  test('normalizes form-encoded text without corrupting literal plus signs',
-      () {
+  test('normalizes form-encoded text without corrupting literal plus signs', () {
     final p = ImmersionMinePayload.fromJson(<String, dynamic>{
       'fields': <String, dynamic>{
         'glossary': '(明鏡国語辞典+第三版)+たい%E3%81%9D%E3%81%86',
@@ -154,7 +166,7 @@ void main() {
           '%E3%81%86%E3%82%8D%E8%A6%9A%E3%81%88%E3%83%A9%E3%82%B8%E3%82%AA%E4%BD%93%E6%93%8D%E3%81%A7%E3%82%82%E3%81%97%E3%82%88%E3%81%86%EF%BC%81',
       'documentTitle':
           '[Kamigami]+Himouto%21+Umaru-chan+-+10+%5B1920x1080+x264+AAC%5D\n'
-              '/var/mobile/Containers/Data/Application/ABC/Library/Caches/immersion_audio.aac',
+          '/var/mobile/Containers/Data/Application/ABC/Library/Caches/immersion_audio.aac',
     });
 
     expect(p.fields['glossary'], '(明鏡国語辞典 第三版) たいそう');
@@ -181,8 +193,7 @@ void main() {
       expect(p.clipSourceKind, 'bilibili');
       expect(p.clipSourceId, 'BV1Este6wExx');
       expect(p.clipSourcePart, 13);
-      expect(p.isImmersion, true,
-          reason: '有可裁源 + 时间窗就该走沉浸引擎，而不是退成纯文本卡');
+      expect(p.isImmersion, true, reason: '有可裁源 + 时间窗就该走沉浸引擎，而不是退成纯文本卡');
     });
 
     test('缺时间窗 / 缺 id 时不算沉浸（没有窗就没得裁）', () {
@@ -258,8 +269,11 @@ void main() {
         'sentence': 's',
       });
       expect(p.fields['audio'], dataUri);
-      expect(p.fields['audio'], isNot(contains(' ')),
-          reason: 'base64 的 + 被换成空格，落卡侧就会解码失败');
+      expect(
+        p.fields['audio'],
+        isNot(contains(' ')),
+        reason: 'base64 的 + 被换成空格，落卡侧就会解码失败',
+      );
     });
 
     test('端到端：解码出的字节与原始单词音频一致（不丢音频）', () {
@@ -272,10 +286,14 @@ void main() {
         },
         'sentence': 's',
       });
-      final AnkiAudioData? decoded =
-          AnkiAudioRef.decodeDataUri(p.fields['audio']!);
-      expect(decoded, isNotNull,
-          reason: '解码失败 = 落卡侧 AudioFetchOutcome.none() = 卡片没有单词音频');
+      final AnkiAudioData? decoded = AnkiAudioRef.decodeDataUri(
+        p.fields['audio']!,
+      );
+      expect(
+        decoded,
+        isNotNull,
+        reason: '解码失败 = 落卡侧 AudioFetchOutcome.none() = 卡片没有单词音频',
+      );
       expect(decoded!.bytes, bytes);
       expect(decoded.extension, 'mp3');
     });

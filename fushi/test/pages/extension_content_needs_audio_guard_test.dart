@@ -29,11 +29,18 @@ void main() {
 
       final int audioCount = audioInject.allMatches(src).length;
       final int needsCount = needsInject.allMatches(src).length;
-      expect(audioCount, greaterThan(0),
-          reason: 'content.js 应注入 window.audioSources');
-      expect(needsCount, greaterThanOrEqualTo(audioCount),
-          reason: '每处 audioSources 注入都必须伴随 window.needsAudio=true '
-              '（否则扩展制卡永远拿不到重新解析的单词音频，BUG-1005）');
+      expect(
+        audioCount,
+        greaterThan(0),
+        reason: 'content.js 应注入 window.audioSources',
+      );
+      expect(
+        needsCount,
+        greaterThanOrEqualTo(audioCount),
+        reason:
+            '每处 audioSources 注入都必须伴随 window.needsAudio=true '
+            '（否则扩展制卡永远拿不到重新解析的单词音频，BUG-1005）',
+      );
     });
   }
 }

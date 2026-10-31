@@ -22,31 +22,47 @@ void main() {
     const String pkg = '../packages/gamepads_windows/windows';
     final String gamepadCpp = File('$pkg/gamepad.cpp').readAsStringSync();
     final String gamepadH = File('$pkg/gamepad.h').readAsStringSync();
-    final String pluginCpp =
-        File('$pkg/gamepads_windows_plugin.cpp').readAsStringSync();
+    final String pluginCpp = File(
+      '$pkg/gamepads_windows_plugin.cpp',
+    ).readAsStringSync();
 
     test('gamepad.h 声明 game_input_available 标志', () {
-      expect(gamepadH, contains('bool game_input_available'),
-          reason: 'init() 探测结果须有可读回的成员');
+      expect(
+        gamepadH,
+        contains('bool game_input_available'),
+        reason: 'init() 探测结果须有可读回的成员',
+      );
     });
 
     test('init() 探测到 GameInput.dll 后置位 available（缺失路径不置位）', () {
-      expect(gamepadCpp, contains('game_input_available = true'),
-          reason: 'LoadLibraryW 成功后必须标记可用，否则永远提示不可用');
+      expect(
+        gamepadCpp,
+        contains('game_input_available = true'),
+        reason: 'LoadLibraryW 成功后必须标记可用，否则永远提示不可用',
+      );
       // available 的置位必须在 LoadLibraryW 探测的早退 return 之后，确保缺 DLL
       // 时它保持 false（=触发提示）。
       final int probeReturn = gamepadCpp.indexOf('gamepad support disabled');
       final int setTrue = gamepadCpp.indexOf('game_input_available = true');
       expect(probeReturn, greaterThanOrEqualTo(0));
-      expect(setTrue, greaterThan(probeReturn),
-          reason: 'available=true 必须在缺 DLL 早退之后，缺 DLL 时保持 false');
+      expect(
+        setTrue,
+        greaterThan(probeReturn),
+        reason: 'available=true 必须在缺 DLL 早退之后，缺 DLL 时保持 false',
+      );
     });
 
     test('插件 HandleMethodCall 暴露 gameInputAvailable 方法', () {
-      expect(pluginCpp, contains('"gameInputAvailable"'),
-          reason: 'Dart 须能经通道查询探测结果');
-      expect(pluginCpp, contains('gamepads.game_input_available'),
-          reason: 'gameInputAvailable 必须回传真实探测标志，不能硬编码');
+      expect(
+        pluginCpp,
+        contains('"gameInputAvailable"'),
+        reason: 'Dart 须能经通道查询探测结果',
+      );
+      expect(
+        pluginCpp,
+        contains('gamepads.game_input_available'),
+        reason: 'gameInputAvailable 必须回传真实探测标志，不能硬编码',
+      );
     });
   });
 
@@ -60,9 +76,9 @@ void main() {
       invoked = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        invoked.add(call.method);
-        return reply();
-      });
+            invoked.add(call.method);
+            return reply();
+          });
     }
 
     tearDown(() {

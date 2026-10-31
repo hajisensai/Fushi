@@ -86,20 +86,21 @@ class AudiobookPlayBar extends StatelessWidget {
     final ButtonStyle? playStyle = fg == null
         ? null
         : isGlassDesign(context)
-            ? ButtonStyle(
-                backgroundColor: WidgetStatePropertyAll<Color>(fg),
-                foregroundColor: WidgetStatePropertyAll<Color>(
-                  appleOnAccent(fg.withValues(alpha: 1)),
-                ),
-              )
-            : IconButton.styleFrom(
-                backgroundColor: fg.withValues(alpha: 0.12),
-                foregroundColor: fg,
-              );
+        ? ButtonStyle(
+            backgroundColor: WidgetStatePropertyAll<Color>(fg),
+            foregroundColor: WidgetStatePropertyAll<Color>(
+              appleOnAccent(fg.withValues(alpha: 1)),
+            ),
+          )
+        : IconButton.styleFrom(
+            backgroundColor: fg.withValues(alpha: 0.12),
+            foregroundColor: fg,
+          );
     // 上一句/下一句、设置齿轮按旧版是无框原生 [IconButton]（仅图标），纸张主题
     // 前景色经 [IconButton.styleFrom] 的 foregroundColor 注入。
-    final ButtonStyle? flatStyle =
-        fg != null ? IconButton.styleFrom(foregroundColor: fg) : null;
+    final ButtonStyle? flatStyle = fg != null
+        ? IconButton.styleFrom(foregroundColor: fg)
+        : null;
     // ⏮⏯⏭ 是一个原子组：reversed 镜像整条 bar 时这组只换边、内部方向不动，
     // 否则快退/快进会左右颠倒（BUG-021）。用 min-size Row 包住三键。
     //
@@ -110,16 +111,14 @@ class AudiobookPlayBar extends StatelessWidget {
     //
     // 把「后退」与「前进」两组语义抽成局部记录，再按 invertSkip 决定哪组喂左键、
     // 哪组喂右键，消除内部的 if 分支特例。
-    final ({
-      IconData icon,
-      String tooltip,
-      VoidCallback onPressed
-    }) backwardKey = (
+    final ({IconData icon, String tooltip, VoidCallback onPressed})
+    backwardKey = (
       icon: skipActionSeconds == 0
           ? FushiIcons.skipPrevious
           : FushiIcons.fastRewind,
-      tooltip:
-          skipActionSeconds == 0 ? t.prev_sentence : '-${skipActionSeconds}s',
+      tooltip: skipActionSeconds == 0
+          ? t.prev_sentence
+          : '-${skipActionSeconds}s',
       onPressed: () {
         if (skipActionSeconds == 0) {
           controller.skipToPrevCue();
@@ -130,19 +129,20 @@ class AudiobookPlayBar extends StatelessWidget {
     );
     final ({IconData icon, String tooltip, VoidCallback onPressed}) forwardKey =
         (
-      icon: skipActionSeconds == 0
-          ? FushiIcons.skipNext
-          : FushiIcons.fastForward,
-      tooltip:
-          skipActionSeconds == 0 ? t.next_sentence : '+${skipActionSeconds}s',
-      onPressed: () {
-        if (skipActionSeconds == 0) {
-          controller.skipToNextCue();
-        } else {
-          controller.seekRelative(skipActionSeconds);
-        }
-      },
-    );
+          icon: skipActionSeconds == 0
+              ? FushiIcons.skipNext
+              : FushiIcons.fastForward,
+          tooltip: skipActionSeconds == 0
+              ? t.next_sentence
+              : '+${skipActionSeconds}s',
+          onPressed: () {
+            if (skipActionSeconds == 0) {
+              controller.skipToNextCue();
+            } else {
+              controller.seekRelative(skipActionSeconds);
+            }
+          },
+        );
     // 左键（屏幕左侧，id=audiobook_prev）：invertSkip 开时变前进键。
     final ({IconData icon, String tooltip, VoidCallback onPressed}) leftKey =
         invertSkip ? forwardKey : backwardKey;
@@ -167,9 +167,7 @@ class AudiobookPlayBar extends StatelessWidget {
           id: const FushiFocusId('audiobook_play'),
           filledTonal: true,
           icon: FushiIcon(
-            controller.isPlaying
-                ? FushiIcons.pause
-                : FushiIcons.play,
+            controller.isPlaying ? FushiIcons.pause : FushiIcons.play,
           ),
           iconSize: 24,
           style: playStyle,
@@ -282,12 +280,10 @@ class _ScrubbableProgressState extends State<_ScrubbableProgress> {
           behavior: HitTestBehavior.opaque,
           onTapUp: (TapUpDetails d) =>
               _commit(_fractionAt(d.localPosition.dx, width)),
-          onHorizontalDragStart: (DragStartDetails d) => setState(
-            () => _scrub = _fractionAt(d.localPosition.dx, width),
-          ),
-          onHorizontalDragUpdate: (DragUpdateDetails d) => setState(
-            () => _scrub = _fractionAt(d.localPosition.dx, width),
-          ),
+          onHorizontalDragStart: (DragStartDetails d) =>
+              setState(() => _scrub = _fractionAt(d.localPosition.dx, width)),
+          onHorizontalDragUpdate: (DragUpdateDetails d) =>
+              setState(() => _scrub = _fractionAt(d.localPosition.dx, width)),
           onHorizontalDragEnd: (DragEndDetails _) =>
               _commit(_scrub ?? widget.fraction),
           onHorizontalDragCancel: () => setState(() => _scrub = null),
@@ -577,8 +573,9 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
     final Color bg = cs.primaryContainer;
     final Color fg = cs.onPrimaryContainer;
     final ButtonStyle flat = IconButton.styleFrom(foregroundColor: fg);
-    final ({IconData icon, String tooltip, VoidCallback onPressed}) left =
-        _key(forward: widget.invertSkip);
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) left = _key(
+      forward: widget.invertSkip,
+    );
     final ({IconData icon, String tooltip, VoidCallback onPressed}) right =
         _key(forward: !widget.invertSkip);
     final int totalMs = c.totalDuration.inMilliseconds;
@@ -635,12 +632,12 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
                   switchOutCurve: FushiMotion.exit,
                   layoutBuilder: (Widget? current, List<Widget> previous) =>
                       Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: <Widget>[
-                      ...previous,
-                      if (current != null) current,
-                    ],
-                  ),
+                        alignment: AlignmentDirectional.centerStart,
+                        children: <Widget>[
+                          ...previous,
+                          if (current != null) current,
+                        ],
+                      ),
                   child: Text(
                     label,
                     key: ValueKey<String>('mini_cue_$label'),
@@ -712,7 +709,10 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
                   cover,
                   info,
                   group,
-                  AudiobookFollowAudioButton(controller: c, foregroundColor: fg),
+                  AudiobookFollowAudioButton(
+                    controller: c,
+                    foregroundColor: fg,
+                  ),
                 ],
               ),
             ),
@@ -753,11 +753,13 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
       Color foreground,
       Color selectedContainer,
       Color selectedForeground,
-    }) palette = fushiFloatingToolbarPalette(context, colors: widget.colors);
+    })
+    palette = fushiFloatingToolbarPalette(context, colors: widget.colors);
     final Color fg = palette.foreground;
     final ButtonStyle flat = IconButton.styleFrom(foregroundColor: fg);
-    final ({IconData icon, String tooltip, VoidCallback onPressed}) left =
-        _key(forward: widget.invertSkip);
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) left = _key(
+      forward: widget.invertSkip,
+    );
     final ({IconData icon, String tooltip, VoidCallback onPressed}) right =
         _key(forward: !widget.invertSkip);
     final int totalMs = c.totalDuration.inMilliseconds;
@@ -814,12 +816,12 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
                   switchOutCurve: FushiMotion.exit,
                   layoutBuilder: (Widget? current, List<Widget> previous) =>
                       Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: <Widget>[
-                      ...previous,
-                      if (current != null) current,
-                    ],
-                  ),
+                        alignment: AlignmentDirectional.centerStart,
+                        children: <Widget>[
+                          ...previous,
+                          if (current != null) current,
+                        ],
+                      ),
                   child: Text(
                     label,
                     key: ValueKey<String>('mini_cue_$label'),
@@ -877,11 +879,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
 /// 有声书播放键的 M3E 形状变形 FAB（[FushiToolbarFab] morphing：暂停 = 圆、
 /// 播放中 = 圆角方），悬浮工具栏 / 迷你播放条旁共用。只随控制器重建。
 class AudiobookPlayFab extends StatelessWidget {
-  const AudiobookPlayFab({
-    required this.controller,
-    this.size = 56,
-    super.key,
-  });
+  const AudiobookPlayFab({required this.controller, this.size = 56, super.key});
 
   final AudiobookPlayerController controller;
   final double size;

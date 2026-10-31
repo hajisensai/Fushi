@@ -22,11 +22,10 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 MangaOcrRemoteRunner createInterconnectMangaOcrRunner(
   AppModel appModel,
   FushiDatabase db,
-) =>
-    InterconnectMangaOcrClient(
-      repo: SyncRepository(db),
-      preferredModel: () => appModel.mangaOcrPairedHostModel,
-    );
+) => InterconnectMangaOcrClient(
+  repo: SyncRepository(db),
+  preferredModel: () => appModel.mangaOcrPairedHostModel,
+);
 
 /// 漫画 OCR 大模型识别器的唯一装配点：档位关、没指派（也没默认）提供商、指派的
 /// 那家没配全，都回 null——此时整条链路与没有 AI 完全一致，不发任何请求。
@@ -34,8 +33,9 @@ MangaOcrRemoteRunner createInterconnectMangaOcrRunner(
 /// 每次任务开跑时现读偏好（[MangaOcrWizardEngines.aiRefinerFactory]），设置里
 /// 改了档位不必重开阅读器。
 MangaAiOcrRefiner? createMangaAiOcrRefiner(AppModel appModel) {
-  final MangaAiOcrMode mode =
-      MangaAiOcrMode.fromStorageKey(appModel.mangaOcrAiMode);
+  final MangaAiOcrMode mode = MangaAiOcrMode.fromStorageKey(
+    appModel.mangaOcrAiMode,
+  );
   if (mode == MangaAiOcrMode.off) return null;
   final AiProviderConfig? provider = appModel.prefsRepo.aiFeatureAssignments
       .resolve(AiFeature.mangaOcr, appModel.prefsRepo.aiProviders);
@@ -94,8 +94,10 @@ class MangaOcrWizardEngines {
     MangaOcrRemoteRunner? remoteRunnerOverride,
     bool? desktopOverride,
   }) {
-    final ProviderContainer container =
-        ProviderScope.containerOf(context, listen: false);
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
     final AppModel appModel = container.read(appProvider);
     final bool desktop = desktopOverride ?? isDesktopPlatform;
     final String configured = appModel.mangaExternalMokuroPath.trim();
@@ -106,7 +108,8 @@ class MangaOcrWizardEngines {
               configuredPath: configured.isEmpty ? null : configured,
             )
           : null,
-      remoteRunner: remoteRunnerOverride ??
+      remoteRunner:
+          remoteRunnerOverride ??
           createInterconnectMangaOcrRunner(appModel, db),
       lensRunner: GoogleLensMangaOcrService(),
       systemOcrRunner: SystemOcrMangaService(),

@@ -30,66 +30,104 @@ void main() {
       test('[$path] wheel factor 乘以 __fushiPopupWheelSpeed', () {
         final String src = File(path).readAsStringSync();
 
-        expect(src, contains('window.__fushiPopupWheelSpeed'),
-            reason: 'popup.js 必须读注入的滚轮速度倍率，否则设置项是哑的');
+        expect(
+          src,
+          contains('window.__fushiPopupWheelSpeed'),
+          reason: 'popup.js 必须读注入的滚轮速度倍率，否则设置项是哑的',
+        );
         // 设备分类（粗鼠标 / 触控板）必须保留，倍率只在其外层相乘。
-        expect(src, contains('? POPUP_WHEEL_PIXEL_FACTOR'),
-            reason: 'BUG-870 的粗鼠标/触控板设备分类不得被倍率改造抹掉');
+        expect(
+          src,
+          contains('? POPUP_WHEEL_PIXEL_FACTOR'),
+          reason: 'BUG-870 的粗鼠标/触控板设备分类不得被倍率改造抹掉',
+        );
         expect(src, contains(': POPUP_WHEEL_TRACKPAD_FACTOR'));
-        expect(src, contains('* wheelSpeed'),
-            reason: '倍率必须真的乘进 factor，而不是读了就丢');
-        expect(src, contains('deltaPx * factor'),
-            reason: '每帧步长仍由 factor 决定（BUG-260/870 既有链路不变）');
+        expect(
+          src,
+          contains('* wheelSpeed'),
+          reason: '倍率必须真的乘进 factor，而不是读了就丢',
+        );
+        expect(
+          src,
+          contains('deltaPx * factor'),
+          reason: '每帧步长仍由 factor 决定（BUG-260/870 既有链路不变）',
+        );
         // 缺省/非法值必须回落 1.0：旧 app + 新扩展、或注入尚未到达时，行为与改前一致。
         expect(
-            src, contains("typeof window.__fushiPopupWheelSpeed === 'number'"),
-            reason: '必须做类型/有限性校验，非法值不得把滚动放飞或归零');
+          src,
+          contains("typeof window.__fushiPopupWheelSpeed === 'number'"),
+          reason: '必须做类型/有限性校验，非法值不得把滚动放飞或归零',
+        );
       });
     }
   });
 
   group('滚轮速度真值下发链路 (BUG-1026)', () {
     test('in-app 注入端设 window.__fushiPopupWheelSpeed', () {
-      final String dart =
-          File('lib/src/pages/implementations/popup_settings_injection.dart')
-              .readAsStringSync();
-      expect(dart, contains('window.__fushiPopupWheelSpeed'),
-          reason: 'in-app 三种弹窗都经此 head 注入滚轮速度');
-      expect(dart, contains('appModel.popupWheelSpeed'),
-          reason: '注入值必须来自偏好真值，而不是写死常量');
+      final String dart = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(
+        dart,
+        contains('window.__fushiPopupWheelSpeed'),
+        reason: 'in-app 三种弹窗都经此 head 注入滚轮速度',
+      );
+      expect(
+        dart,
+        contains('appModel.popupWheelSpeed'),
+        reason: '注入值必须来自偏好真值，而不是写死常量',
+      );
     });
 
     test('扩展 theme 通道下发 --fushi-wheel-speed', () {
-      final String dart =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(dart, contains("'--fushi-wheel-speed'"),
-          reason: '扩展弹窗只能经查词响应 theme 拿到 app 设置');
+      final String dart = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(
+        dart,
+        contains("'--fushi-wheel-speed'"),
+        reason: '扩展弹窗只能经查词响应 theme 拿到 app 设置',
+      );
       expect(dart, contains('popupWheelSpeed'), reason: 'theme 下发值必须来自同一个偏好真值');
     });
 
     for (final String path in contentCopies) {
       test('[$path] content.js 把 theme 值落成同名全局', () {
         final String src = File(path).readAsStringSync();
-        expect(src, contains("theme['--fushi-wheel-speed']"),
-            reason: 'content.js 必须读 theme 下发的滚轮速度');
-        expect(src, contains('window.__fushiPopupWheelSpeed'),
-            reason: '必须落到 popup.js 读取的同名全局，否则扩展弹窗调速无效');
+        expect(
+          src,
+          contains("theme['--fushi-wheel-speed']"),
+          reason: 'content.js 必须读 theme 下发的滚轮速度',
+        );
+        expect(
+          src,
+          contains('window.__fushiPopupWheelSpeed'),
+          reason: '必须落到 popup.js 读取的同名全局，否则扩展弹窗调速无效',
+        );
       });
     }
 
     test('偏好读写带 clamp，越界值不得放飞滚动', () {
-      final String dart =
-          File('lib/src/models/preferences_repository.dart').readAsStringSync();
+      final String dart = File(
+        'lib/src/models/preferences_repository.dart',
+      ).readAsStringSync();
       expect(dart, contains("'popup_wheel_speed'"));
-      expect(dart, contains('clamp(0.5, 5.0)'),
-          reason: '损坏/越界的存值不得作为倍率直达 popup.js');
+      expect(
+        dart,
+        contains('clamp(0.5, 5.0)'),
+        reason: '损坏/越界的存值不得作为倍率直达 popup.js',
+      );
     });
 
     test('设置页暴露滚轮速度滑杆', () {
-      final String dart = File('lib/src/settings/settings_schema_lookup.dart')
-          .readAsStringSync();
-      expect(dart, contains('lookup.popup_wheel_speed'),
-          reason: '设置项必须在查词分类可见可搜，否则用户改不了');
+      final String dart = File(
+        'lib/src/settings/settings_schema_lookup.dart',
+      ).readAsStringSync();
+      expect(
+        dart,
+        contains('lookup.popup_wheel_speed'),
+        reason: '设置项必须在查词分类可见可搜，否则用户改不了',
+      );
       expect(dart, contains('setPopupWheelSpeed'));
     });
   });

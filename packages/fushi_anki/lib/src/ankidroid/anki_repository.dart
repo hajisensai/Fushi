@@ -32,8 +32,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 旧 native / 测试桩返回 `true` 或 `null`（没有这个方法的桩），一律视为已授权，
   /// 保持向后兼容——只有明确的失败终态才短路。
   Future<void> _ensurePermission() async {
-    final Object? status =
-        await _channel.invokeMethod('requestAnkidroidPermissions');
+    final Object? status = await _channel.invokeMethod(
+      'requestAnkidroidPermissions',
+    );
     switch (status) {
       case null:
       case true:
@@ -47,7 +48,8 @@ class AnkiRepository extends BaseAnkiRepository {
       case 'permanently_denied':
         throw PlatformException(
           code: 'PERMISSION_PERMANENTLY_DENIED',
-          message: 'AnkiDroid permission was permanently denied. '
+          message:
+              'AnkiDroid permission was permanently denied. '
               'Grant it in the system app settings.',
         );
       default:
@@ -64,8 +66,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// AnkiDroid 权限——那种状态下系统不再弹框，这是唯一出路。成功返回 true。
   static Future<bool> openPermissionSettings() async {
     try {
-      final Object? ok =
-          await _channel.invokeMethod('openAnkiPermissionSettings');
+      final Object? ok = await _channel.invokeMethod(
+        'openAnkiPermissionSettings',
+      );
       return ok == true;
     } on PlatformException catch (e, stack) {
       debugPrint('AnkiRepository.openPermissionSettings: $e\n$stack');
@@ -258,7 +261,8 @@ class AnkiRepository extends BaseAnkiRepository {
     final AnkiDeck? deck = resolveTargetDeck(settings, payload);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType = settings.availableNoteTypes.firstWhereOrNull(
+    final noteType =
+        settings.availableNoteTypes.firstWhereOrNull(
           (t) => t.id == settings.selectedNoteTypeId,
         ) ??
         (settings.selectedNoteTypeName != null
@@ -353,15 +357,13 @@ class AnkiRepository extends BaseAnkiRepository {
       // 字段使用。与 AnkiConnect 后端对称。旧版 native 返回字符串 "Added note"（无 id），
       // 升级前装的 app 仍可工作：_asNoteId 解析失败时返回 null = 优雅降级（弹窗进不了
       // 「最新可改」第三态，与现状一致，Never break userspace）。
-      final dynamic addResult = await _channel.invokeMethod(
-        'addNote',
-        <String, dynamic>{
-          'deck': deck.name,
-          'model': noteType.name,
-          'fields': fieldArray,
-          'tags': tags,
-        },
-      );
+      final dynamic addResult = await _channel
+          .invokeMethod('addNote', <String, dynamic>{
+            'deck': deck.name,
+            'model': noteType.name,
+            'fields': fieldArray,
+            'tags': tags,
+          });
       // BUG-1549：实际落卡的牌组名随成功结果带回（与 AnkiConnect 后端对称）。
       return MineOutcome.success(
         noteId: _asNoteId(addResult),
@@ -687,8 +689,9 @@ class AnkiRepository extends BaseAnkiRepository {
       for (final item in raw) {
         if (item is! Map) continue;
         final rawId = item['noteId'];
-        final int? id =
-            rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+        final int? id = rawId is int
+            ? rawId
+            : int.tryParse(rawId?.toString() ?? '');
         if (id == null) continue;
         result.add(
           MinedNoteRef(
@@ -775,13 +778,14 @@ class AnkiRepository extends BaseAnkiRepository {
     await _ensurePermission();
     final bool? created =
         await _channel.invokeMethod('createNoteType', <String, dynamic>{
-      'noteTypeName': template.name,
-      'noteTypeFields': template.fields,
-      'cardName': template.cardName,
-      'front': template.front,
-      'back': template.back,
-      'css': template.css,
-    }) as bool?;
+              'noteTypeName': template.name,
+              'noteTypeFields': template.fields,
+              'cardName': template.cardName,
+              'front': template.front,
+              'back': template.back,
+              'css': template.css,
+            })
+            as bool?;
     // null 只可能来自契约漂移（native 该回 bool）。当成「建了」，最坏只是 toast
     // 说成新建而非已存在；真正的成败由 native 抛 CREATE_MODEL_FAILED 表达。
     return created ?? true;
@@ -820,10 +824,11 @@ class AnkiRepository extends BaseAnkiRepository {
     String modelName,
   ) async {
     await _ensurePermission();
-    final Map? raw = await _channel.invokeMethod(
-      'readNoteType',
-      <String, dynamic>{'noteTypeName': modelName},
-    ) as Map?;
+    final Map? raw =
+        await _channel.invokeMethod('readNoteType', <String, dynamic>{
+              'noteTypeName': modelName,
+            })
+            as Map?;
     if (raw == null) return null;
     final List<dynamic> templates =
         (raw['templates'] as List?) ?? const <dynamic>[];
@@ -835,14 +840,16 @@ class AnkiRepository extends BaseAnkiRepository {
       // ord 只在写回时用于定位（Java 侧按模板名反查），backend 无关的
       // AnkiCardTemplate 不带它——备份文件里存位置号毫无意义，模板被重排
       // 之后按位置写回就会把正面写进另一张卡。
-      templates: templates.map((dynamic e) {
-        final Map tmpl = e as Map;
-        return AnkiCardTemplate(
-          name: tmpl['name']?.toString() ?? '',
-          front: tmpl['front']?.toString() ?? '',
-          back: tmpl['back']?.toString() ?? '',
-        );
-      }).toList(growable: false),
+      templates: templates
+          .map((dynamic e) {
+            final Map tmpl = e as Map;
+            return AnkiCardTemplate(
+              name: tmpl['name']?.toString() ?? '',
+              front: tmpl['front']?.toString() ?? '',
+              back: tmpl['back']?.toString() ?? '',
+            );
+          })
+          .toList(growable: false),
       css: raw['css']?.toString() ?? '',
     );
   }
@@ -850,10 +857,12 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async {
     await _ensurePermission();
-    final bool? ok = await _channel.invokeMethod(
-      'updateNoteTypeStyling',
-      <String, dynamic>{'noteTypeName': modelName, 'css': css},
-    ) as bool?;
+    final bool? ok =
+        await _channel.invokeMethod('updateNoteTypeStyling', <String, dynamic>{
+              'noteTypeName': modelName,
+              'css': css,
+            })
+            as bool?;
     return ok ?? false;
   }
 
@@ -864,19 +873,23 @@ class AnkiRepository extends BaseAnkiRepository {
   ) async {
     if (templates.isEmpty) return false;
     await _ensurePermission();
-    final bool? ok = await _channel.invokeMethod(
-      'updateNoteTypeTemplates',
-      <String, dynamic>{
-        'noteTypeName': modelName,
-        'templates': templates
-            .map((AnkiCardTemplate t) => <String, String>{
-                  'name': t.name,
-                  'front': t.front,
-                  'back': t.back,
-                })
-            .toList(growable: false),
-      },
-    ) as bool?;
+    final bool? ok =
+        await _channel.invokeMethod(
+              'updateNoteTypeTemplates',
+              <String, dynamic>{
+                'noteTypeName': modelName,
+                'templates': templates
+                    .map(
+                      (AnkiCardTemplate t) => <String, String>{
+                        'name': t.name,
+                        'front': t.front,
+                        'back': t.back,
+                      },
+                    )
+                    .toList(growable: false),
+              },
+            )
+            as bool?;
     return ok ?? false;
   }
 
@@ -889,8 +902,9 @@ class AnkiRepository extends BaseAnkiRepository {
     await _ensurePermission();
     final bool? created =
         await _channel.invokeMethod('createDeck', <String, dynamic>{
-      'deckName': name,
-    }) as bool?;
+              'deckName': name,
+            })
+            as bool?;
     return created ?? true;
   }
 
@@ -1064,14 +1078,12 @@ class AnkiRepository extends BaseAnkiRepository {
         filePath,
         preferredName,
       );
-      final result = await _channel.invokeMethod(
-        'addFileToMedia',
-        <String, dynamic>{
-          'filename': stagedPath,
-          'preferredName': preferredName,
-          'mimeType': mimeType,
-        },
-      );
+      final result = await _channel
+          .invokeMethod('addFileToMedia', <String, dynamic>{
+            'filename': stagedPath,
+            'preferredName': preferredName,
+            'mimeType': mimeType,
+          });
       return result as String?;
     } catch (e, stack) {
       debugPrint('AnkiRepository._addMediaFile $preferredName: $e\n$stack');

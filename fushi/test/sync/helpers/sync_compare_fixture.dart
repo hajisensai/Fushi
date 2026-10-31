@@ -96,8 +96,10 @@ class FakeCompareBackend implements SyncBackend {
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     _root = rootFolderId;
     if (titleToFolderId != null) _folders.addAll(titleToFolderId);
   }
@@ -135,15 +137,17 @@ class FakeCompareBackend implements SyncBackend {
 int _nextCompareImportedAt = 1700000000000;
 
 Future<EpubBookRow> seedCompareBook(FushiDatabase db, String title) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/$title.epub',
-    extractDir: '/fake/$title',
-    chapterCount: 1,
-    chaptersJson: kCompareChaptersJson,
-    importedAt: _nextCompareImportedAt++,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/$title.epub',
+      extractDir: '/fake/$title',
+      chapterCount: 1,
+      chaptersJson: kCompareChaptersJson,
+      importedAt: _nextCompareImportedAt++,
+    ),
+  );
   return (await db.getAllEpubBooks()).firstWhere((b) => b.title == title);
 }
 
@@ -153,12 +157,14 @@ Future<void> seedComparePosition(
   required int updatedAt,
   required double fraction,
 }) async {
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: const Value(0),
-    normCharOffset: Value((fraction * 10000).round()),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: const Value(0),
+      normCharOffset: Value((fraction * 10000).round()),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 /// 标准场景：见文件头。返回配好的 fake 后端。
@@ -177,17 +183,32 @@ Future<FakeCompareBackend> seedCompareScenario(FushiDatabase db) async {
   final EpubBookRow remoteNewer = await seedCompareBook(db, 'Remote newer');
   await seedComparePosition(db, remoteNewer.uid, updatedAt: 100, fraction: 0.3);
   await db.setSyncBaseline(
-      sanitizeTtuFilename('Remote newer'), 'progress', 100);
+    sanitizeTtuFilename('Remote newer'),
+    'progress',
+    100,
+  );
 
   return FakeCompareBackend(<String, RemoteBookFixture>{
     'Conflict A': const RemoteBookFixture(
-        folderId: 'fa', timestampMs: 130, fraction: 0.7),
+      folderId: 'fa',
+      timestampMs: 130,
+      fraction: 0.7,
+    ),
     'Conflict B': const RemoteBookFixture(
-        folderId: 'fb', timestampMs: 130, fraction: 0.2),
+      folderId: 'fb',
+      timestampMs: 130,
+      fraction: 0.2,
+    ),
     'Local newer': const RemoteBookFixture(
-        folderId: 'fl', timestampMs: 100, fraction: 0.3),
+      folderId: 'fl',
+      timestampMs: 100,
+      fraction: 0.3,
+    ),
     'Remote newer': const RemoteBookFixture(
-        folderId: 'fr', timestampMs: 120, fraction: 0.5),
+      folderId: 'fr',
+      timestampMs: 120,
+      fraction: 0.5,
+    ),
     'Remote only': const RemoteBookFixture(folderId: 'fo'),
   });
 }

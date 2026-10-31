@@ -21,8 +21,7 @@ import 'package:path/path.dart' as p;
 const String _title = 'Interconnect Box Book';
 
 class _FileBoxBackend extends InterconnectSyncBackend {
-  _FileBoxBackend()
-    : super.withProbe((String url, String token) async => true);
+  _FileBoxBackend() : super.withProbe((String url, String token) async => true);
 
   int contentProbes = 0;
   int contentUploads = 0;

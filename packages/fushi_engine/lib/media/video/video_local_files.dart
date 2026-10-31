@@ -106,20 +106,20 @@ List<String> localVideoFileCandidates({
 /// 纯函数：这一行有没有本机可删的原始文件——删除确认框据此决定摆不摆
 /// 「同时删除本地文件」勾选框。
 bool videoBookHasLocalFiles(VideoBookRow row) => localVideoFileCandidates(
-      videoPath: row.videoPath,
-      playlistJson: row.playlistJson,
-    ).isNotEmpty;
+  videoPath: row.videoPath,
+  playlistJson: row.playlistJson,
+).isNotEmpty;
 
 /// 纯函数：[rows] 引用的全部本地文件路径（按 [platformPathKey] 归一），用作删除
 /// 护栏——出现在这个集合里的文件仍被库里某一行引用，绝不删。
 Set<String> referencedLocalVideoPaths(Iterable<VideoBookRow> rows) => <String>{
-      for (final VideoBookRow row in rows)
-        for (final String path in localVideoFileCandidates(
-          videoPath: row.videoPath,
-          playlistJson: row.playlistJson,
-        ))
-          platformPathKey(path),
-    };
+  for (final VideoBookRow row in rows)
+    for (final String path in localVideoFileCandidates(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+    ))
+      platformPathKey(path),
+};
 
 /// 纯函数：[path] 是否落在某个选择器导入副本目录 [copyDirs] 之内（BUG-2863，
 /// 见 `EnginePaths.pickerImportCopyDirectories`）。落在里面的视频是 app 拷出来的
@@ -145,11 +145,10 @@ bool isPickerImportCopyPath(String path, Iterable<String> copyDirs) {
 Future<LocalFileDeleteReport> deleteLocalVideoFiles({
   required Iterable<String> candidates,
   required Set<String> stillReferenced,
-}) =>
-    deleteLocalFiles(<String>[
-      for (final String path in candidates)
-        if (!stillReferenced.contains(platformPathKey(path))) path,
-    ]);
+}) => deleteLocalFiles(<String>[
+  for (final String path in candidates)
+    if (!stillReferenced.contains(platformPathKey(path))) path,
+]);
 
 /// 纯函数：从同目录文件名清单 [dirFileNames] 里挑出**跟着 [videoFileName] 一起走**
 /// 的 sidecar 外挂字幕文件名（原样返回，便于调用方拼回目录）。
@@ -179,7 +178,10 @@ List<String> sidecarSubtitlesForDeletedVideo({
     // sidecar 本就匹配不到这里来。
     if (otherStem.length <= stem.length) continue;
     if (!otherStem.toLowerCase().startsWith(stemLower)) continue;
-    for (final String claimed in listSidecarSubtitles(otherStem, dirFileNames)) {
+    for (final String claimed in listSidecarSubtitles(
+      otherStem,
+      dirFileNames,
+    )) {
       claimedByNeighbours.add(claimed.toLowerCase());
     }
   }
@@ -207,8 +209,8 @@ Future<List<String>> localVideoSidecarSubtitleCandidates(
   final List<String> out = <String>[];
   for (final String videoPath in videoPaths) {
     final String dir = p.dirname(videoPath);
-    final List<String> dirFileNames =
-        dirFilesByKey[platformPathKey(dir)] ??= await _listFileNames(dir);
+    final List<String> dirFileNames = dirFilesByKey[platformPathKey(dir)] ??=
+        await _listFileNames(dir);
     if (dirFileNames.isEmpty) continue;
     for (final String name in sidecarSubtitlesForDeletedVideo(
       videoFileName: p.basename(videoPath),
@@ -244,7 +246,8 @@ Future<List<String>> _listFileNames(String dir) async {
 /// 与 [referencedLocalVideoPaths] 并用作删除护栏：幸存行手动挂着的外挂字幕，哪怕
 /// 正好躺在被删视频旁边、名字也对得上，也绝不能删。`embedded:<n>` / `off:` 两种
 /// 非路径编码由 [isLocalVideoFilePath] 天然滤掉。
-Set<String> referencedLocalSubtitlePaths(Iterable<VideoBookRow> rows) => <String>{
+Set<String> referencedLocalSubtitlePaths(Iterable<VideoBookRow> rows) =>
+    <String>{
       for (final VideoBookRow row in rows)
         for (final String? source in <String?>[
           row.subtitleSource,

@@ -75,8 +75,11 @@ void main() {
         // MaterialApp 本身——它在 Navigator 之上，Navigator.of 会找不到根导航器）。用
         // 首页 Scaffold 的 element 作锚点。
         final Finder scaffoldFinder = find.byType(Scaffold);
-        expect(scaffoldFinder, findsWidgets,
-            reason: 'home must have a Scaffold to anchor the modal sheet');
+        expect(
+          scaffoldFinder,
+          findsWidgets,
+          reason: 'home must have a Scaffold to anchor the modal sheet',
+        );
         final BuildContext ctx = tester.element(scaffoldFinder.first);
 
         // 与生产同一入口：直接调 showAnkiMinedCardActionSheet（runAnkiMinedCardAction
@@ -85,18 +88,18 @@ void main() {
         int? overwrittenNoteId;
         final Future<AnkiMinedCardActionResult> future =
             showAnkiMinedCardActionSheet(
-          context: ctx,
-          matches: matches,
-          repo: repo,
-          mineNew: () async {
-            mineNewCalled = true;
-            return (ankiConnect: false, noteId: null);
-          },
-          overwrite: (int noteId) async {
-            overwrittenNoteId = noteId;
-            return (ankiConnect: true, noteId: noteId);
-          },
-        );
+              context: ctx,
+              matches: matches,
+              repo: repo,
+              mineNew: () async {
+                mineNewCalled = true;
+                return (ankiConnect: false, noteId: null);
+              },
+              overwrite: (int noteId) async {
+                overwrittenNoteId = noteId;
+                return (ankiConnect: true, noteId: noteId);
+              },
+            );
         // 让 bottom sheet 弹出并布局（有界 pump，不用 pumpAndSettle）。
         bool sheetUp = false;
         for (int i = 0; i < 40; i++) {
@@ -109,34 +112,53 @@ void main() {
             break;
           }
         }
-        debugPrint('[verify][1007] action sheet up=$sheetUp '
-            'title-present=${find.text(t.anki_mined_card_title).evaluate().isNotEmpty} '
-            'bottomsheet=${find.byType(BottomSheet).evaluate().length}');
+        debugPrint(
+          '[verify][1007] action sheet up=$sheetUp '
+          'title-present=${find.text(t.anki_mined_card_title).evaluate().isNotEmpty} '
+          'bottomsheet=${find.byType(BottomSheet).evaluate().length}',
+        );
 
         // ── 断言 1：操作单三项可达 ──
         // 标题（卡已在 Anki）。
-        expect(find.text(t.anki_mined_card_title), findsOneWidget,
-            reason: 'TODO-1007: action sheet title must show');
+        expect(
+          find.text(t.anki_mined_card_title),
+          findsOneWidget,
+          reason: 'TODO-1007: action sheet title must show',
+        );
         // 「新增重复卡」ListTile（底部恒有）。
         final Finder addDup = find.text(t.anki_mined_action_add_duplicate);
-        expect(addDup, findsOneWidget,
-            reason: 'TODO-1007: "add duplicate" option must be present');
+        expect(
+          addDup,
+          findsOneWidget,
+          reason: 'TODO-1007: "add duplicate" option must be present',
+        );
         // 「覆写」IconButton（每张命中卡一枚，edit_outlined）。
         final Finder overwriteBtns = find.byIcon(Icons.edit_outlined);
-        expect(overwriteBtns, findsWidgets,
-            reason: 'TODO-1007: per-card "overwrite" action must be present');
+        expect(
+          overwriteBtns,
+          findsWidgets,
+          reason: 'TODO-1007: per-card "overwrite" action must be present',
+        );
         // 「查看·在 Anki 打开」IconButton（open_in_new）。
         final Finder viewBtns = find.byIcon(Icons.open_in_new);
-        expect(viewBtns, findsWidgets,
-            reason: 'TODO-1007: per-card "view/open in Anki" action must be '
-                'present');
+        expect(
+          viewBtns,
+          findsWidgets,
+          reason:
+              'TODO-1007: per-card "view/open in Anki" action must be '
+              'present',
+        );
         // 命中多张 → 副标题用 multiple-matches。
-        expect(find.text(t.anki_mined_multiple_matches(count: matches.length)),
-            findsOneWidget,
-            reason: 'TODO-1007: multiple matches must be listed');
-        debugPrint('[verify][1007] action sheet: title+addDup+overwrite('
-            '${overwriteBtns.evaluate().length})+view('
-            '${viewBtns.evaluate().length}) all present');
+        expect(
+          find.text(t.anki_mined_multiple_matches(count: matches.length)),
+          findsOneWidget,
+          reason: 'TODO-1007: multiple matches must be listed',
+        );
+        debugPrint(
+          '[verify][1007] action sheet: title+addDup+overwrite('
+          '${overwriteBtns.evaluate().length})+view('
+          '${viewBtns.evaluate().length}) all present',
+        );
 
         // ── 断言 2：焦点驱动到「查看」→ Activate → 打开只读 note viewer ──
         // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
@@ -145,11 +167,14 @@ void main() {
         final FocusDriver driver = FocusDriver(tester);
         // 焦点落到第一枚 open_in_new（查看）按钮子树 —— 焦点可达是硬要求（禁坐标点击）。
         final Finder firstView = viewBtns.first;
-        final bool focusedView = await driver.focusWidget(firstView) ||
+        final bool focusedView =
+            await driver.focusWidget(firstView) ||
             await driver.requestFocusInside(firstView);
-        expect(focusedView, isTrue,
-            reason:
-                'TODO-1007: "view" action must be focus-reachable (no tap)');
+        expect(
+          focusedView,
+          isTrue,
+          reason: 'TODO-1007: "view" action must be focus-reachable (no tap)',
+        );
 
         Future<bool> viewerOpen() async {
           for (int i = 0; i < 20; i++) {
@@ -174,9 +199,13 @@ void main() {
           Actions.invoke<ActivateIntent>(btnCtx, const ActivateIntent());
           opened = await viewerOpen();
         }
-        expect(find.text(t.anki_note_viewer_title), findsOneWidget,
-            reason: 'TODO-1007: activating "view" must open the read-only '
-                'note viewer dialog');
+        expect(
+          find.text(t.anki_note_viewer_title),
+          findsOneWidget,
+          reason:
+              'TODO-1007: activating "view" must open the read-only '
+              'note viewer dialog',
+        );
         // note viewer 的字段经 async repo.noteFields 加载后才渲染，等它落地。
         bool fieldsShown = false;
         for (int i = 0; i < 30; i++) {
@@ -186,23 +215,37 @@ void main() {
             break;
           }
         }
-        expect(repo.noteFieldsCalled, isTrue,
-            reason: 'TODO-1007: note viewer must load existing fields via '
-                'repo.noteFields');
+        expect(
+          repo.noteFieldsCalled,
+          isTrue,
+          reason:
+              'TODO-1007: note viewer must load existing fields via '
+              'repo.noteFields',
+        );
         // note viewer 展示了 stub 返回的字段值。
-        expect(fieldsShown, isTrue,
-            reason: 'TODO-1007: note viewer must render existing field values '
-                '(stub-front)');
+        expect(
+          fieldsShown,
+          isTrue,
+          reason:
+              'TODO-1007: note viewer must render existing field values '
+              '(stub-front)',
+        );
         // 「在 Anki 打开」入口可见。
-        expect(find.text(t.anki_note_viewer_open_in_anki), findsOneWidget,
-            reason: 'TODO-1007: note viewer must offer "open in Anki"');
-        debugPrint('[verify][1007] note viewer opened; noteFieldsCalled='
-            '${repo.noteFieldsCalled} mineNewCalled=$mineNewCalled '
-            'overwrittenNoteId=$overwrittenNoteId');
+        expect(
+          find.text(t.anki_note_viewer_open_in_anki),
+          findsOneWidget,
+          reason: 'TODO-1007: note viewer must offer "open in Anki"',
+        );
+        debugPrint(
+          '[verify][1007] note viewer opened; noteFieldsCalled='
+          '${repo.noteFieldsCalled} mineNewCalled=$mineNewCalled '
+          'overwrittenNoteId=$overwrittenNoteId',
+        );
 
         // 收口：关掉 note viewer + 操作单（避免悬挂 future 卡 test）。
-        final NavigatorState nav =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
+        final NavigatorState nav = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
         nav.pop(); // note viewer
         await tester.pump(const Duration(milliseconds: 300));
         if (find
@@ -212,8 +255,10 @@ void main() {
           nav.pop(); // action sheet
           await tester.pump(const Duration(milliseconds: 300));
         }
-        await future.timeout(const Duration(seconds: 5),
-            onTimeout: () => const AnkiMinedCardActionResult.unchanged());
+        await future.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => const AnkiMinedCardActionResult.unchanged(),
+        );
 
         assertStrictErrors(errors);
       } finally {
@@ -232,10 +277,7 @@ class _StubAnkiRepo extends BaseAnkiRepository {
   @override
   Future<Map<String, String>?> noteFields(int noteId) async {
     noteFieldsCalled = true;
-    return <String, String>{
-      'Front': 'stub-front-$noteId',
-      'Back': 'stub-back',
-    };
+    return <String, String>{'Front': 'stub-front-$noteId', 'Back': 'stub-back'};
   }
 
   @override
@@ -252,8 +294,7 @@ class _StubAnkiRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('stub');
+  }) async => MineOutcome.failure('stub');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => true;

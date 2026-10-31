@@ -286,8 +286,11 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(candidate.title,
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(
+                  candidate.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (metaParts.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -303,8 +306,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           ),
           const SizedBox(width: 8),
           FushiFilledButton.tonal(
-            onPressed:
-                _applyingCandidate != null ? null : () => _use(candidate),
+            onPressed: _applyingCandidate != null
+                ? null
+                : () => _use(candidate),
             child: identical(_applyingCandidate, candidate)
                 ? const SizedBox(
                     width: 16,

@@ -56,17 +56,25 @@ void main() {
 
       test('html.global-lookup 声明真实背景层，阻止 body 背景传播成方角画布底', () {
         final String body = ruleBody(css, r'html\.global-lookup');
-        final RegExp backgroundDecl =
-            RegExp(r'(?:^|[;{\s])background(?:-image)?\s*:([^;]*)');
+        final RegExp backgroundDecl = RegExp(
+          r'(?:^|[;{\s])background(?:-image)?\s*:([^;]*)',
+        );
         final RegExpMatch? decl = backgroundDecl.firstMatch(body);
-        expect(decl, isNotNull,
-            reason: 'html.global-lookup 必须显式声明背景，否则会继承 html,body 的不透明主题色');
+        expect(
+          decl,
+          isNotNull,
+          reason: 'html.global-lookup 必须显式声明背景，否则会继承 html,body 的不透明主题色',
+        );
 
         final String value = decl!.group(1)!.trim();
-        expect(value.contains('linear-gradient'), isTrue,
-            reason: '必须是一个真实存在的背景层（全透明渐变）。裸 transparent/none 会让 '
-                'documentElement 变成「无背景」，body 背景被提升为方角画布背景，'
-                '卡片右上/右下圆角随即消失');
+        expect(
+          value.contains('linear-gradient'),
+          isTrue,
+          reason:
+              '必须是一个真实存在的背景层（全透明渐变）。裸 transparent/none 会让 '
+              'documentElement 变成「无背景」，body 背景被提升为方角画布背景，'
+              '卡片右上/右下圆角随即消失',
+        );
       });
 
       test('该背景层全透明，不会让 TODO-893 的方形「白框」回归', () {
@@ -75,22 +83,38 @@ void main() {
         final Iterable<RegExpMatch> stops = colorStop.allMatches(body);
         expect(stops, isNotEmpty, reason: '渐变必须用 rgba() 颜色停靠点，便于机器校验 alpha');
         for (final RegExpMatch stop in stops) {
-          final List<String> parts =
-              stop.group(1)!.split(',').map((String s) => s.trim()).toList();
-          expect(parts.length, 4,
-              reason: '颜色停靠点必须写成 rgba(r, g, b, a) 四元组：${stop.group(0)}');
-          expect(double.parse(parts[3]), 0,
-              reason: '停靠点 alpha 必须为 0（纯透明层），否则会在卡片外画出不透明方角：'
-                  '${stop.group(0)}');
+          final List<String> parts = stop
+              .group(1)!
+              .split(',')
+              .map((String s) => s.trim())
+              .toList();
+          expect(
+            parts.length,
+            4,
+            reason: '颜色停靠点必须写成 rgba(r, g, b, a) 四元组：${stop.group(0)}',
+          );
+          expect(
+            double.parse(parts[3]),
+            0,
+            reason:
+                '停靠点 alpha 必须为 0（纯透明层），否则会在卡片外画出不透明方角：'
+                '${stop.group(0)}',
+          );
         }
       });
 
       test('html.global-lookup body 仍是圆角卡片（圆角的唯一来源）', () {
         final String body = ruleBody(css, r'html\.global-lookup body');
-        expect(RegExp(r'border-radius\s*:').hasMatch(body), isTrue,
-            reason: '卡片圆角由 body 自己画；去掉它，四角只能靠外层 shell 裁剪碰运气');
-        expect(RegExp(r'(^|[;{\s])border\s*:').hasMatch(body), isTrue,
-            reason: '卡片 1px 描边与圆角同属一套卡片 chrome');
+        expect(
+          RegExp(r'border-radius\s*:').hasMatch(body),
+          isTrue,
+          reason: '卡片圆角由 body 自己画；去掉它，四角只能靠外层 shell 裁剪碰运气',
+        );
+        expect(
+          RegExp(r'(^|[;{\s])border\s*:').hasMatch(body),
+          isTrue,
+          reason: '卡片 1px 描边与圆角同属一套卡片 chrome',
+        );
       });
     });
   });

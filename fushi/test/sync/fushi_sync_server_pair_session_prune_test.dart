@@ -16,16 +16,17 @@ void main() {
 
   Future<void> startServer() async {
     tempDir = Directory.systemTemp.createTempSync('fushi_pair_prune_test');
-    server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: 'tok',
-      allowLan: true,
-      now: () => fakeNow,
-    )
-      ..onPairRequest = ((FushiPairRequest _) async => true)
-      ..onPairPinGenerated = ((FushiPairSession s) => '000000')
-      ..lanRequiresPinProvider = (() async => false);
+    server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: 'tok',
+            allowLan: true,
+            now: () => fakeNow,
+          )
+          ..onPairRequest = ((FushiPairRequest _) async => true)
+          ..onPairPinGenerated = ((FushiPairSession s) => '000000')
+          ..lanRequiresPinProvider = (() async => false);
     await server.start();
   }
 

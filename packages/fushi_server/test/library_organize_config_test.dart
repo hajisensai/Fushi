@@ -19,8 +19,10 @@ ai:
   test('yaml 往返保留 library_organize', () {
     final ServerConfig config = ServerConfig.parse(yaml, configDir: '.');
     expect(config.ai!.libraryOrganize, isTrue);
-    final ServerConfig again =
-        ServerConfig.parse(config.toYaml(), configDir: '.');
+    final ServerConfig again = ServerConfig.parse(
+      config.toYaml(),
+      configDir: '.',
+    );
     expect(again.ai!.libraryOrganize, isTrue);
     expect(
       ServerConfig.parse(
@@ -38,15 +40,15 @@ ai:
     final ServerAiConfig on = ServerConfig.parse(yaml, configDir: '.').ai!;
     final ServerAiConfig off = on.copyWith(libraryOrganize: false);
     expect(
-      ServerAiSettings(() => on)
-          .aiFeatureAssignments
-          .providerIdFor(AiFeature.libraryOrganize),
+      ServerAiSettings(
+        () => on,
+      ).aiFeatureAssignments.providerIdFor(AiFeature.libraryOrganize),
       kServerAiProviderId,
     );
     expect(
-      ServerAiSettings(() => off)
-          .aiFeatureAssignments
-          .providerIdFor(AiFeature.libraryOrganize),
+      ServerAiSettings(
+        () => off,
+      ).aiFeatureAssignments.providerIdFor(AiFeature.libraryOrganize),
       isNull,
     );
     expect(serverLibraryOrganizer(db, on), isNotNull);

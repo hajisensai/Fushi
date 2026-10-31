@@ -16,12 +16,12 @@ class VideoMetadataWorkKey {
   const VideoMetadataWorkKey.collection({
     required String name,
     required this.collectionType,
-  })  : collectionName = name,
-        bookUid = null;
+  }) : collectionName = name,
+       bookUid = null;
 
   const VideoMetadataWorkKey.book(String this.bookUid)
-      : collectionName = null,
-        collectionType = null;
+    : collectionName = null,
+      collectionType = null;
 
   final String? collectionName;
   final String? collectionType;
@@ -51,7 +51,9 @@ class VideoMetadataWorkKey {
       final Object? type = collection['collectionType'];
       if (name is String && name.isNotEmpty && type is String) {
         return VideoMetadataWorkKey.collection(
-            name: name, collectionType: type);
+          name: name,
+          collectionType: type,
+        );
       }
     }
     throw const FormatException('work key needs bookUid or collection');
@@ -97,12 +99,12 @@ class VideoMetadataWorkEntry {
   final VideoMetadataWork work;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'key': key.toJson(),
-        'updatedAt': updatedAt,
-        'lockedFields': lockedFields,
-        if (lookup != null) 'lookup': encodeVideoMetadataLookup(lookup!),
-        'work': encodeVideoMetadataWork(work),
-      };
+    'key': key.toJson(),
+    'updatedAt': updatedAt,
+    'lockedFields': lockedFields,
+    if (lookup != null) 'lookup': encodeVideoMetadataLookup(lookup!),
+    'work': encodeVideoMetadataWork(work),
+  };
 
   static VideoMetadataWorkEntry fromJson(Object? json) {
     if (json is! Map) throw const FormatException('entry must be an object');
@@ -133,16 +135,17 @@ class VideoMetadataCandidateEntry {
   final VideoMetadataWork work;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'lookup': encodeVideoMetadataLookup(lookup),
-        'work': encodeVideoMetadataWork(work),
-      };
+    'lookup': encodeVideoMetadataLookup(lookup),
+    'work': encodeVideoMetadataWork(work),
+  };
 
   static VideoMetadataCandidateEntry fromJson(Object? json) {
     if (json is! Map) {
       throw const FormatException('candidate must be an object');
     }
-    final VideoMetadataLookup? lookup =
-        decodeVideoMetadataLookup(json['lookup']);
+    final VideoMetadataLookup? lookup = decodeVideoMetadataLookup(
+      json['lookup'],
+    );
     final Object? work = json['work'];
     if (lookup == null || work is! Map) {
       throw const FormatException('candidate needs lookup and work');
@@ -175,9 +178,9 @@ enum VideoMetadataConflict {
 /// [VideoMetadataHost] 写操作的结果：成功带 entry；拒绝带 conflict + 附加信息。
 class VideoMetadataWriteResult {
   const VideoMetadataWriteResult.ok(VideoMetadataWorkEntry this.entry)
-      : conflict = null,
-        currentLookup = null,
-        ambiguousWorks = const <VideoMetadataWorkKey>[];
+    : conflict = null,
+      currentLookup = null,
+      ambiguousWorks = const <VideoMetadataWorkKey>[];
 
   const VideoMetadataWriteResult.conflict(
     VideoMetadataConflict this.conflict, {
@@ -212,8 +215,8 @@ class VideoMetadataWriteResult {
         VideoMetadataWorkEntry.fromJson(json['entry']),
       );
     }
-    final VideoMetadataConflict? conflict =
-        VideoMetadataConflict.values.asNameMap()[json['conflict']];
+    final VideoMetadataConflict? conflict = VideoMetadataConflict.values
+        .asNameMap()[json['conflict']];
     if (conflict == null) {
       throw FormatException('unknown conflict ${json['conflict']}');
     }
@@ -240,19 +243,19 @@ class VideoMetadataEpisodeGroupListing {
   final String? current;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'groups': <Object?>[
-          for (final VideoMetadataEpisodeGroupSummary g in groups)
-            <String, Object?>{
-              'id': g.id,
-              'name': g.name,
-              'type': g.type,
-              if (g.description != null) 'description': g.description,
-              if (g.groupCount != null) 'groupCount': g.groupCount,
-              if (g.episodeCount != null) 'episodeCount': g.episodeCount,
-            },
-        ],
-        'current': current,
-      };
+    'groups': <Object?>[
+      for (final VideoMetadataEpisodeGroupSummary g in groups)
+        <String, Object?>{
+          'id': g.id,
+          'name': g.name,
+          'type': g.type,
+          if (g.description != null) 'description': g.description,
+          if (g.groupCount != null) 'groupCount': g.groupCount,
+          if (g.episodeCount != null) 'episodeCount': g.episodeCount,
+        },
+    ],
+    'current': current,
+  };
 
   static VideoMetadataEpisodeGroupListing fromJson(Object? raw) {
     if (raw is! Map) throw const FormatException('episode group listing');
@@ -264,13 +267,19 @@ class VideoMetadataEpisodeGroupListing {
           if (node is Map && node['id'] is String)
             VideoMetadataEpisodeGroupSummary(
               id: node['id'] as String,
-              name: node['name'] is String ? node['name'] as String : node['id'] as String,
+              name: node['name'] is String
+                  ? node['name'] as String
+                  : node['id'] as String,
               type: node['type'] is int ? node['type'] as int : 0,
-              description:
-                  node['description'] is String ? node['description'] as String : null,
-              groupCount: node['groupCount'] is int ? node['groupCount'] as int : null,
-              episodeCount:
-                  node['episodeCount'] is int ? node['episodeCount'] as int : null,
+              description: node['description'] is String
+                  ? node['description'] as String
+                  : null,
+              groupCount: node['groupCount'] is int
+                  ? node['groupCount'] as int
+                  : null,
+              episodeCount: node['episodeCount'] is int
+                  ? node['episodeCount'] as int
+                  : null,
             ),
       ],
       current: raw['current'] is String ? raw['current'] as String : null,

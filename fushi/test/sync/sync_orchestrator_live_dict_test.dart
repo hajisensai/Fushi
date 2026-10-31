@@ -41,15 +41,17 @@ Future<void> _seedDictionary(
   Directory dictRoot,
   String name,
 ) async {
-  await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-    name: name,
-    formatKey: 'yomichan',
-    order: 0,
-    type: const Value('term'),
-    metadataJson: const Value('{}'),
-    hiddenLanguagesJson: const Value('[]'),
-    collapsedLanguagesJson: const Value('[]'),
-  ));
+  await db.upsertDictionaryMeta(
+    DictionaryMetadataCompanion.insert(
+      name: name,
+      formatKey: 'yomichan',
+      order: 0,
+      type: const Value('term'),
+      metadataJson: const Value('{}'),
+      hiddenLanguagesJson: const Value('[]'),
+      collapsedLanguagesJson: const Value('[]'),
+    ),
+  );
   final Directory dir = Directory(p.join(dictRoot.path, name))
     ..createSync(recursive: true);
   File(p.join(dir.path, 'blobs.bin')).writeAsBytesSync(<int>[1, 2, 3]);
@@ -66,8 +68,9 @@ Future<InterconnectSyncBackend> _buildClientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -79,20 +82,19 @@ SyncOrchestrator _orchestrator(
   SyncBackend backend,
   Directory dictRoot,
   Directory tmp,
-) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: dictRoot,
-      audioDatabaseRoot: tmp,
-      tempDir: tmp,
-      syncStats: false,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: false,
-      syncDictionary: true,
-    );
+) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: dictRoot,
+  audioDatabaseRoot: tmp,
+  tempDir: tmp,
+  syncStats: false,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: false,
+  syncDictionary: true,
+);
 
 // ── Fake staged backend（同 sync_orchestrator_test.dart 里的 FakeSyncBackend）──
 
@@ -112,13 +114,18 @@ class _FakeSyncBackend implements SyncBackend {
   Future<AssetEntry?> findAsset(String namespaceId, String name) =>
       _store.findAsset(namespaceId, name);
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) =>
-      _store.putAsset(namespaceId, name, file, onProgress: onProgress);
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) => _store.putAsset(namespaceId, name, file, onProgress: onProgress);
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) =>
-      _store.getAsset(assetId, destination, onProgress: onProgress);
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) => _store.getAsset(assetId, destination, onProgress: onProgress);
   @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
@@ -135,8 +142,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _store.ensureFolder(rootFolderId, bookTitle);
+  }) => _store.ensureFolder(rootFolderId, bookTitle);
 
   @override
   Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
@@ -172,46 +178,44 @@ class _FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   void clearCache() {}
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   String? get cachedRootFolderId => 'root';
   @override
@@ -276,27 +280,37 @@ void main() {
       // 本地：有 JMdict，无「明镜」
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
-      final Directory localDictRoot =
-          Directory(p.join(work.path, 'local_dicts_pull'))..createSync();
+      final Directory localDictRoot = Directory(
+        p.join(work.path, 'local_dicts_pull'),
+      )..createSync();
       await _seedDictionary(localDb, localDictRoot, 'JMdict');
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
-      final SyncOrchestrator orch =
-          _orchestrator(localDb, backend, localDictRoot, tmp);
+      final SyncOrchestrator orch = _orchestrator(
+        localDb,
+        backend,
+        localDictRoot,
+        tmp,
+      );
       final SyncRunReport report = SyncRunReport();
       await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
-      expect(report.errors, isEmpty,
-          reason: 'live sync should have no errors: ${report.errors}');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'live sync should have no errors: ${report.errors}',
+      );
       expect(report.dictionariesImported, 1, reason: '「明镜」应从 host pull 并导入');
 
       // 本地 DB 现含「明镜」
-      final List<DictionaryMetaRow> local =
-          await localDb.getAllDictionaryMetadata();
+      final List<DictionaryMetaRow> local = await localDb
+          .getAllDictionaryMetadata();
       expect(local.map((DictionaryMetaRow d) => d.name), contains('明镜'));
     });
 
@@ -304,17 +318,24 @@ void main() {
       // 本地：有 JMdict，无「明镜」
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
-      final Directory localDictRoot =
-          Directory(p.join(work.path, 'local_dicts_push'))..createSync();
+      final Directory localDictRoot = Directory(
+        p.join(work.path, 'local_dicts_push'),
+      )..createSync();
       await _seedDictionary(localDb, localDictRoot, 'JMdict');
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_push'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
-      final SyncOrchestrator orch =
-          _orchestrator(localDb, backend, localDictRoot, tmp);
+      final SyncOrchestrator orch = _orchestrator(
+        localDb,
+        backend,
+        localDictRoot,
+        tmp,
+      );
       final SyncRunReport report = SyncRunReport();
       await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
@@ -322,68 +343,95 @@ void main() {
       expect(report.dictionariesExported, 1, reason: 'JMdict 应推送到 host');
 
       // host DB 现含 JMdict
-      final List<DictionaryMetaRow> hostDicts =
-          await hostDb.getAllDictionaryMetadata();
+      final List<DictionaryMetaRow> hostDicts = await hostDb
+          .getAllDictionaryMetadata();
       expect(
-          hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
+        hostDicts.map((DictionaryMetaRow d) => d.name),
+        contains('JMdict'),
+      );
     });
 
     test('live 路径不创建 __dictionaries__ 文件夹', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
-      final Directory localDictRoot =
-          Directory(p.join(work.path, 'local_dicts_ns'))..createSync();
+      final Directory localDictRoot = Directory(
+        p.join(work.path, 'local_dicts_ns'),
+      )..createSync();
 
       final Directory tmp = Directory(p.join(work.path, 'tmp'))..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
-      final SyncOrchestrator orch =
-          _orchestrator(localDb, backend, localDictRoot, tmp);
-      await orch.syncDictionaries(SyncRunReport(),
-          direction: SyncAssetDirection.both);
+      final SyncOrchestrator orch = _orchestrator(
+        localDb,
+        backend,
+        localDictRoot,
+        tmp,
+      );
+      await orch.syncDictionaries(
+        SyncRunReport(),
+        direction: SyncAssetDirection.both,
+      );
 
       // server 的 sync-data 目录下不应有 __dictionaries__ 文件夹
       final String syncDataDir = p.join(work.path, 'server_data', 'sync-data');
-      final Directory dictNs =
-          Directory(p.join(syncDataDir, '__dictionaries__'));
-      expect(dictNs.existsSync(), isFalse,
-          reason: 'live 路径不应在服务端创建 __dictionaries__ 暂存');
+      final Directory dictNs = Directory(
+        p.join(syncDataDir, '__dictionaries__'),
+      );
+      expect(
+        dictNs.existsSync(),
+        isFalse,
+        reason: 'live 路径不应在服务端创建 __dictionaries__ 暂存',
+      );
     });
 
     test('pull+push 双向 union round-trip', () async {
       // 本地：JMdict；host：「明镜」。运行后本地含「明镜」，host 含 JMdict。
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
-      final Directory localDictRoot =
-          Directory(p.join(work.path, 'local_dicts_rt'))..createSync();
+      final Directory localDictRoot = Directory(
+        p.join(work.path, 'local_dicts_rt'),
+      )..createSync();
       await _seedDictionary(localDb, localDictRoot, 'JMdict');
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_rt'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
-      final SyncOrchestrator orch =
-          _orchestrator(localDb, backend, localDictRoot, tmp);
+      final SyncOrchestrator orch = _orchestrator(
+        localDb,
+        backend,
+        localDictRoot,
+        tmp,
+      );
       final SyncRunReport report = SyncRunReport();
       await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
-      expect(report.errors, isEmpty,
-          reason: 'round-trip errors: ${report.errors}');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'round-trip errors: ${report.errors}',
+      );
       expect(report.dictionariesImported, 1, reason: '「明镜」应 pull');
       expect(report.dictionariesExported, 1, reason: 'JMdict 应 push');
 
       // 本地现有「明镜」
-      final List<DictionaryMetaRow> localDicts =
-          await localDb.getAllDictionaryMetadata();
+      final List<DictionaryMetaRow> localDicts = await localDb
+          .getAllDictionaryMetadata();
       expect(localDicts.map((DictionaryMetaRow d) => d.name), contains('明镜'));
 
       // host 有「JMdict」
-      final List<DictionaryMetaRow> hostDicts =
-          await hostDb.getAllDictionaryMetadata();
+      final List<DictionaryMetaRow> hostDicts = await hostDb
+          .getAllDictionaryMetadata();
       expect(
-          hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
+        hostDicts.map((DictionaryMetaRow d) => d.name),
+        contains('JMdict'),
+      );
 
       // 第二次同步：两边词典已一致，必须零传输（不能每次全量重传）。
       final SyncRunReport second = SyncRunReport();
@@ -413,7 +461,10 @@ void main() {
       addTearDown(db.close);
 
       await _seedDictionary(
-          db, Directory(p.join(work.path, 'dicts'))..createSync(), 'JMdict');
+        db,
+        Directory(p.join(work.path, 'dicts'))..createSync(),
+        'JMdict',
+      );
 
       final SyncOrchestrator orch = _orchestrator(
         db,
@@ -429,11 +480,15 @@ void main() {
       expect(report.errors, isEmpty);
 
       // 验证 __dictionaries__ 命名空间确实被创建（staged 路径的特征）
-      final String nsId =
-          await backend.ensureNamespace(kSyncDictionaryNamespace);
+      final String nsId = await backend.ensureNamespace(
+        kSyncDictionaryNamespace,
+      );
       final List<AssetEntry> children = await backend.listChildren(nsId);
-      expect(children.where((AssetEntry e) => !e.isFolder), isNotEmpty,
-          reason: 'staged 路径应在 __dictionaries__ 下创建词典资产');
+      expect(
+        children.where((AssetEntry e) => !e.isFolder),
+        isNotEmpty,
+        reason: 'staged 路径应在 __dictionaries__ 下创建词典资产',
+      );
     });
   });
 }

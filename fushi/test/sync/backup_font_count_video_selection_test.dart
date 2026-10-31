@@ -52,85 +52,93 @@ void main() {
     final ArchiveFile dbFile = archive.findFile('fushi.db')!;
     final Directory dir = Directory(p.join(into.path, 'exdb'))
       ..createSync(recursive: true);
-    File(p.join(dir.path, 'fushi.db'))
-        .writeAsBytesSync(dbFile.content as List<int>);
+    File(
+      p.join(dir.path, 'fushi.db'),
+    ).writeAsBytesSync(dbFile.content as List<int>);
     return FushiDatabase(dir.path);
   }
 
   Future<int> countRows(FushiDatabase db, String table) async {
-    final row =
-        await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
+    final row = await db
+        .customSelect('SELECT COUNT(*) AS c FROM $table')
+        .getSingle();
     return row.data['c'] as int;
   }
 
   group('font count / packing = catalog entries, not raw file count', () {
-    test('counts + packs only catalog-referenced files, skips orphans/temp',
-        () async {
-      final String dbDir = p.join(src.path, 'db');
-      final String fonts = p.join(src.path, 'custom_fonts');
-      Directory(dbDir).createSync(recursive: true);
+    test(
+      'counts + packs only catalog-referenced files, skips orphans/temp',
+      () async {
+        final String dbDir = p.join(src.path, 'db');
+        final String fonts = p.join(src.path, 'custom_fonts');
+        Directory(dbDir).createSync(recursive: true);
 
-      // Two managed fonts + three garbage files the tree accumulated: a failed
-      // download temp file and two replaced-but-unreferenced old files.
-      await writeFile(p.join(fonts, 'Klee.ttf'), 'FONT-A');
-      await writeFile(p.join(fonts, 'Mincho.otf'), 'FONT-B');
-      await writeFile(p.join(fonts, '_tmp_1700000000000'), 'HALF-DOWNLOAD');
-      await writeFile(p.join(fonts, 'OldDeleted.ttf'), 'ORPHAN-1');
-      await writeFile(p.join(fonts, 'AlsoUnreferenced.woff2'), 'ORPHAN-2');
+        // Two managed fonts + three garbage files the tree accumulated: a failed
+        // download temp file and two replaced-but-unreferenced old files.
+        await writeFile(p.join(fonts, 'Klee.ttf'), 'FONT-A');
+        await writeFile(p.join(fonts, 'Mincho.otf'), 'FONT-B');
+        await writeFile(p.join(fonts, '_tmp_1700000000000'), 'HALF-DOWNLOAD');
+        await writeFile(p.join(fonts, 'OldDeleted.ttf'), 'ORPHAN-1');
+        await writeFile(p.join(fonts, 'AlsoUnreferenced.woff2'), 'ORPHAN-2');
 
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      await db.setPref(
-        'src:reader_fushi:font_catalog',
-        jsonEncode(<String, Object?>{
-          'version': 1,
-          'fonts': <Map<String, Object?>>[
-            <String, Object?>{
-              'id': 'a',
-              'name': 'Klee',
-              'path': p.join(fonts, 'Klee.ttf'),
-            },
-            <String, Object?>{
-              'id': 'b',
-              'name': 'Mincho',
-              'path': p.join(fonts, 'Mincho.otf'),
-            },
-          ],
-        }),
-      );
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        await db.setPref(
+          'src:reader_fushi:font_catalog',
+          jsonEncode(<String, Object?>{
+            'version': 1,
+            'fonts': <Map<String, Object?>>[
+              <String, Object?>{
+                'id': 'a',
+                'name': 'Klee',
+                'path': p.join(fonts, 'Klee.ttf'),
+              },
+              <String, Object?>{
+                'id': 'b',
+                'name': 'Mincho',
+                'path': p.join(fonts, 'Mincho.otf'),
+              },
+            ],
+          }),
+        );
 
-      final BackupService service = BackupService(
-        db: db,
-        dbDirectory: dbDir,
-        appVersion: '1.0.0',
-        fontsRootDirectory: fonts,
-      );
+        final BackupService service = BackupService(
+          db: db,
+          dbDirectory: dbDir,
+          appVersion: '1.0.0',
+          fontsRootDirectory: fonts,
+        );
 
-      // The five files on disk must NOT inflate the count: only the two
-      // catalog entries are reported (root fix for "2 fonts shown as 7").
-      final BackupContentSummary summary = await service.summarizeLiveContent();
-      expect(summary.countFor(BackupCategory.fonts), 2);
+        // The five files on disk must NOT inflate the count: only the two
+        // catalog entries are reported (root fix for "2 fonts shown as 7").
+        final BackupContentSummary summary = await service
+            .summarizeLiveContent();
+        expect(summary.countFor(BackupCategory.fonts), 2);
 
-      final String zip = p.join(src.path, 'fonts.zip');
-      await service.createBackup(zip);
-      await db.close();
+        final String zip = p.join(src.path, 'fonts.zip');
+        await service.createBackup(zip);
+        await db.close();
 
-      final Archive archive = await readZip(zip);
-      expect(archive.findFile('custom_fonts/Klee.ttf'), isNotNull);
-      expect(archive.findFile('custom_fonts/Mincho.otf'), isNotNull);
-      // The garbage never travels.
-      expect(archive.findFile('custom_fonts/_tmp_1700000000000'), isNull);
-      expect(archive.findFile('custom_fonts/OldDeleted.ttf'), isNull);
-      expect(archive.findFile('custom_fonts/AlsoUnreferenced.woff2'), isNull);
-      // The archive font-file count agrees with the export-dialog count.
-      final int packedFonts = archive.files
-          .where((ArchiveFile f) =>
-              f.isFile &&
-              f.name.startsWith('custom_fonts/') &&
-              f.name.length > 'custom_fonts/'.length)
-          .length;
-      expect(packedFonts, 2);
-    });
+        final Archive archive = await readZip(zip);
+        expect(archive.findFile('custom_fonts/Klee.ttf'), isNotNull);
+        expect(archive.findFile('custom_fonts/Mincho.otf'), isNotNull);
+        // The garbage never travels.
+        expect(archive.findFile('custom_fonts/_tmp_1700000000000'), isNull);
+        expect(archive.findFile('custom_fonts/OldDeleted.ttf'), isNull);
+        expect(archive.findFile('custom_fonts/AlsoUnreferenced.woff2'), isNull);
+        // The archive font-file count agrees with the export-dialog count.
+        final int packedFonts = archive.files
+            .where(
+              (ArchiveFile f) =>
+                  f.isFile &&
+                  f.name.startsWith('custom_fonts/') &&
+                  f.name.length > 'custom_fonts/'.length,
+            )
+            .length;
+        expect(packedFonts, 2);
+      },
+    );
 
     test('legacy shadow font list (no catalog) is still counted', () async {
       final String dbDir = p.join(src.path, 'db');
@@ -139,8 +147,9 @@ void main() {
       await writeFile(p.join(fonts, 'Legacy.ttf'), 'FONT');
       await writeFile(p.join(fonts, '_tmp_999'), 'ORPHAN');
 
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       await db.setPref(
         'src:reader_fushi:custom_fonts',
         jsonEncode(<Map<String, Object?>>[
@@ -162,32 +171,36 @@ void main() {
       expect(summary.countFor(BackupCategory.fonts), 1);
     });
 
-    test('no catalog + no legacy list → zero fonts (orphans do not count)',
-        () async {
-      final String dbDir = p.join(src.path, 'db');
-      final String fonts = p.join(src.path, 'custom_fonts');
-      Directory(dbDir).createSync(recursive: true);
-      await writeFile(p.join(fonts, '_tmp_1'), 'ORPHAN');
-      await writeFile(p.join(fonts, 'strays.ttf'), 'ORPHAN');
+    test(
+      'no catalog + no legacy list → zero fonts (orphans do not count)',
+      () async {
+        final String dbDir = p.join(src.path, 'db');
+        final String fonts = p.join(src.path, 'custom_fonts');
+        Directory(dbDir).createSync(recursive: true);
+        await writeFile(p.join(fonts, '_tmp_1'), 'ORPHAN');
+        await writeFile(p.join(fonts, 'strays.ttf'), 'ORPHAN');
 
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      final BackupService service = BackupService(
-        db: db,
-        dbDirectory: dbDir,
-        appVersion: '1.0.0',
-        fontsRootDirectory: fonts,
-      );
-      final BackupContentSummary summary = await service.summarizeLiveContent();
-      await db.close();
-      expect(summary.countFor(BackupCategory.fonts), 0);
-    });
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        final BackupService service = BackupService(
+          db: db,
+          dbDirectory: dbDir,
+          appVersion: '1.0.0',
+          fontsRootDirectory: fonts,
+        );
+        final BackupContentSummary summary = await service
+            .summarizeLiveContent();
+        await db.close();
+        expect(summary.countFor(BackupCategory.fonts), 0);
+      },
+    );
   });
 
   group('per-video export selection (videoKeys)', () {
     /// Lays out three local videos (A/B/C) and returns the service + db.
     Future<({BackupService service, FushiDatabase db})>
-        buildThreeVideos() async {
+    buildThreeVideos() async {
       final String dbDir = p.join(src.path, 'db');
       final String videos = p.join(src.path, 'external_videos');
       Directory(dbDir).createSync(recursive: true);
@@ -195,14 +208,17 @@ void main() {
       await writeFile(p.join(videos, 'B.mp4'), 'VID-B');
       await writeFile(p.join(videos, 'C.mp4'), 'VID-C');
 
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       for (final String k in <String>['A', 'B', 'C']) {
-        await db.upsertVideoBook(VideoBooksCompanion.insert(
-          bookUid: 'video/$k',
-          title: 'Video $k',
-          videoPath: p.join(videos, '$k.mp4'),
-        ));
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/$k',
+            title: 'Video $k',
+            videoPath: p.join(videos, '$k.mp4'),
+          ),
+        );
       }
       final BackupService service = BackupService(
         db: db,
@@ -237,8 +253,10 @@ void main() {
       final FushiDatabase exdb = await openBackupDb(zip, dst);
       final List<VideoBookRow> rows = await exdb.allVideoBooks();
       await exdb.close();
-      expect(rows.map((VideoBookRow v) => v.bookUid).toSet(),
-          <String>{'video/A', 'video/C'});
+      expect(rows.map((VideoBookRow v) => v.bookUid).toSet(), <String>{
+        'video/A',
+        'video/C',
+      });
       // bookCount is honest to what travels (2 usable videos, 0 epub books).
       expect(meta.bookCount, 2);
     });

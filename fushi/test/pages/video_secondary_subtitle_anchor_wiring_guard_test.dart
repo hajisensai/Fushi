@@ -17,8 +17,9 @@ void main() {
   }
 
   test('_handleSubtitleLookupTap 必须把命中 cue 作为 overrideCue 透传给 _lookupAt', () {
-    final String page =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String page = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
     final int start = page.indexOf('void _handleSubtitleLookupTap(');
     expect(start, greaterThanOrEqualTo(0));
     // 用 `\n  }\n` 而不是 `\n  }`：后者会提前命中签名收尾的 `  }) {`（方法带可选
@@ -27,15 +28,22 @@ void main() {
     expect(end, greaterThan(start));
     final String body = page.substring(start, end);
 
-    expect(body.contains('AudioCue? cue'), isTrue,
-        reason: '点击查词入口必须收下命中项带出的所属 cue');
-    expect(body.contains('overrideCue: cue'), isTrue,
-        reason: '收下了却不作为 overrideCue 透传 = 锚点仍去主字幕流猜 → 只开副字幕时制卡区间 0..0');
+    expect(
+      body.contains('AudioCue? cue'),
+      isTrue,
+      reason: '点击查词入口必须收下命中项带出的所属 cue',
+    );
+    expect(
+      body.contains('overrideCue: cue'),
+      isTrue,
+      reason: '收下了却不作为 overrideCue 透传 = 锚点仍去主字幕流猜 → 只开副字幕时制卡区间 0..0',
+    );
   });
 
   test('hover 查词入口同样透传命中 cue（与点击同一条链路）', () {
-    final String page =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String page = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
     final int start = page.indexOf('void _handleSubtitleHoverLookup(');
     expect(start, greaterThanOrEqualTo(0));
     final int end = page.indexOf('\n  }\n', start);
@@ -48,25 +56,42 @@ void main() {
       r'_handleSubtitleLookupTap\(([^;]*)\);',
     ).firstMatch(body);
     expect(call, isNotNull, reason: 'hover 入口必须转调点击查词那条链路');
-    expect(call!.group(1)!.contains('cue'), isTrue,
-        reason: 'hover 换词丢掉 cue 会让 Shift-悬停查词制出的卡回到黑帧');
+    expect(
+      call!.group(1)!.contains('cue'),
+      isTrue,
+      reason: 'hover 换词丢掉 cue 会让 Shift-悬停查词制出的卡回到黑帧',
+    );
   });
 
   test('查词锚点兜底解析走有效流 miningCues（主流为空即副流），不再硬认主字幕流', () {
     final String favorite = read(
-        'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart');
-    expect(favorite.contains('cues: controller.miningCues'), isTrue,
-        reason: '硬认 controller.cues 会让只开副字幕时按位置解析恒 null');
-    expect(favorite.contains('cues: controller.cues'), isFalse,
-        reason: '不得回潮到只认主字幕流');
+      'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart',
+    );
+    expect(
+      favorite.contains('cues: controller.miningCues'),
+      isTrue,
+      reason: '硬认 controller.cues 会让只开副字幕时按位置解析恒 null',
+    );
+    expect(
+      favorite.contains('cues: controller.cues'),
+      isFalse,
+      reason: '不得回潮到只认主字幕流',
+    );
   });
 
   test('制卡区间与上下 N 句上下文都按有效流/锚点所属流取', () {
     final String mining = read(
-        'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart');
-    expect(mining.contains('cues: controller.miningCues'), isTrue,
-        reason: '_resolveVideoMiningRange 的按位置兜底必须走有效流');
-    expect(mining.contains('controller.cueStreamOwning(anchor)'), isTrue,
-        reason: '上下 N 句必须在锚点所属的那条流里取邻句，否则副字幕锚点 indexOf 恒 -1 静默失效');
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    );
+    expect(
+      mining.contains('cues: controller.miningCues'),
+      isTrue,
+      reason: '_resolveVideoMiningRange 的按位置兜底必须走有效流',
+    );
+    expect(
+      mining.contains('controller.cueStreamOwning(anchor)'),
+      isTrue,
+      reason: '上下 N 句必须在锚点所属的那条流里取邻句，否则副字幕锚点 indexOf 恒 -1 静默失效',
+    );
   });
 }

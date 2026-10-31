@@ -28,21 +28,20 @@ void main() {
     int status = 200,
     List<Map<String, Object?>> media = const <Map<String, Object?>>[],
     List<String>? recordInto,
-  }) =>
-      http_testing.MockClient((http.Request request) async {
-        recordInto?.add(request.url.toString());
-        return http.Response(
-          jsonEncode(<String, Object?>{
-            'data': <String, Object?>{
-              'Page': <String, Object?>{'media': media},
-            },
-          }),
-          status,
-          headers: <String, String>{
-            'content-type': 'application/json; charset=utf-8',
-          },
-        );
-      });
+  }) => http_testing.MockClient((http.Request request) async {
+    recordInto?.add(request.url.toString());
+    return http.Response(
+      jsonEncode(<String, Object?>{
+        'data': <String, Object?>{
+          'Page': <String, Object?>{'media': media},
+        },
+      }),
+      status,
+      headers: <String, String>{
+        'content-type': 'application/json; charset=utf-8',
+      },
+    );
+  });
 
   Widget host({
     required VideoSubtitleRegistry registry,
@@ -53,25 +52,24 @@ void main() {
     String? videoPath,
     int? initialSeason,
     List<AniListMedia>? series,
-  }) =>
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: JimakuSubtitleDialog(
-              initialQuery: initialQuery,
-              initialApiKey: 'jimaku-key',
-              onApiKeyChanged: (String _) async {},
-              saveDirectory: saveDirectory,
-              subtitleRegistry: () async => registry,
-              seed: seed,
-              videoPath: videoPath,
-              initialSeason: initialSeason,
-              httpClientFactory: () async => anilist,
-              debugInitialSeriesMatches: series,
-            ),
-          ),
+  }) => TranslationProvider(
+    child: MaterialApp(
+      home: Scaffold(
+        body: JimakuSubtitleDialog(
+          initialQuery: initialQuery,
+          initialApiKey: 'jimaku-key',
+          onApiKeyChanged: (String _) async {},
+          saveDirectory: saveDirectory,
+          subtitleRegistry: () async => registry,
+          seed: seed,
+          videoPath: videoPath,
+          initialSeason: initialSeason,
+          httpClientFactory: () async => anilist,
+          debugInitialSeriesMatches: series,
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> sized(WidgetTester tester, Widget widget) async {
     tester.view.physicalSize = const Size(1400, 1000);
@@ -164,9 +162,7 @@ void main() {
       expect(request.effectiveSeason, 4);
     });
 
-    testWidgets('预填日文原名不带季号：从种子里的合集名读出第四季', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('预填日文原名不带季号：从种子里的合集名读出第四季', (WidgetTester tester) async {
       final _RecordingSubtitleProvider provider = _RecordingSubtitleProvider();
       await sized(
         tester,
@@ -189,9 +185,7 @@ void main() {
       expect(provider.requests.single.media?.anilistId, 189046);
     });
 
-    testWidgets('用户改了番名：不拿原视频的季号去套他写的词', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('用户改了番名：不拿原视频的季号去套他写的词', (WidgetTester tester) async {
       final _RecordingSubtitleProvider provider = _RecordingSubtitleProvider();
       await sized(
         tester,
@@ -378,7 +372,8 @@ void main() {
       expect(
         find.text('Re:Zero 2nd Season Part 2'),
         findsNothing,
-        reason: '「没问上」才保留旧列表；「问了、真没有」必须如实替换，否则用户对着一批'
+        reason:
+            '「没问上」才保留旧列表；「问了、真没有」必须如实替换，否则用户对着一批'
             '与当前搜索词无关的系列以为还能选',
       );
     });

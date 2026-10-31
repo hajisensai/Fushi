@@ -79,14 +79,20 @@ void main() {
 
       // 容差 2°：调制要经 HSL→8bit RGB 往返，饱和度压得越低量化误差越大
       // （实测暗色档 0.26 下偏 1.15°）。这个量级肉眼不可辨，色相仍是留住的。
-      expect(tunedHsl.hue, closeTo(seedHsl.hue, 2.0),
-          reason: '色相是与前景协调的依据，必须留住');
-      expect(tunedHsl.saturation,
-          lessThanOrEqualTo(kBackdropMaxSaturationDark + 0.01));
+      expect(
+        tunedHsl.hue,
+        closeTo(seedHsl.hue, 2.0),
+        reason: '色相是与前景协调的依据，必须留住',
+      );
+      expect(
+        tunedHsl.saturation,
+        lessThanOrEqualTo(kBackdropMaxSaturationDark + 0.01),
+      );
       // 暗色收得更紧：同一颗种子在亮色主题下允许更高的饱和度。
       expect(
-        HSLColor.fromColor(harmonizeBackdrop(vivid, Brightness.light))
-            .saturation,
+        HSLColor.fromColor(
+          harmonizeBackdrop(vivid, Brightness.light),
+        ).saturation,
         greaterThan(tunedHsl.saturation),
       );
       expect(tunedHsl.lightness, closeTo(kBackdropDarkLightness, 0.02));
@@ -97,12 +103,15 @@ void main() {
       const Color light = Color(0xFFF2F0EC);
       for (final Color seed in <Color>[dark, light]) {
         expect(
-          HSLColor.fromColor(harmonizeBackdrop(seed, Brightness.light))
-              .lightness,
+          HSLColor.fromColor(
+            harmonizeBackdrop(seed, Brightness.light),
+          ).lightness,
           closeTo(kBackdropLightLightness, 0.02),
         );
         expect(
-          HSLColor.fromColor(harmonizeBackdrop(seed, Brightness.dark)).lightness,
+          HSLColor.fromColor(
+            harmonizeBackdrop(seed, Brightness.dark),
+          ).lightness,
           closeTo(kBackdropDarkLightness, 0.02),
         );
       }
@@ -112,17 +121,20 @@ void main() {
   group('PortraitCoverImage 垫底层序', () {
     /// 把 [image] 编码成 PNG 交给 [MemoryImage]（保留 alpha 通道）。
     Future<Uint8List> pngOf(ui.Image image) async {
-      final ByteData? data =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? data = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       return data!.buffer.asUint8List();
     }
 
     /// 主色底层：带渐变的 [DecoratedBox]。
     Iterable<DecoratedBox> tintedLayers(WidgetTester tester) => tester
         .widgetList<DecoratedBox>(find.byType(DecoratedBox))
-        .where((DecoratedBox b) =>
-            b.decoration is BoxDecoration &&
-            (b.decoration as BoxDecoration).gradient != null);
+        .where(
+          (DecoratedBox b) =>
+              b.decoration is BoxDecoration &&
+              (b.decoration as BoxDecoration).gradient != null,
+        );
 
     Future<void> pumpCover(WidgetTester tester, MemoryImage provider) async {
       await tester.pumpWidget(
@@ -154,23 +166,25 @@ void main() {
 
     /// 找铺满槽位的纯压暗层：旧实现用它把 `Color(0x59000000)` 涂满整张卡。
     Finder flatDimLayer() => find.byWidgetPredicate(
-          (Widget w) => w is ColoredBox && w.color == kCoverBackdropDimColor,
-        );
+      (Widget w) => w is ColoredBox && w.color == kCoverBackdropDimColor,
+    );
 
     testWidgets('去背立绘：铺主色底，且压暗不再涂在透明区上', (WidgetTester tester) async {
       final ui.Image raw = (await tester.runAsync<ui.Image>(
         () => halfTransparentImage(64, 64, color: const Color(0xFFCC3366)),
       ))!;
       addTearDown(raw.dispose);
-      final MemoryImage provider =
-          MemoryImage((await tester.runAsync<Uint8List>(() => pngOf(raw)))!);
+      final MemoryImage provider = MemoryImage(
+        (await tester.runAsync<Uint8List>(() => pngOf(raw)))!,
+      );
 
       await pumpCover(tester, provider);
 
       // 方图不合竖槽 → 走垫底路径。
       expect(find.byType(PrebakedBlurImage), findsOneWidget);
       expect(
-        tester.widget<PrebakedBlurImage>(find.byType(PrebakedBlurImage))
+        tester
+            .widget<PrebakedBlurImage>(find.byType(PrebakedBlurImage))
             .colorFilter,
         const ColorFilter.mode(kCoverBackdropDimColor, BlendMode.srcATop),
         reason: '压暗只能作用在图自身 alpha 上（srcATop），随图一起烘焙进模糊',
@@ -187,15 +201,19 @@ void main() {
       );
     });
 
-    testWidgets('不透明封面：不额外铺底色（模糊垫底本就铺满，观感零变化）',
-        (WidgetTester tester) async {
+    testWidgets('不透明封面：不额外铺底色（模糊垫底本就铺满，观感零变化）', (WidgetTester tester) async {
       final ui.Image raw = (await tester.runAsync<ui.Image>(
-        () => halfTransparentImage(64, 64,
-            color: const Color(0xFF2244AA), opaque: true),
+        () => halfTransparentImage(
+          64,
+          64,
+          color: const Color(0xFF2244AA),
+          opaque: true,
+        ),
       ))!;
       addTearDown(raw.dispose);
-      final MemoryImage provider =
-          MemoryImage((await tester.runAsync<Uint8List>(() => pngOf(raw)))!);
+      final MemoryImage provider = MemoryImage(
+        (await tester.runAsync<Uint8List>(() => pngOf(raw)))!,
+      );
 
       await pumpCover(tester, provider);
 

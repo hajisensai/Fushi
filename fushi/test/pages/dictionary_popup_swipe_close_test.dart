@@ -151,8 +151,11 @@ void main() {
       // 判别力守卫：body 起手点必须落在顶栏 SwipeDismissWrapper（仅裹顶栏）矩形之外，
       // 证明触发来自新的弹窗本体横拖识别器，而非顶栏那条 wrapper。
       final Rect swipeRect = tester.getRect(find.byType(SwipeDismissWrapper));
-      expect(swipeRect.contains(bodyCenter), isFalse,
-          reason: 'body 起手点须在顶栏可滑区域之外，证明本体横拖识别器生效');
+      expect(
+        swipeRect.contains(bodyCenter),
+        isFalse,
+        reason: 'body 起手点须在顶栏可滑区域之外，证明本体横拖识别器生效',
+      );
 
       await dragHorizontally(tester, bodyCenter);
 
@@ -160,38 +163,38 @@ void main() {
     },
   );
 
-  testWidgets(
-    'TODO-486: horizontal drag below threshold does NOT dismiss',
-    (WidgetTester tester) async {
-      bool dismissed = false;
-      await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
+  testWidgets('TODO-486: horizontal drag below threshold does NOT dismiss', (
+    WidgetTester tester,
+  ) async {
+    bool dismissed = false;
+    await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
 
-      final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
-      await dragHorizontally(
-        tester,
-        headerCenter,
-        distance: 40,
-        kind: PointerDeviceKind.mouse,
-      );
+    final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
+    await dragHorizontally(
+      tester,
+      headerCenter,
+      distance: 40,
+      kind: PointerDeviceKind.mouse,
+    );
 
-      expect(dismissed, isFalse,
-          reason:
-              'desktop drag below the configured threshold must spring back');
-    },
-  );
+    expect(
+      dismissed,
+      isFalse,
+      reason: 'desktop drag below the configured threshold must spring back',
+    );
+  });
 
-  testWidgets(
-    'TODO-486: touch drag over threshold on the header dismisses',
-    (WidgetTester tester) async {
-      bool dismissed = false;
-      await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
+  testWidgets('TODO-486: touch drag over threshold on the header dismisses', (
+    WidgetTester tester,
+  ) async {
+    bool dismissed = false;
+    await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
 
-      final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
-      await dragHorizontally(tester, headerCenter);
+    final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
+    await dragHorizontally(tester, headerCenter);
 
-      expect(dismissed, isTrue, reason: 'header（可拖区）的水平滑动应保留滑动关闭');
-    },
-  );
+    expect(dismissed, isTrue, reason: 'header（可拖区）的水平滑动应保留滑动关闭');
+  });
 
   testWidgets(
     'TODO-486: desktop mouse drag on child top bar dismisses without onClose',
@@ -208,9 +211,11 @@ void main() {
       final Rect swipeRect = tester.getRect(find.byType(SwipeDismissWrapper));
       final Offset blankTopBarPoint = swipeRect.center;
       final Rect closeIconRect = tester.getRect(find.byIcon(Icons.close));
-      expect(closeIconRect.contains(blankTopBarPoint), isFalse,
-          reason:
-              'the drag starts from blank child top-bar space, not the icon');
+      expect(
+        closeIconRect.contains(blankTopBarPoint),
+        isFalse,
+        reason: 'the drag starts from blank child top-bar space, not the icon',
+      );
 
       await dragHorizontally(
         tester,
@@ -218,26 +223,34 @@ void main() {
         kind: PointerDeviceKind.mouse,
       );
 
-      expect(dismissed, isTrue,
-          reason: 'child swipe should close only the current child layer');
-      expect(closed, isFalse,
-          reason: 'swipe must not be implemented by invoking the child X');
+      expect(
+        dismissed,
+        isTrue,
+        reason: 'child swipe should close only the current child layer',
+      );
+      expect(
+        closed,
+        isFalse,
+        reason: 'swipe must not be implemented by invoking the child X',
+      );
     },
   );
 
-  testWidgets(
-    'TODO-486: trackpad pan zoom on the header dismisses',
-    (WidgetTester tester) async {
-      bool dismissed = false;
-      await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
+  testWidgets('TODO-486: trackpad pan zoom on the header dismisses', (
+    WidgetTester tester,
+  ) async {
+    bool dismissed = false;
+    await tester.pumpWidget(popup(onDismiss: () => dismissed = true));
 
-      final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
-      await panZoomHorizontally(tester, headerCenter);
+    final Offset headerCenter = tester.getCenter(find.byKey(headerKey));
+    await panZoomHorizontally(tester, headerCenter);
 
-      expect(dismissed, isTrue,
-          reason: 'trackpad PointerPanZoom sequences must drive swipe close');
-    },
-  );
+    expect(
+      dismissed,
+      isTrue,
+      reason: 'trackpad PointerPanZoom sequences must drive swipe close',
+    );
+  });
 
   testWidgets('TODO-407①: tapping the X routes through onDismiss', (
     WidgetTester tester,
@@ -292,47 +305,50 @@ void main() {
   );
 
   testWidgets(
-      'TODO-501: top-bar action buttons are 36 boxes with the shared icon '
-      'size (BUG-3412)',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      buildTestApp(
-        Center(
-          child: SizedBox(
-            width: 320,
-            height: 360,
-            child: DictionaryPopupLayer(
-              result: null,
-              isSearching: false,
-              webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
-              enableSwipeToClose: false,
-              onClose: () {},
-              onDismiss: () {},
-              onTextSelected: (text, rect, _) {},
-              onLinkClick: (query, rect) {},
-              onMineEntry: (fields) async => const MinePopupResult(),
-              onDuplicateCheck: (expression, reading) async => false,
+    'TODO-501: top-bar action buttons are 36 boxes with the shared icon '
+    'size (BUG-3412)',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          Center(
+            child: SizedBox(
+              width: 320,
+              height: 360,
+              child: DictionaryPopupLayer(
+                result: null,
+                isSearching: false,
+                webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+                enableSwipeToClose: false,
+                onClose: () {},
+                onDismiss: () {},
+                onTextSelected: (text, rect, _) {},
+                onLinkClick: (query, rect) {},
+                onMineEntry: (fields) async => const MinePopupResult(),
+                onDuplicateCheck: (expression, reading) async => false,
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    final FushiIconButton button = tester.widget<FushiIconButton>(
-      find.widgetWithIcon(FushiIconButton, Icons.close),
-    );
-    // BUG-3412：图标尺寸统一由 kDictionaryPopupTopActionIconSize（18）给出。
-    expect(button.size, kDictionaryPopupTopActionIconSize);
-    expect(
-      button.constraints,
-      const BoxConstraints.tightFor(width: 36, height: 36),
-    );
-    // M3E（1fd2964855d）：关闭是独立的 tonal 圆钮，底色画在 padding 盒上，
-    // 内边距补满 36 命中区（(36 - 图标) / 2），tonal 圆与命中区同大。
-    expect(button.padding,
-        const EdgeInsets.all((36 - kDictionaryPopupTopActionIconSize) / 2));
-    expect(button.backgroundColor, isNotNull);
-  });
+      final FushiIconButton button = tester.widget<FushiIconButton>(
+        find.widgetWithIcon(FushiIconButton, Icons.close),
+      );
+      // BUG-3412：图标尺寸统一由 kDictionaryPopupTopActionIconSize（18）给出。
+      expect(button.size, kDictionaryPopupTopActionIconSize);
+      expect(
+        button.constraints,
+        const BoxConstraints.tightFor(width: 36, height: 36),
+      );
+      // M3E（1fd2964855d）：关闭是独立的 tonal 圆钮，底色画在 padding 盒上，
+      // 内边距补满 36 命中区（(36 - 图标) / 2），tonal 圆与命中区同大。
+      expect(
+        button.padding,
+        const EdgeInsets.all((36 - kDictionaryPopupTopActionIconSize) / 2),
+      );
+      expect(button.backgroundColor, isNotNull);
+    },
+  );
 
   testWidgets(
     'TODO-407②: enableSwipeToClose=false drops the SwipeDismissWrapper on the '
@@ -349,8 +365,9 @@ void main() {
   testWidgets(
     'TODO-407②: enableSwipeToClose=true mounts the SwipeDismissWrapper',
     (WidgetTester tester) async {
-      await tester
-          .pumpWidget(popup(onDismiss: () {}, enableSwipeToClose: true));
+      await tester.pumpWidget(
+        popup(onDismiss: () {}, enableSwipeToClose: true),
+      );
       expect(find.byType(SwipeDismissWrapper), findsOneWidget);
     },
   );
@@ -358,7 +375,9 @@ void main() {
   group('TODO-407②: defaultSwipeToClose platform truth table', () {
     test('desktop Windows/Linux default to false (no swipe-to-close)', () {
       expect(
-          ReaderSettings.defaultSwipeToClose(TargetPlatform.windows), isFalse);
+        ReaderSettings.defaultSwipeToClose(TargetPlatform.windows),
+        isFalse,
+      );
       expect(ReaderSettings.defaultSwipeToClose(TargetPlatform.linux), isFalse);
     });
 
@@ -366,15 +385,20 @@ void main() {
       expect(ReaderSettings.defaultSwipeToClose(TargetPlatform.macOS), isTrue);
       expect(ReaderSettings.defaultSwipeToClose(TargetPlatform.iOS), isTrue);
       expect(
-          ReaderSettings.defaultSwipeToClose(TargetPlatform.android), isTrue);
+        ReaderSettings.defaultSwipeToClose(TargetPlatform.android),
+        isTrue,
+      );
     });
 
     test('the only false branch is exactly windows||linux', () {
       for (final TargetPlatform p in TargetPlatform.values) {
         final bool expected =
             !(p == TargetPlatform.windows || p == TargetPlatform.linux);
-        expect(ReaderSettings.defaultSwipeToClose(p), expected,
-            reason: '平台 $p 的默认滑关开关应为 $expected');
+        expect(
+          ReaderSettings.defaultSwipeToClose(p),
+          expected,
+          reason: '平台 $p 的默认滑关开关应为 $expected',
+        );
       }
     });
   });

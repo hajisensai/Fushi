@@ -35,7 +35,8 @@ void main() {
     // 桌面 / 移动派生仍在其内、仍是单一真相源。
     expect(
       src.contains(
-          'Duration get _videoControlsTransitionDuration => einkSafeDuration('),
+        'Duration get _videoControlsTransitionDuration => einkSafeDuration(',
+      ),
       isTrue,
       reason: '应有按桌面 / 移动派生（外层 einkSafeDuration）的单一真相源 getter',
     );
@@ -57,68 +58,79 @@ void main() {
   });
 
   test(
-      '锁按钮淡出用 _videoControlsTransitionDuration + easeInOut（不回退 200ms / linear）',
-      () {
-    final String body = _section(
-      src,
-      'Widget _withImmersiveLockAutoHide({required Widget child})',
-      'Widget _buildVideoSideActionRail(',
-    );
+    '锁按钮淡出用 _videoControlsTransitionDuration + easeInOut（不回退 200ms / linear）',
+    () {
+      final String body = _section(
+        src,
+        'Widget _withImmersiveLockAutoHide({required Widget child})',
+        'Widget _buildVideoSideActionRail(',
+      );
 
-    expect(
-      body.contains('FadingChromeGate('),
-      isTrue,
-      reason: '锁按钮淡入淡出应走共享门控 FadingChromeGate（BUG-1301）',
-    );
-    expect(
-      body.contains('duration: _videoControlsTransitionDuration'),
-      isTrue,
-      reason: '锁按钮淡入淡出时长应读控制条同源真相源（不再硬编码 200ms）',
-    );
-    expect(
-      body.contains('curve:'),
-      isFalse,
-      reason: '调用点不得覆盖曲线——覆盖了就绕开 FadingChromeGate 的 easeInOut 默认值',
-    );
-    expect(
-      body.contains('duration: const Duration(milliseconds: 200)'),
-      isFalse,
-      reason: '锁按钮不得回退到硬编码 200ms（TODO-435 回归）',
-    );
-    // 曲线契约落在组件里，跟着组件断。
-    expectFadingChromeGateContract();
-  });
+      expect(
+        body.contains('FadingChromeGate('),
+        isTrue,
+        reason: '锁按钮淡入淡出应走共享门控 FadingChromeGate（BUG-1301）',
+      );
+      expect(
+        body.contains('duration: _videoControlsTransitionDuration'),
+        isTrue,
+        reason: '锁按钮淡入淡出时长应读控制条同源真相源（不再硬编码 200ms）',
+      );
+      expect(
+        body.contains('curve:'),
+        isFalse,
+        reason: '调用点不得覆盖曲线——覆盖了就绕开 FadingChromeGate 的 easeInOut 默认值',
+      );
+      expect(
+        body.contains('duration: const Duration(milliseconds: 200)'),
+        isFalse,
+        reason: '锁按钮不得回退到硬编码 200ms（TODO-435 回归）',
+      );
+      // 曲线契约落在组件里，跟着组件断。
+      expectFadingChromeGateContract();
+    },
+  );
 
-  test('桌面控制主题显式设 controlsTransitionDuration: _videoControlsTransitionDuration',
-      () {
-    final int start = src.indexOf(
-        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
-    expect(start, greaterThan(0), reason: '应有 _desktopControlsTheme 构造器');
-    final int end = src.indexOf(
-        'MaterialVideoControlsThemeData _mobileControlsTheme(', start);
-    expect(end, greaterThan(start));
-    final String body = src.substring(start, end);
-    expect(
-      body.contains(
-          'controlsTransitionDuration: _videoControlsTransitionDuration'),
-      isTrue,
-      reason: '桌面控制主题应读锁按钮同源的淡入淡出时长',
-    );
-  });
+  test(
+    '桌面控制主题显式设 controlsTransitionDuration: _videoControlsTransitionDuration',
+    () {
+      final int start = src.indexOf(
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
+      );
+      expect(start, greaterThan(0), reason: '应有 _desktopControlsTheme 构造器');
+      final int end = src.indexOf(
+        'MaterialVideoControlsThemeData _mobileControlsTheme(',
+        start,
+      );
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+      expect(
+        body.contains(
+          'controlsTransitionDuration: _videoControlsTransitionDuration',
+        ),
+        isTrue,
+        reason: '桌面控制主题应读锁按钮同源的淡入淡出时长',
+      );
+    },
+  );
 
-  test('移动控制主题显式设 controlsTransitionDuration: _videoControlsTransitionDuration',
-      () {
-    final int start =
-        src.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme(');
-    expect(start, greaterThan(0), reason: '应有 _mobileControlsTheme 构造器');
-    final String body = src.substring(start);
-    expect(
-      body.contains(
-          'controlsTransitionDuration: _videoControlsTransitionDuration'),
-      isTrue,
-      reason: '移动控制主题应读锁按钮同源的淡入淡出时长',
-    );
-  });
+  test(
+    '移动控制主题显式设 controlsTransitionDuration: _videoControlsTransitionDuration',
+    () {
+      final int start = src.indexOf(
+        'MaterialVideoControlsThemeData _mobileControlsTheme(',
+      );
+      expect(start, greaterThan(0), reason: '应有 _mobileControlsTheme 构造器');
+      final String body = src.substring(start);
+      expect(
+        body.contains(
+          'controlsTransitionDuration: _videoControlsTransitionDuration',
+        ),
+        isTrue,
+        reason: '移动控制主题应读锁按钮同源的淡入淡出时长',
+      );
+    },
+  );
 
   test('right rail gate 监听所有强压制态，gate 与 rebuild 来源一致', () {
     final String railBody = _section(
@@ -127,8 +139,11 @@ void main() {
       'Widget _buildVideoSideRailFor(',
     );
     final int mergeStart = railBody.indexOf('Listenable.merge(<Listenable>[');
-    expect(mergeStart, greaterThanOrEqualTo(0),
-        reason: 'rail 必须用 Listenable.merge 汇总显隐来源');
+    expect(
+      mergeStart,
+      greaterThanOrEqualTo(0),
+      reason: 'rail 必须用 Listenable.merge 汇总显隐来源',
+    );
     final int mergeEnd = railBody.indexOf(']),', mergeStart);
     expect(mergeEnd, greaterThan(mergeStart));
     final String mergeBody = railBody.substring(mergeStart, mergeEnd);
@@ -141,8 +156,11 @@ void main() {
       '_subtitleListVisible',
       '_videoControlEditMode',
     ]) {
-      expect(mergeBody.contains(listenable), isTrue,
-          reason: 'rail Listenable.merge 缺少 $listenable，gate 变化会不同步');
+      expect(
+        mergeBody.contains(listenable),
+        isTrue,
+        reason: 'rail Listenable.merge 缺少 $listenable，gate 变化会不同步',
+      );
     }
 
     final String gateBody = _section(
@@ -150,12 +168,21 @@ void main() {
       'bool get _videoSideActionRailStronglySuppressed',
       'void _applyControlsVisibilityFromMediaKit()',
     );
-    expect(gateBody.contains('_subtitleListVisible.value'), isTrue,
-        reason: '字幕列表打开时普通 right rail 必须被强压制');
-    expect(gateBody.contains('_videoControlEditMode.value'), isTrue,
-        reason: '画面编辑模式打开时普通 right rail 必须被强压制');
-    expect(gateBody.contains('_videoSidePanel.value != null'), isTrue,
-        reason: '侧栏 / 面板打开时普通 right rail 必须被强压制');
+    expect(
+      gateBody.contains('_subtitleListVisible.value'),
+      isTrue,
+      reason: '字幕列表打开时普通 right rail 必须被强压制',
+    );
+    expect(
+      gateBody.contains('_videoControlEditMode.value'),
+      isTrue,
+      reason: '画面编辑模式打开时普通 right rail 必须被强压制',
+    );
+    expect(
+      gateBody.contains('_videoSidePanel.value != null'),
+      isTrue,
+      reason: '侧栏 / 面板打开时普通 right rail 必须被强压制',
+    );
     expect(
       railBody.contains('if (_videoSideActionRailStronglySuppressed)'),
       isTrue,
@@ -169,10 +196,16 @@ void main() {
       'void _clearRailHover()',
       'void _applyControlsVisibilityFromMediaKit()',
     );
-    expect(clearHoverBody.contains('_railHovered.value = false'), isTrue,
-        reason: '清 hover 必须直接把 _railHovered 置 false');
-    expect(clearHoverBody.contains('_railHovered.value = true'), isFalse,
-        reason: '清 hover helper 不能恢复旧 hover');
+    expect(
+      clearHoverBody.contains('_railHovered.value = false'),
+      isTrue,
+      reason: '清 hover 必须直接把 _railHovered 置 false',
+    );
+    expect(
+      clearHoverBody.contains('_railHovered.value = true'),
+      isFalse,
+      reason: '清 hover helper 不能恢复旧 hover',
+    );
 
     // 阶段B：`_showVideoControlEditOverlay()`（画面内拖拽编辑入口）已删——旧面板只
     // 声明了 onEditControlsOnscreen 参数从未渲染入口，该 show 路径本就不可达；控件
@@ -191,10 +224,16 @@ void main() {
       expect(start, greaterThanOrEqualTo(0), reason: '缺少 ${hook.key}');
       final int clearIdx = src.indexOf('_clearRailHover();', start);
       final int enterIdx = src.indexOf(hook.value, start);
-      expect(clearIdx, greaterThanOrEqualTo(0),
-          reason: '${hook.key} 进入强压制态时必须清 _railHovered');
-      expect(enterIdx, greaterThan(clearIdx),
-          reason: '${hook.key} 应先清 hover，再进入强压制态');
+      expect(
+        clearIdx,
+        greaterThanOrEqualTo(0),
+        reason: '${hook.key} 进入强压制态时必须清 _railHovered',
+      );
+      expect(
+        enterIdx,
+        greaterThan(clearIdx),
+        reason: '${hook.key} 应先清 hover，再进入强压制态',
+      );
     }
 
     final String hideSidePanel = _section(
@@ -207,9 +246,15 @@ void main() {
       'void _hideVideoControlEditOverlay({bool revealControls = true})',
       'Future<void> _clearWindowAspectRatioLock()',
     );
-    expect(hideSidePanel.contains('_railHovered.value = true'), isFalse,
-        reason: '退出侧栏不应恢复旧 hover，只能等待真实 hover / 控制条状态');
-    expect(hideEdit.contains('_railHovered.value = true'), isFalse,
-        reason: '退出画面编辑不应恢复旧 hover，只能等待真实 hover / 控制条状态');
+    expect(
+      hideSidePanel.contains('_railHovered.value = true'),
+      isFalse,
+      reason: '退出侧栏不应恢复旧 hover，只能等待真实 hover / 控制条状态',
+    );
+    expect(
+      hideEdit.contains('_railHovered.value = true'),
+      isFalse,
+      reason: '退出画面编辑不应恢复旧 hover，只能等待真实 hover / 控制条状态',
+    );
   });
 }

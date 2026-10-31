@@ -17,46 +17,55 @@ void main() {
       expect(await audioRefToWebViewUrl(''), isNull);
     });
 
-    test('remote http(s) refs pass through unchanged so <audio> streams them',
-        () async {
-      expect(
-        await audioRefToWebViewUrl('https://example.com/a.mp3'),
-        'https://example.com/a.mp3',
-      );
-      expect(
-        await audioRefToWebViewUrl('http://host/audio/file?id=42&token=abc'),
-        'http://host/audio/file?id=42&token=abc',
-      );
-    });
+    test(
+      'remote http(s) refs pass through unchanged so <audio> streams them',
+      () async {
+        expect(
+          await audioRefToWebViewUrl('https://example.com/a.mp3'),
+          'https://example.com/a.mp3',
+        );
+        expect(
+          await audioRefToWebViewUrl('http://host/audio/file?id=42&token=abc'),
+          'http://host/audio/file?id=42&token=abc',
+        );
+      },
+    );
 
-    test('a local file becomes a base64 data: URL with the right MIME',
-        () async {
-      final Directory dir = await Directory.systemTemp.createTemp('fushi_wa');
-      addTearDown(() => dir.delete(recursive: true));
-      final List<int> bytes = <int>[1, 2, 3, 4, 5, 250, 128, 0];
-      final File mp3 = File('${dir.path}/word.mp3')..writeAsBytesSync(bytes);
+    test(
+      'a local file becomes a base64 data: URL with the right MIME',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp('fushi_wa');
+        addTearDown(() => dir.delete(recursive: true));
+        final List<int> bytes = <int>[1, 2, 3, 4, 5, 250, 128, 0];
+        final File mp3 = File('${dir.path}/word.mp3')..writeAsBytesSync(bytes);
 
-      final String? url = await audioRefToWebViewUrl(mp3.path);
-      expect(url, 'data:audio/mpeg;base64,${base64Encode(bytes)}');
-    });
+        final String? url = await audioRefToWebViewUrl(mp3.path);
+        expect(url, 'data:audio/mpeg;base64,${base64Encode(bytes)}');
+      },
+    );
 
-    test('a file:// URI ref is decoded to a path then base64-encoded',
-        () async {
-      final Directory dir = await Directory.systemTemp.createTemp('fushi_wa');
-      addTearDown(() => dir.delete(recursive: true));
-      final List<int> bytes = <int>[9, 8, 7];
-      final File opus = File('${dir.path}/word.opus')..writeAsBytesSync(bytes);
+    test(
+      'a file:// URI ref is decoded to a path then base64-encoded',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp('fushi_wa');
+        addTearDown(() => dir.delete(recursive: true));
+        final List<int> bytes = <int>[9, 8, 7];
+        final File opus = File('${dir.path}/word.opus')
+          ..writeAsBytesSync(bytes);
 
-      final String? url = await audioRefToWebViewUrl(opus.uri.toString());
-      expect(url, 'data:audio/ogg;base64,${base64Encode(bytes)}');
-    });
+        final String? url = await audioRefToWebViewUrl(opus.uri.toString());
+        expect(url, 'data:audio/ogg;base64,${base64Encode(bytes)}');
+      },
+    );
 
-    test('a missing local file resolves to null (no broken data: URL)',
-        () async {
-      final Directory dir = await Directory.systemTemp.createTemp('fushi_wa');
-      addTearDown(() => dir.delete(recursive: true));
-      expect(await audioRefToWebViewUrl('${dir.path}/nope.mp3'), isNull);
-    });
+    test(
+      'a missing local file resolves to null (no broken data: URL)',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp('fushi_wa');
+        addTearDown(() => dir.delete(recursive: true));
+        expect(await audioRefToWebViewUrl('${dir.path}/nope.mp3'), isNull);
+      },
+    );
   });
 
   group('audioMimeForPath', () {
@@ -76,8 +85,7 @@ void main() {
       expect(audioMimeForPath('WORD.Opus'), 'audio/ogg');
     });
 
-    test(
-        'unknown extensions fall back to audio/mpeg (dominant word-audio '
+    test('unknown extensions fall back to audio/mpeg (dominant word-audio '
         'format)', () {
       expect(audioMimeForPath('a.xyz'), 'audio/mpeg');
       expect(audioMimeForPath('noext'), 'audio/mpeg');

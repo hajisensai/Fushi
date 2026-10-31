@@ -67,24 +67,23 @@ Future<MediaSourceRow> _insertVideoSource(
 VideoMediaReference _reference({
   VideoMetadataMediaKind kind = VideoMetadataMediaKind.tv,
   VideoDiscoveryCategory category = VideoDiscoveryCategory.anime,
-}) =>
-    VideoMediaReference(
-      providerId: 'mal',
-      mediaId: '100',
-      mediaKind: kind,
-      discoveryCategory: category,
-      title: 'Show',
-      originalTitle: 'ショー',
-      aliases: const <String>['Show'],
-      year: 2026,
-      season: 1,
-      tmdbId: 77,
-    );
+}) => VideoMediaReference(
+  providerId: 'mal',
+  mediaId: '100',
+  mediaKind: kind,
+  discoveryCategory: category,
+  title: 'Show',
+  originalTitle: 'ショー',
+  aliases: const <String>['Show'],
+  year: 2026,
+  season: 1,
+  tmdbId: 77,
+);
 
 VideoDiscoveryItem _item(VideoMediaReference reference) => VideoDiscoveryItem(
-      reference: reference,
-      posterUrl: 'https://img.example/cover.jpg',
-    );
+  reference: reference,
+  posterUrl: 'https://img.example/cover.jpg',
+);
 
 VideoDiscoveryDownloadSelection _download({
   required VideoMediaReference media,
@@ -92,30 +91,28 @@ VideoDiscoveryDownloadSelection _download({
   required VideoResourceCandidate resource,
   VideoDownloadSubtitlePolicy subtitlePolicy =
       VideoDownloadSubtitlePolicy.required,
-}) =>
-    VideoDiscoveryDownloadSelection(
-      media: media,
-      resource: resource,
-      source: source,
-      subtitlePolicy: subtitlePolicy,
-    );
+}) => VideoDiscoveryDownloadSelection(
+  media: media,
+  resource: resource,
+  source: source,
+  subtitlePolicy: subtitlePolicy,
+);
 
 VideoDiscoverySubscriptionSelection _subscription({
   required VideoDiscoveryDownloadSelection download,
   int? startAfterEpisode,
   bool batchRelease = false,
-}) =>
-    VideoDiscoverySubscriptionSelection(
-      download: download,
-      filter: const StrictVideoSubscriptionFilter(
-        json: '{"resolution":"1080p"}',
-        releaseGroup: null,
-        resolution: '1080p',
-        summaryParts: <String>['1080p'],
-      ),
-      startAfterEpisode: startAfterEpisode,
-      batchRelease: batchRelease,
-    );
+}) => VideoDiscoverySubscriptionSelection(
+  download: download,
+  filter: const StrictVideoSubscriptionFilter(
+    json: '{"resolution":"1080p"}',
+    releaseGroup: null,
+    resolution: '1080p',
+    summaryParts: <String>['1080p'],
+  ),
+  startAfterEpisode: startAfterEpisode,
+  batchRelease: batchRelease,
+);
 
 void main() {
   group('videoResourceSubscriptionSearchQuery', () {
@@ -164,9 +161,10 @@ void main() {
         nowMs: _firstAt,
       );
 
-      final VideoDownloadSubscriptionRow row =
-          (await database.getVideoDownloadSubscription(
-              videoDiscoverySubscriptionId(reference)))!;
+      final VideoDownloadSubscriptionRow row = (await database
+          .getVideoDownloadSubscription(
+            videoDiscoverySubscriptionId(reference),
+          ))!;
       expect(checkNowCalls, 1);
       expect(row.mode, 'oneShot');
       expect(row.organizationPolicy, 'library');
@@ -190,8 +188,9 @@ void main() {
       expect(row.createdAt, _firstAt);
       expect(row.updatedAt, _firstAt);
 
-      final VideoMediaReference decoded =
-          decodeVideoMediaReference(row.identityJson)!;
+      final VideoMediaReference decoded = decodeVideoMediaReference(
+        row.identityJson,
+      )!;
       expect(decoded.title, reference.title);
       expect(decoded.mediaId, reference.mediaId);
       expect(decoded.providerId, reference.providerId);
@@ -225,8 +224,8 @@ void main() {
         target: _target,
       );
 
-      final List<VideoDownloadSubscriptionRow> rows =
-          await database.getVideoDownloadSubscriptions();
+      final List<VideoDownloadSubscriptionRow> rows = await database
+          .getVideoDownloadSubscriptions();
       expect(rows.single.mode, 'oneShot');
       await database.close();
     });
@@ -253,8 +252,8 @@ void main() {
         target: _target,
         nowMs: _firstAt,
       );
-      final VideoDownloadSubscriptionRow first =
-          (await database.getVideoDownloadSubscription(subscriptionId))!;
+      final VideoDownloadSubscriptionRow first = (await database
+          .getVideoDownloadSubscription(subscriptionId))!;
       expect(first.mode, 'ongoing');
       expect(first.subtitlePolicy, VideoDownloadSubtitlePolicy.required.name);
       expect(first.startAfterEpisode, isNull);
@@ -270,8 +269,8 @@ void main() {
         searchQuery: 'custom query',
         nowMs: _secondAt,
       );
-      final VideoDownloadSubscriptionRow second =
-          (await database.getVideoDownloadSubscription(subscriptionId))!;
+      final VideoDownloadSubscriptionRow second = (await database
+          .getVideoDownloadSubscription(subscriptionId))!;
       expect(second.searchQuery, 'custom query');
       expect(second.createdAt, _firstAt);
       expect(second.updatedAt, _secondAt);
@@ -287,11 +286,14 @@ void main() {
   group('enqueueLocalVideoDownload', () {
     test('入队行带落点来源 / 封面 / 字幕策略', () async {
       final FushiDatabase database = await _openDatabase();
-      final Directory root =
-          await Directory.systemTemp.createTemp('fushi-discovery-submit-');
+      final Directory root = await Directory.systemTemp.createTemp(
+        'fushi-discovery-submit-',
+      );
       addTearDown(() => root.delete(recursive: true));
-      final MediaSourceRow source =
-          await _insertVideoSource(database, rootPath: root.path);
+      final MediaSourceRow source = await _insertVideoSource(
+        database,
+        rootPath: root.path,
+      );
       final _FakeResourceCandidate resource = _FakeResourceCandidate();
       final VideoResourceRegistry resourceRegistry = VideoResourceRegistry(
         <VideoResourceProvider>[_FakeResourceProvider(resource)],
@@ -302,23 +304,23 @@ void main() {
       addTearDown(metadataRegistry.close);
       final VideoSourceScrapeCoordinator scrapeCoordinator =
           VideoSourceScrapeCoordinator(
-        database: database,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry: metadataRegistry,
-      );
+            database: database,
+            config: const VideoSourceScrapeGlobalConfig(),
+            registry: metadataRegistry,
+          );
       addTearDown(scrapeCoordinator.close);
       // 后端未装配：入队只落库，wake 后的处理轮以 action-required 收场，
       // 不影响这里断言的落点字段。
       final VideoDownloadPipelineService pipeline =
           VideoDownloadPipelineService(
-        database: database,
-        resourceRegistry: resourceRegistry,
-        backendResolver: (_) async => null,
-        scrapeCoordinator: scrapeCoordinator,
-        workerId: 'discovery-submit-test-worker',
-        pollInterval: const Duration(hours: 1),
-        videoCoversDirectory: Directory('${root.path}/covers'),
-      );
+            database: database,
+            resourceRegistry: resourceRegistry,
+            backendResolver: (_) async => null,
+            scrapeCoordinator: scrapeCoordinator,
+            workerId: 'discovery-submit-test-worker',
+            pollInterval: const Duration(hours: 1),
+            videoCoversDirectory: Directory('${root.path}/covers'),
+          );
       addTearDown(pipeline.dispose);
       final VideoMediaReference reference = _reference();
       final VideoDiscoveryItem item = _item(reference);
@@ -335,8 +337,9 @@ void main() {
         target: _target,
       );
 
-      final VideoDownloadJobRow job =
-          (await database.getVideoDownloadJob(jobId))!;
+      final VideoDownloadJobRow job = (await database.getVideoDownloadJob(
+        jobId,
+      ))!;
       expect(job.targetSourceId, source.id);
       expect(job.coverUrl, 'https://img.example/cover.jpg');
       expect(job.subtitlePolicy, VideoDownloadSubtitlePolicy.bestEffort.name);
@@ -358,14 +361,14 @@ void main() {
 
 class _FakeResourceCandidate extends VideoResourceCandidate {
   _FakeResourceCandidate()
-      : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'test-instance',
-          remoteId: 'release-1',
-          title: 'Show S01E01',
-          providerPriority: 0,
-          infoHash: _torrentHash,
-        );
+    : super(
+        providerId: 'nyaa',
+        providerInstanceId: 'test-instance',
+        remoteId: 'release-1',
+        title: 'Show S01E01',
+        providerPriority: 0,
+        infoHash: _torrentHash,
+      );
 }
 
 class _FakeResourceProvider implements VideoResourceProvider {
@@ -386,10 +389,9 @@ class _FakeResourceProvider implements VideoResourceProvider {
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(
-        <VideoResourceCandidate>[candidate],
-      );
+  ) async => ProviderBatchResult<VideoResourceCandidate>.success(
+    <VideoResourceCandidate>[candidate],
+  );
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>

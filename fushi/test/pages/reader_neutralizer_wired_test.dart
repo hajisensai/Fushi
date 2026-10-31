@@ -10,17 +10,29 @@ void main() {
 
   test('reader_fushi_source wraps ReaderFushiPage with neutralizer', () {
     final String src = read('lib/src/media/sources/reader_fushi_source.dart');
-    expect(src.contains('FushiAppUiScaleNeutralizer'), isTrue,
-        reason: 'reader_fushi_source.dart 必须用中和器包裹 ReaderFushiPage');
+    expect(
+      src.contains('FushiAppUiScaleNeutralizer'),
+      isTrue,
+      reason: 'reader_fushi_source.dart 必须用中和器包裹 ReaderFushiPage',
+    );
   });
 
   test('history page opens books through ReaderFushiSource', () {
     final String src = readReaderHistorySource();
-    expect(src.contains('appModel.openMedia('), isTrue,
-        reason: '书架打开阅读器必须走 AppModel.openMedia 注册媒体源');
-    expect(src.contains('mediaSource: ReaderFushiSource.instance'), isTrue,
-        reason: '书架入口必须走 ReaderFushiSource，由 source 层包裹中和器');
-    expect(src.contains('ReaderFushiPage('), isFalse,
-        reason: '书架/历史页不得直接构造 ReaderFushiPage');
+    expect(
+      src.contains('appModel.openMedia('),
+      isTrue,
+      reason: '书架打开阅读器必须走 AppModel.openMedia 注册媒体源',
+    );
+    expect(
+      src.contains('mediaSource: ReaderFushiSource.instance'),
+      isTrue,
+      reason: '书架入口必须走 ReaderFushiSource，由 source 层包裹中和器',
+    );
+    expect(
+      src.contains('ReaderFushiPage('),
+      isFalse,
+      reason: '书架/历史页不得直接构造 ReaderFushiPage',
+    );
   });
 }

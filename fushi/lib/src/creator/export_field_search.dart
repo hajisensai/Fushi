@@ -50,8 +50,10 @@ mixin ExportFieldSearch on Field {
       return searchTerm;
     } else {
       for (Field fallbackField in fallbackSearchTerms) {
-        String fallbackTerm =
-            creatorModel.getFieldController(fallbackField).text.trim();
+        String fallbackTerm = creatorModel
+            .getFieldController(fallbackField)
+            .text
+            .trim();
         if (fallbackTerm.isNotEmpty) {
           FushiToast.show(
             msg: t.field_fallback_used(

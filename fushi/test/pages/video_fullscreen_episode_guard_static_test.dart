@@ -22,54 +22,88 @@ void main() {
   // 定义与 `_buildBottomSlotButton(` 端点仍在主壳（语料最前段），切片不受影响。
   final String pageSource = readVideoFushiSource();
 
-  test('load() reuses Player/VideoController across episodes (no recreate)',
-      () {
-    final String fn = _functionSource(
-      controllerSource,
-      '  Future<void> load({',
-      '  Future<void> _loadEmbeddedSubtitleIfNeeded(',
-    );
-    // 复用：`_player ??` 命中已有实例（换集不重建），仅 _player==null 时才新建 Player
-    // + VideoController。TODO-1232 A2 给 null 分支加了「诊断开启则用 verbose logLevel
-    // 构造」的三元，故不再钉死裸 `_player ?? Player()` 整串，而是锁复用契约本身：
-    // ① `_player ??` 前缀（非空即复用）；② 仍保留裸 `Player()` 分支（pitch-safe 默认路径）。
-    expect(fn, contains('_player ??'),
-        reason: '换集必须复用同一 Player（_player 非空即复用），否则全屏路由绑旧实例黑屏（BUG-120）');
-    expect(fn, contains('Player()'),
-        reason: '_player==null 时仍走裸 Player()（诊断关闭路径），保 pitch 默认安全构造');
-    expect(fn, contains('if (_player == null) {'),
-        reason: 'VideoController 仅首次实例化，换集复用同一实例');
+  test(
+    'load() reuses Player/VideoController across episodes (no recreate)',
+    () {
+      final String fn = _functionSource(
+        controllerSource,
+        '  Future<void> load({',
+        '  Future<void> _loadEmbeddedSubtitleIfNeeded(',
+      );
+      // 复用：`_player ??` 命中已有实例（换集不重建），仅 _player==null 时才新建 Player
+      // + VideoController。TODO-1232 A2 给 null 分支加了「诊断开启则用 verbose logLevel
+      // 构造」的三元，故不再钉死裸 `_player ?? Player()` 整串，而是锁复用契约本身：
+      // ① `_player ??` 前缀（非空即复用）；② 仍保留裸 `Player()` 分支（pitch-safe 默认路径）。
+      expect(
+        fn,
+        contains('_player ??'),
+        reason: '换集必须复用同一 Player（_player 非空即复用），否则全屏路由绑旧实例黑屏（BUG-120）',
+      );
+      expect(
+        fn,
+        contains('Player()'),
+        reason: '_player==null 时仍走裸 Player()（诊断关闭路径），保 pitch 默认安全构造',
+      );
+      expect(
+        fn,
+        contains('if (_player == null) {'),
+        reason: 'VideoController 仅首次实例化，换集复用同一实例',
+      );
 
-    // 不得在 load 内 dispose 旧 player 后重建 VideoController（旧的黑屏根因写法）。
-    expect(fn.contains('await _player?.dispose()'), isFalse,
-        reason: 'load() 内不应 dispose 旧 player（会让全屏路由的 VideoController 失效）');
-    // VideoController 构造只应出现在 _player==null 守卫内，全文件至多一次。
-    expect('VideoController('.allMatches(fn).length, lessThanOrEqualTo(1),
-        reason: 'load() 内 VideoController 至多构造一次（仅首次）');
-  });
+      // 不得在 load 内 dispose 旧 player 后重建 VideoController（旧的黑屏根因写法）。
+      expect(
+        fn.contains('await _player?.dispose()'),
+        isFalse,
+        reason: 'load() 内不应 dispose 旧 player（会让全屏路由的 VideoController 失效）',
+      );
+      // VideoController 构造只应出现在 _player==null 守卫内，全文件至多一次。
+      expect(
+        'VideoController('.allMatches(fn).length,
+        lessThanOrEqualTo(1),
+        reason: 'load() 内 VideoController 至多构造一次（仅首次）',
+      );
+    },
+  );
 
   test('top bar title is reactive via ValueListenable (fullscreen-safe)', () {
-    expect(pageSource, contains('ValueNotifier<String?> _titleNotifier'),
-        reason: '标题需 ValueNotifier 承载，全屏路由才能监听刷新（BUG-120）');
-    expect(pageSource, contains('_titleNotifier.value = title'),
-        reason: '_applyLoad 必须把新标题推给 notifier');
-    expect(pageSource, contains('_titleNotifier.dispose()'),
-        reason: 'dispose 必须释放 _titleNotifier');
+    expect(
+      pageSource,
+      contains('ValueNotifier<String?> _titleNotifier'),
+      reason: '标题需 ValueNotifier 承载，全屏路由才能监听刷新（BUG-120）',
+    );
+    expect(
+      pageSource,
+      contains('_titleNotifier.value = title'),
+      reason: '_applyLoad 必须把新标题推给 notifier',
+    );
+    expect(
+      pageSource,
+      contains('_titleNotifier.dispose()'),
+      reason: 'dispose 必须释放 _titleNotifier',
+    );
     // 两套控制条主题（桌面 + 移动）都应接入响应式标题 helper，不再裸 Text(_title)。
     // TODO-491 把两处 ValueListenableBuilder 提炼为同一个稳定布局 helper，避免右侧
     // 自定义 slot 清空时靠空白占位维持标题位置。
     expect(
-        '_topBarTitle()'.allMatches(pageSource).length, greaterThanOrEqualTo(2),
-        reason: '桌面与移动两套控制条主题的标题都要接入响应式 helper');
+      '_topBarTitle()'.allMatches(pageSource).length,
+      greaterThanOrEqualTo(2),
+      reason: '桌面与移动两套控制条主题的标题都要接入响应式 helper',
+    );
     final String titleHelper = _functionSource(
       pageSource,
       '  Widget _topBarTitle() {',
       '  Widget _buildBottomSlotButton(',
     );
-    expect(titleHelper, contains('valueListenable: _titleNotifier'),
-        reason: '标题 helper 必须用 ValueListenableBuilder 监听 _titleNotifier');
-    expect(titleHelper, contains('AlignmentDirectional.centerStart'),
-        reason: '标题 helper 应固定标题起点，避免 topRight 空槽挤歪标题');
+    expect(
+      titleHelper,
+      contains('valueListenable: _titleNotifier'),
+      reason: '标题 helper 必须用 ValueListenableBuilder 监听 _titleNotifier',
+    );
+    expect(
+      titleHelper,
+      contains('AlignmentDirectional.centerStart'),
+      reason: '标题 helper 应固定标题起点，避免 topRight 空槽挤歪标题',
+    );
   });
 }
 

@@ -37,25 +37,44 @@ void main() {
     final String boot = src.substring(start, end);
 
     // boot 定义受保护的 `_fushiBootInitialize`：try 里调 initialize()，catch 里 console.error。
-    expect(boot.contains('function _fushiBootInitialize()'), isTrue,
-        reason: 'boot 必须经受保护的 _fushiBootInitialize 调用 initialize()');
-    expect(boot.contains('try {'), isTrue,
-        reason: 'boot 必须 try 包 initialize()');
-    expect(boot.contains('window.fushiReader.initialize();'), isTrue,
-        reason: 'boot 仍要调 initialize()');
-    expect(boot.contains('} catch (e) {'), isTrue,
-        reason: 'boot 必须 catch 住 initialize() 的同步抛（否则冲出 IIFE 卡 cloak）');
-    expect(boot.contains('console.error'), isTrue,
-        reason: 'boot catch 必须 console.error 暴露真错供定位');
+    expect(
+      boot.contains('function _fushiBootInitialize()'),
+      isTrue,
+      reason: 'boot 必须经受保护的 _fushiBootInitialize 调用 initialize()',
+    );
+    expect(
+      boot.contains('try {'),
+      isTrue,
+      reason: 'boot 必须 try 包 initialize()',
+    );
+    expect(
+      boot.contains('window.fushiReader.initialize();'),
+      isTrue,
+      reason: 'boot 仍要调 initialize()',
+    );
+    expect(
+      boot.contains('} catch (e) {'),
+      isTrue,
+      reason: 'boot 必须 catch 住 initialize() 的同步抛（否则冲出 IIFE 卡 cloak）',
+    );
+    expect(
+      boot.contains('console.error'),
+      isTrue,
+      reason: 'boot catch 必须 console.error 暴露真错供定位',
+    );
     // 裸调用（不经 _fushiBootInitialize）会绕过保护 —— boot 里两处触发都必须走它
     // （带分号的调用点，排除 `function _fushiBootInitialize()` 定义本身）。
-    expect(RegExp(r'_fushiBootInitialize\(\);').allMatches(boot).length, 2,
-        reason: 'load 事件与 readyState==="complete" 两处都必须走受保护的 boot');
+    expect(
+      RegExp(r'_fushiBootInitialize\(\);').allMatches(boot).length,
+      2,
+      reason: 'load 事件与 readyState==="complete" 两处都必须走受保护的 boot',
+    );
   });
 
   test('reader-setup IIFE 必须无条件兜底摘 fushi-cloak（BUG-1017 ②）', () {
-    final String src =
-        read('lib/src/pages/implementations/reader_fushi/webview.part.dart');
+    final String src = read(
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
+    );
 
     // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('fushi-cloak').remove()。
     // BUG-1140 第二阶段①：整段 setup 由 IIFE 变成 `window.__fushiEngine.install(C)`
@@ -64,11 +83,15 @@ void main() {
     final int iifeStart = src.indexOf('install: function(C) {');
     expect(iifeStart, greaterThan(-1), reason: '找不到 reader-setup install 函数体');
     final String iife = src.substring(iifeStart);
-    expect(iife.contains('Promise.resolve().then(function() {'), isTrue,
-        reason: 'IIFE 顶部必须排 microtask 兜底（任意抛点后仍摘 cloak）');
     expect(
-        RegExp(r"getElementById\('fushi-cloak'\)").allMatches(iife).length >= 2,
-        isTrue,
-        reason: '兜底 microtask 与尾部快路径两处都要摘 fushi-cloak');
+      iife.contains('Promise.resolve().then(function() {'),
+      isTrue,
+      reason: 'IIFE 顶部必须排 microtask 兜底（任意抛点后仍摘 cloak）',
+    );
+    expect(
+      RegExp(r"getElementById\('fushi-cloak'\)").allMatches(iife).length >= 2,
+      isTrue,
+      reason: '兜底 microtask 与尾部快路径两处都要摘 fushi-cloak',
+    );
   });
 }

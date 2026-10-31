@@ -68,8 +68,9 @@ String isoWeekKey(String dateKey) {
   final int isoYear = thursday.year;
   // 该 ISO 周年第一个周四所在的 ISO 第 1 周。
   final DateTime jan1 = DateTime(isoYear, 1, 1);
-  final DateTime firstThursday =
-      jan1.add(Duration(days: (4 - jan1.weekday + 7) % 7));
+  final DateTime firstThursday = jan1.add(
+    Duration(days: (4 - jan1.weekday + 7) % 7),
+  );
   final int week = 1 + (thursday.difference(firstThursday).inDays ~/ 7);
   return '$isoYear-W${week.toString().padLeft(2, '0')}';
 }
@@ -91,13 +92,14 @@ List<StatTrendPoint> aggregateTrend(
 ) {
   if (granularity == StatTrendGranularity.daily) {
     return daily
-        .map((StatDayData d) => StatTrendPoint(
-              bucketKey: d.dateKey,
-              label:
-                  d.dateKey.length >= 10 ? d.dateKey.substring(5) : d.dateKey,
-              chars: d.chars,
-              ms: d.ms,
-            ))
+        .map(
+          (StatDayData d) => StatTrendPoint(
+            bucketKey: d.dateKey,
+            label: d.dateKey.length >= 10 ? d.dateKey.substring(5) : d.dateKey,
+            chars: d.chars,
+            ms: d.ms,
+          ),
+        )
         .toList();
   }
 
@@ -163,8 +165,9 @@ List<double> movingAverage(List<double> values, int window) {
 /// 避免在数据稀疏时误报。
 List<bool> detectAnomalies(List<double> values, {double sigmaMultiple = 2.0}) {
   final List<bool> flags = List<bool>.filled(values.length, false);
-  final List<double> nonZero =
-      values.where((double v) => v > 0).toList(growable: false);
+  final List<double> nonZero = values
+      .where((double v) => v > 0)
+      .toList(growable: false);
   if (nonZero.length < 3) return flags;
   final double mu =
       nonZero.reduce((double a, double b) => a + b) / nonZero.length;

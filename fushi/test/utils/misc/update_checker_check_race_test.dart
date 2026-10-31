@@ -15,9 +15,12 @@ void main() {
   group('raceFirstSuccessfulBody 并发竞速（TODO-821）', () {
     test('空列表 → null', () async {
       expect(
-          await raceFirstSuccessfulBody(const <String>[],
-              fetch: (_) async => 'x'),
-          isNull);
+        await raceFirstSuccessfulBody(
+          const <String>[],
+          fetch: (_) async => 'x',
+        ),
+        isNull,
+      );
     });
 
     test('单候选 → 退化跑那一个（无并发开销，单请求行为不变）', () async {
@@ -43,8 +46,11 @@ void main() {
           return null; // 全失败，确保所有候选都被发起
         },
       );
-      expect(launched, unorderedEquals(<String>['direct', 'm1', 'm2', 'm3']),
-          reason: '并发：所有候选同时发起，不等前一个失败');
+      expect(
+        launched,
+        unorderedEquals(<String>['direct', 'm1', 'm2', 'm3']),
+        reason: '并发：所有候选同时发起，不等前一个失败',
+      );
     });
 
     test('胜出=合法响应而非最先返回：镜像快速失败(null)不赢慢但成功的直连', () async {
@@ -152,42 +158,39 @@ void main() {
       expect(failed.length, 3, reason: '全失败前每个候选都记一条 onFailure');
     });
 
-    test(
-      '总耗时 ≈ 最快活源那一份，而非 N 个候选超时之和（串行回归会红）',
-      () {
-        fakeAsync((FakeAsync async) {
-          const String direct = 'https://api.github.com/x';
-          // 5 个镜像各吃满 8s 超时式失败；直连 1s 成功。串行实现要先等 8s×? 才轮到直连，
-          // 并发实现只付 1s。
-          final List<String> urls = <String>[
-            direct,
-            for (int i = 0; i < 5; i++) 'https://m$i.example/$direct',
-          ];
-          String? body;
-          var done = false;
-          raceFirstSuccessfulBody(
-            urls,
-            fetch: (String url) async {
-              if (url == direct) {
-                await Future<void>.delayed(const Duration(seconds: 1));
-                return 'DIRECT-OK';
-              }
-              // 镜像：8s 后才失败（模拟吃满超时返 null）。
-              await Future<void>.delayed(const Duration(seconds: 8));
-              return null;
-            },
-          ).then((String? b) {
-            body = b;
-            done = true;
-          });
-          // 推进 1.1s：直连成功胜出，无需等任何镜像的 8s 超时。
-          async.elapse(const Duration(milliseconds: 1100));
-          async.flushMicrotasks();
-          expect(done, isTrue, reason: '并发竞速：直连 1s 成功即胜出，不叠加 5×8s 镜像超时');
-          expect(body, 'DIRECT-OK');
+    test('总耗时 ≈ 最快活源那一份，而非 N 个候选超时之和（串行回归会红）', () {
+      fakeAsync((FakeAsync async) {
+        const String direct = 'https://api.github.com/x';
+        // 5 个镜像各吃满 8s 超时式失败；直连 1s 成功。串行实现要先等 8s×? 才轮到直连，
+        // 并发实现只付 1s。
+        final List<String> urls = <String>[
+          direct,
+          for (int i = 0; i < 5; i++) 'https://m$i.example/$direct',
+        ];
+        String? body;
+        var done = false;
+        raceFirstSuccessfulBody(
+          urls,
+          fetch: (String url) async {
+            if (url == direct) {
+              await Future<void>.delayed(const Duration(seconds: 1));
+              return 'DIRECT-OK';
+            }
+            // 镜像：8s 后才失败（模拟吃满超时返 null）。
+            await Future<void>.delayed(const Duration(seconds: 8));
+            return null;
+          },
+        ).then((String? b) {
+          body = b;
+          done = true;
         });
-      },
-    );
+        // 推进 1.1s：直连成功胜出，无需等任何镜像的 8s 超时。
+        async.elapse(const Duration(milliseconds: 1100));
+        async.flushMicrotasks();
+        expect(done, isTrue, reason: '并发竞速：直连 1s 成功即胜出，不叠加 5×8s 镜像超时');
+        expect(body, 'DIRECT-OK');
+      });
+    });
   });
 
   group('UpdateCheckCancellation abort wiring (TODO-821 检查侧中断)', () {
@@ -223,8 +226,9 @@ void main() {
 
     test('abort 回调抛异常不逃逸 cancel（强断 best-effort）', () {
       final UpdateCheckCancellation cancellation = UpdateCheckCancellation();
-      cancellation
-          .registerAbort(() => throw StateError('client already closed'));
+      cancellation.registerAbort(
+        () => throw StateError('client already closed'),
+      );
       expect(cancellation.cancel, returnsNormally);
       expect(cancellation.isCancelled, isTrue);
     });

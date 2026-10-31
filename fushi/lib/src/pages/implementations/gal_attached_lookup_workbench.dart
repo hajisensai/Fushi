@@ -91,7 +91,10 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                       'game-attached-lookup-accept-risk',
                     ),
                     onPressed: () => _acceptRisk(context, riskRequest),
-                    icon: const FushiIcon(Icons.warning_amber_rounded, size: 18),
+                    icon: const FushiIcon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                    ),
                     label: Text(t.game_lookup_attached_risk_accept),
                   ),
                 ],
@@ -181,7 +184,10 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             slot: GalLookupCalibrationSlotV1.dialogue,
                           )
                         : null,
-                    icon: const FushiIcon(Icons.format_quote_outlined, size: 20),
+                    icon: const FushiIcon(
+                      Icons.format_quote_outlined,
+                      size: 20,
+                    ),
                   ),
                 ],
                 FushiPopupMenuButton<String>(

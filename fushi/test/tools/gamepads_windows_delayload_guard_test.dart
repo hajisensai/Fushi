@@ -44,7 +44,8 @@ void main() {
       expect(
         content.contains('/DELAYLOAD:GameInput.dll'),
         isTrue,
-        reason: '缺 /DELAYLOAD:GameInput.dll —— GameInput.dll 会退回静态导入，'
+        reason:
+            '缺 /DELAYLOAD:GameInput.dll —— GameInput.dll 会退回静态导入，'
             '无 GameInput 的 Windows 机器 app 启动即崩（BUG-563）',
       );
       expect(
@@ -61,7 +62,8 @@ void main() {
       expect(
         probeAt,
         greaterThanOrEqualTo(0),
-        reason: '缺 LoadLibraryW(L"GameInput.dll") 运行时探测 —— delay-load 的导入'
+        reason:
+            '缺 LoadLibraryW(L"GameInput.dll") 运行时探测 —— delay-load 的导入'
             '在 DLL 缺失时被调用会抛 SEH 异常，必须先探测再降级（BUG-563）',
       );
       expect(
@@ -72,20 +74,24 @@ void main() {
       expect(
         probeAt < createAt,
         isTrue,
-        reason: 'LoadLibraryW 探测必须出现在 GameInputCreate 之前，'
+        reason:
+            'LoadLibraryW 探测必须出现在 GameInputCreate 之前，'
             '否则首次 GameInput 调用仍可能在无 DLL 机器上抛 SEH 异常',
       );
     });
 
-    test('gamepad.cpp 仍保留 GameInput.lib 的 pragma（delay-load 需要 import lib）',
-        () {
-      final content = gamepadCpp.readAsStringSync();
-      expect(
-        content.contains('#pragma comment(lib, "GameInput.lib")'),
-        isTrue,
-        reason: '删掉 pragma 会直接链接失败；delay-load 是把该 import lib 的导入'
-            '改挂到 delay-load 表，不是去掉链接',
-      );
-    });
+    test(
+      'gamepad.cpp 仍保留 GameInput.lib 的 pragma（delay-load 需要 import lib）',
+      () {
+        final content = gamepadCpp.readAsStringSync();
+        expect(
+          content.contains('#pragma comment(lib, "GameInput.lib")'),
+          isTrue,
+          reason:
+              '删掉 pragma 会直接链接失败；delay-load 是把该 import lib 的导入'
+              '改挂到 delay-load 表，不是去掉链接',
+        );
+      },
+    );
   });
 }

@@ -22,8 +22,9 @@ void main() {
     });
 
     test('每周同一时刻的样本给出零离散度相位', () {
-      final WeeklyReleasePhase? phase =
-          inferWeeklyReleasePhase(_weeklySamples(3));
+      final WeeklyReleasePhase? phase = inferWeeklyReleasePhase(
+        _weeklySamples(3),
+      );
       expect(phase, isNotNull);
       expect(phase!.spread, Duration.zero);
       expect(phase.phaseMs, subscriptionWeekPhase(_ms(kBase)));
@@ -32,9 +33,9 @@ void main() {
     test('相位过于离散时拒绝推断', () {
       final List<int> scattered = <int>[
         _ms(kBase),
-        _ms(kBase.subtract(const Duration(days: 7)).add(
-              const Duration(hours: 8),
-            )),
+        _ms(
+          kBase.subtract(const Duration(days: 7)).add(const Duration(hours: 8)),
+        ),
         _ms(kBase.subtract(const Duration(days: 14))),
       ];
       expect(inferWeeklyReleasePhase(scattered), isNull);
@@ -89,10 +90,7 @@ void main() {
     }
 
     test('样本不足退回均匀间隔', () {
-      expect(
-        delayAt(kBase, samples: _weeklySamples(2)),
-        kCadence.baseInterval,
-      );
+      expect(delayAt(kBase, samples: _weeklySamples(2)), kCadence.baseInterval);
     });
 
     test('非周期模式退回均匀间隔', () {
@@ -102,9 +100,9 @@ void main() {
     test('相位离散退回均匀间隔', () {
       final List<int> scattered = <int>[
         _ms(kBase),
-        _ms(kBase.subtract(const Duration(days: 7)).add(
-              const Duration(hours: 8),
-            )),
+        _ms(
+          kBase.subtract(const Duration(days: 7)).add(const Duration(hours: 8)),
+        ),
         _ms(kBase.subtract(const Duration(days: 14))),
       ];
       expect(delayAt(kBase, samples: scattered), kCadence.baseInterval);
@@ -181,7 +179,8 @@ void main() {
       for (int minutes = 0; minutes < 7 * 24 * 60; minutes++) {
         final DateTime now = kBase.add(Duration(minutes: minutes));
         if (isInsideReleaseHotWindow(phase, _ms(now))) continue;
-        final int hotStart = nextSubscriptionPhasePoint(phase, _ms(now)) -
+        final int hotStart =
+            nextSubscriptionPhasePoint(phase, _ms(now)) -
             kCadence.hotLead.inMilliseconds;
         final Duration delay = delayAt(now, samples: samples);
         expect(
@@ -195,8 +194,9 @@ void main() {
 
   group('isInsideReleaseHotWindow', () {
     test('一整周里热窗只覆盖预测点附近的一小段', () {
-      final WeeklyReleasePhase phase =
-          inferWeeklyReleasePhase(_weeklySamples(4))!;
+      final WeeklyReleasePhase phase = inferWeeklyReleasePhase(
+        _weeklySamples(4),
+      )!;
       int hotMinutes = 0;
       for (int minutes = 0; minutes < 7 * 24 * 60; minutes++) {
         if (isInsideReleaseHotWindow(
@@ -211,8 +211,9 @@ void main() {
     });
 
     test('热窗两端边界与外侧一分钟', () {
-      final WeeklyReleasePhase phase =
-          inferWeeklyReleasePhase(_weeklySamples(4))!;
+      final WeeklyReleasePhase phase = inferWeeklyReleasePhase(
+        _weeklySamples(4),
+      )!;
       bool hotAt(Duration offset) =>
           isInsideReleaseHotWindow(phase, _ms(kBase.add(offset)));
 

@@ -36,10 +36,10 @@ class VideoScrapeAutoService {
     required Future<CoverScraperService> Function() serviceFactory,
     bool Function()? isEnabled,
     Duration perBookDelay = _perBookDelay,
-  })  : _repo = repository,
-        _serviceFactory = serviceFactory,
-        _isEnabled = isEnabled,
-        _delay = perBookDelay;
+  }) : _repo = repository,
+       _serviceFactory = serviceFactory,
+       _isEnabled = isEnabled,
+       _delay = perBookDelay;
 
   /// 每本之间的间隔：串行处理本地文件，避免整库首轮造成 IO 突刺。
   static const Duration _perBookDelay = Duration(milliseconds: 600);

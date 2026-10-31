@@ -28,8 +28,10 @@ class _AlwaysRetryableBackend implements SyncBackend {
   void clearCache() => clearCacheCalls++;
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
 
   @override
   String? get cachedRootFolderId => null;
@@ -60,8 +62,7 @@ class _AlwaysRetryableBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) async =>
       throw UnimplementedError();
@@ -79,41 +80,37 @@ class _AlwaysRetryableBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   void cacheBookFolderIds(List<SyncFileRef> folders) =>
       throw UnimplementedError();
@@ -135,65 +132,79 @@ class _AlwaysRetryableBackend implements SyncBackend {
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
   @override
   Future<void> putJsonAsset(
-          String namespaceId, String name, Object? json) async =>
-      throw UnimplementedError();
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async => throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
       throw UnimplementedError();
 }
 
 void main() {
-  test('retryable error keeps the persisted folder cache (F1 regression)',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final SyncRepository repo = SyncRepository(db);
+  test(
+    'retryable error keeps the persisted folder cache (F1 regression)',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
 
-    // Seed an on-disk folder cache as a prior successful sync would have.
-    await repo.setRootFolderId(SyncChannelScope.unscoped, 'root-1');
-    await repo.setFolderCache(
-        SyncChannelScope.unscoped, <String, String>{'Book': 'folder-1'});
+      // Seed an on-disk folder cache as a prior successful sync would have.
+      await repo.setRootFolderId(SyncChannelScope.unscoped, 'root-1');
+      await repo.setFolderCache(SyncChannelScope.unscoped, <String, String>{
+        'Book': 'folder-1',
+      });
 
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'Book',
-      title: 'Book',
-      epubPath: '/fake/book.epub',
-      extractDir: '/fake/extract',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-    ));
-    final EpubBookRow book = (await db.getAllEpubBooks()).single;
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'Book',
+          title: 'Book',
+          epubPath: '/fake/book.epub',
+          extractDir: '/fake/extract',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      final EpubBookRow book = (await db.getAllEpubBooks()).single;
 
-    final backend = _AlwaysRetryableBackend();
-    final manager = SyncManager(db: db, backend: backend);
+      final backend = _AlwaysRetryableBackend();
+      final manager = SyncManager(db: db, backend: backend);
 
-    final SyncBookResult result = await manager.syncBook(
-      book: book,
-      syncStats: false,
-      statsSyncMode: StatisticsSyncMode.merge,
-      syncAudioBook: false,
-    );
+      final SyncBookResult result = await manager.syncBook(
+        book: book,
+        syncStats: false,
+        statsSyncMode: StatisticsSyncMode.merge,
+        syncAudioBook: false,
+      );
 
-    // The retry path ran (in-memory cache dropped) but gave up...
-    expect(backend.clearCacheCalls, greaterThanOrEqualTo(1));
-    expect(result.error, isNotNull);
+      // The retry path ran (in-memory cache dropped) but gave up...
+      expect(backend.clearCacheCalls, greaterThanOrEqualTo(1));
+      expect(result.error, isNotNull);
 
-    // ...and the PERSISTED cache must survive a transient failure.
-    expect(await repo.getRootFolderId(SyncChannelScope.unscoped), 'root-1');
-    expect(await repo.getFolderCache(SyncChannelScope.unscoped),
-        containsPair('Book', 'folder-1'));
-  });
+      // ...and the PERSISTED cache must survive a transient failure.
+      expect(await repo.getRootFolderId(SyncChannelScope.unscoped), 'root-1');
+      expect(
+        await repo.getFolderCache(SyncChannelScope.unscoped),
+        containsPair('Book', 'folder-1'),
+      );
+    },
+  );
 }

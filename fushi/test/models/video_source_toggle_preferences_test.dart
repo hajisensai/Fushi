@@ -91,32 +91,37 @@ void main() {
     // 站点地址可能带 passkey：与 video_resource_torznab_config 同样归类。
     expect(SyncRepository.deviceLocalPrefKeys, contains(kResourceBtSitesPref));
     expect(PrefRedactionPolicy.sensitiveKeys, contains(kResourceBtSitesPref));
-    expect(PrefRedactionPolicy.isDeviceLocalOrCredential(kResourceBtSitesPref), isTrue);
+    expect(
+      PrefRedactionPolicy.isDeviceLocalOrCredential(kResourceBtSitesPref),
+      isTrue,
+    );
   });
 
-  test('the Jimaku switch travels with the key across interconnected devices',
-      () {
-    // 只搬 key 不搬开关，子设备会拿到一把配好却处于关闭状态的 key。
-    expect(
-      InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
-      containsAll(<String>['jimaku_api_key', 'jimaku_enabled']),
-    );
-    // 用户 BT 站与 Torznab 同类，随互联服务配置同步到子设备。
-    expect(
-      InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
-      containsAll(<String>[
-        'video_resource_torznab_config',
-        kResourceBtSitesPref,
-      ]),
-    );
-    // 冻结的旧停用清单与发现页停用清单是设备本地口味，不跨设备携带。
-    expect(
-      InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
-      isNot(contains('video_resource_disabled_sources')),
-    );
-    expect(
-      InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
-      isNot(contains('discovery_disabled_sources')),
-    );
-  });
+  test(
+    'the Jimaku switch travels with the key across interconnected devices',
+    () {
+      // 只搬 key 不搬开关，子设备会拿到一把配好却处于关闭状态的 key。
+      expect(
+        InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
+        containsAll(<String>['jimaku_api_key', 'jimaku_enabled']),
+      );
+      // 用户 BT 站与 Torznab 同类，随互联服务配置同步到子设备。
+      expect(
+        InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
+        containsAll(<String>[
+          'video_resource_torznab_config',
+          kResourceBtSitesPref,
+        ]),
+      );
+      // 冻结的旧停用清单与发现页停用清单是设备本地口味，不跨设备携带。
+      expect(
+        InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
+        isNot(contains('video_resource_disabled_sources')),
+      );
+      expect(
+        InterconnectServiceConfigSnapshot.sharedPreferenceKeys,
+        isNot(contains('discovery_disabled_sources')),
+      );
+    },
+  );
 }

@@ -38,22 +38,23 @@ Future<void> _putSegment(
   int chars = 0,
   int pages = 0,
   int updatedAt = 1000,
-}) =>
-    db.upsertStudySegment(StudySegmentsCompanion.insert(
-      uid: uid,
-      deviceId: 'dev',
-      mediaKind: kind,
-      mediaKey: key,
-      title: 'T',
-      startAt: start.millisecondsSinceEpoch,
-      endAt: end.millisecondsSinceEpoch,
-      dateKey: FushiDatabase.statDateKeyOf(start),
-      hour: start.hour,
-      durationMs: Value(ms),
-      chars: Value(chars),
-      pages: Value(pages),
-      updatedAt: updatedAt,
-    ));
+}) => db.upsertStudySegment(
+  StudySegmentsCompanion.insert(
+    uid: uid,
+    deviceId: 'dev',
+    mediaKind: kind,
+    mediaKey: key,
+    title: 'T',
+    startAt: start.millisecondsSinceEpoch,
+    endAt: end.millisecondsSinceEpoch,
+    dateKey: FushiDatabase.statDateKeyOf(start),
+    hour: start.hour,
+    durationMs: Value(ms),
+    chars: Value(chars),
+    pages: Value(pages),
+    updatedAt: updatedAt,
+  ),
+);
 
 Future<Map<String, StudySegmentRow>> _rowsByUid(FushiDatabase db) async =>
     <String, StudySegmentRow>{
@@ -68,14 +69,14 @@ Future<List<StudySession>> _sessions(FushiDatabase db) async =>
     );
 
 Future<void> _putGame(FushiDatabase db, String id) => db.upsertGalgame(
-      GalgamesCompanion.insert(
-        id: id,
-        name: 'G',
-        exePath: '$id.exe',
-        workdir: '.',
-        addedAt: 0,
-      ),
-    );
+  GalgamesCompanion.insert(
+    id: id,
+    name: 'G',
+    exePath: '$id.exe',
+    workdir: '.',
+    addedAt: 0,
+  ),
+);
 
 /// StudyClock 的落库替身（观察退役门有没有真的把写挡掉）。
 class _Sink {
@@ -217,7 +218,10 @@ void main() {
       final StudySession session = (await _sessions(db)).single;
 
       await applyStudySessionEdit(
-          db, session, const StudySessionEdit(chars: 500));
+        db,
+        session,
+        const StudySessionEdit(chars: 500),
+      );
 
       final Map<String, StudySegmentRow> after = await _rowsByUid(db);
       expect(after['a']!.chars, 150);
@@ -443,7 +447,10 @@ void main() {
       );
 
       await applyStudySessionEdit(
-          db, session, const StudySessionEdit(chars: 42));
+        db,
+        session,
+        const StudySessionEdit(chars: 42),
+      );
 
       expect(
         await _tickOnce(db, 'a'),
@@ -453,8 +460,9 @@ void main() {
     });
 
     test('源码顺序守卫：retireStudySegmentUids 出现在 updateStudySession 之前', () {
-      final String source =
-          File('../packages/fushi_engine/lib/stats/study_sessions.dart').readAsStringSync();
+      final String source = File(
+        '../packages/fushi_engine/lib/stats/study_sessions.dart',
+      ).readAsStringSync();
       final int body = source.indexOf('Future<void> applyStudySessionEdit(');
       expect(body, greaterThan(0), reason: '入口改名了就来这里同步改');
       final int retire = source.indexOf('retireStudySegmentUids(', body);

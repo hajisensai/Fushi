@@ -6,11 +6,11 @@ import 'package:fushi/pages.dart';
 class DictionaryMediaType extends MediaType {
   /// Initialise this media type.
   DictionaryMediaType._privateConstructor()
-      : super(
-          uniqueKey: 'dictionary_media_type',
-          icon: Icons.auto_stories_rounded,
-          outlinedIcon: Icons.auto_stories_outlined,
-        );
+    : super(
+        uniqueKey: 'dictionary_media_type',
+        icon: Icons.auto_stories_rounded,
+        outlinedIcon: Icons.auto_stories_outlined,
+      );
 
   /// Get the singleton instance of this media type.
   static DictionaryMediaType get instance => _instance;

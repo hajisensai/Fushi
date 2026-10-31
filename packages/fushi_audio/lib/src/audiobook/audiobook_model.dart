@@ -63,7 +63,7 @@ class Audiobook {
 /// 首 token 可能略晚于 cue 起点；cue 起点被前一条挤后时可为负）。
 class CueTokenTiming {
   CueTokenTiming({required this.tokens, required this.offsetsMs})
-      : assert(tokens.length == offsetsMs.length);
+    : assert(tokens.length == offsetsMs.length);
 
   final List<String> tokens;
   final List<int> offsetsMs;

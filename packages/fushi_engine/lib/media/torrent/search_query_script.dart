@@ -32,10 +32,12 @@ String foldFullWidthAscii(String value) {
 ///
 /// 单个字母不算词：`第2期` 里的 `2`、`Re:` 之外的孤立字母都不足以让只索引拉丁
 /// 标题的站点匹配到东西。
-bool hasLatinWord(String value) => _latinWord.hasMatch(foldFullWidthAscii(value));
+bool hasLatinWord(String value) =>
+    _latinWord.hasMatch(foldFullWidthAscii(value));
 
 /// 整条查询是否纯 ASCII（`2012`、`300`、`9` 这类全数字/符号标题）。
-bool isPureAscii(String value) => !_nonAscii.hasMatch(foldFullWidthAscii(value));
+bool isPureAscii(String value) =>
+    !_nonAscii.hasMatch(foldFullWidthAscii(value));
 
 /// 只索引拉丁字母标题的站点能不能表达这条查询。
 ///

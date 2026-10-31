@@ -31,12 +31,12 @@ Future<SyncRepository> _repo(FushiDatabase db) async {
 }
 
 http.Response _jsonOk(Map<String, dynamic> body) => http.Response.bytes(
-      utf8.encode(jsonEncode(body)),
-      200,
-      headers: const <String, String>{
-        'content-type': 'application/json; charset=utf-8',
-      },
-    );
+  utf8.encode(jsonEncode(body)),
+  200,
+  headers: const <String, String>{
+    'content-type': 'application/json; charset=utf-8',
+  },
+);
 
 void main() {
   test('truncated / headwordCount / kanjiResults 全部透传', () async {
@@ -126,9 +126,13 @@ void main() {
       maximumTerms: 10,
     );
 
-    expect(result, isNotNull,
-        reason: '瘦 client 本地没有汉字词典——远端 kanji-only 命中是唯一数据源，'
-            '不得因 entries 为空判「无结果」（BUG-1570）');
+    expect(
+      result,
+      isNotNull,
+      reason:
+          '瘦 client 本地没有汉字词典——远端 kanji-only 命中是唯一数据源，'
+          '不得因 entries 为空判「无结果」（BUG-1570）',
+    );
     expect(result!.entries, isEmpty);
     expect(result.kanjiResults.single.character, '狛');
   });
@@ -147,8 +151,11 @@ void main() {
             'bestLength': 1,
             'scrollPosition': 0,
             'entries': <String>[
-              DictionaryEntry(word: '猫', reading: 'ねこ', meaning: 'cat')
-                  .toJson(),
+              DictionaryEntry(
+                word: '猫',
+                reading: 'ねこ',
+                meaning: 'cat',
+              ).toJson(),
             ],
           },
           'popupJson': null,

@@ -51,12 +51,18 @@ void main() {
   group('MiningAnimatedFormat 取值域', () {
     test('缺省与未知 wire 值都回落 avif（新默认）', () {
       expect(
-          MiningAnimatedFormat.fromWireName(null), MiningAnimatedFormat.avif);
+        MiningAnimatedFormat.fromWireName(null),
+        MiningAnimatedFormat.avif,
+      );
       expect(
-          MiningAnimatedFormat.fromWireName('nope'), MiningAnimatedFormat.avif);
+        MiningAnimatedFormat.fromWireName('nope'),
+        MiningAnimatedFormat.avif,
+      );
       // 老用户存过的 'gif' 必须仍解析成 gif——换默认值不等于抹掉已有选择。
       expect(
-          MiningAnimatedFormat.fromWireName('gif'), MiningAnimatedFormat.gif);
+        MiningAnimatedFormat.fromWireName('gif'),
+        MiningAnimatedFormat.gif,
+      );
     });
 
     test('wireName 往返稳定（改了就是破坏已落盘偏好）', () {
@@ -68,8 +74,9 @@ void main() {
         <String>['avif', 'webp', 'gif'],
       );
       expect(
-        MiningAnimatedFormat.values
-            .map((MiningAnimatedFormat f) => f.fileExtension),
+        MiningAnimatedFormat.values.map(
+          (MiningAnimatedFormat f) => f.fileExtension,
+        ),
         <String>['avif', 'webp', 'gif'],
       );
     });
@@ -77,15 +84,23 @@ void main() {
     test('AVIF 顶格档比 WebP/GIF 宽松，但三者都不是源直通', () {
       // WebP 规格上有帧间差分，但实测在源分辨率下比 GIF 还慢（libwebp_anim 是逐帧
       // 帧内的静态图编码器）。它和 GIF 吃同一组封顶值，这不是笔误。
-      expect(MiningAnimatedFormat.webp.maxTierFps,
-          MiningAnimatedFormat.gif.maxTierFps);
-      expect(MiningAnimatedFormat.webp.maxTierWidth,
-          MiningAnimatedFormat.gif.maxTierWidth);
+      expect(
+        MiningAnimatedFormat.webp.maxTierFps,
+        MiningAnimatedFormat.gif.maxTierFps,
+      );
+      expect(
+        MiningAnimatedFormat.webp.maxTierWidth,
+        MiningAnimatedFormat.gif.maxTierWidth,
+      );
       // AVIF 是真视频编码器，同参数下体积小一个量级，故拿更宽松的上限——但仍是上限。
-      expect(MiningAnimatedFormat.avif.maxTierFps,
-          greaterThan(MiningAnimatedFormat.gif.maxTierFps));
-      expect(MiningAnimatedFormat.avif.maxTierWidth,
-          greaterThan(MiningAnimatedFormat.gif.maxTierWidth));
+      expect(
+        MiningAnimatedFormat.avif.maxTierFps,
+        greaterThan(MiningAnimatedFormat.gif.maxTierFps),
+      );
+      expect(
+        MiningAnimatedFormat.avif.maxTierWidth,
+        greaterThan(MiningAnimatedFormat.gif.maxTierWidth),
+      );
     });
 
     // BUG-1039 的教训是「顶格档不该是不可用配置」。AVIF 一度被配成 0/0（源分辨率 +
@@ -104,8 +119,11 @@ void main() {
         // 预算 300 Mpx 由实测反推：现值 AVIF 1440px·24fps 跑满 10 秒是 2.91 MB /
         // 2.9 s（1080p 源），比同窗真 GIF 的 4.97 MB 还小，属可用；再往上
         // 1920px·30fps 就是 8.80 MB（622 Mpx），4K30 直通 34.54 MB（2488 Mpx）。
-        expect(megapixels, lessThanOrEqualTo(300),
-            reason: '$f 顶格档 $megapixels Mpx 超预算——抬上限必须先重测体积/耗时');
+        expect(
+          megapixels,
+          lessThanOrEqualTo(300),
+          reason: '$f 顶格档 $megapixels Mpx 超预算——抬上限必须先重测体积/耗时',
+        );
       }
     });
   });
@@ -153,29 +171,38 @@ void main() {
       }
       // 关键一条：AVIF 顶格档参数落到 GIF 上必须被夹掉（BUG-1039 的换格式陷阱）。
       expect(
-          MiningAnimatedFormat.gif.capFps(MiningAnimatedFormat.avif.maxTierFps),
-          MiningAnimatedFormat.gif.maxTierFps);
+        MiningAnimatedFormat.gif.capFps(MiningAnimatedFormat.avif.maxTierFps),
+        MiningAnimatedFormat.gif.maxTierFps,
+      );
       expect(
-          MiningAnimatedFormat.gif
-              .capWidth(MiningAnimatedFormat.avif.maxTierWidth),
-          MiningAnimatedFormat.gif.maxTierWidth);
+        MiningAnimatedFormat.gif.capWidth(
+          MiningAnimatedFormat.avif.maxTierWidth,
+        ),
+        MiningAnimatedFormat.gif.maxTierWidth,
+      );
     });
 
     test('低三档与格式无关（同一滑块位置在三种格式下含义一致）', () {
       for (int tier = 0; tier < MiningMediaCompression.imageTierMax; tier++) {
         final List<MiningMediaCompression> all = MiningAnimatedFormat.values
-            .map((MiningAnimatedFormat f) => MiningMediaCompression.resolve(
-                  imageTier: tier,
-                  audioTier: 0,
-                  format: f,
-                ))
+            .map(
+              (MiningAnimatedFormat f) => MiningMediaCompression.resolve(
+                imageTier: tier,
+                audioTier: 0,
+                format: f,
+              ),
+            )
             .toList();
-        expect(all.map((MiningMediaCompression c) => c.gifFps).toSet(),
-            hasLength(1),
-            reason: '档 $tier 的帧率不该随格式变');
-        expect(all.map((MiningMediaCompression c) => c.gifWidth).toSet(),
-            hasLength(1),
-            reason: '档 $tier 的宽度不该随格式变');
+        expect(
+          all.map((MiningMediaCompression c) => c.gifFps).toSet(),
+          hasLength(1),
+          reason: '档 $tier 的帧率不该随格式变',
+        );
+        expect(
+          all.map((MiningMediaCompression c) => c.gifWidth).toSet(),
+          hasLength(1),
+          reason: '档 $tier 的宽度不该随格式变',
+        );
         expect(all.first.gifFps, greaterThan(0));
       }
     });
@@ -193,17 +220,19 @@ void main() {
   });
 
   group('buildFfmpegClipAnimatedArgs 按格式分派', () {
-    List<String> argsFor(MiningAnimatedFormat f,
-            {int fps = 8, int width = 480}) =>
-        buildFfmpegClipAnimatedArgs(
-          format: f,
-          inputPath: '/v.mp4',
-          startMs: 1000,
-          endMs: 5000,
-          outputPath: '/out.${f.fileExtension}',
-          fps: fps,
-          width: width,
-        );
+    List<String> argsFor(
+      MiningAnimatedFormat f, {
+      int fps = 8,
+      int width = 480,
+    }) => buildFfmpegClipAnimatedArgs(
+      format: f,
+      inputPath: '/v.mp4',
+      startMs: 1000,
+      endMs: 5000,
+      outputPath: '/out.${f.fileExtension}',
+      fps: fps,
+      width: width,
+    );
 
     test('GIF 走 filter_complex 双趟调色板且不带 -c:v（与改动前逐字等价）', () {
       final List<String> gif = argsFor(MiningAnimatedFormat.gif);
@@ -211,8 +240,11 @@ void main() {
       expect(gif.contains('-vf'), isFalse);
       expect(gif.join(' '), contains('palettegen'));
       expect(gif.join(' '), contains('paletteuse'));
-      expect(gif.contains('-c:v'), isFalse,
-          reason: 'gif 由扩展名选编码器，显式 -c:v 会改字节');
+      expect(
+        gif.contains('-c:v'),
+        isFalse,
+        reason: 'gif 由扩展名选编码器，显式 -c:v 会改字节',
+      );
       // 薄委托必须与泛化版完全一致。
       expect(
         buildFfmpegClipGifArgs(
@@ -241,8 +273,11 @@ void main() {
     });
 
     test('源直通档（fps/width=0）不加 fps/scale 滤镜，且 -vf 不为空串', () {
-      final List<String> avif =
-          argsFor(MiningAnimatedFormat.avif, fps: 0, width: 0);
+      final List<String> avif = argsFor(
+        MiningAnimatedFormat.avif,
+        fps: 0,
+        width: 0,
+      );
       final int vf = avif.indexOf('-vf');
       expect(vf, greaterThanOrEqualTo(0));
       final String chain = avif[vf + 1];
@@ -252,10 +287,14 @@ void main() {
     });
 
     test('非 GIF 用 -2 取偶高度（AVIF/WebP 编码器要求偶数维度）', () {
-      expect(argsFor(MiningAnimatedFormat.avif).join(' '),
-          contains('scale=480:-2'));
-      expect(argsFor(MiningAnimatedFormat.webp).join(' '),
-          contains('scale=480:-2'));
+      expect(
+        argsFor(MiningAnimatedFormat.avif).join(' '),
+        contains('scale=480:-2'),
+      );
+      expect(
+        argsFor(MiningAnimatedFormat.webp).join(' '),
+        contains('scale=480:-2'),
+      );
     });
 
     test('三种格式的输出扩展名与格式一致', () {
@@ -267,31 +306,45 @@ void main() {
 
   group('galgame 窗口动图参数', () {
     List<String> galArgs(MiningAnimatedFormat f) => buildGalWindowAnimatedArgs(
-          format: f,
-          inputPattern: '/tmp/frame_%03d.png',
-          outputPath: '/tmp/out.${f.fileExtension}',
-          fps: 8,
-          maxWidth: 480,
-        );
+      format: f,
+      inputPattern: '/tmp/frame_%03d.png',
+      outputPath: '/tmp/out.${f.fileExtension}',
+      fps: 8,
+      maxWidth: 480,
+    );
 
     test('GIF 保留双趟调色板；WebP/AVIF 单趟且带编码器', () {
       expect(
-          galArgs(MiningAnimatedFormat.gif).join(' '), contains('palettegen'));
-      expect(galArgs(MiningAnimatedFormat.webp).join(' '),
-          isNot(contains('palettegen')));
-      expect(galArgs(MiningAnimatedFormat.webp).join(' '),
-          contains('libwebp_anim'));
+        galArgs(MiningAnimatedFormat.gif).join(' '),
+        contains('palettegen'),
+      );
       expect(
-          galArgs(MiningAnimatedFormat.avif).join(' '), contains('libsvtav1'));
+        galArgs(MiningAnimatedFormat.webp).join(' '),
+        isNot(contains('palettegen')),
+      );
+      expect(
+        galArgs(MiningAnimatedFormat.webp).join(' '),
+        contains('libwebp_anim'),
+      );
+      expect(
+        galArgs(MiningAnimatedFormat.avif).join(' '),
+        contains('libsvtav1'),
+      );
     });
 
     test('GIF 用 -1 高度、非 GIF 用 -2（编码器要求偶数维度）', () {
-      expect(galArgs(MiningAnimatedFormat.gif).join(' '),
-          contains('scale=480:-1'));
-      expect(galArgs(MiningAnimatedFormat.avif).join(' '),
-          contains('scale=480:-2'));
-      expect(galArgs(MiningAnimatedFormat.webp).join(' '),
-          contains('scale=480:-2'));
+      expect(
+        galArgs(MiningAnimatedFormat.gif).join(' '),
+        contains('scale=480:-1'),
+      );
+      expect(
+        galArgs(MiningAnimatedFormat.avif).join(' '),
+        contains('scale=480:-2'),
+      );
+      expect(
+        galArgs(MiningAnimatedFormat.webp).join(' '),
+        contains('scale=480:-2'),
+      );
     });
 
     test('输出扩展名与格式一致', () {
@@ -340,19 +393,19 @@ void main() {
       if (tmp.existsSync()) await tmp.delete(recursive: true);
     });
 
-    Future<String?> okAudio(
-            {required String inputPath,
-            required int startMs,
-            required int endMs,
-            required String outputPath,
-            int? audioStreamIndex,
-            int? audioStreamCount,
-            FfmpegFailureReporter? onFailure,
-            int audioChannels = 1,
-            String audioBitrate = '64k',
-            String? tlsPinSha256,
-            Map<String, String> httpHeaders = const {}}) async =>
-        outputPath;
+    Future<String?> okAudio({
+      required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      int? audioStreamIndex,
+      int? audioStreamCount,
+      FfmpegFailureReporter? onFailure,
+      int audioChannels = 1,
+      String audioBitrate = '64k',
+      String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
+    }) async => outputPath;
 
     /// 只让 GIF 成功的抽取器 + 调用流水账。模拟「旧包捆绑的 ffmpeg 没有 libsvtav1」。
     ({GifExtractor extractor, List<_GifCall> calls}) gifOnly() {
@@ -415,16 +468,25 @@ void main() {
 
       expect(fake.calls, hasLength(2), reason: '首选 avif 失败后必须降级 gif 再试一次');
       expect(fake.calls[0].format, MiningAnimatedFormat.avif);
-      expect(fake.calls[0].fps, MiningAnimatedFormat.avif.maxTierFps,
-          reason: 'AVIF 顶格档取自己声明的上限');
+      expect(
+        fake.calls[0].fps,
+        MiningAnimatedFormat.avif.maxTierFps,
+        reason: 'AVIF 顶格档取自己声明的上限',
+      );
       expect(fake.calls[0].width, MiningAnimatedFormat.avif.maxTierWidth);
 
       expect(fake.calls[1].format, MiningAnimatedFormat.gif);
-      expect(fake.calls[1].fps, MiningAnimatedFormat.gif.maxTierFps,
-          reason: '沿用 AVIF 的 24fps/1440px 会把 GIF 打成 BUG-1039 那个 54 MB / 撞超时配置');
+      expect(
+        fake.calls[1].fps,
+        MiningAnimatedFormat.gif.maxTierFps,
+        reason: '沿用 AVIF 的 24fps/1440px 会把 GIF 打成 BUG-1039 那个 54 MB / 撞超时配置',
+      );
       expect(fake.calls[1].width, MiningAnimatedFormat.gif.maxTierWidth);
-      expect(fake.calls[1].outputPath, endsWith('.gif'),
-          reason: '扩展名必须跟着实际尝试的格式走，否则 muxer 选错');
+      expect(
+        fake.calls[1].outputPath,
+        endsWith('.gif'),
+        reason: '扩展名必须跟着实际尝试的格式走，否则 muxer 选错',
+      );
       // 降级后仍是动图，不是「降级为静态帧」，不该弹那个 OSD。
       expect(repo.minedContext!.coverPath, endsWith('.gif'));
     });
@@ -553,10 +615,16 @@ void main() {
         repo: _RecordingRepo(),
       );
       expect(fake.calls, hasLength(2));
-      expect(fake.calls[0].diagnosticOnly, isTrue,
-          reason: 'avif 失败后还会降级 gif —— 预期内的能力探测，不该进用户错误日志');
-      expect(fake.calls[1].diagnosticOnly, isFalse,
-          reason: 'gif 是末次尝试，它失败才是真失败');
+      expect(
+        fake.calls[0].diagnosticOnly,
+        isTrue,
+        reason: 'avif 失败后还会降级 gif —— 预期内的能力探测，不该进用户错误日志',
+      );
+      expect(
+        fake.calls[1].diagnosticOnly,
+        isFalse,
+        reason: 'gif 是末次尝试，它失败才是真失败',
+      );
     });
 
     test('首选就是 GIF 时那唯一一次尝试不标 diagnosticOnly', () async {
@@ -615,8 +683,11 @@ void main() {
         isNull,
       );
       expect(log.entries.length, errors0, reason: '必然发生的能力探测失败不得进用户可见错误日志');
-      expect(log.diagnosticEntries.length, diagnostics0 + 1,
-          reason: '仍要留痕，只是降级到诊断日志');
+      expect(
+        log.diagnosticEntries.length,
+        diagnostics0 + 1,
+        reason: '仍要留痕，只是降级到诊断日志',
+      );
 
       // 末次尝试失败 = 真的抽不出封面 → 错误日志（既有行为不变）。
       expect(
@@ -635,19 +706,26 @@ void main() {
     // gal 窗口捕获走同一条契约，但它是 Windows 专属且没有注入缝（真 WindowCaptureChannel
     // + 真 ffmpeg 进程），只能源码扫描。
     test('galgame_window_gif 的降级尝试同样只记诊断日志', () {
-      final String src =
-          File('lib/src/mining/galgame_window_gif.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/mining/galgame_window_gif.dart',
+      ).readAsStringSync();
       final Match? branch = RegExp(
         r'if \(attempt == attempts\.last\) \{([\s\S]*?)\n\s*\} else \{([\s\S]*?)\n\s*\}',
       ).firstMatch(src);
       expect(branch, isNotNull, reason: '编码失败必须按「是不是末次尝试」分流日志级别');
       final String lastAttempt = branch!.group(1)!;
       final String willRetry = branch.group(2)!;
-      expect(lastAttempt.contains('.log('), isTrue,
-          reason: '末次尝试（GIF 也失败）是真失败，必须进用户可见错误日志');
+      expect(
+        lastAttempt.contains('.log('),
+        isTrue,
+        reason: '末次尝试（GIF 也失败）是真失败，必须进用户可见错误日志',
+      );
       expect(lastAttempt.contains('logDiagnostic'), isFalse);
-      expect(willRetry.contains('logDiagnostic'), isTrue,
-          reason: '后面还有降级尝试 → 只记诊断日志，否则每制一张卡塞一条错误');
+      expect(
+        willRetry.contains('logDiagnostic'),
+        isTrue,
+        reason: '后面还有降级尝试 → 只记诊断日志，否则每制一张卡塞一条错误',
+      );
       expect(willRetry.contains('.log('), isFalse);
     });
   });
@@ -665,7 +743,9 @@ class _AlwaysFailingBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
       const FfmpegRunResult(
-          returnCode: 8, output: 'Unknown encoder \'libsvtav1\'');
+        returnCode: 8,
+        output: 'Unknown encoder \'libsvtav1\'',
+      );
 
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>

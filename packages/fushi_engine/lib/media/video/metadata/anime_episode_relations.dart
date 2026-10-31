@@ -69,8 +69,10 @@ class AnimeEpisodeRedirection {
 class AnimeEpisodeRelations {
   const AnimeEpisodeRelations._(this._rulesByMalId, this.ruleCount);
 
-  static const AnimeEpisodeRelations empty =
-      AnimeEpisodeRelations._(<int, List<AnimeEpisodeRedirect>>{}, 0);
+  static const AnimeEpisodeRelations empty = AnimeEpisodeRelations._(
+    <int, List<AnimeEpisodeRedirect>>{},
+    0,
+  );
 
   final Map<int, List<AnimeEpisodeRedirect>> _rulesByMalId;
   final int ruleCount;
@@ -131,8 +133,10 @@ class AnimeEpisodeRelations {
 
   /// 把 (malId, episode) 重定向到 (目标 malId, 目标集号)。无规则命中返回 null；
   /// 多条规则命中且结果不同（歧义）返回 null——与 Sonarr/Taiga 一致，歧义即放弃。
-  AnimeEpisodeRedirection? redirect(
-      {required int malId, required int episode}) {
+  AnimeEpisodeRedirection? redirect({
+    required int malId,
+    required int episode,
+  }) {
     if (episode < 0) return null;
     final List<AnimeEpisodeRedirect>? rules = _rulesByMalId[malId];
     if (rules == null) return null;
@@ -155,14 +159,12 @@ class AnimeEpisodeRelations {
   /// 区间重定向：两端都必须命中且落到同一目标 id，否则 null
   /// （Taiga `SearchEpisodeRedirection`）。
   ({AnimeEpisodeRedirection start, AnimeEpisodeRedirection end})?
-      redirectRange({
-    required int malId,
-    required int start,
-    required int end,
-  }) {
+  redirectRange({required int malId, required int start, required int end}) {
     if (start > end) return null;
-    final AnimeEpisodeRedirection? first =
-        redirect(malId: malId, episode: start);
+    final AnimeEpisodeRedirection? first = redirect(
+      malId: malId,
+      episode: start,
+    );
     if (first == null) return null;
     final AnimeEpisodeRedirection? last = redirect(malId: malId, episode: end);
     if (last == null || last.malId != first.malId) return null;
@@ -172,13 +174,17 @@ class AnimeEpisodeRelations {
   /// 某个 MAL id 作为源侧的全部规则（只读，测试与诊断用）。
   List<AnimeEpisodeRedirect> rulesFor(int malId) =>
       List<AnimeEpisodeRedirect>.unmodifiable(
-          _rulesByMalId[malId] ?? const <AnimeEpisodeRedirect>[]);
+        _rulesByMalId[malId] ?? const <AnimeEpisodeRedirect>[],
+      );
 }
 
 /// 规则一侧：`MAL|Kitsu|AniList:range`。只保留 MAL 列。
 class _RuleSide {
-  const _RuleSide(
-      {required this.malId, required this.start, required this.end});
+  const _RuleSide({
+    required this.malId,
+    required this.start,
+    required this.end,
+  });
 
   final int malId;
   final int start;
@@ -226,9 +232,9 @@ class AnimeEpisodeRelationsCatalog {
     this.cacheTtl = const Duration(hours: 24),
     this.maxResponseBytes = 4 * 1024 * 1024,
     DateTime Function()? now,
-  })  : _http = httpClient ?? VideoMetadataHttpClient(),
-        _ownsHttp = httpClient == null,
-        _now = now ?? DateTime.now;
+  }) : _http = httpClient ?? VideoMetadataHttpClient(),
+       _ownsHttp = httpClient == null,
+       _now = now ?? DateTime.now;
 
   static final Uri sourceUri = Uri.parse(
     'https://raw.githubusercontent.com/erengy/anime-relations/master/anime-relations.txt',

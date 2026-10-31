@@ -19,15 +19,17 @@ void main() {
     expect(await RecommendedPackTutorialState(root).shouldPrompt, isTrue);
   });
 
-  test('explicit skip remains dismissed after restart and another import',
-      () async {
-    await state.markImportSucceeded();
-    await state.dismissPrompt();
-    final RecommendedPackTutorialState restarted =
-        RecommendedPackTutorialState(root);
-    await restarted.markImportSucceeded();
-    expect(await restarted.shouldPrompt, isFalse);
-  });
+  test(
+    'explicit skip remains dismissed after restart and another import',
+    () async {
+      await state.markImportSucceeded();
+      await state.dismissPrompt();
+      final RecommendedPackTutorialState restarted =
+          RecommendedPackTutorialState(root);
+      await restarted.markImportSucceeded();
+      expect(await restarted.shouldPrompt, isFalse);
+    },
+  );
 
   test('completed tutorials do not prompt after later imports', () async {
     await state.markCompleted();

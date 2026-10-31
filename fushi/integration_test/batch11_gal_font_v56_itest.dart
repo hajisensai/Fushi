@@ -30,8 +30,7 @@ import 'test_helpers.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-      'batch11: 真 app 上 galgame 台词字号设置项焦点可达、写穿 DB、可还原；'
+  testWidgets('batch11: 真 app 上 galgame 台词字号设置项焦点可达、写穿 DB、可还原；'
       '活库 schema=v56 且 galgames.launch_args 在场', (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
@@ -59,8 +58,10 @@ void main() {
           .customSelect('PRAGMA user_version')
           .getSingle();
       final int userVersion = version.read<int>('user_version');
-      debugPrint('[batch11] live DB user_version=$userVersion '
-          'schemaVersion=${model.database.schemaVersion}');
+      debugPrint(
+        '[batch11] live DB user_version=$userVersion '
+        'schemaVersion=${model.database.schemaVersion}',
+      );
       expect(userVersion, model.database.schemaVersion);
       expect(userVersion, 56, reason: 'v56 = galgames.launch_args');
 
@@ -71,26 +72,40 @@ void main() {
         for (final QueryRow r in cols) r.read<String>('name'): r,
       };
       debugPrint('[batch11] galgames columns=${byName.keys.toList()}');
-      expect(byName.containsKey('launch_args'), isTrue,
-          reason: '活库里 galgames 必须有 launch_args 列');
+      expect(
+        byName.containsKey('launch_args'),
+        isTrue,
+        reason: '活库里 galgames 必须有 launch_args 列',
+      );
       expect(byName['launch_args']!.read<String>('type'), 'TEXT');
-      expect(byName['launch_args']!.read<int>('notnull'), 1,
-          reason: 'launch_args 非空');
-      expect(byName['launch_args']!.read<String?>('dflt_value'), "''",
-          reason: '默认空串 = 不带任何参数 = 旧启动命令行逐字节不变');
+      expect(
+        byName['launch_args']!.read<int>('notnull'),
+        1,
+        reason: 'launch_args 非空',
+      );
+      expect(
+        byName['launch_args']!.read<String?>('dflt_value'),
+        "''",
+        reason: '默认空串 = 不带任何参数 = 旧启动命令行逐字节不变',
+      );
 
       // ---------- ② 向后兼容：全新库上的字号默认值 ----------
       await model.prefsRepo.refreshFromDb();
       originalFontPref =
           model.prefsRepo.prefsSnapshot['gal_hook_text_font_size'];
-      debugPrint('[batch11] stored gal_hook_text_font_size='
-          '${originalFontPref ?? "<unset>"} '
-          'effective=${model.galHookTextFontSize}');
+      debugPrint(
+        '[batch11] stored gal_hook_text_font_size='
+        '${originalFontPref ?? "<unset>"} '
+        'effective=${model.galHookTextFontSize}',
+      );
       if (originalFontPref == null) {
         // 全新隔离数据根：没有存过值 → 必须回落 30，正是旧公式
         // `30 * clamp(140dip/140dip, .9, 2.5)` = 30 的逐像素等价值。
-        expect(model.galHookTextFontSize, 30.0,
-            reason: '默认 30 == 旧公式在默认窗高 140dip 下的实际字号');
+        expect(
+          model.galHookTextFontSize,
+          30.0,
+          reason: '默认 30 == 旧公式在默认窗高 140dip 下的实际字号',
+        );
       }
       expect(PreferencesRepository.galHookTextFontSizeDefault, 30.0);
       expect(PreferencesRepository.galHookTextFontSizeMin, 12.0);
@@ -126,23 +141,36 @@ void main() {
             .byType(AdaptiveSettingsStepperRow)
             .evaluate()
             .map((Element e) => e.widget as AdaptiveSettingsStepperRow);
-        debugPrint('[batch11] stepper rows currently built: '
-            '${steppers.map((AdaptiveSettingsStepperRow r) => r.title).toList()}');
+        debugPrint(
+          '[batch11] stepper rows currently built: '
+          '${steppers.map((AdaptiveSettingsStepperRow r) => r.title).toList()}',
+        );
       }
-      expect(reached, isTrue,
-          reason: '「$rowTitle」必须能被 Tab 焦点驱动到（查词分类末尾，仅 Windows）');
+      expect(
+        reached,
+        isTrue,
+        reason: '「$rowTitle」必须能被 Tab 焦点驱动到（查词分类末尾，仅 Windows）',
+      );
 
       final double beforeValue = model.galHookTextFontSize;
       // Stepper 是单一焦点停靠点，左右方向键就地加减（不移动焦点）。
       await driver.adjust(steps: 3, up: LogicalKeyboardKey.arrowRight);
       await tester.pump(const Duration(milliseconds: 500));
       final double afterValue = model.galHookTextFontSize;
-      debugPrint('[batch11] font size $beforeValue -> $afterValue '
-          '(3 x arrowRight, step=1)');
-      expect(afterValue, greaterThan(beforeValue),
-          reason: '方向键必须真改到值（step=1，按 3 次）');
-      expect(afterValue, beforeValue + 3.0,
-          reason: 'step=1 且 3 次右键 → 恰好 +3（没有重复触发/丢事件）');
+      debugPrint(
+        '[batch11] font size $beforeValue -> $afterValue '
+        '(3 x arrowRight, step=1)',
+      );
+      expect(
+        afterValue,
+        greaterThan(beforeValue),
+        reason: '方向键必须真改到值（step=1，按 3 次）',
+      );
+      expect(
+        afterValue,
+        beforeValue + 3.0,
+        reason: 'step=1 且 3 次右键 → 恰好 +3（没有重复触发/丢事件）',
+      );
 
       // ---------- ④ 写穿 DB（真读回 preferences 表，不是只读内存） ----------
       final QueryRow? persisted = await model.database
@@ -150,27 +178,41 @@ void main() {
             "SELECT value FROM preferences WHERE key = 'gal_hook_text_font_size'",
           )
           .getSingleOrNull();
-      debugPrint('[batch11] preferences row value='
-          '${persisted?.read<String>('value')}');
+      debugPrint(
+        '[batch11] preferences row value='
+        '${persisted?.read<String>('value')}',
+      );
       expect(persisted, isNotNull, reason: '必须真写进 preferences 表');
       final String raw = persisted!.read<String>('value');
-      expect(raw.startsWith('d:'), isTrue,
-          reason: 'PrefCodec 把 double 编成 d:<value>，实得 $raw');
-      expect(double.parse(raw.substring(2)), afterValue,
-          reason: 'DB 里的值必须与内存值一致');
+      expect(
+        raw.startsWith('d:'),
+        isTrue,
+        reason: 'PrefCodec 把 double 编成 d:<value>，实得 $raw',
+      );
+      expect(
+        double.parse(raw.substring(2)),
+        afterValue,
+        reason: 'DB 里的值必须与内存值一致',
+      );
 
       // 绕过缓存重新从 DB 读，证明「读回也生效」。
       await model.prefsRepo.refreshFromDb();
-      expect(model.galHookTextFontSize, afterValue,
-          reason: 'refreshFromDb 后读回同一个值');
+      expect(
+        model.galHookTextFontSize,
+        afterValue,
+        reason: 'refreshFromDb 后读回同一个值',
+      );
 
       // ---------- ⑤ 还原 ----------
       await driver.adjust(steps: 3, up: LogicalKeyboardKey.arrowLeft);
       await tester.pump(const Duration(milliseconds: 500));
       await model.prefsRepo.refreshFromDb();
       debugPrint('[batch11] after restore=${model.galHookTextFontSize}');
-      expect(model.galHookTextFontSize, beforeValue,
-          reason: '左键 3 次必须回到原值（对称）');
+      expect(
+        model.galHookTextFontSize,
+        beforeValue,
+        reason: '左键 3 次必须回到原值（对称）',
+      );
 
       assertStrictErrors(errors);
       debugPrint('[batch11] PASS');
@@ -182,8 +224,10 @@ void main() {
         if (originalFontPref == null) {
           await model.database.deletePref('gal_hook_text_font_size');
         } else {
-          await model.database
-              .setPref('gal_hook_text_font_size', originalFontPref);
+          await model.database.setPref(
+            'gal_hook_text_font_size',
+            originalFontPref,
+          );
         }
         if (originalFocusNav != null) {
           await model.setExperimentalFocusNavigationEnabled(originalFocusNav);
@@ -200,24 +244,28 @@ Future<void> _openLookupSettingsPage(WidgetTester tester) async {
   final NavigatorState nav = Navigator.of(
     tester.element(find.byType(Scaffold).first),
   );
-  unawaited(nav.push(
-    MaterialPageRoute<void>(
-      builder: (BuildContext routeCtx) => Consumer(
-        builder: (BuildContext ctx, WidgetRef ref, _) {
-          final SettingsContext sctx = SettingsContext(
-            context: ctx,
-            appModel: ref.read(appProvider),
-            ref: ref,
-            readerSource: ReaderFushiSource.instance,
-            refresh: () {},
-          );
-          final SettingsDestination lookup = buildSettingsSchema(sctx)
-              .firstWhere((SettingsDestination d) =>
-                  d.id == SettingsDestinationId.lookup);
-          return SettingsDetailPage(destination: lookup);
-        },
+  unawaited(
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext routeCtx) => Consumer(
+          builder: (BuildContext ctx, WidgetRef ref, _) {
+            final SettingsContext sctx = SettingsContext(
+              context: ctx,
+              appModel: ref.read(appProvider),
+              ref: ref,
+              readerSource: ReaderFushiSource.instance,
+              refresh: () {},
+            );
+            final SettingsDestination lookup = buildSettingsSchema(sctx)
+                .firstWhere(
+                  (SettingsDestination d) =>
+                      d.id == SettingsDestinationId.lookup,
+                );
+            return SettingsDetailPage(destination: lookup);
+          },
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump(const Duration(seconds: 2));
 }

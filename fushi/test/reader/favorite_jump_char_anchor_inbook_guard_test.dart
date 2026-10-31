@@ -40,49 +40,78 @@ void main() {
   /// 方法，quick settings sheet 与 debugJumpToFavorite 测试钩子共用这一条真实路径）。
   String favoriteBlock() {
     final int start = chrome.indexOf(
-        'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'chrome.part.dart 必须有 _jumpToFavoriteSentence 方法');
+      'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {',
+    );
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'chrome.part.dart 必须有 _jumpToFavoriteSentence 方法',
+    );
     // 画廊已抽成独立文件 reader_gallery_page.dart；方法体右边界改用紧随其后的
     // _favoritePositionLabel。
     final int end = chrome.indexOf(
-        'String? _favoritePositionLabel(FavoriteSentence fav) {', start);
+      'String? _favoritePositionLabel(FavoriteSentence fav) {',
+      start,
+    );
     expect(end, greaterThan(start));
     return chrome.substring(start, end);
   }
 
   test('根因①：书内收藏跳转不得把绝对字符索引 /10000 当分数', () {
     final String fav = favoriteBlock();
-    expect(fav.contains('/ 10000'), isFalse,
-        reason: 'fav.normCharOffset 是 getNormalizedOffset 的绝对字符索引，'
-            '/10000 当分数会恒落章节开头（BUG-696 根因①）');
-    expect(fav.contains('restoreProgress('), isFalse,
-        reason: '同章收藏跳转必须走 restoreToCharOffset 绝对锚，不得走分数 restoreProgress');
+    expect(
+      fav.contains('/ 10000'),
+      isFalse,
+      reason:
+          'fav.normCharOffset 是 getNormalizedOffset 的绝对字符索引，'
+          '/10000 当分数会恒落章节开头（BUG-696 根因①）',
+    );
+    expect(
+      fav.contains('restoreProgress('),
+      isFalse,
+      reason: '同章收藏跳转必须走 restoreToCharOffset 绝对锚，不得走分数 restoreProgress',
+    );
     // BUG-876：offset 缺失时回退按文本定位后，charOffset 由 `useOffset` 门控条件运输
     // （offset 有效才烘绝对锚，null 走 scrollToSearchMatch 文本回退）；仍必须把绝对字符锚
     // 烘进 _navigateToChapterAndWait(charOffset:)，只是从裸 `normCharOffset` 变条件形。
-    expect(norm(fav).contains('charOffset: useOffset ? normCharOffset : null'),
-        isTrue,
-        reason: '跨章收藏跳转必须把绝对字符锚（offset 有效时）烘进 '
-            '_navigateToChapterAndWait(charOffset:)');
-    expect(fav.contains('.restoreToCharOffset('), isTrue,
-        reason: '同章收藏跳转必须直接 restoreToCharOffset（与冷启动 charAnchor 同构）');
+    expect(
+      norm(fav).contains('charOffset: useOffset ? normCharOffset : null'),
+      isTrue,
+      reason:
+          '跨章收藏跳转必须把绝对字符锚（offset 有效时）烘进 '
+          '_navigateToChapterAndWait(charOffset:)',
+    );
+    expect(
+      fav.contains('.restoreToCharOffset('),
+      isTrue,
+      reason: '同章收藏跳转必须直接 restoreToCharOffset（与冷启动 charAnchor 同构）',
+    );
   });
 
-  test('根因①：导航链路必须能运输字符锚（_navigateToChapterAndWait 带 charOffset/charOffsetEnd）',
-      () {
-    final String n = norm(nav);
-    expect(
-        n.contains('Future<bool> _navigateToChapterAndWait( int index, '
-            '{ bool manual = false, double progress = 0.0, int? charOffset, '
-            'int charOffsetEnd = -1, String? preciseLocateJs, })'),
+  test(
+    '根因①：导航链路必须能运输字符锚（_navigateToChapterAndWait 带 charOffset/charOffsetEnd）',
+    () {
+      final String n = norm(nav);
+      expect(
+        n.contains(
+          'Future<bool> _navigateToChapterAndWait( int index, '
+          '{ bool manual = false, double progress = 0.0, int? charOffset, '
+          'int charOffsetEnd = -1, String? preciseLocateJs, })',
+        ),
         isTrue,
-        reason: '_navigateToChapterAndWait 必须带 charOffset/charOffsetEnd 参数'
-            '（书内收藏跳转的绝对锚运输通道）');
-    expect(n.contains('_initialCharOffsetEnd = charOffsetEnd;'), isTrue,
-        reason: '_beginNavigation 必须拥有并每次导航复位句尾锚，防冷启动收藏跳转的'
-            '_initialCharOffsetEnd 泄漏进后续无关导航');
-  });
+        reason:
+            '_navigateToChapterAndWait 必须带 charOffset/charOffsetEnd 参数'
+            '（书内收藏跳转的绝对锚运输通道）',
+      );
+      expect(
+        n.contains('_initialCharOffsetEnd = charOffsetEnd;'),
+        isTrue,
+        reason:
+            '_beginNavigation 必须拥有并每次导航复位句尾锚，防冷启动收藏跳转的'
+            '_initialCharOffsetEnd 泄漏进后续无关导航',
+      );
+    },
+  );
 
   test('根因②：搜索跳转连续兜底不得做 surroundContents DOM 手术', () {
     // 剥掉注释后断言（修复说明注释里提到旧 API 名不算回归）。
@@ -92,11 +121,18 @@ void main() {
     // 旧写法只丢「整行以 // 开头」的行，`/* surroundContents */` 这种块注释一概放行，
     // 也吃不掉行尾注释——本条是禁止型断言，那两个洞会让它误判成红/被绕过。
     final String code = maskCommentsAndScriptLines(js);
-    expect(code.contains('surroundContents'), isFalse,
-        reason: 'range.surroundContents 在 rb/rtc 形态书上跨基字命中时抛 '
-            'InvalidStateError → 跨章搜索停在章节开头（BUG-696 根因②）；'
-            '兜底必须直接 scrollToTarget(range)');
-    expect(code.contains('this.scrollToTarget(range);'), isTrue,
-        reason: '连续模式搜索跳转兜底必须直接滚 Range（getRect 原生支持 Range）');
+    expect(
+      code.contains('surroundContents'),
+      isFalse,
+      reason:
+          'range.surroundContents 在 rb/rtc 形态书上跨基字命中时抛 '
+          'InvalidStateError → 跨章搜索停在章节开头（BUG-696 根因②）；'
+          '兜底必须直接 scrollToTarget(range)',
+    );
+    expect(
+      code.contains('this.scrollToTarget(range);'),
+      isTrue,
+      reason: '连续模式搜索跳转兜底必须直接滚 Range（getRect 原生支持 Range）',
+    );
   });
 }

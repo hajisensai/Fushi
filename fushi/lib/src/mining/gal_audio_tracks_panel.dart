@@ -39,10 +39,12 @@ class GalAudioTracksPanel extends StatelessWidget {
     // 且不再渲染只对引擎 PCM 有意义的「自动选择」radio。
     //
     // BUG-1102：解释态与禁用判据都必须看**后端**，不是看列表空不空。
-    final GalTrackEmptyHint emptyHint =
-        galTrackEmptyHintFor(state.audioBackend);
-    final bool selectionEffective =
-        galTrackSelectionAffectsCapture(state.audioBackend);
+    final GalTrackEmptyHint emptyHint = galTrackEmptyHintFor(
+      state.audioBackend,
+    );
+    final bool selectionEffective = galTrackSelectionAffectsCapture(
+      state.audioBackend,
+    );
     final String? backendHint = selectionEffective
         ? null
         : switch (emptyHint) {
@@ -184,8 +186,9 @@ class GalTrackTile extends StatelessWidget {
               ),
               FushiIconButton(
                 icon: excluded ? Icons.undo : Icons.music_off_outlined,
-                tooltip:
-                    excluded ? t.game_track_restore : t.game_track_exclude_bgm,
+                tooltip: excluded
+                    ? t.game_track_restore
+                    : t.game_track_exclude_bgm,
                 enabled: selectable,
                 onTap: () => onToggleExcluded(!excluded),
               ),

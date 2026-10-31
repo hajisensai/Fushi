@@ -130,7 +130,8 @@ class MagpieUpscalingReport {
   final String? detail;
 
   @override
-  String toString() => 'MagpieUpscalingReport($status, '
+  String toString() =>
+      'MagpieUpscalingReport($status, '
       'skip=$profileSkipReason, failure=$failureReason, '
       'scaling=$scalingActive, detail=$detail)';
 }
@@ -185,23 +186,24 @@ class MagpieUpscalingService extends ChangeNotifier {
     Future<MagpieProcessHandle> Function(
       String executable,
       List<String> arguments,
-    )? processLauncher,
+    )?
+    processLauncher,
     String? fushiExecutablePath,
     String? configPathOverride,
     bool? isWindowsOverride,
     Duration? bootstrapTimeout,
     bool Function()? bundledMagpieRunningProbe,
-  })  : _modeReader = modeReader,
-        _bridge = bridge,
-        _installerFactory = installerFactory ??
-            (() => MagpieInstaller(isWindowsOverride: isWindowsOverride)),
-        _processLauncher = processLauncher ?? _defaultLauncher,
-        _fushiExecutablePath =
-            fushiExecutablePath ?? _safeResolvedExecutable(),
-        _configPathOverride = configPathOverride,
-        _isWindows = isWindowsOverride ?? Platform.isWindows,
-        _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout,
-        _bundledMagpieRunningProbe = bundledMagpieRunningProbe;
+  }) : _modeReader = modeReader,
+       _bridge = bridge,
+       _installerFactory =
+           installerFactory ??
+           (() => MagpieInstaller(isWindowsOverride: isWindowsOverride)),
+       _processLauncher = processLauncher ?? _defaultLauncher,
+       _fushiExecutablePath = fushiExecutablePath ?? _safeResolvedExecutable(),
+       _configPathOverride = configPathOverride,
+       _isWindows = isWindowsOverride ?? Platform.isWindows,
+       _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout,
+       _bundledMagpieRunningProbe = bundledMagpieRunningProbe;
 
   /// 读**当前这局游戏**的档位。
   ///
@@ -213,7 +215,7 @@ class MagpieUpscalingService extends ChangeNotifier {
   final MagpieWin32Bridge? _bridge;
   final MagpieInstaller Function() _installerFactory;
   final Future<MagpieProcessHandle> Function(String, List<String>)
-      _processLauncher;
+  _processLauncher;
   final String _fushiExecutablePath;
   final String? _configPathOverride;
   final bool _isWindows;
@@ -234,8 +236,9 @@ class MagpieUpscalingService extends ChangeNotifier {
   /// 同一时刻只允许一条编排在跑（开/收互斥），避免收尾与启动交叉。
   Future<void> _gate = Future<void>.value();
 
-  MagpieUpscalingReport _reportValue =
-      const MagpieUpscalingReport(status: MagpieUpscalingStatus.idle);
+  MagpieUpscalingReport _reportValue = const MagpieUpscalingReport(
+    status: MagpieUpscalingStatus.idle,
+  );
 
   /// 当前状态。UI 直接把本服务当 [Listenable] 订阅即可。
   MagpieUpscalingReport get report => _reportValue;
@@ -263,14 +266,9 @@ class MagpieUpscalingService extends ChangeNotifier {
   static Future<MagpieProcessHandle> _defaultLauncher(
     String executable,
     List<String> arguments,
-  ) async =>
-      _RealProcessHandle(
-        await Process.start(
-          executable,
-          arguments,
-          mode: ProcessStartMode.detached,
-        ),
-      );
+  ) async => _RealProcessHandle(
+    await Process.start(executable, arguments, mode: ProcessStartMode.detached),
+  );
 
   /// 便携配置文件路径（`<install>/config/config.json`）。
   String get _configPath =>
@@ -336,8 +334,9 @@ class MagpieUpscalingService extends ChangeNotifier {
   MagpieProfileWriteResult _reconciledConfig(Map<String, dynamic> config) {
     final MagpieProfileWriteResult renamed =
         magpieConfigWithLegacyProfilePrefixRenamed(config: config);
-    final Map<String, dynamic> base =
-        renamed.applied ? renamed.config! : config;
+    final Map<String, dynamic> base = renamed.applied
+        ? renamed.config!
+        : config;
     final MagpieProfileWriteResult cleared =
         magpieConfigWithFushiAutoScaleCleared(config: base);
     if (cleared.applied) return cleared;
@@ -418,7 +417,8 @@ class MagpieUpscalingService extends ChangeNotifier {
       _report = const MagpieUpscalingReport(
         status: MagpieUpscalingStatus.hotkeyOnly,
         profileSkipReason: MagpieProfileSkipReason.externalInstance,
-        detail: 'an existing Magpie instance is already running; '
+        detail:
+            'an existing Magpie instance is already running; '
             'left untouched, user can scale with its own hotkey',
       );
       return;
@@ -442,8 +442,9 @@ class MagpieUpscalingService extends ChangeNotifier {
 
     final String exe = MagpieInstaller.executablePath();
     try {
-      _ownedProcess =
-          await _processLauncher(exe, <String>[kMagpieSilentLaunchArg]);
+      _ownedProcess = await _processLauncher(exe, <String>[
+        kMagpieSilentLaunchArg,
+      ]);
     } catch (e) {
       await _restoreProfile();
       _report = MagpieUpscalingReport(
@@ -563,8 +564,9 @@ class MagpieUpscalingService extends ChangeNotifier {
       final String exe = MagpieInstaller.executablePath();
       if (!File(exe).existsSync()) return;
 
-      final MagpieProcessHandle warmup =
-          await _processLauncher(exe, <String>[kMagpieSilentLaunchArg]);
+      final MagpieProcessHandle warmup = await _processLauncher(exe, <String>[
+        kMagpieSilentLaunchArg,
+      ]);
       try {
         await _waitForConfig();
       } finally {
@@ -743,21 +745,26 @@ class MagpieWindowsBridge implements MagpieWin32Bridge {
 
   late final _GetClassNameDart _getClassName = _user32
       .lookupFunction<_GetClassNameNative, _GetClassNameDart>('GetClassNameW');
-  late final _GetWindowThreadProcessIdDart _getWindowThreadProcessId =
-      _user32.lookupFunction<_GetWindowThreadProcessIdNative,
-          _GetWindowThreadProcessIdDart>('GetWindowThreadProcessId');
+  late final _GetWindowThreadProcessIdDart _getWindowThreadProcessId = _user32
+      .lookupFunction<
+        _GetWindowThreadProcessIdNative,
+        _GetWindowThreadProcessIdDart
+      >('GetWindowThreadProcessId');
   late final _RegisterWindowMessageDart _registerWindowMessage = _user32
       .lookupFunction<_RegisterWindowMessageNative, _RegisterWindowMessageDart>(
-          'RegisterWindowMessageW');
+        'RegisterWindowMessageW',
+      );
   late final _PostMessageDart _postMessage = _user32
       .lookupFunction<_PostMessageNative, _PostMessageDart>('PostMessageW');
   late final _OpenProcessDart _openProcess = _kernel32
       .lookupFunction<_OpenProcessNative, _OpenProcessDart>('OpenProcess');
   late final _QueryFullProcessImageNameDart _queryFullProcessImageName =
-      _kernel32.lookupFunction<_QueryFullProcessImageNameNative,
-          _QueryFullProcessImageNameDart>('QueryFullProcessImageNameW');
-  late final _OpenMutexDart _openMutex =
-      _kernel32.lookupFunction<_OpenMutexNative, _OpenMutexDart>('OpenMutexW');
+      _kernel32.lookupFunction<
+        _QueryFullProcessImageNameNative,
+        _QueryFullProcessImageNameDart
+      >('QueryFullProcessImageNameW');
+  late final _OpenMutexDart _openMutex = _kernel32
+      .lookupFunction<_OpenMutexNative, _OpenMutexDart>('OpenMutexW');
   late final _CloseHandleDart _closeHandle = _kernel32
       .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle');
 
@@ -851,37 +858,47 @@ class MagpieWindowsBridge implements MagpieWin32Bridge {
   }
 }
 
-typedef _GetClassNameNative = Int32 Function(
-    IntPtr hwnd, Pointer<Uint16> buffer, Int32 maxCount);
-typedef _GetClassNameDart = int Function(
-    int hwnd, Pointer<Uint16> buffer, int maxCount);
+typedef _GetClassNameNative =
+    Int32 Function(IntPtr hwnd, Pointer<Uint16> buffer, Int32 maxCount);
+typedef _GetClassNameDart =
+    int Function(int hwnd, Pointer<Uint16> buffer, int maxCount);
 
-typedef _GetWindowThreadProcessIdNative = Uint32 Function(
-    IntPtr hwnd, Pointer<Uint32> pid);
-typedef _GetWindowThreadProcessIdDart = int Function(
-    int hwnd, Pointer<Uint32> pid);
+typedef _GetWindowThreadProcessIdNative =
+    Uint32 Function(IntPtr hwnd, Pointer<Uint32> pid);
+typedef _GetWindowThreadProcessIdDart =
+    int Function(int hwnd, Pointer<Uint32> pid);
 
 typedef _RegisterWindowMessageNative = Uint32 Function(Pointer<Utf16> name);
 typedef _RegisterWindowMessageDart = int Function(Pointer<Utf16> name);
 
-typedef _PostMessageNative = Int32 Function(
-    IntPtr hwnd, Uint32 message, IntPtr wParam, IntPtr lParam);
-typedef _PostMessageDart = int Function(
-    int hwnd, int message, int wParam, int lParam);
+typedef _PostMessageNative =
+    Int32 Function(IntPtr hwnd, Uint32 message, IntPtr wParam, IntPtr lParam);
+typedef _PostMessageDart =
+    int Function(int hwnd, int message, int wParam, int lParam);
 
-typedef _OpenProcessNative = IntPtr Function(
-    Uint32 access, Int32 inherit, Uint32 pid);
+typedef _OpenProcessNative =
+    IntPtr Function(Uint32 access, Int32 inherit, Uint32 pid);
 typedef _OpenProcessDart = int Function(int access, int inherit, int pid);
 
-typedef _QueryFullProcessImageNameNative = Int32 Function(
-    IntPtr process, Uint32 flags, Pointer<Uint16> buffer, Pointer<Uint32> size);
-typedef _QueryFullProcessImageNameDart = int Function(
-    int process, int flags, Pointer<Uint16> buffer, Pointer<Uint32> size);
+typedef _QueryFullProcessImageNameNative =
+    Int32 Function(
+      IntPtr process,
+      Uint32 flags,
+      Pointer<Uint16> buffer,
+      Pointer<Uint32> size,
+    );
+typedef _QueryFullProcessImageNameDart =
+    int Function(
+      int process,
+      int flags,
+      Pointer<Uint16> buffer,
+      Pointer<Uint32> size,
+    );
 
-typedef _OpenMutexNative = IntPtr Function(
-    Uint32 access, Int32 inherit, Pointer<Utf16> name);
-typedef _OpenMutexDart = int Function(
-    int access, int inherit, Pointer<Utf16> name);
+typedef _OpenMutexNative =
+    IntPtr Function(Uint32 access, Int32 inherit, Pointer<Utf16> name);
+typedef _OpenMutexDart =
+    int Function(int access, int inherit, Pointer<Utf16> name);
 
 typedef _CloseHandleNative = Int32 Function(IntPtr handle);
 typedef _CloseHandleDart = int Function(int handle);

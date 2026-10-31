@@ -30,7 +30,8 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
@@ -41,16 +42,15 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'popup empty-entry-card JS behavior test failed.\n'
+        reason:
+            'popup empty-entry-card JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -65,22 +65,34 @@ void main() {
     final String js = File('assets/popup/popup.js').readAsStringSync();
 
     final int build = js.indexOf('function buildEntryElement(');
-    expect(build, greaterThanOrEqualTo(0),
-        reason: 'buildEntryElement must exist');
+    expect(
+      build,
+      greaterThanOrEqualTo(0),
+      reason: 'buildEntryElement must exist',
+    );
 
     // The skip judgement must be exactly "glossary wrapper is null → return null",
     // computed before the header is appended so no shell is ever built.
-    final int wrapperCall =
-        js.indexOf('entryGlossaryWrapperOrNull(entry)', build);
-    expect(wrapperCall, greaterThanOrEqualTo(0),
-        reason: 'buildEntryElement must consult the shared wrapper predicate');
+    final int wrapperCall = js.indexOf(
+      'entryGlossaryWrapperOrNull(entry)',
+      build,
+    );
+    expect(
+      wrapperCall,
+      greaterThanOrEqualTo(0),
+      reason: 'buildEntryElement must consult the shared wrapper predicate',
+    );
 
     final int returnNull = js.indexOf('return null;', wrapperCall);
     final int headerAppend = js.indexOf('createEntryHeader(entry, idx)', build);
     expect(returnNull, greaterThanOrEqualTo(0));
-    expect(returnNull, lessThan(headerAppend),
-        reason: 'the null-skip must precede the header append so no empty '
-            'header+freq shell card is ever built');
+    expect(
+      returnNull,
+      lessThan(headerAppend),
+      reason:
+          'the null-skip must precede the header append so no empty '
+          'header+freq shell card is ever built',
+    );
   });
 
   test('popup.js keeps DOM/entries alignment via _entryDomIndex', () {
@@ -88,22 +100,30 @@ void main() {
 
     // renderPopup must build and store the dom-index map, and updatePopupIncremental
     // must read it instead of indexing the live .entry NodeList by raw entries idx.
-    expect(js.contains('window._entryDomIndex'), isTrue,
-        reason: 'the dom-index alignment map must be stored on window');
+    expect(
+      js.contains('window._entryDomIndex'),
+      isTrue,
+      reason: 'the dom-index alignment map must be stored on window',
+    );
 
     final int incremental = js.indexOf('window.updatePopupIncremental =');
     expect(incremental, greaterThanOrEqualTo(0));
     final int mapRead = js.indexOf('window._entryDomIndex', incremental);
-    expect(mapRead, greaterThanOrEqualTo(0),
-        reason: 'updatePopupIncremental must consult the dom-index map so a '
-            'skipped entry does not misalign existingEntries[idx]');
+    expect(
+      mapRead,
+      greaterThanOrEqualTo(0),
+      reason:
+          'updatePopupIncremental must consult the dom-index map so a '
+          'skipped entry does not misalign existingEntries[idx]',
+    );
   });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

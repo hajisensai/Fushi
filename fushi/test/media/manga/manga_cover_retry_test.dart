@@ -57,8 +57,10 @@ void main() {
         async.elapse(const Duration(milliseconds: 999));
         expect(attemptsAt, hasLength(1));
         async.elapse(const Duration(milliseconds: 1));
-        expect(
-            attemptsAt, <Duration>[Duration.zero, const Duration(seconds: 1)]);
+        expect(attemptsAt, <Duration>[
+          Duration.zero,
+          const Duration(seconds: 1),
+        ]);
         async.elapse(const Duration(seconds: 3));
         expect(attemptsAt.last, const Duration(seconds: 4));
         async.elapse(const Duration(seconds: 8));
@@ -121,14 +123,11 @@ void main() {
         bool wanted = true;
         Object? failure;
         unawaited(
-          retryTransient<void>(
-            () async {
-              attempts++;
-              wanted = false;
-              throw TimeoutException('slow source');
-            },
-            stillWanted: () => wanted,
-          ).catchError((Object error) {
+          retryTransient<void>(() async {
+            attempts++;
+            wanted = false;
+            throw TimeoutException('slow source');
+          }, stillWanted: () => wanted).catchError((Object error) {
             failure = error;
           }),
         );
@@ -263,14 +262,14 @@ void main() {
       final MihonCoverCache cache = MihonCoverCache(root);
       int fetches = 0;
       Future<Uint8List> load() => cache.load(
-            extensionPackage: 'org.example.fixture',
-            sourceId: '42',
-            url: 'https://fixture.invalid/aged.jpg',
-            fetch: (bool Function() stillWanted) async {
-              fetches++;
-              return pngBytes;
-            },
-          );
+        extensionPackage: 'org.example.fixture',
+        sourceId: '42',
+        url: 'https://fixture.invalid/aged.jpg',
+        fetch: (bool Function() stillWanted) async {
+          fetches++;
+          return pngBytes;
+        },
+      );
       await load();
       expect(fetches, 1);
       await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -283,8 +282,9 @@ void main() {
     });
 
     test('MihonManager 把偏好穿到封面缓存的 maxAge', () async {
-      final FushiDatabase database =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase database = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       final MihonManager manager = MihonManager(
         database: database,
         rootDirectory: root,
@@ -315,11 +315,13 @@ void main() {
         Object? failure;
         bool secondRan = false;
         unawaited(
-          queue.run<void>(() async {
-            secondRan = true;
-          }).catchError((Object error) {
-            failure = error;
-          }),
+          queue
+              .run<void>(() async {
+                secondRan = true;
+              })
+              .catchError((Object error) {
+                failure = error;
+              }),
         );
         async.flushMicrotasks();
         expect(queue.active, 1);
@@ -407,22 +409,23 @@ void main() {
     }
 
     Widget harness(_CoverRuntime runtime, MihonCoverCache cache) => MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 100,
-              height: 140,
-              child: MihonSourceImage(
-                runtime: runtime,
-                cache: cache,
-                context: sourceContext,
-                url: 'https://fixture.invalid/cover.jpg',
-              ),
-            ),
+      home: Center(
+        child: SizedBox(
+          width: 100,
+          height: 140,
+          child: MihonSourceImage(
+            runtime: runtime,
+            cache: cache,
+            context: sourceContext,
+            url: 'https://fixture.invalid/cover.jpg',
           ),
-        );
+        ),
+      ),
+    );
 
-    testWidgets('假 runtime 第一次超时第二次成功：封面最终渲染且只按退避表等待',
-        (WidgetTester tester) async {
+    testWidgets('假 runtime 第一次超时第二次成功：封面最终渲染且只按退避表等待', (
+      WidgetTester tester,
+    ) async {
       await tester.runAsync(() async {
         final List<Duration> waits = <Duration>[];
         final MihonCoverCache cache = MihonCoverCache(
@@ -445,8 +448,10 @@ void main() {
 
     testWidgets('非 Cloudflare 失败态有重试按钮，点击后重新发请求', (WidgetTester tester) async {
       await tester.runAsync(() async {
-        final MihonCoverCache cache =
-            MihonCoverCache(root, retryBackoff: const <Duration>[]);
+        final MihonCoverCache cache = MihonCoverCache(
+          root,
+          retryBackoff: const <Duration>[],
+        );
         final _CoverRuntime runtime = _CoverRuntime()
           ..failures.add(const MihonRuntimeException('IMAGE_HTTP_404', 'no'))
           ..failures.add(const MihonRuntimeException('IMAGE_HTTP_404', 'no'));
@@ -472,8 +477,10 @@ void main() {
 
     testWidgets('Cloudflare 挑战走验证按钮而不是裸重试', (WidgetTester tester) async {
       await tester.runAsync(() async {
-        final MihonCoverCache cache =
-            MihonCoverCache(root, retryBackoff: const <Duration>[]);
+        final MihonCoverCache cache = MihonCoverCache(
+          root,
+          retryBackoff: const <Duration>[],
+        );
         final _CoverRuntime runtime = _CoverRuntime()
           ..failures.add(
             MihonCloudflareChallengeException(

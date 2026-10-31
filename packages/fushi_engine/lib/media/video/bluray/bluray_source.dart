@@ -199,7 +199,11 @@ bool _coversWholeClip(BlurayClipRef clip, BlurayClipTimebase timebase) {
 
 /// 一条 EDL 条目：[source] 是 mpv 能直接打开的任何东西——本地 m2ts 路径、解密回环
 /// URL、或互联 host 的分段 URL；IN / 时长是 MPLS 的 45 kHz tick。
-typedef BlurayEdlSegment = ({String source, int inTimeTicks, int durationTicks});
+typedef BlurayEdlSegment = ({
+  String source,
+  int inTimeTicks,
+  int durationTicks,
+});
 
 /// 把一条播放列表的各段拼成 `edl://`。本地播放与互联远端播放共用这一份拼法，两边
 /// 的时间轴、章节对齐因此逐 tick 相同。
@@ -262,7 +266,7 @@ String mapEdlSources(String uri, String Function(String source) map) {
   bool entryStart = true;
   while (i < bytes.length) {
     final int c = bytes[i];
-    if (c == 0x3B /* ; */ || c == 0x2C /* , */) {
+    if (c == 0x3B /* ; */ || c == 0x2C /* , */ ) {
       out.writeCharCode(c);
       entryStart = c == 0x3B;
       i++;
@@ -270,7 +274,7 @@ String mapEdlSources(String uri, String Function(String source) map) {
     }
     final int start = i;
     final String field;
-    if (c == 0x25 /* % */) {
+    if (c == 0x25 /* % */ ) {
       final int close = bytes.indexOf(0x25, i + 1);
       final int? length = close < 0
           ? null

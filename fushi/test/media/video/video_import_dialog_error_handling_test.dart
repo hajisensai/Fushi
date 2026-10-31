@@ -38,10 +38,12 @@ void main() {
   }
 
   group('import errors are caught, logged, and _busy is reset', () {
-    testWidgets('stream url import failure does not escape the zone',
-        (WidgetTester tester) async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+    testWidgets('stream url import failure does not escape the zone', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final VideoBookRepository repo = _ThrowingRepo(db);
       final int entriesBefore = ErrorLogService.instance.entries.length;
@@ -56,9 +58,16 @@ void main() {
       );
       await tester.pump();
 
-      final Finder confirm =
-          find.widgetWithText(FilledButton, t.video_import_confirm);
-      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed, isNotNull);
+      final Finder confirm = find.widgetWithText(
+        FilledButton,
+        t.video_import_confirm,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(confirm))
+            .onPressed,
+        isNotNull,
+      );
       await tester.tap(confirm);
       await tester.pumpAndSettle();
 
@@ -66,40 +75,58 @@ void main() {
       expect(tester.takeException(), isNull);
       // 落进错误日志（用户可在错误日志页看到，而非完全静默）。
       expect(
-        ErrorLogService.instance.entries.skip(entriesBefore).any(
-            (ErrorLogEntry e) => e.source == 'VideoImportDialog.importStream'),
+        ErrorLogService.instance.entries
+            .skip(entriesBefore)
+            .any(
+              (ErrorLogEntry e) => e.source == 'VideoImportDialog.importStream',
+            ),
         isTrue,
       );
       // finally 复位 _busy：确认按钮恢复可用、spinner 消失（不再卡住）。
-      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed, isNotNull);
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(confirm))
+            .onPressed,
+        isNotNull,
+      );
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets(
-        'fire-and-forget auto import (initialStreamUrl) failure is caught',
-        (WidgetTester tester) async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      final VideoBookRepository repo = _ThrowingRepo(db);
-      final int entriesBefore = ErrorLogService.instance.entries.length;
+      'fire-and-forget auto import (initialStreamUrl) failure is caught',
+      (WidgetTester tester) async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
+        final VideoBookRepository repo = _ThrowingRepo(db);
+        final int entriesBefore = ErrorLogService.instance.entries.length;
 
-      // 拖入 URL 的 postFrameCallback 自动导入是 fire-and-forget：无 catch 时
-      // 异常必然无人接、直接逃逸 zone。
-      await tester.pumpWidget(buildApp(VideoImportDialog(
-        repo: repo,
-        initialStreamUrl: 'https://example.com/auto.mp4',
-      )));
-      await tester.pumpAndSettle();
+        // 拖入 URL 的 postFrameCallback 自动导入是 fire-and-forget：无 catch 时
+        // 异常必然无人接、直接逃逸 zone。
+        await tester.pumpWidget(
+          buildApp(
+            VideoImportDialog(
+              repo: repo,
+              initialStreamUrl: 'https://example.com/auto.mp4',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(
-        ErrorLogService.instance.entries.skip(entriesBefore).any(
-            (ErrorLogEntry e) => e.source == 'VideoImportDialog.importStream'),
-        isTrue,
-      );
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-    });
+        expect(tester.takeException(), isNull);
+        expect(
+          ErrorLogService.instance.entries
+              .skip(entriesBefore)
+              .any(
+                (ErrorLogEntry e) =>
+                    e.source == 'VideoImportDialog.importStream',
+              ),
+          isTrue,
+        );
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+      },
+    );
   });
 
   group('source guard: all import methods route through runImport', () {
@@ -107,8 +134,9 @@ void main() {
 
     setUpAll(() {
       // 测试 cwd 是 fushi/；源码相对路径稳定（范式同 video_import_dialog_busy_guard_test）。
-      source = File('lib/src/media/video/video_import_dialog.dart')
-          .readAsStringSync();
+      source = File(
+        'lib/src/media/video/video_import_dialog.dart',
+      ).readAsStringSync();
     });
 
     // _importPlaylistFromPath 依赖拖入路径，widget 测试驱动不到，靠源码扫描
@@ -124,66 +152,73 @@ void main() {
         expect(
           RegExp("logTag:\\s*'${RegExp.escape(tag)}',").hasMatch(source),
           isTrue,
-          reason: '导入方法必须以 logTag $tag 走 ImportFlowMixin.runImport 模板'
+          reason:
+              '导入方法必须以 logTag $tag 走 ImportFlowMixin.runImport 模板'
               '（模板保证 catch 落日志 + toast + importing 复位），'
               '否则导入异常回到静默逃逸（BUG-1117 回归）',
         );
       });
     }
 
-    test('no handwritten try/finally or direct ErrorLogService call remains',
-        () {
-      // 四方法收敛到 runImport 后，本文件不应再出现手写 finally 或直接
-      // ErrorLogService 调用——防止未来新增导入方法复制旧的 try{}finally{}
-      // 形态（无 catch，异常静默逃逸 async zone）回归。
-      // 禁的是「无 catch 的 try/finally」那种形态：异常穿过 finally 后无人接，
-      // 静默逃逸 async zone（BUG-1117）。**释放句柄**用 finally 是对的，而且必须
-      // 用 finally——异常照常向上传到 runImport 的 catch，什么都没被吞。所以判据
-      // 从「整文件不许出现 finally」收成「只有登记的函数可以用」：新增导入方法
-      // 抄旧的 try{}finally{} 仍然当场红。
-      const Set<String> allowedFinallyFunctions = <String>{
-        // 封面写入闸门的 lease 释放：try 里只有一句 await，没有 catch，异常原样
-        // 上抛给 runImport 模板。
-        '_runVideoImportCoverMutation',
-      };
-      // `(?:<[^>]*>)?` 是必需的：泛型函数 `Future<T> _foo<T>(` 的名字与 `(` 之间
-      // 夹着类型参数，少了它整条声明匹配不到，归属会退回 <file-scope>。
-      final RegExp declaration = RegExp(
-          r'^ {0,2}(?:static )?(?:[\w<>?,]+ )+(\w+)\s*(?:<[^>]*>)?\s*[({]');
-      final Set<String> finallyOwners = <String>{};
-      String current = '<file-scope>';
-      for (final String line in source.split('\n')) {
-        // 形参行（`Future<T> Function(bool x) action,`）与声明行同形，靠尾逗号
-        // 区分：真声明行以 `{` 或 `(` 收尾，形参行以 `,` 收尾。
-        final String trimmedEnd = line.trimRight();
-        final RegExpMatch? decl =
-            trimmedEnd.endsWith(',') ? null : declaration.firstMatch(line);
-        if (decl != null) current = decl.group(1)!;
-        if (line.contains('} finally {')) finallyOwners.add(current);
-      }
-      expect(
-        finallyOwners,
-        allowedFinallyFunctions,
-        reason: '新增导入方法必须走 ImportFlowMixin.runImport 模板，'
-            '不要手写 try/finally（BUG-1117 回归风险）。'
-            '实际=$finallyOwners 登记=$allowedFinallyFunctions',
-      );
-      expect(
-        source.contains('ErrorLogService.instance.log('),
-        isFalse,
-        reason: '导入错误日志统一由 runImport 模板落，不在本文件手写',
-      );
-      // 模板体内 catch 在 finally 之前、且落日志 + toast——锁在 mixin 源码上。
-      final String mixinSource =
-          File('lib/src/media/import/import_flow_mixin.dart')
-              .readAsStringSync();
-      expect(
-        mixinSource.indexOf('} catch (e, stack) {'),
-        allOf(isNonNegative, lessThan(mixinSource.indexOf('} finally {'))),
-        reason: 'runImport 模板必须 catch 后 finally（catch 落日志/提示、'
-            'finally 复位 importing）',
-      );
-    });
+    test(
+      'no handwritten try/finally or direct ErrorLogService call remains',
+      () {
+        // 四方法收敛到 runImport 后，本文件不应再出现手写 finally 或直接
+        // ErrorLogService 调用——防止未来新增导入方法复制旧的 try{}finally{}
+        // 形态（无 catch，异常静默逃逸 async zone）回归。
+        // 禁的是「无 catch 的 try/finally」那种形态：异常穿过 finally 后无人接，
+        // 静默逃逸 async zone（BUG-1117）。**释放句柄**用 finally 是对的，而且必须
+        // 用 finally——异常照常向上传到 runImport 的 catch，什么都没被吞。所以判据
+        // 从「整文件不许出现 finally」收成「只有登记的函数可以用」：新增导入方法
+        // 抄旧的 try{}finally{} 仍然当场红。
+        const Set<String> allowedFinallyFunctions = <String>{
+          // 封面写入闸门的 lease 释放：try 里只有一句 await，没有 catch，异常原样
+          // 上抛给 runImport 模板。
+          '_runVideoImportCoverMutation',
+        };
+        // `(?:<[^>]*>)?` 是必需的：泛型函数 `Future<T> _foo<T>(` 的名字与 `(` 之间
+        // 夹着类型参数，少了它整条声明匹配不到，归属会退回 <file-scope>。
+        final RegExp declaration = RegExp(
+          r'^ {0,2}(?:static )?(?:[\w<>?,]+ )+(\w+)\s*(?:<[^>]*>)?\s*[({]',
+        );
+        final Set<String> finallyOwners = <String>{};
+        String current = '<file-scope>';
+        for (final String line in source.split('\n')) {
+          // 形参行（`Future<T> Function(bool x) action,`）与声明行同形，靠尾逗号
+          // 区分：真声明行以 `{` 或 `(` 收尾，形参行以 `,` 收尾。
+          final String trimmedEnd = line.trimRight();
+          final RegExpMatch? decl = trimmedEnd.endsWith(',')
+              ? null
+              : declaration.firstMatch(line);
+          if (decl != null) current = decl.group(1)!;
+          if (line.contains('} finally {')) finallyOwners.add(current);
+        }
+        expect(
+          finallyOwners,
+          allowedFinallyFunctions,
+          reason:
+              '新增导入方法必须走 ImportFlowMixin.runImport 模板，'
+              '不要手写 try/finally（BUG-1117 回归风险）。'
+              '实际=$finallyOwners 登记=$allowedFinallyFunctions',
+        );
+        expect(
+          source.contains('ErrorLogService.instance.log('),
+          isFalse,
+          reason: '导入错误日志统一由 runImport 模板落，不在本文件手写',
+        );
+        // 模板体内 catch 在 finally 之前、且落日志 + toast——锁在 mixin 源码上。
+        final String mixinSource = File(
+          'lib/src/media/import/import_flow_mixin.dart',
+        ).readAsStringSync();
+        expect(
+          mixinSource.indexOf('} catch (e, stack) {'),
+          allOf(isNonNegative, lessThan(mixinSource.indexOf('} finally {'))),
+          reason:
+              'runImport 模板必须 catch 后 finally（catch 落日志/提示、'
+              'finally 复位 importing）',
+        );
+      },
+    );
   });
 }
 

@@ -25,32 +25,46 @@ void main() {
   });
 
   test('存在共用全量同步入口 _triggerFullAutoSync', () {
-    expect(src, contains('void _triggerFullAutoSync()'),
-        reason: 'postFrame 首帧与定时轮询应共用同一全量同步入口');
-    expect(src, contains('triggerAutoSyncOnAppOpen('),
-        reason: '入口应触发 app-open 语义的全量双向同步');
+    expect(
+      src,
+      contains('void _triggerFullAutoSync()'),
+      reason: 'postFrame 首帧与定时轮询应共用同一全量同步入口',
+    );
+    expect(
+      src,
+      contains('triggerAutoSyncOnAppOpen('),
+      reason: '入口应触发 app-open 语义的全量双向同步',
+    );
   });
 
   test('定时器把全量同步按 _periodicSyncInterval 周期触发', () {
-    expect(src, contains('Timer? _periodicSyncTimer'),
-        reason: '应持有可取消的周期同步 timer 字段');
+    expect(
+      src,
+      contains('Timer? _periodicSyncTimer'),
+      reason: '应持有可取消的周期同步 timer 字段',
+    );
     // 同步模块门控给这句包了一层 if 并换了行（实参本身没变），所以钉「周期用
     // _periodicSyncInterval、回调是 _triggerFullAutoSync」，不钉单行写法。
     expect(
-        RegExp(r'Timer\.periodic\([\s\S]{0,80}?_periodicSyncInterval'
-                r'[\s\S]{0,80}?_triggerFullAutoSync\(\)')
-            .hasMatch(src),
-        isTrue,
-        reason: '定时器必须周期性重跑共用全量同步入口');
+      RegExp(
+        r'Timer\.periodic\([\s\S]{0,80}?_periodicSyncInterval'
+        r'[\s\S]{0,80}?_triggerFullAutoSync\(\)',
+      ).hasMatch(src),
+      isTrue,
+      reason: '定时器必须周期性重跑共用全量同步入口',
+    );
   });
 
   test('轮询间隔小于 5 分钟冷却窗（避免卡冷却下沿被跳过、周期翻倍）', () {
     expect(
-        src,
-        contains(
-            'static const Duration _periodicSyncInterval = Duration(minutes: 1)'),
-        reason: '轮询间隔应显式为 1 分钟，小于 _runAutoSyncAll 的 5 分钟冷却窗；'
-            '若取成恰等于冷却窗，tick 会落在冷却下沿被跳过，把有效周期翻倍成 10 分钟');
+      src,
+      contains(
+        'static const Duration _periodicSyncInterval = Duration(minutes: 1)',
+      ),
+      reason:
+          '轮询间隔应显式为 1 分钟，小于 _runAutoSyncAll 的 5 分钟冷却窗；'
+          '若取成恰等于冷却窗，tick 会落在冷却下沿被跳过，把有效周期翻倍成 10 分钟',
+    );
   });
 
   test('dispose 取消周期同步 timer（不泄漏）', () {
@@ -58,7 +72,10 @@ void main() {
     expect(start, greaterThanOrEqualTo(0));
     final int end = src.indexOf('\n  }', start);
     final String body = src.substring(start, end);
-    expect(body, contains('_periodicSyncTimer?.cancel()'),
-        reason: 'dispose 必须取消周期同步 timer，避免页面销毁后回调仍触发');
+    expect(
+      body,
+      contains('_periodicSyncTimer?.cancel()'),
+      reason: 'dispose 必须取消周期同步 timer，避免页面销毁后回调仍触发',
+    );
   });
 }

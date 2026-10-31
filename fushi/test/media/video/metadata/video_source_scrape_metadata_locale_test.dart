@@ -26,13 +26,14 @@ void main() {
   });
 
   Future<SourceLibraryRow> seedSource({String? metadataLocale}) async {
-    final int sourceId =
-        await db.insertMediaSource(MediaSourcesCompanion.insert(
-      label: 'Anime',
-      mediaKind: 'video',
-      rootPath: r'D:\anime',
-      createdAt: 1,
-    ));
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Anime',
+        mediaKind: 'video',
+        rootPath: r'D:\anime',
+        createdAt: 1,
+      ),
+    );
     await db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(sourceId),
@@ -48,24 +49,27 @@ void main() {
     required String globalLocale,
     String? metadataLocale,
   }) async {
-    final SourceLibraryRow source =
-        await seedSource(metadataLocale: metadataLocale);
+    final SourceLibraryRow source = await seedSource(
+      metadataLocale: metadataLocale,
+    );
     final List<String> locales = <String>[];
     final List<_FakeRegistry> built = <_FakeRegistry>[];
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-      primaryProvider: VideoMetadataProviderKind.mal,
-      database: db,
-      config: VideoSourceScrapeGlobalConfig(locale: globalLocale),
-      registry: VideoMetadataProviderRegistry(const <VideoMetadataProvider>[]),
-      localeRegistryFactory: (String locale) {
-        locales.add(locale);
-        final _FakeRegistry registry = _FakeRegistry();
-        built.add(registry);
-        return registry;
-      },
-    );
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: VideoSourceScrapeGlobalConfig(locale: globalLocale),
+          registry: VideoMetadataProviderRegistry(
+            const <VideoMetadataProvider>[],
+          ),
+          localeRegistryFactory: (String locale) {
+            locales.add(locale);
+            final _FakeRegistry registry = _FakeRegistry();
+            built.add(registry);
+            return registry;
+          },
+        );
     addTearDown(coordinator.close);
     await coordinator.scrapeSource(
       source,
@@ -79,27 +83,36 @@ void main() {
     final (List<String> locales, List<_FakeRegistry> built) =
         await scrapeAndRecord(globalLocale: 'zh-CN', metadataLocale: 'ja');
     expect(locales, <String>['ja']);
-    expect(built.single.closed, isTrue,
-        reason: '本方法自己建的 registry 必须自己关，否则每刮一次漏一套 HTTP client');
+    expect(
+      built.single.closed,
+      isTrue,
+      reason: '本方法自己建的 registry 必须自己关，否则每刮一次漏一套 HTTP client',
+    );
   });
 
   test('metadata_locale 为 NULL / 空白 → 跟随全局，不另建 registry', () async {
     for (final String? value in <String?>[null, '', '   ']) {
-      final (List<String> locales, _) =
-          await scrapeAndRecord(globalLocale: 'zh-CN', metadataLocale: value);
+      final (List<String> locales, _) = await scrapeAndRecord(
+        globalLocale: 'zh-CN',
+        metadataLocale: value,
+      );
       expect(locales, isEmpty, reason: 'metadataLocale=$value 应当跟随全局');
     }
   });
 
   test('来源级 locale 与全局相同 → 复用全局 registry，不重复建', () async {
-    final (List<String> locales, _) =
-        await scrapeAndRecord(globalLocale: 'ja', metadataLocale: 'ja');
+    final (List<String> locales, _) = await scrapeAndRecord(
+      globalLocale: 'ja',
+      metadataLocale: 'ja',
+    );
     expect(locales, isEmpty);
   });
 
   test('来源 locale 首尾空白被裁掉后再比较', () async {
-    final (List<String> locales, _) =
-        await scrapeAndRecord(globalLocale: 'zh-CN', metadataLocale: '  ja  ');
+    final (List<String> locales, _) = await scrapeAndRecord(
+      globalLocale: 'zh-CN',
+      metadataLocale: '  ja  ',
+    );
     expect(locales, <String>['ja'], reason: '裁剪后的值才是有效 locale');
   });
 }

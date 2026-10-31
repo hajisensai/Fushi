@@ -25,15 +25,19 @@ void main() {
   });
 
   test('Cupertino navLargeTitle = HIG Large Title（34 bold）', () {
-    expect(tt.navLargeTitleTextStyle.fontSize,
-        FushiAppleTypeScale.displaySmall.size);
+    expect(
+      tt.navLargeTitleTextStyle.fontSize,
+      FushiAppleTypeScale.displaySmall.size,
+    );
     expect(tt.navLargeTitleTextStyle.fontSize, 34);
     expect(tt.navLargeTitleTextStyle.fontWeight, FontWeight.w700);
   });
 
   test('Cupertino 字号仍分级（body ≤ navTitle < navLargeTitle）', () {
     expect(tt.textStyle.fontSize! <= tt.navTitleTextStyle.fontSize!, isTrue);
-    expect(tt.navTitleTextStyle.fontSize! < tt.navLargeTitleTextStyle.fontSize!,
-        isTrue);
+    expect(
+      tt.navTitleTextStyle.fontSize! < tt.navLargeTitleTextStyle.fontSize!,
+      isTrue,
+    );
   });
 }

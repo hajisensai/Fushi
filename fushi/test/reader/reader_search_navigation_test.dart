@@ -28,28 +28,30 @@ void main() {
       );
     });
 
-    test('same logical chapter replaces pending while restore is in flight',
-        () {
-      expect(
-        decideReaderSearchJump(
-          targetChapter: 4,
-          currentChapter: 4,
-          restoreInFlight: true,
-          readerContentReady: false,
-        ),
-        ReaderSearchJumpAction.replacePending,
-      );
-      expect(
-        decideReaderSearchJump(
-          targetChapter: 4,
-          currentChapter: 4,
-          restoreInFlight: false,
-          readerContentReady: false,
-        ),
-        ReaderSearchJumpAction.replacePending,
-        reason: 'logical current must not be treated as a ready DOM',
-      );
-    });
+    test(
+      'same logical chapter replaces pending while restore is in flight',
+      () {
+        expect(
+          decideReaderSearchJump(
+            targetChapter: 4,
+            currentChapter: 4,
+            restoreInFlight: true,
+            readerContentReady: false,
+          ),
+          ReaderSearchJumpAction.replacePending,
+        );
+        expect(
+          decideReaderSearchJump(
+            targetChapter: 4,
+            currentChapter: 4,
+            restoreInFlight: false,
+            readerContentReady: false,
+          ),
+          ReaderSearchJumpAction.replacePending,
+          reason: 'logical current must not be treated as a ready DOM',
+        );
+      },
+    );
   });
 
   group('ReaderPreciseLocateQueue', () {

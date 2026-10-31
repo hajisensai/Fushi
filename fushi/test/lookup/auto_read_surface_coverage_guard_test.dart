@@ -28,21 +28,21 @@ void main() {
   const Map<String, String> wiredSurfaces = <String, String>{
     'lib/src/lookup/global_lookup_controller.dart':
         'app 外瞬态查词覆盖窗：lookupText 与 _lookupNested 两条路径末尾各调 '
-            '_autoReadFirstEntry（委托共享 OverlayAutoRead）。',
+        '_autoReadFirstEntry（委托共享 OverlayAutoRead）。',
     'lib/src/pages/base_source_page.dart':
         'app 内媒体页：查词后读 autoReadOnLookup 偏好并调 _autoReadWord。',
     'lib/src/pages/implementations/home_dictionary_page.dart':
         'app 内词典主页：除 mixin 的 searchPopup 外自己也直接查词（_performSearch），'
-            '命中后按 autoRead ?? autoReadOnLookup 调 autoReadWord。深链/悬浮字幕注入'
-            '那条路径显式传 autoRead: false，是有意覆盖（避免注入时突然出声），不是漏接。',
+        '命中后按 autoRead ?? autoReadOnLookup 调 autoReadWord。深链/悬浮字幕注入'
+        '那条路径显式传 autoRead: false，是有意覆盖（避免注入时突然出声），不是漏接。',
     'lib/src/pages/implementations/dictionary_page_mixin.dart':
         'app 内词典页 mixin：searchPopup(autoRead:) 决定是否调 autoReadWord。'
-            '五个消费方（home_dictionary / popup_dictionary / texthooker / '
-            'floating_lyric_lookup_host / video_fushi_page）均传 autoRead: true。',
+        '五个消费方（home_dictionary / popup_dictionary / texthooker / '
+        'floating_lyric_lookup_host / video_fushi_page）均传 autoRead: true。',
     'lib/src/pages/implementations/video_remote_page.dart':
         '手机字幕遥控器：查的是已配对电脑的词典（searchPopupDictionary 覆写成钉住'
-            '设备的 FushiRemoteLookupClient），弹框仍是 mixin 那一个，openLookup 传 '
-            'autoRead: true；发音经 playPopupWordAudio 问那台电脑要。',
+        '设备的 FushiRemoteLookupClient），弹框仍是 mixin 那一个，openLookup 传 '
+        'autoRead: true；发音经 playPopupWordAudio 问那台电脑要。',
   };
 
   /// 豁免的查词调用点：路径 → **具体**理由。
@@ -51,51 +51,51 @@ void main() {
   const Map<String, String> exemptCallSites = <String, String>{
     'lib/src/models/app_model.dart':
         '三类都不是查词表面：① 启动与切 profile 时的预热（Future.wait 里的 '
-            'searchDictionary，没有任何 UI 呈现）；② _searchRemoteDictionary 是 '
-            'searchDictionary 自己的远端分支，不是独立入口；③ '
-            '_setupFloatingDictHandlers.onSearch 是 Android 悬浮词典的 native 通道 '
-            'handler。用户已明确决定「不用接」自动朗读：该窗浮在别的 app 上层，'
-            '查词后突然出声会打扰当前应用，故保持静音；剪贴板面板的主动查词路径不受此豁免影响。',
+        'searchDictionary，没有任何 UI 呈现）；② _searchRemoteDictionary 是 '
+        'searchDictionary 自己的远端分支，不是独立入口；③ '
+        '_setupFloatingDictHandlers.onSearch 是 Android 悬浮词典的 native 通道 '
+        'handler。用户已明确决定「不用接」自动朗读：该窗浮在别的 app 上层，'
+        '查词后突然出声会打扰当前应用，故保持静音；剪贴板面板的主动查词路径不受此豁免影响。',
     'lib/src/pages/implementations/floating_dict_page.dart':
         'Android 悬浮词典页的搜索框查词。用户已明确决定「不用接」自动朗读：'
-            '该窗浮在别的 app 上层，查词后突然出声会打扰当前应用，故有意保持静音；'
-            '此豁免不包含剪贴板面板点字换根或嵌套查词，那两条主动路径仍须按偏好朗读。',
+        '该窗浮在别的 app 上层，查词后突然出声会打扰当前应用，故有意保持静音；'
+        '此豁免不包含剪贴板面板点字换根或嵌套查词，那两条主动路径仍须按偏好朗读。',
     'lib/src/media/favorites/favorite_batch_mining.dart':
         '收藏夹一键制卡：逐条查词只为取回制卡字段，一批几十个词连续查，'
-            '每个都自动念一遍会变成一串噪音；用户没有在「看」这些查词结果。',
+        '每个都自动念一遍会变成一串噪音；用户没有在「看」这些查词结果。',
     'lib/src/pages/implementations/home_page.dart':
         'resumed 生命周期里用固定的 helloWorld 串 + useCache:false 预热词典引擎，'
-            '不是用户查词，也没有结果呈现。',
+        '不是用户查词，也没有结果呈现。',
     '../packages/fushi_engine/lib/sync/fushi_remote_api_handlers.dart':
         '互联对端 / 浏览器扩展经 HTTP 拉词的服务端 handler：结果序列化给**远端**渲染，'
-            '本机屏幕上什么都没发生，出声等于对着空气念。',
+        '本机屏幕上什么都没发生，出声等于对着空气念。',
     'lib/src/ops/ctl_dictionary_routes.dart':
         '`fushi_cli dict search` 的控制通道 handler：结果以 JSON 回给终端，'
-            '本机屏幕上没有查词呈现；要弹窗查词用内置 `lookup` 命令（走浮窗表面，按偏好朗读）。'
-            'anki mine 补字段时的查词同理只为取回制卡字段。',
+        '本机屏幕上没有查词呈现；要弹窗查词用内置 `lookup` 命令（走浮窗表面，按偏好朗读）。'
+        'anki mine 补字段时的查词同理只为取回制卡字段。',
     'lib/src/ops/ctl_video_player_routes.dart':
         '`fushi_cli video mine` 的控制通道 handler：查词只为给当前字幕句制卡补读音 / 释义'
-            '等字段，结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且视频正在播放出声，'
-            '此时朗读会盖在台词语音上（与 game mine 那条豁免同一理由）。',
+        '等字段，结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且视频正在播放出声，'
+        '此时朗读会盖在台词语音上（与 game mine 那条豁免同一理由）。',
     'lib/src/ops/ctl_game_routes.dart':
         '`fushi_cli game mine` 的控制通道 handler：查词只为给游戏台词制卡补读音 / 释义字段，'
-            '结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且游戏正在前台发声，'
-            '此时朗读会直接盖在台词语音上（与串流接收端那条豁免同一理由）。',
+        '结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且游戏正在前台发声，'
+        '此时朗读会直接盖在台词语音上（与串流接收端那条豁免同一理由）。',
     'lib/src/sync/fushi_api_server.dart':
         'Yomitan 兼容 API 的服务端：同上，结果给外部客户端消费，本机不该出声。',
     'lib/src/sync/fushi_remote_lookup_client.dart':
         '本机作为 client 向 host 查词的传输层封装，返回给上层表面渲染；'
-            '朗读由那个表面负责，这里重复朗读会双读。',
+        '朗读由那个表面负责，这里重复朗读会双读。',
     '../packages/fushi_engine/lib/sync/fushi_remote_lookup_service.dart':
         '上一条的抽象接口声明（FushiRemoteLookupService），只有方法签名没有实现体，'
-            '不产生任何结果也不呈现 UI，谈不上朗读。',
+        '不产生任何结果也不呈现 UI，谈不上朗读。',
     'lib/src/sync/game_stream_client.dart':
         '游戏串流接收端（Android）向主机查词的传输层封装，只是把 '
-            'FushiRemoteLookupClient 约束到当前串流对端。**有意静音**：这台手机同时'
-            '正在放主机串过来的游戏声，查词再朗读会直接盖在台词语音上——与悬浮词典'
-            '那条豁免同一理由（会打扰正在发声的前景内容）。结果由 '
-            'game_stream_page 的 DictionaryPopupLayer 呈现，那层也不接朗读；'
-            '哪天要接，就把它挪进 wiredSurfaces 并在页面侧按偏好调 autoReadWord。',
+        'FushiRemoteLookupClient 约束到当前串流对端。**有意静音**：这台手机同时'
+        '正在放主机串过来的游戏声，查词再朗读会直接盖在台词语音上——与悬浮词典'
+        '那条豁免同一理由（会打扰正在发声的前景内容）。结果由 '
+        'game_stream_page 的 DictionaryPopupLayer 呈现，那层也不接朗读；'
+        '哪天要接，就把它挪进 wiredSurfaces 并在页面侧按偏好调 autoReadWord。',
   };
 
   /// 收集 lib/ 下所有 `searchDictionary(` 的**调用**点（排除声明/重写本身）。
@@ -124,8 +124,9 @@ void main() {
         final String t = line.trim();
         if (!t.contains('searchDictionary(')) continue;
         // 方法声明/接口签名本身不算调用点。
-        if (RegExp(r'Future<DictionarySearchResult\??>\s+searchDictionary\(')
-            .hasMatch(t)) {
+        if (RegExp(
+          r'Future<DictionarySearchResult\??>\s+searchDictionary\(',
+        ).hasMatch(t)) {
           continue;
         }
         hits.add(rel);
@@ -136,53 +137,79 @@ void main() {
 
   test('每个查词调用点都必须显式声明接不接自动朗读', () {
     final Set<String> found = collectCallSiteFiles();
-    expectScanScale(scannedFiles,
-        what: 'lib/ + fushi_engine/lib 下的 .dart', atLeast: 750, measured: 939);
+    expectScanScale(
+      scannedFiles,
+      what: 'lib/ + fushi_engine/lib 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
     // `found` 才是判据的真分母：扫描面还在、但预筛/掩码把命中全滤没了，同样是
     // 「守卫在对着空气跑」，而 isNotEmpty 放行到只剩 1 个都不会响。
     // 2026-08-28 删桌面剪贴板查词后 clipboard_panel_controller.dart 整文件删除，
     // 真分母从 10 降到 9：这是「真把那棵树删到了下界以下」的情形，下界同步下调。
-    expectScanScale(found.length,
-        what: 'searchDictionary 调用点所在文件', atLeast: 9, measured: 10);
+    expectScanScale(
+      found.length,
+      what: 'searchDictionary 调用点所在文件',
+      atLeast: 9,
+      measured: 10,
+    );
     final Set<String> declared = <String>{
       ...wiredSurfaces.keys,
       ...exemptCallSites.keys,
     };
     final Set<String> undeclared = found.difference(declared);
-    expect(undeclared, isEmpty,
-        reason: '这些文件里有查词调用点，但没在 wiredSurfaces / exemptCallSites 任一表中'
-            '声明：$undeclared\n'
-            '新增查词表面时必须显式选一边——接朗读就接上并进 wiredSurfaces，'
-            '不该接就进 exemptCallSites 并写清**为什么不该出声**（BUG-1210）。');
+    expect(
+      undeclared,
+      isEmpty,
+      reason:
+          '这些文件里有查词调用点，但没在 wiredSurfaces / exemptCallSites 任一表中'
+          '声明：$undeclared\n'
+          '新增查词表面时必须显式选一边——接朗读就接上并进 wiredSurfaces，'
+          '不该接就进 exemptCallSites 并写清**为什么不该出声**（BUG-1210）。',
+    );
   });
 
   test('wiredSurfaces 里的文件必须真的接了朗读（名单不许过期）', () {
     for (final MapEntry<String, String> e in wiredSurfaces.entries) {
       final File f = File(e.key);
-      expect(f.existsSync(), true,
-          reason: 'wiredSurfaces 里的 ${e.key} 已不存在，请更新名单');
+      expect(
+        f.existsSync(),
+        true,
+        reason: 'wiredSurfaces 里的 ${e.key} 已不存在，请更新名单',
+      );
       // 掩码注释：讲「这里为什么要朗读」的注释里必然写着这些符号名，
       // 连注释一起扫会让「实现删光、注释还在」照样绿。旧写法只丢整行 `//`，
       // 把朗读调用包进 `/* */` 就能继续骗绿；maskComments 把行注释、行尾注释与
       // 块注释一并换成等长空白。
       final String code = maskComments(f.readAsStringSync());
-      final bool wired = code.contains('autoReadFirstEntry(') ||
+      final bool wired =
+          code.contains('autoReadFirstEntry(') ||
           code.contains('autoReadWord(') ||
           code.contains('_autoReadWord(') ||
           code.contains('autoRead:');
-      expect(wired, true,
-          reason: '${e.key} 在 wiredSurfaces 里声明为「已接朗读」，但剥掉注释后找不到任何'
-              '朗读调用——要么朗读被删了（回归），要么该挪进 exemptCallSites 并说明理由。');
+      expect(
+        wired,
+        true,
+        reason:
+            '${e.key} 在 wiredSurfaces 里声明为「已接朗读」，但剥掉注释后找不到任何'
+            '朗读调用——要么朗读被删了（回归），要么该挪进 exemptCallSites 并说明理由。',
+      );
     }
   });
 
   test('豁免必须带具体理由，不能是只有文件名的橡皮图章', () {
     for (final MapEntry<String, String> e in exemptCallSites.entries) {
-      expect(File(e.key).existsSync(), true,
-          reason: 'exemptCallSites 里的 ${e.key} 已不存在，请清理名单');
+      expect(
+        File(e.key).existsSync(),
+        true,
+        reason: 'exemptCallSites 里的 ${e.key} 已不存在，请清理名单',
+      );
       final String why = e.value.trim();
-      expect(why.length, greaterThanOrEqualTo(20),
-          reason: '${e.key} 的豁免理由太短（"$why"）——要说清为什么这里不该自动出声');
+      expect(
+        why.length,
+        greaterThanOrEqualTo(20),
+        reason: '${e.key} 的豁免理由太短（"$why"）——要说清为什么这里不该自动出声',
+      );
       for (final String placeholder in <String>[
         'TODO',
         'FIXME',
@@ -192,8 +219,11 @@ void main() {
         '待产品拍板',
         '待拍板',
       ]) {
-        expect(why.contains(placeholder), false,
-            reason: '${e.key} 的豁免理由是占位符（含 "$placeholder"），等于没写');
+        expect(
+          why.contains(placeholder),
+          false,
+          reason: '${e.key} 的豁免理由是占位符（含 "$placeholder"），等于没写',
+        );
       }
     }
   });
@@ -203,10 +233,16 @@ void main() {
       'lib/src/models/app_model.dart',
       'lib/src/pages/implementations/floating_dict_page.dart',
     ]) {
-      expect(wiredSurfaces, isNot(contains(path)),
-          reason: '$path 属于用户已决定保持静音的 Android 悬浮词典路径');
-      expect(exemptCallSites[path], contains('用户已明确决定「不用接」'),
-          reason: '$path 的豁免必须记录终稿决定，不能退回待拍板占位文案');
+      expect(
+        wiredSurfaces,
+        isNot(contains(path)),
+        reason: '$path 属于用户已决定保持静音的 Android 悬浮词典路径',
+      );
+      expect(
+        exemptCallSites[path],
+        contains('用户已明确决定「不用接」'),
+        reason: '$path 的豁免必须记录终稿决定，不能退回待拍板占位文案',
+      );
     }
   });
 }

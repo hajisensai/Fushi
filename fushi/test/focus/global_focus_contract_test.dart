@@ -4,63 +4,68 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 
 void main() {
-  testWidgets('FushiFocusRoot restores focus when the primary node is removed',
-      (WidgetTester tester) async {
-    final FocusNode first = FocusNode(debugLabel: 'first');
-    final FocusNode second = FocusNode(debugLabel: 'second');
-    addTearDown(first.dispose);
-    addTearDown(second.dispose);
+  testWidgets(
+    'FushiFocusRoot restores focus when the primary node is removed',
+    (WidgetTester tester) async {
+      final FocusNode first = FocusNode(debugLabel: 'first');
+      final FocusNode second = FocusNode(debugLabel: 'second');
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
 
-    bool showFirst = true;
-    StateSetter setOuter = (_) {};
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            setOuter = setState;
-            return Column(
-              children: <Widget>[
-                if (showFirst)
-                  FushiFocusTarget(
-                    id: const FushiFocusId('first'),
-                    focusNode: first,
-                    child: const SizedBox(width: 40, height: 40),
-                  ),
-                FushiFocusTarget(
-                  id: const FushiFocusId('second'),
-                  focusNode: second,
-                  child: const SizedBox(width: 40, height: 40),
-                ),
-              ],
-            );
-          },
+      bool showFirst = true;
+      StateSetter setOuter = (_) {};
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                setOuter = setState;
+                return Column(
+                  children: <Widget>[
+                    if (showFirst)
+                      FushiFocusTarget(
+                        id: const FushiFocusId('first'),
+                        focusNode: first,
+                        child: const SizedBox(width: 40, height: 40),
+                      ),
+                    FushiFocusTarget(
+                      id: const FushiFocusId('second'),
+                      focusNode: second,
+                      child: const SizedBox(width: 40, height: 40),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
+      );
+
+      first.requestFocus();
+      await tester.pump();
+      expect(FocusManager.instance.primaryFocus, same(first));
+
+      setOuter(() => showFirst = false);
+      await tester.pump();
+      await tester.pump();
+
+      expect(FocusManager.instance.primaryFocus, isNotNull);
+      expect(
+        second.hasPrimaryFocus,
+        isTrue,
+        reason: 'primary=${FocusManager.instance.primaryFocus?.debugLabel}',
+      );
+    },
+  );
+
+  testWidgets('FushiFocusRoot keeps a fallback focus for passive routes', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FushiFocusRoot(child: Center(child: Text('passive'))),
       ),
-    ));
-
-    first.requestFocus();
-    await tester.pump();
-    expect(FocusManager.instance.primaryFocus, same(first));
-
-    setOuter(() => showFirst = false);
-    await tester.pump();
-    await tester.pump();
-
-    expect(FocusManager.instance.primaryFocus, isNotNull);
-    expect(
-      second.hasPrimaryFocus,
-      isTrue,
-      reason: 'primary=${FocusManager.instance.primaryFocus?.debugLabel}',
     );
-  });
-
-  testWidgets('FushiFocusRoot keeps a fallback focus for passive routes',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: FushiFocusRoot(
-        child: Center(child: Text('passive')),
-      ),
-    ));
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -71,54 +76,58 @@ void main() {
   });
 
   testWidgets(
-      'disabling the focused target moves focus to the next enabled one',
-      (WidgetTester tester) async {
-    final FocusNode first = FocusNode(debugLabel: 'first');
-    final FocusNode second = FocusNode(debugLabel: 'second');
-    addTearDown(first.dispose);
-    addTearDown(second.dispose);
+    'disabling the focused target moves focus to the next enabled one',
+    (WidgetTester tester) async {
+      final FocusNode first = FocusNode(debugLabel: 'first');
+      final FocusNode second = FocusNode(debugLabel: 'second');
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
 
-    bool firstEnabled = true;
-    StateSetter setOuter = (_) {};
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            setOuter = setState;
-            return Column(
-              children: <Widget>[
-                FushiFocusTarget(
-                  id: const FushiFocusId('first'),
-                  focusNode: first,
-                  enabled: firstEnabled,
-                  child: const SizedBox(width: 40, height: 40),
-                ),
-                FushiFocusTarget(
-                  id: const FushiFocusId('second'),
-                  focusNode: second,
-                  child: const SizedBox(width: 40, height: 40),
-                ),
-              ],
-            );
-          },
+      bool firstEnabled = true;
+      StateSetter setOuter = (_) {};
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                setOuter = setState;
+                return Column(
+                  children: <Widget>[
+                    FushiFocusTarget(
+                      id: const FushiFocusId('first'),
+                      focusNode: first,
+                      enabled: firstEnabled,
+                      child: const SizedBox(width: 40, height: 40),
+                    ),
+                    FushiFocusTarget(
+                      id: const FushiFocusId('second'),
+                      focusNode: second,
+                      child: const SizedBox(width: 40, height: 40),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
-      ),
-    ));
+      );
 
-    first.requestFocus();
-    await tester.pump();
-    expect(first.hasPrimaryFocus, isTrue);
+      first.requestFocus();
+      await tester.pump();
+      expect(first.hasPrimaryFocus, isTrue);
 
-    setOuter(() => firstEnabled = false);
-    await tester.pump();
-    await tester.pump();
+      setOuter(() => firstEnabled = false);
+      await tester.pump();
+      await tester.pump();
 
-    expect(FocusManager.instance.primaryFocus, isNotNull);
-    expect(second.hasPrimaryFocus, isTrue);
-  });
+      expect(FocusManager.instance.primaryFocus, isNotNull);
+      expect(second.hasPrimaryFocus, isTrue);
+    },
+  );
 
-  testWidgets('pushed routes own directional focus targets',
-      (WidgetTester tester) async {
+  testWidgets('pushed routes own directional focus targets', (
+    WidgetTester tester,
+  ) async {
     final FocusNode outer = FocusNode(debugLabel: 'outer');
     final FocusNode inner = FocusNode(debugLabel: 'inner');
     addTearDown(outer.dispose);
@@ -127,9 +136,8 @@ void main() {
     late FushiFocusController controller;
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => FushiFocusRoot(
-          child: child!,
-        ),
+        builder: (BuildContext context, Widget? child) =>
+            FushiFocusRoot(child: child!),
         home: Scaffold(
           body: Builder(
             builder: (BuildContext context) {
@@ -180,8 +188,9 @@ void main() {
     expect(outer.hasPrimaryFocus, isFalse);
   });
 
-  testWidgets('modal routes own directional focus targets',
-      (WidgetTester tester) async {
+  testWidgets('modal routes own directional focus targets', (
+    WidgetTester tester,
+  ) async {
     final FocusNode outer = FocusNode(debugLabel: 'outer');
     final FocusNode dialog = FocusNode(debugLabel: 'dialog');
     addTearDown(outer.dispose);
@@ -190,9 +199,8 @@ void main() {
     late FushiFocusController controller;
     await tester.pumpWidget(
       MaterialApp(
-        builder: (BuildContext context, Widget? child) => FushiFocusRoot(
-          child: child!,
-        ),
+        builder: (BuildContext context, Widget? child) =>
+            FushiFocusRoot(child: child!),
         home: Scaffold(
           body: Builder(
             builder: (BuildContext context) {

@@ -80,11 +80,17 @@ void main() {
         reason: 'skipToCue 与 playCueOnce 都要在 seek 前 _beginExplicitSeek',
       );
       // _updateCurrentCue 顶部据 _explicitSeekInFlight 抑制瞬态 tick。
-      expect(src.contains('if (_explicitSeekInFlight)'), isTrue,
-          reason: '_updateCurrentCue 顶部要有显式 seek 抑制 guard');
+      expect(
+        src.contains('if (_explicitSeekInFlight)'),
+        isTrue,
+        reason: '_updateCurrentCue 顶部要有显式 seek 抑制 guard',
+      );
       // guard 调谓词决定落定放行。
-      expect(src.contains('reachedExplicitSeekTargetForTesting('), isTrue,
-          reason: '放行判据必须走纯谓词');
+      expect(
+        src.contains('reachedExplicitSeekTargetForTesting('),
+        isTrue,
+        reason: '放行判据必须走纯谓词',
+      );
     });
   });
 }

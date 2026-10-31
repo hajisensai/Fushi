@@ -88,8 +88,9 @@ bool isNetworkOnlyVideoPath(String? path) {
   final String trimmed = path.trim();
   final int sep = trimmed.indexOf('://');
   if (sep <= 0) return false;
-  return kNetworkStreamSchemes
-      .contains(trimmed.substring(0, sep).toLowerCase());
+  return kNetworkStreamSchemes.contains(
+    trimmed.substring(0, sep).toLowerCase(),
+  );
 }
 
 /// 纯函数：这一行视频在本机**没有可读的媒体字节**——网络流
@@ -116,8 +117,9 @@ bool isAppleUnsupportedStreamUrl(String url) {
   final String trimmed = url.trim();
   final int sep = trimmed.indexOf('://');
   if (sep <= 0) return false;
-  return kAppleUnsupportedStreamSchemes
-      .contains(trimmed.substring(0, sep).toLowerCase());
+  return kAppleUnsupportedStreamSchemes.contains(
+    trimmed.substring(0, sep).toLowerCase(),
+  );
 }
 
 /// 纯函数：[path] 是否指向一个 `.strm` 文件。本地路径与来源库网络条目（WebDAV /

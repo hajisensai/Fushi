@@ -23,9 +23,9 @@ enum ShelfSortMode {
 
   /// 从持久化 `.name` 解析；未知值（含旧版本残留）退默认 [recent]。
   static ShelfSortMode fromName(String name) => values.firstWhere(
-        (ShelfSortMode m) => m.name == name,
-        orElse: () => ShelfSortMode.recent,
-      );
+    (ShelfSortMode m) => m.name == name,
+    orElse: () => ShelfSortMode.recent,
+  );
 }
 
 /// 一个展示单元（散卡或合集行）参与库页排序的键。合集行取成员聚合：

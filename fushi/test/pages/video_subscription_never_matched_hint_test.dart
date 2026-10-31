@@ -14,43 +14,43 @@ VideoDownloadSubscriptionRow _row({
   required String mode,
   int? lastCheckedAt,
   int? lastMatchedAt,
-}) =>
-    VideoDownloadSubscriptionRow(
-      subscriptionId: id,
-      resourceProvider: 'nyaa:default',
-      metadataProvider: 'tmdb',
-      externalId: '77777',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      title: 'Shoujo Kageki Revue Starlight',
-      year: 2018,
-      season: 1,
-      coverUrl: null,
-      searchQuery: 'Revue Starlight',
-      filterJson: '{"strict":true,"releaseGroup":"VCB-Studio",'
-          '"resolution":"1080p","trusted":true}',
-      mode: mode,
-      startAfterEpisode: 1,
-      backendKind: 'embedded',
-      backendProfileId: null,
-      fingerprint: 'embedded-test',
-      category: 'fushi-video',
-      targetSourceId: null,
-      collectionId: null,
-      organizationPolicy: 'library',
-      subtitlePolicy: 'bestEffort',
-      enabled: true,
-      nextCheckAt: null,
-      claimedBy: null,
-      claimExpiresAt: null,
-      retryCount: 0,
-      lastCheckedAt: lastCheckedAt,
-      lastMatchedAt: lastMatchedAt,
-      fulfilledAt: null,
-      lastError: null,
-      createdAt: 1,
-      updatedAt: 2,
-    );
+}) => VideoDownloadSubscriptionRow(
+  subscriptionId: id,
+  resourceProvider: 'nyaa:default',
+  metadataProvider: 'tmdb',
+  externalId: '77777',
+  mediaKind: 'tv',
+  discoveryCategory: 'anime',
+  title: 'Shoujo Kageki Revue Starlight',
+  year: 2018,
+  season: 1,
+  coverUrl: null,
+  searchQuery: 'Revue Starlight',
+  filterJson:
+      '{"strict":true,"releaseGroup":"VCB-Studio",'
+      '"resolution":"1080p","trusted":true}',
+  mode: mode,
+  startAfterEpisode: 1,
+  backendKind: 'embedded',
+  backendProfileId: null,
+  fingerprint: 'embedded-test',
+  category: 'fushi-video',
+  targetSourceId: null,
+  collectionId: null,
+  organizationPolicy: 'library',
+  subtitlePolicy: 'bestEffort',
+  enabled: true,
+  nextCheckAt: null,
+  claimedBy: null,
+  claimExpiresAt: null,
+  retryCount: 0,
+  lastCheckedAt: lastCheckedAt,
+  lastMatchedAt: lastMatchedAt,
+  fulfilledAt: null,
+  lastError: null,
+  createdAt: 1,
+  updatedAt: 2,
+);
 
 Future<void> _pumpExpanded(
   WidgetTester tester,
@@ -75,8 +75,8 @@ Future<void> _pumpExpanded(
             onDelete: (_) async {},
             itemsWatcher: (String id) =>
                 Stream<List<VideoDownloadSubscriptionItemRow>>.value(
-              const <VideoDownloadSubscriptionItemRow>[],
-            ),
+                  const <VideoDownloadSubscriptionItemRow>[],
+                ),
           ),
         ),
       ),
@@ -84,9 +84,9 @@ Future<void> _pumpExpanded(
   );
   await tester.pumpAndSettle();
   await tester.tap(
-    find.byKey(ValueKey<String>(
-      'video-subscription-expand-${row.subscriptionId}',
-    )),
+    find.byKey(
+      ValueKey<String>('video-subscription-expand-${row.subscriptionId}'),
+    ),
   );
   await tester.pumpAndSettle();
 }
@@ -106,10 +106,7 @@ void main() {
 
     expect(find.text(t.subscription_items_empty), findsOneWidget);
     expect(hint, findsOneWidget);
-    expect(
-      find.text(t.subscription_items_empty_ongoing_hint),
-      findsOneWidget,
-    );
+    expect(find.text(t.subscription_items_empty_ongoing_hint), findsOneWidget);
   });
 
   testWidgets('还没查过时不猜原因', (WidgetTester tester) async {

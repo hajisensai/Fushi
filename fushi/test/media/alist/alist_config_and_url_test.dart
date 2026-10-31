@@ -32,13 +32,13 @@ void main() {
       expect(back.single.origin, 'https://od.example.com');
       expect(back.single.kinds, <DiscoveryMediaKind>{
         DiscoveryMediaKind.game,
-        DiscoveryMediaKind.manga
+        DiscoveryMediaKind.manga,
       });
     });
 
     test('kinds 缺省/未知名：缺省走默认，未知名只丢那一个', () {
-      final List<AListSiteConfig> decoded = decodeAListSiteConfigs(jsonEncode(
-        <Map<String, Object?>>[
+      final List<AListSiteConfig> decoded = decodeAListSiteConfigs(
+        jsonEncode(<Map<String, Object?>>[
           <String, Object?>{'id': 'a', 'url': 'https://a.example.com'},
           <String, Object?>{
             'id': 'b',
@@ -51,8 +51,8 @@ void main() {
             'url': 'https://c.example.com',
             'kinds': <String>['nope'],
           },
-        ],
-      ));
+        ]),
+      );
       expect(decoded.map((AListSiteConfig s) => s.id), <String>['a', 'b']);
       expect(decoded[0].kinds, kDefaultAListSiteKinds);
       expect(decoded[1].kinds, <DiscoveryMediaKind>{DiscoveryMediaKind.novel});
@@ -98,8 +98,9 @@ void main() {
 
     test('根目录与尾斜杠归一；带子路径的站点根', () {
       expect(
-          alistSourceUrlFor(baseUrl: 'https://x.example.com/alist', path: '/'),
-          'https://x.example.com/alist/d/');
+        alistSourceUrlFor(baseUrl: 'https://x.example.com/alist', path: '/'),
+        'https://x.example.com/alist/d/',
+      );
       expect(
         alistPathFromSourceUrl(
           baseUrl: 'https://x.example.com/alist',
@@ -119,17 +120,26 @@ void main() {
     test('不在本站 /d/ 命名空间下返回 null（不做前缀蒙混）', () {
       const String base = 'https://od.example.com';
       expect(
-          alistPathFromSourceUrl(
-              baseUrl: base, url: 'https://od.example.com/GD-3/x.mkv'),
-          isNull);
+        alistPathFromSourceUrl(
+          baseUrl: base,
+          url: 'https://od.example.com/GD-3/x.mkv',
+        ),
+        isNull,
+      );
       expect(
-          alistPathFromSourceUrl(
-              baseUrl: base, url: 'https://od.example.com/dd/x.mkv'),
-          isNull);
+        alistPathFromSourceUrl(
+          baseUrl: base,
+          url: 'https://od.example.com/dd/x.mkv',
+        ),
+        isNull,
+      );
       expect(
-          alistPathFromSourceUrl(
-              baseUrl: base, url: 'https://other.example.com/d/x.mkv'),
-          isNull);
+        alistPathFromSourceUrl(
+          baseUrl: base,
+          url: 'https://other.example.com/d/x.mkv',
+        ),
+        isNull,
+      );
     });
   });
 }

@@ -10,9 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 「对端列表」里的地址可以属于不同的 host（LAN 发现里点谁配谁，每次都往同一个
 /// 列表 append）。凭据若只有一个全局槽，配对第二台就把第一台的 token 覆盖掉——
 /// 第一台地址仍排在候选前列、依然可达，却拿着第二台的 token 撞 401。
-FushiDatabase _testDb() => FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory()),
-    );
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
   group('FushiClientUrl.token wire 往返', () {
@@ -31,15 +30,18 @@ void main() {
     });
 
     test('无 token 的老配置解析成 null（additive，零破坏）', () {
-      final FushiClientUrl back = FushiClientUrl.fromJson(
-        <String, dynamic>{'url': 'http://legacy:8765', 'enabled': true},
-      );
+      final FushiClientUrl back = FushiClientUrl.fromJson(<String, dynamic>{
+        'url': 'http://legacy:8765',
+        'enabled': true,
+      });
       expect(back.token, isNull);
     });
 
     test('空 token 不写进 wire（不产生噪声键）', () {
-      const FushiClientUrl row =
-          FushiClientUrl(url: 'http://peer:8765', token: '');
+      const FushiClientUrl row = FushiClientUrl(
+        url: 'http://peer:8765',
+        token: '',
+      );
       expect(row.toJson().containsKey('token'), isFalse);
     });
   });
@@ -64,7 +66,9 @@ void main() {
 
     test('两边都空 → null（调用方按未配置凭据处理）', () {
       expect(
-          interconnectTokenFor(const FushiClientUrl(url: 'u'), null), isNull);
+        interconnectTokenFor(const FushiClientUrl(url: 'u'), null),
+        isNull,
+      );
       expect(interconnectTokenFor(const FushiClientUrl(url: 'u'), ''), isNull);
       expect(
         interconnectTokenFor(const FushiClientUrl(url: 'u', token: ''), ''),
@@ -87,8 +91,11 @@ void main() {
       await repo.setFushiClientTokenForUrl('http://peer-b:8765', 'token-b');
 
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
-      expect(urls[0].token, 'token-a',
-          reason: '配对 B 不该把 A 的凭据抹掉——这正是 BUG-1550 的根因');
+      expect(
+        urls[0].token,
+        'token-a',
+        reason: '配对 B 不该把 A 的凭据抹掉——这正是 BUG-1550 的根因',
+      );
       expect(urls[1].token, 'token-b');
       // 全局键仍随最后一次配对更新，供行上没有 token 的老条目回落。
       expect(await repo.getFushiClientToken(), 'token-b');

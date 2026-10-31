@@ -10,7 +10,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 默认 skip；手动跑：
 /// `flutter test test/matching/anchor_gap_filler_bench_test.dart --run-skipped`
 /// （JIT，绝对值比审查者的 AOT 数字高，看相对比例。）
-const String _pool = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ'
+const String _pool =
+    'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ'
     'まみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでど'
     '俺は三十四歳住所不定無職人生を後悔している真最中だ着のみまま家から叩き出された'
     '五人兄弟四番目として生まれ小学校成績も良かった周囲神童呼ばれていた';
@@ -67,7 +68,8 @@ String _needle(String region, int n, math.Random rng) {
     }
     for (int len = minLen; len <= limit; len++) {
       final double sim = 1 - prev[len] / math.max(n, len);
-      final bool better = best == null ||
+      final bool better =
+          best == null ||
           sim > best.similarity + 1e-9 ||
           (sim > best.similarity - 1e-9 &&
               _tieRank(n, len) < _tieRank(n, best.end - best.start));
@@ -91,41 +93,38 @@ int _timeMs(void Function() body, {int repeat = 3}) {
 }
 
 void main() {
-  test(
-    'bestSpan 基准：旧 O(R·n²) vs Sellers O(R·n)',
-    () {
-      final math.Random rng = math.Random(20260906);
-      final StringBuffer out = StringBuffer()
-        ..writeln('| region | needle | old ms | new ms | same span |')
-        ..writeln('|---|---|---|---|---|');
-      for (final int region in <int>[1000, 10000, 40000]) {
-        final String text = _corpus(region, rng);
-        for (final int n in <int>[30, 60]) {
-          final String needle = _needle(text, n, rng);
-          ({int start, int end, double similarity})? oldR;
-          ({int start, int end, double similarity})? newR;
-          final int oldMs = _timeMs(() => oldR = _oldBestSpan(needle, text, 0));
-          final int newMs = _timeMs(
-            () => newR = AnchorGapFiller.bestSpanForTest(
-              needle,
-              text,
-              0,
-              text.length,
-            ),
-          );
-          expect(newR, isNotNull);
-          expect(oldR, isNotNull);
-          // 植入的 needle 就在正文中段：两者都应找到它（相似度 ≥ 0.75）。
-          expect(newR!.similarity, greaterThanOrEqualTo(0.75));
-          final bool same = oldR!.start == newR!.start &&
-              oldR!.end == newR!.end &&
-              (oldR!.similarity - newR!.similarity).abs() < 1e-9;
-          out.writeln('| $region | $n | $oldMs | $newMs | $same |');
-        }
+  test('bestSpan 基准：旧 O(R·n²) vs Sellers O(R·n)', () {
+    final math.Random rng = math.Random(20260906);
+    final StringBuffer out = StringBuffer()
+      ..writeln('| region | needle | old ms | new ms | same span |')
+      ..writeln('|---|---|---|---|---|');
+    for (final int region in <int>[1000, 10000, 40000]) {
+      final String text = _corpus(region, rng);
+      for (final int n in <int>[30, 60]) {
+        final String needle = _needle(text, n, rng);
+        ({int start, int end, double similarity})? oldR;
+        ({int start, int end, double similarity})? newR;
+        final int oldMs = _timeMs(() => oldR = _oldBestSpan(needle, text, 0));
+        final int newMs = _timeMs(
+          () => newR = AnchorGapFiller.bestSpanForTest(
+            needle,
+            text,
+            0,
+            text.length,
+          ),
+        );
+        expect(newR, isNotNull);
+        expect(oldR, isNotNull);
+        // 植入的 needle 就在正文中段：两者都应找到它（相似度 ≥ 0.75）。
+        expect(newR!.similarity, greaterThanOrEqualTo(0.75));
+        final bool same =
+            oldR!.start == newR!.start &&
+            oldR!.end == newR!.end &&
+            (oldR!.similarity - newR!.similarity).abs() < 1e-9;
+        out.writeln('| $region | $n | $oldMs | $newMs | $same |');
       }
-      // ignore: avoid_print
-      print(out);
-    },
-    skip: '手动基准：flutter test <本文件> --run-skipped',
-  );
+    }
+    // ignore: avoid_print
+    print(out);
+  }, skip: '手动基准：flutter test <本文件> --run-skipped');
 }

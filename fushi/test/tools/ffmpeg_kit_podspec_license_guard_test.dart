@@ -53,8 +53,9 @@ String _extname(String path) {
 Directory _repoRoot() {
   Directory dir = Directory.current;
   for (int i = 0; i < 6; i++) {
-    if (File('${dir.path}/third_party/ffmpeg_kit_next_flutter/pubspec.yaml')
-        .existsSync()) {
+    if (File(
+      '${dir.path}/third_party/ffmpeg_kit_next_flutter/pubspec.yaml',
+    ).existsSync()) {
       return dir;
     }
     final Directory parent = dir.parent;
@@ -81,10 +82,9 @@ List<File> _vendoredPodspecs(Directory root) {
 
 /// 抠出 podspec 里 `:file => '<路径>'` / `:file => "<路径>"` 的值。
 List<String> _licenseFileRefs(String source) {
-  return RegExp(':file\\s*=>\\s*[\'"]([^\'"]+)[\'"]')
-      .allMatches(source)
-      .map((RegExpMatch m) => m.group(1)!)
-      .toList();
+  return RegExp(
+    ':file\\s*=>\\s*[\'"]([^\'"]+)[\'"]',
+  ).allMatches(source).map((RegExpMatch m) => m.group(1)!).toList();
 }
 
 void main() {
@@ -93,15 +93,19 @@ void main() {
 
     test('所有 :file 许可路径的扩展名都在 CocoaPods 白名单内', () {
       final List<File> podspecs = _vendoredPodspecs(root);
-      expect(podspecs, isNotEmpty,
-          reason: 'third_party/ 下一个 podspec 都没扫到，守卫失效');
+      expect(
+        podspecs,
+        isNotEmpty,
+        reason: 'third_party/ 下一个 podspec 都没扫到，守卫失效',
+      );
 
       for (final File podspec in podspecs) {
         for (final String ref in _licenseFileRefs(podspec.readAsStringSync())) {
           expect(
             _cocoaPodsLicenseExtname.hasMatch(_extname(ref)),
             isTrue,
-            reason: '${podspec.path} 的 s.license :file 指向 "$ref"，'
+            reason:
+                '${podspec.path} 的 s.license :file 指向 "$ref"，'
                 '扩展名 "${_extname(ref)}" 不被 cocoapods-core 接受'
                 '（只放行 无扩展名 / .txt / .md / .markdown）。'
                 'pod install 会直接报 "ERROR | license: Invalid file type" 并整个断掉，'
@@ -120,7 +124,8 @@ void main() {
           expect(
             target.existsSync(),
             isTrue,
-            reason: '${podspec.path} 的 s.license :file 指向 "$ref"，'
+            reason:
+                '${podspec.path} 的 s.license :file 指向 "$ref"，'
                 '但 ${target.path} 不存在——改名时漏了 git mv，或 vendor 时漏拷许可文件',
           );
         }
@@ -135,34 +140,36 @@ void main() {
       final String source = podspec.readAsStringSync();
 
       final List<String> refs = _licenseFileRefs(source);
-      expect(
-        refs.length,
-        1,
-        reason: 'iOS podspec 应恰好声明一个许可文件，实测 $refs',
-      );
+      expect(refs.length, 1, reason: 'iOS podspec 应恰好声明一个许可文件，实测 $refs');
       expect(
         refs.single.contains('GPLv3'),
         isTrue,
-        reason: 'iOS podspec 的许可文件从 GPLv3 改成了 "${refs.single}"。'
+        reason:
+            'iOS podspec 的许可文件从 GPLv3 改成了 "${refs.single}"。'
             '统一 FFmpeg（tool/ffmpeg-unified）启用了 --enable-gpl --enable-libx264，'
             '产物有效许可就是 GPLv3；降回 LGPLv3 是合规倒退，不是修构建',
       );
       expect(
         RegExp(":type\\s*=>\\s*['\"]GPL-3\\.0['\"]").hasMatch(source),
         isTrue,
-        reason: 'iOS podspec 的 s.license 必须显式写 :type => \'GPL-3.0\'，'
+        reason:
+            'iOS podspec 的 s.license 必须显式写 :type => \'GPL-3.0\'，'
             '让许可结论机器可读、也免掉 CocoaPods 的 "Missing license type." 警告',
       );
 
       // 指向的正文必须真是 GPL（不是 LGPL）。只看抬头——GPLv3 正文后段（第 13 节附近）
       // 本来就会提到 "GNU Lesser General Public License"，全文搜 LESSER 会假阳。
       final File license = File('${podspec.parent.path}/${refs.single}');
-      final String heading =
-          license.readAsStringSync().split('\n').first.trim();
+      final String heading = license
+          .readAsStringSync()
+          .split('\n')
+          .first
+          .trim();
       expect(
         heading,
         'GNU GENERAL PUBLIC LICENSE',
-        reason: '${license.path} 抬头是 "$heading"，不是 GPL 正文。'
+        reason:
+            '${license.path} 抬头是 "$heading"，不是 GPL 正文。'
             '若指到了 LGPL：包根的 LICENSE 是 FFmpegKitNext 的 LGPLv3 原件'
             '——iOS 侧的统一 FFmpeg 产物是 GPLv3，别指错',
       );

@@ -47,9 +47,9 @@ void installDictionaryUrlCandidatesResolver() {
 List<String> dictionaryDownloadUrlCandidates(String url) {
   final Uri? parsed = Uri.tryParse(url);
   if (parsed == null) return <String>[url];
-  return gitHubMirrorCandidates(parsed)
-      .map((Uri candidate) => candidate.toString())
-      .toList(growable: false);
+  return gitHubMirrorCandidates(
+    parsed,
+  ).map((Uri candidate) => candidate.toString()).toList(growable: false);
 }
 
 /// 建一个走应用代理的 [Dio]。超时由 `createDictionaryDio` 统一兜底钉死，这里只管代理。

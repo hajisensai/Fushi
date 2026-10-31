@@ -75,12 +75,15 @@ Future<void> _waitFor(
     await tester.pump(step);
     if (ready()) {
       debugPrint(
-          '[inset-probe] $label ready after ${i * step.inMilliseconds}ms');
+        '[inset-probe] $label ready after ${i * step.inMilliseconds}ms',
+      );
       return;
     }
   }
-  fail('$label did not become ready within '
-      '${maxPolls * step.inMilliseconds}ms');
+  fail(
+    '$label did not become ready within '
+    '${maxPolls * step.inMilliseconds}ms',
+  );
 }
 
 /// 一次 DOM 采样：图片 max 盒、body used column-width、两条 chrome inset，以及
@@ -101,18 +104,18 @@ class _InsetProbe {
   });
 
   factory _InsetProbe.fromJson(Map<String, dynamic> m) => _InsetProbe(
-        maxWidth: (m['maxW'] as num).toDouble(),
-        maxHeight: (m['maxH'] as num).toDouble(),
-        columnWidth: (m['colW'] as num).toDouble(),
-        columnWidthRaw: m['colWRaw'].toString(),
-        topInset: (m['top'] as num).toDouble(),
-        bottomInset: (m['bottom'] as num).toDouble(),
-        bodyClientHeight: (m['bodyClientH'] as num).toDouble(),
-        paddingTop: (m['padT'] as num).toDouble(),
-        paddingBottom: (m['padB'] as num).toDouble(),
-        vertical: m['vertical'] == true,
-        reanchorPending: m['pending'] == true,
-      );
+    maxWidth: (m['maxW'] as num).toDouble(),
+    maxHeight: (m['maxH'] as num).toDouble(),
+    columnWidth: (m['colW'] as num).toDouble(),
+    columnWidthRaw: m['colWRaw'].toString(),
+    topInset: (m['top'] as num).toDouble(),
+    bottomInset: (m['bottom'] as num).toDouble(),
+    bodyClientHeight: (m['bodyClientH'] as num).toDouble(),
+    paddingTop: (m['padT'] as num).toDouble(),
+    paddingBottom: (m['padB'] as num).toDouble(),
+    vertical: m['vertical'] == true,
+    reanchorPending: m['pending'] == true,
+  );
 
   final double maxWidth;
   final double maxHeight;
@@ -205,14 +208,19 @@ Future<void> _openSeededBook(WidgetTester tester, String bookKey) async {
   await openBookViaProductionPath(tester, bookKey);
   await _waitFor(tester, _webViewShown, 'reader WebView');
   await _waitFor(tester, _contentReady, 'reader content');
-  await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-      maxPolls: 20);
+  await _waitFor(
+    tester,
+    readerWebViewReady,
+    'reader debug hooks',
+    maxPolls: 20,
+  );
 }
 
 Future<void> _closeReader(WidgetTester tester) async {
   if (_readerPageGone()) return;
-  final NavigatorState nav =
-      Navigator.of(tester.element(find.byType(ReaderFushiPage)));
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(ReaderFushiPage)),
+  );
   nav.pop();
   await _waitFor(tester, _readerPageGone, 'reader closed', maxPolls: 40);
   await tester.pump(const Duration(seconds: 1));
@@ -220,11 +228,15 @@ Future<void> _closeReader(WidgetTester tester) async {
 
 Future<void> _capture(WidgetTester tester, String name) async {
   final ObserveShot frame = await captureFlutterFrame(tester, name);
-  debugPrint('[inset-probe] frame $name saved=${frame.saved} '
-      'nonBlank=${frame.nonBlank} path=${frame.path}');
+  debugPrint(
+    '[inset-probe] frame $name saved=${frame.saved} '
+    'nonBlank=${frame.nonBlank} path=${frame.path}',
+  );
   final ObserveShot web = await captureReaderWebView('$name-webview');
-  debugPrint('[inset-probe] webview $name saved=${web.saved} '
-      'nonBlank=${web.nonBlank} path=${web.path}');
+  debugPrint(
+    '[inset-probe] webview $name saved=${web.saved} '
+    'nonBlank=${web.nonBlank} path=${web.path}',
+  );
 }
 
 void main() {
@@ -239,8 +251,11 @@ void main() {
         label: 'inset-probe',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
           final AppModel appModel = await readyAppModel(tester);
 
@@ -250,138 +265,224 @@ void main() {
           await ReaderFushiSource.instance.setReaderViewMode('paginated');
           await _pumpForPref(tester);
 
-          final String bookKey = await seedReaderBook(tester,
-              fileName: 'bug2454_vertical_paginated.epub');
+          final String bookKey = await seedReaderBook(
+            tester,
+            fileName: 'bug2454_vertical_paginated.epub',
+          );
           await _openSeededBook(tester, bookKey);
           // 首次就绪后页面会补发一次 chrome insets（_reapplyChromeInsetsAfterFirstLoad）
           // 并重锚；基线必须取在那之后。
           await tester.pump(const Duration(seconds: 2));
 
           final _RunJs? runJs = ReaderFushiPage.debugEvaluateJavascript;
-          expect(runJs, isNotNull,
-              reason:
-                  'reader must expose debugEvaluateJavascript (debug build)');
-          expect(ReaderFushiSource.readerSettings?.isContinuousMode, isFalse,
-              reason: 'A must run in paginated (non-continuous) mode');
+          expect(
+            runJs,
+            isNotNull,
+            reason: 'reader must expose debugEvaluateJavascript (debug build)',
+          );
+          expect(
+            ReaderFushiSource.readerSettings?.isContinuousMode,
+            isFalse,
+            reason: 'A must run in paginated (non-continuous) mode',
+          );
 
-          final _InsetProbe base =
-              await _settledProbe(tester, runJs!, 'A.1 baseline');
-          expect(base.vertical, isTrue,
-              reason: 'A must run in vertical-rl (fushiReader.isVertical())');
-          expect(base.columnWidth, greaterThan(0),
-              reason: 'paginated body must have a used column-width '
-                  '(got ${base.columnWidthRaw})');
-          expect(base.maxHeight, closeTo(base.columnWidth, 1.0),
-              reason: 'A.1 baseline: image max-height must already equal the '
-                  'column height after the first-load inset re-send');
+          final _InsetProbe base = await _settledProbe(
+            tester,
+            runJs!,
+            'A.1 baseline',
+          );
+          expect(
+            base.vertical,
+            isTrue,
+            reason: 'A must run in vertical-rl (fushiReader.isVertical())',
+          );
+          expect(
+            base.columnWidth,
+            greaterThan(0),
+            reason:
+                'paginated body must have a used column-width '
+                '(got ${base.columnWidthRaw})',
+          );
+          expect(
+            base.maxHeight,
+            closeTo(base.columnWidth, 1.0),
+            reason:
+                'A.1 baseline: image max-height must already equal the '
+                'column height after the first-load inset re-send',
+          );
           await _capture(tester, 'observe-a1-baseline');
 
           // A.2：改 chrome inset（顶栏 48 + 底栏 84），等重锚落地。
           await runJs('window.fushiReader.setChromeInsets(48, 84);');
           final _InsetProbe grown = await _settledProbe(
-              tester, runJs, 'A.3 after setChromeInsets(48,84)');
+            tester,
+            runJs,
+            'A.3 after setChromeInsets(48,84)',
+          );
           expect(grown.topInset, closeTo(48, 0.5));
           expect(grown.bottomInset, closeTo(84, 0.5));
           final double expectedShrink =
               (48 + 84) - (base.topInset + base.bottomInset);
-          debugPrint('[inset-probe] A.3 maxH ${_f(base.maxHeight)} → '
-              '${_f(grown.maxHeight)} (Δ=${_f(base.maxHeight - grown.maxHeight)}, '
-              'expected ≈ ${_f(expectedShrink)}); colW ${_f(base.columnWidth)} → '
-              '${_f(grown.columnWidth)}');
-          expect(grown.columnWidth,
-              closeTo(base.columnWidth - expectedShrink, 1.0),
-              reason: 'sanity: the column height itself must shrink by the '
-                  'inset delta (CSS column-width reads the inset vars)');
+          debugPrint(
+            '[inset-probe] A.3 maxH ${_f(base.maxHeight)} → '
+            '${_f(grown.maxHeight)} (Δ=${_f(base.maxHeight - grown.maxHeight)}, '
+            'expected ≈ ${_f(expectedShrink)}); colW ${_f(base.columnWidth)} → '
+            '${_f(grown.columnWidth)}',
+          );
+          expect(
+            grown.columnWidth,
+            closeTo(base.columnWidth - expectedShrink, 1.0),
+            reason:
+                'sanity: the column height itself must shrink by the '
+                'inset delta (CSS column-width reads the inset vars)',
+          );
           // 根因断言：修复前 --fushi-image-max-height 停在基线值（比新列高多
           // expectedShrink px），插图因此被 Blink 切到相邻列。
-          expect(grown.maxHeight, closeTo(grown.columnWidth, 1.0),
-              reason:
-                  'BUG-2468: after setChromeInsets the image max-height must '
-                  'be re-derived to the NEW column height '
-                  '(maxH=${_f(grown.maxHeight)} colW=${_f(grown.columnWidth)} '
-                  'baseline maxH=${_f(base.maxHeight)})');
-          expect(base.maxHeight - grown.maxHeight, closeTo(expectedShrink, 2.0),
-              reason: 'BUG-2468: max-height must shrink by exactly the inset '
-                  'delta (${_f(expectedShrink)}px)');
+          expect(
+            grown.maxHeight,
+            closeTo(grown.columnWidth, 1.0),
+            reason:
+                'BUG-2468: after setChromeInsets the image max-height must '
+                'be re-derived to the NEW column height '
+                '(maxH=${_f(grown.maxHeight)} colW=${_f(grown.columnWidth)} '
+                'baseline maxH=${_f(base.maxHeight)})',
+          );
+          expect(
+            base.maxHeight - grown.maxHeight,
+            closeTo(expectedShrink, 2.0),
+            reason:
+                'BUG-2468: max-height must shrink by exactly the inset '
+                'delta (${_f(expectedShrink)}px)',
+          );
           await _capture(tester, 'observe-a3-insets-48-84');
 
           // A.4：复原到基线 inset，再断言相等且回到基线。
-          await runJs('window.fushiReader.setChromeInsets('
-              '${base.topInset}, ${base.bottomInset});');
+          await runJs(
+            'window.fushiReader.setChromeInsets('
+            '${base.topInset}, ${base.bottomInset});',
+          );
           final _InsetProbe restored = await _settledProbe(
-              tester, runJs, 'A.4 after restoring baseline insets');
+            tester,
+            runJs,
+            'A.4 after restoring baseline insets',
+          );
           expect(restored.topInset, closeTo(base.topInset, 0.5));
           expect(restored.bottomInset, closeTo(base.bottomInset, 0.5));
-          expect(restored.maxHeight, closeTo(restored.columnWidth, 1.0),
-              reason: 'BUG-2468: restoring the insets must re-derive the image '
-                  'max-height again');
-          expect(restored.maxHeight, closeTo(base.maxHeight, 1.0),
-              reason: 'restored max-height must return to the baseline value');
+          expect(
+            restored.maxHeight,
+            closeTo(restored.columnWidth, 1.0),
+            reason:
+                'BUG-2468: restoring the insets must re-derive the image '
+                'max-height again',
+          );
+          expect(
+            restored.maxHeight,
+            closeTo(base.maxHeight, 1.0),
+            reason: 'restored max-height must return to the baseline value',
+          );
           await _capture(tester, 'observe-a4-insets-restored');
-          debugPrint('[inset-probe] A PASS: maxH tracks columnWidth through '
-              '${_f(base.maxHeight)} → ${_f(grown.maxHeight)} → '
-              '${_f(restored.maxHeight)}');
+          debugPrint(
+            '[inset-probe] A PASS: maxH tracks columnWidth through '
+            '${_f(base.maxHeight)} → ${_f(grown.maxHeight)} → '
+            '${_f(restored.maxHeight)}',
+          );
 
           await _closeReader(tester);
 
           // ── B. BUG-2467：挤压态底栏吸收状态行 ──────────────────────────
           final bool originalTapEmpty =
               ReaderFushiSource.instance.tapEmptyToHideChrome;
-          debugPrint('[inset-probe] B tap_empty_hide_chrome original='
-              '$originalTapEmpty');
+          debugPrint(
+            '[inset-probe] B tap_empty_hide_chrome original='
+            '$originalTapEmpty',
+          );
           try {
             if (originalTapEmpty) {
               ReaderFushiSource.instance.toggleTapEmptyToHideChrome();
               await _pumpForPref(tester);
             }
-            expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isFalse,
-                reason: 'B needs squeeze mode (tap_empty_hide_chrome=false)');
+            expect(
+              ReaderFushiSource.instance.tapEmptyToHideChrome,
+              isFalse,
+              reason: 'B needs squeeze mode (tap_empty_hide_chrome=false)',
+            );
 
-            final String audiobookKey = await seedAudiobook(tester,
-                title: 'BUG-2467 Squeeze Audiobook');
+            final String audiobookKey = await seedAudiobook(
+              tester,
+              title: 'BUG-2467 Squeeze Audiobook',
+            );
             await _openSeededBook(tester, audiobookKey);
 
             AudiobookPlayerController? ctrl;
-            await _waitFor(tester, () {
-              ctrl = appModel.audiobookSession.controller;
-              return ctrl != null && ctrl!.chapterCueCount > 0;
-            }, 'audiobook controller attached', maxPolls: 80);
+            await _waitFor(
+              tester,
+              () {
+                ctrl = appModel.audiobookSession.controller;
+                return ctrl != null && ctrl!.chapterCueCount > 0;
+              },
+              'audiobook controller attached',
+              maxPolls: 80,
+            );
             debugPrint('[inset-probe] B cueCount=${ctrl!.chapterCueCount}');
 
             await _waitFor(
-                tester,
-                () => find.byKey(_kPlayBarKey).evaluate().isNotEmpty,
-                'audiobook play bar (squeeze mode)',
-                maxPolls: 60);
+              tester,
+              () => find.byKey(_kPlayBarKey).evaluate().isNotEmpty,
+              'audiobook play bar (squeeze mode)',
+              maxPolls: 60,
+            );
             await tester.pump(const Duration(seconds: 1));
             final _RunJs? runJsB = ReaderFushiPage.debugEvaluateJavascript;
             expect(runJsB, isNotNull);
             final _InsetProbe squeeze = await _settledProbe(
-                tester, runJsB!, 'B squeeze (bar occupies)');
+              tester,
+              runJsB!,
+              'B squeeze (bar occupies)',
+            );
             await _capture(tester, 'observe-b1-squeeze-play-bar');
 
             final int playBars = find.byKey(_kPlayBarKey).evaluate().length;
-            final int barProgress =
-                find.byKey(_kBarProgressKey).evaluate().length;
+            final int barProgress = find
+                .byKey(_kBarProgressKey)
+                .evaluate()
+                .length;
             final int footers = find.byKey(_kStatusFooterKey).evaluate().length;
-            final int footerProgress =
-                find.byKey(_kFooterProgressKey).evaluate().length;
-            debugPrint('[inset-probe] B squeeze: playBar=$playBars '
-                'barProgress=$barProgress statusFooter=$footers '
-                'footerProgress=$footerProgress bottomInset=${_f(squeeze.bottomInset)}');
+            final int footerProgress = find
+                .byKey(_kFooterProgressKey)
+                .evaluate()
+                .length;
+            debugPrint(
+              '[inset-probe] B squeeze: playBar=$playBars '
+              'barProgress=$barProgress statusFooter=$footers '
+              'footerProgress=$footerProgress bottomInset=${_f(squeeze.bottomInset)}',
+            );
             expect(playBars, 1, reason: 'squeeze mode must show the play bar');
-            expect(barProgress, 1,
-                reason:
-                    'wide window: the readout is inlined at the bar\'s right '
-                    'end (precondition for absorption)');
-            expect(footers, 0,
-                reason: 'BUG-2467: with the readout inlined into the occupying '
-                    'bar, the status footer must not paint a second copy');
-            expect(footerProgress, 0,
-                reason: 'BUG-2467: only ONE progress readout may be on screen');
-            expect(squeeze.bottomInset, greaterThan(30),
-                reason: 'squeeze bar must occupy layout (bottom inset ≈ bar '
-                    'height, no extra footer row)');
+            expect(
+              barProgress,
+              1,
+              reason:
+                  'wide window: the readout is inlined at the bar\'s right '
+                  'end (precondition for absorption)',
+            );
+            expect(
+              footers,
+              0,
+              reason:
+                  'BUG-2467: with the readout inlined into the occupying '
+                  'bar, the status footer must not paint a second copy',
+            );
+            expect(
+              footerProgress,
+              0,
+              reason: 'BUG-2467: only ONE progress readout may be on screen',
+            );
+            expect(
+              squeeze.bottomInset,
+              greaterThan(30),
+              reason:
+                  'squeeze bar must occupy layout (bottom inset ≈ bar '
+                  'height, no extra footer row)',
+            );
 
             // 切回悬浮态（2026-09-13 语义）：底栏 / 状态行都不占位、随控制栏一起
             // 收起，正文满屏；屏底只剩一条 2px 细进度线当读数。
@@ -390,36 +491,62 @@ void main() {
             expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isTrue);
             ReaderFushiSource.onChromeReanchorLive?.call();
             await _waitFor(
-                tester,
-                () => find.byKey(_kEdgeLineKey).evaluate().isNotEmpty,
-                'progress edge line (floating mode, chrome hidden)',
-                maxPolls: 40);
-            final _InsetProbe floating =
-                await _settledProbe(tester, runJsB, 'B floating (bar hidden)');
+              tester,
+              () => find.byKey(_kEdgeLineKey).evaluate().isNotEmpty,
+              'progress edge line (floating mode, chrome hidden)',
+              maxPolls: 40,
+            );
+            final _InsetProbe floating = await _settledProbe(
+              tester,
+              runJsB,
+              'B floating (bar hidden)',
+            );
             await _capture(tester, 'observe-b2-floating-status-footer');
-            final int footersFloating =
-                find.byKey(_kStatusFooterKey).evaluate().length;
-            final int footerProgressFloating =
-                find.byKey(_kFooterProgressKey).evaluate().length;
-            final int playBarsFloating =
-                find.byKey(_kPlayBarKey).evaluate().length;
+            final int footersFloating = find
+                .byKey(_kStatusFooterKey)
+                .evaluate()
+                .length;
+            final int footerProgressFloating = find
+                .byKey(_kFooterProgressKey)
+                .evaluate()
+                .length;
+            final int playBarsFloating = find
+                .byKey(_kPlayBarKey)
+                .evaluate()
+                .length;
             final int edgeLines = find.byKey(_kEdgeLineKey).evaluate().length;
-            debugPrint('[inset-probe] B floating: playBar=$playBarsFloating '
-                'statusFooter=$footersFloating '
-                'footerProgress=$footerProgressFloating edgeLine=$edgeLines '
-                'bottomInset=${_f(floating.bottomInset)}');
-            expect(footersFloating, 0,
-                reason: 'floating mode (chrome hidden): the status footer hides '
-                    'with the rest of the chrome — body goes full-bleed');
+            debugPrint(
+              '[inset-probe] B floating: playBar=$playBarsFloating '
+              'statusFooter=$footersFloating '
+              'footerProgress=$footerProgressFloating edgeLine=$edgeLines '
+              'bottomInset=${_f(floating.bottomInset)}',
+            );
+            expect(
+              footersFloating,
+              0,
+              reason:
+                  'floating mode (chrome hidden): the status footer hides '
+                  'with the rest of the chrome — body goes full-bleed',
+            );
             expect(footerProgressFloating, 0);
-            expect(edgeLines, 1,
-                reason: 'floating mode: the 2px edge line is the only readout '
-                    'left while the chrome is hidden');
-            expect(floating.bottomInset, lessThan(squeeze.bottomInset - 20),
-                reason: 'floating chrome no longer occupies layout: bottom '
-                    'inset drops to the system inset');
-            debugPrint('[inset-probe] B PASS: squeeze → footer absorbed '
-                '(1 readout); floating → chrome hidden, edge line only');
+            expect(
+              edgeLines,
+              1,
+              reason:
+                  'floating mode: the 2px edge line is the only readout '
+                  'left while the chrome is hidden',
+            );
+            expect(
+              floating.bottomInset,
+              lessThan(squeeze.bottomInset - 20),
+              reason:
+                  'floating chrome no longer occupies layout: bottom '
+                  'inset drops to the system inset',
+            );
+            debugPrint(
+              '[inset-probe] B PASS: squeeze → footer absorbed '
+              '(1 readout); floating → chrome hidden, edge line only',
+            );
           } finally {
             if (ReaderFushiSource.instance.tapEmptyToHideChrome !=
                 originalTapEmpty) {

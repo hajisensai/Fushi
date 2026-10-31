@@ -76,17 +76,11 @@ Active Connections
 
     test('rejects whitelisted system image names case-insensitively', () {
       expect(
-        isProtectedSystemProcess(
-          listenerPid: 1544,
-          processName: 'svchost.exe',
-        ),
+        isProtectedSystemProcess(listenerPid: 1544, processName: 'svchost.exe'),
         isTrue,
       );
       expect(
-        isProtectedSystemProcess(
-          listenerPid: 1544,
-          processName: 'SvcHost.EXE',
-        ),
+        isProtectedSystemProcess(listenerPid: 1544, processName: 'SvcHost.EXE'),
         isTrue,
       );
       expect(
@@ -112,10 +106,7 @@ Active Connections
         isFalse,
       );
       expect(
-        isProtectedSystemProcess(
-          listenerPid: 5000,
-          processName: 'hibiki.exe',
-        ),
+        isProtectedSystemProcess(listenerPid: 5000, processName: 'hibiki.exe'),
         isFalse,
       );
     });
@@ -136,10 +127,7 @@ Active Connections
       expect(isSameExecutablePath(null, r'D:\a\hibiki.exe'), isFalse);
       expect(isSameExecutablePath('', r'D:\a\hibiki.exe'), isFalse);
       expect(
-        isSameExecutablePath(
-          r'C:\python\python.exe',
-          r'D:\a\hibiki.exe',
-        ),
+        isSameExecutablePath(r'C:\python\python.exe', r'D:\a\hibiki.exe'),
         isFalse,
       );
     });

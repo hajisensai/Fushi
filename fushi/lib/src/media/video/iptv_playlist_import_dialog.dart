@@ -79,8 +79,10 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
     if (!_canImport) return;
     final String url = _urlController.text.trim();
     final String? localPath = _urlValid ? null : _localPath;
-    final AppModel appModel =
-        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
     await runImport(
       logTag: 'IptvPlaylistImportDialog.import',
       action: () async {

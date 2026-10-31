@@ -11,16 +11,16 @@ import 'package:fushi_core/fushi_core.dart';
 /// [keepCollectionGroupUnderTagFilter]，书架与视频库共用。
 void main() {
   MediaCollectionRow collection(int id, String name) => MediaCollectionRow(
-        origin: 'user',
-        organizeAliases: '',
-        id: id,
-        name: name,
-        collectionType: 'playlist',
-        coverSource: null,
-        sortOrder: 0,
-        createdAt: 0,
-        orderUpdatedAt: 0,
-      );
+    origin: 'user',
+    organizeAliases: '',
+    id: id,
+    name: name,
+    collectionType: 'playlist',
+    coverSource: null,
+    sortOrder: 0,
+    createdAt: 0,
+    orderUpdatedAt: 0,
+  );
 
   group('keepCollectionGroupUnderTagFilter', () {
     test('无选中标签 → 恒保留', () {
@@ -78,34 +78,37 @@ void main() {
     };
     final List<CollectionOrderingItem<String>> items =
         <CollectionOrderingItem<String>>[
-      for (final String key in <String>['a', 'b', 'c'])
-        if (keepMemberUnderTagFilter(
-          memberMatched: taggedMembers.contains(key),
-          primaryCollectionId: primary[MediaKind.epub.compositeKey(key)],
-          collectionFilter: taggedCollections,
-        ))
-          CollectionOrderingItem<String>(
-            mediaType: MediaKind.epub,
-            entryKey: key,
-            importedAt: 0,
-            payload: key,
-          ),
-    ];
-    final List<CollectionGroup<String>> groups = groupByCollections<String>(
-      items: items,
-      primaryCollectionIdByEntry: primary,
-      collectionsById: <int, MediaCollectionRow>{1: collection(1, 'S')},
-      memberSortIndex: const <String, int>{},
-    )..removeWhere((CollectionGroup<String> g) =>
-        g.collection != null &&
-        !keepCollectionGroupUnderTagFilter(
-          collectionId: g.collection!.id,
-          collectionFilter: taggedCollections,
-          anyMemberMatched: g.items.any(
-            (CollectionOrderingItem<String> it) =>
-                taggedMembers.contains(it.payload),
-          ),
-        ));
+          for (final String key in <String>['a', 'b', 'c'])
+            if (keepMemberUnderTagFilter(
+              memberMatched: taggedMembers.contains(key),
+              primaryCollectionId: primary[MediaKind.epub.compositeKey(key)],
+              collectionFilter: taggedCollections,
+            ))
+              CollectionOrderingItem<String>(
+                mediaType: MediaKind.epub,
+                entryKey: key,
+                importedAt: 0,
+                payload: key,
+              ),
+        ];
+    final List<CollectionGroup<String>> groups =
+        groupByCollections<String>(
+          items: items,
+          primaryCollectionIdByEntry: primary,
+          collectionsById: <int, MediaCollectionRow>{1: collection(1, 'S')},
+          memberSortIndex: const <String, int>{},
+        )..removeWhere(
+          (CollectionGroup<String> g) =>
+              g.collection != null &&
+              !keepCollectionGroupUnderTagFilter(
+                collectionId: g.collection!.id,
+                collectionFilter: taggedCollections,
+                anyMemberMatched: g.items.any(
+                  (CollectionOrderingItem<String> it) =>
+                      taggedMembers.contains(it.payload),
+                ),
+              ),
+        );
 
     final List<String> visible = <String>[
       for (final CollectionGroup<String> g in groups)
@@ -121,11 +124,16 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
     ]) {
       final String src = File(path).readAsStringSync();
-      expect(src.contains('keepCollectionGroupUnderTagFilter('), isTrue,
-          reason: '$path 的合集组标签筛选必须走共享判据（BUG-2968）');
       expect(
-          src.contains('!collectionFilter.contains(g.collection!.id)'), isFalse,
-          reason: '$path 不得再只按合集自身标签整组删除（BUG-2968）');
+        src.contains('keepCollectionGroupUnderTagFilter('),
+        isTrue,
+        reason: '$path 的合集组标签筛选必须走共享判据（BUG-2968）',
+      );
+      expect(
+        src.contains('!collectionFilter.contains(g.collection!.id)'),
+        isFalse,
+        reason: '$path 不得再只按合集自身标签整组删除（BUG-2968）',
+      );
     }
   });
 }

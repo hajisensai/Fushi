@@ -13,21 +13,20 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 每个可锁字段在 UI 上的标签。genres / studios 复用作品详情页已有的词条标题。
-String videoMetadataLockableFieldLabel(VideoMetadataLockableField field) =>
-    switch (field) {
-      VideoMetadataLockableField.title => t.video_work_field_title,
-      VideoMetadataLockableField.originalTitle =>
-        t.video_work_field_original_title,
-      VideoMetadataLockableField.overview => t.video_work_field_overview,
-      VideoMetadataLockableField.tagline => t.video_work_field_tagline,
-      VideoMetadataLockableField.genres => t.video_work_genres,
-      VideoMetadataLockableField.studios => t.video_work_studios,
-      VideoMetadataLockableField.rating => t.video_work_field_rating,
-      VideoMetadataLockableField.cover => t.video_work_field_cover,
-      VideoMetadataLockableField.backdrop => t.video_work_field_backdrop,
-      VideoMetadataLockableField.episodeGroup =>
-        t.video_work_field_episode_group,
-    };
+String videoMetadataLockableFieldLabel(
+  VideoMetadataLockableField field,
+) => switch (field) {
+  VideoMetadataLockableField.title => t.video_work_field_title,
+  VideoMetadataLockableField.originalTitle => t.video_work_field_original_title,
+  VideoMetadataLockableField.overview => t.video_work_field_overview,
+  VideoMetadataLockableField.tagline => t.video_work_field_tagline,
+  VideoMetadataLockableField.genres => t.video_work_genres,
+  VideoMetadataLockableField.studios => t.video_work_studios,
+  VideoMetadataLockableField.rating => t.video_work_field_rating,
+  VideoMetadataLockableField.cover => t.video_work_field_cover,
+  VideoMetadataLockableField.backdrop => t.video_work_field_backdrop,
+  VideoMetadataLockableField.episodeGroup => t.video_work_field_episode_group,
+};
 
 /// 打开字段锁对话框并在用户确认后写库。返回是否真的写了。
 Future<bool> editVideoMetadataLockedFields({
@@ -35,16 +34,17 @@ Future<bool> editVideoMetadataLockedFields({
   required FushiDatabase database,
   required int workId,
 }) async {
-  final VideoMetadataWorkRow? row =
-      await database.getVideoMetadataWorkById(workId);
+  final VideoMetadataWorkRow? row = await database.getVideoMetadataWorkById(
+    workId,
+  );
   if (row == null || !context.mounted) return false;
   final Set<VideoMetadataLockableField>? picked =
       await showAppDialog<Set<VideoMetadataLockableField>>(
-    context: context,
-    builder: (BuildContext context) => _VideoMetadataLockDialog(
-      initial: parseLockedFields(row.lockedFields),
-    ),
-  );
+        context: context,
+        builder: (BuildContext context) => _VideoMetadataLockDialog(
+          initial: parseLockedFields(row.lockedFields),
+        ),
+      );
   if (picked == null) return false;
   await database.setVideoMetadataWorkLockedFields(
     workId,

@@ -42,8 +42,11 @@ void main() {
     test('已 mined 的行拿到新 note id 仍要写进去（覆写卡后仍可复核）', () {
       final String id = appendLine('こんにちは');
       service.markLineMined(id, noteId: 42);
-      expect(service.markLineMined(id, noteId: 99), isTrue,
-          reason: '否则这行永远拿着过期 id、复核不到真正那张卡');
+      expect(
+        service.markLineMined(id, noteId: 99),
+        isTrue,
+        reason: '否则这行永远拿着过期 id、复核不到真正那张卡',
+      );
       expect(service.entryById(id)!.minedNoteId, 99);
     });
 
@@ -111,9 +114,13 @@ void main() {
 
       expect(service.clearMinedForNotes(<int>{}), 0);
 
-      expect(minedOf(id), isTrue,
-          reason: 'findDeletedNotes 查询失败时返回空集，'
-              '此时必须一张都不清，否则 Anki 没开着就会清空满屏徽章');
+      expect(
+        minedOf(id),
+        isTrue,
+        reason:
+            'findDeletedNotes 查询失败时返回空集，'
+            '此时必须一张都不清，否则 Anki 没开着就会清空满屏徽章',
+      );
       expect(service.entryById(id)!.minedNoteId, 42);
     });
 
@@ -131,8 +138,7 @@ void main() {
 
       expect(service.clearMinedForNotes(<int>{42, 99}), 0);
 
-      expect(minedOf(id), isTrue,
-          reason: '拿不到 id 的后端保持旧 latch 行为，宁可陈旧不可误清');
+      expect(minedOf(id), isTrue, reason: '拿不到 id 的后端保持旧 latch 行为，宁可陈旧不可误清');
     });
 
     test('未制卡的行不受影响', () {

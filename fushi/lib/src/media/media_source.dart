@@ -270,10 +270,7 @@ abstract class MediaSource {
     required WidgetRef ref,
     required AppModel appModel,
   }) async {
-    appModel.openMedia(
-      ref: ref,
-      mediaSource: this,
-    );
+    appModel.openMedia(ref: ref, mediaSource: this);
   }
 
   /// This function can be used to clean up resources associated with a
@@ -284,40 +281,28 @@ abstract class MediaSource {
   /// a card while this source is active. Can be set with [setCurrentSentence]
   /// and [clearCurrentSentence] in a source page.
   FushiTextSelection get currentSentence => _currentSentence;
-  FushiTextSelection _currentSentence = FushiTextSelection(
-    text: '',
-  );
+  FushiTextSelection _currentSentence = FushiTextSelection(text: '');
 
   /// Update the current sentence.
-  void setCurrentSentence({
-    required FushiTextSelection selection,
-  }) {
+  void setCurrentSentence({required FushiTextSelection selection}) {
     _currentSentence = selection;
   }
 
   /// Clear the current sentence.
   void clearCurrentSentence() {
-    _currentSentence = FushiTextSelection(
-      text: '',
-    );
+    _currentSentence = FushiTextSelection(text: '');
   }
 
   /// Full subtitle-cue text (not punctuation-segmented).
   FushiTextSelection get currentCueSentence => _currentCueSentence;
-  FushiTextSelection _currentCueSentence = FushiTextSelection(
-    text: '',
-  );
+  FushiTextSelection _currentCueSentence = FushiTextSelection(text: '');
 
-  void setCurrentCueSentence({
-    required FushiTextSelection selection,
-  }) {
+  void setCurrentCueSentence({required FushiTextSelection selection}) {
     _currentCueSentence = selection;
   }
 
   void clearCurrentCueSentence() {
-    _currentCueSentence = FushiTextSelection(
-      text: '',
-    );
+    _currentCueSentence = FushiTextSelection(text: '');
   }
 
   /// This is used to hold data for generating images and audio.
@@ -366,7 +351,8 @@ abstract class MediaSource {
   /// UnimplementedError so a contract violation names the source and the method
   /// that was not overridden, instead of surfacing an opaque runtime trap.
   MediaItem get currentMediaItem => throw UnsupportedError(
-      '$runtimeType does not implement currentMediaItem');
+    '$runtimeType does not implement currentMediaItem',
+  );
 
   /// The body widget to show in the tab when this source's media type and this
   /// source is selected.
@@ -405,10 +391,7 @@ abstract class MediaSource {
   }) {
     if (!noOverride) {
       final ImageProvider<Object>? overrideThumbnail =
-          getOverrideThumbnailFromMediaItem(
-        appModel: appModel,
-        item: item,
-      );
+          getOverrideThumbnailFromMediaItem(appModel: appModel, item: item);
       if (overrideThumbnail != null) {
         return overrideThumbnail;
       }
@@ -520,8 +503,7 @@ abstract class MediaSource {
   static String legacyOverrideTitleKey({
     required String sourceId,
     required String mediaIdentifier,
-  }) =>
-      '$kOverrideTitleKeyMarker$sourceId/$sourceId/$mediaIdentifier';
+  }) => '$kOverrideTitleKeyMarker$sourceId/$sourceId/$mediaIdentifier';
 
   /// The map value used to store the override thumbnail of an item.
   ///
@@ -531,22 +513,20 @@ abstract class MediaSource {
   String getOverrideThumbnailFilename({
     required AppModel appModel,
     required MediaItem item,
-  }) =>
-      _overrideThumbnailPath(
-        appModel,
-        '${item.mediaIdentifier}/override_thumbnail',
-      );
+  }) => _overrideThumbnailPath(
+    appModel,
+    '${item.mediaIdentifier}/override_thumbnail',
+  );
 
   /// BUG-1317 之前的旧封面文件名（把源键烧进 hashCode）。只用于读取期回退与清除。
   String legacyOverrideThumbnailFilename({
     required AppModel appModel,
     required MediaItem item,
     required String sourceId,
-  }) =>
-      _overrideThumbnailPath(
-        appModel,
-        '${item.mediaIdentifier}/$sourceId/override_thumbnail',
-      );
+  }) => _overrideThumbnailPath(
+    appModel,
+    '${item.mediaIdentifier}/$sourceId/override_thumbnail',
+  );
 
   String _overrideThumbnailPath(AppModel appModel, String key) =>
       path.join(appModel.thumbnailsDirectory.path, key.hashCode.toString());
@@ -558,8 +538,10 @@ abstract class MediaSource {
     }
 
     final String key = getOverrideTitleKey(item);
-    final String? current =
-        overrideStore.getPreference<String?>(key: key, defaultValue: null);
+    final String? current = overrideStore.getPreference<String?>(
+      key: key,
+      defaultValue: null,
+    );
     if (current != null) {
       return current;
     }
@@ -580,15 +562,16 @@ abstract class MediaSource {
         sourceId: legacy.uniqueKey,
         mediaIdentifier: item.mediaIdentifier,
       );
-      final String? value =
-          legacy.getPreference<String?>(key: legacyKey, defaultValue: null);
+      final String? value = legacy.getPreference<String?>(
+        key: legacyKey,
+        defaultValue: null,
+      );
       if (value == null) {
         continue;
       }
-      unawaited(overrideStore.setPreference<String?>(
-        key: canonicalKey,
-        value: value,
-      ));
+      unawaited(
+        overrideStore.setPreference<String?>(key: canonicalKey, value: value),
+      );
       unawaited(legacy.deletePreference(key: legacyKey));
       return value;
     }
@@ -620,18 +603,22 @@ abstract class MediaSource {
     required AppModel appModel,
     required MediaItem item,
   }) {
-    final String canonical =
-        getOverrideThumbnailFilename(appModel: appModel, item: item);
+    final String canonical = getOverrideThumbnailFilename(
+      appModel: appModel,
+      item: item,
+    );
     final File canonicalFile = File(canonical);
     if (canonicalFile.existsSync()) {
       return canonicalFile;
     }
     for (final MediaSource legacy in legacyOverrideStores) {
-      final File legacyFile = File(legacyOverrideThumbnailFilename(
-        appModel: appModel,
-        item: item,
-        sourceId: legacy.uniqueKey,
-      ));
+      final File legacyFile = File(
+        legacyOverrideThumbnailFilename(
+          appModel: appModel,
+          item: item,
+          sourceId: legacy.uniqueKey,
+        ),
+      );
       if (!legacyFile.existsSync()) {
         continue;
       }
@@ -639,8 +626,11 @@ abstract class MediaSource {
         canonicalFile.parent.createSync(recursive: true);
         return legacyFile.renameSync(canonical);
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('MediaSource.adoptLegacyOverrideThumbnail', e, stack);
+        ErrorLogService.instance.log(
+          'MediaSource.adoptLegacyOverrideThumbnail',
+          e,
+          stack,
+        );
         // rename 失败不该让封面凭空消失：仍返回旧文件，下次读再试一次。
         return legacyFile;
       }
@@ -654,11 +644,13 @@ abstract class MediaSource {
     required MediaItem item,
   }) {
     for (final MediaSource legacy in legacyOverrideStores) {
-      final File legacyFile = File(legacyOverrideThumbnailFilename(
-        appModel: appModel,
-        item: item,
-        sourceId: legacy.uniqueKey,
-      ));
+      final File legacyFile = File(
+        legacyOverrideThumbnailFilename(
+          appModel: appModel,
+          item: item,
+          sourceId: legacy.uniqueKey,
+        ),
+      );
       if (legacyFile.existsSync()) {
         legacyFile.deleteSync();
       }
@@ -670,8 +662,10 @@ abstract class MediaSource {
     required AppModel appModel,
     required MediaItem item,
   }) {
-    final File? file =
-        resolveOverrideThumbnailFile(appModel: appModel, item: item);
+    final File? file = resolveOverrideThumbnailFile(
+      appModel: appModel,
+      item: item,
+    );
     if (file == null) {
       return null;
     }
@@ -755,7 +749,9 @@ abstract class MediaSource {
         mediaIdentifier: item.mediaIdentifier,
       );
       final String? value = legacy.getPreference<String?>(
-          key: legacyShortKey, defaultValue: null);
+        key: legacyShortKey,
+        defaultValue: null,
+      );
       if (value == null || value.isEmpty) continue;
       await db.setPrefIfNewer(
         canonicalDbKey,
@@ -812,10 +808,14 @@ abstract class MediaSource {
       // 也不让「保存」整体失败：记诊断后当作没换图返回。
       try {
         await MediaCoverService.applyCoverFile(
-            source: file, destPath: filename);
+          source: file,
+          destPath: filename,
+        );
       } on CoverImageInvalidException catch (e) {
-        ErrorLogService.instance
-            .logDiagnostic('MediaSource.setOverrideThumbnail', e);
+        ErrorLogService.instance.logDiagnostic(
+          'MediaSource.setOverrideThumbnail',
+          e,
+        );
         return;
       }
     } else {

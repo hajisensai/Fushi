@@ -53,8 +53,9 @@ void main() {
 
     test('boundary lengths around 32-byte keystream period round-trip', () {
       for (final n in [1, 31, 32, 33, 63, 64, 65]) {
-        final data =
-            Uint8List.fromList(List<int>.generate(n, (i) => (i * 13) & 0xFF));
+        final data = Uint8List.fromList(
+          List<int>.generate(n, (i) => (i * 13) & 0xFF),
+        );
         final ob = SyncObfuscator.obfuscateBytes(data);
         expect(SyncObfuscator.deobfuscateBytes(ob), data, reason: 'n=$n');
       }
@@ -65,7 +66,8 @@ void main() {
     test('multi-chunk file round-trips and equals bytes output', () async {
       // > 1 MiB：跨 Rust 侧读块边界。
       final data = Uint8List.fromList(
-          List<int>.generate(3 * 1024 * 1024 + 77, (i) => (i * 17 + 3) & 0xFF));
+        List<int>.generate(3 * 1024 * 1024 + 77, (i) => (i * 17 + 3) & 0xFF),
+      );
       final ob = await _viaFiles(data, SyncObfuscator.obfuscateFile);
       expect(ob, SyncObfuscator.obfuscateBytes(data));
       final back = await _viaFiles(ob, SyncObfuscator.deobfuscateFile);
@@ -97,7 +99,9 @@ void main() {
       try {
         await expectLater(
           SyncObfuscator.deobfuscateFile(
-              File('${dir.path}/missing'), File('${dir.path}/out')),
+            File('${dir.path}/missing'),
+            File('${dir.path}/out'),
+          ),
           throwsA(isA<FileSystemException>()),
         );
       } finally {
@@ -132,21 +136,25 @@ void main() {
       expect(back, Uint8List.fromList(legacy));
     });
 
-    test('deobfuscateFile copies legacy plaintext shorter than header',
-        () async {
-      final tiny = [9, 8, 7];
-      final back = await _viaFiles(tiny, SyncObfuscator.deobfuscateFile);
-      expect(back, Uint8List.fromList(tiny));
-    });
+    test(
+      'deobfuscateFile copies legacy plaintext shorter than header',
+      () async {
+        final tiny = [9, 8, 7];
+        final back = await _viaFiles(tiny, SyncObfuscator.deobfuscateFile);
+        expect(back, Uint8List.fromList(tiny));
+      },
+    );
   });
 
   group('SyncObfuscator random access (deobfuscateBodyAt)', () {
     // 按 64 位字长 XOR 的实现必须与整文件逐字节还原逐字节一致：覆盖全部 32 种
     // 相位、8 字节边界两侧的长度，以及非 Uint8List 的输入（网络分块可能是普通 List）。
     final plain = Uint8List.fromList(
-        List<int>.generate(4096 + 77, (i) => (i * 131 + 17) & 0xFF));
-    final body = SyncObfuscator.obfuscateBytes(plain)
-        .sublist(SyncObfuscator.magicHeaderLength);
+      List<int>.generate(4096 + 77, (i) => (i * 131 + 17) & 0xFF),
+    );
+    final body = SyncObfuscator.obfuscateBytes(
+      plain,
+    ).sublist(SyncObfuscator.magicHeaderLength);
 
     test('any offset / length restores the plaintext slice', () {
       for (var offset = 0; offset < 64; offset++) {

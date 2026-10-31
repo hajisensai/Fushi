@@ -40,17 +40,14 @@ void main() {
     final List<String> messages = <String>[];
     late final CollectionAddOutcome outcome;
     // 不抛是硬要求：调用点是 void 回调，抛出去就等于静默。
-    await expectLater(
-      () async {
-        outcome = await addMediaRefToCollection(
-          database: db,
-          collectionId: collectionId,
-          mediaRef: bookRef,
-          notify: messages.add,
-        );
-      }(),
-      completes,
-    );
+    await expectLater(() async {
+      outcome = await addMediaRefToCollection(
+        database: db,
+        collectionId: collectionId,
+        mediaRef: bookRef,
+        notify: messages.add,
+      );
+    }(), completes);
 
     expect(outcome, CollectionAddOutcome.failed);
     expect(
@@ -58,11 +55,9 @@ void main() {
       isEmpty,
       reason: '失败就是没写进去——提示必须与真实落库结果一致',
     );
-    expect(
-      messages,
-      <String>[t.collection_add_failed],
-      reason: '落库失败必须让用户看到——静默失败会让他以为已经加进合集了',
-    );
+    expect(messages, <String>[
+      t.collection_add_failed,
+    ], reason: '落库失败必须让用户看到——静默失败会让他以为已经加进合集了');
   });
 
   test('首次加入 → 返回 added，且不抢调用方的成功提示', () async {
@@ -78,8 +73,9 @@ void main() {
 
     expect(outcome, CollectionAddOutcome.added);
     expect(messages, isEmpty, reason: '成功提示由调用方在刷新后报，此处不得抢发');
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     expect(items.map((MediaCollectionItemRow it) => it.entryKey), <String>[
       bookRef.entryKey,
     ]);

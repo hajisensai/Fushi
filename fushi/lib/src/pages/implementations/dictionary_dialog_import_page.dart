@@ -64,8 +64,8 @@ class _DictionaryDialogImportPageState
 
         final String header =
             currentCount != null && totalCount != null && totalCount != 1
-                ? '${t.import_in_progress}\n$currentCount / $totalCount'
-                : t.import_in_progress;
+            ? '${t.import_in_progress}\n$currentCount / $totalCount'
+            : t.import_in_progress;
 
         return DictionaryProgressDialogContent(
           header: header,

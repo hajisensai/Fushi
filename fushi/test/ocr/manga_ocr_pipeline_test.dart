@@ -122,19 +122,19 @@ class _FixedDetector implements OcrDetector {
 }
 
 List<DetectedTextRegion> _columns(int count) => <DetectedTextRegion>[
-      for (int index = 0; index < count; index++)
-        DetectedTextRegion(
-          rect: OcrRect(
-            left: (index * 20).toDouble(),
-            top: 0,
-            right: (index * 20 + 10).toDouble(),
-            bottom: 100,
-          ),
-          score: index / count,
-          classId: index.isEven ? 1 : 2,
-          insideBubble: index.isEven,
-        ),
-    ];
+  for (int index = 0; index < count; index++)
+    DetectedTextRegion(
+      rect: OcrRect(
+        left: (index * 20).toDouble(),
+        top: 0,
+        right: (index * 20 + 10).toDouble(),
+        bottom: 100,
+      ),
+      score: index / count,
+      classId: index.isEven ? 1 : 2,
+      insideBubble: index.isEven,
+    ),
+];
 
 class _TextRecognizer implements OcrRecognizer {
   _TextRecognizer(this.texts);
@@ -166,11 +166,11 @@ class _BatchTextRecognizer extends _TextRecognizer
 }
 
 DetectedTextRegion _region(OcrRect rect, double score) => DetectedTextRegion(
-      rect: rect,
-      score: score,
-      classId: 2,
-      insideBubble: false,
-    );
+  rect: rect,
+  score: score,
+  classId: 2,
+  insideBubble: false,
+);
 
 void main() {
   group('补检（检测器弱候选）', () {
@@ -229,15 +229,17 @@ void main() {
     const OcrRect parent = OcrRect(left: 0, top: 0, right: 400, bottom: 200);
     const OcrRect child = OcrRect(left: 20, top: 120, right: 220, bottom: 130);
     final List<
-        ({
-          String name,
-          OcrRect outer,
-          OcrRect inner,
-          double score,
-          String parentText,
-          String childText,
-          List<String> expected,
-        })> cases = [
+      ({
+        String name,
+        OcrRect outer,
+        OcrRect inner,
+        double score,
+        String parentText,
+        String childText,
+        List<String> expected,
+      })
+    >
+    cases = [
       (
         name: '父框漏正文时保留小字内框',
         outer: parent,
@@ -363,8 +365,9 @@ void main() {
             c.outer: c.parentText,
             c.inner: c.childText,
           };
-          final _TextRecognizer recognizer =
-              batch ? _BatchTextRecognizer(texts) : _TextRecognizer(texts);
+          final _TextRecognizer recognizer = batch
+              ? _BatchTextRecognizer(texts)
+              : _TextRecognizer(texts);
           final OcrPageResult result = await MangaOcrPipeline(
             detector: _FixedDetector(<DetectedTextRegion>[
               _region(c.inner, 0.8),
@@ -376,13 +379,10 @@ void main() {
           final List<OcrRect> recognized = recognizer is _BatchTextRecognizer
               ? recognizer.batches.expand((List<OcrRect> b) => b).toList()
               : recognizer.calls;
-          expect(
-              recognized,
-              <OcrRect>[
-                c.outer,
-                c.inner,
-              ],
-              reason: '包含框必须实际识别，不能预先删除');
+          expect(recognized, <OcrRect>[
+            c.outer,
+            c.inner,
+          ], reason: '包含框必须实际识别，不能预先删除');
           if (c.parentText.isNotEmpty) {
             expect(result.blocks.first.box, same(c.outer));
             expect(result.blocks.first.score, c.score);
@@ -432,23 +432,24 @@ void main() {
       final List<OcrRect> order = <OcrRect>[parent, ...fillers, lastChild];
       final _BatchTextRecognizer recognizer =
           _BatchTextRecognizer(<OcrRect, String>{
-        parent: 'TITLEBODY',
-        lastChild: 'BODY',
-        for (int i = 0; i < fillers.length; i++) fillers[i]: 'extra$i',
-      });
+            parent: 'TITLEBODY',
+            lastChild: 'BODY',
+            for (int i = 0; i < fillers.length; i++) fillers[i]: 'extra$i',
+          });
       final MemoryCache cache = MemoryCache();
-      final List<OcrPageResult> results = await MangaOcrPipeline(
-        detector: _FixedDetector(<DetectedTextRegion>[
-          for (final OcrRect box in order.reversed)
-            _region(box, identical(box, parent) ? 0.9 : 0.8),
-        ]),
-        recognizer: recognizer,
-        cache: cache,
-      ).processBook(
-        bookId: 'nested',
-        pageCount: 1,
-        loadPage: (int _) async => pageImage(0),
-      );
+      final List<OcrPageResult> results =
+          await MangaOcrPipeline(
+            detector: _FixedDetector(<DetectedTextRegion>[
+              for (final OcrRect box in order.reversed)
+                _region(box, identical(box, parent) ? 0.9 : 0.8),
+            ]),
+            recognizer: recognizer,
+            cache: cache,
+          ).processBook(
+            bookId: 'nested',
+            pageCount: 1,
+            loadPage: (int _) async => pageImage(0),
+          );
       expect(recognizer.calls, isEmpty);
       expect(recognizer.batches.map((List<OcrRect> b) => b.length), [8, 1]);
       expect(recognizer.batches.expand((List<OcrRect> b) => b), order);
@@ -494,14 +495,15 @@ void main() {
 
     test('密集页分为最多 8 框的有界批次，批次和页面都不并发', () async {
       final _BatchRecognizer recognizer = _BatchRecognizer();
-      final List<OcrPageResult> results = await MangaOcrPipeline(
-        detector: _FixedDetector(_columns(19)),
-        recognizer: recognizer,
-      ).processBook(
-        bookId: 'batch',
-        pageCount: 2,
-        loadPage: (int index) async => pageImage(index),
-      );
+      final List<OcrPageResult> results =
+          await MangaOcrPipeline(
+            detector: _FixedDetector(_columns(19)),
+            recognizer: recognizer,
+          ).processBook(
+            bookId: 'batch',
+            pageCount: 2,
+            loadPage: (int index) async => pageImage(index),
+          );
       expect(
         recognizer.batches.map((List<OcrRect> boxes) => boxes.length),
         <int>[8, 8, 3, 8, 8, 3],
@@ -731,10 +733,13 @@ void main() {
         <int>[5, 5, 2],
       ]);
       // 返回值与起点无关：按页序，每页结果属于自己的页。
-      expect(
-        results.map((OcrPageResult r) => r.pageIndex).toList(),
-        <int>[0, 1, 2, 3, 4],
-      );
+      expect(results.map((OcrPageResult r) => r.pageIndex).toList(), <int>[
+        0,
+        1,
+        2,
+        3,
+        4,
+      ]);
       for (int page = 0; page < 5; page++) {
         expect(results[page].blocks.first.lines.single, 'p$page@400');
       }
@@ -917,19 +922,21 @@ void main() {
         ],
       );
       await legacy.write('b', old);
-      final _FixedDetector detector =
-          _FixedDetector(const <DetectedTextRegion>[]);
-      final _LayoutRecognizer recognizer = _LayoutRecognizer();
-      final List<OcrPageResult> results = await MangaOcrPipeline(
-        detector: detector,
-        recognizer: recognizer,
-        cache: current,
-      ).processBook(
-        bookId: 'b',
-        pageCount: 1,
-        loadPage: (int page) async => pageImage(page),
-        legacyCaches: <OcrPageCache>[legacy],
+      final _FixedDetector detector = _FixedDetector(
+        const <DetectedTextRegion>[],
       );
+      final _LayoutRecognizer recognizer = _LayoutRecognizer();
+      final List<OcrPageResult> results =
+          await MangaOcrPipeline(
+            detector: detector,
+            recognizer: recognizer,
+            cache: current,
+          ).processBook(
+            bookId: 'b',
+            pageCount: 1,
+            loadPage: (int page) async => pageImage(page),
+            legacyCaches: <OcrPageCache>[legacy],
+          );
       expect(detector.calls, 0);
       expect(recognizer.recognizeCalls, 0);
       expect(recognizer.layoutCalls, 1);
@@ -1204,17 +1211,11 @@ void main() {
 
     test('只包含一个子块：父块不让位（父块漏读小字的情形保持原样）', () async {
       final List<String> texts = await run(
-        <OcrRect, String>{
-          tallParent: '身長162センチ趣味は読害',
-          upper: '身長162センチ',
-        },
+        <OcrRect, String>{tallParent: '身長162センチ趣味は読害', upper: '身長162センチ'},
         parentLines: <String>['身長162センチ', '趣味は読害'],
         parentLineBoxes: parentRows,
       );
-      expect(
-        texts,
-        unorderedEquals(<String>['身長162センチ趣味は読害', '身長162センチ']),
-      );
+      expect(texts, unorderedEquals(<String>['身長162センチ趣味は読害', '身長162センチ']));
     });
 
     test('父块没有行几何：不知道字落在哪，不让位', () async {
@@ -1229,21 +1230,22 @@ void main() {
     test('父块的行大半不在子块里：留着父块，不丢子块没认领的字', () async {
       const OcrRect inner1 = OcrRect(left: 20, top: 20, right: 120, bottom: 50);
       const OcrRect inner2 = OcrRect(left: 20, top: 60, right: 120, bottom: 90);
-      final _ReplyRecognizer recognizer = _ReplyRecognizer(<OcrRect,
-          OcrRecognition>{
-        tallParent: const OcrRecognition(
-          text: 'AB本文本文本文',
-          vertical: false,
-          lines: <String>['A', 'B', '本文本文本文'],
-          lineBoxes: <OcrRect>[
-            OcrRect(left: 20, top: 20, right: 120, bottom: 50),
-            OcrRect(left: 20, top: 60, right: 120, bottom: 90),
-            OcrRect(left: 20, top: 300, right: 380, bottom: 900),
-          ],
-        ),
-        inner1: const OcrRecognition(text: 'A', vertical: false),
-        inner2: const OcrRecognition(text: 'B', vertical: false),
-      });
+      final _ReplyRecognizer recognizer = _ReplyRecognizer(
+        <OcrRect, OcrRecognition>{
+          tallParent: const OcrRecognition(
+            text: 'AB本文本文本文',
+            vertical: false,
+            lines: <String>['A', 'B', '本文本文本文'],
+            lineBoxes: <OcrRect>[
+              OcrRect(left: 20, top: 20, right: 120, bottom: 50),
+              OcrRect(left: 20, top: 60, right: 120, bottom: 90),
+              OcrRect(left: 20, top: 300, right: 380, bottom: 900),
+            ],
+          ),
+          inner1: const OcrRecognition(text: 'A', vertical: false),
+          inner2: const OcrRecognition(text: 'B', vertical: false),
+        },
+      );
       final OcrPageResult result = await MangaOcrPipeline(
         detector: _FixedDetector(<DetectedTextRegion>[
           _region(tallParent, 0.9),
@@ -1259,20 +1261,21 @@ void main() {
     });
 
     test('父块的行都被子块盖住：按行几何判定，父块让位', () async {
-      final _ReplyRecognizer recognizer = _ReplyRecognizer(<OcrRect,
-          OcrRecognition>{
-        tallParent: const OcrRecognition(
-          text: 'XY',
-          vertical: false,
-          lines: <String>['X', 'Y'],
-          lineBoxes: <OcrRect>[
-            OcrRect(left: 25, top: 110, right: 370, bottom: 150),
-            OcrRect(left: 25, top: 610, right: 370, bottom: 650),
-          ],
-        ),
-        upper: const OcrRecognition(text: 'X1', vertical: false),
-        lower: const OcrRecognition(text: 'Y1', vertical: false),
-      });
+      final _ReplyRecognizer recognizer = _ReplyRecognizer(
+        <OcrRect, OcrRecognition>{
+          tallParent: const OcrRecognition(
+            text: 'XY',
+            vertical: false,
+            lines: <String>['X', 'Y'],
+            lineBoxes: <OcrRect>[
+              OcrRect(left: 25, top: 110, right: 370, bottom: 150),
+              OcrRect(left: 25, top: 610, right: 370, bottom: 650),
+            ],
+          ),
+          upper: const OcrRecognition(text: 'X1', vertical: false),
+          lower: const OcrRecognition(text: 'Y1', vertical: false),
+        },
+      );
       final OcrPageResult result = await MangaOcrPipeline(
         detector: _FixedDetector(<DetectedTextRegion>[
           _region(tallParent, 0.9),
@@ -1323,8 +1326,10 @@ void main() {
       final OcrBlock back = OcrBlock.fromJson(
         jsonDecode(jsonEncode(block.toJson())) as Map<String, dynamic>,
       );
-      expect(back.glyphBoxes!.map((OcrGlyphBox g) => g.rect.right),
-          <double>[40, 100]);
+      expect(back.glyphBoxes!.map((OcrGlyphBox g) => g.rect.right), <double>[
+        40,
+        100,
+      ]);
       expect(back.glyphBoxes!.map((OcrGlyphBox g) => g.end), <int>[1, 2]);
     });
 
@@ -1402,22 +1407,24 @@ class _LayoutRecognizer
   bool corrupt = false;
 
   OcrRecognition _laidOut(OcrRect box, String text) => OcrRecognition(
-        text: text,
-        vertical: true,
-        lines: corrupt ? <String>['あいう', 'えX'] : <String>['あいう', 'えお'],
-        lineBoxes: <OcrRect>[
-          OcrRect(
-              left: box.left + 40,
-              top: box.top,
-              right: box.right,
-              bottom: box.bottom),
-          OcrRect(
-              left: box.left,
-              top: box.top,
-              right: box.left + 40,
-              bottom: box.bottom),
-        ],
-      );
+    text: text,
+    vertical: true,
+    lines: corrupt ? <String>['あいう', 'えX'] : <String>['あいう', 'えお'],
+    lineBoxes: <OcrRect>[
+      OcrRect(
+        left: box.left + 40,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+      ),
+      OcrRect(
+        left: box.left,
+        top: box.top,
+        right: box.left + 40,
+        bottom: box.bottom,
+      ),
+    ],
+  );
 
   @override
   Future<String> recognize(img.Image page, OcrRect box) async {
@@ -1458,29 +1465,30 @@ class _TwoLineParentRecognizer implements OrientedOcrRecognizer {
   Future<List<OcrRecognition>> recognizeOriented(
     img.Image page,
     List<OcrRect> boxes,
-  ) async =>
-      <OcrRecognition>[
-        for (final OcrRect box in boxes)
-          box.width >= 300
-              ? OcrRecognition(
-                  text: '題名本文',
-                  vertical: false,
-                  lines: const <String>['題名', '本文'],
-                  lineBoxes: <OcrRect>[
-                    OcrRect(
-                        left: box.left,
-                        top: box.top,
-                        right: box.right,
-                        bottom: 40),
-                    OcrRect(
-                        left: box.left,
-                        top: 50,
-                        right: box.right,
-                        bottom: box.bottom),
-                  ],
-                )
-              : const OcrRecognition(text: '本文', vertical: false),
-      ];
+  ) async => <OcrRecognition>[
+    for (final OcrRect box in boxes)
+      box.width >= 300
+          ? OcrRecognition(
+              text: '題名本文',
+              vertical: false,
+              lines: const <String>['題名', '本文'],
+              lineBoxes: <OcrRect>[
+                OcrRect(
+                  left: box.left,
+                  top: box.top,
+                  right: box.right,
+                  bottom: 40,
+                ),
+                OcrRect(
+                  left: box.left,
+                  top: 50,
+                  right: box.right,
+                  bottom: box.bottom,
+                ),
+              ],
+            )
+          : const OcrRecognition(text: '本文', vertical: false),
+  ];
 }
 
 /// 一个正式块（右上竖排）+ 两个弱候选（下方的标题两行）。
@@ -1513,17 +1521,12 @@ class _SweepDetector implements OcrDetector {
 
   @override
   Future<PageDetections> detect(img.Image page) async => PageDetections(
-        textRegions: const <DetectedTextRegion>[
-          DetectedTextRegion(
-            rect: top,
-            score: 0.9,
-            classId: 1,
-            insideBubble: true,
-          ),
-        ],
-        bubbles: const <OcrRect>[],
-        weakTextRegions: weak,
-      );
+    textRegions: const <DetectedTextRegion>[
+      DetectedTextRegion(rect: top, score: 0.9, classId: 1, insideBubble: true),
+    ],
+    bubbles: const <OcrRect>[],
+    weakTextRegions: weak,
+  );
 }
 
 /// 按框交回固定识别结果（可带行几何）的识别器。

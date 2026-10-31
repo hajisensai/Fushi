@@ -417,12 +417,14 @@ class VideoSpecsService extends ChangeNotifier {
     }
     _cache[path] = facts;
     try {
-      await _db.upsertVideoFileSpec(videoFileSpecCompanion(
-        filePath: path,
-        facts: facts,
-        fileSizeBytes: stat.size,
-        fileModifiedAt: stat.modified.millisecondsSinceEpoch,
-      ));
+      await _db.upsertVideoFileSpec(
+        videoFileSpecCompanion(
+          filePath: path,
+          facts: facts,
+          fileSizeBytes: stat.size,
+          fileModifiedAt: stat.modified.millisecondsSinceEpoch,
+        ),
+      );
     } catch (e) {
       // 库写不进去（磁盘满 / 迁移中把 db 关了 / 约束冲突）不影响本次结果，
       // 只是下次启动要重探一遍。
@@ -462,19 +464,19 @@ class VideoSpecsService extends ChangeNotifier {
 /// 刻意复用 [VideoProbeFacts] 而不是另立一个「已落库的规格」类：两者是同一份事实的
 /// 两种存放形态，各写一个类就得写一套互转，还得保证两边字段永远同步。
 VideoProbeFacts videoProbeFactsFromRow(VideoFileSpecRow row) => VideoProbeFacts(
-      durationMs: row.durationMs,
-      fileSizeBytes: row.fileSizeBytes,
-      containerBitrate: row.containerBitrate,
-      video: _videoStreamFromRow(row),
-      audioTracks: decodeTrackListJson<AudioTrackFacts>(
-        row.audioTracksJson,
-        AudioTrackFacts.fromJson,
-      ),
-      subtitleTracks: decodeTrackListJson<SubtitleTrackFacts>(
-        row.subtitleTracksJson,
-        SubtitleTrackFacts.fromJson,
-      ),
-    );
+  durationMs: row.durationMs,
+  fileSizeBytes: row.fileSizeBytes,
+  containerBitrate: row.containerBitrate,
+  video: _videoStreamFromRow(row),
+  audioTracks: decodeTrackListJson<AudioTrackFacts>(
+    row.audioTracksJson,
+    AudioTrackFacts.fromJson,
+  ),
+  subtitleTracks: decodeTrackListJson<SubtitleTrackFacts>(
+    row.subtitleTracksJson,
+    SubtitleTrackFacts.fromJson,
+  ),
+);
 
 /// 视频流那部分全为空时返回 null——纯音频文件与「探到了但没视频流」应当同形。
 VideoStreamFacts? _videoStreamFromRow(VideoFileSpecRow row) {
@@ -525,12 +527,15 @@ VideoFileSpecsCompanion videoFileSpecCompanion({
     colorPrimaries: Value<String?>(video?.colorPrimaries),
     colorTransfer: Value<String?>(video?.colorTransfer),
     colorSpace: Value<String?>(video?.colorSpace),
-    audioTracksJson: Value<String>(encodeTrackListJson(<Map<String, Object?>>[
-      for (final AudioTrackFacts t in facts.audioTracks) t.toJson(),
-    ])),
-    subtitleTracksJson:
-        Value<String>(encodeTrackListJson(<Map<String, Object?>>[
-      for (final SubtitleTrackFacts t in facts.subtitleTracks) t.toJson(),
-    ])),
+    audioTracksJson: Value<String>(
+      encodeTrackListJson(<Map<String, Object?>>[
+        for (final AudioTrackFacts t in facts.audioTracks) t.toJson(),
+      ]),
+    ),
+    subtitleTracksJson: Value<String>(
+      encodeTrackListJson(<Map<String, Object?>>[
+        for (final SubtitleTrackFacts t in facts.subtitleTracks) t.toJson(),
+      ]),
+    ),
   );
 }

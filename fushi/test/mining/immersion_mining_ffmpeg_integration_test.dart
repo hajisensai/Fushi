@@ -17,9 +17,10 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
   @override
-  Future<MineOutcome> mineEntry(
-      {required String rawPayloadJson,
-      required AnkiMiningContext context}) async {
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
     minedContext = context;
     return const MineOutcome.success(noteId: 1);
   }
@@ -103,62 +104,81 @@ void main() {
       expect(File(audio!).lengthSync(), greaterThan(100));
     }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
 
-    test('engine end-to-end: real GIF + audio -> mineEntry with cover+audio',
-        () async {
-      final _FakeRepo repo = _FakeRepo();
-      final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
-        ImmersionMiningRequest(
-          source: AnkiMiningSource.video,
-          fields: const <String, String>{'expression': '走る'},
-          mediaSource: videoPath,
-          clipStartMs: 1000,
-          clipEndMs: 3000,
-          sentence: '走り出した。',
-        ),
-        compression: MiningMediaCompression.compressed,
-        tempDir: tmp.path,
-        repo: repo,
-      );
-      expect(res.aborted, isFalse);
-      expect(repo.minedContext, isNotNull);
-      expect(repo.minedContext!.coverPath, endsWith('.gif'));
-      expect(
-          File(repo.minedContext!.coverPath!).lengthSync(), greaterThan(100));
-      expect(repo.minedContext!.sentenceAudioPath,
-          endsWith('immersion_audio.${immersionMiningAudioExtension()}'));
-      expect(File(repo.minedContext!.sentenceAudioPath!).lengthSync(),
-          greaterThan(100));
-    }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
+    test(
+      'engine end-to-end: real GIF + audio -> mineEntry with cover+audio',
+      () async {
+        final _FakeRepo repo = _FakeRepo();
+        final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
+          ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
+            fields: const <String, String>{'expression': '走る'},
+            mediaSource: videoPath,
+            clipStartMs: 1000,
+            clipEndMs: 3000,
+            sentence: '走り出した。',
+          ),
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+          repo: repo,
+        );
+        expect(res.aborted, isFalse);
+        expect(repo.minedContext, isNotNull);
+        expect(repo.minedContext!.coverPath, endsWith('.gif'));
+        expect(
+          File(repo.minedContext!.coverPath!).lengthSync(),
+          greaterThan(100),
+        );
+        expect(
+          repo.minedContext!.sentenceAudioPath,
+          endsWith('immersion_audio.${immersionMiningAudioExtension()}'),
+        );
+        expect(
+          File(repo.minedContext!.sentenceAudioPath!).lengthSync(),
+          greaterThan(100),
+        );
+      },
+      skip: ffmpeg == null ? 'ffmpeg unavailable' : false,
+    );
 
     // Netflix GIF 路径：扩展录到的字幕片段（此处用 mp4 fixture 字节模拟）→ ffmpeg 转 GIF+音频。
     // ffmpeg 按内容识别封装，扩展名无关，故用现成 mp4 字节即可验证转码链路。
-    test('transcodeClipToCapture (netflix clip -> GIF + audio) via real ffmpeg',
-        () async {
-      final Uint8List clipBytes = File(videoPath).readAsBytesSync();
-      final ImmersionCaptureResult cap = await transcodeClipToCapture(
-        clipBytes,
-        durationMs: 3000,
-        compression: MiningMediaCompression.compressed,
-        tempDir: tmp.path,
-      );
-      expect(cap.error, isNull, reason: cap.error ?? '');
-      expect(cap.gifBytes, isNotNull);
-      expect(String.fromCharCodes(cap.gifBytes!.take(3)), 'GIF');
-      expect(cap.audioBytes, isNotNull);
-      expect(cap.audioBytes!.length, greaterThan(100));
-      // TODO-1217: the clip audio container is platform-aware. iOS produces an
-      // MP4/M4A ('ftyp' box at offset 4); desktop/Android produce raw ADTS AAC
-      // (the old desktop ffmpeg-min had no ipod muxer; the container choice is kept as the existing contract), whose first frame starts
-      // with the 12-bit 0xFFF sync word.
-      if (immersionMiningAudioExtension() == 'm4a') {
-        expect(String.fromCharCodes(cap.audioBytes!.skip(4).take(4)), 'ftyp');
-      } else {
-        expect(cap.audioBytes![0], 0xFF,
-            reason: 'desktop/Android clip audio must be ADTS AAC (.aac), the '
-                'container chosen since the old ffmpeg-min could only mux adts (TODO-1217).');
-        expect(cap.audioBytes![1] & 0xF0, 0xF0,
-            reason: 'ADTS sync word high nibble.');
-      }
-    }, skip: ffmpeg == null ? 'ffmpeg unavailable' : false);
+    test(
+      'transcodeClipToCapture (netflix clip -> GIF + audio) via real ffmpeg',
+      () async {
+        final Uint8List clipBytes = File(videoPath).readAsBytesSync();
+        final ImmersionCaptureResult cap = await transcodeClipToCapture(
+          clipBytes,
+          durationMs: 3000,
+          compression: MiningMediaCompression.compressed,
+          tempDir: tmp.path,
+        );
+        expect(cap.error, isNull, reason: cap.error ?? '');
+        expect(cap.gifBytes, isNotNull);
+        expect(String.fromCharCodes(cap.gifBytes!.take(3)), 'GIF');
+        expect(cap.audioBytes, isNotNull);
+        expect(cap.audioBytes!.length, greaterThan(100));
+        // TODO-1217: the clip audio container is platform-aware. iOS produces an
+        // MP4/M4A ('ftyp' box at offset 4); desktop/Android produce raw ADTS AAC
+        // (the old desktop ffmpeg-min had no ipod muxer; the container choice is kept as the existing contract), whose first frame starts
+        // with the 12-bit 0xFFF sync word.
+        if (immersionMiningAudioExtension() == 'm4a') {
+          expect(String.fromCharCodes(cap.audioBytes!.skip(4).take(4)), 'ftyp');
+        } else {
+          expect(
+            cap.audioBytes![0],
+            0xFF,
+            reason:
+                'desktop/Android clip audio must be ADTS AAC (.aac), the '
+                'container chosen since the old ffmpeg-min could only mux adts (TODO-1217).',
+          );
+          expect(
+            cap.audioBytes![1] & 0xF0,
+            0xF0,
+            reason: 'ADTS sync word high nibble.',
+          );
+        }
+      },
+      skip: ffmpeg == null ? 'ffmpeg unavailable' : false,
+    );
   });
 }

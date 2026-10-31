@@ -97,14 +97,11 @@ void main() {
   });
 
   group('LapisNoteType default mapping', () {
-    test(
-      'SentenceAudio 默认映射到通用键 {sentence-audio}（不再是内部历史命名别名）',
-      () {
-        expect(
-          LapisNoteType.defaultFieldMappings['SentenceAudio'],
-          '{sentence-audio}',
-        );
-      },
-    );
+    test('SentenceAudio 默认映射到通用键 {sentence-audio}（不再是内部历史命名别名）', () {
+      expect(
+        LapisNoteType.defaultFieldMappings['SentenceAudio'],
+        '{sentence-audio}',
+      );
+    });
   });
 }

@@ -64,7 +64,8 @@ void installServerHostBindings({
 ///
 /// 外包一层 [ServerGpuBudgetOnnxFactory]：FFI 后端查不到显存预算，不补的话带显存
 /// 门槛的包（日语视频 Parakeet）有 N 卡也只会规划成 CPU int8（见 server_gpu_budget.dart）。
-asr.OnnxSessionFactory buildServerAsrOnnxFactory() => ServerGpuBudgetOnnxFactory(
+asr.OnnxSessionFactory buildServerAsrOnnxFactory() =>
+    ServerGpuBudgetOnnxFactory(
       FfiOnnxSessionFactory(
         logName: asr.kAsrLogName,
         libraryPathOverride: serverOrtLibraryPath,
@@ -99,16 +100,15 @@ void serverAsrIsolateBootstrap(Object arg) {
 /// 缺省值与 app 那边一致——同一份算法在两端跑出不同行为比慢一点糟得多。
 asr.AsrTranscriptionService createServerAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
-}) =>
-    asr.AsrTranscriptionService(
-      audioProfile: audioProfile,
-      backend: asr.AsrIsolateBackend(
-        buildFactory: buildServerAsrOnnxFactory,
-        bootstrap: serverAsrIsolateBootstrap,
-        bootstrapArg: serverOrtLibraryPath ?? '',
-      ),
-      pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
-    );
+}) => asr.AsrTranscriptionService(
+  audioProfile: audioProfile,
+  backend: asr.AsrIsolateBackend(
+    buildFactory: buildServerAsrOnnxFactory,
+    bootstrap: serverAsrIsolateBootstrap,
+    bootstrapArg: serverOrtLibraryPath ?? '',
+  ),
+  pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+);
 
 /// 视频字幕管线挑识别器的服务端装配（与 app 的 `resolveAppVideoSubtitleRecognizer`
 /// 对偶）：ASR 服务工厂是 [createServerAsrTranscriptionService]，子进程走引擎默认的
@@ -120,20 +120,21 @@ Future<VideoSubtitleRecognizerChoice> resolveServerVideoSubtitleRecognizer({
   asr.AsrAccelerationPreference preference = asr.AsrAccelerationPreference.auto,
   String? mossCliPath,
   String? mossModelPath,
-}) =>
-    resolveVideoSubtitleRecognizer(
-      mode: mode,
-      mossBackend: mossBackend,
-      serviceFactory: (asr.AsrAudioProfile profile) => createServerAsrTranscriptionService(audioProfile: profile),
-      preference: preference,
-      mossCliPath: mossCliPath,
-      mossModelPath: mossModelPath,
-    );
+}) => resolveVideoSubtitleRecognizer(
+  mode: mode,
+  mossBackend: mossBackend,
+  serviceFactory: (asr.AsrAudioProfile profile) =>
+      createServerAsrTranscriptionService(audioProfile: profile),
+  preference: preference,
+  mossCliPath: mossCliPath,
+  mossModelPath: mossModelPath,
+);
 
 /// 配置显式路径优先；否则 bundle 布局里找随包的 onnxruntime；都没有返回 null
 /// （交给 asr_onnx_ffi 的候选链）。
 String? resolveOrtLibraryPath(ServerConfig config) {
   final String? configured = config.ortLibraryPath;
-  if (configured != null && configured.trim().isNotEmpty) return configured.trim();
+  if (configured != null && configured.trim().isNotEmpty)
+    return configured.trim();
   return locateBundledLibrary(onnxRuntimeLibraryName());
 }

@@ -45,10 +45,12 @@ class HelperProcessRegistry {
       mode: mode,
     );
     _live.add(process);
-    unawaited(process.exitCode.then<void>(
-      (int _) => _live.remove(process),
-      onError: (Object _) => _live.remove(process),
-    ));
+    unawaited(
+      process.exitCode.then<void>(
+        (int _) => _live.remove(process),
+        onError: (Object _) => _live.remove(process),
+      ),
+    );
     return process;
   }
 

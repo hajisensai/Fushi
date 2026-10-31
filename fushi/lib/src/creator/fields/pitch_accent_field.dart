@@ -12,12 +12,12 @@ import 'package:fushi/models.dart';
 class PitchAccentField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   PitchAccentField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Pitch Accent',
-          description: 'Pre-fills text to export for pitch accent diagrams.',
-          icon: Icons.swap_vert_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Pitch Accent',
+        description: 'Pre-fills text to export for pitch accent diagrams.',
+        icon: Icons.swap_vert_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static PitchAccentField get instance => _instance;
@@ -50,8 +50,11 @@ class PitchAccentField extends Field {
         reading: reading,
         positions: positions,
       ),
-      pitchCategoriesExtraKey:
-          _getAllCategories(reading, positions, patterns: patterns),
+      pitchCategoriesExtraKey: _getAllCategories(
+        reading,
+        positions,
+        patterns: patterns,
+      ),
     };
   }
 
@@ -72,8 +75,11 @@ class PitchAccentField extends Field {
     return buffer.toString();
   }
 
-  static String _getAllCategories(String reading, List<int> positions,
-      {List<String> patterns = const []}) {
+  static String _getAllCategories(
+    String reading,
+    List<int> positions, {
+    List<String> patterns = const [],
+  }) {
     if (positions.isEmpty && patterns.isEmpty) return '';
     final moraCount = PitchSvg.hiraToMora(reading).length;
     final categories = <String>[];
@@ -199,7 +205,8 @@ class PitchSvg {
     const int marginLr = 16;
     int svgWidth = max(0, ((positions - 1) * stepWidth) + (marginLr * 2));
     final svg = StringBuffer(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth * (3 / 5)}px" height="45px" viewBox="0 0 $svgWidth 75">');
+      '<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth * (3 / 5)}px" height="45px" viewBox="0 0 $svgWidth 75">',
+    );
     final chars = StringBuffer();
     for (int i = 0; i < mora.length; i++) {
       int xCenter = marginLr + (i * stepWidth);
@@ -313,7 +320,7 @@ class PitchSvg {
       'ィ',
       'ゥ',
       'ェ',
-      'ォ'
+      'ォ',
     ];
 
     int i = 0;

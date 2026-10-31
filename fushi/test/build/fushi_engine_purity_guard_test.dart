@@ -46,7 +46,10 @@ void main() {
     'package:fushi_anki/fushi_anki.dart',
     'package:fushi_dictionary/fushi_dictionary.dart',
   ];
-  final RegExp directive = RegExp(r"""^\s*(?:import|export)\s+['"]([^'"]+)['"]""", multiLine: true);
+  final RegExp directive = RegExp(
+    r"""^\s*(?:import|export)\s+['"]([^'"]+)['"]""",
+    multiLine: true,
+  );
 
   List<String> offendersIn(File f) {
     final List<String> out = <String>[];
@@ -85,8 +88,12 @@ void main() {
   test('fushi_engine 源码零 Flutter / 插件 / 反向 app import', () {
     final Directory lib = Directory('../packages/fushi_engine/lib');
     expect(lib.existsSync(), isTrue, reason: '请从 fushi/ 包根跑测试');
-    expectScanScale(countDart(lib),
-        what: 'fushi_engine/lib 下的 .dart', atLeast: 150, measured: 214);
+    expectScanScale(
+      countDart(lib),
+      what: 'fushi_engine/lib 下的 .dart',
+      atLeast: 150,
+      measured: 214,
+    );
     expect(scanTree(lib), isEmpty);
   });
 
@@ -101,8 +108,12 @@ void main() {
     for (final MapEntry<String, int> e in measured.entries) {
       final Directory lib = Directory('../packages/${e.key}/lib');
       expect(lib.existsSync(), isTrue, reason: '${lib.path} 不存在');
-      expectScanScale(countDart(lib),
-          what: '${e.key}/lib 下的 .dart', atLeast: 25, measured: e.value);
+      expectScanScale(
+        countDart(lib),
+        what: '${e.key}/lib 下的 .dart',
+        atLeast: 25,
+        measured: e.value,
+      );
       expect(scanTree(lib), isEmpty, reason: e.key);
     }
   });
@@ -111,8 +122,12 @@ void main() {
     final Directory lib = Directory('../packages/fushi_server/lib');
     final Directory bin = Directory('../packages/fushi_server/bin');
     expect(lib.existsSync() && bin.existsSync(), isTrue);
-    expectScanScale(countDart(lib) + countDart(bin),
-        what: 'fushi_server 下的 .dart', atLeast: 8, measured: 12);
+    expectScanScale(
+      countDart(lib) + countDart(bin),
+      what: 'fushi_server 下的 .dart',
+      atLeast: 8,
+      measured: 12,
+    );
     expect(<String, List<String>>{...scanTree(lib), ...scanTree(bin)}, isEmpty);
   });
 
@@ -120,7 +135,8 @@ void main() {
     final Map<String, String> barrels = <String, String>{
       'fushi_audio': '../packages/fushi_audio/lib/fushi_audio_core.dart',
       'fushi_anki': '../packages/fushi_anki/lib/fushi_anki_core.dart',
-      'fushi_dictionary': '../packages/fushi_dictionary/lib/fushi_dictionary_core.dart',
+      'fushi_dictionary':
+          '../packages/fushi_dictionary/lib/fushi_dictionary_core.dart',
     };
     final Map<String, List<String>> bad = <String, List<String>>{};
     int visited = 0;
@@ -136,7 +152,9 @@ void main() {
         visited++;
         final List<String> hits = offendersIn(f);
         if (hits.isNotEmpty) bad[f.path.replaceAll('\\', '/')] = hits;
-        for (final RegExpMatch m in directive.allMatches(f.readAsStringSync())) {
+        for (final RegExpMatch m in directive.allMatches(
+          f.readAsStringSync(),
+        )) {
           final String uri = m.group(1)!;
           if (uri.startsWith('package:') || uri.startsWith('dart:')) continue;
           final File dep = File('${f.parent.path}/$uri');
@@ -144,7 +162,12 @@ void main() {
         }
       }
     }
-    expectScanScale(visited, what: '三个 core barrel 的 export 闭包文件', atLeast: 30, measured: 60);
+    expectScanScale(
+      visited,
+      what: '三个 core barrel 的 export 闭包文件',
+      atLeast: 30,
+      measured: 60,
+    );
     expect(bad, isEmpty);
   });
 
@@ -156,33 +179,51 @@ void main() {
       '../packages/fushi_audio/pubspec.yaml',
     ]) {
       final String text = File(path).readAsStringSync();
-      expect(RegExp(r'^\s+flutter:\s*\n\s+sdk:\s*flutter', multiLine: true).hasMatch(text), isFalse,
-          reason: '$path 声明了 flutter sdk 依赖');
+      expect(
+        RegExp(
+          r'^\s+flutter:\s*\n\s+sdk:\s*flutter',
+          multiLine: true,
+        ).hasMatch(text),
+        isFalse,
+        reason: '$path 声明了 flutter sdk 依赖',
+      );
     }
   });
 
-  test('fushi_core / fushi_audio 的 pubspec 连 dev 依赖与 environment 都不带 Flutter', () {
-    // dev_dependencies 里的 flutter_test 同样让解析依赖需要 Flutter SDK；包测试改用
-    // package:test（CI 的 flutter_test_failures.dart runner 对纯 Dart 包照样能跑）。
-    for (final String path in <String>[
-      '../packages/fushi_core/pubspec.yaml',
-      '../packages/fushi_audio/pubspec.yaml',
-    ]) {
-      final String text = File(path).readAsStringSync();
-      expect(RegExp(r'^\s*sdk:\s*flutter\s*$', multiLine: true).hasMatch(text), isFalse,
-          reason: '$path 仍有 `sdk: flutter` 依赖（含 dev_dependencies）');
-      expect(RegExp(r'^\s+flutter:\s*"', multiLine: true).hasMatch(text), isFalse,
-          reason: '$path 的 environment 仍约束 flutter 版本');
-      for (final String plugin in <String>[
-        'just_audio',
-        'audio_session',
-        'path_provider',
-        'flutter_charset_detector',
-        'sqlite3_flutter_libs',
+  test(
+    'fushi_core / fushi_audio 的 pubspec 连 dev 依赖与 environment 都不带 Flutter',
+    () {
+      // dev_dependencies 里的 flutter_test 同样让解析依赖需要 Flutter SDK；包测试改用
+      // package:test（CI 的 flutter_test_failures.dart runner 对纯 Dart 包照样能跑）。
+      for (final String path in <String>[
+        '../packages/fushi_core/pubspec.yaml',
+        '../packages/fushi_audio/pubspec.yaml',
       ]) {
-        expect(RegExp('^\\s+$plugin:', multiLine: true).hasMatch(text), isFalse,
-            reason: '$path 仍依赖 method-channel 插件 $plugin');
+        final String text = File(path).readAsStringSync();
+        expect(
+          RegExp(r'^\s*sdk:\s*flutter\s*$', multiLine: true).hasMatch(text),
+          isFalse,
+          reason: '$path 仍有 `sdk: flutter` 依赖（含 dev_dependencies）',
+        );
+        expect(
+          RegExp(r'^\s+flutter:\s*"', multiLine: true).hasMatch(text),
+          isFalse,
+          reason: '$path 的 environment 仍约束 flutter 版本',
+        );
+        for (final String plugin in <String>[
+          'just_audio',
+          'audio_session',
+          'path_provider',
+          'flutter_charset_detector',
+          'sqlite3_flutter_libs',
+        ]) {
+          expect(
+            RegExp('^\\s+$plugin:', multiLine: true).hasMatch(text),
+            isFalse,
+            reason: '$path 仍依赖 method-channel 插件 $plugin',
+          );
+        }
       }
-    }
-  });
+    },
+  );
 }

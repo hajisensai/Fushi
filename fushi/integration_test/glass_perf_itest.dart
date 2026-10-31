@@ -31,15 +31,18 @@ void main() {
     await appModel.setExperimentalFocusNavigationEnabled(true);
     await _settle(tester, 2000);
     final FocusDriver driver = FocusDriver(tester);
-    final double refresh =
-        tester.view.display.refreshRate > 0 ? tester.view.display.refreshRate : 60;
+    final double refresh = tester.view.display.refreshRate > 0
+        ? tester.view.display.refreshRate
+        : 60;
     final double budgetMs = 1000 / refresh;
-    debugPrint('[glass-perf] refresh=${refresh.toStringAsFixed(1)}Hz '
-        'budget=${budgetMs.toStringAsFixed(2)}ms '
-        'size=${tester.view.physicalSize} dpr=${tester.view.devicePixelRatio}');
+    debugPrint(
+      '[glass-perf] refresh=${refresh.toStringAsFixed(1)}Hz '
+      'budget=${budgetMs.toStringAsFixed(2)}ms '
+      'size=${tester.view.physicalSize} dpr=${tester.view.devicePixelRatio}',
+    );
 
     final List<({String name, String design, FushiGlassMaterial tier})>
-        configs = <({String name, String design, FushiGlassMaterial tier})>[
+    configs = <({String name, String design, FushiGlassMaterial tier})>[
       (name: 'md3', design: 'material', tier: FushiGlassMaterial.liquid),
       (name: 'frosted', design: 'glass', tier: FushiGlassMaterial.frosted),
       (name: 'liquid', design: 'glass', tier: FushiGlassMaterial.liquid),
@@ -50,7 +53,8 @@ void main() {
         await appModel.themeNotifier.setGlassMaterial(config.tier);
         await appModel.themeNotifier.setDesignSystem(config.design);
         await _settle(tester, 1500);
-        final String tag = 'r$round/${config.name} '
+        final String tag =
+            'r$round/${config.name} '
             'resolved=${appModel.glassMaterial.name}';
 
         await _measure(tester, '$tag nav', budgetMs, () async {
@@ -148,15 +152,19 @@ Future<void> _measure(
   final List<double> build = ms((FrameTiming t) => t.buildDuration);
   final List<double> raster = ms((FrameTiming t) => t.rasterDuration);
   final int overBudget = timings
-      .where((FrameTiming t) =>
-          t.buildDuration.inMicroseconds / 1000 > budgetMs ||
-          t.rasterDuration.inMicroseconds / 1000 > budgetMs)
+      .where(
+        (FrameTiming t) =>
+            t.buildDuration.inMicroseconds / 1000 > budgetMs ||
+            t.rasterDuration.inMicroseconds / 1000 > budgetMs,
+      )
       .length;
   String f(double v) => v.toStringAsFixed(2);
-  debugPrint('[glass-perf] $label frames=${timings.length} '
-      'build p50=${f(pct(build, .5))} p90=${f(pct(build, .9))} '
-      'p99=${f(pct(build, .99))} | raster p50=${f(pct(raster, .5))} '
-      'p90=${f(pct(raster, .9))} p99=${f(pct(raster, .99))} '
-      'max=${f(raster.last)} | over=$overBudget/${timings.length} '
-      '(${(overBudget * 100 / timings.length).toStringAsFixed(1)}%)');
+  debugPrint(
+    '[glass-perf] $label frames=${timings.length} '
+    'build p50=${f(pct(build, .5))} p90=${f(pct(build, .9))} '
+    'p99=${f(pct(build, .99))} | raster p50=${f(pct(raster, .5))} '
+    'p90=${f(pct(raster, .9))} p99=${f(pct(raster, .99))} '
+    'max=${f(raster.last)} | over=$overBudget/${timings.length} '
+    '(${(overBudget * 100 / timings.length).toStringAsFixed(1)}%)',
+  );
 }

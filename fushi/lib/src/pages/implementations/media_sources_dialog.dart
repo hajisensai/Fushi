@@ -31,8 +31,10 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double maxHeight =
-        (MediaQuery.of(context).size.height * 0.55).clamp(160.0, 480.0);
+    final double maxHeight = (MediaQuery.of(context).size.height * 0.55).clamp(
+      160.0,
+      480.0,
+    );
 
     return FushiDialogFrame(
       maxWidth: 520,
@@ -69,10 +71,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
           // 行少时仍按内容收缩。与同款「本地音频来源」对话框
           // （local_audio_sources_dialog）一致修法——此前独漏此层。
           child: SingleChildScrollView(
-            child: MediaSourcesView(
-              key: _viewKey,
-              mediaKind: widget.mediaKind,
-            ),
+            child: MediaSourcesView(key: _viewKey, mediaKind: widget.mediaKind),
           ),
         ),
         // BUG-1184：这是全仓唯一一个还用 Row 的 [FushiModalSheetFrame] 页脚（其余

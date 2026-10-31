@@ -58,8 +58,9 @@ void main() {
     expect(find.text('copy'), findsOneWidget);
   });
 
-  testWidgets('维持期内卸载不抛：dispose 取消定时器（删掉那句 cancel 即红）',
-      (WidgetTester tester) async {
+  testWidgets('维持期内卸载不抛：dispose 取消定时器（删掉那句 cancel 即红）', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(host());
     await tester.tap(find.text('copy'));
     await tester.pump();

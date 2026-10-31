@@ -17,10 +17,7 @@ void main() {
 
   test('hardware-nav resume revalidates the top popup caret surface', () {
     // The algorithm lives in the controller now.
-    expect(
-      controller,
-      contains('void resumePopupCaretForHardwareNav()'),
-    );
+    expect(controller, contains('void resumePopupCaretForHardwareNav()'));
     expect(controller, contains('if (!identical(state, popupState))'));
     expect(controller, contains('unawaited(transferToTopPopup(state))'));
     expect(controller, contains('surface = CaretSurface.none'));
@@ -29,14 +26,15 @@ void main() {
     expect(reader, contains('_caret.resumePopupCaretForHardwareNav()'));
   });
 
-  test('TODO-070: jump-to-dictionary is wired into the popup caret dispatch',
-      () {
+  test('TODO-070: jump-to-dictionary is wired into the popup caret dispatch', () {
     final String source = reader;
 
     // The popup-only jump helper exists and is dispatched from _runCaretAction
     // for both jump actions.
     expect(
-        source, contains('Future<void> _caretJumpDict(bool forward) async {'));
+      source,
+      contains('Future<void> _caretJumpDict(bool forward) async {'),
+    );
     expect(source, contains('case CaretAction.jumpDictNext:'));
     expect(source, contains('case CaretAction.jumpDictPrev:'));
     expect(source, contains('await _caretJumpDict(true);'));
@@ -49,19 +47,23 @@ void main() {
     expect(source, contains('ReaderCaretRouter.decideGamepad(button)'));
     // Jump is popup-only — it must not fall through to the reader/lyrics caret.
     expect(
-        source, contains('if (_caretSurface != CaretSurface.popup) return;'));
+      source,
+      contains('if (_caretSurface != CaretSurface.popup) return;'),
+    );
   });
 
-  test('TODO-070: jump-to-dictionary fires once per press (not on auto-repeat)',
-      () {
-    final String source = reader;
-    // Both jump actions sit in the non-repeatable arm of _isRepeatableCaretMove
-    // (returns false), so holding the key/trigger does not blow past every
-    // section.
-    final int falseArm = source.indexOf('case CaretAction.activate:');
-    final int retFalse = source.indexOf('return false;', falseArm);
-    final String falseBlock = source.substring(falseArm, retFalse);
-    expect(falseBlock, contains('case CaretAction.jumpDictNext:'));
-    expect(falseBlock, contains('case CaretAction.jumpDictPrev:'));
-  });
+  test(
+    'TODO-070: jump-to-dictionary fires once per press (not on auto-repeat)',
+    () {
+      final String source = reader;
+      // Both jump actions sit in the non-repeatable arm of _isRepeatableCaretMove
+      // (returns false), so holding the key/trigger does not blow past every
+      // section.
+      final int falseArm = source.indexOf('case CaretAction.activate:');
+      final int retFalse = source.indexOf('return false;', falseArm);
+      final String falseBlock = source.substring(falseArm, retFalse);
+      expect(falseBlock, contains('case CaretAction.jumpDictNext:'));
+      expect(falseBlock, contains('case CaretAction.jumpDictPrev:'));
+    },
+  );
 }

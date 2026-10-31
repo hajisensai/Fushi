@@ -47,9 +47,7 @@ void main() {
   AsrTranscriptionService service(_ProbeFactory factory) =>
       AsrTranscriptionService(
         audioProfile: AsrAudioProfile.cleanSpeech,
-        backend: const AsrIsolateBackend(
-          buildFactory: _unusedOnnxFactory,
-        ),
+        backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
         loader: AsrEngineLoader(factory: factory),
         openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
             AsrModelStore(tmp, asrModelPackFor(l, profile: profile)),
@@ -108,14 +106,12 @@ void main() {
     test('同名同字节数、不同目录 → 同 id（与绝对路径无关）', () {
       final File a = write('a', '第01巻.m4b', 100);
       final File b = write('b', '第01巻.m4b', 100);
-      final String ia = AsrTranscriptionService.jobIdFor(
-        <String>[a.path],
-        AsrLanguage.japanese,
-      );
-      final String ib = AsrTranscriptionService.jobIdFor(
-        <String>[b.path],
-        AsrLanguage.japanese,
-      );
+      final String ia = AsrTranscriptionService.jobIdFor(<String>[
+        a.path,
+      ], AsrLanguage.japanese);
+      final String ib = AsrTranscriptionService.jobIdFor(<String>[
+        b.path,
+      ], AsrLanguage.japanese);
       expect(ia, isNotEmpty);
       expect(ia, ib);
       expect(ia, matches(RegExp(r'^[0-9a-f]{40}$')), reason: 'SHA-1 十六进制');
@@ -125,13 +121,13 @@ void main() {
       final File a = write('a', 'x.m4b', 100);
       final File b = write('b', 'x.m4b', 101);
       expect(
-        AsrTranscriptionService.jobIdFor(
-            <String>[a.path], AsrLanguage.japanese),
+        AsrTranscriptionService.jobIdFor(<String>[
+          a.path,
+        ], AsrLanguage.japanese),
         isNot(
-          AsrTranscriptionService.jobIdFor(
-            <String>[b.path],
-            AsrLanguage.japanese,
-          ),
+          AsrTranscriptionService.jobIdFor(<String>[
+            b.path,
+          ], AsrLanguage.japanese),
         ),
       );
     });
@@ -139,13 +135,13 @@ void main() {
     test('同一组文件换语言 → 不同 id（互不覆盖进度）', () {
       final File a = write('a', 'x.m4b', 100);
       expect(
-        AsrTranscriptionService.jobIdFor(
-            <String>[a.path], AsrLanguage.japanese),
+        AsrTranscriptionService.jobIdFor(<String>[
+          a.path,
+        ], AsrLanguage.japanese),
         isNot(
-          AsrTranscriptionService.jobIdFor(
-            <String>[a.path],
-            AsrLanguage.english,
-          ),
+          AsrTranscriptionService.jobIdFor(<String>[
+            a.path,
+          ], AsrLanguage.english),
         ),
       );
     });
@@ -153,25 +149,23 @@ void main() {
     test('多文件顺序参与 id；不存在的文件按 0 字节计', () {
       final File a = write('a', 'x.m4b', 10);
       final File b = write('a', 'y.m4b', 10);
-      final String ab = AsrTranscriptionService.jobIdFor(
-        <String>[a.path, b.path],
-        AsrLanguage.japanese,
-      );
-      final String ba = AsrTranscriptionService.jobIdFor(
-        <String>[b.path, a.path],
-        AsrLanguage.japanese,
-      );
+      final String ab = AsrTranscriptionService.jobIdFor(<String>[
+        a.path,
+        b.path,
+      ], AsrLanguage.japanese);
+      final String ba = AsrTranscriptionService.jobIdFor(<String>[
+        b.path,
+        a.path,
+      ], AsrLanguage.japanese);
       expect(ab, isNot(ba));
-      final String missing = AsrTranscriptionService.jobIdFor(
-        <String>[p.join(tmp.path, 'nope', 'x.m4b')],
-        AsrLanguage.japanese,
-      );
+      final String missing = AsrTranscriptionService.jobIdFor(<String>[
+        p.join(tmp.path, 'nope', 'x.m4b'),
+      ], AsrLanguage.japanese);
       final File zero = write('z', 'x.m4b', 0);
       expect(
-        AsrTranscriptionService.jobIdFor(
-          <String>[zero.path],
-          AsrLanguage.japanese,
-        ),
+        AsrTranscriptionService.jobIdFor(<String>[
+          zero.path,
+        ], AsrLanguage.japanese),
         missing,
       );
     });
@@ -184,7 +178,9 @@ void main() {
         ..writeAsStringSync('');
       File(p.join(job.path, AsrJobFiles.state)).writeAsStringSync('{}');
       expect(
-          AsrTranscriptionService.isAsrGeneratedSubtitlePath(srt.path), isTrue);
+        AsrTranscriptionService.isAsrGeneratedSubtitlePath(srt.path),
+        isTrue,
+      );
     });
 
     test('transcript.srt 没有 state.json → false', () {

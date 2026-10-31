@@ -44,11 +44,11 @@ class LibraryRootConfig {
   final bool enabled;
 
   Map<String, Object?> toYamlMap() => <String, Object?>{
-        'id': id,
-        'path': path,
-        'kind': kind,
-        'enabled': enabled,
-      };
+    'id': id,
+    'path': path,
+    'kind': kind,
+    'enabled': enabled,
+  };
 }
 
 class ServerConfig {
@@ -105,29 +105,29 @@ class ServerConfig {
   static const String defaultMetadataLocale = 'zh-CN';
 
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
-        dataDir: dataDir,
-        port: defaultPort,
-        bind: '0.0.0.0',
-        tls: true,
-        deviceName: Platform.localHostname,
-        lanRequiresPin: true,
-        libraries: const <LibraryRootConfig>[],
-        ffmpegPath: null,
-        ffprobePath: null,
-        adminToken: null,
-        uploadQuotaBytes: 50 * 1024 * 1024 * 1024,
-        subtitleLanguage: 'ja',
-        metadataLocale: defaultMetadataLocale,
-        qbittorrentUrl: null,
-        qbittorrentUsername: null,
-        qbittorrentPassword: null,
-        ortLibraryPath: null,
-        adminPort: defaultAdminPort,
-        adminBind: '0.0.0.0',
-        torrentEngine: torrentEngineAuto,
-        torrentLibraryPath: null,
-        torrentListen: defaultTorrentListen,
-      );
+    dataDir: dataDir,
+    port: defaultPort,
+    bind: '0.0.0.0',
+    tls: true,
+    deviceName: Platform.localHostname,
+    lanRequiresPin: true,
+    libraries: const <LibraryRootConfig>[],
+    ffmpegPath: null,
+    ffprobePath: null,
+    adminToken: null,
+    uploadQuotaBytes: 50 * 1024 * 1024 * 1024,
+    subtitleLanguage: 'ja',
+    metadataLocale: defaultMetadataLocale,
+    qbittorrentUrl: null,
+    qbittorrentUsername: null,
+    qbittorrentPassword: null,
+    ortLibraryPath: null,
+    adminPort: defaultAdminPort,
+    adminBind: '0.0.0.0',
+    torrentEngine: torrentEngineAuto,
+    torrentLibraryPath: null,
+    torrentListen: defaultTorrentListen,
+  );
 
   final String dataDir;
   final int port;
@@ -236,47 +236,48 @@ class ServerConfig {
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
-  }) =>
-      ServerConfig(
-        dataDir: dataDir,
-        port: port ?? this.port,
-        bind: bind ?? this.bind,
-        tls: tls ?? this.tls,
-        deviceName: deviceName ?? this.deviceName,
-        lanRequiresPin: lanRequiresPin ?? this.lanRequiresPin,
-        libraries: libraries ?? this.libraries,
-        ffmpegPath: ffmpegPath ?? this.ffmpegPath,
-        ffprobePath: ffprobePath ?? this.ffprobePath,
-        adminToken: adminToken ?? this.adminToken,
-        uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
-        subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
-        metadataLocale: metadataLocale ?? this.metadataLocale,
-        qbittorrentUrl: qbittorrentUrl ?? this.qbittorrentUrl,
-        qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
-        qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
-        ortLibraryPath: ortLibraryPath ?? this.ortLibraryPath,
-        adminPort: adminPort ?? this.adminPort,
-        adminBind: adminBind ?? this.adminBind,
-        torrentEngine: torrentEngine ?? this.torrentEngine,
-        torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
-        torrentListen: torrentListen ?? this.torrentListen,
-        publicUrls: publicUrls ?? this.publicUrls,
-        p2p: p2p ?? this.p2p,
-        p2pRelays: p2pRelays ?? this.p2pRelays,
-        scanPrune: scanPrune ?? this.scanPrune,
-        scanScrape: scanScrape ?? this.scanScrape,
-        profileTransfer: profileTransfer ?? this.profileTransfer,
-        tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
-        ai: clearAi ? null : ai ?? this.ai,
-      );
+  }) => ServerConfig(
+    dataDir: dataDir,
+    port: port ?? this.port,
+    bind: bind ?? this.bind,
+    tls: tls ?? this.tls,
+    deviceName: deviceName ?? this.deviceName,
+    lanRequiresPin: lanRequiresPin ?? this.lanRequiresPin,
+    libraries: libraries ?? this.libraries,
+    ffmpegPath: ffmpegPath ?? this.ffmpegPath,
+    ffprobePath: ffprobePath ?? this.ffprobePath,
+    adminToken: adminToken ?? this.adminToken,
+    uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
+    subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
+    metadataLocale: metadataLocale ?? this.metadataLocale,
+    qbittorrentUrl: qbittorrentUrl ?? this.qbittorrentUrl,
+    qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
+    qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
+    ortLibraryPath: ortLibraryPath ?? this.ortLibraryPath,
+    adminPort: adminPort ?? this.adminPort,
+    adminBind: adminBind ?? this.adminBind,
+    torrentEngine: torrentEngine ?? this.torrentEngine,
+    torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
+    torrentListen: torrentListen ?? this.torrentListen,
+    publicUrls: publicUrls ?? this.publicUrls,
+    p2p: p2p ?? this.p2p,
+    p2pRelays: p2pRelays ?? this.p2pRelays,
+    scanPrune: scanPrune ?? this.scanPrune,
+    scanScrape: scanScrape ?? this.scanScrape,
+    profileTransfer: profileTransfer ?? this.profileTransfer,
+    tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
+    ai: clearAi ? null : ai ?? this.ai,
+  );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
   static ServerConfig parse(String text, {required String configDir}) {
     final Object? doc = loadYaml(text);
-    final Map<dynamic, dynamic> map =
-        doc is Map ? doc : const <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> map = doc is Map
+        ? doc
+        : const <dynamic, dynamic>{};
     String dataDir = map['data_dir']?.toString() ?? 'data';
-    if (!p.isAbsolute(dataDir)) dataDir = p.normalize(p.join(configDir, dataDir));
+    if (!p.isAbsolute(dataDir))
+      dataDir = p.normalize(p.join(configDir, dataDir));
     final ServerConfig base = ServerConfig.defaults(dataDir: dataDir);
     final Object? libsRaw = map['libraries'];
     final List<LibraryRootConfig> libraries = <LibraryRootConfig>[
@@ -285,16 +286,21 @@ class ServerConfig {
           LibraryRootConfig.fromYaml(libsRaw[i], i),
     ];
     final Object? qb = map['qbittorrent'];
-    final Map<dynamic, dynamic> qbMap =
-        qb is Map ? qb : const <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> qbMap = qb is Map
+        ? qb
+        : const <dynamic, dynamic>{};
     final Object? torrent = map['torrent'];
-    final Map<dynamic, dynamic> torrentMap =
-        torrent is Map ? torrent : const <dynamic, dynamic>{};
-    final String engine = torrentMap['engine']?.toString() ?? base.torrentEngine;
+    final Map<dynamic, dynamic> torrentMap = torrent is Map
+        ? torrent
+        : const <dynamic, dynamic>{};
+    final String engine =
+        torrentMap['engine']?.toString() ?? base.torrentEngine;
     if (engine != torrentEngineAuto &&
         engine != torrentEngineEmbedded &&
         engine != torrentEngineQbittorrent) {
-      throw FormatException('torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"');
+      throw FormatException(
+        'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+      );
     }
     return base.copyWith(
       port: _int(map['port']) ?? base.port,
@@ -306,11 +312,11 @@ class ServerConfig {
       ffmpegPath: map['ffmpeg']?.toString(),
       ffprobePath: map['ffprobe']?.toString(),
       adminToken: map['admin_token']?.toString(),
-      uploadQuotaBytes: _int(map['upload_quota_bytes']) ?? base.uploadQuotaBytes,
+      uploadQuotaBytes:
+          _int(map['upload_quota_bytes']) ?? base.uploadQuotaBytes,
       subtitleLanguage:
           map['subtitle_language']?.toString() ?? base.subtitleLanguage,
-      metadataLocale:
-          map['metadata_locale']?.toString() ?? base.metadataLocale,
+      metadataLocale: map['metadata_locale']?.toString() ?? base.metadataLocale,
       qbittorrentUrl: qbMap['url']?.toString(),
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),
@@ -346,10 +352,10 @@ class ServerConfig {
   }
 
   static List<String> _strings(Object? v) => <String>[
-        if (v is List)
-          for (final Object? e in v)
-            if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
-      ];
+    if (v is List)
+      for (final Object? e in v)
+        if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
+  ];
 
   static Future<ServerConfig> load(File file) async {
     final String text = await file.readAsString();
@@ -373,7 +379,8 @@ class ServerConfig {
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
-    if ((tmdbApiKey ?? '').isNotEmpty) b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
+    if ((tmdbApiKey ?? '').isNotEmpty)
+      b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {
@@ -393,7 +400,8 @@ class ServerConfig {
     ai?.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
-    if (torrentLibraryPath != null) b.writeln('  library: ${_q(torrentLibraryPath!)}');
+    if (torrentLibraryPath != null)
+      b.writeln('  library: ${_q(torrentLibraryPath!)}');
     b.writeln('  listen: ${_q(torrentListen)}');
     if (qbittorrentUrl != null) {
       b.writeln('qbittorrent:');

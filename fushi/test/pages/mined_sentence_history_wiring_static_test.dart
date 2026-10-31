@@ -69,7 +69,9 @@ void main() {
     );
     expect(
       compactCode(src),
-      contains('Stringget_activeBookUid=>_discBookUid??_webEpisodeBookUid??widget.bookUid;'),
+      contains(
+        'Stringget_activeBookUid=>_discBookUid??_webEpisodeBookUid??widget.bookUid;',
+      ),
       reason: '普通视频仍使用 widget.bookUid，原盘使用已绑定的当前标题身份',
     );
     final String record = compactCode(

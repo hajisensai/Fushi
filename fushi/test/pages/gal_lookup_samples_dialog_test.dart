@@ -694,9 +694,13 @@ void main() {
     await tester.tap(manualLayout);
     await tester.pumpAndSettle();
 
-    final Slider continuation = tester.widget<Slider>(glassUnwrap<Slider>(find.byKey(
-        const ValueKey<String>('calibration-continuation-indent-slider'),
-      )),);
+    final Slider continuation = tester.widget<Slider>(
+      glassUnwrap<Slider>(
+        find.byKey(
+          const ValueKey<String>('calibration-continuation-indent-slider'),
+        ),
+      ),
+    );
     expect(continuation.min, -1);
     expect(continuation.max, 8);
     expect(
@@ -747,7 +751,11 @@ void main() {
     await tester.tap(manualLayout);
     await tester.pumpAndSettle();
 
-    Slider slider() => tester.widget<Slider>(glassUnwrap<Slider>(find.byKey(const ValueKey<String>('calibration-grid-advance-slider'))),);
+    Slider slider() => tester.widget<Slider>(
+      glassUnwrap<Slider>(
+        find.byKey(const ValueKey<String>('calibration-grid-advance-slider')),
+      ),
+    );
     // A narrow ±15 % span around the starting width with 0.1 % steps.
     expect(slider().value, closeTo(0.8, 1e-8));
     expect(slider().min, closeTo(0.65, 1e-8));
@@ -803,7 +811,11 @@ void main() {
       await tester.ensureVisible(manualLayout);
       await tester.tap(manualLayout);
       await tester.pumpAndSettle();
-      Slider slider() => tester.widget<Slider>(glassUnwrap<Slider>(find.byKey(const ValueKey<String>('calibration-grid-advance-slider'))),);
+      Slider slider() => tester.widget<Slider>(
+        glassUnwrap<Slider>(
+          find.byKey(const ValueKey<String>('calibration-grid-advance-slider')),
+        ),
+      );
       // 0.05 free width / (20 × 600/800) = 0.00333 advance → ratio ≈ 0.8667.
       expect(slider().max, closeTo(0.8 + 0.05 / 15 / 0.05, 1e-8));
       for (final double overshoot in <double>[5.0, 0.95, 0.9]) {

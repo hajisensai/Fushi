@@ -20,14 +20,11 @@ Future<MagpieUpscalingMode?> pickMagpieUpscalingMode(
   BuildContext context, {
   required MagpieUpscalingMode current,
   required String gameName,
-}) =>
-    showAppDialog<MagpieUpscalingMode>(
-      context: context,
-      builder: (BuildContext dialogContext) => MagpieUpscalingModeDialog(
-        current: current,
-        gameName: gameName,
-      ),
-    );
+}) => showAppDialog<MagpieUpscalingMode>(
+  context: context,
+  builder: (BuildContext dialogContext) =>
+      MagpieUpscalingModeDialog(current: current, gameName: gameName),
+);
 
 /// 三档单选对话框。每档都写清代价，范式同工作台的「音频降级策略」——这不是「高级
 /// 选项」，是用户按自己机器和这个游戏的分辨率来定的判断。

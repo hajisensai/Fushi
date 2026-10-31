@@ -32,9 +32,15 @@ void main() {
 
     test('确定性：同输入同输出，且为 64 hex 字符（SHA-256）', () {
       final String p1 = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: clientNonce, hostNonce: hostNonce);
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: hostNonce,
+      );
       final String p2 = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: clientNonce, hostNonce: hostNonce);
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: hostNonce,
+      );
       expect(p1, equals(p2));
       expect(p1.length, 64);
       expect(RegExp(r'^[0-9a-f]{64}$').hasMatch(p1), isTrue);
@@ -42,7 +48,10 @@ void main() {
 
     test('正确 PIN + 正确 nonce → 校验通过', () {
       final String proof = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: clientNonce, hostNonce: hostNonce);
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: hostNonce,
+      );
       expect(
         FushiPairingProtocol.verifyPinProof(
           pin: pin,
@@ -56,7 +65,10 @@ void main() {
 
     test('错误 PIN → 校验失败', () {
       final String proof = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: clientNonce, hostNonce: hostNonce);
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: hostNonce,
+      );
       expect(
         FushiPairingProtocol.verifyPinProof(
           pin: '000000', // 错误 PIN
@@ -70,7 +82,10 @@ void main() {
 
     test('nonce 不匹配（重放到另一会话）→ 校验失败', () {
       final String proof = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: clientNonce, hostNonce: hostNonce);
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: hostNonce,
+      );
       // host 端用另一对 nonce（另一会话）重算 → 不等。
       expect(
         FushiPairingProtocol.verifyPinProof(
@@ -94,7 +109,10 @@ void main() {
 
     test('归一化：大小写/空白噪声不影响比对', () {
       final String proof = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: clientNonce, hostNonce: hostNonce);
+        pin: pin,
+        clientNonce: clientNonce,
+        hostNonce: hostNonce,
+      );
       expect(
         FushiPairingProtocol.verifyPinProof(
           pin: pin,
@@ -108,9 +126,15 @@ void main() {
 
     test('PIN 进入 MAC：交换 nonce 顺序得到不同 proof（分隔符防边界碰撞）', () {
       final String ab = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: 'a', hostNonce: 'bc');
+        pin: pin,
+        clientNonce: 'a',
+        hostNonce: 'bc',
+      );
       final String ab2 = FushiPairingProtocol.computePinProof(
-          pin: pin, clientNonce: 'ab', hostNonce: 'c');
+        pin: pin,
+        clientNonce: 'ab',
+        hostNonce: 'c',
+      );
       expect(ab, isNot(equals(ab2)));
     });
   });
@@ -119,12 +143,16 @@ void main() {
     test('公网入站恒强制 PIN', () {
       expect(
         FushiPairingProtocol.computePinRequired(
-            isLanPeer: false, lanRequiresPin: false),
+          isLanPeer: false,
+          lanRequiresPin: false,
+        ),
         isTrue,
       );
       expect(
         FushiPairingProtocol.computePinRequired(
-            isLanPeer: false, lanRequiresPin: true),
+          isLanPeer: false,
+          lanRequiresPin: true,
+        ),
         isTrue,
       );
     });
@@ -132,12 +160,16 @@ void main() {
     test('LAN：随 host 设置（默认 false=免）', () {
       expect(
         FushiPairingProtocol.computePinRequired(
-            isLanPeer: true, lanRequiresPin: false),
+          isLanPeer: true,
+          lanRequiresPin: false,
+        ),
         isFalse,
       );
       expect(
         FushiPairingProtocol.computePinRequired(
-            isLanPeer: true, lanRequiresPin: true),
+          isLanPeer: true,
+          lanRequiresPin: true,
+        ),
         isTrue,
       );
     });
@@ -156,8 +188,11 @@ void main() {
         'fe80::1',
         'fd00::1',
       ]) {
-        expect(FushiPairingProtocol.isPrivateLanAddress(addr), isTrue,
-            reason: addr);
+        expect(
+          FushiPairingProtocol.isPrivateLanAddress(addr),
+          isTrue,
+          reason: addr,
+        );
       }
     });
 
@@ -171,8 +206,11 @@ void main() {
         null,
         'not-an-ip',
       ]) {
-        expect(FushiPairingProtocol.isPrivateLanAddress(addr), isFalse,
-            reason: '$addr');
+        expect(
+          FushiPairingProtocol.isPrivateLanAddress(addr),
+          isFalse,
+          reason: '$addr',
+        );
       }
     });
   });
@@ -197,10 +235,10 @@ void main() {
     final DateTime t0 = DateTime.utc(2026, 1, 1, 12, 0, 0);
 
     FushiPinRateLimiter limiter() => FushiPinRateLimiter(
-          maxFailures: 3,
-          failureWindow: const Duration(minutes: 5),
-          lockoutDuration: const Duration(minutes: 15),
-        );
+      maxFailures: 3,
+      failureWindow: const Duration(minutes: 5),
+      lockoutDuration: const Duration(minutes: 15),
+    );
 
     test('阈值前不锁定；第 maxFailures 次失败即锁定', () {
       final FushiPinRateLimiter rl = limiter();
@@ -219,13 +257,19 @@ void main() {
       rl.recordFailure('ip:a', t0); // 锁定 15min
       // 窗口内仍锁定。
       expect(
-          rl.isLockedOut('ip:a', t0.add(const Duration(minutes: 14))), isTrue);
+        rl.isLockedOut('ip:a', t0.add(const Duration(minutes: 14))),
+        isTrue,
+      );
       // 窗口后自动恢复（退避可恢复、有界）。
       expect(
-          rl.isLockedOut('ip:a', t0.add(const Duration(minutes: 15))), isFalse);
+        rl.isLockedOut('ip:a', t0.add(const Duration(minutes: 15))),
+        isFalse,
+      );
       // 恢复后计数已清零：再失败一次不会立刻又锁。
-      expect(rl.recordFailure('ip:a', t0.add(const Duration(minutes: 16))),
-          isFalse);
+      expect(
+        rl.recordFailure('ip:a', t0.add(const Duration(minutes: 16))),
+        isFalse,
+      );
     });
 
     test('成功配对清零该来源计数（不株连未来）', () {
@@ -243,8 +287,10 @@ void main() {
       rl.recordFailure('ip:c', t0); // 1
       rl.recordFailure('ip:c', t0); // 2
       // 距上次失败超过 5min 窗口 → 下一次失败视为窗口重开（计数=1，不触锁）。
-      expect(rl.recordFailure('ip:c', t0.add(const Duration(minutes: 6))),
-          isFalse);
+      expect(
+        rl.recordFailure('ip:c', t0.add(const Duration(minutes: 6))),
+        isFalse,
+      );
     });
 
     test('不同来源各自独立计数（不互相株连）', () {
@@ -267,7 +313,9 @@ void main() {
       rl.prune(t0.add(const Duration(minutes: 6)));
       expect(rl.trackedSourceCount, 1);
       expect(
-          rl.isLockedOut('ip:hot', t0.add(const Duration(minutes: 6))), isTrue);
+        rl.isLockedOut('ip:hot', t0.add(const Duration(minutes: 6))),
+        isTrue,
+      );
     });
 
     test('跟踪来源数受上限约束（防伪造来源撑爆内存）', () {

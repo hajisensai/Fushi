@@ -26,8 +26,7 @@ class _ManualBindingRunner
     VideoSourceScrapeBatchContext? batchContext,
     List<VideoSourceScrapeWork>? plannedWorks,
     String runScope = 'source',
-  }) async =>
-      SourceScrapeReport(sourceIds: <int>[source.id]);
+  }) async => SourceScrapeReport(sourceIds: <int>[source.id]);
 
   @override
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
@@ -67,44 +66,55 @@ class _ManualBindingRunner
 }
 
 void main() {
-  testWidgets('ID preview requires selection and numeric titles stay titles',
-      (WidgetTester tester) async {
+  testWidgets('ID preview requires selection and numeric titles stay titles', (
+    WidgetTester tester,
+  ) async {
     const SourceLibraryRow source = SourceLibraryRow(
-        id: 1,
-        label: 'Anime',
-        mediaKind: 'video',
-        transport: 'local',
-        rootPath: '/videos',
-        mediaCount: 0,
-        recursive: true,
-        videoGroupingMode: 'series',
-        isPrivate: false,
-        sortOrder: 0,
-        createdAt: 1);
+      id: 1,
+      label: 'Anime',
+      mediaKind: 'video',
+      transport: 'local',
+      rootPath: '/videos',
+      mediaCount: 0,
+      recursive: true,
+      videoGroupingMode: 'series',
+      isPrivate: false,
+      sortOrder: 0,
+      createdAt: 1,
+    );
     final _ManualBindingRunner runner = _ManualBindingRunner();
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(runner);
     addTearDown(controller.dispose);
     VideoSourceScrapeConfirmationCandidate? selected;
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(
+      MaterialApp(
         home: Builder(
-            builder: (BuildContext context) => Scaffold(
-                body: TextButton(
-                    onPressed: () async {
-                      selected = await showVideoSourceScrapeManualBindingDialog(
-                          context: context,
-                          controller: controller,
-                          source: source,
-                          workTitle: '86',
-                          workStableKey: 'book:chosen');
-                    },
-                    child: const Text('Open'))))));
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                selected = await showVideoSourceScrapeManualBindingDialog(
+                  context: context,
+                  controller: controller,
+                  source: source,
+                  workTitle: '86',
+                  workStableKey: 'book:chosen',
+                );
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    final Finder search =
-        find.byKey(const ValueKey<String>('video-source-manual-search'));
-    final Finder query =
-        find.byKey(const ValueKey<String>('video-source-manual-query'));
+    final Finder search = find.byKey(
+      const ValueKey<String>('video-source-manual-search'),
+    );
+    final Finder query = find.byKey(
+      const ValueKey<String>('video-source-manual-query'),
+    );
     await tester.tap(search);
     await tester.pumpAndSettle();
     expect(runner.queries, <String>['86']);
@@ -119,14 +129,17 @@ void main() {
     expect(runner.searchedKeys, everyElement('book:chosen'));
     runner.results = <VideoSourceScrapeConfirmationCandidate>[
       VideoSourceScrapeConfirmationCandidate(
-          lookup: const VideoMetadataLookup(
-              provider: VideoMetadataProviderKind.mal,
-              externalId: '42',
-              mediaKind: VideoMetadataMediaKind.tv),
-          work: VideoMetadataWork(
-              provider: VideoMetadataProviderKind.mal,
-              kind: VideoMetadataMediaKind.tv,
-              title: 'Confirmed work')),
+        lookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.tv,
+        ),
+        work: VideoMetadataWork(
+          provider: VideoMetadataProviderKind.mal,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'Confirmed work',
+        ),
+      ),
     ];
     await tester.enterText(query, '42');
     await tester.tap(search);
@@ -135,8 +148,9 @@ void main() {
     expect(selected, isNull);
     expect(runner.boundLookups, isEmpty);
     expect(find.text('MAL · 42'), findsOneWidget);
-    final Finder candidate =
-        find.byKey(const ValueKey<String>('video-source-candidate-mal-tv-42'));
+    final Finder candidate = find.byKey(
+      const ValueKey<String>('video-source-candidate-mal-tv-42'),
+    );
     // 重设计后对话框页眉 / 间距更大，800×600 测试窗里候选行落在可滚动结果区的
     // 视口外：先滚进来再点（用户同样要滚到它）。
     await tester.ensureVisible(candidate);

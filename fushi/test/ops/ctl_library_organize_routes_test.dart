@@ -18,50 +18,52 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 AiProviderConfig _provider() => AiProviderConfig(
-      id: 'p1',
-      presetId: 'openai',
-      name: 'Fake',
-      baseUrl: Uri.parse('https://example.invalid/v1'),
-      apiKey: 'k',
-      model: 'm',
-    );
+  id: 'p1',
+  presetId: 'openai',
+  name: 'Fake',
+  baseUrl: Uri.parse('https://example.invalid/v1'),
+  apiKey: 'k',
+  model: 'm',
+);
 
 /// 假 AI：把收到的全部条目编成一组。
 AiChatClient _groupEverything() => AiChatClient(
-      client: MockClient((http.Request request) async {
-        final Map<String, Object?> body =
-            jsonDecode(request.body) as Map<String, Object?>;
-        final String user = ((body['messages']! as List<Object?>).last!
-            as Map<String, Object?>)['content']! as String;
-        final List<int> all = <int>[
-          for (final String line in const LineSplitter().convert(user))
-            if (line.startsWith('{"i":'))
-              (jsonDecode(line) as Map<String, Object?>)['i']! as int,
-        ];
-        return http.Response(
-          jsonEncode(<String, Object?>{
-            'choices': <Object?>[
-              <String, Object?>{
-                'message': <String, Object?>{
-                  'content': jsonEncode(<String, Object?>{
-                    'groups': <Object?>[
-                      <String, Object?>{
-                        'members': all,
-                        'name': 'S',
-                        'originalTitle': 'S',
-                        'confidence': 'high',
-                      },
-                    ],
-                  }),
-                },
-              },
-            ],
-          }),
-          200,
-          headers: <String, String>{'content-type': 'application/json'},
-        );
+  client: MockClient((http.Request request) async {
+    final Map<String, Object?> body =
+        jsonDecode(request.body) as Map<String, Object?>;
+    final String user =
+        ((body['messages']! as List<Object?>).last!
+                as Map<String, Object?>)['content']!
+            as String;
+    final List<int> all = <int>[
+      for (final String line in const LineSplitter().convert(user))
+        if (line.startsWith('{"i":'))
+          (jsonDecode(line) as Map<String, Object?>)['i']! as int,
+    ];
+    return http.Response(
+      jsonEncode(<String, Object?>{
+        'choices': <Object?>[
+          <String, Object?>{
+            'message': <String, Object?>{
+              'content': jsonEncode(<String, Object?>{
+                'groups': <Object?>[
+                  <String, Object?>{
+                    'members': all,
+                    'name': 'S',
+                    'originalTitle': 'S',
+                    'confidence': 'high',
+                  },
+                ],
+              }),
+            },
+          },
+        ],
       }),
+      200,
+      headers: <String, String>{'content-type': 'application/json'},
     );
+  }),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -123,18 +125,28 @@ void main() {
   Future<void> assign() async {
     await prefs.setAiProviders(<AiProviderConfig>[_provider()]);
     await prefs.setAiFeatureAssignments(
-      const AiFeatureAssignments()
-          .withAssignment(AiFeature.libraryOrganize, 'p1'),
+      const AiFeatureAssignments().withAssignment(
+        AiFeature.libraryOrganize,
+        'p1',
+      ),
     );
   }
 
   test('未知 domain 400；没指派提供商拒', () async {
     await expectLater(
-      call('POST', kLibraryOrganizeCtlRoot, body: <String, Object?>{'domain': 'music'}),
+      call(
+        'POST',
+        kLibraryOrganizeCtlRoot,
+        body: <String, Object?>{'domain': 'music'},
+      ),
       throwsA(isA<CtlFailure>()),
     );
     await expectLater(
-      call('POST', kLibraryOrganizeCtlRoot, body: <String, Object?>{'domain': 'books'}),
+      call(
+        'POST',
+        kLibraryOrganizeCtlRoot,
+        body: <String, Object?>{'domain': 'books'},
+      ),
       throwsA(isA<CtlFailure>()),
     );
     expect(await db.getAllMediaCollections(), isEmpty);
@@ -143,15 +155,21 @@ void main() {
   test('没同意过要 --yes；带了就记为同意并整理；记录可列出、可整次撤销', () async {
     await assign();
     await expectLater(
-      call('POST', kLibraryOrganizeCtlRoot, body: <String, Object?>{'domain': 'books'}),
+      call(
+        'POST',
+        kLibraryOrganizeCtlRoot,
+        body: <String, Object?>{'domain': 'books'},
+      ),
       throwsA(isA<CtlFailure>()),
     );
     expect(prefs.libraryOrganizeConsented, isFalse);
-    final Map<String, Object?> result = (await call(
-      'POST',
-      kLibraryOrganizeCtlRoot,
-      body: <String, Object?>{'domain': 'books', 'yes': true},
-    ))! as Map<String, Object?>;
+    final Map<String, Object?> result =
+        (await call(
+              'POST',
+              kLibraryOrganizeCtlRoot,
+              body: <String, Object?>{'domain': 'books', 'yes': true},
+            ))!
+            as Map<String, Object?>;
     expect(prefs.libraryOrganizeConsented, isTrue);
     expect(result['status'], 'done');
     expect(result['changes'], 1);
@@ -164,10 +182,9 @@ void main() {
     expect(runs, hasLength(1));
     final int runId = (runs.single! as Map<String, Object?>)['id']! as int;
 
-    final Map<String, Object?> undo = (await call(
-      'POST',
-      '$kLibraryOrganizeCtlRoot/runs/$runId/undo',
-    ))! as Map<String, Object?>;
+    final Map<String, Object?> undo =
+        (await call('POST', '$kLibraryOrganizeCtlRoot/runs/$runId/undo'))!
+            as Map<String, Object?>;
     expect(undo['undone'], 1);
     expect(await db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull);
   });

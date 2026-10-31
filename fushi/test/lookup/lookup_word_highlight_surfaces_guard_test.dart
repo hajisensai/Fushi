@@ -48,16 +48,25 @@ void main() {
         reason: 'mixin 未 await onPush 取匹配字数用于高亮',
       );
       final int link = src.indexOf('onLinkClick: (query, localRect) =>');
-      expect(link, greaterThanOrEqualTo(0),
-          reason: 'mixin onLinkClick 必须是原地跳转（=> navigatePopupInPlace）');
+      expect(
+        link,
+        greaterThanOrEqualTo(0),
+        reason: 'mixin onLinkClick 必须是原地跳转（=> navigatePopupInPlace）',
+      );
       final String linkBody = src.substring(
         link,
         src.indexOf('onMineEntry:', link),
       );
-      expect(linkBody.contains('navigatePopupInPlace('), isTrue,
-          reason: 'mixin onLinkClick 未走 navigatePopupInPlace');
-      expect(linkBody.contains('onPush('), isFalse,
-          reason: 'mixin onLinkClick 不得再 push 子层（回退成叠层）');
+      expect(
+        linkBody.contains('navigatePopupInPlace('),
+        isTrue,
+        reason: 'mixin onLinkClick 未走 navigatePopupInPlace',
+      );
+      expect(
+        linkBody.contains('onPush('),
+        isFalse,
+        reason: 'mixin onLinkClick 不得再 push 子层（回退成叠层）',
+      );
       // onPush 必须返回匹配字数（Future<int>），否则拿不到 count。
       expect(
         src.contains(
@@ -85,9 +94,14 @@ void main() {
 
     test('阅读器车道 onTextSelected 高亮父卡片；onLinkClick 原地跳转不叠层', () {
       final String src = base.readAsStringSync();
-      final int text = src.indexOf('onTextSelected: (text, localRect, rubySpans) async {');
-      expect(text, greaterThanOrEqualTo(0),
-          reason: 'base_source_page 缺 onTextSelected');
+      final int text = src.indexOf(
+        'onTextSelected: (text, localRect, rubySpans) async {',
+      );
+      expect(
+        text,
+        greaterThanOrEqualTo(0),
+        reason: 'base_source_page 缺 onTextSelected',
+      );
       final int idx = src.indexOf('onLinkClick: (query, localRect) =>', text);
       expect(
         idx,
@@ -106,10 +120,16 @@ void main() {
         idx,
         nextCallback > idx ? nextCallback : src.length,
       );
-      expect(linkBody.contains('navigatePopupInPlace('), isTrue,
-          reason: 'reader onLinkClick 未走 navigatePopupInPlace');
-      expect(linkBody.contains('searchDictionaryResult('), isFalse,
-          reason: 'reader onLinkClick 不得再 push 子层（回退成叠层）');
+      expect(
+        linkBody.contains('navigatePopupInPlace('),
+        isTrue,
+        reason: 'reader onLinkClick 未走 navigatePopupInPlace',
+      );
+      expect(
+        linkBody.contains('searchDictionaryResult('),
+        isFalse,
+        reason: 'reader onLinkClick 不得再 push 子层（回退成叠层）',
+      );
     });
 
     test('app 外全局查词嵌套高亮父 iframe', () {
@@ -174,17 +194,20 @@ void main() {
       // reveal 门，事后重锚会移动已可见的卡片，还会把整个覆盖窗的几何（union
       // bbox → overlaySize → 原生挪窗）在**每次**嵌套查词时重跑一遍（单行选区的
       // 整词 bbox 同样不等于首字符矩形）。
-      final String body = methodBody(
-        src,
-        'Future<void> _lookupNested(',
-      );
+      final String body = methodBody(src, 'Future<void> _lookupNested(');
       final int awaitAnchor = body.indexOf('_highlightAndAwaitWordAnchor(');
       final int push = body.indexOf('_pushChildFrame(');
-      expect(awaitAnchor, greaterThanOrEqualTo(0),
-          reason: '_lookupNested 未等待整词 bbox');
+      expect(
+        awaitAnchor,
+        greaterThanOrEqualTo(0),
+        reason: '_lookupNested 未等待整词 bbox',
+      );
       expect(push, greaterThanOrEqualTo(0), reason: '_lookupNested 未推子卡');
-      expect(awaitAnchor, lessThan(push),
-          reason: 'bbox 往返落在 push 之后 ⇒ 卡片弹出后跳位 + 覆盖窗二次挪动');
+      expect(
+        awaitAnchor,
+        lessThan(push),
+        reason: 'bbox 往返落在 push 之后 ⇒ 卡片弹出后跳位 + 覆盖窗二次挪动',
+      );
       expect(
         containsCodeLine(body, 'effectiveAnchor'),
         isTrue,
@@ -233,10 +256,16 @@ void main() {
         'anchorRectToScreen': anchorAt,
         'postToHost': postAt,
       }.entries) {
-        expect(e.value, greaterThan(tryAt),
-            reason: '${e.key} 落在 try 之外（highlightFrame 的契约是绝不抛）');
-        expect(e.value, lessThan(catchAt),
-            reason: '${e.key} 落在 catch 之后（highlightFrame 的契约是绝不抛）');
+        expect(
+          e.value,
+          greaterThan(tryAt),
+          reason: '${e.key} 落在 try 之外（highlightFrame 的契约是绝不抛）',
+        );
+        expect(
+          e.value,
+          lessThan(catchAt),
+          reason: '${e.key} 落在 catch 之后（highlightFrame 的契约是绝不抛）',
+        );
       }
     });
   });

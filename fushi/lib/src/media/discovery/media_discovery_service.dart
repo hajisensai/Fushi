@@ -29,8 +29,8 @@ class DiscoveryAggregateResult {
     Iterable<ExternalProviderFailure> failures =
         const <ExternalProviderFailure>[],
     this.successfulSourceCount = 0,
-  })  : slices = List<DiscoverySourceSlice>.unmodifiable(slices),
-        failures = List<ExternalProviderFailure>.unmodifiable(failures);
+  }) : slices = List<DiscoverySourceSlice>.unmodifiable(slices),
+       failures = List<ExternalProviderFailure>.unmodifiable(failures);
 
   final List<DiscoverySourceSlice> slices;
   final List<ExternalProviderFailure> failures;
@@ -38,8 +38,8 @@ class DiscoveryAggregateResult {
 
   /// 平铺视图（保持源 priority 顺序）。
   List<DiscoveryEntry> get entries => <DiscoveryEntry>[
-        for (final DiscoverySourceSlice slice in slices) ...slice.page.entries,
-      ];
+    for (final DiscoverySourceSlice slice in slices) ...slice.page.entries,
+  ];
 
   bool get hasMore =>
       slices.any((DiscoverySourceSlice slice) => slice.page.hasMore);
@@ -55,11 +55,11 @@ class DiscoveryAggregateResult {
 /// 再构造，或经 [sourceById] 单源直查），生命周期由持有者管理。
 class MediaDiscoveryService {
   MediaDiscoveryService({required Iterable<MediaDiscoverySource> sources})
-      : _sources = List<MediaDiscoverySource>.of(sources)
-          ..sort(
-            (MediaDiscoverySource a, MediaDiscoverySource b) =>
-                a.priority.compareTo(b.priority),
-          );
+    : _sources = List<MediaDiscoverySource>.of(sources)
+        ..sort(
+          (MediaDiscoverySource a, MediaDiscoverySource b) =>
+              a.priority.compareTo(b.priority),
+        );
 
   final List<MediaDiscoverySource> _sources;
 
@@ -75,9 +75,7 @@ class MediaDiscoveryService {
 
   /// 支持 [kind] 的源，按 priority 排序（源切换下拉的选项列表）。
   List<MediaDiscoverySource> sourcesFor(DiscoveryMediaKind kind) => _sources
-      .where(
-        (MediaDiscoverySource s) => s.capabilities.kinds.contains(kind),
-      )
+      .where((MediaDiscoverySource s) => s.capabilities.kinds.contains(kind))
       .toList();
 
   /// 执行一次发现请求。
@@ -133,9 +131,9 @@ class MediaDiscoveryService {
 
     final List<ProviderBatchResult<DiscoveryResultPage>?> results =
         List<ProviderBatchResult<DiscoveryResultPage>?>.filled(
-      candidates.length,
-      null,
-    );
+          candidates.length,
+          null,
+        );
     await runBoundedTasks(
       List<int>.generate(candidates.length, (int i) => i),
       maxConcurrent: maxConcurrent,

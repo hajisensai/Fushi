@@ -27,10 +27,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
             dimension: 36,
             child: Padding(
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              child: adaptiveIndicator(
-                context: context,
-                color: progressColor,
-              ),
+              child: adaptiveIndicator(context: context, color: progressColor),
             ),
           ),
           SizedBox(width: tokens.spacing.gap / 2),
@@ -47,11 +44,7 @@ class DictionaryProgressDialogContent extends StatelessWidget {
                     style: tokens.type.metadata,
                   ),
                   SizedBox(height: tokens.spacing.gap / 4),
-                  Text(
-                    message,
-                    maxLines: 5,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(message, maxLines: 5, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),

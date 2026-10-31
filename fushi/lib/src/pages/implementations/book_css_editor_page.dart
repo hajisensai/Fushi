@@ -95,8 +95,9 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     for (int i = 0; i < snapshots.length; i++) {
       final String content = snapshots[i].content;
       _diskContent[i] = content;
-      final TextEditingController controller =
-          TextEditingController(text: content);
+      final TextEditingController controller = TextEditingController(
+        text: content,
+      );
       controller.addListener(_onTextChanged);
       _textControllers[i] = controller;
     }
@@ -193,9 +194,9 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // _guardUnsaved, so the page may already be popped/disposed. Guard the
     // snackbar like _doResetCurrent/_doResetAll (HBK-AUDIT-108).
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        FushiSnackBar(content: Text(t.book_css_editor_saved)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.book_css_editor_saved)));
     }
   }
 
@@ -273,7 +274,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // 重置前捕获「有自定义（.original 存在）」的条目，逐条记重置墓碑（跨端传播重置）。
     final List<CssFileEntry> customized = <CssFileEntry>[
       for (final CssFileEntry e in _entries)
-        if (e.hasOriginal) e
+        if (e.hasOriginal) e,
     ];
     _repo.resetAll();
     for (final CssFileEntry e in customized) {
@@ -451,10 +452,7 @@ class BookCssConfirmationDialog<T> extends StatelessWidget {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: Text(
-          message,
-          style: tokens.type.listSubtitle,
-        ),
+        body: Text(message, style: tokens.type.listSubtitle),
         footer: Wrap(
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,

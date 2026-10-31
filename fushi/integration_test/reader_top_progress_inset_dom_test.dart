@@ -50,185 +50,227 @@ void main() {
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'BUG-470: top progress reserve is pushed into the WebView on first load '
-      '- first body line is not covered by the top progress strip',
-      timeout: const Timeout(Duration(minutes: 5)),
-      (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = [];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint('[TOPINSET] FlutterError: ${details.exceptionAsString()}');
-    };
+    'BUG-470: top progress reserve is pushed into the WebView on first load '
+    '- first body line is not covered by the top progress strip',
+    timeout: const Timeout(Duration(minutes: 5)),
+    (WidgetTester tester) async {
+      final List<FlutterErrorDetails> errors = [];
+      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        errors.add(details);
+        debugPrint('[TOPINSET] FlutterError: ${details.exceptionAsString()}');
+      };
 
-    try {
-      await launchFushiTestApp();
-      expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
-      await tester.pump(const Duration(seconds: 2));
+      try {
+        await launchFushiTestApp();
+        expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
+        await tester.pump(const Duration(seconds: 2));
 
-      // BUG-470 关心「挤压模式首载 inset 缺口」。顶部进度默认已改为悬浮
-      // （top_progress_floating=true，悬浮不占预留），故本测试在开书前显式切回挤压
-      // 模式，保住原始触发场景（进度键经单一 app DB 共享，开书前写入会被 per-book
-      // ReaderSettings 首载读到）。
-      expect(ReaderFushiSource.instance.showTopProgressBar, isTrue,
-          reason: '顶部阅读进度必须默认开启（BUG-470 的触发条件）。若默认被改，'
-              '此测试需显式经偏好开启 show_top_progress_bar。');
-      if (ReaderFushiSource.instance.topProgressFloating) {
-        ReaderFushiSource.instance.toggleTopProgressFloating();
-        await tester.pump(const Duration(milliseconds: 500));
-      }
-      expect(ReaderFushiSource.instance.topProgressFloating, isFalse,
-          reason: '本测试需挤压（非悬浮）模式——挤压模式才会占 18px 预留，'
-              '正是 BUG-470 关心的首载 inset 缺口场景。');
-
-      // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
-      // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
-      await enableFocusNavigation(tester);
-      final FocusDriver driver = FocusDriver(tester);
-
-      // Books 标签置前 + 始终导入一本全新 EPUB（无有声书）并打开它，确定性走分页章节
-      // 阅读器首载路径（不被书架既有书状态污染）。
-      await _openBooksTab(tester, driver);
-      final String bookKey = await _seedTestBook(tester);
-      await _openBooksTab(tester, driver);
-
-      // 书架条目按 media identifier（fushi://book/<id>）取键，不是裸 row id。
-      final String seededKey =
-          'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
-      final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
-      for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-      }
-      expect(seededEntry, findsOneWidget,
-          reason: 'freshly seeded paginated book must appear on the shelf');
-
-      // 经 AppModel.openMedia 确定性打开（与卡片 onTap 同一调用）。书架卡片的
-      // Enter→activate 绑定只在卡片处于 FushiFocusRoot 下才装上，测试书架没包它，
-      // 故焦点驱动 Enter 是 no-op、阅读器永远打不开（见 reader_pagination_test.dart
-      // _activateBook / TODO-783）。直接 openMedia 绕过焦点树。
-      await _activateBook(tester, bookKey);
-      await tester.pump(const Duration(seconds: 3));
-
-      // 先断言 ReaderFushiPage 真挂载，让「打开失败」显式暴露在这里，而非下游被
-      // 误读成 WebView mount 超时。
-      for (int i = 0;
-          i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
-          i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
-      expect(find.byType(ReaderFushiPage), findsOneWidget,
-          reason: 'ReaderFushiPage must mount after openMedia — if this '
-              'fails the reader never opened (not a WebView timeout).');
-
-      // Cold WebView2 init on a freshly isolated profile (the Windows harness
-      // creates an empty webview2-profile per run) can take a while; poll
-      // generously and log progress to diagnose a missing WebView.
-      const Key webViewKey = ValueKey<String>('fushi_webview');
-      bool webViewPresent = false;
-      for (int i = 0; i < 180; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byKey(webViewKey).evaluate().isNotEmpty) {
-          webViewPresent = true;
-          break;
-        }
-        if (i % 20 == 0) debugPrint('[TOPINSET] waiting for WebView i=$i');
-      }
-      expect(webViewPresent, isTrue, reason: 'WebView present');
-
-      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
-      bool contentReady = false;
-      for (int i = 0; i < 120; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
-          contentReady = true;
-          break;
-        }
-      }
-      expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
-
-      final eval = ReaderFushiPage.debugEvaluateJavascript;
-      expect(eval, isNotNull,
-          reason: 'Reader debug JS hook must be set (debug/profile build).');
-
-      // 读取注入到 WebView 的顶部 inset（修复路径推进的就是这个 CSS 变量）。
-      Future<double> readChromeTopInset() async {
-        final Object? raw = await eval!(
-          r'(function(){var v=getComputedStyle(document.documentElement)'
-          r".getPropertyValue('--chrome-top-inset');return parseFloat(v)||0;})()",
+        // BUG-470 关心「挤压模式首载 inset 缺口」。顶部进度默认已改为悬浮
+        // （top_progress_floating=true，悬浮不占预留），故本测试在开书前显式切回挤压
+        // 模式，保住原始触发场景（进度键经单一 app DB 共享，开书前写入会被 per-book
+        // ReaderSettings 首载读到）。
+        expect(
+          ReaderFushiSource.instance.showTopProgressBar,
+          isTrue,
+          reason:
+              '顶部阅读进度必须默认开启（BUG-470 的触发条件）。若默认被改，'
+              '此测试需显式经偏好开启 show_top_progress_bar。',
         );
-        return double.tryParse(raw.toString()) ?? -1;
-      }
-
-      // 读取正文第一个可见文本元素的 getBoundingClientRect().top（视口坐标）。
-      // 跳过零尺寸 / 不可见节点（display:none、空白）；命中第一个有文本且有宽高的
-      // 块级元素（EpubGenerator 产出 <p id="mN">【MN】...</p>）。同时回传该元素文本
-      // 前缀作为读数取证（确认确实命中正文而非 chrome）。
-      Future<Map<String, dynamic>> readFirstTextLine() async {
-        final Object? raw = await eval!(jsFirstTextLineProbe);
-        final dynamic decoded = jsonDecode(raw.toString());
-        return decoded == null
-            ? <String, dynamic>{}
-            : (decoded as Map<String, dynamic>);
-      }
-
-      // 修复经 _refreshProgress 在「进度由空→正」上升沿异步补推 inset + 重锚，
-      // 首载稳定后需要给它若干帧落地。轮询直到 inset 稳定 >= 进度条预留，或超时。
-      // 进度条预留 = _infoFontSize(12) * 1.5 = 18px（再乘 appUiScale，桌面通常 1.0）。
-      const double kExpectedReservePx = 18.0;
-      double chromeTopInset = -1;
-      Map<String, dynamic> firstLine = <String, dynamic>{};
-      for (int i = 0; i < 40; i++) {
-        await tester.pump(const Duration(milliseconds: 300));
-        chromeTopInset = await readChromeTopInset();
-        firstLine = await readFirstTextLine();
-        debugPrint('[TOPINSET] poll#$i chromeTopInset=$chromeTopInset '
-            'firstLine=$firstLine');
-        if (chromeTopInset >= kExpectedReservePx - 1.0 &&
-            firstLine['top'] != null) {
-          break;
+        if (ReaderFushiSource.instance.topProgressFloating) {
+          ReaderFushiSource.instance.toggleTopProgressFloating();
+          await tester.pump(const Duration(milliseconds: 500));
         }
-      }
+        expect(
+          ReaderFushiSource.instance.topProgressFloating,
+          isFalse,
+          reason:
+              '本测试需挤压（非悬浮）模式——挤压模式才会占 18px 预留，'
+              '正是 BUG-470 关心的首载 inset 缺口场景。',
+        );
 
-      final double firstTop = (firstLine['top'] as num?)?.toDouble() ?? -1;
-      debugPrint('[TOPINSET] FINAL chromeTopInset=$chromeTopInset '
+        // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+        // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+        await enableFocusNavigation(tester);
+        final FocusDriver driver = FocusDriver(tester);
+
+        // Books 标签置前 + 始终导入一本全新 EPUB（无有声书）并打开它，确定性走分页章节
+        // 阅读器首载路径（不被书架既有书状态污染）。
+        await _openBooksTab(tester, driver);
+        final String bookKey = await _seedTestBook(tester);
+        await _openBooksTab(tester, driver);
+
+        // 书架条目按 media identifier（fushi://book/<id>）取键，不是裸 row id。
+        final String seededKey =
+            'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
+        final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
+        for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+        }
+        expect(
+          seededEntry,
+          findsOneWidget,
+          reason: 'freshly seeded paginated book must appear on the shelf',
+        );
+
+        // 经 AppModel.openMedia 确定性打开（与卡片 onTap 同一调用）。书架卡片的
+        // Enter→activate 绑定只在卡片处于 FushiFocusRoot 下才装上，测试书架没包它，
+        // 故焦点驱动 Enter 是 no-op、阅读器永远打不开（见 reader_pagination_test.dart
+        // _activateBook / TODO-783）。直接 openMedia 绕过焦点树。
+        await _activateBook(tester, bookKey);
+        await tester.pump(const Duration(seconds: 3));
+
+        // 先断言 ReaderFushiPage 真挂载，让「打开失败」显式暴露在这里，而非下游被
+        // 误读成 WebView mount 超时。
+        for (
+          int i = 0;
+          i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 250));
+        }
+        expect(
+          find.byType(ReaderFushiPage),
+          findsOneWidget,
+          reason:
+              'ReaderFushiPage must mount after openMedia — if this '
+              'fails the reader never opened (not a WebView timeout).',
+        );
+
+        // Cold WebView2 init on a freshly isolated profile (the Windows harness
+        // creates an empty webview2-profile per run) can take a while; poll
+        // generously and log progress to diagnose a missing WebView.
+        const Key webViewKey = ValueKey<String>('fushi_webview');
+        bool webViewPresent = false;
+        for (int i = 0; i < 180; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          if (find.byKey(webViewKey).evaluate().isNotEmpty) {
+            webViewPresent = true;
+            break;
+          }
+          if (i % 20 == 0) debugPrint('[TOPINSET] waiting for WebView i=$i');
+        }
+        expect(webViewPresent, isTrue, reason: 'WebView present');
+
+        const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
+        bool contentReady = false;
+        for (int i = 0; i < 120; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
+            contentReady = true;
+            break;
+          }
+        }
+        expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
+
+        final eval = ReaderFushiPage.debugEvaluateJavascript;
+        expect(
+          eval,
+          isNotNull,
+          reason: 'Reader debug JS hook must be set (debug/profile build).',
+        );
+
+        // 读取注入到 WebView 的顶部 inset（修复路径推进的就是这个 CSS 变量）。
+        Future<double> readChromeTopInset() async {
+          final Object? raw = await eval!(
+            r'(function(){var v=getComputedStyle(document.documentElement)'
+            r".getPropertyValue('--chrome-top-inset');return parseFloat(v)||0;})()",
+          );
+          return double.tryParse(raw.toString()) ?? -1;
+        }
+
+        // 读取正文第一个可见文本元素的 getBoundingClientRect().top（视口坐标）。
+        // 跳过零尺寸 / 不可见节点（display:none、空白）；命中第一个有文本且有宽高的
+        // 块级元素（EpubGenerator 产出 <p id="mN">【MN】...</p>）。同时回传该元素文本
+        // 前缀作为读数取证（确认确实命中正文而非 chrome）。
+        Future<Map<String, dynamic>> readFirstTextLine() async {
+          final Object? raw = await eval!(jsFirstTextLineProbe);
+          final dynamic decoded = jsonDecode(raw.toString());
+          return decoded == null
+              ? <String, dynamic>{}
+              : (decoded as Map<String, dynamic>);
+        }
+
+        // 修复经 _refreshProgress 在「进度由空→正」上升沿异步补推 inset + 重锚，
+        // 首载稳定后需要给它若干帧落地。轮询直到 inset 稳定 >= 进度条预留，或超时。
+        // 进度条预留 = _infoFontSize(12) * 1.5 = 18px（再乘 appUiScale，桌面通常 1.0）。
+        const double kExpectedReservePx = 18.0;
+        double chromeTopInset = -1;
+        Map<String, dynamic> firstLine = <String, dynamic>{};
+        for (int i = 0; i < 40; i++) {
+          await tester.pump(const Duration(milliseconds: 300));
+          chromeTopInset = await readChromeTopInset();
+          firstLine = await readFirstTextLine();
+          debugPrint(
+            '[TOPINSET] poll#$i chromeTopInset=$chromeTopInset '
+            'firstLine=$firstLine',
+          );
+          if (chromeTopInset >= kExpectedReservePx - 1.0 &&
+              firstLine['top'] != null) {
+            break;
+          }
+        }
+
+        final double firstTop = (firstLine['top'] as num?)?.toDouble() ?? -1;
+        debugPrint(
+          '[TOPINSET] FINAL chromeTopInset=$chromeTopInset '
           'firstLineTop=$firstTop firstLineText=${firstLine['text']} '
-          'tag=${firstLine['tag']}');
+          'tag=${firstLine['tag']}',
+        );
 
-      expect(firstLine['top'], isNotNull, reason: '必须在 WebView 里定位到正文首个可见文本元素');
+        expect(
+          firstLine['top'],
+          isNotNull,
+          reason: '必须在 WebView 里定位到正文首个可见文本元素',
+        );
 
-      // 核心不变式 1：顶部 inset 必须含进度条预留（首载上升沿补推已落地）。
-      // 留 1px 容差兜亚像素 / 缩放四舍五入。
-      expect(chromeTopInset, greaterThanOrEqualTo(kExpectedReservePx - 1.0),
-          reason: 'BUG-470：首载稳定后 --chrome-top-inset 必须 >= 顶部进度条预留'
+        // 核心不变式 1：顶部 inset 必须含进度条预留（首载上升沿补推已落地）。
+        // 留 1px 容差兜亚像素 / 缩放四舍五入。
+        expect(
+          chromeTopInset,
+          greaterThanOrEqualTo(kExpectedReservePx - 1.0),
+          reason:
+              'BUG-470：首载稳定后 --chrome-top-inset 必须 >= 顶部进度条预留'
               '（${kExpectedReservePx}px）。实读=$chromeTopInset。若仍≈0 说明首载'
-              '「进度由空→正」上升沿的 inset 重推未生效——回归未修复。');
+              '「进度由空→正」上升沿的 inset 重推未生效——回归未修复。',
+        );
 
-      // 核心不变式 2：正文首行 top >= 注入的 inset（正文从预留带之下开始，
-      // 不被顶部进度条覆盖）。body padding-top = calc(...vh + var(--chrome-top-inset))，
-      // 故首行 top 应 >= inset。留 1px 容差。
-      expect(firstTop, greaterThanOrEqualTo(chromeTopInset - 1.0),
-          reason: 'BUG-470：正文首行 top($firstTop) 必须 >= --chrome-top-inset'
-              '($chromeTopInset)——首行被顶部进度条压住即回归复现。');
+        // 核心不变式 2：正文首行 top >= 注入的 inset（正文从预留带之下开始，
+        // 不被顶部进度条覆盖）。body padding-top = calc(...vh + var(--chrome-top-inset))，
+        // 故首行 top 应 >= inset。留 1px 容差。
+        expect(
+          firstTop,
+          greaterThanOrEqualTo(chromeTopInset - 1.0),
+          reason:
+              'BUG-470：正文首行 top($firstTop) 必须 >= --chrome-top-inset'
+              '($chromeTopInset)——首行被顶部进度条压住即回归复现。',
+        );
 
-      // 核心不变式 3（直接版）：首行 top 必须避开整条进度条预留带。
-      expect(firstTop, greaterThanOrEqualTo(kExpectedReservePx - 1.0),
-          reason: 'BUG-470：正文首行 top($firstTop) 必须避开顶部进度条预留带'
-              '（>= ${kExpectedReservePx}px）。');
+        // 核心不变式 3（直接版）：首行 top 必须避开整条进度条预留带。
+        expect(
+          firstTop,
+          greaterThanOrEqualTo(kExpectedReservePx - 1.0),
+          reason:
+              'BUG-470：正文首行 top($firstTop) 必须避开顶部进度条预留带'
+              '（>= ${kExpectedReservePx}px）。',
+        );
 
-      await takeScreenshot(binding, 'bug470_top_progress_inset_verified');
+        await takeScreenshot(binding, 'bug470_top_progress_inset_verified');
 
-      final NavigatorState nav =
-          Navigator.of(tester.element(find.byType(Scaffold).first));
-      nav.pop();
-      await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
+        final NavigatorState nav = Navigator.of(
+          tester.element(find.byType(Scaffold).first),
+        );
+        nav.pop();
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pumpAndSettle();
 
-      assertStrictErrors(errors);
-      debugPrint('[TOPINSET] === BUG-470 TOP-INSET TEST PASSED ===');
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  });
+        assertStrictErrors(errors);
+        debugPrint('[TOPINSET] === BUG-470 TOP-INSET TEST PASSED ===');
+      } finally {
+        FlutterError.onError = oldHandler;
+      }
+    },
+  );
 }
 
 /// 在 WebView 里定位正文首个可见文本块并回传其 client rect（JSON）。抽成顶层常量，
@@ -282,8 +324,11 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before importing a book');
+  expect(
+    appModel.isInitialised,
+    isTrue,
+    reason: 'AppModel must be initialised before importing a book',
+  );
 
   final Uint8List bytes = EpubGenerator().generate();
   final String bookKey = await EpubImporter.import(
@@ -304,30 +349,38 @@ Future<String> _seedTestBook(WidgetTester tester) async {
 /// MediaItem，直接驱动 AppModel.openMedia（与真实卡片 tap 同一调用），把 ReaderFushiPage
 /// push 上导航栈，与焦点树状态无关。
 Future<void> _activateBook(WidgetTester tester, String bookKey) async {
-  final BuildContext appContext =
-      tester.element(find.byType(MaterialApp).first);
+  final BuildContext appContext = tester.element(
+    find.byType(MaterialApp).first,
+  );
   final ProviderContainer container = ProviderScope.containerOf(appContext);
   final AppModel appModel = container.read(appProvider);
 
   // openMedia 需要 WidgetRef 但打开路径不解引用它（经 app 的 navigatorKey context
   // 路由，非 ref）。根 FushiReaderApp 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
-  final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.FushiReaderApp)) as ConsumerStatefulElement;
+  final ConsumerStatefulElement appElement =
+      tester.element(find.byType(app.FushiReaderApp))
+          as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
 
-  final MediaItem? item =
-      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
-  expect(item, isNotNull,
-      reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
+  final MediaItem? item = await ReaderFushiSource.instance.mediaItemForBookKey(
+    bookKey,
+  );
+  expect(
+    item,
+    isNotNull,
+    reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)',
+  );
 
   // 不 await openMedia 到完成：它 await Navigator.push，其 future 只在阅读器路由被 pop
   // 时才 resolve，await 会永久阻塞线性测试体。fire 它（与真实卡片 onTap 同一调用）并
   // pump 帧让 push + 阅读器异步 _initBook 跑起来；路由生命周期 future 故意不 await。
-  unawaited(appModel.openMedia(
-    ref: ref,
-    mediaSource: ReaderFushiSource.instance,
-    item: item!,
-  ));
+  unawaited(
+    appModel.openMedia(
+      ref: ref,
+      mediaSource: ReaderFushiSource.instance,
+      item: item!,
+    ),
+  );
   for (int i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 250));
   }

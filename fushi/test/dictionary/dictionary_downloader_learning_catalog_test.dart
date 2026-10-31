@@ -11,7 +11,9 @@ void main() {
             DictionaryDownloader.catalogForLang(gloss);
         final List<RecommendedDictionary> viaLearning =
             DictionaryDownloader.catalogForLearningLang(
-                learningLang: 'ja', glossLang: gloss);
+              learningLang: 'ja',
+              glossLang: gloss,
+            );
         expect(
           viaLearning.map((d) => d.matchPrefix).toList(),
           legacy.map((d) => d.matchPrefix).toList(),
@@ -23,47 +25,64 @@ void main() {
     test('学英语 + 中文释义 → 双语 en-zh + 英语兜底不重复 + 单语 en-en', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'en', glossLang: 'zh');
+            learningLang: 'en',
+            glossLang: 'zh',
+          );
       expect(cat.map((d) => d.matchPrefix), ['wty-en-zh', 'wty-en-en']);
       expect(cat[0].category, DictionaryCategory.bilingual);
-      expect(cat[0].url,
-          'https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/en/zh/wty-en-zh.zip');
+      expect(
+        cat[0].url,
+        'https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/en/zh/wty-en-zh.zip',
+      );
       expect(cat[1].category, DictionaryCategory.monolingual);
     });
 
     test('学中文 + 日语释义 → zh-ja、zh-en 兜底、zh-zh 单语', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'zh', glossLang: 'ja');
-      expect(cat.map((d) => d.matchPrefix),
-          ['wty-zh-ja', 'wty-zh-en', 'wty-zh-zh']);
+            learningLang: 'zh',
+            glossLang: 'ja',
+          );
+      expect(cat.map((d) => d.matchPrefix), [
+        'wty-zh-ja',
+        'wty-zh-en',
+        'wty-zh-zh',
+      ]);
     });
 
     test('释义语言 == 学习语言 → 只有英语兜底双语 + 单语', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'ko', glossLang: 'ko');
+            learningLang: 'ko',
+            glossLang: 'ko',
+          );
       expect(cat.map((d) => d.matchPrefix), ['wty-ko-en', 'wty-ko-ko']);
     });
 
     test('受限源语言（hu）缺 sv 目标与单语 → 只剩英语兜底', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'hu', glossLang: 'sv');
+            learningLang: 'hu',
+            glossLang: 'sv',
+          );
       expect(cat.map((d) => d.matchPrefix), ['wty-hu-en']);
     });
 
     test('id 源缺 mn 目标但保留单语', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'id', glossLang: 'mn');
+            learningLang: 'id',
+            glossLang: 'mn',
+          );
       expect(cat.map((d) => d.matchPrefix), ['wty-id-en', 'wty-id-id']);
     });
 
     test('非日语目录不含日语专属条目（JPDB/KANJIDIC 等）', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'en', glossLang: 'zh');
+            learningLang: 'en',
+            glossLang: 'zh',
+          );
       expect(
         cat.where((d) => !d.matchPrefix.startsWith('wty-')),
         isEmpty,
@@ -78,7 +97,10 @@ void main() {
           DictionaryDownloader.catalogForLang('zh');
       expect(
         DictionaryDownloader.defaultSelectionForLearningLang(
-            learningLang: 'ja', glossLang: 'zh', workingCatalog: cat),
+          learningLang: 'ja',
+          glossLang: 'zh',
+          workingCatalog: cat,
+        ),
         DictionaryDownloader.defaultSelectionForLang('zh', cat),
       );
     });
@@ -86,9 +108,14 @@ void main() {
     test('非日语默认勾第一个双语条目', () {
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'en', glossLang: 'zh');
+            learningLang: 'en',
+            glossLang: 'zh',
+          );
       final Set<int> sel = DictionaryDownloader.defaultSelectionForLearningLang(
-          learningLang: 'en', glossLang: 'zh', workingCatalog: cat);
+        learningLang: 'en',
+        glossLang: 'zh',
+        workingCatalog: cat,
+      );
       expect(sel, {0});
       expect(cat[0].matchPrefix, 'wty-en-zh');
     });
@@ -97,18 +124,24 @@ void main() {
       // en 学 en 释义：无双语（同语言），应勾英英单语。
       final List<RecommendedDictionary> cat =
           DictionaryDownloader.catalogForLearningLang(
-              learningLang: 'en', glossLang: 'en');
+            learningLang: 'en',
+            glossLang: 'en',
+          );
       expect(cat.map((d) => d.matchPrefix), ['wty-en-en']);
       expect(
         DictionaryDownloader.defaultSelectionForLearningLang(
-            learningLang: 'en', glossLang: 'en', workingCatalog: cat),
+          learningLang: 'en',
+          glossLang: 'en',
+          workingCatalog: cat,
+        ),
         {0},
       );
       expect(
         DictionaryDownloader.defaultSelectionForLearningLang(
-            learningLang: 'en',
-            glossLang: 'en',
-            workingCatalog: const <RecommendedDictionary>[]),
+          learningLang: 'en',
+          glossLang: 'en',
+          workingCatalog: const <RecommendedDictionary>[],
+        ),
         isEmpty,
       );
     });
@@ -116,8 +149,10 @@ void main() {
 
   group('indexUrl 对任意 wty 语言对派生（在线更新能力保持）', () {
     test('wty-en-zh → 独立 index 端点', () {
-      final RecommendedDictionary d =
-          DictionaryDownloader.wtyPairDict(srcLang: 'en', tgtLang: 'zh')!;
+      final RecommendedDictionary d = DictionaryDownloader.wtyPairDict(
+        srcLang: 'en',
+        tgtLang: 'zh',
+      )!;
       expect(
         d.indexUrl,
         'https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/index/wty-en-zh-index.json?download=true',
@@ -126,8 +161,9 @@ void main() {
     });
 
     test('旧 ja 条目派生不变（wty-ja-en）', () {
-      final RecommendedDictionary d = DictionaryDownloader.catalog
-          .singleWhere((x) => x.matchPrefix == 'wty-ja-en');
+      final RecommendedDictionary d = DictionaryDownloader.catalog.singleWhere(
+        (x) => x.matchPrefix == 'wty-ja-en',
+      );
       expect(
         d.indexUrl,
         'https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/index/wty-ja-en-index.json?download=true',
@@ -146,8 +182,11 @@ void main() {
       expect(DictionaryDownloader.wtyPairAvailable('hu', 'hu'), isFalse);
       expect(DictionaryDownloader.wtyPairAvailable('sv', 'mn'), isFalse);
       expect(DictionaryDownloader.wtyPairAvailable('mn', 'sl'), isFalse);
-      expect(DictionaryDownloader.wtyPairAvailable('id', 'id'), isTrue,
-          reason: 'id 有单语，只缺 hu/sl/sv/mn 目标');
+      expect(
+        DictionaryDownloader.wtyPairAvailable('id', 'id'),
+        isTrue,
+        reason: 'id 有单语，只缺 hu/sl/sv/mn 目标',
+      );
     });
 
     test('未知语言码不可用', () {

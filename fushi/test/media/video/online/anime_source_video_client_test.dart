@@ -55,16 +55,14 @@ void main() {
   AnimeSourceVideoClient client({
     http.Client? httpClient,
     String? preferredSubtitleLanguage,
-  }) =>
-      AnimeSourceVideoClient(
-        manager: manager,
-        context: _context,
-        anime: anime,
-        episodes: sortEpisodesForPlayback(episodes),
-        httpClient:
-            httpClient ?? MockClient((_) async => http.Response('', 404)),
-        subtitleLanguageResolver: () => preferredSubtitleLanguage,
-      );
+  }) => AnimeSourceVideoClient(
+    manager: manager,
+    context: _context,
+    anime: anime,
+    episodes: sortEpisodesForPlayback(episodes),
+    httpClient: httpClient ?? MockClient((_) async => http.Response('', 404)),
+    subtitleLanguageResolver: () => preferredSubtitleLanguage,
+  );
 
   test('episodes become playlist members with stable url-based ids', () {
     final AnimeSourceVideoClient c = client();
@@ -160,79 +158,76 @@ void main() {
     expect(urls.streamIsOriginalContainer, isTrue);
   });
 
-  test(
-    'stream variants list the current episode and switching pins a line '
-    'whose headers follow',
-    () async {
-      runtime.videos = <Object?>[
-        <Object?, Object?>{
-          'url': 'https://a.example/1080.m3u8',
-          'quality': 'A · 1080p',
-          'headers': <Object?, Object?>{'Referer': 'https://a.example/'},
-        },
-        <Object?, Object?>{
-          'url': 'https://b.example/720.mp4',
-          'quality': '',
-          'headers': <Object?, Object?>{'Referer': 'https://b.example/'},
-        },
-      ];
-      final AnimeSourceVideoClient c = client();
-      // 尚未取流：没有「当前集」，菜单为空、下标 -1、设下标是 no-op。
-      expect(c.streamVariants, isEmpty);
-      expect(c.streamVariantIndex, -1);
-      c.streamVariantIndex = 1;
-      final String id = c.remoteVideos.first.id;
-      final RemoteVideoStreamUrls first = await c.remoteVideoStreamUrls(id);
-      expect(first.streamUrl, 'https://a.example/1080.m3u8');
-      // 没给画质名的候选退到主机名，仍能分辨是哪家 hoster。
-      expect(
-        c.streamVariants.map((RemoteVideoStreamVariant v) => v.label).toList(),
-        <String>['A · 1080p', 'b.example'],
-      );
-      expect(c.streamVariantIndex, 0);
-      c.streamVariantIndex = 1;
-      // 设下标只是钉住：要等播放页重新取流才切换（当前流的头也随之换）。
-      expect(c.httpHeaderFields, <String, String>{
-        'Referer': 'https://a.example/',
-      });
-      final RemoteVideoStreamUrls switched = await c.remoteVideoStreamUrls(id);
-      expect(switched.streamUrl, 'https://b.example/720.mp4');
-      expect(c.streamVariantIndex, 1);
-      expect(c.httpHeaderFields, <String, String>{
-        'Referer': 'https://b.example/',
-      });
-      // 换到另一集：菜单跟着变成那一集的候选，钉住的选择只对原来那集有效。
-      runtime.videos = <Object?>[
-        <Object?, Object?>{'url': 'https://c.example/ep2.mp4', 'quality': 'C'},
-      ];
-      final RemoteVideoStreamUrls second = await c.remoteVideoStreamUrls(
-        c.remoteVideos.last.id,
-      );
-      expect(second.streamUrl, 'https://c.example/ep2.mp4');
-      expect(
-        c.streamVariants.map((RemoteVideoStreamVariant v) => v.label).toList(),
-        <String>['C'],
-      );
-      expect(c.streamVariantIndex, 0);
-      // 越界下标不改变钉住的选择。回到第一集会重新问扩展（一次性地址不重放），
-      // 钉住的那条按菜单标签在新一批候选里重新认出来——哪怕它这次排在别的位置。
-      c.streamVariantIndex = 5;
-      runtime.videos = <Object?>[
-        <Object?, Object?>{
-          'url': 'https://b.example/720.mp4',
-          'quality': '',
-          'headers': <Object?, Object?>{'Referer': 'https://b.example/'},
-        },
-        <Object?, Object?>{
-          'url': 'https://a.example/1080.m3u8',
-          'quality': 'A · 1080p',
-          'headers': <Object?, Object?>{'Referer': 'https://a.example/'},
-        },
-      ];
-      final RemoteVideoStreamUrls back = await c.remoteVideoStreamUrls(id);
-      expect(back.streamUrl, 'https://b.example/720.mp4');
-    },
-  );
+  test('stream variants list the current episode and switching pins a line '
+      'whose headers follow', () async {
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://a.example/1080.m3u8',
+        'quality': 'A · 1080p',
+        'headers': <Object?, Object?>{'Referer': 'https://a.example/'},
+      },
+      <Object?, Object?>{
+        'url': 'https://b.example/720.mp4',
+        'quality': '',
+        'headers': <Object?, Object?>{'Referer': 'https://b.example/'},
+      },
+    ];
+    final AnimeSourceVideoClient c = client();
+    // 尚未取流：没有「当前集」，菜单为空、下标 -1、设下标是 no-op。
+    expect(c.streamVariants, isEmpty);
+    expect(c.streamVariantIndex, -1);
+    c.streamVariantIndex = 1;
+    final String id = c.remoteVideos.first.id;
+    final RemoteVideoStreamUrls first = await c.remoteVideoStreamUrls(id);
+    expect(first.streamUrl, 'https://a.example/1080.m3u8');
+    // 没给画质名的候选退到主机名，仍能分辨是哪家 hoster。
+    expect(
+      c.streamVariants.map((RemoteVideoStreamVariant v) => v.label).toList(),
+      <String>['A · 1080p', 'b.example'],
+    );
+    expect(c.streamVariantIndex, 0);
+    c.streamVariantIndex = 1;
+    // 设下标只是钉住：要等播放页重新取流才切换（当前流的头也随之换）。
+    expect(c.httpHeaderFields, <String, String>{
+      'Referer': 'https://a.example/',
+    });
+    final RemoteVideoStreamUrls switched = await c.remoteVideoStreamUrls(id);
+    expect(switched.streamUrl, 'https://b.example/720.mp4');
+    expect(c.streamVariantIndex, 1);
+    expect(c.httpHeaderFields, <String, String>{
+      'Referer': 'https://b.example/',
+    });
+    // 换到另一集：菜单跟着变成那一集的候选，钉住的选择只对原来那集有效。
+    runtime.videos = <Object?>[
+      <Object?, Object?>{'url': 'https://c.example/ep2.mp4', 'quality': 'C'},
+    ];
+    final RemoteVideoStreamUrls second = await c.remoteVideoStreamUrls(
+      c.remoteVideos.last.id,
+    );
+    expect(second.streamUrl, 'https://c.example/ep2.mp4');
+    expect(
+      c.streamVariants.map((RemoteVideoStreamVariant v) => v.label).toList(),
+      <String>['C'],
+    );
+    expect(c.streamVariantIndex, 0);
+    // 越界下标不改变钉住的选择。回到第一集会重新问扩展（一次性地址不重放），
+    // 钉住的那条按菜单标签在新一批候选里重新认出来——哪怕它这次排在别的位置。
+    c.streamVariantIndex = 5;
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://b.example/720.mp4',
+        'quality': '',
+        'headers': <Object?, Object?>{'Referer': 'https://b.example/'},
+      },
+      <Object?, Object?>{
+        'url': 'https://a.example/1080.m3u8',
+        'quality': 'A · 1080p',
+        'headers': <Object?, Object?>{'Referer': 'https://a.example/'},
+      },
+    ];
+    final RemoteVideoStreamUrls back = await c.remoteVideoStreamUrls(id);
+    expect(back.streamUrl, 'https://b.example/720.mp4');
+  });
 
   test(
     'switching lines reuses the menu, everything else re-resolves (BUG-2617)',
@@ -374,26 +369,26 @@ void main() {
 
   group('网站字幕轨（Video.subtitleTracks）全部可选', () {
     List<Object?> multiTrackVideos() => <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/ep.m3u8',
+        'quality': '1080p',
+        'subtitleTracks': <Object?>[
           <Object?, Object?>{
-            'url': 'https://cdn.example/ep.m3u8',
-            'quality': '1080p',
-            'subtitleTracks': <Object?>[
-              <Object?, Object?>{
-                'url': 'https://cdn.example/en.vtt',
-                'lang': 'English',
-              },
-              <Object?, Object?>{
-                'url': 'https://cdn.example/es.vtt',
-                'lang': 'Spanish - Latin America',
-              },
-              <Object?, Object?>{'url': '', 'lang': 'Broken'},
-              <Object?, Object?>{
-                'url': 'https://cdn.example/ja.ass',
-                'lang': 'Japanese',
-              },
-            ],
+            'url': 'https://cdn.example/en.vtt',
+            'lang': 'English',
           },
-        ];
+          <Object?, Object?>{
+            'url': 'https://cdn.example/es.vtt',
+            'lang': 'Spanish - Latin America',
+          },
+          <Object?, Object?>{'url': '', 'lang': 'Broken'},
+          <Object?, Object?>{
+            'url': 'https://cdn.example/ja.ass',
+            'lang': 'Japanese',
+          },
+        ],
+      },
+    ];
 
     test('每条有链接的轨都报给播放页的字幕轨菜单，并标成外挂文件', () async {
       runtime.videos = multiTrackVideos();
@@ -594,10 +589,8 @@ void main() {
       final _RecordingDownloader d = _RecordingDownloader();
       final AnimeSourceVideoClient c = downloadingClient(d);
       await expectLater(
-        () => c.downloadRemoteVideo(
-          'anime-source:nope',
-          File('${root.path}/x'),
-        ),
+        () =>
+            c.downloadRemoteVideo('anime-source:nope', File('${root.path}/x')),
         throwsArgumentError,
       );
       expect(runtime.videoListCalls, 0);
@@ -631,25 +624,31 @@ void main() {
     expect(mismatched.remoteVideos.first.id, endsWith(':42:/ep/1'));
   });
 
-  test('audioTracks are dub alternatives, never exposed as audioStreamUrl',
-      () async {
-    // Aniyomi 的 audioTracks 是替代配音轨；audioStreamUrl 契约是 audio-only 分离流，
-    // 塞进去播放页会 audio-add 并选中它——默认切到配音、制卡也从它裁。
-    runtime.videos = <Object?>[
-      <Object?, Object?>{
-        'url': 'https://cdn.example/1080.mp4',
-        'quality': '1080p',
-        'audioTracks': <Object?>[
-          <Object?, Object?>{'url': 'https://cdn.example/dub.aac', 'lang': 'en'},
-        ],
-      },
-    ];
-    final AnimeSourceVideoClient c = client();
-    final RemoteVideoStreamUrls urls =
-        await c.remoteVideoStreamUrls(c.remoteVideos.first.id);
-    expect(urls.streamUrl, 'https://cdn.example/1080.mp4');
-    expect(urls.audioStreamUrl, isNull);
-  });
+  test(
+    'audioTracks are dub alternatives, never exposed as audioStreamUrl',
+    () async {
+      // Aniyomi 的 audioTracks 是替代配音轨；audioStreamUrl 契约是 audio-only 分离流，
+      // 塞进去播放页会 audio-add 并选中它——默认切到配音、制卡也从它裁。
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/1080.mp4',
+          'quality': '1080p',
+          'audioTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://cdn.example/dub.aac',
+              'lang': 'en',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = client();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(
+        c.remoteVideos.first.id,
+      );
+      expect(urls.streamUrl, 'https://cdn.example/1080.mp4');
+      expect(urls.audioStreamUrl, isNull);
+    },
+  );
 
   test('playback order is by episode number then upload time', () {
     final List<MihonEpisode> sorted =

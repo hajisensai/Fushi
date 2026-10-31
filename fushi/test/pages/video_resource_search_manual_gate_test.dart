@@ -47,14 +47,14 @@ class _RecordingResourceProvider implements VideoResourceProvider {
 }
 
 Widget _surface(VideoResourceRegistry registry) => MaterialApp(
-      home: Scaffold(
-        body: VideoResourceSearchSurface(
-          registry: registry,
-          sources: const <MediaSourceRow>[],
-          onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
-        ),
-      ),
-    );
+  home: Scaffold(
+    body: VideoResourceSearchSurface(
+      registry: registry,
+      sources: const <MediaSourceRow>[],
+      onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+    ),
+  ),
+);
 
 Finder _searchButton() => find.widgetWithIcon(IconButton, Icons.search_rounded);
 
@@ -63,8 +63,9 @@ void main() {
 
   testWidgets('BUG-1539 只填标题时按钮禁用且给出可见原因，不静默吞点击', (WidgetTester tester) async {
     final _RecordingResourceProvider provider = _RecordingResourceProvider();
-    final VideoResourceRegistry registry =
-        VideoResourceRegistry(<VideoResourceProvider>[provider]);
+    final VideoResourceRegistry registry = VideoResourceRegistry(
+      <VideoResourceProvider>[provider],
+    );
     await tester.pumpWidget(_surface(registry));
 
     await tester.enterText(
@@ -73,7 +74,9 @@ void main() {
     );
     await tester.pump();
 
-    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(_searchButton()));
+    final IconButton button = tester.widget<IconButton>(
+      glassUnwrap<IconButton>(_searchButton()),
+    );
     expect(button.onPressed, isNull, reason: '缺外部 ID/年份时必须禁用');
     expect(
       button.tooltip,
@@ -91,11 +94,13 @@ void main() {
     expect(provider.requests, isEmpty);
   });
 
-  testWidgets('BUG-1539 填齐标题+外部 ID+年份后按钮可点并真正触发搜索',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1539 填齐标题+外部 ID+年份后按钮可点并真正触发搜索', (
+    WidgetTester tester,
+  ) async {
     final _RecordingResourceProvider provider = _RecordingResourceProvider();
-    final VideoResourceRegistry registry =
-        VideoResourceRegistry(<VideoResourceProvider>[provider]);
+    final VideoResourceRegistry registry = VideoResourceRegistry(
+      <VideoResourceProvider>[provider],
+    );
     await tester.pumpWidget(_surface(registry));
 
     await tester.enterText(
@@ -112,7 +117,9 @@ void main() {
     );
     await tester.pump();
 
-    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(_searchButton()));
+    final IconButton button = tester.widget<IconButton>(
+      glassUnwrap<IconButton>(_searchButton()),
+    );
     expect(button.onPressed, isNotNull);
     expect(button.tooltip, t.dialog_search);
     expect(
@@ -131,8 +138,7 @@ void main() {
     // 真触发搜索且把身份带进请求」，与具体是哪一家无关，跟着默认值走。
     expect(request.media?.providerId, 'anidb');
     expect(request.media?.anidbId, 21085);
-    expect(request.media?.anilistId, isNull,
-        reason: 'anidb 分支不该同时填 anilistId');
+    expect(request.media?.anilistId, isNull, reason: 'anidb 分支不该同时填 anilistId');
     expect(request.media?.year, 2016);
   });
 }

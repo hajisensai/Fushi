@@ -36,8 +36,11 @@ void main() {
   /// 的滚动函数当成命中。从签名起到下一个顶层 `static String` 声明之间。
   String continuousShellBody() {
     final int start = scripts.indexOf('static String continuousShellSource(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '找不到 continuousShellSource 定义');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '找不到 continuousShellSource 定义',
+    );
     final int next = scripts.indexOf('\n  static ', start + 1);
     final int end = next >= 0 ? next : scripts.length;
     return scripts.substring(start, end);
@@ -47,8 +50,11 @@ void main() {
   String scrollToTargetBody() {
     final String shell = continuousShellBody();
     final int fnIdx = shell.indexOf('scrollToTarget: function(target)');
-    expect(fnIdx, greaterThanOrEqualTo(0),
-        reason: '连续 shell 必须有 scrollToTarget（有声书 cue reveal 跟随滚动原语）');
+    expect(
+      fnIdx,
+      greaterThanOrEqualTo(0),
+      reason: '连续 shell 必须有 scrollToTarget（有声书 cue reveal 跟随滚动原语）',
+    );
     final int end = shell.indexOf('revealElement: function', fnIdx);
     return shell.substring(fnIdx, end >= 0 ? end : shell.length);
   }
@@ -65,32 +71,38 @@ void main() {
       expect(
         RegExp(r'--fushi-reader-eink-mode').hasMatch(body),
         isTrue,
-        reason: 'behavior 的瞬时分支必须由墨水屏模式 CSS 变量门控（用户显式 opt-in），'
+        reason:
+            'behavior 的瞬时分支必须由墨水屏模式 CSS 变量门控（用户显式 opt-in），'
             '不得无条件砍动画',
       );
       expect(
         RegExp(r"\?\s*'auto'\s*:\s*'smooth'").hasMatch(body),
         isTrue,
-        reason: 'behavior 三元的默认分支必须是 smooth（用户要求恢复平滑动画，'
+        reason:
+            'behavior 三元的默认分支必须是 smooth（用户要求恢复平滑动画，'
             'TODO-803 砍成 instant 已被驳回；eink 才允许 auto）',
       );
       // BUG-2466：三条 scrollBy 收敛成两条（竖排 rl / lr 只差位移算式），都必须经
       // followBehavior(位移, 视口)——一个视口之内回落到共享 behavior 变量（默认
       // smooth），超过一个视口才瞬时落地（跳，不是跟；smooth 补间会把途中所有页
       // arrive 进阅读账本）。
-      final int hits =
-          RegExp(r'behavior:\s*followBehavior\(').allMatches(body).length;
+      final int hits = RegExp(
+        r'behavior:\s*followBehavior\(',
+      ).allMatches(body).length;
       expect(
         hits,
         greaterThanOrEqualTo(2),
-        reason: 'scrollToTarget 竖排 / 横排的 scrollBy 都必须经 followBehavior（'
+        reason:
+            'scrollToTarget 竖排 / 横排的 scrollBy 都必须经 followBehavior（'
             '一个视口内回落到默认 smooth 的 behavior 变量）',
       );
       expect(
-        RegExp(r"Math\.abs\(delta\)\s*>\s*viewport\s*\?\s*'auto'\s*:\s*behavior")
-            .hasMatch(body),
+        RegExp(
+          r"Math\.abs\(delta\)\s*>\s*viewport\s*\?\s*'auto'\s*:\s*behavior",
+        ).hasMatch(body),
         isTrue,
-        reason: 'followBehavior 的阈值必须是「超过一个视口」且短距离回落到 behavior '
+        reason:
+            'followBehavior 的阈值必须是「超过一个视口」且短距离回落到 behavior '
             '变量（BUG-2466：只有跨页跳才瞬时，跟读动画保留）',
       );
     });
@@ -100,13 +112,15 @@ void main() {
       expect(
         RegExp(r"behavior:\s*'instant'").hasMatch(body),
         isFalse,
-        reason: '跟随滚动退化成 instant = 砍掉动画 = 回归 TODO-803 被驳回的修法；'
+        reason:
+            '跟随滚动退化成 instant = 砍掉动画 = 回归 TODO-803 被驳回的修法；'
             '闪烁必须靠 settle 窗治住，不靠砍动画',
       );
       expect(
         RegExp(r"behavior:\s*'auto'").hasMatch(body),
         isFalse,
-        reason: "写死 behavior:'auto' 同样是无条件砍动画；瞬时只能经 eink 门控的 "
+        reason:
+            "写死 behavior:'auto' 同样是无条件砍动画；瞬时只能经 eink 门控的 "
             'behavior 变量',
       );
     });
@@ -117,10 +131,14 @@ void main() {
     String onCueChangedBody() {
       final int start = audiobookPart.indexOf('void _onCueChanged() {');
       expect(start, greaterThanOrEqualTo(0), reason: '找不到 _onCueChanged 定义');
-      final int end =
-          audiobookPart.indexOf('Future<void> _handleCueCrossChapter(', start);
+      final int end = audiobookPart.indexOf(
+        'Future<void> _handleCueCrossChapter(',
+        start,
+      );
       return audiobookPart.substring(
-          start, end >= 0 ? end : audiobookPart.length);
+        start,
+        end >= 0 ? end : audiobookPart.length,
+      );
     }
 
     test('cue reveal 分支在发起跟随滚动前打 _reanchorClearedAt 武装 B-3 窗', () {
@@ -131,15 +149,22 @@ void main() {
       expect(
         armIdx,
         greaterThanOrEqualTo(0),
-        reason: 'TODO-825：cue 权威驱动视口跟随（reveal=true）的平滑滚动必须武装 '
+        reason:
+            'TODO-825：cue 权威驱动视口跟随（reveal=true）的平滑滚动必须武装 '
             '_reanchorClearedAt，否则动画落定尾沿 scroll 触发 _refreshProgress 重绘 / '
             'TODO-798 二次复位 = 闪屏（撤此打点即闪屏回归）',
       );
       final int highlightIdx = body.indexOf('AudiobookBridge.highlight(\n');
-      expect(highlightIdx, greaterThanOrEqualTo(0),
-          reason: '_onCueChanged 末尾必须经 AudiobookBridge.highlight 发起 cue 跟随滚动');
-      expect(armIdx, lessThan(highlightIdx),
-          reason: 'settle 窗必须在发起平滑跟随滚动之前武装，才能覆盖落定尾沿');
+      expect(
+        highlightIdx,
+        greaterThanOrEqualTo(0),
+        reason: '_onCueChanged 末尾必须经 AudiobookBridge.highlight 发起 cue 跟随滚动',
+      );
+      expect(
+        armIdx,
+        lessThan(highlightIdx),
+        reason: 'settle 窗必须在发起平滑跟随滚动之前武装，才能覆盖落定尾沿',
+      );
     });
   });
 }

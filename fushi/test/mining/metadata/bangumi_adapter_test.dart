@@ -14,9 +14,9 @@ import 'package:http/testing.dart';
 
 /// 测试用限流器：容量大、回充快，不让限流拖慢单测。
 GalgameRateLimiter _fastLimiter() => GalgameRateLimiter(
-      capacity: 1000,
-      refillInterval: const Duration(microseconds: 1),
-    );
+  capacity: 1000,
+  refillInterval: const Duration(microseconds: 1),
+);
 
 BangumiMetadataAdapter _adapter(MockClient client, {String? token}) =>
     BangumiMetadataAdapter(
@@ -87,17 +87,18 @@ const Map<String, Object?> _searchFixture = <String, Object?>{
 };
 
 http.Response _json(Object? body, {int status = 200}) => http.Response(
-      jsonEncode(body),
-      status,
-      headers: const <String, String>{
-        'content-type': 'application/json; charset=utf-8',
-      },
-    );
+  jsonEncode(body),
+  status,
+  headers: const <String, String>{
+    'content-type': 'application/json; charset=utf-8',
+  },
+);
 
 void main() {
   group('validateId / externalUrl', () {
-    final BangumiMetadataAdapter adapter =
-        _adapter(MockClient((http.Request _) async => _json(null)));
+    final BangumiMetadataAdapter adapter = _adapter(
+      MockClient((http.Request _) async => _json(null)),
+    );
 
     test('source 是 bgm', () {
       expect(adapter.source, GalgameMetadataSource.bgm);
@@ -132,10 +133,12 @@ void main() {
       expect(draft!.name, 'Fate/stay night');
       expect(draft.nameCn, '命运之夜');
       expect(draft.aliases, <String>['フェイト/ステイナイト', 'FSN']);
-      expect(
-        draft.allTitles,
-        <String>['Fate/stay night', '命运之夜', 'フェイト/ステイナイト', 'FSN'],
-      );
+      expect(draft.allTitles, <String>[
+        'Fate/stay night',
+        '命运之夜',
+        'フェイト/ステイナイト',
+        'FSN',
+      ]);
       expect(draft.summary, '「私は、正義の味方になりたかった。」');
       expect(draft.developer, 'TYPE-MOON');
       expect(draft.releaseDate, '2004-01-30');
@@ -167,10 +170,10 @@ void main() {
 
     test('404 → null（条目不存在不是异常）', () async {
       final BangumiMetadataAdapter adapter = _adapter(
-        MockClient((http.Request _) async => _json(
-              <String, Object?>{'title': 'Not Found'},
-              status: 404,
-            )),
+        MockClient(
+          (http.Request _) async =>
+              _json(<String, Object?>{'title': 'Not Found'}, status: 404),
+        ),
       );
       expect(await adapter.fetchById('99999999'), isNull);
     });
@@ -183,10 +186,16 @@ void main() {
         adapter.fetchById('8'),
         throwsA(
           isA<GalgameMetadataException>()
-              .having((GalgameMetadataException e) => e.statusCode,
-                  'statusCode', 500)
-              .having((GalgameMetadataException e) => e.source, 'source',
-                  GalgameMetadataSource.bgm),
+              .having(
+                (GalgameMetadataException e) => e.statusCode,
+                'statusCode',
+                500,
+              )
+              .having(
+                (GalgameMetadataException e) => e.source,
+                'source',
+                GalgameMetadataSource.bgm,
+              ),
         ),
       );
     });
@@ -261,16 +270,17 @@ void main() {
         }),
       );
 
-      final List<SourceCandidate> candidates =
-          await adapter.searchByName('fate', limit: 10);
+      final List<SourceCandidate> candidates = await adapter.searchByName(
+        'fate',
+        limit: 10,
+      );
 
       final Map<String, Object?> sent =
           jsonDecode(body) as Map<String, Object?>;
       expect(sent['keyword'], 'fate');
-      expect(
-        (sent['filter']! as Map<String, Object?>)['type'],
-        <int>[kBangumiSubjectTypeGame],
-      );
+      expect((sent['filter']! as Map<String, Object?>)['type'], <int>[
+        kBangumiSubjectTypeGame,
+      ]);
       expect(url.path, endsWith('/search/subjects'));
       expect(url.queryParameters['limit'], '10');
 
@@ -280,7 +290,9 @@ void main() {
       expect(candidates.first.nameCn, '命运之夜');
       expect(candidates.first.displayName, '命运之夜');
       expect(
-          candidates.first.coverUrl, 'https://lain.bgm.tv/pic/cover/l/fsn.jpg');
+        candidates.first.coverUrl,
+        'https://lain.bgm.tv/pic/cover/l/fsn.jpg',
+      );
       expect(candidates.first.releaseDate, '2004-01-30');
       expect(candidates.first.summary, '简介一');
       // 第二条：空 name_cn 降级为 null，退化的 `image` 字符串也认，半截日期不落。
@@ -300,20 +312,26 @@ void main() {
 
     test('空结果 / 无 data 字段 / 404 → 空表（搜不到不是异常）', () async {
       final BangumiMetadataAdapter empty = _adapter(
-        MockClient((http.Request _) async =>
-            _json(<String, Object?>{'total': 0, 'data': <Object?>[]})),
+        MockClient(
+          (http.Request _) async =>
+              _json(<String, Object?>{'total': 0, 'data': <Object?>[]}),
+        ),
       );
       expect(await empty.searchByName('无此游戏'), isEmpty);
 
       final BangumiMetadataAdapter noData = _adapter(
-        MockClient((http.Request _) async =>
-            _json(<String, Object?>{'title': 'Bad Request'})),
+        MockClient(
+          (http.Request _) async =>
+              _json(<String, Object?>{'title': 'Bad Request'}),
+        ),
       );
       expect(await noData.searchByName('无此游戏'), isEmpty);
 
       final BangumiMetadataAdapter notFound = _adapter(
-        MockClient((http.Request _) async =>
-            _json(<String, Object?>{'title': 'Not Found'}, status: 404)),
+        MockClient(
+          (http.Request _) async =>
+              _json(<String, Object?>{'title': 'Not Found'}, status: 404),
+        ),
       );
       expect(await notFound.searchByName('无此游戏'), isEmpty);
     });
@@ -370,7 +388,7 @@ void main() {
           'infobox': <Object?>[
             42,
             null,
-            <String, Object?>{'value': 'x'}
+            <String, Object?>{'value': 'x'},
           ],
         }).developer,
         isNull,

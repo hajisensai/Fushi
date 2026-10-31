@@ -34,13 +34,12 @@ void main() {
     });
 
     test('同 hostId 归一组，按首次出现排组', () {
-      final List<List<FushiClientUrl>> groups = groupInterconnectPeers(
-        <FushiClientUrl>[
-          url('http://a1:1', host: 'A'),
-          url('http://b:1'),
-          url('http://a2:1', host: 'A'),
-        ],
-      );
+      final List<List<FushiClientUrl>> groups =
+          groupInterconnectPeers(<FushiClientUrl>[
+            url('http://a1:1', host: 'A'),
+            url('http://b:1'),
+            url('http://a2:1', host: 'A'),
+          ]);
       expect(groups, hasLength(2));
       expect(groups[0].map((FushiClientUrl u) => u.url), <String>[
         'http://a1:1',
@@ -579,16 +578,12 @@ void main() {
       expect(changed, isTrue);
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
       final int port = server.port;
-      expect(
-        urls.map((FushiClientUrl u) => u.url),
-        <String>[
-          'https://192.168.77.5:$port',
-          'https://[2408:8207::5]:$port',
-          anchor,
-          'https://home.example',
-        ],
-        reason: 'http://plain.example 与 docker 网桥都不公布',
-      );
+      expect(urls.map((FushiClientUrl u) => u.url), <String>[
+        'https://192.168.77.5:$port',
+        'https://[2408:8207::5]:$port',
+        anchor,
+        'https://home.example',
+      ], reason: 'http://plain.example 与 docker 网桥都不公布');
       expect(urls.every((FushiClientUrl u) => u.hostId == 'HOST-1'), isTrue);
       expect(
         urls

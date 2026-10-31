@@ -18,12 +18,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// 它」的平台分流在 app 侧（`ffmpeg_kit_backend.dart` + `engine_bindings.dart` 的
 /// `ffmpegPlatformBackendProvider` 装配）。守卫按两半各钉各的。
 void main() {
-  final String src =
-      File('../packages/fushi_engine/lib/media/video/ffmpeg_backend.dart').readAsStringSync();
-  final String kit =
-      File('lib/src/media/video/ffmpeg_kit_backend.dart').readAsStringSync();
-  final String bindings =
-      File('lib/src/engine_bindings.dart').readAsStringSync();
+  final String src = File(
+    '../packages/fushi_engine/lib/media/video/ffmpeg_backend.dart',
+  ).readAsStringSync();
+  final String kit = File(
+    'lib/src/media/video/ffmpeg_kit_backend.dart',
+  ).readAsStringSync();
+  final String bindings = File(
+    'lib/src/engine_bindings.dart',
+  ).readAsStringSync();
 
   test('不再依赖崩溃的预编译 ffmpeg_kit_flutter_new_min', () {
     expect(src.contains('ffmpeg_kit_flutter_new'), isFalse);
@@ -33,12 +36,17 @@ void main() {
 
   test('用自编 ffmpeg-kit：KitFfmpegBackend + ffmpeg_kit_flutter API（app 侧）', () {
     expect(
-        kit, contains('import \'package:ffmpeg_kit_next_flutter/ffmpeg_kit.dart\''));
+      kit,
+      contains('import \'package:ffmpeg_kit_next_flutter/ffmpeg_kit.dart\''),
+    );
     expect(kit, contains('class KitFfmpegBackend implements FfmpegBackend'));
     expect(kit, contains('FFmpegKit.executeWithArguments'));
     // 引擎不得反向碰插件（纯度守卫另钉，这里顺手钉住后端文件本身）。
-    expect(src.contains('ffmpeg_kit_flutter'), isFalse,
-        reason: '引擎 ffmpeg_backend.dart 不得 import ffmpeg_kit 插件');
+    expect(
+      src.contains('ffmpeg_kit_flutter'),
+      isFalse,
+      reason: '引擎 ffmpeg_backend.dart 不得 import ffmpeg_kit 插件',
+    );
   });
 
   test('顶层进程 runner 共用唯一一处 drain/超时（ffmpeg + 查询 + ffprobe）', () {
@@ -61,29 +69,46 @@ void main() {
     ).firstMatch(src);
     expect(body, isNotNull, reason: '应有 _selectBackend 平台分流');
     final String b = body!.group(1)!;
-    expect(b.contains('ffmpegPlatformBackendProvider'), isTrue,
-        reason: '引擎选择器必须问平台装配点，移动端的自编后端从那里进来');
+    expect(
+      b.contains('ffmpegPlatformBackendProvider'),
+      isTrue,
+      reason: '引擎选择器必须问平台装配点，移动端的自编后端从那里进来',
+    );
     // app 装配：移动端分流到自编后端，桌面不装（退回 CLI）；且真的把它装进装配点。
     final RegExpMatch? platform = RegExp(
       r'FfmpegBackend _platformFfmpegBackend\(\) \{(.*?)\n\}',
       dotAll: true,
     ).firstMatch(bindings);
-    expect(platform, isNotNull, reason: 'engine_bindings 应有 _platformFfmpegBackend');
+    expect(
+      platform,
+      isNotNull,
+      reason: 'engine_bindings 应有 _platformFfmpegBackend',
+    );
     final String pb = platform!.group(1)!;
-    expect(pb.contains('Platform.isAndroid || Platform.isIOS'), isTrue,
-        reason: '移动端必须分流到自编后端');
+    expect(
+      pb.contains('Platform.isAndroid || Platform.isIOS'),
+      isTrue,
+      reason: '移动端必须分流到自编后端',
+    );
     expect(pb.contains('KitFfmpegBackend()'), isTrue);
     expect(
-        bindings.contains('ffmpegPlatformBackendProvider = _platformFfmpegBackend;'),
-        isTrue,
-        reason: '分流函数必须真的装进引擎的 ffmpegPlatformBackendProvider');
+      bindings.contains(
+        'ffmpegPlatformBackendProvider = _platformFfmpegBackend;',
+      ),
+      isTrue,
+      reason: '分流函数必须真的装进引擎的 ffmpegPlatformBackendProvider',
+    );
     // BUG-1664：显式 ffmpeg 覆盖必须仍能把移动端拽回 CLI 后端。断言改钉**单一入口**
     // `ffmpegEnvOverride()`（原先钉的是 `FUSHI_FFMPEG` 字面量，那个字面量现在只存在于
     // 该入口内部）——语义不变，且下面额外钉住这个入口本身认新旧两个名字，比原来更严。
-    expect(b.contains('ffmpegExplicitOverride()'), isTrue,
-        reason: '_selectBackend 必须经 ffmpegExplicitOverride()（宿主装配 > 环境变量）'
-            '判显式覆盖：只问 ffmpegEnvOverride() 会让无头服务端配置文件里的 '
-            'ffmpeg: 路径对后端选择失效');
+    expect(
+      b.contains('ffmpegExplicitOverride()'),
+      isTrue,
+      reason:
+          '_selectBackend 必须经 ffmpegExplicitOverride()（宿主装配 > 环境变量）'
+          '判显式覆盖：只问 ffmpegEnvOverride() 会让无头服务端配置文件里的 '
+          'ffmpeg: 路径对后端选择失效',
+    );
     expect(b.contains('CliFfmpegBackend()'), isTrue);
   });
 
@@ -103,21 +128,30 @@ void main() {
   });
 
   test('vendored 包用本地自编 AAR（不拉 maven 预编译）', () {
-    final File gradle =
-        File('../third_party/ffmpeg_kit_next_flutter/android/build.gradle');
-    expect(gradle.existsSync(), isTrue,
-        reason: 'vendored ffmpeg_kit_next_flutter 应存在');
+    final File gradle = File(
+      '../third_party/ffmpeg_kit_next_flutter/android/build.gradle',
+    );
+    expect(
+      gradle.existsSync(),
+      isTrue,
+      reason: 'vendored ffmpeg_kit_next_flutter 应存在',
+    );
     final String g = gradle.readAsStringSync();
     expect(
-        g.contains('implementation(name: \'ffmpeg-kit-next\', ext: \'aar\')'),
-        isTrue);
+      g.contains('implementation(name: \'ffmpeg-kit-next\', ext: \'aar\')'),
+      isTrue,
+    );
     // 任何 com.arthenica:ffmpeg-kit* maven 坐标都是上游预编译（不含 Fushi 补丁、
     // 与播放器不是同一份 FFmpeg）。
-    expect(g.contains('com.arthenica:ffmpeg-kit'), isFalse,
-        reason: '不再拉 maven 预编译');
     expect(
-      File('../third_party/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar')
-          .existsSync(),
+      g.contains('com.arthenica:ffmpeg-kit'),
+      isFalse,
+      reason: '不再拉 maven 预编译',
+    );
+    expect(
+      File(
+        '../third_party/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar',
+      ).existsSync(),
       isTrue,
       reason: '自编 AAR 应 vendored',
     );

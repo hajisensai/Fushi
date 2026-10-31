@@ -60,8 +60,12 @@ void main() {
       ]) {
         expect(
           afterRequest,
-          matches(RegExp('(${pair[0]}\\s*!=\\s*${pair[1]}'
-              '|${pair[1]}\\s*!=\\s*${pair[0]})')),
+          matches(
+            RegExp(
+              '(${pair[0]}\\s*!=\\s*${pair[1]}'
+              '|${pair[1]}\\s*!=\\s*${pair[0]})',
+            ),
+          ),
           reason: '必须比较 ${pair[0]} 与 ${pair[1]}（导航/换章后的快照要丢掉）',
         );
       }

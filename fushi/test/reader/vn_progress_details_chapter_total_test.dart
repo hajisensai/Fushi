@@ -39,7 +39,8 @@ void main() {
     expect(
       result.exitCode,
       0,
-      reason: 'VN progress-details runner failed:\n'
+      reason:
+          'VN progress-details runner failed:\n'
           'stdout=${result.stdout}\nstderr=${result.stderr}',
     );
     expect(result.stdout.toString().trim(), 'OK');

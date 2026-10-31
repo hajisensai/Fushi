@@ -56,11 +56,8 @@ class AiKeyHealth {
       other.reason == reason;
 
   @override
-  int get hashCode => Object.hash(
-    cooldownUntil.microsecondsSinceEpoch,
-    failures,
-    reason,
-  );
+  int get hashCode =>
+      Object.hash(cooldownUntil.microsecondsSinceEpoch, failures, reason);
 
   Map<String, Object?> toJson() => <String, Object?>{
     'until': cooldownUntil.toUtc().millisecondsSinceEpoch,

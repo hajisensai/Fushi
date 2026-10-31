@@ -133,7 +133,11 @@ class ReaderCaretScripts {
     if (x == null || y == null || w == null || h == null) return null;
     if (w <= 0 || h <= 0) return null;
     return Rect.fromLTWH(
-        x.toDouble(), y.toDouble(), w.toDouble(), h.toDouble());
+      x.toDouble(),
+      y.toDouble(),
+      w.toDouble(),
+      h.toDouble(),
+    );
   }
 
   static Map<String, dynamic>? _decode(Object? raw) {

@@ -70,8 +70,9 @@ void main() {
         reason: 'the user table must NOT have been dropped',
       );
 
-      final dataRows =
-          db.select('SELECT id, payload FROM precious_user_data ORDER BY id');
+      final dataRows = db.select(
+        'SELECT id, payload FROM precious_user_data ORDER BY id',
+      );
       expect(dataRows.length, 3, reason: 'all user rows must survive');
       expect(dataRows[0]['payload'], 'novel-progress');
       expect(dataRows[1]['payload'], 'anki-cards');
@@ -81,72 +82,81 @@ void main() {
     }
   }
 
-  test('opening a newer-version DB throws FushiDatabaseDowngradeException',
-      () async {
-    seedFutureVersionDb();
+  test(
+    'opening a newer-version DB throws FushiDatabaseDowngradeException',
+    () async {
+      seedFutureVersionDb();
 
-    final FushiDatabase database =
-        FushiDatabase.forTesting(NativeDatabase(File(dbPath)));
-    addTearDown(() async {
+      final FushiDatabase database = FushiDatabase.forTesting(
+        NativeDatabase(File(dbPath)),
+      );
+      addTearDown(() async {
+        try {
+          await database.close();
+        } catch (_) {
+          // The connection failed to open; close may also throw. Ignore.
+        }
+      });
+
+      // drift opens lazily; the refusal surfaces on the first query.
+      await expectLater(
+        database.getAllEpubBooks(),
+        throwsA(isA<FushiDatabaseDowngradeException>()),
+      );
+    },
+  );
+
+  test(
+    'a refused downgrade leaves the DB file tables and rows intact',
+    () async {
+      seedFutureVersionDb();
+
+      final FushiDatabase database = FushiDatabase.forTesting(
+        NativeDatabase(File(dbPath)),
+      );
+      addTearDown(() async {
+        try {
+          await database.close();
+        } catch (_) {}
+      });
+
+      // Trigger the (refused) open.
+      await expectLater(
+        database.getAllEpubBooks(),
+        throwsA(isA<FushiDatabaseDowngradeException>()),
+      );
+      // Release the file handle before reopening read-only.
       try {
         await database.close();
-      } catch (_) {
-        // The connection failed to open; close may also throw. Ignore.
+      } catch (_) {}
+
+      // The whole point: no DROP / migrate / rebuild touched the file.
+      expectSeedDataIntact();
+    },
+  );
+
+  test(
+    'the exception reports both the DB version and the code version',
+    () async {
+      seedFutureVersionDb();
+
+      final FushiDatabase database = FushiDatabase.forTesting(
+        NativeDatabase(File(dbPath)),
+      );
+      addTearDown(() async {
+        try {
+          await database.close();
+        } catch (_) {}
+      });
+
+      try {
+        await database.getAllEpubBooks();
+        fail('expected FushiDatabaseDowngradeException');
+      } on FushiDatabaseDowngradeException catch (e) {
+        expect(e.dbVersion, 999);
+        expect(e.appSchemaVersion, database.schemaVersion);
+        expect(e.appSchemaVersion, lessThan(e.dbVersion));
       }
-    });
-
-    // drift opens lazily; the refusal surfaces on the first query.
-    await expectLater(
-      database.getAllEpubBooks(),
-      throwsA(isA<FushiDatabaseDowngradeException>()),
-    );
-  });
-
-  test('a refused downgrade leaves the DB file tables and rows intact',
-      () async {
-    seedFutureVersionDb();
-
-    final FushiDatabase database =
-        FushiDatabase.forTesting(NativeDatabase(File(dbPath)));
-    addTearDown(() async {
-      try {
-        await database.close();
-      } catch (_) {}
-    });
-
-    // Trigger the (refused) open.
-    await expectLater(
-      database.getAllEpubBooks(),
-      throwsA(isA<FushiDatabaseDowngradeException>()),
-    );
-    // Release the file handle before reopening read-only.
-    try {
-      await database.close();
-    } catch (_) {}
-
-    // The whole point: no DROP / migrate / rebuild touched the file.
-    expectSeedDataIntact();
-  });
-
-  test('the exception reports both the DB version and the code version',
-      () async {
-    seedFutureVersionDb();
-
-    final FushiDatabase database =
-        FushiDatabase.forTesting(NativeDatabase(File(dbPath)));
-    addTearDown(() async {
-      try {
-        await database.close();
-      } catch (_) {}
-    });
-
-    try {
-      await database.getAllEpubBooks();
-      fail('expected FushiDatabaseDowngradeException');
-    } on FushiDatabaseDowngradeException catch (e) {
-      expect(e.dbVersion, 999);
-      expect(e.appSchemaVersion, database.schemaVersion);
-      expect(e.appSchemaVersion, lessThan(e.dbVersion));
-    }
-  });
+    },
+  );
 }

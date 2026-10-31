@@ -25,14 +25,18 @@ import '../helpers/source_guard.dart';
 void main() {
   test('VN shim 行为级：搜索坐标换算 / 搜索高亮 / cue await ready / restore 兜底', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
-    final Directory temp =
-        Directory.systemTemp.createTempSync('fushi-pr912-vn-js-');
+    final Directory temp = Directory.systemTemp.createTempSync(
+      'fushi-pr912-vn-js-',
+    );
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
     // 跑手与本文件同名同目录（范式同 test/anki/exported_glossary_anchor_deeplink_test）。
     final File runner = File('test/reader/pr912_vn_shim_behavior_test.js');
-    expect(runner.existsSync(), isTrue,
-        reason: 'behavior harness ${runner.path} must exist');
+    expect(
+      runner.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${runner.path} must exist',
+    );
     late final ProcessResult result;
     try {
       result = Process.runSync(
@@ -47,7 +51,8 @@ void main() {
     expect(
       result.exitCode,
       0,
-      reason: 'VN shim behavior runner failed:\n'
+      reason:
+          'VN shim behavior runner failed:\n'
           'stdout=${result.stdout}\nstderr=${result.stderr}',
     );
     expect(result.stdout.toString().trim(), 'OK');
@@ -56,8 +61,9 @@ void main() {
   test('两段式屏查找只剩共享 helper 一份（restoreToCharOffset 不再内联重写）', () {
     // 生成物是 JS，先用共享的词法掩码把注释换成等长空白：注释里出现同一串字面量
     // 不算数（也不会把这条守卫在「实现完全正确」时误判成红）。
-    final String shell =
-        maskJsComments(ReaderVisualNovelScripts.vnShellScript());
+    final String shell = maskJsComments(
+      ReaderVisualNovelScripts.vnShellScript(),
+    );
     // 这是那套「章内字符偏移 → 屏」两段式查找第一段的形状（形参名 target 把它与
     // 有声书 cue 那条同形但不同语义的查找 `…(this.screens[i], start)` 分开）。
     // 它曾同时活在 screenIndexForCharOffset 与 restoreToCharOffset 里，且已经分叉

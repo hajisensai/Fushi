@@ -34,10 +34,18 @@ int? ftpMdtmReplyToMs(String message) {
   final int minute = int.parse(d.substring(10, 12));
   final int second = int.parse(d.substring(12, 14));
   final String frac = m.group(2) ?? '';
-  final int millis =
-      frac.isEmpty ? 0 : int.parse(frac.padRight(3, '0').substring(0, 3));
-  final DateTime t =
-      DateTime.utc(year, month, day, hour, minute, second, millis);
+  final int millis = frac.isEmpty
+      ? 0
+      : int.parse(frac.padRight(3, '0').substring(0, 3));
+  final DateTime t = DateTime.utc(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    millis,
+  );
   // DateTime.utc 会把越界字段进位（13 月 → 次年 1 月），进位了说明原串非法。
   if (t.year != year ||
       t.month != month ||
@@ -132,9 +140,12 @@ class FtpSyncBackend extends SyncBackend
   /// creds through but [_connect] hard-rejected them (BUG-1016).
   @visibleForTesting
   static ({String user, String pass}) ftpLoginCredentials(
-      String? username, String? password) {
-    final String user =
-        (username == null || username.isEmpty) ? 'anonymous' : username;
+    String? username,
+    String? password,
+  ) {
+    final String user = (username == null || username.isEmpty)
+        ? 'anonymous'
+        : username;
     return (user: user, pass: password ?? '');
   }
 
@@ -207,50 +218,52 @@ class FtpSyncBackend extends SyncBackend
 
   @override
   Future<String> findOrCreateRootFolder() => _opLock.withLock(() async {
-        if (rootFolderIdCache != null) return rootFolderIdCache!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
-        await _ensureConnected();
-        try {
-          // Fushi 改名迁移三段（找新根 → 旧根 RNFR/RNTO 改名 → 新建）。稳态
-          // 仍是一次 checkFolderExistence，与旧实现同价；旧根探测仅在新根缺席
-          // 时发生。结果经 rootFolderIdCache 记忆化。
-          final String? existing = await migrateLegacySyncRoot<String>(
-            find: (String name) async {
-              final String candidate = ftpRootPath(_homeDir, name);
-              return await _client!.checkFolderExistence(candidate)
-                  ? candidate
-                  : null;
-            },
-            renameLegacy: (String legacyPath) async {
-              // RNFR/RNTO 对目录整树改名。库只回 bool，false 必须抛出——迁移
-              // 失败要留痕并降级为新建新根，不能静默当成功。
-              final bool renamed = await _client!.rename(legacyPath, _rootPath);
-              if (!renamed) {
-                throw SyncBackendError(
-                    'FTP rename failed: $legacyPath -> $_rootPath');
-              }
-              return _rootPath;
-            },
-            onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
-                .log('FtpSyncBackend.migrateLegacyRoot', e, st),
-          );
-          if (existing == null) {
-            final created = await _client!.makeDirectory(_rootPath);
-            if (!created) {
-              throw SyncBackendError(
-                  'Failed to create root folder: $_rootPath');
-            }
+    await _ensureConnected();
+    try {
+      // Fushi 改名迁移三段（找新根 → 旧根 RNFR/RNTO 改名 → 新建）。稳态
+      // 仍是一次 checkFolderExistence，与旧实现同价；旧根探测仅在新根缺席
+      // 时发生。结果经 rootFolderIdCache 记忆化。
+      final String? existing = await migrateLegacySyncRoot<String>(
+        find: (String name) async {
+          final String candidate = ftpRootPath(_homeDir, name);
+          return await _client!.checkFolderExistence(candidate)
+              ? candidate
+              : null;
+        },
+        renameLegacy: (String legacyPath) async {
+          // RNFR/RNTO 对目录整树改名。库只回 bool，false 必须抛出——迁移
+          // 失败要留痕并降级为新建新根，不能静默当成功。
+          final bool renamed = await _client!.rename(legacyPath, _rootPath);
+          if (!renamed) {
+            throw SyncBackendError(
+              'FTP rename failed: $legacyPath -> $_rootPath',
+            );
           }
-          await _client!.changeDirectory(_homeDir);
-          rootFolderIdCache = _rootPath;
           return _rootPath;
-        } catch (e) {
-          if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          _resetConnection();
-          throw SyncBackendError('Failed to find/create root folder: $e',
-              isRetryable: true);
+        },
+        onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
+            .log('FtpSyncBackend.migrateLegacyRoot', e, st),
+      );
+      if (existing == null) {
+        final created = await _client!.makeDirectory(_rootPath);
+        if (!created) {
+          throw SyncBackendError('Failed to create root folder: $_rootPath');
         }
-      });
+      }
+      await _client!.changeDirectory(_homeDir);
+      rootFolderIdCache = _rootPath;
+      return _rootPath;
+    } catch (e) {
+      if (e is SyncBackendError || e is SyncAuthError) rethrow;
+      _resetConnection();
+      throw SyncBackendError(
+        'Failed to find/create root folder: $e',
+        isRetryable: true,
+      );
+    }
+  });
 
   @override
   Future<List<SyncFileRef>> listBooks(String rootFolderId) =>
@@ -261,10 +274,9 @@ class FtpSyncBackend extends SyncBackend
           final entries = await _client!.listDirectoryContent();
           return entries
               .where((e) => e.type == FTPEntryType.dir)
-              .map((e) => SyncFileRef(
-                    id: '$rootFolderId/${e.name}',
-                    name: e.name,
-                  ))
+              .map(
+                (e) => SyncFileRef(id: '$rootFolderId/${e.name}', name: e.name),
+              )
               .toList();
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
@@ -278,58 +290,58 @@ class FtpSyncBackend extends SyncBackend
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _opLock.withLock(() async {
-        final sanitized = requireBookFolderName(bookTitle);
+  }) => _opLock.withLock(() async {
+    final sanitized = requireBookFolderName(bookTitle);
 
-        if (folderIdCache.containsKey(sanitized)) {
-          return folderIdCache[sanitized]!;
+    if (folderIdCache.containsKey(sanitized)) {
+      return folderIdCache[sanitized]!;
+    }
+
+    final folderPath = '$rootFolderId/$sanitized';
+    await _ensureConnected();
+    try {
+      final exists = await _client!.checkFolderExistence(folderPath);
+      if (!exists) {
+        await _client!.changeDirectory(rootFolderId);
+        final created = await _client!.makeDirectory(sanitized);
+        if (!created) {
+          throw SyncBackendError('Failed to create book folder: $folderPath');
         }
+      }
+      await _client!.changeDirectory(_homeDir);
+      folderIdCache[sanitized] = folderPath;
 
-        final folderPath = '$rootFolderId/$sanitized';
-        await _ensureConnected();
+      final Uint8List? coverData = await readCoverData?.call();
+      if (coverData != null) {
         try {
-          final exists = await _client!.checkFolderExistence(folderPath);
-          if (!exists) {
-            await _client!.changeDirectory(rootFolderId);
-            final created = await _client!.makeDirectory(sanitized);
-            if (!created) {
-              throw SyncBackendError(
-                  'Failed to create book folder: $folderPath');
+          final format = detectCoverFormat(coverData);
+          final coverName = 'cover_1_6.${format.extension}';
+          await _client!.changeDirectory(folderPath);
+          final coverExists = await _client!.existFile(coverName);
+          if (!coverExists) {
+            final tmpFile = await _writeTempFile(coverData, 'cover');
+            try {
+              await _client!.uploadFile(tmpFile, sRemoteName: coverName);
+            } finally {
+              await _deleteTempFile(tmpFile);
             }
           }
           await _client!.changeDirectory(_homeDir);
-          folderIdCache[sanitized] = folderPath;
-
-          final Uint8List? coverData = await readCoverData?.call();
-          if (coverData != null) {
-            try {
-              final format = detectCoverFormat(coverData);
-              final coverName = 'cover_1_6.${format.extension}';
-              await _client!.changeDirectory(folderPath);
-              final coverExists = await _client!.existFile(coverName);
-              if (!coverExists) {
-                final tmpFile = await _writeTempFile(coverData, 'cover');
-                try {
-                  await _client!.uploadFile(tmpFile, sRemoteName: coverName);
-                } finally {
-                  await _deleteTempFile(tmpFile);
-                }
-              }
-              await _client!.changeDirectory(_homeDir);
-            } catch (_) {
-              // Cover upload is best-effort.
-            }
-          }
-
-          return folderPath;
-        } catch (e) {
-          if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          _resetConnection();
-          throw SyncBackendError('Failed to ensure book folder: $e',
-              isRetryable: true);
+        } catch (_) {
+          // Cover upload is best-effort.
         }
-      });
+      }
+
+      return folderPath;
+    } catch (e) {
+      if (e is SyncBackendError || e is SyncAuthError) rethrow;
+      _resetConnection();
+      throw SyncBackendError(
+        'Failed to ensure book folder: $e',
+        isRetryable: true,
+      );
+    }
+  });
 
   // ── Metadata sync ─────────────────────────────────────────────────
 
@@ -353,8 +365,10 @@ class FtpSyncBackend extends SyncBackend
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();
-          throw SyncBackendError('Failed to list sync files: $e',
-              isRetryable: true);
+          throw SyncBackendError(
+            'Failed to list sync files: $e',
+            isRetryable: true,
+          );
         }
       });
 
@@ -368,46 +382,50 @@ class FtpSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) =>
-      _opLock.withLock(() async {
-        await _ensureConnected();
-        final fileName =
-            progressFileName(progress.lastBookmarkModified, progress.progress);
-        await _uploadJsonImpl(folderId, fileName, progress.toJson());
-        // Upload-then-delete: keep the old file until the new one is uploaded
-        // so a failed upload never loses the only copy (HBK-AUDIT-048).
-        if (fileId != null) await _deleteRemoteFileImpl(fileId);
-      });
+  }) => _opLock.withLock(() async {
+    await _ensureConnected();
+    final fileName = progressFileName(
+      progress.lastBookmarkModified,
+      progress.progress,
+    );
+    await _uploadJsonImpl(folderId, fileName, progress.toJson());
+    // Upload-then-delete: keep the old file until the new one is uploaded
+    // so a failed upload never loses the only copy (HBK-AUDIT-048).
+    if (fileId != null) await _deleteRemoteFileImpl(fileId);
+  });
 
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) =>
-      _opLock.withLock(() async {
-        await _ensureConnected();
-        final fileName = statisticsFileName(stats);
-        await _uploadJsonImpl(
-            folderId, fileName, stats.map((s) => s.toJson()).toList());
-        // Upload-then-delete (HBK-AUDIT-048).
-        if (fileId != null) await _deleteRemoteFileImpl(fileId);
-      });
+  }) => _opLock.withLock(() async {
+    await _ensureConnected();
+    final fileName = statisticsFileName(stats);
+    await _uploadJsonImpl(
+      folderId,
+      fileName,
+      stats.map((s) => s.toJson()).toList(),
+    );
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteRemoteFileImpl(fileId);
+  });
 
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) =>
-      _opLock.withLock(() async {
-        await _ensureConnected();
-        final fileName = audioBookFileName(
-            audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
-        await _uploadJsonImpl(folderId, fileName, audioBook.toJson());
-        // Upload-then-delete (HBK-AUDIT-048).
-        if (fileId != null) await _deleteRemoteFileImpl(fileId);
-      });
+  }) => _opLock.withLock(() async {
+    await _ensureConnected();
+    final fileName = audioBookFileName(
+      audioBook.lastAudioBookModified,
+      audioBook.playbackPositionSec,
+    );
+    await _uploadJsonImpl(folderId, fileName, audioBook.toJson());
+    // Upload-then-delete (HBK-AUDIT-048).
+    if (fileId != null) await _deleteRemoteFileImpl(fileId);
+  });
 
   // ── Content file sync ─────────────────────────────────────────────
 
@@ -417,54 +435,56 @@ class FtpSyncBackend extends SyncBackend
     required String fileName,
     required File file,
     SyncTransferProgress? onProgress,
-  }) =>
-      _opLock.withLock(() async {
-        await _ensureConnected();
-        try {
-          await _client!.changeDirectory(folderId);
-          await _client!.uploadFile(
-            file,
-            sRemoteName: fileName,
-            onProgress: onProgress != null
-                ? (percent, received, total) =>
-                    onProgress(percent / 100.0, received)
-                : null,
-          );
-        } catch (e) {
-          if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          _resetConnection();
-          throw SyncBackendError('Failed to upload content file: $e',
-              isRetryable: true);
-        }
-      });
+  }) => _opLock.withLock(() async {
+    await _ensureConnected();
+    try {
+      await _client!.changeDirectory(folderId);
+      await _client!.uploadFile(
+        file,
+        sRemoteName: fileName,
+        onProgress: onProgress != null
+            ? (percent, received, total) =>
+                  onProgress(percent / 100.0, received)
+            : null,
+      );
+    } catch (e) {
+      if (e is SyncBackendError || e is SyncAuthError) rethrow;
+      _resetConnection();
+      throw SyncBackendError(
+        'Failed to upload content file: $e',
+        isRetryable: true,
+      );
+    }
+  });
 
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     SyncTransferProgress? onProgress,
-  }) =>
-      _opLock.withLock(() async {
-        await _ensureConnected();
-        final dir = _parentPath(fileId);
-        final name = _fileName(fileId);
-        try {
-          await _client!.changeDirectory(dir);
-          await _client!.downloadFile(
-            name,
-            destination,
-            onProgress: onProgress != null
-                ? (percent, received, total) =>
-                    onProgress(percent / 100.0, received)
-                : null,
-          );
-        } catch (e) {
-          if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          _resetConnection();
-          throw SyncBackendError('Failed to download content file: $e',
-              isRetryable: true);
-        }
-      });
+  }) => _opLock.withLock(() async {
+    await _ensureConnected();
+    final dir = _parentPath(fileId);
+    final name = _fileName(fileId);
+    try {
+      await _client!.changeDirectory(dir);
+      await _client!.downloadFile(
+        name,
+        destination,
+        onProgress: onProgress != null
+            ? (percent, received, total) =>
+                  onProgress(percent / 100.0, received)
+            : null,
+      );
+    } catch (e) {
+      if (e is SyncBackendError || e is SyncAuthError) rethrow;
+      _resetConnection();
+      throw SyncBackendError(
+        'Failed to download content file: $e',
+        isRetryable: true,
+      );
+    }
+  });
 
   @override
   Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
@@ -478,8 +498,10 @@ class FtpSyncBackend extends SyncBackend
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();
-          throw SyncBackendError('Failed to find content file: $e',
-              isRetryable: true);
+          throw SyncBackendError(
+            'Failed to find content file: $e',
+            isRetryable: true,
+          );
         }
       });
 
@@ -523,8 +545,10 @@ class FtpSyncBackend extends SyncBackend
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();
-          throw SyncBackendError('Failed to ensure folder: $e',
-              isRetryable: true);
+          throw SyncBackendError(
+            'Failed to ensure folder: $e',
+            isRetryable: true,
+          );
         }
       });
 
@@ -549,18 +573,22 @@ class FtpSyncBackend extends SyncBackend
             }
           }
           return entries
-              .map((e) => AssetEntry(
-                    id: '$namespaceId/${e.name}',
-                    name: e.name,
-                    isFolder: e.type == FTPEntryType.dir,
-                    modifiedAt: mtimes[e.name],
-                  ))
+              .map(
+                (e) => AssetEntry(
+                  id: '$namespaceId/${e.name}',
+                  name: e.name,
+                  isFolder: e.type == FTPEntryType.dir,
+                  modifiedAt: mtimes[e.name],
+                ),
+              )
               .toList();
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();
-          throw SyncBackendError('Failed to list children: $e',
-              isRetryable: true);
+          throw SyncBackendError(
+            'Failed to list children: $e',
+            isRetryable: true,
+          );
         }
       });
 
@@ -577,8 +605,10 @@ class FtpSyncBackend extends SyncBackend
       } catch (e) {
         if (e is SyncBackendError || e is SyncAuthError) rethrow;
         _resetConnection();
-        throw SyncBackendError('Failed to read modification time: $e',
-            isRetryable: true);
+        throw SyncBackendError(
+          'Failed to read modification time: $e',
+          isRetryable: true,
+        );
       }
     });
     return AssetEntry(id: found.id, name: found.name, modifiedAt: mtime);
@@ -602,13 +632,16 @@ class FtpSyncBackend extends SyncBackend
   }
 
   @override
-  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
-      _opLock.withLock(() async {
-        await _ensureConnected();
-        // _uploadJsonImpl writes utf8(jsonEncode(...)) to a temp file and
-        // uploads to `'<namespaceId>/<name>'` (same path as updateProgressFile).
-        await _uploadJsonImpl(namespaceId, name, json);
-      });
+  Future<void> putJsonAsset(
+    String namespaceId,
+    String name,
+    Object? json,
+  ) => _opLock.withLock(() async {
+    await _ensureConnected();
+    // _uploadJsonImpl writes utf8(jsonEncode(...)) to a temp file and
+    // uploads to `'<namespaceId>/<name>'` (same path as updateProgressFile).
+    await _uploadJsonImpl(namespaceId, name, json);
+  });
 
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
@@ -627,8 +660,10 @@ class FtpSyncBackend extends SyncBackend
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();
-          throw SyncBackendError('Failed to delete asset: $e',
-              isRetryable: true);
+          throw SyncBackendError(
+            'Failed to delete asset: $e',
+            isRetryable: true,
+          );
         }
       });
 
@@ -694,8 +729,10 @@ class FtpSyncBackend extends SyncBackend
     required String password,
     required bool useTls,
   }) async {
-    final ({String user, String pass}) creds =
-        ftpLoginCredentials(username, password);
+    final ({String user, String pass}) creds = ftpLoginCredentials(
+      username,
+      password,
+    );
     final client = FTPConnect(
       host,
       port: port,
@@ -722,8 +759,10 @@ class FtpSyncBackend extends SyncBackend
     if (_host == null) {
       throw SyncAuthError('FTP credentials not set');
     }
-    final ({String user, String pass}) creds =
-        ftpLoginCredentials(_username, _password);
+    final ({String user, String pass}) creds = ftpLoginCredentials(
+      _username,
+      _password,
+    );
     _client = FTPConnect(
       _host!,
       port: _port,
@@ -790,31 +829,35 @@ class FtpSyncBackend extends SyncBackend
   // ── Private helpers ───────────────────────────────────────────────
 
   Future<dynamic> _downloadJson(String fileId) => _opLock.withLock(() async {
-        await _ensureConnected();
-        final dir = _parentPath(fileId);
-        final name = _fileName(fileId);
-        final tmpFile = _uniqueTempFile('ftp_dl', '.json');
-        try {
-          await _client!.changeDirectory(dir);
-          final ok = await _client!.downloadFile(name, tmpFile);
-          if (!ok) {
-            throw SyncBackendError('Failed to download: $fileId',
-                isRetryable: true);
-          }
-          final content = await tmpFile.readAsString(encoding: utf8);
-          return jsonDecode(content);
-        } catch (e) {
-          if (e is SyncBackendError || e is SyncAuthError) rethrow;
-          _resetConnection();
-          throw SyncBackendError('Failed to download JSON: $e',
-              isRetryable: true);
-        } finally {
-          await _deleteTempFile(tmpFile);
-        }
-      });
+    await _ensureConnected();
+    final dir = _parentPath(fileId);
+    final name = _fileName(fileId);
+    final tmpFile = _uniqueTempFile('ftp_dl', '.json');
+    try {
+      await _client!.changeDirectory(dir);
+      final ok = await _client!.downloadFile(name, tmpFile);
+      if (!ok) {
+        throw SyncBackendError(
+          'Failed to download: $fileId',
+          isRetryable: true,
+        );
+      }
+      final content = await tmpFile.readAsString(encoding: utf8);
+      return jsonDecode(content);
+    } catch (e) {
+      if (e is SyncBackendError || e is SyncAuthError) rethrow;
+      _resetConnection();
+      throw SyncBackendError('Failed to download JSON: $e', isRetryable: true);
+    } finally {
+      await _deleteTempFile(tmpFile);
+    }
+  });
 
   Future<void> _uploadJsonImpl(
-      String folderId, String fileName, dynamic data) async {
+    String folderId,
+    String fileName,
+    dynamic data,
+  ) async {
     final bytes = utf8.encode(jsonEncode(data));
     final tmpFile = await _writeTempFile(bytes, 'ftp_ul');
     try {
@@ -853,7 +896,9 @@ class FtpSyncBackend extends SyncBackend
   Future<void> _deleteTempFile(File file) async {
     try {
       if (await file.exists()) await file.delete();
-    } catch (_) {/* best-effort: failure is non-critical here */}
+    } catch (_) {
+      /* best-effort: failure is non-critical here */
+    }
   }
 
   /// Extract the parent directory from an FTP path.

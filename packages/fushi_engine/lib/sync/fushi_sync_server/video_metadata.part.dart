@@ -29,14 +29,15 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
     if (reqPath == '/api/library/metadata') {
       switch (method) {
         case 'GET':
-          final int? since =
-              int.tryParse(request.url.queryParameters['since'] ?? '');
-          final String? bookUid = request.url.queryParameters['bookUid'];
-          final List<VideoMetadataWorkEntry> entries =
-              await host.listVideoMetadata(
-            since: since,
-            bookUid: bookUid == null || bookUid.isEmpty ? null : bookUid,
+          final int? since = int.tryParse(
+            request.url.queryParameters['since'] ?? '',
           );
+          final String? bookUid = request.url.queryParameters['bookUid'];
+          final List<VideoMetadataWorkEntry> entries = await host
+              .listVideoMetadata(
+                since: since,
+                bookUid: bookUid == null || bookUid.isEmpty ? null : bookUid,
+              );
           return jsonResponse(<String, Object?>{
             'works': <Object?>[
               for (final VideoMetadataWorkEntry e in entries) e.toJson(),
@@ -86,8 +87,8 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       if (query is! String) {
         return shelf.Response(400, body: 'Invalid body: query missing');
       }
-      final List<VideoMetadataCandidateEntry> candidates =
-          await host.searchVideoMetadataCandidates(key: key, query: query);
+      final List<VideoMetadataCandidateEntry> candidates = await host
+          .searchVideoMetadataCandidates(key: key, query: query);
       return jsonResponse(<String, Object?>{
         'candidates': <Object?>[
           for (final VideoMetadataCandidateEntry c in candidates) c.toJson(),
@@ -110,8 +111,10 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       if (lookup == null) {
         return shelf.Response(400, body: 'Invalid body: lookup missing');
       }
-      final VideoMetadataWriteResult result =
-          await host.scrapeVideoMetadata(key: key, lookup: lookup);
+      final VideoMetadataWriteResult result = await host.scrapeVideoMetadata(
+        key: key,
+        lookup: lookup,
+      );
       return _writeResultResponse(result);
     }
 
@@ -134,12 +137,14 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
         return shelf.Response(400, body: 'Invalid body: $e');
       }
       if (reqPath.endsWith('/episode-groups')) {
-        final VideoMetadataEpisodeGroupListing? listing =
-            await ordering.listVideoMetadataEpisodeGroups(key: key);
+        final VideoMetadataEpisodeGroupListing? listing = await ordering
+            .listVideoMetadataEpisodeGroups(key: key);
         if (listing == null) {
-          return _writeResultResponse(const VideoMetadataWriteResult.conflict(
-            VideoMetadataConflict.ambiguousWork,
-          ));
+          return _writeResultResponse(
+            const VideoMetadataWriteResult.conflict(
+              VideoMetadataConflict.ambiguousWork,
+            ),
+          );
         }
         return jsonResponse(listing.toJson());
       }
@@ -147,10 +152,12 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       if (groupId != null && groupId is! String) {
         return shelf.Response(400, body: 'Invalid body: groupId');
       }
-      return _writeResultResponse(await ordering.setVideoMetadataEpisodeGroup(
-        key: key,
-        groupId: groupId as String?,
-      ));
+      return _writeResultResponse(
+        await ordering.setVideoMetadataEpisodeGroup(
+          key: key,
+          groupId: groupId as String?,
+        ),
+      );
     }
 
     return shelf.Response.notFound('Not found');

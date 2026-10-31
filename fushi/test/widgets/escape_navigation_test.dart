@@ -14,10 +14,8 @@ import 'package:fushi/src/shortcuts/global_navigation.dart';
 Widget _app(GlobalKey<NavigatorState> navKey, Widget home) {
   return MaterialApp(
     navigatorKey: navKey,
-    builder: (context, child) => wrapWithGlobalNavigation(
-      navigatorKey: navKey,
-      child: child!,
-    ),
+    builder: (context, child) =>
+        wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
     home: home,
   );
 }
@@ -26,10 +24,7 @@ Widget _focusApp(GlobalKey<NavigatorState> navKey, Widget home) {
   return MaterialApp(
     navigatorKey: navKey,
     builder: (context, child) => FushiFocusRoot(
-      child: wrapWithGlobalNavigation(
-        navigatorKey: navKey,
-        child: child!,
-      ),
+      child: wrapWithGlobalNavigation(navigatorKey: navKey, child: child!),
     ),
     home: home,
   );
@@ -47,9 +42,8 @@ void main() {
               autofocus: true,
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => const Scaffold(
-                    body: Center(child: Text('PAGE2')),
-                  ),
+                  builder: (_) =>
+                      const Scaffold(body: Center(child: Text('PAGE2'))),
                 ),
               ),
               child: const Text('open'),
@@ -66,12 +60,16 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.text('PAGE2'), findsNothing,
-        reason: 'Escape should pop the pushed full-page route');
+    expect(
+      find.text('PAGE2'),
+      findsNothing,
+      reason: 'Escape should pop the pushed full-page route',
+    );
   });
 
-  testWidgets('Escape still closes a barrierDismissible dialog',
-      (tester) async {
+  testWidgets('Escape still closes a barrierDismissible dialog', (
+    tester,
+  ) async {
     final navKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       _app(
@@ -102,66 +100,67 @@ void main() {
   });
 
   testWidgets(
-      'Escape uses the focus controller active context before full-page pop',
-      (WidgetTester tester) async {
-    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    final FocusNode dialogFocus = FocusNode(debugLabel: 'dialog-focus');
-    addTearDown(dialogFocus.dispose);
+    'Escape uses the focus controller active context before full-page pop',
+    (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      final FocusNode dialogFocus = FocusNode(debugLabel: 'dialog-focus');
+      addTearDown(dialogFocus.dispose);
 
-    await tester.pumpWidget(
-      _focusApp(
-        navKey,
-        Scaffold(
-          body: Builder(
-            builder: (BuildContext context) => TextButton(
-              autofocus: true,
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (BuildContext pageContext) => Scaffold(
-                    body: Center(
-                      child: TextButton(
-                        onPressed: () => showDialog<void>(
-                          context: pageContext,
-                          barrierDismissible: false,
-                          builder: (BuildContext dialogContext) => Dialog(
-                            child: FushiFocusTarget(
-                              id: const FushiFocusId('dialog-target'),
-                              focusNode: dialogFocus,
-                              child: const SizedBox(
-                                width: 160,
-                                height: 80,
-                                child: Center(child: Text('LOCKED DIALOG')),
+      await tester.pumpWidget(
+        _focusApp(
+          navKey,
+          Scaffold(
+            body: Builder(
+              builder: (BuildContext context) => TextButton(
+                autofocus: true,
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (BuildContext pageContext) => Scaffold(
+                      body: Center(
+                        child: TextButton(
+                          onPressed: () => showDialog<void>(
+                            context: pageContext,
+                            barrierDismissible: false,
+                            builder: (BuildContext dialogContext) => Dialog(
+                              child: FushiFocusTarget(
+                                id: const FushiFocusId('dialog-target'),
+                                focusNode: dialogFocus,
+                                child: const SizedBox(
+                                  width: 160,
+                                  height: 80,
+                                  child: Center(child: Text('LOCKED DIALOG')),
+                                ),
                               ),
                             ),
                           ),
+                          child: const Text('open dialog'),
                         ),
-                        child: const Text('open dialog'),
                       ),
                     ),
                   ),
                 ),
+                child: const Text('open page'),
               ),
-              child: const Text('open page'),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('open page'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('open dialog'));
-    await tester.pumpAndSettle();
-    dialogFocus.requestFocus();
-    await tester.pump();
-    expect(find.text('LOCKED DIALOG'), findsOneWidget);
+      await tester.tap(find.text('open page'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open dialog'));
+      await tester.pumpAndSettle();
+      dialogFocus.requestFocus();
+      await tester.pump();
+      expect(find.text('LOCKED DIALOG'), findsOneWidget);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
 
-    expect(find.text('LOCKED DIALOG'), findsOneWidget);
-    expect(find.text('open dialog'), findsOneWidget);
-  });
+      expect(find.text('LOCKED DIALOG'), findsOneWidget);
+      expect(find.text('open dialog'), findsOneWidget);
+    },
+  );
 
   testWidgets('Escape in a dialog sub-page goes back one level, not closed', (
     tester,
@@ -244,8 +243,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(escapes, 1, reason: 'the in-page Escape handler runs first');
-    expect(find.text('READER'), findsOneWidget,
-        reason: 'page consumed Escape -> global fallback must not pop it');
+    expect(
+      find.text('READER'),
+      findsOneWidget,
+      reason: 'page consumed Escape -> global fallback must not pop it',
+    );
   });
 
   testWidgets('Escape on a page respects PopScope(canPop:false)', (
@@ -281,8 +283,11 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.text('GUARDED'), findsOneWidget,
-        reason: 'maybePop honours PopScope(canPop:false)');
+    expect(
+      find.text('GUARDED'),
+      findsOneWidget,
+      reason: 'maybePop honours PopScope(canPop:false)',
+    );
   });
 }
 

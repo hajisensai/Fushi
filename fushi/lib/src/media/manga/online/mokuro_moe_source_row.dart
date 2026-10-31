@@ -52,7 +52,7 @@ class MokuroMoeSourceRow extends ConsumerWidget {
         enabled: enabled,
         onEnabledChanged: ready
             ? (bool value) =>
-                unawaited(appModel.setMangaOnlineCatalogEnabled(value))
+                  unawaited(appModel.setMangaOnlineCatalogEnabled(value))
             : null,
         language: 'ja',
         detail: _siteLabel(

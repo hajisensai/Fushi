@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -13,7 +13,9 @@ void main() {
     test('insert and query anki mapping', () async {
       final db = await _openDb();
 
-      await db.into(db.ankiMappings).insert(
+      await db
+          .into(db.ankiMappings)
+          .insert(
             AnkiMappingsCompanion.insert(
               label: 'Default',
               model: 'Basic',

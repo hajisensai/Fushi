@@ -21,16 +21,15 @@ void main() {
       Set<String> aliases = const <String>{},
       required List<String> members,
       String kind = 'epub',
-    }) =>
-        ConvergenceCollection(
-          id: id,
-          name: name,
-          collectionType: 'collection',
-          origin: origin,
-          organizeKey: key,
-          organizeAliases: aliases,
-          memberWireKeys: <String>{for (final String m in members) '$kind\u0000$m'},
-        );
+    }) => ConvergenceCollection(
+      id: id,
+      name: name,
+      collectionType: 'collection',
+      origin: origin,
+      organizeKey: key,
+      organizeAliases: aliases,
+      memberWireKeys: <String>{for (final String m in members) '$kind\u0000$m'},
+    );
 
     test('同键两个 AI 合集合并，胜方与输入顺序无关', () {
       final List<ConvergenceCollection> input = <ConvergenceCollection>[
@@ -38,8 +37,9 @@ void main() {
         c(2, '涼宮ハルヒ', key: 't:books:すずみやはるひ', members: <String>['b']),
       ];
       final List<ConvergenceMerge> p1 = planOrganizeConvergence(input);
-      final List<ConvergenceMerge> p2 =
-          planOrganizeConvergence(input.reversed.toList());
+      final List<ConvergenceMerge> p2 = planOrganizeConvergence(
+        input.reversed.toList(),
+      );
       expect(p1, hasLength(1));
       // 同键时按名字字典序：「凉」(U+51C9) < 「涼」(U+6DBC)。
       expect(p1.single.targetId, 1);
@@ -50,7 +50,13 @@ void main() {
     test('外部 id 键优先当胜方', () {
       final List<ConvergenceMerge> plan = planOrganizeConvergence(
         <ConvergenceCollection>[
-          c(1, 'A', key: 't:video:ふりーれん', kind: 'video', members: <String>['x']),
+          c(
+            1,
+            'A',
+            key: 't:video:ふりーれん',
+            kind: 'video',
+            members: <String>['x'],
+          ),
           c(
             2,
             'B',
@@ -96,8 +102,20 @@ void main() {
       final List<ConvergenceMerge> plan = planOrganizeConvergence(
         <ConvergenceCollection>[
           c(1, 'A', key: 'k', members: <String>['a']),
-          c(2, 'U1', origin: CollectionOrigin.user, key: 'k', members: <String>['b']),
-          c(3, 'U2', origin: CollectionOrigin.user, key: 'k', members: <String>['c']),
+          c(
+            2,
+            'U1',
+            origin: CollectionOrigin.user,
+            key: 'k',
+            members: <String>['b'],
+          ),
+          c(
+            3,
+            'U2',
+            origin: CollectionOrigin.user,
+            key: 'k',
+            members: <String>['c'],
+          ),
         ],
       );
       expect(plan.single.targetId, 2);
@@ -109,7 +127,13 @@ void main() {
         planOrganizeConvergence(<ConvergenceCollection>[
           c(1, 'A', key: 'k', members: <String>['a']),
           c(2, 'B', key: 'k', kind: 'video', members: <String>['v']),
-          c(3, 'F', origin: CollectionOrigin.folder, key: 'k', members: <String>['a']),
+          c(
+            3,
+            'F',
+            origin: CollectionOrigin.folder,
+            key: 'k',
+            members: <String>['a'],
+          ),
         ]),
         isEmpty,
       );
@@ -131,7 +155,9 @@ void main() {
     });
 
     _Device device() {
-      final _Device d = _Device(FushiDatabase.forTesting(NativeDatabase.memory()));
+      final _Device d = _Device(
+        FushiDatabase.forTesting(NativeDatabase.memory()),
+      );
       devices.add(d);
       return d;
     }
@@ -181,7 +207,11 @@ void main() {
         final List<_Snapshot> alive = await _snapshot(d.db);
         expect(alive, hasLength(1));
         expect(alive.single.name, 'Haruhi'); // 'H' < '凉'
-        expect(alive.single.members, <String>{'video|v1', 'video|v2', 'video|v3'});
+        expect(alive.single.members, <String>{
+          'video|v1',
+          'video|v2',
+          'video|v3',
+        });
         expect(alive.single.origin, 'ai');
       }
     });
@@ -199,7 +229,11 @@ void main() {
         for (int i = 0; i < deviceCount; i++) {
           device();
         }
-        const List<String> keys = <String>['t:video:a', 't:video:b', 'anilist:7'];
+        const List<String> keys = <String>[
+          't:video:a',
+          't:video:b',
+          'anilist:7',
+        ];
         final Set<String> everAdded = <String>{};
         for (final _Device d in devices) {
           final int n = 1 + random.nextInt(3);
@@ -209,7 +243,9 @@ void main() {
               for (int m = 0; m < 1 + random.nextInt(3); m++)
                 'v${random.nextInt(8)}',
             ];
-            everAdded.addAll(<String>[for (final String m in members) 'video|$m']);
+            everAdded.addAll(<String>[
+              for (final String m in members) 'video|$m',
+            ]);
             await aiCollection(d, 'name-${random.nextInt(4)}', key, members);
           }
           // 中途插一轮部分同步，制造交错。
@@ -243,14 +279,13 @@ void main() {
       final _Device b = device();
       final int id = await aiCollection(a, 'S', 'k', <String>['v1']);
       await settle(Random(2));
-      final MediaCollectionRow onB =
-          (await b.db.getMediaCollectionByNaturalKey('S', 'collection'))!;
+      final MediaCollectionRow onB = (await b.db.getMediaCollectionByNaturalKey(
+        'S',
+        'collection',
+      ))!;
       expect(onB.origin, 'ai');
       await b.db.addToCollection(onB.id, MediaKind.video, 'v9');
-      expect(
-        (await b.db.getMediaCollectionById(onB.id))!.origin,
-        'user',
-      );
+      expect((await b.db.getMediaCollectionById(onB.id))!.origin, 'user');
       await settle(Random(3));
       expect((await a.db.getMediaCollectionById(id))!.origin, 'user');
       // A 端 AI 又为同键建了一个：并进用户合集，用户合集不动。
@@ -271,14 +306,16 @@ void main() {
       await aiCollection(a, 'W', 'k-w', <String>['v9']);
       await settle(Random(7));
       // A：用户往 L 里加 v3（接手为 user），还没同步。
-      final MediaCollectionRow lOnA =
-          (await a.db.getMediaCollectionByNaturalKey('L', 'collection'))!;
+      final MediaCollectionRow lOnA = (await a.db
+          .getMediaCollectionByNaturalKey('L', 'collection'))!;
       await a.db.addToCollection(lOnA.id, MediaKind.video, 'v3');
       // B：同时按旧状态把 L 并进 W。
       await mergeMediaCollectionsInto(
         b.db,
-        targetId:
-            (await b.db.getMediaCollectionByNaturalKey('W', 'collection'))!.id,
+        targetId: (await b.db.getMediaCollectionByNaturalKey(
+          'W',
+          'collection',
+        ))!.id,
         sourceIds: <int>[
           (await b.db.getMediaCollectionByNaturalKey('L', 'collection'))!.id,
         ],
@@ -316,8 +353,10 @@ void main() {
       cloud.manifest = _stripOrganizeFields(cloud.manifest);
       await tick();
       await a.sync(cloud);
-      final MediaCollectionRow row =
-          (await a.db.getMediaCollectionByNaturalKey('S', 'collection'))!;
+      final MediaCollectionRow row = (await a.db.getMediaCollectionByNaturalKey(
+        'S',
+        'collection',
+      ))!;
       expect(row.origin, 'ai');
       expect(row.organizeKey, 'k');
     });
@@ -390,7 +429,9 @@ Future<List<_Snapshot>> _snapshot(FushiDatabase db) async {
         row.origin,
         row.organizeKey,
         <String>{
-          for (final MediaCollectionItemRow m in await db.getCollectionItems(row.id))
+          for (final MediaCollectionItemRow m in await db.getCollectionItems(
+            row.id,
+          ))
             '${m.mediaType}|${m.entryKey}',
         },
       ),

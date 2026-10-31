@@ -20,41 +20,49 @@ import 'package:fushi_core/fushi_core.dart';
 /// `NativeDatabase.memory()` 默认**关**外键，而生产连接经 applyPragmas 开着；
 /// 不显式打开的话涉及约束/级联的用例会假绿。
 FushiDatabase _memDb() => FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory(
-        setup: (dynamic rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
-      )),
-    );
+  DatabaseConnection(
+    NativeDatabase.memory(
+      setup: (dynamic rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
+    ),
+  ),
+);
 
 DeletionCandidateView _view(String key, String title) => DeletionCandidateView(
-      candidate: DeletionPropagationCandidate(
-        mediaType: 'book',
-        itemKey: key,
-        direction: DeletionPropagationDirection.deleteLocal,
-      ),
-      title: title,
-    );
+  candidate: DeletionPropagationCandidate(
+    mediaType: 'book',
+    itemKey: key,
+    direction: DeletionPropagationDirection.deleteLocal,
+  ),
+  title: title,
+);
 
 // BUG-1579 合流：基线按通道分槽，测试用两条真实通道的槽位。
-final String _cloudScopeId =
-    SyncChannelScope.forBackendType(SyncBackendType.googleDrive).id;
-final String _liveScopeId =
-    SyncChannelScope.forBackendType(SyncBackendType.fushiServer).id;
+final String _cloudScopeId = SyncChannelScope.forBackendType(
+  SyncBackendType.googleDrive,
+).id;
+final String _liveScopeId = SyncChannelScope.forBackendType(
+  SyncBackendType.fushiServer,
+).id;
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   /// 装一个带 navigatorKey 的真实 app，让 `navigatorKey.currentContext` 非空。
   Future<void> pumpApp(
-      WidgetTester tester, GlobalKey<NavigatorState> navKey) async {
+    WidgetTester tester,
+    GlobalKey<NavigatorState> navKey,
+  ) async {
     tester.view.physicalSize = const Size(1200, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(TranslationProvider(
-      child: MaterialApp(
-        navigatorKey: navKey,
-        home: const Scaffold(body: Text('home')),
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navKey,
+          home: const Scaffold(body: Text('home')),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
@@ -67,8 +75,9 @@ void main() {
 
     final List<String> applied = <String>[];
     Future<void> apply(List<DeletionPropagationCandidate> confirmed) async {
-      applied
-          .addAll(confirmed.map((DeletionPropagationCandidate c) => c.itemKey));
+      applied.addAll(
+        confirmed.map((DeletionPropagationCandidate c) => c.itemKey),
+      );
     }
 
     // 通道一（云）与通道二（互联）在同一次 sweep 内先后调 present，都不 await。
@@ -103,8 +112,11 @@ void main() {
     await cloud;
 
     // 第二批不该消失：排队呈现，现在轮到互联通道那批。
-    expect(find.text('Live Book'), findsOneWidget,
-        reason: '单飞位挡下的候选必须排队重现，不能被静默丢弃');
+    expect(
+      find.text('Live Book'),
+      findsOneWidget,
+      reason: '单飞位挡下的候选必须排队重现，不能被静默丢弃',
+    );
 
     await tester.tap(find.text(t.delete_prompt_delete_selected));
     await tester.pumpAndSettle();
@@ -114,13 +126,17 @@ void main() {
     // 两批都被用户复核过 → 各自通道的基线推进到各自的水位（BUG-1579 分槽）。
     final SyncRepository repo = SyncRepository(db);
     expect(
-        await repo.getDeletionTombstonesBaselineMs(
-            SyncChannelScope.byId(_cloudScopeId)),
-        100);
+      await repo.getDeletionTombstonesBaselineMs(
+        SyncChannelScope.byId(_cloudScopeId),
+      ),
+      100,
+    );
     expect(
-        await repo.getDeletionTombstonesBaselineMs(
-            SyncChannelScope.byId(_liveScopeId)),
-        200);
+      await repo.getDeletionTombstonesBaselineMs(
+        SyncChannelScope.byId(_liveScopeId),
+      ),
+      200,
+    );
   });
 
   testWidgets('第二批被用户取消：只 snooze 自己，不推进基线到它的水位', (WidgetTester tester) async {
@@ -166,13 +182,17 @@ void main() {
     // 取消的那批不推进自己通道的基线：下次会话还会再问。
     final SyncRepository repo = SyncRepository(db);
     expect(
-        await repo.getDeletionTombstonesBaselineMs(
-            SyncChannelScope.byId(_cloudScopeId)),
-        100);
+      await repo.getDeletionTombstonesBaselineMs(
+        SyncChannelScope.byId(_cloudScopeId),
+      ),
+      100,
+    );
     expect(
-        await repo.getDeletionTombstonesBaselineMs(
-            SyncChannelScope.byId(_liveScopeId)),
-        0);
+      await repo.getDeletionTombstonesBaselineMs(
+        SyncChannelScope.byId(_liveScopeId),
+      ),
+      0,
+    );
   });
 
   testWidgets('队列不因前一个弹窗抛异常而断链', (WidgetTester tester) async {
@@ -201,17 +221,22 @@ void main() {
       source: ConflictSource.auto,
       inBook: false,
     );
-    unawaited(boom.catchError((Object _) {
-      // 异常照常抛给调用方（这里吞掉只是为了不让测试因未捕获错误失败）。
-    }));
+    unawaited(
+      boom.catchError((Object _) {
+        // 异常照常抛给调用方（这里吞掉只是为了不让测试因未捕获错误失败）。
+      }),
+    );
     unawaited(live);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(t.delete_prompt_delete_selected));
     await tester.pumpAndSettle();
 
-    expect(find.text('Live Book'), findsOneWidget,
-        reason: '前一个弹窗抛异常不得把后续候选卡死在队列里');
+    expect(
+      find.text('Live Book'),
+      findsOneWidget,
+      reason: '前一个弹窗抛异常不得把后续候选卡死在队列里',
+    );
     await tester.tap(find.text(t.dialog_cancel));
     await tester.pumpAndSettle();
     await live;

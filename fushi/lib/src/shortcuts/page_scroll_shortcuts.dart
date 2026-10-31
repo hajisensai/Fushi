@@ -17,9 +17,9 @@ enum PageScrollRequest {
 
   /// 朝内容末尾（向下）还是朝开头（向上）。
   bool get towardEnd => switch (this) {
-        lineDown || pageDown || toBottom => true,
-        lineUp || pageUp || toTop => false,
-      };
+    lineDown || pageDown || toBottom => true,
+    lineUp || pageUp || toTop => false,
+  };
 }
 
 /// 单步滚动的 viewport 比例（↑/↓ 一次）。与手柄「列表边缘接管」的 0.8 / 整屏的

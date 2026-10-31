@@ -69,21 +69,28 @@ void main() {
           title: 'https direct stream',
         );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage.neutralizedRemote(
-            info: info,
-            repo: repo,
-            client: client,
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => VideoFushiPage.neutralizedRemote(
+                info: info,
+                repo: repo,
+                client: client,
+              ),
+            ),
           ),
-        )));
+        );
         debugPrint('[https-itest] pushed player page at ${guard.elapsed}');
 
         VideoFushiTestHooks? readHooks() {
           if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
           return tester.state<State<VideoFushiPage>>(
-              find.byType(VideoFushiPage)) as VideoFushiTestHooks;
+                find.byType(VideoFushiPage),
+              )
+              as VideoFushiTestHooks;
         }
 
         // 等控制器就绪（load 完成 → debugPositionMs 非 null）。
@@ -107,15 +114,22 @@ void main() {
           await tester.pump(const Duration(milliseconds: 250));
           played = hooks.debugPositionMs ?? 0;
           if (i % 8 == 0) {
-            debugPrint('[https-itest] t=${i * 250}ms posMs=$played '
-                'durMs=${hooks.debugDurationMs}');
+            debugPrint(
+              '[https-itest] t=${i * 250}ms posMs=$played '
+              'durMs=${hooks.debugDurationMs}',
+            );
           }
           if (played > 1500) break;
         }
-        debugPrint('[https-itest] FINAL playedMs=$played '
-            'durMs=${hooks.debugDurationMs} elapsed=${guard.elapsed}');
-        expect(played, greaterThan(1500),
-            reason: 'libmpv 应真实播放前进 >1.5s（实测=$played）——黑屏则永远 0');
+        debugPrint(
+          '[https-itest] FINAL playedMs=$played '
+          'durMs=${hooks.debugDurationMs} elapsed=${guard.elapsed}',
+        );
+        expect(
+          played,
+          greaterThan(1500),
+          reason: 'libmpv 应真实播放前进 >1.5s（实测=$played）——黑屏则永远 0',
+        );
 
         await navigator.maybePop();
         for (int i = 0; i < 20; i++) {

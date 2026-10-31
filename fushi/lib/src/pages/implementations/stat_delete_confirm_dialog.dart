@@ -99,10 +99,7 @@ class StatClearAllConfirmDialog extends StatelessWidget {
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: SingleChildScrollView(
-          child: Text(
-            message,
-            style: tokens.type.listSubtitle,
-          ),
+          child: Text(message, style: tokens.type.listSubtitle),
         ),
       ),
       actions: <Widget>[
@@ -157,14 +154,14 @@ class StatClearSessionsConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiDestructiveConfirmDialog(
-        title: t.stat_sessions_clear_all_title,
-        message: t.stat_sessions_clear_all_message(n: count),
-        leadingIcon: FushiIcons.deleteSweep,
-        confirmLabel: t.stat_clear_all_confirm,
-        checkboxLabel: t.stat_sessions_clear_all_ack(n: count),
-        checkboxKey: ackKey,
-        requireCheckboxToConfirm: true,
-      );
+    title: t.stat_sessions_clear_all_title,
+    message: t.stat_sessions_clear_all_message(n: count),
+    leadingIcon: FushiIcons.deleteSweep,
+    confirmLabel: t.stat_clear_all_confirm,
+    checkboxLabel: t.stat_sessions_clear_all_ack(n: count),
+    checkboxKey: ackKey,
+    requireCheckboxToConfirm: true,
+  );
 }
 
 /// 弹出「清除全部会话」的防呆确认框；仅当用户**勾了确认再点清除**时返回 true。
@@ -176,8 +173,9 @@ Future<bool> confirmClearAllStatSessions(
   if (count <= 0) return false;
   final FushiDestructiveConfirmResult? result =
       await showAppDialog<FushiDestructiveConfirmResult>(
-    context: context,
-    builder: (BuildContext ctx) => StatClearSessionsConfirmDialog(count: count),
-  );
+        context: context,
+        builder: (BuildContext ctx) =>
+            StatClearSessionsConfirmDialog(count: count),
+      );
   return result != null;
 }

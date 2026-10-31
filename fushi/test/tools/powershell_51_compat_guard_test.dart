@@ -96,8 +96,9 @@ void main() {
     final Directory dir = Directory('${root.path}/.github/workflows');
     for (final FileSystemEntity e in dir.listSync()) {
       if (e is! File || !e.path.endsWith('.yml')) continue;
-      for (final RegExpMatch m
-          in _ps51Invocation.allMatches(e.readAsStringSync())) {
+      for (final RegExpMatch m in _ps51Invocation.allMatches(
+        e.readAsStringSync(),
+      )) {
         found.add(m.group(1)!.replaceAll(r'\', '/'));
       }
     }
@@ -111,7 +112,8 @@ void main() {
     expect(
       scripts,
       isNotEmpty,
-      reason: '没有从 workflow 里解析出任何 `powershell -File` 调用，'
+      reason:
+          '没有从 workflow 里解析出任何 `powershell -File` 调用，'
           '守卫会扫空 —— 检查 _ps51Invocation 正则是否跟不上调用写法变化',
     );
     expect(
@@ -140,7 +142,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '以下写法在 Windows PowerShell 5.1 上不可用，而 CI 正是用 '
+      reason:
+          '以下写法在 Windows PowerShell 5.1 上不可用，而 CI 正是用 '
           '`powershell -File` 跑这些脚本：\n${offenders.join('\n')}',
     );
   });

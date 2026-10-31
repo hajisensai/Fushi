@@ -16,10 +16,8 @@ const String _backupServiceShell = 'lib/src/sync/backup_service.dart';
 const String kBackupServicePartDir = 'lib/src/sync/backup_service';
 
 /// 主壳 + 磁盘上全部 `*.part.dart`（按路径排序）。
-List<String> backupServiceFiles() => partCorpusFiles(
-      shell: _backupServiceShell,
-      partDir: kBackupServicePartDir,
-    );
+List<String> backupServiceFiles() =>
+    partCorpusFiles(shell: _backupServiceShell, partDir: kBackupServicePartDir);
 
 /// 读「备份服务合并语料」：主壳 + 全部 part 拼成单个字符串，CRLF 归一成 LF。
 String readBackupServiceSource() => readPartCorpus(backupServiceFiles());

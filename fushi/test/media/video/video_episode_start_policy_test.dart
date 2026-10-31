@@ -13,57 +13,61 @@ void main() {
       }
     });
 
-    test('manual previous and auto advance always start from the beginning',
-        () {
-      for (final int? durationMs in <int?>[null, 0, 100000]) {
-        expect(
-          resolveEpisodeStart(
-            EpisodeStartIntent.manualPrevious,
-            42000,
-            durationMs,
-          ),
-          0,
-        );
-        expect(
-          resolveEpisodeStart(
-            EpisodeStartIntent.autoAdvance,
-            42000,
-            durationMs,
-          ),
-          0,
-        );
-      }
-    });
+    test(
+      'manual previous and auto advance always start from the beginning',
+      () {
+        for (final int? durationMs in <int?>[null, 0, 100000]) {
+          expect(
+            resolveEpisodeStart(
+              EpisodeStartIntent.manualPrevious,
+              42000,
+              durationMs,
+            ),
+            0,
+          );
+          expect(
+            resolveEpisodeStart(
+              EpisodeStartIntent.autoAdvance,
+              42000,
+              durationMs,
+            ),
+            0,
+          );
+        }
+      },
+    );
 
-    test('unknown duration preserves resumable intents except forced starts',
-        () {
-      for (final int? durationMs in <int?>[null, 0, -1]) {
-        expect(
-          resolveEpisodeStart(
-            EpisodeStartIntent.initialOpen,
+    test(
+      'unknown duration preserves resumable intents except forced starts',
+      () {
+        for (final int? durationMs in <int?>[null, 0, -1]) {
+          expect(
+            resolveEpisodeStart(
+              EpisodeStartIntent.initialOpen,
+              42000,
+              durationMs,
+            ),
             42000,
-            durationMs,
-          ),
-          42000,
-        );
-        expect(
-          resolveEpisodeStart(
-            EpisodeStartIntent.manualNext,
+          );
+          expect(
+            resolveEpisodeStart(
+              EpisodeStartIntent.manualNext,
+              42000,
+              durationMs,
+            ),
             42000,
-            durationMs,
-          ),
-          42000,
-        );
-        expect(
-          resolveEpisodeStart(
-            EpisodeStartIntent.listSelect,
+          );
+          expect(
+            resolveEpisodeStart(
+              EpisodeStartIntent.listSelect,
+              42000,
+              durationMs,
+            ),
             42000,
-            durationMs,
-          ),
-          42000,
-        );
-      }
-    });
+          );
+        }
+      },
+    );
 
     test('known duration preserves non-near-end saved positions', () {
       for (final EpisodeStartIntent intent in <EpisodeStartIntent>[
@@ -240,40 +244,40 @@ void main() {
     test('全部 8 种输入组合的真值表完全钉死', () {
       final Map<String, EpisodeSwitchPlan> expected =
           <String, EpisodeSwitchPlan>{
-        // key = 'fullscreenRouteActive,ownsHandedOver,hasCurrentRoute'
-        'false,false,false': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.replace,
-          handOverNativeFullscreen: false,
-        ),
-        'false,false,true': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.replace,
-          handOverNativeFullscreen: false,
-        ),
-        'false,true,false': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.replace,
-          handOverNativeFullscreen: true,
-        ),
-        'false,true,true': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.takeover,
-          handOverNativeFullscreen: true,
-        ),
-        'true,false,false': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.replace,
-          handOverNativeFullscreen: true,
-        ),
-        'true,false,true': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.takeover,
-          handOverNativeFullscreen: true,
-        ),
-        'true,true,false': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.replace,
-          handOverNativeFullscreen: true,
-        ),
-        'true,true,true': const EpisodeSwitchPlan(
-          mode: EpisodeSwitchMode.takeover,
-          handOverNativeFullscreen: true,
-        ),
-      };
+            // key = 'fullscreenRouteActive,ownsHandedOver,hasCurrentRoute'
+            'false,false,false': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.replace,
+              handOverNativeFullscreen: false,
+            ),
+            'false,false,true': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.replace,
+              handOverNativeFullscreen: false,
+            ),
+            'false,true,false': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.replace,
+              handOverNativeFullscreen: true,
+            ),
+            'false,true,true': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.takeover,
+              handOverNativeFullscreen: true,
+            ),
+            'true,false,false': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.replace,
+              handOverNativeFullscreen: true,
+            ),
+            'true,false,true': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.takeover,
+              handOverNativeFullscreen: true,
+            ),
+            'true,true,false': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.replace,
+              handOverNativeFullscreen: true,
+            ),
+            'true,true,true': const EpisodeSwitchPlan(
+              mode: EpisodeSwitchMode.takeover,
+              handOverNativeFullscreen: true,
+            ),
+          };
       expect(expected.length, 8, reason: '真值表必须覆盖全部 2^3 组合');
       for (final bool a in <bool>[false, true]) {
         for (final bool b in <bool>[false, true]) {

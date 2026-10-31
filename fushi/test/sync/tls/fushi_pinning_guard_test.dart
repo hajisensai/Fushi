@@ -23,54 +23,61 @@ void main() {
       stripDartComments('/// badCertificateCallback = (a, b, c) => true;\n'),
       isNot(contains('=> true')),
     );
-    expect(
-      stripDartComments('x => true; // ok'),
-      contains('=> true'),
-    );
+    expect(stripDartComments('x => true; // ok'), contains('=> true'));
   });
 
-  test('lib/src/sync/ 下不得无条件 badCertificateCallback/onBadCertificate => true',
-      () {
-    final RegExp unconditionalBad = RegExp(
-      r'(badCertificateCallback|onBadCertificate)\b[^;{]*=>\s*true\b',
-      multiLine: true,
-    );
-    final RegExp blockReturnTrue = RegExp(
-      r'(badCertificateCallback|onBadCertificate)\b[^;{]*\{\s*return\s+true\s*;\s*\}',
-      multiLine: true,
-    );
+  test(
+    'lib/src/sync/ 下不得无条件 badCertificateCallback/onBadCertificate => true',
+    () {
+      final RegExp unconditionalBad = RegExp(
+        r'(badCertificateCallback|onBadCertificate)\b[^;{]*=>\s*true\b',
+        multiLine: true,
+      );
+      final RegExp blockReturnTrue = RegExp(
+        r'(badCertificateCallback|onBadCertificate)\b[^;{]*\{\s*return\s+true\s*;\s*\}',
+        multiLine: true,
+      );
 
-    final List<String> offenders = <String>[];
-    for (final File entity in Directory('lib/src/sync')
-        .listSync(recursive: true)
-        .whereType<File>()) {
-      if (!entity.path.endsWith('.dart')) continue;
-      final String normalized = entity.path.replaceAll('\\', '/');
-      final String source = stripDartComments(entity.readAsStringSync());
-      if (unconditionalBad.hasMatch(source) ||
-          blockReturnTrue.hasMatch(source)) {
-        offenders.add(normalized);
+      final List<String> offenders = <String>[];
+      for (final File entity in Directory(
+        'lib/src/sync',
+      ).listSync(recursive: true).whereType<File>()) {
+        if (!entity.path.endsWith('.dart')) continue;
+        final String normalized = entity.path.replaceAll('\\', '/');
+        final String source = stripDartComments(entity.readAsStringSync());
+        if (unconditionalBad.hasMatch(source) ||
+            blockReturnTrue.hasMatch(source)) {
+          offenders.add(normalized);
+        }
       }
-    }
 
-    expect(
-      offenders,
-      isEmpty,
-      reason: 'TLS 自签证书只能经指纹钉扎接受；badCertificateCallback 绝不无条件 '
-          'return true（防降级裸奔）。违规文件：\$offenders',
-    );
-  });
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'TLS 自签证书只能经指纹钉扎接受；badCertificateCallback 绝不无条件 '
+            'return true（防降级裸奔）。违规文件：\$offenders',
+      );
+    },
+  );
 
   test('pinning client 回调确实经过指纹比较（正向守卫，防被改空）', () {
-    final String source =
-        File('../packages/fushi_engine/lib/sync/tls/fushi_pinning_http.dart').readAsStringSync();
-    expect(source.contains('certificateMatchesFingerprint'), isTrue,
-        reason: 'pinned client 必须用指纹比较判据。');
+    final String source = File(
+      '../packages/fushi_engine/lib/sync/tls/fushi_pinning_http.dart',
+    ).readAsStringSync();
+    expect(
+      source.contains('certificateMatchesFingerprint'),
+      isTrue,
+      reason: 'pinned client 必须用指纹比较判据。',
+    );
     expect(source.contains('badCertificateCallback'), isTrue);
     final int cbIdx = source.indexOf('badCertificateCallback =');
     expect(cbIdx, isNonNegative);
     final String after = source.substring(cbIdx, cbIdx + 200);
-    expect(after.contains('certificateMatchesFingerprint'), isTrue,
-        reason: 'badCertificateCallback 必须委托给指纹比较，不得无条件放行。');
+    expect(
+      after.contains('certificateMatchesFingerprint'),
+      isTrue,
+      reason: 'badCertificateCallback 必须委托给指纹比较，不得无条件放行。',
+    );
   });
 }

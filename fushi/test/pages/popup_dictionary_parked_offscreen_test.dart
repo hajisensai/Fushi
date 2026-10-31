@@ -106,8 +106,11 @@ void main() {
     await tester.pump();
 
     final Finder layerFinder = find.byType(DictionaryPopupLayer);
-    expect(layerFinder, findsOneWidget,
-        reason: '开页只 seed 一个常驻隐藏热槽（TODO-951 症状C）');
+    expect(
+      layerFinder,
+      findsOneWidget,
+      reason: '开页只 seed 一个常驻隐藏热槽（TODO-951 症状C）',
+    );
     final DictionaryPopupLayer layer = tester.widget(layerFinder);
     expect(layer.keepWebViewWarm, isTrue, reason: 'seed 的层必须是常驻热槽');
 
@@ -116,9 +119,13 @@ void main() {
     // ① 几何：隐藏层左缘 ≥ 窗口宽 + 8 —— 真在屏外。旧实现停在卡片右缘
     //（~556px，屏内），Android 原生 WebView 在那截获触摸。
     final Offset topLeft = tester.getTopLeft(layerFinder);
-    expect(topLeft.dx, greaterThanOrEqualTo(window.width + 8),
-        reason: '隐藏热槽必须停到真·屏外（BUG-135 停靠几何），'
-            '屏内停靠的原生 WebView 会截获活动弹窗的滚动/点击');
+    expect(
+      topLeft.dx,
+      greaterThanOrEqualTo(window.width + 8),
+      reason:
+          '隐藏热槽必须停到真·屏外（BUG-135 停靠几何），'
+          '屏内停靠的原生 WebView 会截获活动弹窗的滚动/点击',
+    );
 
     // 屏外仍保持真实尺寸继续预热（不是 0 尺寸假预热）。
     final Size parkedSize = tester.getSize(layerFinder);
@@ -148,8 +155,9 @@ void main() {
 
     final Finder layerFinder = find.byType(DictionaryPopupLayer);
     expect(layerFinder, findsOneWidget);
-    final GlobalKey warmKey =
-        tester.widget<DictionaryPopupLayer>(layerFinder).webViewKey;
+    final GlobalKey warmKey = tester
+        .widget<DictionaryPopupLayer>(layerFinder)
+        .webViewKey;
 
     final Finder searchField = find.byKey(
       const ValueKey<String>('popup_dictionary_search_field'),
@@ -162,16 +170,21 @@ void main() {
 
     // 复用热槽原地查词：仍只有一层、同一 webViewKey（WebView 未重建 → 不闪）。
     expect(layerFinder, findsOneWidget, reason: '顶层查词必须复用常驻热槽，不得新建层');
-    expect(tester.widget<DictionaryPopupLayer>(layerFinder).webViewKey,
-        same(warmKey),
-        reason: '复用后必须还是同一个 WebView（TODO-951 症状C 不回归）');
+    expect(
+      tester.widget<DictionaryPopupLayer>(layerFinder).webViewKey,
+      same(warmKey),
+      reason: '复用后必须还是同一个 WebView（TODO-951 症状C 不回归）',
+    );
 
     // 可见层回到屏内、可命中（触摸路径畅通）。
     final Size window = tester.view.physicalSize / tester.view.devicePixelRatio;
     final Offset topLeft = tester.getTopLeft(layerFinder);
     expect(topLeft.dx, greaterThanOrEqualTo(0));
     expect(topLeft.dx, lessThan(window.width), reason: '可见层必须回到屏内');
-    expect(layerFinder.hitTestable(), findsOneWidget,
-        reason: '可见层必须可命中（触摸路径畅通）');
+    expect(
+      layerFinder.hitTestable(),
+      findsOneWidget,
+      reason: '可见层必须可命中（触摸路径畅通）',
+    );
   });
 }

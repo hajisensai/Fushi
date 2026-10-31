@@ -18,9 +18,9 @@ import 'package:flutter/widgets.dart';
 /// axis-aligned `Transform.scale`. With rotation, `Rect.fromPoints` of two
 /// opposite corners would not be the true bounding box.
 Rect globalRectOfBox(RenderBox box) => Rect.fromPoints(
-      box.localToGlobal(Offset.zero),
-      box.localToGlobal(box.size.bottomRight(Offset.zero)),
-    );
+  box.localToGlobal(Offset.zero),
+  box.localToGlobal(box.size.bottomRight(Offset.zero)),
+);
 
 /// [globalRectOfBox] for the render object behind [context], or null when it has
 /// no attached, laid-out [RenderBox] — an inactive/unmounted element, or a box

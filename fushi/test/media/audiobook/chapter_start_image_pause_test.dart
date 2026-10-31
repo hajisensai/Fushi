@@ -25,26 +25,33 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
-      final File jsTest =
-          File('test/media/audiobook/chapter_start_image_pause_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
+      final File jsTest = File(
+        'test/media/audiobook/chapter_start_image_pause_test.js',
       );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
       expect(
         result.exitCode,
         0,
-        reason: 'BUG-2536 chapter-start image pause behavior test failed.\n'
+        reason:
+            'BUG-2536 chapter-start image pause behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
     },
   );
 
@@ -60,11 +67,15 @@ void main() {
       expect(
         reader,
         contains(
-            '_audioChapterArrivalSection = pausedOnTarget ? -1 : newSection;'),
+          '_audioChapterArrivalSection = pausedOnTarget ? -1 : newSection;',
+        ),
         reason: '_handleCueCrossChapter 须在 _navigateToChapter 前记下到达章',
       );
-      expect(reader, contains('Future<bool> _pauseThroughImageOnlyChapters('),
-          reason: '图片章停留序列须回报是否已在目标宿主上停留过（TODO-1128 合并图）');
+      expect(
+        reader,
+        contains('Future<bool> _pauseThroughImageOnlyChapters('),
+        reason: '图片章停留序列须回报是否已在目标宿主上停留过（TODO-1128 合并图）',
+      );
     });
 
     test('到达标记只在目标章落地后的第一次真实 cue 高亮消费', () {
@@ -72,33 +83,46 @@ void main() {
       expect(i, greaterThan(-1));
       final String fn = reader.substring(i, i + 500);
       expect(
-          fn,
-          contains(
-              'if (cue == null || cue.textFragmentId.isEmpty) return false;'),
-          reason: '未匹配 cue 的清高亮不消费标记，等第一条匹配 cue');
+        fn,
+        contains(
+          'if (cue == null || cue.textFragmentId.isEmpty) return false;',
+        ),
+        reason: '未匹配 cue 的清高亮不消费标记，等第一条匹配 cue',
+      );
       expect(
-          fn,
-          contains(
-              'if (_restoreInFlight || _currentChapter != section) return false;'),
-          reason: '载入期瞬态 notify 不消费标记');
-      expect(reader,
-          contains('fromChapterStart: _consumeAudioChapterArrival(cue),'),
-          reason: '_onCueChanged 的高亮须透传到达标记');
+        fn,
+        contains(
+          'if (_restoreInFlight || _currentChapter != section) return false;',
+        ),
+        reason: '载入期瞬态 notify 不消费标记',
+      );
+      expect(
+        reader,
+        contains('fromChapterStart: _consumeAudioChapterArrival(cue),'),
+        reason: '_onCueChanged 的高亮须透传到达标记',
+      );
     });
 
     test('JS 桥两条高亮路径都把 fromChapterStart 透传到 __fushiImagePauseAdvance', () {
       expect(
-          bridge,
-          contains(
-              'if (fromChapterStart && document.body) prev = document.body;'),
-          reason: '章首到达以 document.body 为上一句锚点');
+        bridge,
+        contains(
+          'if (fromChapterStart && document.body) prev = document.body;',
+        ),
+        reason: '章首到达以 document.body 为上一句锚点',
+      );
       expect(
-          bridge,
-          contains(
-              '\${jsonEncode(raw)}, \$reveal, \$pauseEnabled, \$fromChapterStart);'),
-          reason: 'sasayaki 路径 Dart→JS 须传 fromChapterStart');
-      expect(bridge, contains("'\$fromChapterStart);}'"),
-          reason: 'selector 路径 Dart→JS 须传 fromChapterStart');
+        bridge,
+        contains(
+          '\${jsonEncode(raw)}, \$reveal, \$pauseEnabled, \$fromChapterStart);',
+        ),
+        reason: 'sasayaki 路径 Dart→JS 须传 fromChapterStart',
+      );
+      expect(
+        bridge,
+        contains("'\$fromChapterStart);}'"),
+        reason: 'selector 路径 Dart→JS 须传 fromChapterStart',
+      );
     });
   });
 }

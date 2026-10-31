@@ -9,18 +9,18 @@ import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 
 http.Response _json(Map<String, dynamic> envelope) => http.Response.bytes(
-      utf8.encode(jsonEncode(envelope)),
-      200,
-      headers: <String, String>{'content-type': 'application/json'},
-    );
+  utf8.encode(jsonEncode(envelope)),
+  200,
+  headers: <String, String>{'content-type': 'application/json'},
+);
 
 AListDiscoverySource _source(MockClient client) => AListDiscoverySource(
-      id: 'alist-test',
-      displayName: 'Test AList',
-      baseUrl: 'https://alist.example.com/',
-      kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
-      client: client,
-    );
+  id: 'alist-test',
+  displayName: 'Test AList',
+  baseUrl: 'https://alist.example.com/',
+  kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+  client: client,
+);
 
 void main() {
   test('browse:目录/文件分形,分页由 total 决定,文件 payload 留待 resolve', () async {
@@ -244,23 +244,28 @@ void main() {
       }),
     );
 
-    const DiscoveryRequest req =
-        DiscoveryRequest(kind: DiscoveryMediaKind.game, query: 'ATRI');
+    const DiscoveryRequest req = DiscoveryRequest(
+      kind: DiscoveryMediaKind.game,
+      query: 'ATRI',
+    );
 
-    final ProviderBatchResult<DiscoveryResultPage> first =
-        await source.search(req);
+    final ProviderBatchResult<DiscoveryResultPage> first = await source.search(
+      req,
+    );
     expect(
       (first.items.single.entries.single as DiscoveryResourceItem).id,
       '/guest/其他/ATRI.rar',
       reason: '首次探测失败 → 退回不剥前缀的老行为，搜索本身照常成功',
     );
 
-    final ProviderBatchResult<DiscoveryResultPage> second =
-        await source.search(req);
+    final ProviderBatchResult<DiscoveryResultPage> second = await source.search(
+      req,
+    );
     expect(
       (second.items.single.entries.single as DiscoveryResourceItem).id,
       '/其他/ATRI.rar',
-      reason: '第二次必须重新探测并剥掉 /guest；若这里仍是 /guest/... 说明又退回了'
+      reason:
+          '第二次必须重新探测并剥掉 /guest；若这里仍是 /guest/... 说明又退回了'
           '「一次失败即永久放弃」',
     );
     expect(listCalls, 2, reason: '第二次搜索必须真的再问一次根目录');

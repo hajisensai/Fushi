@@ -22,11 +22,17 @@ void main() {
       'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
     ).readAsStringSync();
     // 旧 fork 曾 `new HashSet<>(Arrays.asList("Yuuna"))`，给每张卡硬塞 Yuuna。
-    expect(src.contains('"Yuuna"'), isFalse,
-        reason: 'AnkiDroid 不得再注入旧 Yuuna 默认 tag；标签统一由 Dart buildNoteTags 计算');
+    expect(
+      src.contains('"Yuuna"'),
+      isFalse,
+      reason: 'AnkiDroid 不得再注入旧 Yuuna 默认 tag；标签统一由 Dart buildNoteTags 计算',
+    );
     // addNote 仍透传 Dart 传入的 tags（含 fushi + 分类标签）。
-    expect(src, contains('allTags.addAll(tags)'),
-        reason: 'AnkiDroid 必须透传 Dart 传入的 tags');
+    expect(
+      src,
+      contains('allTags.addAll(tags)'),
+      reason: 'AnkiDroid 必须透传 Dart 传入的 tags',
+    );
   });
 
   test('buildNoteTags 把来源映射成 book/video 分类标签（追加不覆盖）', () {
@@ -35,19 +41,27 @@ void main() {
       '../packages/fushi_anki/lib/src/anki_note_composer.dart',
     ).readAsStringSync();
     expect(
-        src,
-        allOf(
-          contains('List<String> buildNoteTags('),
-          contains('AnkiMiningSource? source'),
-        ),
-        reason: 'buildNoteTags 必须接受来源参数');
+      src,
+      allOf(
+        contains('List<String> buildNoteTags('),
+        contains('AnkiMiningSource? source'),
+      ),
+      reason: 'buildNoteTags 必须接受来源参数',
+    );
     expect(src, contains("static const String bookTag = 'book';"));
     expect(src, contains("static const String videoTag = 'video';"));
-    expect(src, contains("static const String gameTag = 'game';"),
-        reason: 'BUG-1137：gal Hook 来源必须有自己的 game 分类标签');
-    expect(src, contains("static const String fushiTag = 'fushi';"),
-        reason: 'fushi 固定标签不得丢（TODO-062；W7 起新卡默认 tag 为 fushi，'
-            '存量卡上的字面 hibiki tag 属用户 Anki 库外部数据不迁移）');
+    expect(
+      src,
+      contains("static const String gameTag = 'game';"),
+      reason: 'BUG-1137：gal Hook 来源必须有自己的 game 分类标签',
+    );
+    expect(
+      src,
+      contains("static const String fushiTag = 'fushi';"),
+      reason:
+          'fushi 固定标签不得丢（TODO-062；W7 起新卡默认 tag 为 fushi，'
+          '存量卡上的字面 hibiki tag 属用户 Anki 库外部数据不迁移）',
+    );
   });
 
   test('两后端 mineEntry 都把 context.source 传给 buildNoteTags', () {
@@ -56,34 +70,48 @@ void main() {
       '../packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
     ]) {
       final String src = File(path).readAsStringSync();
-      expect(src,
-          allOf(contains('buildNoteTags('), contains('source: context.source')),
-          reason: '$path 必须把来源透传给 buildNoteTags（否则分类标签不生效）');
+      expect(
+        src,
+        allOf(contains('buildNoteTags('), contains('source: context.source')),
+        reason: '$path 必须把来源透传给 buildNoteTags（否则分类标签不生效）',
+      );
     }
   });
 
   test('reader 制卡入口指定 book 来源', () {
     final String src = readReaderPageSource();
-    expect(src, contains('source: AnkiMiningSource.book'),
-        reason: 'reader 制卡应标记书籍来源 → book 分类标签');
+    expect(
+      src,
+      contains('source: AnkiMiningSource.book'),
+      reason: 'reader 制卡应标记书籍来源 → book 分类标签',
+    );
   });
 
   test('video 制卡入口指定 video 来源', () {
     // TODO-590 batch14: `_mineVideoCard`（含 source: AnkiMiningSource.video）已搬进
     // lookup_mining.part.dart，读合并语料才能命中。
     final String src = readVideoFushiSource();
-    expect(src, contains('source: AnkiMiningSource.video'),
-        reason: 'video 制卡应标记视频来源 → video 分类标签');
+    expect(
+      src,
+      contains('source: AnkiMiningSource.video'),
+      reason: 'video 制卡应标记视频来源 → video 分类标签',
+    );
   });
 
   test('mixin 把 dictionarySourceType 映射进 AnkiMiningContext.source', () {
-    final String src =
-        File('lib/src/pages/implementations/dictionary_page_mixin.dart')
-            .readAsStringSync();
-    expect(src, contains('AnkiMiningSource get miningSource'),
-        reason: 'mixin 应把统计来源映射成制卡来源（可被 texthooker 页覆写成 game）');
-    expect(src, contains('source: miningSource'),
-        reason: 'mixin 的 onMineEntry 必须把来源传进 context');
+    final String src = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
+    expect(
+      src,
+      contains('AnkiMiningSource get miningSource'),
+      reason: 'mixin 应把统计来源映射成制卡来源（可被 texthooker 页覆写成 game）',
+    );
+    expect(
+      src,
+      contains('source: miningSource'),
+      reason: 'mixin 的 onMineEntry 必须把来源传进 context',
+    );
     expect(src, contains('AnkiMiningSource.video'));
     expect(src, contains('AnkiMiningSource.book'));
   });
@@ -93,30 +121,46 @@ void main() {
   // ② gal 场景卡协调器显式声明 game 来源；③ texthooker 页 fallback 纯文本卡覆写
   // mixin 来源为 game（统计口径不动，标签与统计两个维度）。
   test('gal 制卡链路显式声明 game 来源，source 无静默默认值', () {
-    final String requestSrc =
-        File('../packages/fushi_engine/lib/mining/immersion_mining_request.dart').readAsStringSync();
-    expect(requestSrc, contains('required this.source'),
-        reason: 'ImmersionMiningRequest.source 必须必填，禁止恢复 video 默认值');
-    expect(requestSrc, isNot(contains('this.source = AnkiMiningSource')),
-        reason: 'source 默认值是 BUG-1137 根因，不得回归');
+    final String requestSrc = File(
+      '../packages/fushi_engine/lib/mining/immersion_mining_request.dart',
+    ).readAsStringSync();
+    expect(
+      requestSrc,
+      contains('required this.source'),
+      reason: 'ImmersionMiningRequest.source 必须必填，禁止恢复 video 默认值',
+    );
+    expect(
+      requestSrc,
+      isNot(contains('this.source = AnkiMiningSource')),
+      reason: 'source 默认值是 BUG-1137 根因，不得回归',
+    );
 
-    final String builderSrc =
-        File('lib/src/mining/external_window_mining.dart').readAsStringSync();
-    expect(builderSrc, contains('required AnkiMiningSource source'),
-        reason: 'buildExternalWindowRequest 的来源必须由调用点显式声明');
+    final String builderSrc = File(
+      'lib/src/mining/external_window_mining.dart',
+    ).readAsStringSync();
+    expect(
+      builderSrc,
+      contains('required AnkiMiningSource source'),
+      reason: 'buildExternalWindowRequest 的来源必须由调用点显式声明',
+    );
 
-    final String coordinatorSrc =
-        File('lib/src/mining/gal_hook_mining_coordinator.dart')
-            .readAsStringSync();
-    expect(coordinatorSrc, contains('source: AnkiMiningSource.game'),
-        reason: 'gal 场景卡应标记游戏来源 → game 分类标签');
+    final String coordinatorSrc = File(
+      'lib/src/mining/gal_hook_mining_coordinator.dart',
+    ).readAsStringSync();
+    expect(
+      coordinatorSrc,
+      contains('source: AnkiMiningSource.game'),
+      reason: 'gal 场景卡应标记游戏来源 → game 分类标签',
+    );
 
-    final String texthookerSrc =
-        File('lib/src/pages/implementations/texthooker_page.dart')
-            .readAsStringSync();
-    expect(texthookerSrc,
-        contains('AnkiMiningSource get miningSource => AnkiMiningSource.game'),
-        reason: 'texthooker fallback 纯文本卡同样归 game，不得吃默认 book');
+    final String texthookerSrc = File(
+      'lib/src/pages/implementations/texthooker_page.dart',
+    ).readAsStringSync();
+    expect(
+      texthookerSrc,
+      contains('AnkiMiningSource get miningSource => AnkiMiningSource.game'),
+      reason: 'texthooker fallback 纯文本卡同样归 game，不得吃默认 book',
+    );
   });
 
   // TODO-295 / BUG-242：设置页「添加来源分类标签」开关的提示文案，必须如实描述
@@ -130,19 +174,37 @@ void main() {
     final String zhHint =
         AppLocale.zhCn.translations.anki_tag_include_category_hint;
 
-    expect(enHint.contains('video'), isTrue,
-        reason: 'EN 提示应说明视频卡片得到 "video" 标签');
-    expect(enHint.toLowerCase().contains('anime'), isFalse,
-        reason: 'EN 提示不得再把视频标签写成 "anime"（实际写入的是 video）');
-    expect(enHint.contains('game'), isTrue,
-        reason: 'BUG-1137：EN 提示应说明游戏卡片得到 "game" 标签');
+    expect(
+      enHint.contains('video'),
+      isTrue,
+      reason: 'EN 提示应说明视频卡片得到 "video" 标签',
+    );
+    expect(
+      enHint.toLowerCase().contains('anime'),
+      isFalse,
+      reason: 'EN 提示不得再把视频标签写成 "anime"（实际写入的是 video）',
+    );
+    expect(
+      enHint.contains('game'),
+      isTrue,
+      reason: 'BUG-1137：EN 提示应说明游戏卡片得到 "game" 标签',
+    );
 
-    expect(zhHint.contains('video'), isTrue,
-        reason: 'zh-CN 提示应说明视频卡片得到「video」标签');
+    expect(
+      zhHint.contains('video'),
+      isTrue,
+      reason: 'zh-CN 提示应说明视频卡片得到「video」标签',
+    );
     expect(zhHint.contains('anime'), isFalse, reason: 'zh-CN 提示不得再出现 "anime"');
-    expect(zhHint.contains('动漫'), isFalse,
-        reason: 'zh-CN 提示不得把视频写成「动漫」（视频≠动画）');
-    expect(zhHint.contains('game'), isTrue,
-        reason: 'BUG-1137：zh-CN 提示应说明游戏卡片得到「game」标签');
+    expect(
+      zhHint.contains('动漫'),
+      isFalse,
+      reason: 'zh-CN 提示不得把视频写成「动漫」（视频≠动画）',
+    );
+    expect(
+      zhHint.contains('game'),
+      isTrue,
+      reason: 'BUG-1137：zh-CN 提示应说明游戏卡片得到「game」标签',
+    );
   });
 }

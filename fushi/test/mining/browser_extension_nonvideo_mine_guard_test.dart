@@ -43,7 +43,9 @@ void main() {
 
         // 1. mineEntry 必须先取制卡上下文，不再无条件入队视频剪辑队列。
         expect(
-          src.contains("var ctx = (typeof window.fushiMineContext === 'function')"),
+          src.contains(
+            "var ctx = (typeof window.fushiMineContext === 'function')",
+          ),
           isTrue,
           reason: '$root bridge-shim.js mineEntry 未取制卡上下文',
         );
@@ -55,8 +57,10 @@ void main() {
           reason: '$root bridge-shim.js 未按可裁媒体能力分支即时制卡',
         );
         expect(
-          src.contains("var msg = { type: 'mine', fields: args[0], "
-              'sentence: sentence };'),
+          src.contains(
+            "var msg = { type: 'mine', fields: args[0], "
+            'sentence: sentence };',
+          ),
           isTrue,
           reason: '$root bridge-shim.js 非队列回落未走 background type:mine',
         );
@@ -65,8 +69,10 @@ void main() {
         //    整集拦截 / textTracks 收割 / DOM 采样）都要能当例句。少了这一级，
         //    B 站挂了外挂字幕制出来的卡就没有句子。
         expect(
-          src.contains('var trackText = (ctx && ctx.window) '
-              "? (ctx.window.text || '') : '';"),
+          src.contains(
+            'var trackText = (ctx && ctx.window) '
+            "? (ctx.window.text || '') : '';",
+          ),
           isTrue,
           reason: '$root bridge-shim.js 例句未接当前字幕行（只认 Netflix DOM）',
         );
@@ -79,8 +85,10 @@ void main() {
 
         // 4. 立即出卡这条路要带上当前解码帧当封面（取不到才不带）。
         expect(
-          src.contains('if (frame && frame.base64) '
-              'msg.screenshotBase64 = frame.base64;'),
+          src.contains(
+            'if (frame && frame.base64) '
+            'msg.screenshotBase64 = frame.base64;',
+          ),
           isTrue,
           reason: '$root bridge-shim.js 立即制卡未带当前解码帧封面',
         );
@@ -89,15 +97,23 @@ void main() {
         //    该 toast 必须落在门控之后（非队列分支已 return，够不到它）。
         //    锚点取只在代码里出现的整串：注释里若含同样的片段，indexOf 会先命中注释，
         //    顺序断言就变成恒真的空转。
-        final int gate =
-            src.indexOf("if (!(ctx && ctx.clip && ctx.clip.mode === 'queue'))");
-        final int enqueue =
-            src.indexOf('window.fushiEnqueue(args[0], sentence)');
+        final int gate = src.indexOf(
+          "if (!(ctx && ctx.clip && ctx.clip.mode === 'queue'))",
+        );
+        final int enqueue = src.indexOf(
+          'window.fushiEnqueue(args[0], sentence)',
+        );
         final int noCueToast = src.indexOf("res.reason === 'no-cue'");
-        expect(gate >= 0 && enqueue > gate, isTrue,
-            reason: '$root bridge-shim.js 视频剪辑入队必须在门控之后');
-        expect(noCueToast > gate, isTrue,
-            reason: '$root bridge-shim.js「没找到当前字幕」提示必须只在队列分支可达');
+        expect(
+          gate >= 0 && enqueue > gate,
+          isTrue,
+          reason: '$root bridge-shim.js 视频剪辑入队必须在门控之后',
+        );
+        expect(
+          noCueToast > gate,
+          isTrue,
+          reason: '$root bridge-shim.js「没找到当前字幕」提示必须只在队列分支可达',
+        );
       });
     });
   });

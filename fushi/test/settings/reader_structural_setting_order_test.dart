@@ -35,7 +35,7 @@ void main() {
     ('reading_display.page_columns', 'setReaderPageColumns'),
     (
       'reading_display.prioritize_reader_styles',
-      'setReaderPrioritizeReaderStyles'
+      'setReaderPrioritizeReaderStyles',
     ),
     ('reading_display.blur_images', 'setReaderBlurImages'),
     ('reading_display.merge_image_pages', 'setReaderMergeImagePages'),

@@ -121,8 +121,9 @@ void main() {
         lastStatisticModified: 1705944232500,
       );
       final encoded = jsonEncode(stat.toJson());
-      final decoded =
-          TtuStatistics.fromJson(jsonDecode(encoded) as Map<String, dynamic>);
+      final decoded = TtuStatistics.fromJson(
+        jsonDecode(encoded) as Map<String, dynamic>,
+      );
       expect(decoded.title, 'かがみの孤城');
     });
 
@@ -139,8 +140,9 @@ void main() {
         lastStatisticModified: 1000,
       );
       final encoded = jsonEncode(stat.toJson());
-      final decoded =
-          TtuStatistics.fromJson(jsonDecode(encoded) as Map<String, dynamic>);
+      final decoded = TtuStatistics.fromJson(
+        jsonDecode(encoded) as Map<String, dynamic>,
+      );
       expect(decoded.title, 'Book "with" \\slashes/ and\nnewlines');
     });
   });

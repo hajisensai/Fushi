@@ -14,10 +14,13 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     if (svc == null) return shelf.Response.notFound('Library service off');
     if (method != 'GET') return shelf.Response(405);
     final int limit =
-        (int.tryParse(request.url.queryParameters['limit'] ?? '') ?? 100)
-            .clamp(1, 500);
-    final List<RemoteActivityEvent> events =
-        await svc.listActivityEvents(limit: limit);
+        (int.tryParse(request.url.queryParameters['limit'] ?? '') ?? 100).clamp(
+          1,
+          500,
+        );
+    final List<RemoteActivityEvent> events = await svc.listActivityEvents(
+      limit: limit,
+    );
     return shelf.Response.ok(
       jsonEncode(<Map<String, Object?>>[
         for (final RemoteActivityEvent e in events) e.toJson(),
@@ -51,7 +54,7 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
           // charset=utf-8 必带：快照里的书名/标题/义项含 CJK，client 用
           // package:http `.body` 默认按 latin1 解码会乱码（同 _jsonResponse）。
           headers: <String, String>{
-            'Content-Type': 'application/json; charset=utf-8'
+            'Content-Type': 'application/json; charset=utf-8',
           },
         );
       case 'PUT':
@@ -94,7 +97,7 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
           // charset=utf-8 必带：合集名含 CJK，client 用 package:http `.body` 默认按
           // latin1 解码会乱码（同 aggregate / _jsonResponse）。
           headers: <String, String>{
-            'Content-Type': 'application/json; charset=utf-8'
+            'Content-Type': 'application/json; charset=utf-8',
           },
         );
       case 'POST':
@@ -106,12 +109,13 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
         } on FormatException catch (e) {
           return shelf.Response(400, body: 'Invalid manifest: $e');
         }
-        final CollectionManifest merged =
-            await svc.mergeCollectionManifest(incoming);
+        final CollectionManifest merged = await svc.mergeCollectionManifest(
+          incoming,
+        );
         return shelf.Response.ok(
           merged.canonicalJson(),
           headers: <String, String>{
-            'Content-Type': 'application/json; charset=utf-8'
+            'Content-Type': 'application/json; charset=utf-8',
           },
         );
       default:
@@ -135,13 +139,15 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     if (svc is! TagSyncHost) return shelf.Response.notFound('Tag sync off');
     final TagSyncHost host = svc;
     const Map<String, String> jsonHeaders = <String, String>{
-      'Content-Type': 'application/json; charset=utf-8'
+      'Content-Type': 'application/json; charset=utf-8',
     };
     switch (method) {
       case 'GET':
         final TagManifest manifest = await host.getTagManifest();
-        return shelf.Response.ok(manifest.canonicalJson(),
-            headers: jsonHeaders);
+        return shelf.Response.ok(
+          manifest.canonicalJson(),
+          headers: jsonHeaders,
+        );
       case 'POST':
         final Map<String, dynamic>? json = await readJsonObjectBody(request);
         if (json == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -174,13 +180,15 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
     final MediaLinkSyncHost host = svc;
     const Map<String, String> jsonHeaders = <String, String>{
-      'Content-Type': 'application/json; charset=utf-8'
+      'Content-Type': 'application/json; charset=utf-8',
     };
     switch (method) {
       case 'GET':
         final MediaLinkManifest manifest = await host.getMediaLinkManifest();
-        return shelf.Response.ok(manifest.canonicalJson(),
-            headers: jsonHeaders);
+        return shelf.Response.ok(
+          manifest.canonicalJson(),
+          headers: jsonHeaders,
+        );
       case 'POST':
         final Map<String, dynamic>? json = await readJsonObjectBody(request);
         if (json == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -190,8 +198,9 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
         } on FormatException catch (e) {
           return shelf.Response(400, body: 'Invalid manifest: $e');
         }
-        final MediaLinkManifest merged =
-            await host.mergeMediaLinkManifest(incoming);
+        final MediaLinkManifest merged = await host.mergeMediaLinkManifest(
+          incoming,
+        );
         return shelf.Response.ok(merged.canonicalJson(), headers: jsonHeaders);
       default:
         return shelf.Response(405);
@@ -326,7 +335,7 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
       // charset=utf-8 必带：itemKey 可能含 CJK（书名派生 key），client 按 latin1 默认
       // 解码会乱码（同 collections / aggregate）。
       headers: <String, String>{
-        'Content-Type': 'application/json; charset=utf-8'
+        'Content-Type': 'application/json; charset=utf-8',
       },
     );
   }

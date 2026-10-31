@@ -36,29 +36,41 @@ void main() {
   const String rightUrl = 'fushi.local/OEBPS/img/right.png';
 
   String htmlWith({String keyBridgeScript = ''}) => buildSpreadPageHtml(
-        navigationGeneration: 1,
-        leftUrl: leftUrl,
-        rightUrl: rightUrl,
-        swipeDistThreshold: 44,
-        swipeFastDistThreshold: 22,
-        swipeFastVelocity: 300,
-        keyBridgeScript: keyBridgeScript,
-      );
+    navigationGeneration: 1,
+    leftUrl: leftUrl,
+    rightUrl: rightUrl,
+    swipeDistThreshold: 44,
+    swipeFastDistThreshold: 22,
+    swipeFastVelocity: 300,
+    keyBridgeScript: keyBridgeScript,
+  );
 
   group('spread 文档自带翻页输入 (BUG-1426)', () {
     test('滚轮桥直连既有 onWheelPaginate，且带主轴与输入设备参数', () {
       final String html = htmlWith();
-      expect(html, contains("callHandler('onWheelPaginate'"),
-          reason: 'spread 页没有 wheel 桥 = 滚轮完全无反应（用户报的第一个症状）');
-      expect(html, contains("document.addEventListener('wheel'"),
-          reason: 'wheel 必须挂文档级，两张整页图铺满视口时滚轮落在哪都要算数');
-      expect(html, contains("horizontal ? 'horizontal' : 'vertical'"),
-          reason: 'Dart 侧 onWheelPaginate 的第 2 个实参是主轴，少一个直接早退');
+      expect(
+        html,
+        contains("callHandler('onWheelPaginate'"),
+        reason: 'spread 页没有 wheel 桥 = 滚轮完全无反应（用户报的第一个症状）',
+      );
+      expect(
+        html,
+        contains("document.addEventListener('wheel'"),
+        reason: 'wheel 必须挂文档级，两张整页图铺满视口时滚轮落在哪都要算数',
+      );
+      expect(
+        html,
+        contains("horizontal ? 'horizontal' : 'vertical'"),
+        reason: 'Dart 侧 onWheelPaginate 的第 2 个实参是主轴，少一个直接早退',
+      );
       // BUG-1745：第 3 个实参是输入设备。少了它就落进 Dart 侧的 2 参兼容回落
       // （纵向恒判 mouse → 绕过触摸板闸门 → 上下滑一次翻 3 页）。「两个注入点拼的
       // 是同一份常量」由 pr912_paged_wheel_single_source_test.dart 单独守。
-      expect(html, contains("_isTrackpadWheel(e) ? 'trackpad' : 'mouse'"),
-          reason: 'spread 也必须回传 trackpad/mouse，否则触摸板聚合闸门在双页模式失效');
+      expect(
+        html,
+        contains("_isTrackpadWheel(e) ? 'trackpad' : 'mouse'"),
+        reason: 'spread 也必须回传 trackpad/mouse，否则触摸板聚合闸门在双页模式失效',
+      );
     });
 
     test('横扫桥直连既有 onSwipe，阈值来自入参而非另立默认', () {
@@ -77,8 +89,11 @@ void main() {
 
     test('键桥脚本原样嵌入，空串则不装键桥', () {
       const String marker = '/*__SPREAD_KEY_BRIDGE_MARKER__*/';
-      expect(htmlWith(keyBridgeScript: marker), contains(marker),
-          reason: '调用方生成的键桥必须真的进文档，否则 WebView2 持焦时按键全丢');
+      expect(
+        htmlWith(keyBridgeScript: marker),
+        contains(marker),
+        reason: '调用方生成的键桥必须真的进文档，否则 WebView2 持焦时按键全丢',
+      );
       expect(htmlWith(), isNot(contains(marker)));
     });
 
@@ -86,8 +101,9 @@ void main() {
     // **行为**：滚轮方向映射、横扫阈值判定、横扫后合成 click 不再误触发图片查看器。
     test('spread 脚本真跑：滚轮方向 / 横扫阈值 / 合成 click 抑制（行为级）', () {
       final String payload = jsonEncode(<String, String>{'html': htmlWith()});
-      final Directory temp =
-          Directory.systemTemp.createTempSync('fushi-spread-input-js-');
+      final Directory temp = Directory.systemTemp.createTempSync(
+        'fushi-spread-input-js-',
+      );
       final File payloadFile = File('${temp.path}/payload.json')
         ..writeAsStringSync(payload);
       late final ProcessResult result;
@@ -104,7 +120,8 @@ void main() {
       expect(
         result.exitCode,
         0,
-        reason: 'spread input runner failed:\n'
+        reason:
+            'spread input runner failed:\n'
             'stdout=${result.stdout}\nstderr=${result.stderr}',
       );
       expect(result.stdout.toString().trim(), 'OK');
@@ -127,18 +144,26 @@ void main() {
       // document 上装 keydown，同一次按下各命中一次就会翻两页——这条是真实的双触发
       // 风险，不是洁癖。
       const String bareSpace = 'Space';
-      expect(tokens.contains(bareSpace), isFalse,
-          reason: '裸 Space 必须留给 onSpaceKey 桥，否则空格翻两页');
+      expect(
+        tokens.contains(bareSpace),
+        isFalse,
+        reason: '裸 Space 必须留给 onSpaceKey 桥，否则空格翻两页',
+      );
 
       // 表里的每个 token 都必须能反解析回本表声明的动作之一——否则 Dart 侧
       // onSpreadKey 收到后 resolveKeyboard 得到别的动作（或 null），键桥形同虚设。
       for (final String token in tokens) {
         final InputBinding? binding = InputBinding.deserialize(token);
         expect(binding, isNotNull, reason: '$token 不是合法 InputBinding token');
-        final ShortcutAction? action =
-            resolveSpreadKeyBridgeAction(registry, binding!);
-        expect(kSpreadBridgedActions.contains(action), isTrue,
-            reason: '$token 解析成 $action，不在 spread 声明的动作集里');
+        final ShortcutAction? action = resolveSpreadKeyBridgeAction(
+          registry,
+          binding!,
+        );
+        expect(
+          kSpreadBridgedActions.contains(action),
+          isTrue,
+          reason: '$token 解析成 $action，不在 spread 声明的动作集里',
+        );
       }
 
       // 翻页是本 bug 的主诉，必须真的在表里（默认绑定含方向键）。
@@ -163,8 +188,11 @@ void main() {
             ],
           ),
         );
-      expect(spreadKeyBridgeTokens(registry), contains('KeyN'),
-          reason: '漫画页旧桥写死 ArrowLeft/ArrowRight 的教训（BUG-1347）不得重演');
+      expect(
+        spreadKeyBridgeTokens(registry),
+        contains('KeyN'),
+        reason: '漫画页旧桥写死 ArrowLeft/ArrowRight 的教训（BUG-1347）不得重演',
+      );
     });
   });
 
@@ -178,8 +206,9 @@ void main() {
   /// 的既有性质：页面专属 scope 优先于兜底 scope、裸 Space 恒不进表。
   group('键桥跨 scope 解析 (BUG-1442)', () {
     /// 一个确定不在任何 reader 默认绑定里的键，用来当「兜底 scope 专属键」。
-    const InputBinding fallbackOnly =
-        InputBinding(key: LogicalKeyboardKey.keyJ);
+    const InputBinding fallbackOnly = InputBinding(
+      key: LogicalKeyboardKey.keyJ,
+    );
 
     /// reader 与兜底 scope **同时**绑上的键，用来验优先级。
     const InputBinding shared = InputBinding(key: LogicalKeyboardKey.keyK);
@@ -198,7 +227,8 @@ void main() {
       expect(
         spreadKeyBridgeScopes(),
         <ShortcutScope>[ShortcutScope.reader, ShortcutScope.universal],
-        reason: 'kSpreadBridgedActions 前三个是 reader 动作、末位是 universal 的'
+        reason:
+            'kSpreadBridgedActions 前三个是 reader 动作、末位是 universal 的'
             'globalBack，导出的 scope 列表就该是 [reader, universal]——顺序反了会让'
             '「返回」把 spread 页的翻页键夺舍',
       );
@@ -206,25 +236,30 @@ void main() {
 
     test('scope 列表按动作集出现序去重导出，不是硬编码', () {
       expect(
-        spreadKeyBridgeScopes(actions: const <ShortcutAction>[
-          ShortcutAction.readerPageForward,
-          ShortcutAction.globalBack,
-          ShortcutAction.readerToggleChrome,
-          ShortcutAction.globalToggleFullscreen,
-        ]),
+        spreadKeyBridgeScopes(
+          actions: const <ShortcutAction>[
+            ShortcutAction.readerPageForward,
+            ShortcutAction.globalBack,
+            ShortcutAction.readerToggleChrome,
+            ShortcutAction.globalToggleFullscreen,
+          ],
+        ),
         <ShortcutScope>[
           ShortcutScope.reader,
           ShortcutScope.universal,
           ShortcutScope.global,
         ],
-        reason: '两个 reader 必须去重成一个，且三个 scope 按首次出现序排'
+        reason:
+            '两个 reader 必须去重成一个，且三个 scope 按首次出现序排'
             '（reader → universal → global）',
       );
       expect(
-        spreadKeyBridgeScopes(actions: const <ShortcutAction>[
-          ShortcutAction.globalBack,
-          ShortcutAction.readerPageForward,
-        ]),
+        spreadKeyBridgeScopes(
+          actions: const <ShortcutAction>[
+            ShortcutAction.globalBack,
+            ShortcutAction.readerPageForward,
+          ],
+        ),
         <ShortcutScope>[ShortcutScope.universal, ShortcutScope.reader],
         reason: '顺序必须真的跟着动作集走，不能返回固定列表',
       );
@@ -247,15 +282,22 @@ void main() {
 
       // globalBack 是 universal scope，靠的就是它在动作集里 → 解析侧才试 universal。
       // 这正是 PR#722 撞上的那堵墙，现在已经拆掉。
-      expect(resolveSpreadKeyBridgeAction(registry, fallbackOnly),
-          ShortcutAction.globalBack,
-          reason: '解析侧若还硬编码 reader scope，进了动作集的兜底动作永远解析成 null，'
-              '键桥对它形同虚设');
+      expect(
+        resolveSpreadKeyBridgeAction(registry, fallbackOnly),
+        ShortcutAction.globalBack,
+        reason:
+            '解析侧若还硬编码 reader scope，进了动作集的兜底动作永远解析成 null，'
+            '键桥对它形同虚设',
+      );
 
       // 没进动作集的 scope 一概不试——键桥不是「什么都解析」。
-      expect(resolveSpreadKeyBridgeAction(registry, notBridged), isNull,
-          reason: 'globalToggleFullscreen（global scope）不在生产动作集里，它的键就'
-              '不该被 spread 键桥解析到');
+      expect(
+        resolveSpreadKeyBridgeAction(registry, notBridged),
+        isNull,
+        reason:
+            'globalToggleFullscreen（global scope）不在生产动作集里，它的键就'
+            '不该被 spread 键桥解析到',
+      );
 
       // 把它加进动作集，解析侧无需任何改动就跟着生效。
       expect(
@@ -268,7 +310,8 @@ void main() {
           ],
         ),
         ShortcutAction.globalToggleFullscreen,
-        reason: 'scope 列表从动作集导出 ⇒ 往集合里加一个新 scope 的动作，解析侧零改动'
+        reason:
+            'scope 列表从动作集导出 ⇒ 往集合里加一个新 scope 的动作，解析侧零改动'
             '就该跟着生效',
       );
     });
@@ -294,7 +337,8 @@ void main() {
           ],
         ),
         ShortcutAction.readerPageForward,
-        reason: '兜底 scope 排在动作集后面 = 解析时也排在后面；反过来会让翻页被'
+        reason:
+            '兜底 scope 排在动作集后面 = 解析时也排在后面；反过来会让翻页被'
             '「返回」夺舍，spread 页直接退书',
       );
     });
@@ -325,12 +369,20 @@ void main() {
       // App 已把裸空格中和为 DoNothingIntent、焦点确认统一走 Enter/手柄 A；spread
       // 页的裸 Space 又归 onSpaceKey 那座桥。两座桥都装 keydown，裸 Space 一旦进本
       // 表就是同一次按下触发两次。
-      expect(tokens, isNot(contains('Space')),
-          reason: '裸 Space 必须恒排除，跨 scope 动作也不例外——否则空格在 spread 里'
-              '复活成双触发');
-      expect(tokens, contains('Ctrl+Space'),
-          reason: '排除的判据只是「裸」Space，带修饰键的 Space 仍是正常绑定，不该被'
-              '一起误杀');
+      expect(
+        tokens,
+        isNot(contains('Space')),
+        reason:
+            '裸 Space 必须恒排除，跨 scope 动作也不例外——否则空格在 spread 里'
+            '复活成双触发',
+      );
+      expect(
+        tokens,
+        contains('Ctrl+Space'),
+        reason:
+            '排除的判据只是「裸」Space，带修饰键的 Space 仍是正常绑定，不该被'
+            '一起误杀',
+      );
     });
 
     test('spread 专属键（翻页/唤栏/退书）解析结果一字不变', () {
@@ -344,9 +396,13 @@ void main() {
               binding.modifiers.isEmpty) {
             continue;
           }
-          expect(resolveSpreadKeyBridgeAction(registry, binding), action,
-              reason: '${binding.serialize()} 本该解析成 $action；spread 专属键的行为'
-                  '不允许因为解析改成多 scope 而漂动');
+          expect(
+            resolveSpreadKeyBridgeAction(registry, binding),
+            action,
+            reason:
+                '${binding.serialize()} 本该解析成 $action；spread 专属键的行为'
+                '不允许因为解析改成多 scope 而漂动',
+          );
         }
       }
     });
@@ -367,34 +423,64 @@ void main() {
       expect(end, greaterThan(idx));
       final String body = source.substring(idx, end);
 
-      expect(body, contains('InputBinding.deserialize'),
-          reason: 'token 必须反解析，不能按字面量比键名');
-      expect(body, contains('resolveSpreadKeyBridgeAction('),
-          reason: '必须走与 Flutter 焦点路径同一个解析（该 helper 内部就是 '
-              'resolveKeyboard），改键才会对两条路一起生效');
+      expect(
+        body,
+        contains('InputBinding.deserialize'),
+        reason: 'token 必须反解析，不能按字面量比键名',
+      );
+      expect(
+        body,
+        contains('resolveSpreadKeyBridgeAction('),
+        reason:
+            '必须走与 Flutter 焦点路径同一个解析（该 helper 内部就是 '
+            'resolveKeyboard），改键才会对两条路一起生效',
+      );
       // BUG-1442：handler 体内**不许**再出现任何 `ShortcutScope.xxx` 字面量——
       // 硬编码单 scope 正是「动作集里加了跨 scope 动作却静默解析不到」的根因。
       // 要试哪些 scope 由 spreadKeyBridgeScopes 从动作集导出。
-      expect(body, isNot(contains('ShortcutScope.')),
-          reason: 'onSpreadKey 里硬编码 scope = 动作集与解析侧两份真值，必然漂开');
-      expect(body, contains('_executeShortcutAction('),
-          reason: '解析出动作却不执行 = 按键仍然没反应');
-      expect(body, contains('FocusReclaimCause.gesture'),
-          reason: '不夺回 Flutter 焦点，后续按键还是只到 DOM（BUG-136 同族）');
+      expect(
+        body,
+        isNot(contains('ShortcutScope.')),
+        reason: 'onSpreadKey 里硬编码 scope = 动作集与解析侧两份真值，必然漂开',
+      );
+      expect(
+        body,
+        contains('_executeShortcutAction('),
+        reason: '解析出动作却不执行 = 按键仍然没反应',
+      );
+      expect(
+        body,
+        contains('FocusReclaimCause.gesture'),
+        reason: '不夺回 Flutter 焦点，后续按键还是只到 DOM（BUG-136 同族）',
+      );
     });
 
     test('_loadSpreadPage 真的把三样都传进 HTML', () {
-      final String body =
-          methodBody(source, 'Future<void> _loadSpreadPage(SpreadEntry entry)');
-      expect(containsCodeLine(body, 'swipeDistThreshold:'), isTrue,
-          reason: '不传阈值，横扫判据就退回不到正文那套手感');
-      expect(containsCodeLine(body, 'swipePageTurnDistThresholds('), isTrue,
-          reason: '阈值必须来自 ReaderSettings 的同一真值（随灵敏度设置缩放）');
+      final String body = methodBody(
+        source,
+        'Future<void> _loadSpreadPage(SpreadEntry entry)',
+      );
+      expect(
+        containsCodeLine(body, 'swipeDistThreshold:'),
+        isTrue,
+        reason: '不传阈值，横扫判据就退回不到正文那套手感',
+      );
+      expect(
+        containsCodeLine(body, 'swipePageTurnDistThresholds('),
+        isTrue,
+        reason: '阈值必须来自 ReaderSettings 的同一真值（随灵敏度设置缩放）',
+      );
       expect(containsCodeLine(body, 'keyBridgeScript:'), isTrue);
-      expect(body, contains("handlerName: 'onSpreadKey'"),
-          reason: '键桥脚本必须在装载 spread 时生成，改键下次进页即生效');
-      expect(body, contains("handlerName: 'onSpaceKey'"),
-          reason: '裸 Space 桥与正文逐字同款，spread 页的空格翻页靠它');
+      expect(
+        body,
+        contains("handlerName: 'onSpreadKey'"),
+        reason: '键桥脚本必须在装载 spread 时生成，改键下次进页即生效',
+      );
+      expect(
+        body,
+        contains("handlerName: 'onSpaceKey'"),
+        reason: '裸 Space 桥与正文逐字同款，spread 页的空格翻页靠它',
+      );
     });
 
     // 滚轮/横扫桥只有在 Dart 侧 handler 仍然存在时才有意义。它们是**既有** handler，
@@ -412,8 +498,10 @@ void main() {
       final String src = File(kSettingsFile).readAsStringSync();
       final int at = src.indexOf('double get swipePageTurnSensitivity {');
       expect(at, greaterThanOrEqualTo(0), reason: '找不到灵敏度 getter');
-      final int end =
-          src.indexOf('Future<void> setSwipePageTurnSensitivity', at);
+      final int end = src.indexOf(
+        'Future<void> setSwipePageTurnSensitivity',
+        at,
+      );
       expect(end, greaterThan(at));
       return src.substring(at, end);
     }
@@ -425,11 +513,7 @@ void main() {
         contains('return defaultSwipePageTurnSensitivity;'),
         reason: 'getter 里写回字面量 1.0 = 又有两处默认，改手感只会改到一半',
       );
-      expect(
-        body,
-        isNot(contains('1.0;')),
-        reason: '兜底必须引用常量，不得出现裸字面量默认值',
-      );
+      expect(body, isNot(contains('1.0;')), reason: '兜底必须引用常量，不得出现裸字面量默认值');
       expect(ReaderSettings.defaultSwipePageTurnSensitivity, 1.0);
     });
 
@@ -441,8 +525,7 @@ void main() {
       final int newKeyAt = body.indexOf('swipeSensitivityKey');
       final int legacyAt = body.indexOf('legacySwipeSensitivityMultiplierKey');
       expect(newKeyAt, greaterThanOrEqualTo(0));
-      expect(legacyAt, greaterThan(newKeyAt),
-          reason: '新 key 必须先于旧 key 被读');
+      expect(legacyAt, greaterThan(newKeyAt), reason: '新 key 必须先于旧 key 被读');
       expect(
         body,
         contains('1.0 / legacyMultiplier'),

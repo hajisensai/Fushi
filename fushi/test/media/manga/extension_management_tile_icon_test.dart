@@ -32,8 +32,9 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('图标经 AppHttpImage（应用代理出口）加载，而不是 NetworkImage',
-      (WidgetTester tester) async {
+  testWidgets('图标经 AppHttpImage（应用代理出口）加载，而不是 NetworkImage', (
+    WidgetTester tester,
+  ) async {
     await pumpTile(tester, iconUrl: 'https://icons.example/pkg.png');
 
     final Iterable<Image> images = tester.widgetList<Image>(find.byType(Image));
@@ -42,7 +43,8 @@ void main() {
       expect(
         image.image,
         isA<AppHttpImage>(),
-        reason: 'BUG-1715：图标 provider 必须是 AppHttpImage，'
+        reason:
+            'BUG-1715：图标 provider 必须是 AppHttpImage，'
             'NetworkImage 结构上接不进应用代理层',
       );
       expect(image.image, isNot(isA<NetworkImage>()));

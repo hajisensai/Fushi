@@ -5,10 +5,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// 对任意 [SyncAssetStore] 实现跑同一组行为断言。后端集成测试可复用
 /// （传入真实后端工厂），单测传 FakeAssetStore。
-void runAssetStoreContract(
-  String label,
-  SyncAssetStore Function() create,
-) {
+void runAssetStoreContract(String label, SyncAssetStore Function() create) {
   group('SyncAssetStore contract: $label', () {
     late SyncAssetStore store;
     late Directory tmp;
@@ -48,22 +45,25 @@ void runAssetStoreContract(
       await store.putAsset(sub, 'content.epub', src);
       await store.putJsonAsset(books, 'top.json', <String, int>{'x': 1});
 
-      final Set<String> topNames = (await store.listChildren(books))
-          .map((AssetEntry e) => e.name)
-          .toSet();
+      final Set<String> topNames = (await store.listChildren(
+        books,
+      )).map((AssetEntry e) => e.name).toSet();
       expect(topNames, containsAll(<String>['bookKey', 'top.json']));
       // 不应递归出 content.epub
       expect(topNames.contains('content.epub'), isFalse);
 
-      final Set<String> subNames =
-          (await store.listChildren(sub)).map((AssetEntry e) => e.name).toSet();
+      final Set<String> subNames = (await store.listChildren(
+        sub,
+      )).map((AssetEntry e) => e.name).toSet();
       expect(subNames, contains('content.epub'));
     });
 
     test('json round-trips', () async {
       final String ns = await store.ensureNamespace('dictionaries');
-      await store
-          .putJsonAsset(ns, 'm.json', <String, Object?>{'k': 'v', 'n': 2});
+      await store.putJsonAsset(ns, 'm.json', <String, Object?>{
+        'k': 'v',
+        'n': 2,
+      });
       final AssetEntry? found = await store.findAsset(ns, 'm.json');
       final Object? decoded = await store.getJsonAsset(found!.id);
       expect(decoded, <String, Object?>{'k': 'v', 'n': 2});

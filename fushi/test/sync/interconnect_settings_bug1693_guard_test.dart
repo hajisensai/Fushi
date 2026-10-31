@@ -28,7 +28,8 @@ void main() {
     expect(
       containsCodeLine(body, 'interconnectTokenFor(u, globalToken)'),
       isTrue,
-      reason: '凭据必须按候选取（行上 per-peer token 优先、回落全局键），'
+      reason:
+          '凭据必须按候选取（行上 per-peer token 优先、回落全局键），'
           '否则配对第二台后全局键被覆写，第一台恒被误报失败',
     );
     expect(
@@ -39,7 +40,8 @@ void main() {
     expect(
       containsCodeLine(body, '_saveToken'),
       isFalse,
-      reason: '_saveToken 会清掉全部地址行的 per-peer token（BUG-1550 显式覆盖'
+      reason:
+          '_saveToken 会清掉全部地址行的 per-peer token（BUG-1550 显式覆盖'
           '语义），测试连接不许顺手改写凭据；手动输入路径的 onChanged 已逐次落库',
     );
 
@@ -52,8 +54,10 @@ void main() {
   });
 
   test('② 备份后端切换失败走统一友好错误翻译，不弹裸异常', () {
-    final String body =
-        methodBody(corpus, '  Future<void> _useInterconnectAsBackend() async');
+    final String body = methodBody(
+      corpus,
+      '  Future<void> _useInterconnectAsBackend() async',
+    );
     expect(
       containsCodeLine(body, 'friendlySyncErrorDetail(e)'),
       isTrue,
@@ -73,7 +77,8 @@ void main() {
     expect(
       containsCodeLine(body, '_reachable.removeWhere('),
       isTrue,
-      reason: '所有 URL 变更（删除/改址/重排）必经 _mutateUrls；不在这里剪，'
+      reason:
+          '所有 URL 变更（删除/改址/重排）必经 _mutateUrls；不在这里剪，'
           '删掉再重加同一地址就会立刻显示上一轮的 ✓/✗',
     );
     expect(
@@ -85,7 +90,9 @@ void main() {
 
   test('④ 互联启用只落在配对成功点，点击 LAN 设备不再预写', () {
     final String connect = methodBody(
-        corpus, '  Future<void> _connectToDevice(FushiDevice device) async');
+      corpus,
+      '  Future<void> _connectToDevice(FushiDevice device) async',
+    );
     expect(
       containsCodeLine(connect, 'setInterconnectEnabled(true)'),
       isFalse,
@@ -94,8 +101,11 @@ void main() {
 
     // v2 成功点：token 落库之后启用。
     final String v2 = methodBody(corpus, '  Future<String> _onPairSuccess(');
-    expect(containsCodeLine(v2, 'setInterconnectEnabled(true)'), isTrue,
-        reason: 'v2 配对成功（token 已落库）才代表互联真的投入使用');
+    expect(
+      containsCodeLine(v2, 'setInterconnectEnabled(true)'),
+      isTrue,
+      reason: 'v2 配对成功（token 已落库）才代表互联真的投入使用',
+    );
     final String v2Masked = maskComments(v2);
     expect(
       v2Masked.indexOf('setFushiClientTokenForUrl('),
@@ -105,8 +115,11 @@ void main() {
 
     // v1 回退成功点：同样拿到 token 才启用。
     final String v1 = methodBody(corpus, '  Future<void> _pairLegacyV1(');
-    expect(containsCodeLine(v1, 'setInterconnectEnabled(true)'), isTrue,
-        reason: 'v1 老路径拿到 token（配对成功）后同样要落启用');
+    expect(
+      containsCodeLine(v1, 'setInterconnectEnabled(true)'),
+      isTrue,
+      reason: 'v1 老路径拿到 token（配对成功）后同样要落启用',
+    );
     final String v1Masked = maskComments(v1);
     expect(
       v1Masked.indexOf('setFushiClientTokenForUrl('),

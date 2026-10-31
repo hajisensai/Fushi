@@ -41,8 +41,10 @@ AudioCue _bottomCue(
     ..markup = SubtitleMarkup(
       plainText: text,
       spans: const <SubtitleSpan>[],
-      anchor:
-          const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center),
+      anchor: const SubtitleAnchor(
+        SubtitleVAlign.bottom,
+        SubtitleHAlign.center,
+      ),
       cueStyle: style,
       playResY: 720,
     )
@@ -53,7 +55,8 @@ AudioCue _bottomCue(
 
 Rect _fillRect(WidgetTester tester, String ch) {
   final Finder fill = find.byWidgetPredicate(
-      (Widget w) => w is Text && w.data == ch && w.style?.foreground == null);
+    (Widget w) => w is Text && w.data == ch && w.style?.foreground == null,
+  );
   return tester.getRect(fill.first);
 }
 
@@ -65,19 +68,21 @@ Future<void> _mount(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: SizedBox(
-        width: size.width,
-        height: size.height,
-        child: VideoSubtitleOverlay(
-          controller: c,
-          respectAssStyle: true,
-          onCharTap: (_, __, ___, ____) {},
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: VideoSubtitleOverlay(
+            controller: c,
+            respectAssStyle: true,
+            onCharTap: (_, __, ___, ____) {},
+          ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -87,14 +92,34 @@ void main() {
     addTearDown(c.dispose);
     // 两对触边界对白：A[0..1000]，B[1000..2000]（B.start == A.end）。文件顺序仿 ASS：
     // 先全部 JP 后全部 CH。
-    final AudioCue jpA =
-        _bottomCue('あ', marginV: 4, fontSizePx: 35, startMs: 0, endMs: 1000);
-    final AudioCue jpB =
-        _bottomCue('い', marginV: 4, fontSizePx: 35, startMs: 1000, endMs: 2000);
-    final AudioCue chA =
-        _bottomCue('甲', marginV: 30, fontSizePx: 56, startMs: 0, endMs: 1000);
-    final AudioCue chB = _bottomCue('乙',
-        marginV: 30, fontSizePx: 56, startMs: 1000, endMs: 2000);
+    final AudioCue jpA = _bottomCue(
+      'あ',
+      marginV: 4,
+      fontSizePx: 35,
+      startMs: 0,
+      endMs: 1000,
+    );
+    final AudioCue jpB = _bottomCue(
+      'い',
+      marginV: 4,
+      fontSizePx: 35,
+      startMs: 1000,
+      endMs: 2000,
+    );
+    final AudioCue chA = _bottomCue(
+      '甲',
+      marginV: 30,
+      fontSizePx: 56,
+      startMs: 0,
+      endMs: 1000,
+    );
+    final AudioCue chB = _bottomCue(
+      '乙',
+      marginV: 30,
+      fontSizePx: 56,
+      startMs: 1000,
+      endMs: 2000,
+    );
     c.setCues(<AudioCue>[jpA, jpB, chA, chB]);
 
     await _mount(tester, c, const Size(1280, 720));
@@ -115,19 +140,35 @@ void main() {
     final Rect jpBBox = _fillRect(tester, 'い');
     final Rect chBBox = _fillRect(tester, '乙');
 
-    expect((jpBBox.top - jpABox.top).abs(), lessThan(1.0),
-        reason: 'JP 续存对白应与前一条同基线，不被幻影占位抬高（弹跳根除）');
-    expect((chBBox.top - chABox.top).abs(), lessThan(1.0),
-        reason: 'CH 续存对白应与前一条同基线，不弹跳');
+    expect(
+      (jpBBox.top - jpABox.top).abs(),
+      lessThan(1.0),
+      reason: 'JP 续存对白应与前一条同基线，不被幻影占位抬高（弹跳根除）',
+    );
+    expect(
+      (chBBox.top - chABox.top).abs(),
+      lessThan(1.0),
+      reason: 'CH 续存对白应与前一条同基线，不弹跳',
+    );
   });
 
   testWidgets('② 大屏（2160 高）底部双语 JP/CH 仍不塌陷重叠', (WidgetTester tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
-    final AudioCue jp =
-        _bottomCue('日', marginV: 4, fontSizePx: 35, startMs: 0, endMs: 5000);
-    final AudioCue ch =
-        _bottomCue('中', marginV: 30, fontSizePx: 56, startMs: 0, endMs: 5000);
+    final AudioCue jp = _bottomCue(
+      '日',
+      marginV: 4,
+      fontSizePx: 35,
+      startMs: 0,
+      endMs: 5000,
+    );
+    final AudioCue ch = _bottomCue(
+      '中',
+      marginV: 30,
+      fontSizePx: 56,
+      startMs: 0,
+      endMs: 5000,
+    );
     c.setCues(<AudioCue>[jp, ch]);
     // 2160 高显示区：旧判据把 CH（scaledMarginV = 30 * 2160/720 = 90 > 75）判成独立位置
     // → 与 JP 重叠。原始值判据（30 <= 75）恒折叠堆叠。
@@ -139,20 +180,36 @@ void main() {
     final Rect jpBox = _fillRect(tester, '日');
     final Rect chBox = _fillRect(tester, '中');
     final bool overlap = jpBox.top < chBox.bottom && chBox.top < jpBox.bottom;
-    expect(overlap, isFalse,
-        reason: '大屏下 JP(MarginV=4)+CH(MarginV=30) 竖直不得相交（BUG-709 大屏不回归）');
+    expect(
+      overlap,
+      isFalse,
+      reason: '大屏下 JP(MarginV=4)+CH(MarginV=30) 竖直不得相交（BUG-709 大屏不回归）',
+    );
     // CH 在 JP 上方（MarginV 大者离底更远，libass 相对次序）。
-    expect(chBox.bottom, lessThanOrEqualTo(jpBox.top + 1.0),
-        reason: 'CH 应堆叠在 JP 上方');
+    expect(
+      chBox.bottom,
+      lessThanOrEqualTo(jpBox.top + 1.0),
+      reason: 'CH 应堆叠在 JP 上方',
+    );
   });
 
   testWidgets('③ 渲染集半开区间：触边界处只后一条活跃（幻影重叠消除）', (WidgetTester tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
-    final AudioCue a =
-        _bottomCue('前', marginV: 4, fontSizePx: 35, startMs: 0, endMs: 1000);
-    final AudioCue b =
-        _bottomCue('后', marginV: 4, fontSizePx: 35, startMs: 1000, endMs: 2000);
+    final AudioCue a = _bottomCue(
+      '前',
+      marginV: 4,
+      fontSizePx: 35,
+      startMs: 0,
+      endMs: 1000,
+    );
+    final AudioCue b = _bottomCue(
+      '后',
+      marginV: 4,
+      fontSizePx: 35,
+      startMs: 1000,
+      endMs: 2000,
+    );
     c.setCues(<AudioCue>[a, b]);
     await _mount(tester, c, const Size(1280, 720));
 

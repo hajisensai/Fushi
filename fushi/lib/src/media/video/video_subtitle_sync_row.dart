@@ -55,8 +55,9 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   late int _delayMs = widget.host.delayMs();
 
   /// 字幕调轴数值输入（读数胶囊的编辑态）控制器（与滑条/± 按钮共享同一权威 [_delayMs]）。
-  late final TextEditingController _delayController =
-      TextEditingController(text: '$_delayMs');
+  late final TextEditingController _delayController = TextEditingController(
+    text: '$_delayMs',
+  );
 
   /// 拖动字幕调轴滑条时的临时预览值（仅本地回显，松手才 [_commitDelay] 落盘+实时生效），
   /// 避免每个拖动 tick 都写 DB。null = 未在拖动。
@@ -67,11 +68,11 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   /// 视图共享 [SubtitleDelayInputDebounce]（原两处逐行拷贝已抽出）。
   late final SubtitleDelayInputDebounce _delayInput =
       SubtitleDelayInputDebounce(
-    controller: _delayController,
-    isMounted: () => mounted,
-    currentDelayMs: () => _delayMs,
-    commit: _commitDelay,
-  );
+        controller: _delayController,
+        isMounted: () => mounted,
+        currentDelayMs: () => _delayMs,
+        commit: _commitDelay,
+      );
 
   /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
   bool _autoAligning = false;
@@ -91,12 +92,12 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   /// 副轨数值输入框「边键入边生效」去抖（与主轨同款，BUG-918 范式）。
   late final SubtitleDelayInputDebounce _secondaryDelayInput =
       SubtitleDelayInputDebounce(
-    controller: _secondaryDelayController,
-    isMounted: () => mounted,
-    currentDelayMs: () => _secondaryDelayMs ?? _delayMs,
-    commit: (int delayMs, {bool syncField = true}) =>
-        _commitSecondaryDelay(delayMs, syncField: syncField),
-  );
+        controller: _secondaryDelayController,
+        isMounted: () => mounted,
+        currentDelayMs: () => _secondaryDelayMs ?? _delayMs,
+        commit: (int delayMs, {bool syncField = true}) =>
+            _commitSecondaryDelay(delayMs, syncField: syncField),
+      );
 
   @override
   void initState() {
@@ -171,8 +172,10 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     final Future<void> Function(int? delayMs)? onSet =
         widget.host.onSetSecondaryDelay;
     if (onSet == null) return;
-    final int? clamped =
-        next?.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
+    final int? clamped = next?.clamp(
+      -_subtitleSyncClampMs,
+      _subtitleSyncClampMs,
+    );
     if (syncField) _secondaryDelayInput.cancelPending();
     setState(() => _secondaryDelayMs = clamped);
     final String fieldText = '${clamped ?? _delayMs}';
@@ -358,7 +361,8 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             active: shownMs != 0,
             maxWidth: 140,
             semanticsLabel: t.video_setting_subtitle_sync_input,
-            tooltip: '${t.video_setting_av_delay_tap_to_type}\n'
+            tooltip:
+                '${t.video_setting_av_delay_tap_to_type}\n'
                 '${t.video_setting_av_delay_hint}',
             controller: _delayController,
             onChanged: _delayInput.onChanged,
@@ -714,8 +718,9 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiSpringSpec spring = context.fushiMotion.effectsFast;
     final TextStyle digits = context.fushiType.titleMediumEmphasized.tabular;
-    final Color fill =
-        _editing || widget.active ? cs.secondaryContainer : cs.surfaceContainer;
+    final Color fill = _editing || widget.active
+        ? cs.secondaryContainer
+        : cs.surfaceContainer;
     final Color foreground = _editing || widget.active
         ? cs.onSecondaryContainer
         : cs.onSurfaceVariant;

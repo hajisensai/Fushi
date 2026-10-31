@@ -88,34 +88,34 @@ class ForwardedMinePayload {
   final List<ForwardedDictMedia> dictionaryMedia;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'rawPayloadJson': rawPayloadJson,
-        'sentence': sentence,
-        if (cueSentence != null) 'cueSentence': cueSentence,
-        if (documentTitle != null) 'documentTitle': documentTitle,
-        if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
-        if (source != null) 'source': source,
-        if (sourceLink != null) 'sourceLink': sourceLink!.toUri().toString(),
-        if (sourceUrl != null) 'sourceUrl': sourceUrl,
-        if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
-        if (collectionTag != null) 'collectionTag': collectionTag,
-        if (charPositionTag != null) 'charPositionTag': charPositionTag,
-        if (clipStartMs != null) 'clipStartMs': clipStartMs,
-        if (clipEndMs != null) 'clipEndMs': clipEndMs,
-        if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
-        if (coverExt != null) 'coverExt': coverExt,
-        if (synchronizedVideo) 'synchronizedVideo': true,
-        if (sentenceAudioBytes != null && !synchronizedVideo)
-          'sentenceAudioBase64': base64Encode(sentenceAudioBytes!),
-        if (sentenceAudioExt != null && !synchronizedVideo)
-          'sentenceAudioExt': sentenceAudioExt,
-        if (wordAudioBytes != null)
-          'wordAudioBase64': base64Encode(wordAudioBytes!),
-        if (wordAudioExt != null) 'wordAudioExt': wordAudioExt,
-        if (dictionaryMedia.isNotEmpty)
-          'dictionaryMedia': dictionaryMedia
-              .map((ForwardedDictMedia m) => m.toJson())
-              .toList(),
-      };
+    'rawPayloadJson': rawPayloadJson,
+    'sentence': sentence,
+    if (cueSentence != null) 'cueSentence': cueSentence,
+    if (documentTitle != null) 'documentTitle': documentTitle,
+    if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
+    if (source != null) 'source': source,
+    if (sourceLink != null) 'sourceLink': sourceLink!.toUri().toString(),
+    if (sourceUrl != null) 'sourceUrl': sourceUrl,
+    if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
+    if (collectionTag != null) 'collectionTag': collectionTag,
+    if (charPositionTag != null) 'charPositionTag': charPositionTag,
+    if (clipStartMs != null) 'clipStartMs': clipStartMs,
+    if (clipEndMs != null) 'clipEndMs': clipEndMs,
+    if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
+    if (coverExt != null) 'coverExt': coverExt,
+    if (synchronizedVideo) 'synchronizedVideo': true,
+    if (sentenceAudioBytes != null && !synchronizedVideo)
+      'sentenceAudioBase64': base64Encode(sentenceAudioBytes!),
+    if (sentenceAudioExt != null && !synchronizedVideo)
+      'sentenceAudioExt': sentenceAudioExt,
+    if (wordAudioBytes != null)
+      'wordAudioBase64': base64Encode(wordAudioBytes!),
+    if (wordAudioExt != null) 'wordAudioExt': wordAudioExt,
+    if (dictionaryMedia.isNotEmpty)
+      'dictionaryMedia': dictionaryMedia
+          .map((ForwardedDictMedia m) => m.toJson())
+          .toList(),
+  };
 
   /// `fields` 缺失/非法（[rawPayloadJson] 不是字符串）→ 抛 [FormatException]（真正的坏请求，
   /// 由调用方转 400）。媒体字节 base64 坏了只当该媒体缺失（降级），不抛。
@@ -127,11 +127,13 @@ class ForwardedMinePayload {
     final Object? dmRaw = json['dictionaryMedia'];
     final List<ForwardedDictMedia> media = dmRaw is List
         ? dmRaw
-            .whereType<Map>()
-            .map((Map e) =>
-                ForwardedDictMedia.fromJson(Map<String, dynamic>.from(e)))
-            .where((ForwardedDictMedia m) => m.bytes != null)
-            .toList(growable: false)
+              .whereType<Map>()
+              .map(
+                (Map e) =>
+                    ForwardedDictMedia.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .where((ForwardedDictMedia m) => m.bytes != null)
+              .toList(growable: false)
         : const <ForwardedDictMedia>[];
     return ForwardedMinePayload(
       rawPayloadJson: raw,
@@ -174,8 +176,9 @@ class ForwardedMinePayload {
   /// 或过长串影响服务端临时文件命名。
   static String? sanitizeExt(Object? value) {
     if (value is! String) return null;
-    final String cleaned =
-        value.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toLowerCase();
+    final String cleaned = value
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+        .toLowerCase();
     if (cleaned.isEmpty) return null;
     return cleaned.length > 8 ? cleaned.substring(0, 8) : cleaned;
   }
@@ -196,10 +199,10 @@ class ForwardedDictMedia {
   final Uint8List? bytes;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        if (dictionary.isNotEmpty) 'dictionary': dictionary,
-        'path': path,
-        if (bytes != null) 'base64': base64Encode(bytes!),
-      };
+    if (dictionary.isNotEmpty) 'dictionary': dictionary,
+    'path': path,
+    if (bytes != null) 'base64': base64Encode(bytes!),
+  };
 
   static ForwardedDictMedia fromJson(Map<String, dynamic> json) =>
       ForwardedDictMedia(

@@ -15,7 +15,9 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
@@ -33,8 +35,11 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text(t.lyrics_mode_hint_title), findsOneWidget);
     expect(
-      find.text(MaterialLocalizations.of(tester.element(find.byType(Dialog)))
-          .okButtonLabel),
+      find.text(
+        MaterialLocalizations.of(
+          tester.element(find.byType(Dialog)),
+        ).okButtonLabel,
+      ),
       findsOneWidget,
     );
   });

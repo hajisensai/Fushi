@@ -6,10 +6,7 @@ import 'package:fushi/utils.dart';
 /// The content of the dialog used for picking a source for a media type.
 class MediaSourcePickerDialogPage extends BasePage {
   /// Create an instance of this page.
-  const MediaSourcePickerDialogPage({
-    required this.mediaType,
-    super.key,
-  });
+  const MediaSourcePickerDialogPage({required this.mediaType, super.key});
 
   /// What media type is being picked for a source in the dialog.
   final MediaType mediaType;
@@ -51,8 +48,10 @@ class _MediaSourcePickerDialogPageState
   }
 
   Widget buildContent() {
-    List<MediaSource> mediaSources =
-        appModel.mediaSources[widget.mediaType]!.values.toList();
+    List<MediaSource> mediaSources = appModel
+        .mediaSources[widget.mediaType]!
+        .values
+        .toList();
 
     return SizedBox(
       width: double.maxFinite,

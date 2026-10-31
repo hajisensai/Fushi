@@ -3,14 +3,18 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final String header =
-      File('windows/runner/floating_lyric_window.h').readAsStringSync();
-  final String runner =
-      File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
-  final String prefs =
-      File('lib/src/models/preferences_repository.dart').readAsStringSync();
-  final String channel =
-      File('windows/runner/flutter_window.cpp').readAsStringSync();
+  final String header = File(
+    'windows/runner/floating_lyric_window.h',
+  ).readAsStringSync();
+  final String runner = File(
+    'windows/runner/floating_lyric_window.cpp',
+  ).readAsStringSync();
+  final String prefs = File(
+    'lib/src/models/preferences_repository.dart',
+  ).readAsStringSync();
+  final String channel = File(
+    'windows/runner/flutter_window.cpp',
+  ).readAsStringSync();
 
   test('MethodChannel appearance fields are parsed into native style', () {
     for (final String field in <String>[

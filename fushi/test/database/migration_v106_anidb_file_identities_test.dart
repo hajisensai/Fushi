@@ -90,11 +90,11 @@ void main() {
           'idx_anidb_file_identities_anime',
         ]),
       );
-      final AnidbFileIdentityRow? byHash =
-          await reopened.anidbFileIdentityByHash(
-        ed2k: '0123456789ABCDEF0123456789ABCDEF',
-        fileSize: 1,
-      );
+      final AnidbFileIdentityRow? byHash = await reopened
+          .anidbFileIdentityByHash(
+            ed2k: '0123456789ABCDEF0123456789ABCDEF',
+            fileSize: 1,
+          );
       expect(byHash?.anidbFileId, 200, reason: '按内容键查不分大小写');
       expect(
         byHash?.ed2k,

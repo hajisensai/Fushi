@@ -146,8 +146,9 @@ class AnimeDownloadSubscription {
       enabled: enabled ?? this.enabled,
       lastCheckedAtMs: lastCheckedAtMs ?? this.lastCheckedAtMs,
       lastMatchedAtMs: lastMatchedAtMs ?? this.lastMatchedAtMs,
-      lastError:
-          identical(lastError, _notSet) ? this.lastError : lastError as String?,
+      lastError: identical(lastError, _notSet)
+          ? this.lastError
+          : lastError as String?,
     );
   }
 }
@@ -211,16 +212,19 @@ AnimeDownloadSubscription? decodeAnimeDownloadSubscription(
       seriesTitle: title,
       coverUrl: raw['coverUrl'] is String ? raw['coverUrl'] as String : null,
       nyaaQuery: query,
-      category: raw['category'] is String &&
+      category:
+          raw['category'] is String &&
               (raw['category'] as String).trim().isNotEmpty
           ? raw['category'] as String
           : '1_0',
       trustedOnly: raw['trustedOnly'] == true,
       releaseGroup: group.trim(),
-      resolution:
-          raw['resolution'] is String ? raw['resolution'] as String : null,
-      jimakuEntryId:
-          raw['jimakuEntryId'] is int ? raw['jimakuEntryId'] as int : null,
+      resolution: raw['resolution'] is String
+          ? raw['resolution'] as String
+          : null,
+      jimakuEntryId: raw['jimakuEntryId'] is int
+          ? raw['jimakuEntryId'] as int
+          : null,
       jimakuEntryName: raw['jimakuEntryName'] is String
           ? raw['jimakuEntryName'] as String
           : null,
@@ -230,10 +234,12 @@ AnimeDownloadSubscription? decodeAnimeDownloadSubscription(
       startAfterEpisode: anchor,
       processedEpisodes: processed,
       enabled: raw['enabled'] != false,
-      lastCheckedAtMs:
-          raw['lastCheckedAtMs'] is int ? raw['lastCheckedAtMs'] as int : null,
-      lastMatchedAtMs:
-          raw['lastMatchedAtMs'] is int ? raw['lastMatchedAtMs'] as int : null,
+      lastCheckedAtMs: raw['lastCheckedAtMs'] is int
+          ? raw['lastCheckedAtMs'] as int
+          : null,
+      lastMatchedAtMs: raw['lastMatchedAtMs'] is int
+          ? raw['lastMatchedAtMs'] as int
+          : null,
       lastError: raw['lastError'] is String ? raw['lastError'] as String : null,
     );
   } catch (_) {
@@ -267,8 +273,10 @@ class AnimeDownloadSubscriptionStore {
         } catch (_) {}
       }
     } catch (_) {}
-    subscriptions
-        .sort((AnimeDownloadSubscription a, AnimeDownloadSubscription b) {
+    subscriptions.sort((
+      AnimeDownloadSubscription a,
+      AnimeDownloadSubscription b,
+    ) {
       final int byCreated = b.createdAtMs.compareTo(a.createdAtMs);
       return byCreated != 0 ? byCreated : a.id.compareTo(b.id);
     });
@@ -336,12 +344,13 @@ List<NyaaTorrent> selectSubscriptionReleases(
       bestByEpisode[episode] = torrent;
     }
   }
-  final List<MapEntry<int, NyaaTorrent>> entries = bestByEpisode.entries
-      .toList()
-    ..sort((MapEntry<int, NyaaTorrent> a, MapEntry<int, NyaaTorrent> b) =>
-        a.key.compareTo(b.key));
+  final List<MapEntry<int, NyaaTorrent>> entries =
+      bestByEpisode.entries.toList()..sort(
+        (MapEntry<int, NyaaTorrent> a, MapEntry<int, NyaaTorrent> b) =>
+            a.key.compareTo(b.key),
+      );
   return <NyaaTorrent>[
-    for (final MapEntry<int, NyaaTorrent> e in entries) e.value
+    for (final MapEntry<int, NyaaTorrent> e in entries) e.value,
   ];
 }
 
@@ -360,15 +369,15 @@ bool _isBetterRelease(NyaaTorrent candidate, NyaaTorrent previous) {
   return candidate.infoHash.compareTo(previous.infoHash) < 0;
 }
 
-typedef AnimeSubscriptionSearch = Future<List<NyaaTorrent>> Function(
-  AnimeDownloadSubscription subscription,
-);
+typedef AnimeSubscriptionSearch =
+    Future<List<NyaaTorrent>> Function(AnimeDownloadSubscription subscription);
 
-typedef AnimeSubscriptionSubtitleFetcher = Future<List<PlanSubtitle>> Function(
-  AnimeDownloadSubscription subscription,
-  NyaaTorrent torrent,
-  Directory destination,
-);
+typedef AnimeSubscriptionSubtitleFetcher =
+    Future<List<PlanSubtitle>> Function(
+      AnimeDownloadSubscription subscription,
+      NyaaTorrent torrent,
+      Directory destination,
+    );
 
 class AnimeDownloadSubscriptionService {
   AnimeDownloadSubscriptionService({
@@ -382,14 +391,14 @@ class AnimeDownloadSubscriptionService {
     Future<http.Client> Function()? httpClientFactory,
     BtSiteConfig? Function()? animeSiteProvider,
     this.interval = const Duration(minutes: 15),
-  })  : _configProvider = configProvider,
-        _animeSiteProvider = animeSiteProvider ?? (() => null),
-        _backendFactory = backendFactory,
-        _search = search,
-        _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
-        _subtitleFetcher = subtitleFetcher,
-        _httpClientFactory =
-            httpClientFactory ?? (() async => createAppHttpIoClient());
+  }) : _configProvider = configProvider,
+       _animeSiteProvider = animeSiteProvider ?? (() => null),
+       _backendFactory = backendFactory,
+       _search = search,
+       _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
+       _subtitleFetcher = subtitleFetcher,
+       _httpClientFactory =
+           httpClientFactory ?? (() async => createAppHttpIoClient());
 
   final AnimeDownloadSubscriptionStore store;
   final AnimeDownloadPlanStore planStore;
@@ -421,8 +430,8 @@ class AnimeDownloadSubscriptionService {
     // 同一个大类（`1_2` 之于 `1_0`）时才沿用它的子类细分，否则用站点自己的动画分类。
     final String category =
         subscription.category.split('_').first == siteCategory.split('_').first
-            ? subscription.category
-            : siteCategory;
+        ? subscription.category
+        : siteCategory;
     final http.Client rawClient = await _httpClientFactory();
     final NyaaClient client = NyaaClient(
       baseUrl: site.baseUrl.toString(),
@@ -531,8 +540,8 @@ class AnimeDownloadSubscriptionService {
     _checking = true;
     checking.value = true;
     try {
-      final List<AnimeDownloadSubscription> subscriptions =
-          await store.loadAll();
+      final List<AnimeDownloadSubscription> subscriptions = await store
+          .loadAll();
       for (final AnimeDownloadSubscription subscription in subscriptions) {
         if (subscription.enabled) await _check(subscription);
       }
@@ -583,8 +592,8 @@ class AnimeDownloadSubscriptionService {
     _checking = true;
     checking.value = true;
     try {
-      final List<AnimeDownloadSubscription> subscriptions =
-          await store.loadAll();
+      final List<AnimeDownloadSubscription> subscriptions = await store
+          .loadAll();
       for (final AnimeDownloadSubscription subscription in subscriptions) {
         if (subscription.id == id) {
           await _check(subscription);
@@ -602,10 +611,12 @@ class AnimeDownloadSubscriptionService {
     try {
       final QbConnectionConfig config = _configProvider();
       if (!config.isConfigured) {
-        await store.save(current.copyWith(
-          lastCheckedAtMs: checkedAt,
-          lastError: 'download backend not configured',
-        ));
+        await store.save(
+          current.copyWith(
+            lastCheckedAtMs: checkedAt,
+            lastError: 'download backend not configured',
+          ),
+        );
         return;
       }
       final AnimeSubscriptionSearch? injectedSearch = _search;
@@ -614,10 +625,9 @@ class AnimeDownloadSubscriptionService {
         await (injectedSearch?.call(current) ?? _searchNyaa(current)),
       );
       if (releases.isEmpty) {
-        await store.save(current.copyWith(
-          lastCheckedAtMs: checkedAt,
-          lastError: null,
-        ));
+        await store.save(
+          current.copyWith(lastCheckedAtMs: checkedAt, lastError: null),
+        );
         return;
       }
       final Set<String> existingPlanIds = <String>{
@@ -650,7 +660,8 @@ class AnimeDownloadSubscriptionService {
               // AnimeDownloadService 按**包内真实文件名**反查（BUG-1206 的强
               // 判据，比这里按标题猜集号更准），之后还有 backoff 重试兜底。
               // pendingError 仍然写，任务行照旧告诉用户「这集字幕还没到」。
-              pendingError = 'subtitle not yet available for episode $episode '
+              pendingError =
+                  'subtitle not yet available for episode $episode '
                   'from ${current.jimakuEntryName ?? current.jimakuEntryId}; '
                   'will retry after download';
             }
@@ -676,8 +687,8 @@ class AnimeDownloadSubscriptionService {
               subtitleStatus: subtitles.isNotEmpty
                   ? AnimeDownloadPlan.subtitleResolved
                   : (current.jimakuEntryId != null
-                      ? AnimeDownloadPlan.subtitlePending
-                      : AnimeDownloadPlan.subtitleNone),
+                        ? AnimeDownloadPlan.subtitlePending
+                        : AnimeDownloadPlan.subtitleNone),
               // 发现期下好的字幕还没见过视频：交给下载完成那一轮按内嵌轨对齐
               // （与完成时反查配上的字幕同一条路）。
               subtitleAlignPending: subtitles.isNotEmpty,
@@ -701,10 +712,7 @@ class AnimeDownloadSubscriptionService {
           }
           if (!queued) continue;
           current = current.copyWith(
-            processedEpisodes: <int>{
-              ...current.processedEpisodes,
-              episode,
-            },
+            processedEpisodes: <int>{...current.processedEpisodes, episode},
             lastCheckedAtMs: checkedAt,
             lastMatchedAtMs: DateTime.now().millisecondsSinceEpoch,
             lastError: null,
@@ -716,18 +724,22 @@ class AnimeDownloadSubscriptionService {
         backend.close();
       }
       if (current.lastCheckedAtMs != checkedAt) {
-        await store.save(current.copyWith(
-          lastCheckedAtMs: checkedAt,
-          lastError: pendingError ?? 'matching release could not be queued',
-        ));
+        await store.save(
+          current.copyWith(
+            lastCheckedAtMs: checkedAt,
+            lastError: pendingError ?? 'matching release could not be queued',
+          ),
+        );
       } else if (pendingError != null) {
         await store.save(current.copyWith(lastError: pendingError));
       }
     } catch (error) {
-      await store.save(current.copyWith(
-        lastCheckedAtMs: checkedAt,
-        lastError: error.toString(),
-      ));
+      await store.save(
+        current.copyWith(
+          lastCheckedAtMs: checkedAt,
+          lastError: error.toString(),
+        ),
+      );
     }
   }
 }

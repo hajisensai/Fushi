@@ -74,8 +74,11 @@ void main() {
         cache: cache,
       );
 
-      expect(second, Uri.file(hit).toString(),
-          reason: '瞬时探测落空必须回落 last-good，否则封面运行期消失(BUG-513)');
+      expect(
+        second,
+        Uri.file(hit).toString(),
+        reason: '瞬时探测落空必须回落 last-good，否则封面运行期消失(BUG-513)',
+      );
     });
 
     test('从未成功过(缓存为空)且探测落空：返回 null(不凭空捏造路径)', () async {
@@ -152,11 +155,11 @@ void main() {
       );
     }
 
-    test(
-        '封面文件在盘上 imageUrl 解析成功；随后模拟瞬时探测落空(删文件)后重建，'
+    test('封面文件在盘上 imageUrl 解析成功；随后模拟瞬时探测落空(删文件)后重建，'
         'imageUrl 仍回落 last-good 不塌成 null', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       MediaSource.setDatabase(db);
 
@@ -177,8 +180,11 @@ void main() {
       final MediaItem? second = await source.mediaItemForBookKey('Kokoro');
 
       expect(second, isNotNull);
-      expect(second!.imageUrl, expectedUrl,
-          reason: '重建期探测落空必须回落 last-good，封面不得消失(BUG-513)');
+      expect(
+        second!.imageUrl,
+        expectedUrl,
+        reason: '重建期探测落空必须回落 last-good，封面不得消失(BUG-513)',
+      );
     });
   });
 }

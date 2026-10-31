@@ -20,11 +20,9 @@ import '../helpers/glass_unwrap.dart';
 /// 断言的是真实渲染：段的先后用两个标签的实际横坐标比，不是「字符串存在」——
 /// 把两段调换回去，本文件必须红。
 class _TestAppModel extends AppModel {
-  _TestAppModel({
-    required QbConnectionConfig config,
-    this.embeddedReady = true,
-  })  : _config = config,
-        super(testPlatformServices());
+  _TestAppModel({required QbConnectionConfig config, this.embeddedReady = true})
+    : _config = config,
+      super(testPlatformServices());
 
   QbConnectionConfig _config;
   final bool embeddedReady;
@@ -39,11 +37,11 @@ class _TestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'jp.fushi.test',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'jp.fushi.test',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   QbConnectionConfig? get qbConnectionConfig => _config;
@@ -116,8 +114,9 @@ Widget _harness(
 
 /// 两个后端标签的实际横坐标：内置引擎必须在外接 qb 左边。
 void _expectEmbeddedRendersFirst(WidgetTester tester) {
-  final Finder embedded =
-      find.text(t.video_setting_torrent_backend_embedded).last;
+  final Finder embedded = find
+      .text(t.video_setting_torrent_backend_embedded)
+      .last;
   final Finder qb = find.text(t.video_setting_torrent_backend_qb).last;
   expect(embedded, findsOneWidget);
   expect(qb, findsOneWidget);
@@ -130,27 +129,33 @@ void _expectEmbeddedRendersFirst(WidgetTester tester) {
 
 void main() {
   testWidgets('下载设置：内置引擎段排在外接 qBittorrent 之前', (WidgetTester tester) async {
-    final _TestAppModel appModel =
-        _TestAppModel(config: const QbConnectionConfig());
-    await tester.pumpWidget(_harness(
-      appModel,
-      const TorrentSettingsSection(embeddedSupportedOverride: true),
-    ));
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        const TorrentSettingsSection(embeddedSupportedOverride: true),
+      ),
+    );
     await tester.pump();
     _expectEmbeddedRendersFirst(tester);
   });
 
   testWidgets('引导：段序同上，且开屏即停在内置引擎', (WidgetTester tester) async {
-    final _TestAppModel appModel =
-        _TestAppModel(config: const QbConnectionConfig());
-    await tester.pumpWidget(_harness(
-      appModel,
-      DownloadBackendSetupDialog(
-        appModel: appModel,
-        embeddedSupportedOverride: true,
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
       ),
-      scrollable: false,
-    ));
+    );
     await tester.pump();
 
     _expectEmbeddedRendersFirst(tester);
@@ -161,66 +166,83 @@ void main() {
   });
 
   testWidgets('引导：内置引擎一步落库，无需填任何字段', (WidgetTester tester) async {
-    final _TestAppModel appModel =
-        _TestAppModel(config: const QbConnectionConfig());
-    await tester.pumpWidget(_harness(
-      appModel,
-      DownloadBackendSetupDialog(
-        appModel: appModel,
-        embeddedSupportedOverride: true,
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
       ),
-      scrollable: false,
-    ));
+    );
     await tester.pump();
 
     await tester.tap(find.widgetWithText(FilledButton, t.dialog_done));
     await tester.pumpAndSettle();
 
     expect(appModel.saved?.backend, QbConnectionConfig.backendEmbedded);
-    expect(appModel.pipelineReloads, 1,
-        reason: '后端刚配好，管线 runtime 必须重建，否则仍报「后端未配置」');
+    expect(
+      appModel.pipelineReloads,
+      1,
+      reason: '后端刚配好，管线 runtime 必须重建，否则仍报「后端未配置」',
+    );
   });
 
-  testWidgets('引导：内置引擎运行库缺失时不让「完成」，并说清原因',
-      (WidgetTester tester) async {
+  testWidgets('引导：内置引擎运行库缺失时不让「完成」，并说清原因', (WidgetTester tester) async {
     final _TestAppModel appModel = _TestAppModel(
       config: const QbConnectionConfig(),
       embeddedReady: false,
     );
-    await tester.pumpWidget(_harness(
-      appModel,
-      DownloadBackendSetupDialog(
-        appModel: appModel,
-        embeddedSupportedOverride: true,
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
       ),
-      scrollable: false,
-    ));
+    );
     await tester.pump();
 
     expect(find.text(t.download_backend_embedded_unavailable), findsOneWidget);
-    final FilledButton done = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.dialog_done)),);
-    expect(done.onPressed, isNull,
-        reason: '缺 DLL 的包配了也下不了，不能让用户以为配好了');
+    final FilledButton done = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.widgetWithText(FilledButton, t.dialog_done),
+      ),
+    );
+    expect(done.onPressed, isNull, reason: '缺 DLL 的包配了也下不了，不能让用户以为配好了');
   });
 
   testWidgets('引导：切到外接 qb 后地址是必填项', (WidgetTester tester) async {
-    final _TestAppModel appModel =
-        _TestAppModel(config: const QbConnectionConfig());
-    await tester.pumpWidget(_harness(
-      appModel,
-      DownloadBackendSetupDialog(
-        appModel: appModel,
-        embeddedSupportedOverride: true,
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
       ),
-      scrollable: false,
-    ));
+    );
     await tester.pump();
 
     await tester.tap(find.text(t.video_setting_torrent_backend_qb).last);
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_setting_qb_url), findsOneWidget);
-    FilledButton done() => tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.dialog_done)),);
+    FilledButton done() => tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.widgetWithText(FilledButton, t.dialog_done),
+      ),
+    );
     expect(done().onPressed, isNull, reason: '地址空着的 qb 后端连不上');
 
     await tester.enterText(
@@ -241,23 +263,29 @@ void main() {
   // 用户点完「完成」→ 落库 → 调用方解析身份抛 ArgumentError → 被当成「未配置」
   // 再弹一次本对话框，字段原样、没有任何提示，走不出去——正是本对话框要消灭的
   // 那种死路，被以模态弹窗的形式重造一遍。
-  testWidgets('引导：缺 scheme 的地址被拒，且当场说明要填什么',
-      (WidgetTester tester) async {
-    final _TestAppModel appModel =
-        _TestAppModel(config: const QbConnectionConfig());
-    await tester.pumpWidget(_harness(
-      appModel,
-      DownloadBackendSetupDialog(
-        appModel: appModel,
-        embeddedSupportedOverride: true,
+  testWidgets('引导：缺 scheme 的地址被拒，且当场说明要填什么', (WidgetTester tester) async {
+    final _TestAppModel appModel = _TestAppModel(
+      config: const QbConnectionConfig(),
+    );
+    await tester.pumpWidget(
+      _harness(
+        appModel,
+        DownloadBackendSetupDialog(
+          appModel: appModel,
+          embeddedSupportedOverride: true,
+        ),
+        scrollable: false,
       ),
-      scrollable: false,
-    ));
+    );
     await tester.pump();
     await tester.tap(find.text(t.video_setting_torrent_backend_qb).last);
     await tester.pumpAndSettle();
 
-    FilledButton done() => tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.dialog_done)),);
+    FilledButton done() => tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.widgetWithText(FilledButton, t.dialog_done),
+      ),
+    );
 
     for (final String bad in <String>[
       '127.0.0.1:8080',
@@ -266,10 +294,12 @@ void main() {
     ]) {
       await tester.enterText(find.byType(TextField).first, bad);
       await tester.pump();
-      expect(done().onPressed, isNull,
-          reason: '「$bad」解析不出后端身份，放行就会让用户困在配置引导里');
-      expect(find.text(t.download_backend_qb_url_invalid), findsOneWidget,
-          reason: '拒绝必须当场告诉用户该填什么，否则和静默失败无异');
+      expect(done().onPressed, isNull, reason: '「$bad」解析不出后端身份，放行就会让用户困在配置引导里');
+      expect(
+        find.text(t.download_backend_qb_url_invalid),
+        findsOneWidget,
+        reason: '拒绝必须当场告诉用户该填什么，否则和静默失败无异',
+      );
       expect(appModel.saved, isNull, reason: '被拒的地址不得落库');
     }
 

@@ -25,7 +25,8 @@ void main() {
     expect(
       src.contains('Future<void> _pickAudioDir('),
       isFalse,
-      reason: '「选目录」音频输入入口 _pickAudioDir 必须删除——它会让用户指向目录后'
+      reason:
+          '「选目录」音频输入入口 _pickAudioDir 必须删除——它会让用户指向目录后'
           '把整目录音频全弄进一本书（TODO-1031）',
     );
     expect(
@@ -48,7 +49,8 @@ void main() {
     expect(
       src.contains('srcDir.list()'),
       isFalse,
-      reason: '导入不得再 srcDir.list() 扫整目录把所有音频 addAll 进同一本书'
+      reason:
+          '导入不得再 srcDir.list() 扫整目录把所有音频 addAll 进同一本书'
           '（用户抱怨「一系列音频全弄到一本」的根因，TODO-1031）',
     );
     expect(
@@ -72,12 +74,14 @@ void main() {
     final int start = src.indexOf('Future<void> _pickAudioFiles(');
     expect(start, isNonNegative);
     final int end = src.indexOf('\n  Future<', start + 1);
-    final String body =
-        end >= 0 ? src.substring(start, end) : src.substring(start);
+    final String body = end >= 0
+        ? src.substring(start, end)
+        : src.substring(start);
     expect(
       body.contains('pickRealFilePaths('),
       isTrue,
-      reason: '「选文件」必须调用多选 helper pickRealFilePaths——多段章节有声书需一次选'
+      reason:
+          '「选文件」必须调用多选 helper pickRealFilePaths——多段章节有声书需一次选'
           '多个章节文件，不得因 TODO-1031 砍成单文件而破坏多段有声书语义',
     );
     expect(
@@ -87,18 +91,22 @@ void main() {
     );
 
     final String pickerSrc = read(picker);
-    final int helperStart =
-        pickerSrc.indexOf('Future<List<String>> pickRealFilePaths(');
+    final int helperStart = pickerSrc.indexOf(
+      'Future<List<String>> pickRealFilePaths(',
+    );
     expect(helperStart, isNonNegative);
-    final int helperEnd =
-        pickerSrc.indexOf('\nFuture<String?> _fallbackPickFile(', helperStart);
+    final int helperEnd = pickerSrc.indexOf(
+      '\nFuture<String?> _fallbackPickFile(',
+      helperStart,
+    );
     final String helperBody = helperEnd >= 0
         ? pickerSrc.substring(helperStart, helperEnd)
         : pickerSrc.substring(helperStart);
     expect(
       RegExp(r'allowMultiple:\s*true').hasMatch(helperBody),
       isTrue,
-      reason: 'pickRealFilePaths 内部必须 allowMultiple: true——多段章节有声书需一次选'
+      reason:
+          'pickRealFilePaths 内部必须 allowMultiple: true——多段章节有声书需一次选'
           '多个章节文件，不得因 TODO-1031 砍成单文件而破坏多段有声书语义',
     );
   });

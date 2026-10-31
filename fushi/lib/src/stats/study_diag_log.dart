@@ -50,7 +50,8 @@ class StudyDiagLog {
   /// [directoryOverride] 仅供测试；生产走 [fushiTestDirectory] / 应用文档目录。
   Future<void> init({Directory? directoryOverride}) async {
     try {
-      final Directory dir = directoryOverride ??
+      final Directory dir =
+          directoryOverride ??
           fushiTestDirectory('app-documents') ??
           await getApplicationDocumentsDirectory();
       _file = File('${dir.path}/$fileName');

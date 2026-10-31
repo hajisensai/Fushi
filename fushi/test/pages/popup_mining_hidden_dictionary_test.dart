@@ -27,7 +27,8 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
@@ -40,11 +41,9 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
@@ -85,8 +84,9 @@ void _assertHiddenFilterInFunction(String js, String functionName) {
   expect(start, greaterThanOrEqualTo(0), reason: '$functionName must exist');
 
   final int next = js.indexOf('\nfunction ', start + 1);
-  final String body =
-      next >= 0 ? js.substring(start, next) : js.substring(start);
+  final String body = next >= 0
+      ? js.substring(start, next)
+      : js.substring(start);
 
   expect(
     body.contains('window.hiddenDictionaryNames'),
@@ -95,19 +95,28 @@ void _assertHiddenFilterInFunction(String js, String functionName) {
   );
 
   final int forEach = body.indexOf('entry.glossaries.forEach(');
-  final int skip =
-      body.indexOf('hiddenDictionaryNames.includes(g.dictionary)) return;');
-  expect(forEach, greaterThanOrEqualTo(0),
-      reason: '$functionName must iterate entry.glossaries');
-  expect(skip, greaterThan(forEach),
-      reason: 'hidden dictionaries must be skipped inside the glossary forEach '
-          'of $functionName');
+  final int skip = body.indexOf(
+    'hiddenDictionaryNames.includes(g.dictionary)) return;',
+  );
+  expect(
+    forEach,
+    greaterThanOrEqualTo(0),
+    reason: '$functionName must iterate entry.glossaries',
+  );
+  expect(
+    skip,
+    greaterThan(forEach),
+    reason:
+        'hidden dictionaries must be skipped inside the glossary forEach '
+        'of $functionName',
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

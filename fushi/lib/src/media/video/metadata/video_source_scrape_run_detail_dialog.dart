@@ -23,13 +23,13 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 与后台任务面板、来源摘要行共用的 run 状态文案。
 String videoSourceScrapeRunStatusLabel(String status) => switch (status) {
-      'completed' => t.download_task_status_completed,
-      'cancelled' => t.download_status_cancelled,
-      'interrupted' => t.video_source_scrape_status_interrupted,
-      'failed' => t.download_task_status_error,
-      'running' => t.video_source_scrape_action,
-      _ => status,
-    };
+  'completed' => t.download_task_status_completed,
+  'cancelled' => t.download_status_cancelled,
+  'interrupted' => t.video_source_scrape_status_interrupted,
+  'failed' => t.download_task_status_error,
+  'running' => t.video_source_scrape_action,
+  _ => status,
+};
 
 /// 返回 true 表示这次交互改动了库（重刮了来源或手动绑定了作品），调用方应刷新。
 Future<bool> showVideoSourceScrapeRunDetailDialog({
@@ -70,8 +70,9 @@ class _VideoSourceScrapeRunDetailDialog extends StatefulWidget {
 
 class _VideoSourceScrapeRunDetailDialogState
     extends State<_VideoSourceScrapeRunDetailDialog> {
-  late final SourceScrapeReport? _report =
-      decodeSourceScrapeReport(widget.run.summaryJson);
+  late final SourceScrapeReport? _report = decodeSourceScrapeReport(
+    widget.run.summaryJson,
+  );
 
   /// 已经手动绑定过、不必再出现在待办里的作品名。
   final Set<String> _resolved = <String>{};
@@ -194,8 +195,8 @@ class _VideoSourceScrapeRunDetailDialogState
             label: t.video_source_scrape_rescrape_source,
             onPressed:
                 !_rescrapingSource && !(widget.controller?.isBusy ?? false)
-                    ? () => unawaited(_rescrapeSource(source))
-                    : null,
+                ? () => unawaited(_rescrapeSource(source))
+                : null,
           ),
       ],
     );
@@ -212,18 +213,20 @@ class _VideoSourceScrapeRunDetailDialogState
 
   /// run 状态 → 摘要卡色块。
   static FushiCardTone _runStatusTone(String status) => switch (status) {
-        'completed' => FushiCardTone.primary,
-        'failed' => FushiCardTone.error,
-        'cancelled' || 'interrupted' => FushiCardTone.neutral,
-        _ => FushiCardTone.tertiary,
-      };
+    'completed' => FushiCardTone.primary,
+    'failed' => FushiCardTone.error,
+    'cancelled' || 'interrupted' => FushiCardTone.neutral,
+    _ => FushiCardTone.tertiary,
+  };
 
   Widget _buildRunSummary(VideoSourceScrapeRunRow run, String? lastError) {
     final FushiTypography type = context.fushiType;
     // fushiType 槽位自带页面前景，会盖掉饱和卡的配对前景（HBK-AUDIT-022）；
     // 中性（取消 / 中断）为 null 保持原色。
-    final Color? onCard =
-        fushiCardToneColors(context, _runStatusTone(run.status))?.onContainer;
+    final Color? onCard = fushiCardToneColors(
+      context,
+      _runStatusTone(run.status),
+    )?.onContainer;
     return FushiCard(
       tone: _runStatusTone(run.status),
       padding: const EdgeInsets.all(14),
@@ -271,7 +274,8 @@ class _VideoSourceScrapeRunDetailDialogState
   }
 
   Widget _buildIssue(SourceScrapeIssue issue, bool isError) {
-    final bool busy = _busyWorkTitles.contains(issue.workTitle) ||
+    final bool busy =
+        _busyWorkTitles.contains(issue.workTitle) ||
         (widget.source != null &&
             (widget.controller?.isManualRequestPending(
                   sourceId: widget.source!.id,
@@ -279,8 +283,9 @@ class _VideoSourceScrapeRunDetailDialogState
                 ) ??
                 false));
     final FushiTypography type = context.fushiType;
-    final FushiCardTone tone =
-        isError ? FushiCardTone.error : FushiCardTone.secondary;
+    final FushiCardTone tone = isError
+        ? FushiCardTone.error
+        : FushiCardTone.secondary;
     // 同上：卡内文字跟饱和卡的配对前景。
     final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return FushiCard(
@@ -368,11 +373,11 @@ class _VideoSourceScrapeRunDetailDialogState
     if (source == null || controller == null) return;
     final VideoSourceScrapeConfirmationCandidate? candidate =
         await showVideoSourceScrapeManualBindingDialog(
-      context: context,
-      controller: controller,
-      source: source,
-      workTitle: issue.workTitle,
-    );
+          context: context,
+          controller: controller,
+          source: source,
+          workTitle: issue.workTitle,
+        );
     if (candidate == null || !mounted) return;
     setState(() {
       _busyWorkTitles.add(issue.workTitle);
@@ -516,32 +521,29 @@ class _TimelineRailPainter extends CustomPainter {
 }
 
 /// 候选搜索原语：按用户输入（标题或 `mal:123` 这类身份串）返回候选。
-typedef VideoMetadataCandidateSearch
-    = Future<List<VideoSourceScrapeConfirmationCandidate>> Function(
-  String query,
-);
+typedef VideoMetadataCandidateSearch =
+    Future<List<VideoSourceScrapeConfirmationCandidate>> Function(String query);
 
 /// 手动搜索资料源并挑一个作品（共享入口：run 详情与待确认队列都用它）。
 /// 返回选中的候选；取消返回 null。[source] 为 null = 本机没有这部作品的来源库
 /// （互联 7b 客户端代 host 刮削），provider 取全局主源。
 Future<VideoSourceScrapeConfirmationCandidate?>
-    showVideoSourceScrapeManualBindingDialog({
+showVideoSourceScrapeManualBindingDialog({
   required BuildContext context,
   required VideoSourceScrapeTaskController controller,
   SourceLibraryRow? source,
   required String workTitle,
   String? workStableKey,
-}) =>
-        showVideoMetadataCandidateSearchDialog(
-          context: context,
-          workTitle: workTitle,
-          search: (String query) => controller.searchManualCandidates(
-            source: source,
-            workTitle: workTitle,
-            workStableKey: workStableKey,
-            query: query,
-          ),
-        );
+}) => showVideoMetadataCandidateSearchDialog(
+  context: context,
+  workTitle: workTitle,
+  search: (String query) => controller.searchManualCandidates(
+    source: source,
+    workTitle: workTitle,
+    workStableKey: workStableKey,
+    query: query,
+  ),
+);
 
 /// 同一个候选搜索 UI，但候选来源由 [search] 注入——互联 7a「在 host 上刮削」把
 /// 搜索打到对端端点，本机不需要有刮削链。
@@ -550,22 +552,21 @@ Future<VideoSourceScrapeConfirmationCandidate?>
 /// 在线搜封面，选中只取封面图、不改作品身份）的调用方传自己的文案，免得用户以为
 /// 选一条就会重绑作品。
 Future<VideoSourceScrapeConfirmationCandidate?>
-    showVideoMetadataCandidateSearchDialog({
+showVideoMetadataCandidateSearchDialog({
   required BuildContext context,
   required String workTitle,
   required VideoMetadataCandidateSearch search,
   String? title,
   String? hint,
-}) =>
-        showAppDialog<VideoSourceScrapeConfirmationCandidate>(
-          context: context,
-          builder: (BuildContext context) => _ManualBindingDialog(
-            search: search,
-            workTitle: workTitle,
-            title: title,
-            hint: hint,
-          ),
-        );
+}) => showAppDialog<VideoSourceScrapeConfirmationCandidate>(
+  context: context,
+  builder: (BuildContext context) => _ManualBindingDialog(
+    search: search,
+    workTitle: workTitle,
+    title: title,
+    hint: hint,
+  ),
+);
 
 /// 手动搜索资料源并挑一个作品。结果行与批次内确认是同一个
 /// [VideoSourceScrapeCandidateTile]，选中后返回同一种候选对象。
@@ -589,8 +590,9 @@ class _ManualBindingDialog extends StatefulWidget {
 }
 
 class _ManualBindingDialogState extends State<_ManualBindingDialog> {
-  late final TextEditingController _query =
-      TextEditingController(text: widget.workTitle);
+  late final TextEditingController _query = TextEditingController(
+    text: widget.workTitle,
+  );
   List<VideoSourceScrapeConfirmationCandidate>? _results;
   bool _searching = false;
   bool _byId = false;
@@ -614,8 +616,8 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
       _error = null;
     });
     try {
-      final List<VideoSourceScrapeConfirmationCandidate> results =
-          await widget.search(_manualQuery());
+      final List<VideoSourceScrapeConfirmationCandidate> results = await widget
+          .search(_manualQuery());
       if (!mounted) return;
       setState(() => _results = results);
     } on Object catch (error) {
@@ -625,10 +627,10 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
         _error = error is FormatException
             ? t.video_source_scrape_manual_id_invalid
             : error is VideoSourceScrapeWorkAmbiguous
-                ? t.video_source_scrape_manual_ambiguous
-                : error is VideoSourceScrapeWorkNotFound
-                    ? t.video_source_scrape_work_missing
-                    : error.toString();
+            ? t.video_source_scrape_manual_ambiguous
+            : error is VideoSourceScrapeWorkNotFound
+            ? t.video_source_scrape_work_missing
+            : error.toString();
       });
     } finally {
       if (mounted) setState(() => _searching = false);
@@ -642,8 +644,10 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     // 「当前作品」卡是 secondary 饱和色块：fushiType 自带页面前景，显式跟
     // 卡片配对前景（HBK-AUDIT-022）。
-    final Color? onCard =
-        fushiCardToneColors(context, FushiCardTone.secondary)?.onContainer;
+    final Color? onCard = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    )?.onContainer;
     return FushiAlertDialog(
       icon: const FushiIcon(FushiIcons.manageSearch),
       title: Text(widget.title ?? t.video_source_scrape_manual_search_title),
@@ -695,11 +699,13 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 FushiSegmentedButton<bool>(
                   segments: <ButtonSegment<bool>>[
                     ButtonSegment<bool>(
-                        value: false,
-                        label: Text(t.video_source_scrape_manual_by_title)),
+                      value: false,
+                      label: Text(t.video_source_scrape_manual_by_title),
+                    ),
                     ButtonSegment<bool>(
-                        value: true,
-                        label: Text(t.video_source_scrape_manual_by_id)),
+                      value: true,
+                      label: Text(t.video_source_scrape_manual_by_id),
+                    ),
                   ],
                   selected: <bool>{_byId},
                   onSelectionChanged: _searching
@@ -716,8 +722,9 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 const SizedBox(height: 12),
                 if (_byId) ...<Widget>[
                   FushiDropdownButtonFormField<VideoManualIdentitySource>(
-                    key:
-                        const ValueKey<String>('video-source-manual-id-source'),
+                    key: const ValueKey<String>(
+                      'video-source-manual-id-source',
+                    ),
                     initialValue: _idSource,
                     items: <DropdownMenuItem<VideoManualIdentitySource>>[
                       const DropdownMenuItem(
@@ -791,10 +798,11 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                               candidate: results[i],
                               groupIndex: i,
                               groupCount: results.length,
-                              onSelected: (
-                                VideoSourceScrapeConfirmationCandidate selected,
-                              ) =>
-                                  Navigator.of(context).pop(selected),
+                              onSelected:
+                                  (
+                                    VideoSourceScrapeConfirmationCandidate
+                                    selected,
+                                  ) => Navigator.of(context).pop(selected),
                             ),
                           ),
                       ],

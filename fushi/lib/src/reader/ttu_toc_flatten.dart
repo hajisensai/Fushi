@@ -31,15 +31,17 @@ List<TtuTocEntry> flattenTtuTocEntries(
       final int index = hrefToChapterIndex(item.href);
       if (index >= 0) {
         final String? fragment = tocHrefFragment(item.href);
-        result.add(TtuTocEntry(
-          index: index,
-          label: item.label,
-          parent: parentLabel,
-          fragment: fragment,
-          anchorCharOffset: fragment == null || anchorCharOffset == null
-              ? null
-              : anchorCharOffset(index, fragment),
-        ));
+        result.add(
+          TtuTocEntry(
+            index: index,
+            label: item.label,
+            parent: parentLabel,
+            fragment: fragment,
+            anchorCharOffset: fragment == null || anchorCharOffset == null
+                ? null
+                : anchorCharOffset(index, fragment),
+          ),
+        );
       }
       walk(item.children, item.label);
     }

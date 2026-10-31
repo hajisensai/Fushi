@@ -47,8 +47,9 @@ void main() {
   late Directory documentsDir;
 
   setUpAll(() {
-    documentsDir =
-        Directory.systemTemp.createTempSync('fushi_app_paths_fakeasync');
+    documentsDir = Directory.systemTemp.createTempSync(
+      'fushi_app_paths_fakeasync',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => documentsDir.path,
@@ -67,13 +68,15 @@ void main() {
     }
   });
 
-  testWidgets('fake async 相位内发起的 AppPaths 解析在同一相位内就完成（不依赖真实事件循环）',
-      (WidgetTester tester) async {
+  testWidgets('fake async 相位内发起的 AppPaths 解析在同一相位内就完成（不依赖真实事件循环）', (
+    WidgetTester tester,
+  ) async {
     Directory? resolved;
     // 刻意不 await：复刻页面里 fire-and-forget 的封面/字幕路径解析。
     // ignore: unawaited_futures
-    AppPaths.documentsSubdirectory('bug1400_probe')
-        .then((Directory d) => resolved = d);
+    AppPaths.documentsSubdirectory(
+      'bug1400_probe',
+    ).then((Directory d) => resolved = d);
 
     // 只 pump（纯 fake async，绝不进 runAsync）。解析若依赖真实事件循环，这里必然还是 null。
     await tester.pump();
@@ -82,24 +85,26 @@ void main() {
     expect(
       resolved,
       isNotNull,
-      reason: 'AppPaths 解析在 fake async 相位内没走完 —— prefs 通道被穿到真实平台层，'
+      reason:
+          'AppPaths 解析在 fake async 相位内没走完 —— prefs 通道被穿到真实平台层，'
           '会把进程级 SharedPreferences completer 永久钉死（BUG-1400）。'
           '套件级 harness test/flutter_test_config.dart 应当已装好进程内 prefs。',
     );
     expect(resolved!.path, endsWith('bug1400_probe'));
   });
 
-  testWidgets('前一个用例的解析不会毒化后续 runAsync 里的 AppPaths 解析',
-      (WidgetTester tester) async {
+  testWidgets('前一个用例的解析不会毒化后续 runAsync 里的 AppPaths 解析', (
+    WidgetTester tester,
+  ) async {
     await tester.runAsync(() async {
       final Directory dir =
           await AppPaths.documentsSubdirectory('bug1400_probe').timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw StateError(
-          'AppPaths 在 runAsync 里 5s 没解析出来 —— 进程级 prefs completer 已被'
-          '前一个用例的 fake async 相位钉死（BUG-1400）',
-        ),
-      );
+            const Duration(seconds: 5),
+            onTimeout: () => throw StateError(
+              'AppPaths 在 runAsync 里 5s 没解析出来 —— 进程级 prefs completer 已被'
+              '前一个用例的 fake async 相位钉死（BUG-1400）',
+            ),
+          );
       expect(dir.path, endsWith('bug1400_probe'));
     });
   });
@@ -112,7 +117,8 @@ void main() {
     expect(
       config.existsSync(),
       isTrue,
-      reason: '找不到 test/flutter_test_config.dart —— 套件级 harness 没了，'
+      reason:
+          '找不到 test/flutter_test_config.dart —— 套件级 harness 没了，'
           'BUG-1400 的 prefs 钉死会对全部 widget 测试原地复活。'
           '（flutter test 的 cwd 是 fushi 包根；扫描路径失效也走这一条，'
           '不许静默变成永远绿的摆设。）',
@@ -121,24 +127,30 @@ void main() {
     final String source = config.readAsStringSync();
 
     // 结构窗口而非固定字符窗口：注释里的同名文本不算数，方法体变长也不漂移。
-    final String executable =
-        methodBody(source, 'Future<void> testExecutable(');
+    final String executable = methodBody(
+      source,
+      'Future<void> testExecutable(',
+    );
     expect(
       containsCodeLine(executable, 'installInMemorySharedPreferences()'),
       isTrue,
-      reason: 'test/flutter_test_config.dart 的 testExecutable 没有调用 '
+      reason:
+          'test/flutter_test_config.dart 的 testExecutable 没有调用 '
           'installInMemorySharedPreferences() —— 少了它，任何在 fake async 相位里'
           '触达 AppPaths 的 widget 测试都会把本 isolate 的 prefs completer 钉死'
           '（挂死 / pumpAndSettle 超时 / A Timer is still pending / 资产回收计数偏少），'
           '而且默认沉默、跨用例传染。恢复这一行，不要改成逐文件补 setUp。',
     );
 
-    final String installer =
-        methodBody(source, 'void installInMemorySharedPreferences(');
+    final String installer = methodBody(
+      source,
+      'void installInMemorySharedPreferences(',
+    );
     expect(
       containsCodeLine(installer, 'setMockInitialValues('),
       isTrue,
-      reason: 'installInMemorySharedPreferences 没有真的换掉 SharedPreferences 的'
+      reason:
+          'installInMemorySharedPreferences 没有真的换掉 SharedPreferences 的'
           '平台实现。它必须调 SharedPreferences.setMockInitialValues —— 那条路径走的是'
           'SharedPreferencesStorePlatform.instance = InMemorySharedPreferencesStore，'
           '完全不经平台通道，并顺手把静态 _completer 复位。',

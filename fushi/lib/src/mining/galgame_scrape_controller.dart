@@ -35,12 +35,13 @@ class GalgameScrapeSearchResult {
 
 class GalgameScrapeController {
   GalgameScrapeController({List<GalgameMetadataAdapter>? adapters})
-      : _adapters = adapters ??
-            <GalgameMetadataAdapter>[
-              BangumiMetadataAdapter(),
-              VndbMetadataAdapter(),
-              DlsiteMetadataAdapter(),
-            ];
+    : _adapters =
+          adapters ??
+          <GalgameMetadataAdapter>[
+            BangumiMetadataAdapter(),
+            VndbMetadataAdapter(),
+            DlsiteMetadataAdapter(),
+          ];
 
   /// 进程级单例（页面用）。测试注入假 adapter 时直接替换。
   static GalgameScrapeController instance = GalgameScrapeController();
@@ -118,9 +119,7 @@ class GalgameScrapeController {
         failures.length == used.length &&
         used.isNotEmpty) {
       // 全部源都失败：这不是「搜不到」，必须让 UI 报错而不是显示空列表。
-      throw GalgameMetadataException(
-        failures.values.join('; '),
-      );
+      throw GalgameMetadataException(failures.values.join('; '));
     }
     return GalgameScrapeSearchResult(
       candidates: candidates,

@@ -53,18 +53,18 @@ class FushiRemoteLookupClient {
     Duration timeout = const Duration(seconds: 3),
     Duration audioTransferTimeout = kInterconnectAssetTransferTimeout,
     bool trackDictionaryStyles = false,
-  })  : _transport = InterconnectPostTransport(
-          repo: repo,
-          httpClient: httpClient,
-          pinnedClientFactory: pinnedClientFactory,
-        ),
-        _onlyCandidate = onlyCandidate,
-        _timeout = timeout,
-        _audioTransferTimeout = audioTransferTimeout,
-        _trackDictionaryStyles = trackDictionaryStyles,
-        _pinnedAudioCacheDirectoryProvider =
-            pinnedAudioCacheDirectoryProvider ??
-                _defaultPinnedAudioCacheDirectory;
+  }) : _transport = InterconnectPostTransport(
+         repo: repo,
+         httpClient: httpClient,
+         pinnedClientFactory: pinnedClientFactory,
+       ),
+       _onlyCandidate = onlyCandidate,
+       _timeout = timeout,
+       _audioTransferTimeout = audioTransferTimeout,
+       _trackDictionaryStyles = trackDictionaryStyles,
+       _pinnedAudioCacheDirectoryProvider =
+           pinnedAudioCacheDirectoryProvider ??
+           _defaultPinnedAudioCacheDirectory;
 
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
@@ -126,8 +126,9 @@ class FushiRemoteLookupClient {
     String? language,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
-    final String? lookupLanguage =
-        (language == null || language.trim().isEmpty) ? null : language.trim();
+    final String? lookupLanguage = (language == null || language.trim().isEmpty)
+        ? null
+        : language.trim();
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/dictionary',
       body: <String, dynamic>{
@@ -155,8 +156,9 @@ class FushiRemoteLookupClient {
     if (json == null || json['type'] != 'dictionaryResult') return null;
     final dynamic resultJson = json['result'];
     if (resultJson is! Map) return null;
-    final DictionarySearchResult result =
-        _parseDictionaryResult(Map<String, dynamic>.from(resultJson));
+    final DictionarySearchResult result = _parseDictionaryResult(
+      Map<String, dynamic>.from(resultJson),
+    );
     result.popupJson = json['popupJson']?.toString();
     // BUG-3612：结果在本端渲染 / 导出，随附 host 的词典样式，弹窗按结果判断用哪份
     // （老 host 不认 `stylesRevision` 时为 null，弹窗照旧用本机样式）。
@@ -214,8 +216,9 @@ class FushiRemoteLookupClient {
     if (kanjiJson is List) {
       for (final dynamic kanji in kanjiJson) {
         if (kanji is Map) {
-          kanjiResults
-              .add(FushiKanjiResult.fromMap(Map<String, dynamic>.from(kanji)));
+          kanjiResults.add(
+            FushiKanjiResult.fromMap(Map<String, dynamic>.from(kanji)),
+          );
         }
       }
     }
@@ -242,10 +245,7 @@ class FushiRemoteLookupClient {
   }) async {
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/audio',
-      body: <String, dynamic>{
-        'expression': expression,
-        'reading': reading,
-      },
+      body: <String, dynamic>{'expression': expression, 'reading': reading},
     );
     if (outcome.allUnreachable) {
       throw RemoteLookupUnreachableError(

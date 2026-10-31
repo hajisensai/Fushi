@@ -61,46 +61,48 @@ import 'test_helpers.dart';
 // -- user32 FFI (only to post messages at the native strip window; the strip
 // is a bare Win32 window with no Flutter equivalent) --
 
-typedef _FindWindowNative = IntPtr Function(
-    Pointer<Uint16> lpClassName, Pointer<Uint16> lpWindowName);
-typedef _FindWindowDart = int Function(
-    Pointer<Uint16> lpClassName, Pointer<Uint16> lpWindowName);
-typedef _PostMessageNative = Int32 Function(
-    IntPtr hWnd, Uint32 msg, IntPtr wParam, IntPtr lParam);
-typedef _PostMessageDart = int Function(
-    int hWnd, int msg, int wParam, int lParam);
+typedef _FindWindowNative =
+    IntPtr Function(Pointer<Uint16> lpClassName, Pointer<Uint16> lpWindowName);
+typedef _FindWindowDart =
+    int Function(Pointer<Uint16> lpClassName, Pointer<Uint16> lpWindowName);
+typedef _PostMessageNative =
+    Int32 Function(IntPtr hWnd, Uint32 msg, IntPtr wParam, IntPtr lParam);
+typedef _PostMessageDart =
+    int Function(int hWnd, int msg, int wParam, int lParam);
 typedef _GetClientRectNative = Int32 Function(IntPtr hWnd, Pointer<Int32> rect);
 typedef _GetClientRectDart = int Function(int hWnd, Pointer<Int32> rect);
 typedef _IsWindowVisibleNative = Int32 Function(IntPtr hWnd);
 typedef _IsWindowVisibleDart = int Function(int hWnd);
-typedef _HeapAllocNative = IntPtr Function(
-    IntPtr heap, Uint32 flags, IntPtr bytes);
+typedef _HeapAllocNative =
+    IntPtr Function(IntPtr heap, Uint32 flags, IntPtr bytes);
 typedef _HeapAllocDart = int Function(int heap, int flags, int bytes);
-typedef _HeapFreeNative = Int32 Function(
-    IntPtr heap, Uint32 flags, Pointer<NativeType> p);
-typedef _HeapFreeDart = int Function(
-    int heap, int flags, Pointer<NativeType> p);
+typedef _HeapFreeNative =
+    Int32 Function(IntPtr heap, Uint32 flags, Pointer<NativeType> p);
+typedef _HeapFreeDart =
+    int Function(int heap, int flags, Pointer<NativeType> p);
 typedef _GetProcessHeapNative = IntPtr Function();
 typedef _GetProcessHeapDart = int Function();
 
 final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
 final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
-final _FindWindowDart _findWindow =
-    _user32.lookupFunction<_FindWindowNative, _FindWindowDart>('FindWindowW');
+final _FindWindowDart _findWindow = _user32
+    .lookupFunction<_FindWindowNative, _FindWindowDart>('FindWindowW');
 final _PostMessageDart _postMessage = _user32
     .lookupFunction<_PostMessageNative, _PostMessageDart>('PostMessageW');
 final _GetClientRectDart _getClientRect = _user32
     .lookupFunction<_GetClientRectNative, _GetClientRectDart>('GetClientRect');
-final _IsWindowVisibleDart _isWindowVisible =
-    _user32.lookupFunction<_IsWindowVisibleNative, _IsWindowVisibleDart>(
-        'IsWindowVisible');
-final _HeapAllocDart _heapAlloc =
-    _kernel32.lookupFunction<_HeapAllocNative, _HeapAllocDart>('HeapAlloc');
-final _HeapFreeDart _heapFree =
-    _kernel32.lookupFunction<_HeapFreeNative, _HeapFreeDart>('HeapFree');
-final _GetProcessHeapDart _getProcessHeap =
-    _kernel32.lookupFunction<_GetProcessHeapNative, _GetProcessHeapDart>(
-        'GetProcessHeap');
+final _IsWindowVisibleDart _isWindowVisible = _user32
+    .lookupFunction<_IsWindowVisibleNative, _IsWindowVisibleDart>(
+      'IsWindowVisible',
+    );
+final _HeapAllocDart _heapAlloc = _kernel32
+    .lookupFunction<_HeapAllocNative, _HeapAllocDart>('HeapAlloc');
+final _HeapFreeDart _heapFree = _kernel32
+    .lookupFunction<_HeapFreeNative, _HeapFreeDart>('HeapFree');
+final _GetProcessHeapDart _getProcessHeap = _kernel32
+    .lookupFunction<_GetProcessHeapNative, _GetProcessHeapDart>(
+      'GetProcessHeap',
+    );
 
 const int _wmLButtonDown = 0x0201;
 const int _wmLButtonUp = 0x0202;
@@ -155,7 +157,8 @@ void _postClick(int hwnd, int x, int y) {
 }
 
 File _glogFile() => File(
-    '${Directory.systemTemp.path}${Platform.pathSeparator}hibiki_glookup.log');
+  '${Directory.systemTemp.path}${Platform.pathSeparator}hibiki_glookup.log',
+);
 
 String _glogTail(int fromLength) {
   final File f = _glogFile();
@@ -168,16 +171,22 @@ String _glogTail(int fromLength) {
 /// (the overlay's isolated user-data folder). Returns the number killed.
 Future<int> _killOverlayWebViewProcs(String udfPath) async {
   final String escaped = udfPath.replaceAll("'", "''");
-  final String script = '\$p=\'$escaped\'; '
+  final String script =
+      '\$p=\'$escaped\'; '
       '\$procs = Get-CimInstance Win32_Process '
       '-Filter "Name=\'msedgewebview2.exe\'" '
       '| Where-Object { \$_.CommandLine -like (\'*\'+\$p+\'*\') }; '
       '\$procs | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }; '
       '(\$procs | Measure-Object).Count';
-  final ProcessResult result = await Process.run(
-      'powershell', <String>['-NoProfile', '-Command', script]);
-  debugPrint('[float-tap] kill script stdout=${result.stdout} '
-      'stderr=${result.stderr}');
+  final ProcessResult result = await Process.run('powershell', <String>[
+    '-NoProfile',
+    '-Command',
+    script,
+  ]);
+  debugPrint(
+    '[float-tap] kill script stdout=${result.stdout} '
+    'stderr=${result.stderr}',
+  );
   return int.tryParse(result.stdout.toString().trim()) ?? -1;
 }
 
@@ -209,8 +218,11 @@ void main() {
         label: 'float-tap-lookup',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
 
           final AppModel appModel = await readyAppModel(tester);
@@ -224,8 +236,10 @@ void main() {
           // strip appears automatically).
           await appModel.setShowFloatingLyric(true);
 
-          final String bookKey =
-              await seedAudiobook(tester, title: 'TODO-1268 Float Tap');
+          final String bookKey = await seedAudiobook(
+            tester,
+            title: 'TODO-1268 Float Tap',
+          );
           final FocusDriver driver = FocusDriver(tester);
 
           final List<Finder> navTargets = findPrimaryNavigationTargets();
@@ -249,24 +263,36 @@ void main() {
               break;
             }
           }
-          expect(bookEntry, findsOneWidget,
-              reason: 'seeded audiobook must appear on the shelf');
+          expect(
+            bookEntry,
+            findsOneWidget,
+            reason: 'seeded audiobook must appear on the shelf',
+          );
 
-          expect(await driver.focusWidget(bookEntry), isTrue,
-              reason: 'audiobook card must be reachable by focus');
+          expect(
+            await driver.focusWidget(bookEntry),
+            isTrue,
+            reason: 'audiobook card must be reachable by focus',
+          );
           await driver.activate();
           await tester.pump(const Duration(seconds: 3));
           for (int i = 0; i < 60; i++) {
             await tester.pump(const Duration(milliseconds: 500));
             if (_webViewShown()) break;
           }
-          expect(_webViewShown(), isTrue,
-              reason: 'reader WebView must mount after opening the book');
+          expect(
+            _webViewShown(),
+            isTrue,
+            reason: 'reader WebView must mount after opening the book',
+          );
 
           final AudiobookPlayerController? controller =
               await _waitForActiveAudiobook(tester, appModel);
-          expect(controller, isNotNull,
-              reason: 'audiobook session controller must attach');
+          expect(
+            controller,
+            isNotNull,
+            reason: 'audiobook session controller must attach',
+          );
 
           // Wait for the native strip window to really exist + be visible.
           int stripHwnd = 0;
@@ -275,10 +301,16 @@ void main() {
             if (stripHwnd != 0 && _isWindowVisible(stripHwnd) != 0) break;
             await tester.pump(const Duration(milliseconds: 500));
           }
-          expect(stripHwnd, isNot(0),
-              reason: 'native floating-lyric strip window must exist');
-          expect(_isWindowVisible(stripHwnd), isNot(0),
-              reason: 'native floating-lyric strip window must be visible');
+          expect(
+            stripHwnd,
+            isNot(0),
+            reason: 'native floating-lyric strip window must exist',
+          );
+          expect(
+            _isWindowVisible(stripHwnd),
+            isNot(0),
+            reason: 'native floating-lyric strip window must be visible',
+          );
 
           // Let the first cue text settle on the strip
           // (displayCueForFloatingLyric serves cue 0 even before playback).
@@ -293,8 +325,9 @@ void main() {
           debugPrint('[float-tap] strip hwnd=$stripHwnd client=${w}x$h');
 
           // Baseline: only look at the glog delta from here on.
-          final int glogBase =
-              _glogFile().existsSync() ? _glogFile().lengthSync() : 0;
+          final int glogBase = _glogFile().existsSync()
+              ? _glogFile().lengthSync()
+              : 0;
 
           // The text block sits below the controls row (~38/96 dip) and is
           // centered both ways. Try a few candidate points; a glyph hit
@@ -326,10 +359,14 @@ void main() {
           }
           final String tapLog = _glogTail(glogBase);
           debugPrint('[float-tap] glog after tap:\n$tapLog');
-          expect(lookupSeen, isTrue,
-              reason: 'a strip word tap must reach Dart as a global '
-                  'lookupText (native hit-test -> channel -> controller); '
-                  'glog delta: $tapLog');
+          expect(
+            lookupSeen,
+            isTrue,
+            reason:
+                'a strip word tap must reach Dart as a global '
+                'lookupText (native hit-test -> channel -> controller); '
+                'glog delta: $tapLog',
+          );
 
           // Outcome: a HOST-driven reveal(box) (real render) passes; a
           // READY-SAFETY-only reveal (blank fallback) or no reveal at all is
@@ -350,18 +387,28 @@ void main() {
           final int overlayHwnd = _findWindowByClass('FushiGlobalLookupWindow');
           final bool overlayVisibleNative =
               overlayHwnd != 0 && _isWindowVisible(overlayHwnd) != 0;
-          debugPrint('[float-tap] overlay isShowing=$overlayShowing '
-              'hwnd=$overlayHwnd visibleNative=$overlayVisibleNative '
-              'hostReveal=$hostReveal safetyReveal=$safetyReveal');
+          debugPrint(
+            '[float-tap] overlay isShowing=$overlayShowing '
+            'hwnd=$overlayHwnd visibleNative=$overlayVisibleNative '
+            'hostReveal=$hostReveal safetyReveal=$safetyReveal',
+          );
 
-          expect(hostReveal, isTrue,
-              reason: 'the lookup card must be revealed by the HOST '
-                  '(overlaySize -> reveal(box)) - a READY-SAFETY-only reveal '
-                  'is the blank-card failure the user reported '
-                  '(safetyReveal=$safetyReveal); glog delta: $outcomeLog');
-          expect(overlayShowing || overlayVisibleNative, isTrue,
-              reason: 'the global lookup overlay window must actually be '
-                  'visible after the tap');
+          expect(
+            hostReveal,
+            isTrue,
+            reason:
+                'the lookup card must be revealed by the HOST '
+                '(overlaySize -> reveal(box)) - a READY-SAFETY-only reveal '
+                'is the blank-card failure the user reported '
+                '(safetyReveal=$safetyReveal); glog delta: $outcomeLog',
+          );
+          expect(
+            overlayShowing || overlayVisibleNative,
+            isTrue,
+            reason:
+                'the global lookup overlay window must actually be '
+                'visible after the tap',
+          );
 
           // -- Phase 2 (BUG-693 fault injection): the overlay WebView2
           // process tree dies mid-session (runtime update / GPU reset / OOM /
@@ -374,25 +421,35 @@ void main() {
           await tester.pump(const Duration(seconds: 1));
 
           final String? localAppData = Platform.environment['LOCALAPPDATA'];
-          expect(localAppData, isNotNull,
-              reason: 'LOCALAPPDATA must exist (isolated by the runner)');
+          expect(
+            localAppData,
+            isNotNull,
+            reason: 'LOCALAPPDATA must exist (isolated by the runner)',
+          );
           final String sep = Platform.pathSeparator;
           final String overlayUdf =
               '$localAppData${sep}Fushi${sep}GlobalLookupWebView2';
           final int killedCount = await _killOverlayWebViewProcs(overlayUdf);
-          debugPrint('[float-tap] killed overlay WebView2 procs: '
-              '$killedCount (udf=$overlayUdf)');
-          expect(killedCount, greaterThan(0),
-              reason: 'fault injection must actually kill the overlay '
-                  'WebView2 process tree (0 killed = injection was a no-op)');
+          debugPrint(
+            '[float-tap] killed overlay WebView2 procs: '
+            '$killedCount (udf=$overlayUdf)',
+          );
+          expect(
+            killedCount,
+            greaterThan(0),
+            reason:
+                'fault injection must actually kill the overlay '
+                'WebView2 process tree (0 killed = injection was a no-op)',
+          );
 
           // Let ProcessFailed fire + recovery start.
           for (int i = 0; i < 10; i++) {
             await tester.pump(const Duration(milliseconds: 300));
           }
 
-          final int glogBase2 =
-              _glogFile().existsSync() ? _glogFile().lengthSync() : 0;
+          final int glogBase2 = _glogFile().existsSync()
+              ? _glogFile().lengthSync()
+              : 0;
           _postClick(stripHwnd, hitX, hitY);
 
           bool lookupSeen2 = false;
@@ -403,9 +460,13 @@ void main() {
               break;
             }
           }
-          expect(lookupSeen2, isTrue,
-              reason: 'post-crash strip tap must still reach Dart; glog: '
-                  '${_glogTail(glogBase2)}');
+          expect(
+            lookupSeen2,
+            isTrue,
+            reason:
+                'post-crash strip tap must still reach Dart; glog: '
+                '${_glogTail(glogBase2)}',
+          );
 
           bool hostReveal2 = false;
           bool safetyReveal2 = false;
@@ -418,18 +479,23 @@ void main() {
           }
           final String outcomeLog2 = _glogTail(glogBase2);
           debugPrint('[float-tap] glog outcome after crash:\n$outcomeLog2');
-          expect(hostReveal2, isTrue,
-              reason: 'after the overlay WebView2 process tree died, a strip '
-                  'tap must SELF-HEAL into a real host-rendered card '
-                  '(ProcessFailed recovery). READY-SAFETY-only/blank '
-                  '(safetyReveal2=$safetyReveal2) or nothing = the exact '
-                  'dead-overlay state the user kept reporting; glog delta: '
-                  '$outcomeLog2');
+          expect(
+            hostReveal2,
+            isTrue,
+            reason:
+                'after the overlay WebView2 process tree died, a strip '
+                'tap must SELF-HEAL into a real host-rendered card '
+                '(ProcessFailed recovery). READY-SAFETY-only/blank '
+                '(safetyReveal2=$safetyReveal2) or nothing = the exact '
+                'dead-overlay state the user kept reporting; glog delta: '
+                '$outcomeLog2',
+          );
 
           // Cleanup (isolated app data, but stay tidy anyway).
           await GlobalLookupChannel.hide();
-          await appModel.audiobookSession
-              .toggleFloatingLyric(currentlyOn: true);
+          await appModel.audiobookSession.toggleFloatingLyric(
+            currentlyOn: true,
+          );
           await appModel.setShowFloatingLyric(false);
           await tester.pump(const Duration(milliseconds: 500));
         },

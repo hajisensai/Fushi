@@ -5,18 +5,19 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 
 void main() {
-  testWidgets('windowed and fullscreen resolve the identical control themes',
-      (WidgetTester tester) async {
+  testWidgets('windowed and fullscreen resolve the identical control themes', (
+    WidgetTester tester,
+  ) async {
     const MaterialVideoControlsThemeData mobile =
         MaterialVideoControlsThemeData(
-      buttonBarHeight: 61,
-      buttonBarButtonSize: 31,
-    );
+          buttonBarHeight: 61,
+          buttonBarButtonSize: 31,
+        );
     const MaterialDesktopVideoControlsThemeData desktop =
         MaterialDesktopVideoControlsThemeData(
-      buttonBarHeight: 63,
-      buttonBarButtonSize: 33,
-    );
+          buttonBarHeight: 63,
+          buttonBarButtonSize: 33,
+        );
 
     late MaterialVideoControlsTheme mobileScope;
     late MaterialDesktopVideoControlsTheme desktopScope;

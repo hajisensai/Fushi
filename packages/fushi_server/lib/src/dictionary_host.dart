@@ -14,7 +14,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi_anki/fushi_anki_core.dart' show ankiDictionaryMediaCacheDirPath, ankiDictionaryMediaCacheFilename;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show ankiDictionaryMediaCacheDirPath, ankiDictionaryMediaCacheFilename;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
@@ -65,17 +66,30 @@ List<FushiRubySpan> alignServerRubySpans({
   final Match? m = _leadingPunctuationRegex.firstMatch(raw);
   final int lead = m == null ? 0 : m.end;
   return <FushiRubySpan>[
-    for (final FushiRubySpan span in shiftRubySpans(spans, leadingStrip: lead, length: normalized.length))
+    for (final FushiRubySpan span in shiftRubySpans(
+      spans,
+      leadingStrip: lead,
+      length: normalized.length,
+    ))
       if (span.end + lead <= raw.length &&
-          raw.substring(span.start + lead, span.end + lead) == normalized.substring(span.start, span.end))
+          raw.substring(span.start + lead, span.end + lead) ==
+              normalized.substring(span.start, span.end))
         span,
   ];
 }
 
-final RegExp _leadingPunctuationRegex = RegExp(r'^[\p{P}\p{S}]+', unicode: true);
+final RegExp _leadingPunctuationRegex = RegExp(
+  r'^[\p{P}\p{S}]+',
+  unicode: true,
+);
 final RegExp _emojiRegex = RegExp(r'\p{Extended_Pictographic}', unicode: true);
-final RegExp _punctuationRegex = RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
-final RegExp _loneSurrogateRegex = RegExp('[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]');
+final RegExp _punctuationRegex = RegExp(
+  r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$',
+  unicode: true,
+);
+final RegExp _loneSurrogateRegex = RegExp(
+  '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
+);
 
 /// 单个汉字（按码点数）——只有这种查询才额外查汉字词典桶（与 app `isSingleKanji` 同）。
 bool isSingleKanjiTerm(String text) {
@@ -118,7 +132,10 @@ class ServerDictionaryHost {
 
   bool _available = false;
   String? _unavailableReason;
-  _DictionarySnapshot _snapshot = const _DictionarySnapshot(termOrder: <String>[], hidden: <String>{});
+  _DictionarySnapshot _snapshot = const _DictionarySnapshot(
+    termOrder: <String>[],
+    hidden: <String>{},
+  );
   int _loadedCount = 0;
 
   /// 引擎是否可用（原生库加载成功）。不可用时互联的查词 / 词典媒体路由不接线。
@@ -177,7 +194,10 @@ class ServerDictionaryHost {
   Future<void> refresh() async {
     if (!_available) return;
     final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata()
-      ..sort((DictionaryMetaRow a, DictionaryMetaRow b) => a.order.compareTo(b.order));
+      ..sort(
+        (DictionaryMetaRow a, DictionaryMetaRow b) =>
+            a.order.compareTo(b.order),
+      );
     // 分桶规则与 app 同一份（fushi_dictionary 的 bucketDictPaths / dictPathEntryOf）：
     // 混合词典的术语部分按 hiddenLanguages、汉字部分按 kanjiHidden 各自判定，汉字桶按
     // 「汉字」分区顺序（kanjiOrder）装载（BUG-3573）。
@@ -186,22 +206,32 @@ class ServerDictionaryHost {
     final Set<String> hidden = <String>{};
     for (final DictionaryMetaRow r in rows) {
       final String dir = p.join(dictionaryResourceRoot.path, r.name);
-      final bool isHidden = _decodeStringList(r.hiddenLanguagesJson).contains('ja');
+      final bool isHidden = _decodeStringList(
+        r.hiddenLanguagesJson,
+      ).contains('ja');
       if (isHidden) hidden.add(r.name);
       if (r.type == 'term') termOrder.add(r.name);
-      entries.add(dictPathEntryOf(
-        type: dictionaryTypeFromName(r.type),
-        path: dir,
-        exists: Directory(dir).existsSync(),
-        hidden: isHidden,
-        metadata: _decodeStringMap(r.metadataJson),
-        order: r.order,
-      ));
+      entries.add(
+        dictPathEntryOf(
+          type: dictionaryTypeFromName(r.type),
+          path: dir,
+          exists: Directory(dir).existsSync(),
+          hidden: isHidden,
+          metadata: _decodeStringMap(r.metadataJson),
+          order: r.order,
+        ),
+      );
     }
     final b = bucketDictPaths(entries);
-    FushiDicts.initializeTyped(termPaths: b.term, freqPaths: b.freq, pitchPaths: b.pitch, kanjiPaths: b.kanji);
+    FushiDicts.initializeTyped(
+      termPaths: b.term,
+      freqPaths: b.freq,
+      pitchPaths: b.pitch,
+      kanjiPaths: b.kanji,
+    );
     _snapshot = _DictionarySnapshot(termOrder: termOrder, hidden: hidden);
-    _loadedCount = b.term.length + b.freq.length + b.pitch.length + b.kanji.length;
+    _loadedCount =
+        b.term.length + b.freq.length + b.pitch.length + b.kanji.length;
     engineLog.logDiagnostic(
       'ServerDictionaryHost',
       'loaded ${b.term.length} term / ${b.freq.length} freq / '
@@ -212,7 +242,9 @@ class ServerDictionaryHost {
   static List<String> _decodeStringList(String raw) {
     try {
       final Object? v = jsonDecode(raw);
-      return v is List ? <String>[for (final Object? e in v) '$e'] : const <String>[];
+      return v is List
+          ? <String>[for (final Object? e in v) '$e']
+          : const <String>[];
     } on FormatException {
       return const <String>[];
     }
@@ -222,7 +254,10 @@ class ServerDictionaryHost {
     try {
       final Object? v = jsonDecode(raw);
       return v is Map
-          ? <String, String>{for (final MapEntry<Object?, Object?> e in v.entries) '${e.key}': '${e.value}'}
+          ? <String, String>{
+              for (final MapEntry<Object?, Object?> e in v.entries)
+                '${e.key}': '${e.value}',
+            }
           : const <String, String>{};
     } on FormatException {
       return const <String, String>{};
@@ -255,7 +290,11 @@ class ServerDictionaryHost {
       term,
       maxResults: maximumTerms,
       chineseSimpToTrad: chineseSimpToTrad,
-      rubySpans: alignServerRubySpans(raw: rawTerm, normalized: term, spans: rubySpans),
+      rubySpans: alignServerRubySpans(
+        raw: rawTerm,
+        normalized: term,
+        spans: rubySpans,
+      ),
     );
     if (results.isEmpty) {
       if (kanji.isEmpty) return null;
@@ -293,7 +332,11 @@ class ServerDictionaryHost {
       term,
       maxResults: maximumTerms,
       chineseSimpToTrad: chineseSimpToTrad,
-      rubySpans: alignServerRubySpans(raw: rawTerm, normalized: term, spans: rubySpans),
+      rubySpans: alignServerRubySpans(
+        raw: rawTerm,
+        normalized: term,
+        spans: rubySpans,
+      ),
     );
     if (results.isEmpty) return null;
     int bestLength = 0;
@@ -314,7 +357,8 @@ class ServerDictionaryHost {
 
   /// 词典名 → 词典自带 CSS，给 `/api/lookup/dictionary/styles`（对端弹窗渲染本机结果）。
   Map<String, String> styles() {
-    if (!_available || !FushiDicts.isInitialized) return const <String, String>{};
+    if (!_available || !FushiDicts.isInitialized)
+      return const <String, String>{};
     return FushiDicts.dictionaryStyles;
   }
 
@@ -333,7 +377,10 @@ class ServerDictionaryHost {
     try {
       decoded = jsonDecode(dictionaryMediaJson);
     } on FormatException catch (e) {
-      engineLog.logDiagnostic('ServerDictionaryHost.media', 'payload JSON 解析失败: $e');
+      engineLog.logDiagnostic(
+        'ServerDictionaryHost.media',
+        'payload JSON 解析失败: $e',
+      );
       return;
     }
     if (decoded is! List || decoded.isEmpty) return;
@@ -344,11 +391,16 @@ class ServerDictionaryHost {
       final String dict = raw['dictionary']?.toString() ?? '';
       final String path = raw['path']?.toString() ?? '';
       if (dict.isEmpty || path.isEmpty) continue;
-      final File file = File(p.join(dir.path, ankiDictionaryMediaCacheFilename(dict, path)));
+      final File file = File(
+        p.join(dir.path, ankiDictionaryMediaCacheFilename(dict, path)),
+      );
       if (file.existsSync()) continue;
       final Uint8List? bytes = mediaFile(dict, path);
       if (bytes == null || bytes.isEmpty) {
-        engineLog.logDiagnostic('ServerDictionaryHost.media', '词典「$dict」取不到媒体字节: $path');
+        engineLog.logDiagnostic(
+          'ServerDictionaryHost.media',
+          '词典「$dict」取不到媒体字节: $path',
+        );
         continue;
       }
       await file.writeAsBytes(bytes, flush: true);
@@ -440,7 +492,10 @@ class ServerRemoteLookupService
   );
 
   @override
-  Future<RemoteAudioLookup?> lookupAudio({required String expression, required String reading}) async => null;
+  Future<RemoteAudioLookup?> lookupAudio({
+    required String expression,
+    required String reading,
+  }) async => null;
 }
 
 /// 查词历史（浏览器扩展 / 对端 `record: true`）落服务端 DB：与 app 同两张表——
@@ -448,7 +503,11 @@ class ServerRemoteLookupService
 /// `search_history_items`（historyKey = [kDictionarySearchHistoryKey]，保留最近
 /// [maximumSearchTerms] 条）。写入串行，[idle] 等全部落库。
 class ServerRemoteHistoryService implements FushiRemoteHistoryService {
-  ServerRemoteHistoryService(this.db, {this.maximumResults = 10, this.maximumSearchTerms = 60});
+  ServerRemoteHistoryService(
+    this.db, {
+    this.maximumResults = 10,
+    this.maximumSearchTerms = 60,
+  });
 
   final FushiDatabase db;
   final int maximumResults;
@@ -461,7 +520,10 @@ class ServerRemoteHistoryService implements FushiRemoteHistoryService {
   @override
   void recordHistory(DictionarySearchResult result) {
     if (result.searchTerm.trim().isEmpty) return;
-    _tail = _tail.then((_) => _write(result)).catchError((Object e, StackTrace st) {
+    _tail = _tail.then((_) => _write(result)).catchError((
+      Object e,
+      StackTrace st,
+    ) {
       engineLog.log('ServerRemoteHistoryService.recordHistory', e, st);
     });
   }
@@ -484,9 +546,12 @@ class ServerRemoteHistoryService implements FushiRemoteHistoryService {
       kept.add(row.resultJson);
     }
     kept.add(result.toJson());
-    final List<String> tail = kept.length > maximumResults ? kept.sublist(kept.length - maximumResults) : kept;
+    final List<String> tail = kept.length > maximumResults
+        ? kept.sublist(kept.length - maximumResults)
+        : kept;
     await db.replaceAllDictionaryHistory(<DictionaryHistoryCompanion>[
-      for (int i = 0; i < tail.length; i++) DictionaryHistoryCompanion.insert(position: i, resultJson: tail[i]),
+      for (int i = 0; i < tail.length; i++)
+        DictionaryHistoryCompanion.insert(position: i, resultJson: tail[i]),
     ]);
   }
 
@@ -501,17 +566,30 @@ class ServerRemoteHistoryService implements FushiRemoteHistoryService {
 }
 
 /// 原生库路径：`FUSHI_DICTS_LIB` > bundle 布局（`bin/../lib/` 等）> null（裸名）。
-String? resolveFushiDictsLibraryPath({Map<String, String>? environment, String? executablePath}) {
+String? resolveFushiDictsLibraryPath({
+  Map<String, String>? environment,
+  String? executablePath,
+}) {
   final String? env = (environment ?? Platform.environment)[kFushiDictsLibEnv];
   if (env != null && env.trim().isNotEmpty) return env.trim();
-  return locateBundledLibrary(fushiDictsLibraryName(), executablePath: executablePath);
+  return locateBundledLibrary(
+    fushiDictsLibraryName(),
+    executablePath: executablePath,
+  );
 }
 
 /// 变形表目录：`FUSHI_TRANSFORMS_DIR` > bundle 里的 `share/fushi/transforms` >
 /// 源码树里的 `fushi/assets/transforms`（`dart run` 开发态）。都没有返回 null。
-Directory? resolveTransformsDirectory({Map<String, String>? environment, String? executablePath, Uri? scriptUri}) {
-  final String? env = (environment ?? Platform.environment)[kFushiTransformsDirEnv];
-  final String exeDir = p.dirname(executablePath ?? Platform.resolvedExecutable);
+Directory? resolveTransformsDirectory({
+  Map<String, String>? environment,
+  String? executablePath,
+  Uri? scriptUri,
+}) {
+  final String? env =
+      (environment ?? Platform.environment)[kFushiTransformsDirEnv];
+  final String exeDir = p.dirname(
+    executablePath ?? Platform.resolvedExecutable,
+  );
   final List<String> candidates = <String>[
     if (env != null && env.trim().isNotEmpty) env.trim(),
     p.normalize(p.join(exeDir, '..', 'share', 'fushi', 'transforms')),
@@ -521,7 +599,17 @@ Directory? resolveTransformsDirectory({Map<String, String>? environment, String?
   if (script.isScheme('file')) {
     // packages/fushi_server/bin/<script>.dart → 仓库根/fushi/assets/transforms
     candidates.add(
-      p.normalize(p.join(p.dirname(script.toFilePath()), '..', '..', '..', 'fushi', 'assets', 'transforms')),
+      p.normalize(
+        p.join(
+          p.dirname(script.toFilePath()),
+          '..',
+          '..',
+          '..',
+          'fushi',
+          'assets',
+          'transforms',
+        ),
+      ),
     );
   }
   for (final String c in candidates) {

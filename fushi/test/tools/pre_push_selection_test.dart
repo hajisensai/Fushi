@@ -20,13 +20,16 @@ intro | `test/not_this_test.dart` |
 ## 另一半
 | `test/c/later_test.dart` | nope |
 ''';
-      expect(parseEnumerationGuards(md),
-          <String>['test/a/one_test.dart', 'test/b/two_test.dart']);
+      expect(parseEnumerationGuards(md), <String>[
+        'test/a/one_test.dart',
+        'test/b/two_test.dart',
+      ]);
     });
 
     test('the real fast-workflow.md still parses to the ~50-entry batch', () {
-      final String md =
-          File('../docs/agent/fast-workflow.md').readAsStringSync();
+      final String md = File(
+        '../docs/agent/fast-workflow.md',
+      ).readAsStringSync();
       final List<String> guards = parseEnumerationGuards(md);
       expect(guards.length, greaterThanOrEqualTo(40));
       for (final String g in guards) {
@@ -37,28 +40,35 @@ intro | `test/not_this_test.dart` |
 
   group('importKeysForChange', () {
     const Map<String, String> names = <String, String>{
-      'fushi_core': 'fushi_core'
+      'fushi_core': 'fushi_core',
     };
 
     test('app and package libraries map to their package: URI', () {
-      expect(importKeysForChange('fushi/lib/src/a/b.dart', packageNames: names),
-          <String>{'package:fushi/src/a/b.dart'});
       expect(
-          importKeysForChange('packages/fushi_core/lib/src/db.dart',
-              packageNames: names),
-          <String>{'package:fushi_core/src/db.dart'});
+        importKeysForChange('fushi/lib/src/a/b.dart', packageNames: names),
+        <String>{'package:fushi/src/a/b.dart'},
+      );
+      expect(
+        importKeysForChange(
+          'packages/fushi_core/lib/src/db.dart',
+          packageNames: names,
+        ),
+        <String>{'package:fushi_core/src/db.dart'},
+      );
       expect(importKeysForChange('native/x.cpp', packageNames: names), isEmpty);
     });
 
     test('a part maps to the library that owns it', () {
       expect(
-          importKeysForChange(
-              'fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart',
-              packageNames: names,
-              partOwner: '../reader_fushi_page.dart'),
-          <String>{
-            'package:fushi/src/pages/implementations/reader_fushi_page.dart'
-          });
+        importKeysForChange(
+          'fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+          packageNames: names,
+          partOwner: '../reader_fushi_page.dart',
+        ),
+        <String>{
+          'package:fushi/src/pages/implementations/reader_fushi_page.dart',
+        },
+      );
     });
 
     test('partOfTarget reads the part-of URI', () {
@@ -96,39 +106,45 @@ intro | `test/not_this_test.dart` |
 
     test('a deleted test file is not selected', () {
       expect(
-          directImpactTests(
-            changed: <String>['fushi/test/gone_test.dart'],
-            testSources: sources,
-            importKeys: <String>{},
-          ),
-          isEmpty);
+        directImpactTests(
+          changed: <String>['fushi/test/gone_test.dart'],
+          testSources: sources,
+          importKeys: <String>{},
+        ),
+        isEmpty,
+      );
     });
   });
 
   test('changedTestablePackages mirrors the CI package-loop skip list', () {
     expect(
-        changedTestablePackages(<String>[
-          'packages/fushi_core/lib/a.dart',
-          'packages/fushi_torrent/lib/b.dart',
-          'packages/gamepads_windows/c.cc',
-          'fushi/lib/x.dart',
-        ]),
-        <String>{'fushi_core'});
+      changedTestablePackages(<String>[
+        'packages/fushi_core/lib/a.dart',
+        'packages/fushi_torrent/lib/b.dart',
+        'packages/gamepads_windows/c.cc',
+        'fushi/lib/x.dart',
+      ]),
+      <String>{'fushi_core'},
+    );
   });
 
   test('touchesJsSuites', () {
     expect(touchesJsSuites(<String>['fushi/lib/a.dart']), isFalse);
     expect(touchesJsSuites(<String>['fushi/assets/popup/popup.js']), isTrue);
-    expect(touchesJsSuites(<String>['tools/browser-extension/content.js']),
-        isTrue);
+    expect(
+      touchesJsSuites(<String>['tools/browser-extension/content.js']),
+      isTrue,
+    );
   });
 
   test('chunkByCommandLength keeps every path, each batch under the limit', () {
     final List<String> paths = <String>[
-      for (int i = 0; i < 300; i++) 'test/some/dir/file_number_${i}_test.dart'
+      for (int i = 0; i < 300; i++) 'test/some/dir/file_number_${i}_test.dart',
     ];
-    final List<List<String>> batches =
-        chunkByCommandLength(paths, maxChars: 1000);
+    final List<List<String>> batches = chunkByCommandLength(
+      paths,
+      maxChars: 1000,
+    );
     expect(batches.expand((List<String> b) => b).toList(), paths);
     for (final List<String> b in batches) {
       expect(b.join(' ').length, lessThanOrEqualTo(1000));
@@ -137,51 +153,62 @@ intro | `test/not_this_test.dart` |
 
   test('chunkByCommandLength maxFiles caps each batch, order kept', () {
     final List<String> paths = <String>[
-      for (int i = 0; i < 65; i++) 't/f${i}_test.dart'
+      for (int i = 0; i < 65; i++) 't/f${i}_test.dart',
     ];
-    final List<List<String>> batches =
-        chunkByCommandLength(paths, maxFiles: 20);
+    final List<List<String>> batches = chunkByCommandLength(
+      paths,
+      maxFiles: 20,
+    );
     expect(batches.map((List<String> b) => b.length), <int>[20, 20, 20, 5]);
     expect(batches.expand((List<String> b) => b).toList(), paths);
     // 0 = no file cap (the old behaviour): one batch under the char limit.
     expect(chunkByCommandLength(paths), hasLength(1));
   });
 
-  test('descendantPids: whole subtree, deepest first, root excluded, no loops',
-      () {
-    // 10 -> 11 -> 13 ; 10 -> 12 ; 20 unrelated ; 30 <-> 31 cycle under 11.
-    final List<(int, int)> table = <(int, int)>[
-      (10, 1),
-      (11, 10),
-      (12, 10),
-      (13, 11),
-      (20, 1),
-      (30, 11),
-      (31, 30),
-      (30, 31),
-    ];
-    final List<int> got = descendantPids(10, table);
-    expect(got.toSet(), <int>{11, 12, 13, 30, 31});
-    expect(got.indexOf(13), lessThan(got.indexOf(11)));
-    expect(got, isNot(contains(10)));
-    expect(descendantPids(20, table), isEmpty);
-  });
+  test(
+    'descendantPids: whole subtree, deepest first, root excluded, no loops',
+    () {
+      // 10 -> 11 -> 13 ; 10 -> 12 ; 20 unrelated ; 30 <-> 31 cycle under 11.
+      final List<(int, int)> table = <(int, int)>[
+        (10, 1),
+        (11, 10),
+        (12, 10),
+        (13, 11),
+        (20, 1),
+        (30, 11),
+        (31, 30),
+        (30, 31),
+      ];
+      final List<int> got = descendantPids(10, table);
+      expect(got.toSet(), <int>{11, 12, 13, 30, 31});
+      expect(got.indexOf(13), lessThan(got.indexOf(11)));
+      expect(got, isNot(contains(10)));
+      expect(descendantPids(20, table), isEmpty);
+    },
+  );
 
   group('budgetTrigger (default selection)', () {
     bool isDir(String p) => !p.endsWith('.dart');
     int files(String p) => p == 'native/small' ? 12 : 900;
 
-    bool hit(String changed, String ref) => budgetTrigger(changed, ref,
-        isDirectory: isDir, dirFileCount: files, maxDirFiles: 60);
+    bool hit(String changed, String ref) => budgetTrigger(
+      changed,
+      ref,
+      isDirectory: isDir,
+      dirFileCount: files,
+      maxDirFiles: 60,
+    );
 
     test('exact file reference triggers', () {
       expect(hit('fushi/lib/src/a.dart', 'fushi/lib/src/a.dart'), isTrue);
     });
 
-    test('a sibling in the same directory does NOT trigger (wide mode only)',
-        () {
-      expect(hit('fushi/lib/src/b.dart', 'fushi/lib/src/a.dart'), isFalse);
-    });
+    test(
+      'a sibling in the same directory does NOT trigger (wide mode only)',
+      () {
+        expect(hit('fushi/lib/src/b.dart', 'fushi/lib/src/a.dart'), isFalse);
+      },
+    );
 
     test('a small directory reference triggers, a large one does not', () {
       expect(hit('native/small/x.cpp', 'native/small'), isTrue);
@@ -193,12 +220,15 @@ intro | `test/not_this_test.dart` |
   test('splitHubImportKeys keeps rare imports and drops hubs', () {
     final Map<String, String> sources = <String, String>{
       for (int i = 0; i < 50; i++)
-        't$i': "import 'package:fushi/hub.dart';"
+        't$i':
+            "import 'package:fushi/hub.dart';"
             "${i == 0 ? "import 'package:fushi/rare.dart';" : ''}",
     };
     final ({Set<String> kept, Set<String> hubs}) r = splitHubImportKeys(
-        <String>{'package:fushi/hub.dart', 'package:fushi/rare.dart'}, sources,
-        hubLimit: 40);
+      <String>{'package:fushi/hub.dart', 'package:fushi/rare.dart'},
+      sources,
+      hubLimit: 40,
+    );
     expect(r.kept, <String>{'package:fushi/rare.dart'});
     expect(r.hubs, <String>{'package:fushi/hub.dart'});
   });

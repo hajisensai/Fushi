@@ -5,8 +5,10 @@ import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 void main() {
   group('SubtitleRematch.supportedFormats', () {
     test('contains srt, lrc, vtt, ass', () {
-      expect(SubtitleRematch.supportedFormats,
-          containsAll(['srt', 'lrc', 'vtt', 'ass']));
+      expect(
+        SubtitleRematch.supportedFormats,
+        containsAll(['srt', 'lrc', 'vtt', 'ass']),
+      );
     });
 
     test('does not contain smil or json', () {
@@ -30,50 +32,70 @@ void main() {
     }
 
     test('SRT format is eligible', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'srt', path: 'a.srt')),
-          isTrue);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'srt', path: 'a.srt')),
+        isTrue,
+      );
     });
 
     test('LRC format is eligible', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'lrc', path: 'a.lrc')),
-          isTrue);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'lrc', path: 'a.lrc')),
+        isTrue,
+      );
     });
 
     test('VTT format is eligible', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'vtt', path: 'a.vtt')),
-          isTrue);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'vtt', path: 'a.vtt')),
+        isTrue,
+      );
     });
 
     test('ASS format is eligible', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'ass', path: 'a.ass')),
-          isTrue);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'ass', path: 'a.ass')),
+        isTrue,
+      );
     });
 
     test('SMIL format is not eligible', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'smil', path: 'a.smil')),
-          isFalse);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'smil', path: 'a.smil')),
+        isFalse,
+      );
     });
 
     test('JSON format is not eligible', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'json', path: 'a.json')),
-          isFalse);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'json', path: 'a.json')),
+        isFalse,
+      );
     });
 
     test('SMIL extension overrides unknown format', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: '', path: 'align.smil')),
-          isFalse);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: '', path: 'align.smil')),
+        isFalse,
+      );
     });
 
     test('JSON extension overrides unknown format', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: '', path: 'align.json')),
-          isFalse);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: '', path: 'align.json')),
+        isFalse,
+      );
     });
 
     test('case insensitive format check', () {
-      expect(SubtitleRematch.isEligible(makeAb(format: 'SMIL', path: 'a.txt')),
-          isFalse);
-      expect(SubtitleRematch.isEligible(makeAb(format: 'JSON', path: 'a.txt')),
-          isFalse);
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'SMIL', path: 'a.txt')),
+        isFalse,
+      );
+      expect(
+        SubtitleRematch.isEligible(makeAb(format: 'JSON', path: 'a.txt')),
+        isFalse,
+      );
     });
 
     test('empty format and path is eligible (not non-matcher)', () {
@@ -82,8 +104,9 @@ void main() {
 
     test('unknown format with non-excluded extension is eligible', () {
       expect(
-          SubtitleRematch.isEligible(makeAb(format: 'custom', path: 'a.txt')),
-          isTrue);
+        SubtitleRematch.isEligible(makeAb(format: 'custom', path: 'a.txt')),
+        isTrue,
+      );
     });
   });
 

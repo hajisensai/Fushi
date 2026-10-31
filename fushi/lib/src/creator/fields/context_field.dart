@@ -7,12 +7,12 @@ import 'package:fushi/models.dart';
 class ContextField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ContextField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Context',
-          description: 'Name of current source media.',
-          icon: Icons.perm_media_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Context',
+        description: 'Name of current source media.',
+        icon: Icons.perm_media_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ContextField get instance => _instance;

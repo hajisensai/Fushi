@@ -44,196 +44,310 @@ void main() {
       final String body = src.substring(start, end);
 
       expect(
-          body.contains('if (!_isDesktopVideoControls) return child;'), isTrue,
-          reason: '仅桌面挂（移动端无 OS 光标语义，透传 child）');
-      expect(body.contains('opaque: false'), isTrue,
-          reason: 'opaque:false 不阻断指针下探（cue 行点击 / 查词 / 滚动照常）');
+        body.contains('if (!_isDesktopVideoControls) return child;'),
+        isTrue,
+        reason: '仅桌面挂（移动端无 OS 光标语义，透传 child）',
+      );
+      expect(
+        body.contains('opaque: false'),
+        isTrue,
+        reason: 'opaque:false 不阻断指针下探（cue 行点击 / 查词 / 滚动照常）',
+      );
       // BUG-391 第三轮：onEnter 必须直发强制光标通道（前次 _handleSubtitleHover 两臂对
       // 侧栏全 no-op，是 no-op 补丁的根因）。撤掉 onEnter 直发即变红。
       expect(
-          body.contains('_forceRevealOsCursorForPanel(event.device)'), isTrue,
-          reason:
-              'onEnter/onHover 必须经 _forceRevealOsCursorForPanel 直发 activateSystemCursor');
+        body.contains('_forceRevealOsCursorForPanel(event.device)'),
+        isTrue,
+        reason:
+            'onEnter/onHover 必须经 _forceRevealOsCursorForPanel 直发 activateSystemCursor',
+      );
       expect(body.contains('onEnter:'), isTrue, reason: '进入侧栏唤回');
       expect(body.contains('onHover:'), isTrue, reason: '侧栏内移动持续唤回');
-      expect(body.contains('_handleSubtitleHover(true)'), isTrue,
-          reason: 'onEnter 仍保留字幕盒同款救场（无害冗余）');
+      expect(
+        body.contains('_handleSubtitleHover(true)'),
+        isTrue,
+        reason: 'onEnter 仍保留字幕盒同款救场（无害冗余）',
+      );
     });
 
     test(
-        '管 2 改法 B：_forceRevealOsCursorForPanel 直发 activateSystemCursor 且只剩桌面门控（去掉 _cursorHidden）',
-        () {
-      final int start =
-          src.indexOf('void _forceRevealOsCursorForPanel(int device) {');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '应有直发 OS 光标通道的 helper（绕开框架 lastSession 去重）');
-      final int end = src.indexOf('\n  }', start) + 4;
-      expect(end, greaterThan(start));
-      final String body = src.substring(start, end);
+      '管 2 改法 B：_forceRevealOsCursorForPanel 直发 activateSystemCursor 且只剩桌面门控（去掉 _cursorHidden）',
+      () {
+        final int start = src.indexOf(
+          'void _forceRevealOsCursorForPanel(int device) {',
+        );
+        expect(
+          start,
+          greaterThanOrEqualTo(0),
+          reason: '应有直发 OS 光标通道的 helper（绕开框架 lastSession 去重）',
+        );
+        final int end = src.indexOf('\n  }', start) + 4;
+        expect(end, greaterThan(start));
+        final String body = src.substring(start, end);
 
-      expect(body.contains('SystemChannels.mouseCursor.invokeMethod'), isTrue,
-          reason: '必须直发 mouseCursor 通道');
-      expect(body.contains("'activateSystemCursor'"), isTrue,
-          reason: '通道方法名须为 activateSystemCursor（与框架一致）');
-      expect(body.contains("'kind': 'basic'"), isTrue,
-          reason: "kind 须为 'basic'（IDC_ARROW），不是 none");
-      expect(body.contains("'device': device"), isTrue,
-          reason: '设备 id 取自进入侧栏的真实 pointer event');
-      expect(body.contains('if (!_isDesktopVideoControls) return;'), isTrue,
-          reason: '门控①：仅桌面发');
-      // 改法 B：上一轮的 `_cursorHidden.value == true` 门控在列表开态恒早退（_hasVideoOverlay
-      // 含 _subtitleListVisible → _cursorHidden 恒 false）= 第三轮空转。本轮**去掉**它，
-      // onEnter 跨列入侧栏无条件直发。若回退加回该门控，本断言转红（与第三轮恒早退悖论自相矛盾）。
-      expect(body.contains('_cursorHidden'), isFalse,
+        expect(
+          body.contains('SystemChannels.mouseCursor.invokeMethod'),
+          isTrue,
+          reason: '必须直发 mouseCursor 通道',
+        );
+        expect(
+          body.contains("'activateSystemCursor'"),
+          isTrue,
+          reason: '通道方法名须为 activateSystemCursor（与框架一致）',
+        );
+        expect(
+          body.contains("'kind': 'basic'"),
+          isTrue,
+          reason: "kind 须为 'basic'（IDC_ARROW），不是 none",
+        );
+        expect(
+          body.contains("'device': device"),
+          isTrue,
+          reason: '设备 id 取自进入侧栏的真实 pointer event',
+        );
+        expect(
+          body.contains('if (!_isDesktopVideoControls) return;'),
+          isTrue,
+          reason: '门控①：仅桌面发',
+        );
+        // 改法 B：上一轮的 `_cursorHidden.value == true` 门控在列表开态恒早退（_hasVideoOverlay
+        // 含 _subtitleListVisible → _cursorHidden 恒 false）= 第三轮空转。本轮**去掉**它，
+        // onEnter 跨列入侧栏无条件直发。若回退加回该门控，本断言转红（与第三轮恒早退悖论自相矛盾）。
+        expect(
+          body.contains('_cursorHidden'),
+          isFalse,
           reason:
-              '改法 B：_forceRevealOsCursorForPanel 内不得再有 _cursorHidden 门控（否则列表开态恒早退空转）');
-    });
+              '改法 B：_forceRevealOsCursorForPanel 内不得再有 _cursorHidden 门控（否则列表开态恒早退空转）',
+        );
+      },
+    );
 
     test('字幕列表侧栏面板用 _withSubtitleListCursorReveal 包裹', () {
       final int start = src.indexOf('Widget _subtitleJumpSidePanel(');
       expect(start, greaterThanOrEqualTo(0));
       final int end = src.indexOf('\n  Widget ', start + 1);
       final String body = src.substring(start, end > start ? end : src.length);
-      expect(body.contains('_withSubtitleListCursorReveal('), isTrue,
-          reason: '侧栏内容必须经光标唤回包裹器，否则光标在侧栏残留 none');
+      expect(
+        body.contains('_withSubtitleListCursorReveal('),
+        isTrue,
+        reason: '侧栏内容必须经光标唤回包裹器，否则光标在侧栏残留 none',
+      );
       final int wrapIdx = body.indexOf('_withSubtitleListCursorReveal(');
       final int panelIdx = body.indexOf('VideoSubtitleJumpPanel(');
-      expect(panelIdx, greaterThan(wrapIdx),
-          reason: '包裹器应包住 VideoSubtitleJumpPanel（光标 region 在面板之上）');
+      expect(
+        panelIdx,
+        greaterThan(wrapIdx),
+        reason: '包裹器应包住 VideoSubtitleJumpPanel（光标 region 在面板之上）',
+      );
     });
 
     // ---- BUG-391 r5 根因修：声明式 opaque MouseRegion 把两个 push-aside 侧栏列
     // 各自变成干净 basic 会话的独立 annotation（绕开 none 会话残留 + lastSession 去重）。----
 
     test(
-        'r5 根因修：_withSidePanelOpaqueCursor 是声明式 opaque MouseRegion(cursor basic)',
-        () {
-      final int start = src.indexOf('Widget _withSidePanelOpaqueCursor(');
-      expect(start, greaterThanOrEqualTo(0),
+      'r5 根因修：_withSidePanelOpaqueCursor 是声明式 opaque MouseRegion(cursor basic)',
+      () {
+        final int start = src.indexOf('Widget _withSidePanelOpaqueCursor(');
+        expect(
+          start,
+          greaterThanOrEqualTo(0),
           reason:
-              'r5 应有 push-aside 侧栏声明式 opaque cursor 外层包裹器（根因修，不是救场 onEnter）');
-      final int next = src.indexOf('\n  Widget ', start + 1);
-      final int voidNext = src.indexOf('\n  void ', start + 1);
-      final int end =
-          (next > start) ? next : (voidNext > start ? voidNext : src.length);
-      final String body = src.substring(start, end);
+              'r5 应有 push-aside 侧栏声明式 opaque cursor 外层包裹器（根因修，不是救场 onEnter）',
+        );
+        final int next = src.indexOf('\n  Widget ', start + 1);
+        final int voidNext = src.indexOf('\n  void ', start + 1);
+        final int end = (next > start)
+            ? next
+            : (voidNext > start ? voidNext : src.length);
+        final String body = src.substring(start, end);
 
-      expect(
-          body.contains('if (!_isDesktopVideoControls) return child;'), isTrue,
-          reason: '仅桌面挂（移动端无 OS 光标语义，透传 child）');
-      // 根因核心：opaque:true 让侧栏列成独立 annotation（区别于救场层的 opaque:false）。
-      expect(body.contains('opaque: true'), isTrue,
+        expect(
+          body.contains('if (!_isDesktopVideoControls) return child;'),
+          isTrue,
+          reason: '仅桌面挂（移动端无 OS 光标语义，透传 child）',
+        );
+        // 根因核心：opaque:true 让侧栏列成独立 annotation（区别于救场层的 opaque:false）。
+        expect(
+          body.contains('opaque: true'),
+          isTrue,
           reason:
-              'r5 根因：opaque:true 让 MouseTracker 把侧栏列视为独立 annotation = 干净 basic 会话');
-      expect(body.contains('cursor: SystemMouseCursors.basic'), isTrue,
+              'r5 根因：opaque:true 让 MouseTracker 把侧栏列视为独立 annotation = 干净 basic 会话',
+        );
+        expect(
+          body.contains('cursor: SystemMouseCursors.basic'),
+          isTrue,
           reason:
-              'r5 根因：声明式 cursor:basic 由 MouseTracker 进 annotation 时主动下发（不靠 hover 回调时序）');
-      // 根因修不是再加一发救场直发：本 helper 内不得出现 activateSystemCursor 直发。
-      expect(body.contains('_forceRevealOsCursorForPanel'), isFalse,
+              'r5 根因：声明式 cursor:basic 由 MouseTracker 进 annotation 时主动下发（不靠 hover 回调时序）',
+        );
+        // 根因修不是再加一发救场直发：本 helper 内不得出现 activateSystemCursor 直发。
+        expect(
+          body.contains('_forceRevealOsCursorForPanel'),
+          isFalse,
           reason:
-              'r5：声明式 opaque 包裹器是根因层，不在此再加救场直发（直发仍保留在 _withSubtitleListCursorReveal）');
-    });
+              'r5：声明式 opaque 包裹器是根因层，不在此再加救场直发（直发仍保留在 _withSubtitleListCursorReveal）',
+        );
+      },
+    );
 
     test('r5：字幕侧栏 + 选集侧栏外层都用 _withSidePanelOpaqueCursor 包裹', () {
       // 字幕侧栏：opaque 外层须在 _withSubtitleListCursorReveal（救场层）之外。
       final int subStart = src.indexOf('Widget _subtitleJumpSidePanel(');
       expect(subStart, greaterThanOrEqualTo(0));
       final int subEnd = src.indexOf('\n  Widget ', subStart + 1);
-      final String subBody =
-          src.substring(subStart, subEnd > subStart ? subEnd : src.length);
-      expect(subBody.contains('_withSidePanelOpaqueCursor('), isTrue,
-          reason: '字幕侧栏外层必须有声明式 opaque cursor 包裹（r5 根因层）');
+      final String subBody = src.substring(
+        subStart,
+        subEnd > subStart ? subEnd : src.length,
+      );
+      expect(
+        subBody.contains('_withSidePanelOpaqueCursor('),
+        isTrue,
+        reason: '字幕侧栏外层必须有声明式 opaque cursor 包裹（r5 根因层）',
+      );
       final int subOpaqueIdx = subBody.indexOf('_withSidePanelOpaqueCursor(');
-      final int subRevealIdx =
-          subBody.indexOf('_withSubtitleListCursorReveal(');
-      expect(subRevealIdx, greaterThan(subOpaqueIdx),
-          reason:
-              'opaque 外层应在最外、救场层 _withSubtitleListCursorReveal 在其内（opaque annotation 包整列）');
+      final int subRevealIdx = subBody.indexOf(
+        '_withSubtitleListCursorReveal(',
+      );
+      expect(
+        subRevealIdx,
+        greaterThan(subOpaqueIdx),
+        reason:
+            'opaque 外层应在最外、救场层 _withSubtitleListCursorReveal 在其内（opaque annotation 包整列）',
+      );
 
       // 选集横向轨道：仍需 opaque cursor 外层，鼠标移入卡片后必须恢复 basic。
       final int epStart = src.indexOf('Widget _episodeOverlayPanel(');
       expect(epStart, greaterThanOrEqualTo(0));
       final int epEnd = src.indexOf('\n  Widget ', epStart + 1);
-      final String epBody =
-          src.substring(epStart, epEnd > epStart ? epEnd : src.length);
-      expect(epBody.contains('_withSidePanelOpaqueCursor('), isTrue,
-          reason: '选集轨道外层必须有声明式 opaque cursor 包裹');
+      final String epBody = src.substring(
+        epStart,
+        epEnd > epStart ? epEnd : src.length,
+      );
+      expect(
+        epBody.contains('_withSidePanelOpaqueCursor('),
+        isTrue,
+        reason: '选集轨道外层必须有声明式 opaque cursor 包裹',
+      );
       final int epOpaqueIdx = epBody.indexOf('_withSidePanelOpaqueCursor(');
       final int epPanelIdx = epBody.indexOf('VideoEpisodePanel(');
-      expect(epPanelIdx, greaterThan(epOpaqueIdx),
-          reason: 'opaque 包裹器应包住 VideoEpisodePanel（光标 annotation 在面板之上）');
+      expect(
+        epPanelIdx,
+        greaterThan(epOpaqueIdx),
+        reason: 'opaque 包裹器应包住 VideoEpisodePanel（光标 annotation 在面板之上）',
+      );
     });
 
     test('_handleSubtitleHover 仍是唯一救场（唤回光标 + 续命控制条）', () {
-      final int start =
-          src.indexOf('void _handleSubtitleHover(bool hovering) {');
+      final int start = src.indexOf(
+        'void _handleSubtitleHover(bool hovering) {',
+      );
       expect(start, greaterThanOrEqualTo(0));
       final int end = src.indexOf('\n  }', start) + 4;
       final String body = src.substring(start, end);
-      expect(body.contains('_setCursorHidden(false)'), isTrue,
-          reason: 'hover 唤回光标（让顶层胜出层让位）');
-      expect(body.contains('_pokeControlsVisible()'), isTrue,
-          reason: '续命控制条（避免 media_kit mount=false 自身 cursor 置 none）');
-    });
-
-    test(
-        '管 1·2a：桌面 theme 的 hideMouseOnControlsRemoval 非裸 true、依赖 _subtitleListVisible',
-        () {
-      // 列表开时禁用控制条淡出隐藏光标 → 视频列 controls MouseRegion 恒走 basic 分支、
-      // 从源头消除跨列那次 none→basic 竞态来源。负向：改回裸 true 应转红。
-      expect(src.contains('hideMouseOnControlsRemoval: true'), isFalse,
-          reason: '管 1·2a：hideMouseOnControlsRemoval 不得是裸 true（列表开时必须翻 false）');
-      // r5：选集列表 [_episodeListVisible] 与字幕列表同为 push-aside 侧栏，机理相同 → 必须
-      // 一并排除（去掉首尾空白后匹配，容忍 dart format 折行）。只排字幕列表会让选集列表光标照样隐藏。
-      // BUG-1798：查词浮层 [_lookupOverlayActive] 成为第三个豁免项。断言改为**锁语义**——
-      // 只要求取值是 `!( 豁免条件 )` 且两个列表 notifier 都在豁免条件里，不再把豁免项的
-      // 个数与顺序写死（本条守卫要守的是「列表开时必须豁免」，不是「有且只有两项」）。
-      final RegExp negatedExpr =
-          RegExp(r'hideMouseOnControlsRemoval:\s*!\(([\s\S]*?)\),');
-      final RegExpMatch? m = negatedExpr.firstMatch(src);
-      expect(m, isNotNull,
-          reason: '管 1·2a：hideMouseOnControlsRemoval 必须是 `!( 豁免条件 )` 形式');
-      final String exemptions = m!.group(1)!.replaceAll(RegExp(r'\s+'), '');
-      expect(exemptions.contains('_subtitleListVisible.value'), isTrue,
-          reason: 'r5·管 1·2a：字幕列表可见时必须豁免（否则列表开时光标照样被隐藏）');
-      expect(exemptions.contains('_episodeListVisible.value'), isTrue,
-          reason: 'r5·管 1·2a：选集列表可见时必须豁免（只排字幕列表会让选集列表光标照样隐藏）');
-    });
-
-    test(
-        '管 1·2b 防哑火：构造桌面 theme 的 builder 必须监听 _subtitleListVisible 与 _episodeListVisible',
-        () {
-      // 硬前置：2a 让 hideMouseOnControlsRemoval 依赖 _subtitleListVisible，但若构造 theme 的
-      // builder 不监听它，翻转时 theme 不重建 = 改了值也白改（哑火）。守卫 _buildVideoControlsInner
-      // 内 ListenableBuilder.merge 同时含 _controlLayoutNotifier + _subtitleListVisible。
-      final int start = src.indexOf('Widget _buildVideoControlsInner(');
-      expect(start, greaterThanOrEqualTo(0),
-          reason:
-              '应有 _buildVideoControlsInner（构造 VideoControlsThemePair 的 builder）');
-      final int end = src.indexOf('\n  Widget ', start + 1);
-      final String body = src.substring(start, end > start ? end : src.length);
-      // 监听器须同时含布局 + 字幕列表两个 notifier（顺序不强求，但两者都得在）。
-      expect(body.contains('Listenable.merge('), isTrue,
-          reason:
-              '2b：须用 Listenable.merge 合并多个监听源（替代旧 ValueListenableBuilder 单听布局）');
-      expect(body.contains('_controlLayoutNotifier'), isTrue,
-          reason: '2b：仍须监听布局 notifier（沿用旧 ValueListenableBuilder 的语义）');
-      expect(body.contains('_subtitleListVisible'), isTrue,
-          reason:
-              '2b 防哑火硬前置：构造桌面 theme 的 builder 必须监听 _subtitleListVisible，否则 2a 改了值也白改');
-      // r5：2a 让 hideMouseOnControlsRemoval 也依赖 _episodeListVisible → builder 必须一并监听，
-      // 否则切选集列表时 theme 不重建 = hideMouseOnControlsRemoval 不重算（选集列表分支哑火）。
-      expect(body.contains('_episodeListVisible'), isTrue,
-          reason:
-              'r5·2b 防哑火硬前置：构造桌面 theme 的 builder 必须监听 _episodeListVisible，否则选集列表分支的 hideMouseOnControlsRemoval 哑火');
-      // 旧的单监听 ValueListenableBuilder 不得残留在本 builder 顶层（否则只听布局 = 哑火回归）。
       expect(
+        body.contains('_setCursorHidden(false)'),
+        isTrue,
+        reason: 'hover 唤回光标（让顶层胜出层让位）',
+      );
+      expect(
+        body.contains('_pokeControlsVisible()'),
+        isTrue,
+        reason: '续命控制条（避免 media_kit mount=false 自身 cursor 置 none）',
+      );
+    });
+
+    test(
+      '管 1·2a：桌面 theme 的 hideMouseOnControlsRemoval 非裸 true、依赖 _subtitleListVisible',
+      () {
+        // 列表开时禁用控制条淡出隐藏光标 → 视频列 controls MouseRegion 恒走 basic 分支、
+        // 从源头消除跨列那次 none→basic 竞态来源。负向：改回裸 true 应转红。
+        expect(
+          src.contains('hideMouseOnControlsRemoval: true'),
+          isFalse,
+          reason: '管 1·2a：hideMouseOnControlsRemoval 不得是裸 true（列表开时必须翻 false）',
+        );
+        // r5：选集列表 [_episodeListVisible] 与字幕列表同为 push-aside 侧栏，机理相同 → 必须
+        // 一并排除（去掉首尾空白后匹配，容忍 dart format 折行）。只排字幕列表会让选集列表光标照样隐藏。
+        // BUG-1798：查词浮层 [_lookupOverlayActive] 成为第三个豁免项。断言改为**锁语义**——
+        // 只要求取值是 `!( 豁免条件 )` 且两个列表 notifier 都在豁免条件里，不再把豁免项的
+        // 个数与顺序写死（本条守卫要守的是「列表开时必须豁免」，不是「有且只有两项」）。
+        final RegExp negatedExpr = RegExp(
+          r'hideMouseOnControlsRemoval:\s*!\(([\s\S]*?)\),',
+        );
+        final RegExpMatch? m = negatedExpr.firstMatch(src);
+        expect(
+          m,
+          isNotNull,
+          reason: '管 1·2a：hideMouseOnControlsRemoval 必须是 `!( 豁免条件 )` 形式',
+        );
+        final String exemptions = m!.group(1)!.replaceAll(RegExp(r'\s+'), '');
+        expect(
+          exemptions.contains('_subtitleListVisible.value'),
+          isTrue,
+          reason: 'r5·管 1·2a：字幕列表可见时必须豁免（否则列表开时光标照样被隐藏）',
+        );
+        expect(
+          exemptions.contains('_episodeListVisible.value'),
+          isTrue,
+          reason: 'r5·管 1·2a：选集列表可见时必须豁免（只排字幕列表会让选集列表光标照样隐藏）',
+        );
+      },
+    );
+
+    test(
+      '管 1·2b 防哑火：构造桌面 theme 的 builder 必须监听 _subtitleListVisible 与 _episodeListVisible',
+      () {
+        // 硬前置：2a 让 hideMouseOnControlsRemoval 依赖 _subtitleListVisible，但若构造 theme 的
+        // builder 不监听它，翻转时 theme 不重建 = 改了值也白改（哑火）。守卫 _buildVideoControlsInner
+        // 内 ListenableBuilder.merge 同时含 _controlLayoutNotifier + _subtitleListVisible。
+        final int start = src.indexOf('Widget _buildVideoControlsInner(');
+        expect(
+          start,
+          greaterThanOrEqualTo(0),
+          reason:
+              '应有 _buildVideoControlsInner（构造 VideoControlsThemePair 的 builder）',
+        );
+        final int end = src.indexOf('\n  Widget ', start + 1);
+        final String body = src.substring(
+          start,
+          end > start ? end : src.length,
+        );
+        // 监听器须同时含布局 + 字幕列表两个 notifier（顺序不强求，但两者都得在）。
+        expect(
+          body.contains('Listenable.merge('),
+          isTrue,
+          reason:
+              '2b：须用 Listenable.merge 合并多个监听源（替代旧 ValueListenableBuilder 单听布局）',
+        );
+        expect(
+          body.contains('_controlLayoutNotifier'),
+          isTrue,
+          reason: '2b：仍须监听布局 notifier（沿用旧 ValueListenableBuilder 的语义）',
+        );
+        expect(
+          body.contains('_subtitleListVisible'),
+          isTrue,
+          reason:
+              '2b 防哑火硬前置：构造桌面 theme 的 builder 必须监听 _subtitleListVisible，否则 2a 改了值也白改',
+        );
+        // r5：2a 让 hideMouseOnControlsRemoval 也依赖 _episodeListVisible → builder 必须一并监听，
+        // 否则切选集列表时 theme 不重建 = hideMouseOnControlsRemoval 不重算（选集列表分支哑火）。
+        expect(
+          body.contains('_episodeListVisible'),
+          isTrue,
+          reason:
+              'r5·2b 防哑火硬前置：构造桌面 theme 的 builder 必须监听 _episodeListVisible，否则选集列表分支的 hideMouseOnControlsRemoval 哑火',
+        );
+        // 旧的单监听 ValueListenableBuilder 不得残留在本 builder 顶层（否则只听布局 = 哑火回归）。
+        expect(
           body.contains(
-              'ValueListenableBuilder<VideoControlLayout>(\n      valueListenable: _controlLayoutNotifier'),
+            'ValueListenableBuilder<VideoControlLayout>(\n      valueListenable: _controlLayoutNotifier',
+          ),
           isFalse,
           reason:
-              '2b：不得回退成只监听 _controlLayoutNotifier 的单 ValueListenableBuilder（哑火）');
-    });
+              '2b：不得回退成只监听 _controlLayoutNotifier 的单 ValueListenableBuilder（哑火）',
+        );
+      },
+    );
   });
 
   // 诚实标注：本行为测试用**同构 widget 布局**证「侧栏 MouseRegion 进入即触发回调 + 光标不粘
@@ -300,8 +414,9 @@ void main() {
         ),
       );
 
-      final TestGesture gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       addTearDown(gesture.removePointer);
 
       String kind(MouseCursor c) =>
@@ -316,8 +431,11 @@ void main() {
 
       await gesture.moveTo(const Offset(650, 300));
       await tester.pump();
-      expect(hoverRescued, isTrue,
-          reason: '进入字幕列表侧栏应触发 hover 救场（唤回光标 + 续命控制条）');
+      expect(
+        hoverRescued,
+        isTrue,
+        reason: '进入字幕列表侧栏应触发 hover 救场（唤回光标 + 续命控制条）',
+      );
       expect(kind(active()), isNot('none'), reason: '字幕列表侧栏上光标必须可见（不粘 none）');
 
       // 收尾：把鼠标移出所有 region 让 MouseTracker 把 cursor session 复位回 basic

@@ -47,11 +47,11 @@ String buildPerDictionaryStyleCss(
 
 /// 规则表里出现过的所有词典名（用于决定要给哪几本拼 per-dict CSS）。
 Set<String> dictionariesWithStyleRules(List<DictStyleRule> rules) => <String>{
-      for (final DictStyleRule rule in rules)
-        if (rule.dictionaryName != null &&
-            dictStylePartSupportsPerDictionary(rule.part))
-          rule.dictionaryName!,
-    };
+  for (final DictStyleRule rule in rules)
+    if (rule.dictionaryName != null &&
+        dictStylePartSupportsPerDictionary(rule.part))
+      rule.dictionaryName!,
+};
 
 /// 把编译产物与用户手写 CSS 拼成最终下发文本。
 ///

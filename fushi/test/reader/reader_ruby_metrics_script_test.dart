@@ -18,8 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 量它会把拉力顶到 1.5、整章注音压进基字。行为测试里首颗注音给两段 client rect，
 /// 断言脚本跳过它、量下一颗（0.770），全部跨栏则不写。
 void main() {
-  test(
-      'BUG-2779 / BUG-2810: ruby metrics script writes --fushi-ruby-pull from '
+  test('BUG-2779 / BUG-2810: ruby metrics script writes --fushi-ruby-pull from '
       'measured font geometry, skipping column-split annotations '
       '(executes script via node)', () async {
     final String? nodeExe = _resolveNode();
@@ -27,13 +26,14 @@ void main() {
       markTestSkipped('node not found on PATH; skipping JS behavior execution');
       return;
     }
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>['test/reader/reader_ruby_metrics_behavior_test.js'],
-      workingDirectory: Directory.current.path,
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      'test/reader/reader_ruby_metrics_behavior_test.js',
+    ], workingDirectory: Directory.current.path);
+    expect(
+      result.exitCode,
+      0,
+      reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
-    expect(result.exitCode, 0,
-        reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}');
     expect(result.stdout.toString(), contains('all assertions passed'));
   });
 
@@ -42,19 +42,26 @@ void main() {
       'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
     final int install = webview.indexOf('window.__fushiEngine = {');
-    final int shell =
-        webview.indexOf('window.__fushiInstallShell(C);', install);
+    final int shell = webview.indexOf(
+      'window.__fushiInstallShell(C);',
+      install,
+    );
     final int metrics = webview.indexOf(r'$kReaderRubyMetricsJs', install);
     expect(install, greaterThanOrEqualTo(0));
-    expect(metrics, greaterThan(shell),
-        reason: '度量脚本必须在 __fushiEngine.install 里、shell 安装之后注入'
-            '（分页 / 连续 / VN 三种模式都走这里）');
+    expect(
+      metrics,
+      greaterThan(shell),
+      reason:
+          '度量脚本必须在 __fushiEngine.install 里、shell 安装之后注入'
+          '（分页 / 连续 / VN 三种模式都走这里）',
+    );
   });
 }
 
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

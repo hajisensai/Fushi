@@ -50,10 +50,14 @@ void main() {
       }
       expect(appModel.isInitialised, isTrue);
 
-      await appModel.database
-          .setPref('src:reader_fushi:view_mode', 'pagination');
-      await appModel.database
-          .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
+      await appModel.database.setPref(
+        'src:reader_fushi:view_mode',
+        'pagination',
+      );
+      await appModel.database.setPref(
+        'src:reader_fushi:writing_mode',
+        'horizontal-tb',
+      );
       await ReaderFushiSource.readerSettings?.refreshFromDb();
 
       // 带**真实体量**插图（1600×2400 PNG）的书：合成 fixture 原来的「图片章」是内联
@@ -78,17 +82,24 @@ void main() {
         canEdit: true,
       );
 
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => source.buildLaunchPage(item: item),
-      )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => source.buildLaunchPage(item: item),
+          ),
+        ),
+      );
       await tester.pump(const Duration(seconds: 3));
 
       const Key webViewKey = ValueKey<String>('fushi_webview');
-      for (int i = 0;
-          i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
-          i++) {
+      for (
+        int i = 0;
+        i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(find.byKey(webViewKey), findsOneWidget);
@@ -127,13 +138,15 @@ void main() {
       // 闭包——中段落点用例会 pop + 重新 push 阅读器，缓存的旧引用指向已销毁的控制器。
       Future<String> currentChapterFile() async {
         final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
-            "(document.baseURI || '').split('/').pop()");
+          "(document.baseURI || '').split('/').pop()",
+        );
         return raw?.toString() ?? '';
       }
 
       Future<double> currentProgress() async {
         final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
-            'window.fushiReader ? window.fushiReader.calculateProgress() : -1');
+          'window.fushiReader ? window.fushiReader.calculateProgress() : -1',
+        );
         if (raw is num) return raw.toDouble();
         return double.tryParse(raw?.toString() ?? '') ?? -1;
       }
@@ -170,17 +183,25 @@ void main() {
 
         final String to = await currentChapterFile();
         final double progress = await currentProgress();
-        debugPrint('[xchapter-land] #$i $dir $from -> $to '
-            'progress=${progress.toStringAsFixed(3)}');
+        debugPrint(
+          '[xchapter-land] #$i $dir $from -> $to '
+          'progress=${progress.toStringAsFixed(3)}',
+        );
         expect(landed, isTrue, reason: 'turn #$i ($dir) must land');
-        expect(to, isNot(equals(from)),
-            reason: 'turn #$i ($dir) must actually change chapter');
+        expect(
+          to,
+          isNot(equals(from)),
+          reason: 'turn #$i ($dir) must actually change chapter',
+        );
         visited.add(to);
         // 前进落章首、后退落章末（progress>=0.99 语义）。图片/短章可能整章一页
         // （progress 恒 0），故后退只要求「不在章首之前」且允许整章单页的 0。
         if (dir == 'forward') {
-          expect(progress, lessThan(0.2),
-              reason: 'forward turn #$i must land at chapter start');
+          expect(
+            progress,
+            lessThan(0.2),
+            reason: 'forward turn #$i must land at chapter start',
+          );
         }
       }
 
@@ -198,7 +219,8 @@ void main() {
       // 下「翻一页」实测跨过的字符数当上界 —— 漂一张整页插图 ≥ 一页，必然超出。
       Future<int> firstVisibleChar() async {
         final dynamic raw = await ReaderFushiPage.debugEvaluateJavascript!(
-            'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -1');
+          'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -1',
+        );
         if (raw is num) return raw.toInt();
         return int.tryParse(raw?.toString() ?? '') ?? -1;
       }
@@ -225,7 +247,8 @@ void main() {
       // 翻进章内中段（不是章首、不是章末）。
       for (int i = 0; i < 3; i++) {
         await ReaderFushiPage.debugEvaluateJavascript!(
-            "window.fushiReader.paginate('forward');");
+          "window.fushiReader.paginate('forward');",
+        );
         await tester.pump(const Duration(milliseconds: 400));
       }
       final int anchorChar = await firstVisibleChar();
@@ -236,14 +259,20 @@ void main() {
       // 退出重进：真实的「关书 → 再开」恢复路径。
       navigator.pop();
       await tester.pump(const Duration(seconds: 2));
-      for (int i = 0;
-          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-          i++) {
+      for (
+        int i = 0;
+        i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => source.buildLaunchPage(item: item),
-      )));
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => source.buildLaunchPage(item: item),
+          ),
+        ),
+      );
       await tester.pump(const Duration(seconds: 3));
       bool reopened = false;
       for (int i = 0; i < 140; i++) {
@@ -260,25 +289,38 @@ void main() {
       final String restoredChapter = await currentChapterFile();
       final int restoredChar = await firstVisibleChar();
       // 自校准容差：同章同版式下翻一页跨过多少字符。
-      await ReaderFushiPage
-          .debugEvaluateJavascript!("window.fushiReader.paginate('forward');");
+      await ReaderFushiPage.debugEvaluateJavascript!(
+        "window.fushiReader.paginate('forward');",
+      );
       await tester.pump(const Duration(milliseconds: 600));
       final int nextPageChar = await firstVisibleChar();
       final int pageSpan = (nextPageChar - restoredChar).abs();
-      debugPrint('[xchapter-mid] restored chapter=$restoredChapter '
-          'char=$restoredChar anchor=$anchorChar pageSpan=$pageSpan');
+      debugPrint(
+        '[xchapter-mid] restored chapter=$restoredChapter '
+        'char=$restoredChar anchor=$anchorChar pageSpan=$pageSpan',
+      );
 
       expect(restoredChapter, equals(midChapter), reason: '重进必须落回同一章');
       expect(anchorChar, greaterThan(0), reason: '中段锚必须非章首，否则这条用例测不到中段落点');
-      expect(restoredChar, greaterThan(0),
-          reason: '重进落点不得塌缩回章首（插图 0×0 塌缩布局的典型症状）');
+      expect(
+        restoredChar,
+        greaterThan(0),
+        reason: '重进落点不得塌缩回章首（插图 0×0 塌缩布局的典型症状）',
+      );
       // restoreToCharOffset 把锚所在页对齐到页首 → 首可见字符 <= 锚，且相差不超过一页。
-      expect(restoredChar, lessThanOrEqualTo(anchorChar + 1),
-          reason: '恢复落点不应越过锚');
+      expect(
+        restoredChar,
+        lessThanOrEqualTo(anchorChar + 1),
+        reason: '恢复落点不应越过锚',
+      );
       if (pageSpan > 0) {
-        expect(anchorChar - restoredChar, lessThanOrEqualTo(pageSpan),
-            reason: '重进落点与中段锚的偏差必须在一页之内——超出即恢复算在了'
-                '插图未 decode 的塌缩布局上（BUG-1140 第二轮）');
+        expect(
+          anchorChar - restoredChar,
+          lessThanOrEqualTo(pageSpan),
+          reason:
+              '重进落点与中段锚的偏差必须在一页之内——超出即恢复算在了'
+              '插图未 decode 的塌缩布局上（BUG-1140 第二轮）',
+        );
       }
 
       final List<Map<String, int>> runs = ReaderChapterPerfTrace.completed;
@@ -288,22 +330,24 @@ void main() {
         stages.addAll(run.keys);
       }
       for (final String stage in stages) {
-        final List<int> values = runs
-            .map((Map<String, int> r) => r[stage])
-            .whereType<int>()
-            .toList()
-          ..sort();
+        final List<int> values =
+            runs.map((Map<String, int> r) => r[stage]).whereType<int>().toList()
+              ..sort();
         if (values.isEmpty) continue;
         final int median = values[values.length ~/ 2];
-        debugPrint('[xchapter-perf] $stage median=${median}ms '
-            'min=${values.first}ms max=${values.last}ms n=${values.length}');
+        debugPrint(
+          '[xchapter-perf] $stage median=${median}ms '
+          'min=${values.first}ms max=${values.last}ms n=${values.length}',
+        );
       }
 
       navigator.pop();
       await tester.pump(const Duration(seconds: 2));
-      for (int i = 0;
-          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-          i++) {
+      for (
+        int i = 0;
+        i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 250));
       }
     },

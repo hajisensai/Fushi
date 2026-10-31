@@ -19,9 +19,7 @@ import '../../pages/reader_fushi_page_source_corpus.dart';
 // 原生 applyStyle(GradientDrawable 圆角) / createLayoutParams(窗宽) / Windows Render
 // 无法 bg 单测，靠这里守住值语义正确端到端传递（原生实机观感另需真机点验）。
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -36,10 +34,16 @@ void main() {
         highlightColor: 0x80FFD54F,
         activeColor: 0xFFFFD54F,
       );
-      expect(style.cornerRadius, 0,
-          reason: '默认圆角 0 = Android 直角 / Windows 14dp 各自原生观感');
-      expect(style.windowWidth, 0,
-          reason: '默认宽 0 = Android MATCH_PARENT / Windows 720dip 各自默认');
+      expect(
+        style.cornerRadius,
+        0,
+        reason: '默认圆角 0 = Android 直角 / Windows 14dp 各自原生观感',
+      );
+      expect(
+        style.windowWidth,
+        0,
+        reason: '默认宽 0 = Android MATCH_PARENT / Windows 720dip 各自默认',
+      );
     });
 
     test('显式尺寸如实保留，供 channel payload 透传给原生', () {
@@ -151,8 +155,9 @@ void main() {
 
   group('source guards: 两个样式构造点都喂入圆角/宽度偏好', () {
     test('app 级 + reader 级样式都读圆角/宽度偏好', () {
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       final String reader = readReaderPageSource();
 
       // 两个构造点都经统一构造：设置快照（fromPreferences 读圆角 / 宽度偏好）→
@@ -161,26 +166,33 @@ void main() {
         expect(src.contains('buildFloatingLyricStyle('), isTrue);
         expect(src.contains('floatingLyricStyleSettings('), isTrue);
       }
-      final String settings =
-          File('lib/src/media/audiobook/floating_lyric_style.dart')
-              .readAsStringSync();
-      expect(settings.contains('cornerRadius: prefs.floatingLyricCornerRadius'),
-          isTrue,
-          reason: '设置快照必须读圆角偏好');
-      expect(settings.contains('windowWidth: prefs.floatingLyricWidth'), isTrue,
-          reason: '设置快照必须读宽度偏好');
+      final String settings = File(
+        'lib/src/media/audiobook/floating_lyric_style.dart',
+      ).readAsStringSync();
+      expect(
+        settings.contains('cornerRadius: prefs.floatingLyricCornerRadius'),
+        isTrue,
+        reason: '设置快照必须读圆角偏好',
+      );
+      expect(
+        settings.contains('windowWidth: prefs.floatingLyricWidth'),
+        isTrue,
+        reason: '设置快照必须读宽度偏好',
+      );
       final FloatingLyricStyle style = buildFloatingLyricStyle(
-          theme: buildFushiThemeData(
-            scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-            textTheme: const TextTheme(),
-          ),
-          settings: const FloatingLyricStyleSettings(
-              fontSize: 20,
-              textOpacity: 100,
-              buttonBgOpacity: 100,
-              bgOpacity: 70,
-              cornerRadius: 18,
-              windowWidth: 640));
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+          textTheme: const TextTheme(),
+        ),
+        settings: const FloatingLyricStyleSettings(
+          fontSize: 20,
+          textOpacity: 100,
+          buttonBgOpacity: 100,
+          bgOpacity: 70,
+          cornerRadius: 18,
+          windowWidth: 640,
+        ),
+      );
       expect(style.cornerRadius, 18);
       expect(style.windowWidth, 640);
     });
@@ -194,17 +206,14 @@ void main() {
     });
 
     test('settings schema 暴露圆角 + 宽度两条 stepper 且改值即时重绘', () {
-      final String schema =
-          File('lib/src/settings/settings_schema_listening.dart')
-              .readAsStringSync();
+      final String schema = File(
+        'lib/src/settings/settings_schema_listening.dart',
+      ).readAsStringSync();
       expect(
         schema.contains("id: 'listening.floating_lyric_corner_radius'"),
         isTrue,
       );
-      expect(
-        schema.contains("id: 'listening.floating_lyric_width'"),
-        isTrue,
-      );
+      expect(schema.contains("id: 'listening.floating_lyric_width'"), isTrue);
       expect(schema.contains('t.floating_lyric_corner_radius'), isTrue);
       expect(schema.contains('t.floating_lyric_width'), isTrue);
       expect(

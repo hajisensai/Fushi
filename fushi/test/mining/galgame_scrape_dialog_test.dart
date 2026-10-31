@@ -94,8 +94,9 @@ void main() {
     return () => result ?? Future<bool?>.value();
   }
 
-  testWidgets('打开即自动首搜；点「使用」落库 primarySource 并以 true 关闭',
-      (WidgetTester tester) async {
+  testWidgets('打开即自动首搜；点「使用」落库 primarySource 并以 true 关闭', (
+    WidgetTester tester,
+  ) async {
     final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
     final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
       ..results = const <SourceCandidate>[
@@ -113,8 +114,9 @@ void main() {
         summary: '简介',
         externalId: '4885',
       );
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
     final Future<bool?> Function() applied = await pumpDialogOpener(
       tester,
       repo: repo,
@@ -155,11 +157,13 @@ void main() {
     // 换——即使已有封面也下载覆盖（对齐视频/书籍手动刮削语义，三域统一）。
     // 自动/隐式路径仍走 shouldAutoDownloadScrapedCover（绝不覆盖），对照见
     // galgame_cover_download_test.dart。
-    final Directory coverDir =
-        Directory.systemTemp.createTempSync('gal_cover_new_');
+    final Directory coverDir = Directory.systemTemp.createTempSync(
+      'gal_cover_new_',
+    );
     addTearDown(() => coverDir.deleteSync(recursive: true));
-    final Directory oldDir =
-        Directory.systemTemp.createTempSync('gal_cover_old_');
+    final Directory oldDir = Directory.systemTemp.createTempSync(
+      'gal_cover_old_',
+    );
     addTearDown(() => oldDir.deleteSync(recursive: true));
     final File oldCover = File('${oldDir.path}/manual.png')
       ..writeAsBytesSync(<int>[1, 2, 3]);
@@ -182,8 +186,9 @@ void main() {
         externalId: '4885',
         coverUrl: url,
       );
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
     final Future<bool?> Function() applied = await pumpDialogOpener(
       tester,
       repo: repo,
@@ -200,30 +205,40 @@ void main() {
     // 循环让下载/写盘完成，再回 pump 收 UI 帧，直到弹窗关闭。上限给足 250
     // 次（约 5s 真实时间）：批量套件并行抢磁盘时单次写盘可能明显变慢，上限
     // 太紧会偶发超时（本测试首版 50 次在混跑下真踩过）。
-    for (int i = 0;
-        i < 250 && find.byType(GalgameScrapeDialog).evaluate().isNotEmpty;
-        i++) {
+    for (
+      int i = 0;
+      i < 250 && find.byType(GalgameScrapeDialog).evaluate().isNotEmpty;
+      i++
+    ) {
       await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
       await tester.pump();
     }
     await tester.pumpAndSettle();
 
-    expect(find.byType(GalgameScrapeDialog), findsNothing,
-        reason: '应用成功后弹窗应以 true 关闭。');
+    expect(
+      find.byType(GalgameScrapeDialog),
+      findsNothing,
+      reason: '应用成功后弹窗应以 true 关闭。',
+    );
     expect(http.requests, 1, reason: '显式「使用」必须发起封面下载——即使该游戏已有封面。');
     final String? coverPath = repo.byId('g1')!.coverPath;
     expect(coverPath, isNotNull);
-    expect(coverPath, isNot(oldCover.path),
-        reason: '显式刮削应用后 coverPath 必须指向新下载的封面。');
+    expect(
+      coverPath,
+      isNot(oldCover.path),
+      reason: '显式刮削应用后 coverPath 必须指向新下载的封面。',
+    );
     expect(File(coverPath!).readAsBytesSync(), imageBytes);
     expect(await applied(), isTrue);
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
   test('批量自动应用只更新元数据，不覆盖已有游戏封面', () async {
-    final Directory oldDir =
-        Directory.systemTemp.createTempSync('gal_batch_cover_old_');
+    final Directory oldDir = Directory.systemTemp.createTempSync(
+      'gal_batch_cover_old_',
+    );
     addTearDown(() => oldDir.deleteSync(recursive: true));
     final File oldCover = File('${oldDir.path}/manual.png')
       ..writeAsBytesSync(<int>[1, 2, 3]);
@@ -237,10 +252,10 @@ void main() {
         externalId: '4885',
         coverUrl: url,
       );
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
-    final _FakeCoverHttpClient http =
-        _FakeCoverHttpClient(_fakePngBytes(2048));
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
+    final _FakeCoverHttpClient http = _FakeCoverHttpClient(_fakePngBytes(2048));
 
     final bool applied = await applyGalgameScrapeCandidate(
       repo: repo,
@@ -291,8 +306,9 @@ void main() {
         externalId: '4885',
         coverUrl: url,
       );
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
     final Future<bool?> Function() applied = await pumpDialogOpener(
       tester,
       repo: repo,
@@ -306,8 +322,11 @@ void main() {
 
     // 元数据落了、弹窗以 true 正常关闭、旧封面原样保留。
     expect(await repo.sourcesOf('g1'), hasLength(1));
-    expect(find.byType(GalgameScrapeDialog), findsNothing,
-        reason: '封面下载失败不得打断刮削流程（元数据已成功）。');
+    expect(
+      find.byType(GalgameScrapeDialog),
+      findsNothing,
+      reason: '封面下载失败不得打断刮削流程（元数据已成功）。',
+    );
     expect(await applied(), isTrue);
     expect(repo.byId('g1')!.coverPath, cover.path, reason: '下载失败时旧封面必须原样保留。');
     expect(cover.readAsBytesSync(), <int>[1, 2, 3]);
@@ -328,8 +347,9 @@ void main() {
         SourceCandidate(source: GalgameMetadataSource.bgm, externalId: '4885'),
       ]
       ..draft = const GalgameMetadataDraft(name: 'alpha', externalId: '4885');
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
     await pumpDialogOpener(
       tester,
       repo: repo,
@@ -350,8 +370,9 @@ void main() {
   testWidgets('空结果给弹窗内空态（不再 toast 后散场）', (WidgetTester tester) async {
     final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
     final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm);
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
     await pumpDialogOpener(
       tester,
       repo: repo,
@@ -449,8 +470,9 @@ void main() {
     final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
     final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
       ..failSearch = true;
-    final GalgameScrapeController controller =
-        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
     await pumpDialogOpener(
       tester,
       repo: repo,
@@ -582,13 +604,12 @@ class _FakeCoverResponse extends Stream<List<int>>
     Function? onError,
     void Function()? onDone,
     bool? cancelOnError,
-  }) =>
-      Stream<List<int>>.fromIterable(<List<int>>[bytes]).listen(
-        onData,
-        onError: onError,
-        onDone: onDone,
-        cancelOnError: cancelOnError,
-      );
+  }) => Stream<List<int>>.fromIterable(<List<int>>[bytes]).listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

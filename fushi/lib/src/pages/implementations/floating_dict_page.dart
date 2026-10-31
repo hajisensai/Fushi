@@ -168,10 +168,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return GestureDetector(
       onPanUpdate: (details) {
-        _invoke('drag', {
-          'dx': details.delta.dx,
-          'dy': details.delta.dy,
-        });
+        _invoke('drag', {'dx': details.delta.dx, 'dy': details.delta.dy});
       },
       onPanEnd: (_) {
         _invoke('dragEnd');
@@ -286,10 +283,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       alignment: Alignment.bottomRight,
       child: GestureDetector(
         onPanUpdate: (details) {
-          _invoke('resize', {
-            'dw': details.delta.dx,
-            'dh': details.delta.dy,
-          });
+          _invoke('resize', {'dw': details.delta.dx, 'dh': details.delta.dy});
         },
         onPanEnd: (_) {
           _invoke('dragEnd');

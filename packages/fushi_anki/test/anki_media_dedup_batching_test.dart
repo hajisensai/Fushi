@@ -111,7 +111,8 @@ class _BatchCountingService extends AnkiConnectService {
 
   @override
   Future<List<AnkiConnectBatchResult>> requestMulti(
-      List<AnkiConnectAction> actions) async {
+    List<AnkiConnectAction> actions,
+  ) async {
     if (actions.isEmpty) return const <AnkiConnectBatchResult>[];
     _tick(actions.first.action);
     final List<AnkiConnectBatchResult> out = <AnkiConnectBatchResult>[];
@@ -161,8 +162,9 @@ void main() {
   });
 
   void writeMedia(String name, List<int> bytes) {
-    File('${mediaDir.path}${Platform.pathSeparator}$name')
-        .writeAsBytesSync(bytes);
+    File(
+      '${mediaDir.path}${Platform.pathSeparator}$name',
+    ).writeAsBytesSync(bytes);
   }
 
   bool mediaExists(String name) =>
@@ -198,10 +200,16 @@ void main() {
     expect(service.deleted, hasLength(n));
 
     // ── 这三条是本次性能修复的全部意义所在 ──────────────────────────
-    expect(service.roundTripsFor('deleteMediaFile'), expectedBatches,
-        reason: '$n 个副本的删除必须收敛成 $expectedBatches 次往返（一批一次）');
-    expect(service.roundTripsFor('updateNoteFields'), expectedBatches,
-        reason: '笔记改写同样按批合并，不是一条笔记一次往返');
+    expect(
+      service.roundTripsFor('deleteMediaFile'),
+      expectedBatches,
+      reason: '$n 个副本的删除必须收敛成 $expectedBatches 次往返（一批一次）',
+    );
+    expect(
+      service.roundTripsFor('updateNoteFields'),
+      expectedBatches,
+      reason: '笔记改写同样按批合并，不是一条笔记一次往返',
+    );
     // BUG-2824：建对照表 1 次 findNotes（deck:*）+ 每批 1 条复核检索；
     // notesInfo = 对照表分批 + 每批拉一次命中笔记。复核零命中时不再拉字段。
     expect(service.roundTripsFor('findNotes'), 1 + expectedBatches);
@@ -211,8 +219,11 @@ void main() {
     );
 
     // 总往返数必须远小于副本数——旧实现是 5N + 常数（120 副本实测 606 次）。
-    expect(service.roundTrips.length, lessThan(n),
-        reason: '总往返 ${service.roundTrips.length} 不该逼近副本数 $n');
+    expect(
+      service.roundTrips.length,
+      lessThan(n),
+      reason: '总往返 ${service.roundTrips.length} 不该逼近副本数 $n',
+    );
   });
 
   test('干跑（用户确认前那一遍扫描）同样是批量的：每批 2 次往返', () async {
@@ -407,9 +418,7 @@ void main() {
     final _BatchCountingService service = _BatchCountingService(
       mediaDirPath: mediaDir.path,
       notes: <int, Map<String, String>>{
-        7: <String, String>{
-          'Front': '[sound:xxxx.mp3] 与 [sound:yyyy.mp3]',
-        },
+        7: <String, String>{'Front': '[sound:xxxx.mp3] 与 [sound:yyyy.mp3]'},
       },
     );
     final AnkiConnectRepository repo = AnkiConnectRepository(service: service);
@@ -434,15 +443,19 @@ void main() {
     await repo.runMediaDedup(onProgress: events.add);
 
     final List<AnkiMediaDedupProgress> resolving = events
-        .where((AnkiMediaDedupProgress p) =>
-            p.stage == AnkiMediaDedupStage.resolving)
+        .where(
+          (AnkiMediaDedupProgress p) =>
+              p.stage == AnkiMediaDedupStage.resolving,
+        )
         .toList();
     // 每批一次 + 收尾一次：进度是真按批走的，不是假装逐个。
     expect(resolving, hasLength(ceilDiv(n, kAnkiMediaDedupBatchSize) + 1));
     for (int i = 1; i < resolving.length; i++) {
       expect(resolving[i].done, greaterThanOrEqualTo(resolving[i - 1].done));
-      expect(resolving[i].bytesFreed,
-          greaterThanOrEqualTo(resolving[i - 1].bytesFreed));
+      expect(
+        resolving[i].bytesFreed,
+        greaterThanOrEqualTo(resolving[i - 1].bytesFreed),
+      );
     }
     expect(resolving.last.done, n);
     expect(resolving.last.total, n);
@@ -546,8 +559,11 @@ void main() {
       <String>['a.mp3', 'b.mp3', 'c.mp3'],
     );
 
-    expect(results.map((AnkiConnectBatchResult r) => r.isError),
-        <bool>[false, true, false]);
+    expect(results.map((AnkiConnectBatchResult r) => r.isError), <bool>[
+      false,
+      true,
+      false,
+    ]);
     expect(results[1].error, 'cannot delete');
   });
 
@@ -570,8 +586,10 @@ void main() {
     });
     final AnkiConnectService service = AnkiConnectService(client: client);
 
-    final List<List<int>?> got =
-        await service.findNotesByQueries(<String>['"a"', '"b"']);
+    final List<List<int>?> got = await service.findNotesByQueries(<String>[
+      '"a"',
+      '"b"',
+    ]);
 
     expect(got[0], <int>[1, 2]);
     expect(got[1], isNull, reason: '检索失败当成「没人引用」就会删掉仍在用的媒体');

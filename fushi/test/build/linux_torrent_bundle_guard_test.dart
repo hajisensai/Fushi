@@ -16,8 +16,7 @@ void main() {
     return file.readAsStringSync();
   }
 
-  test('Linux runner CMake copy-if-presents the torrent .so into bundle/lib',
-      () {
+  test('Linux runner CMake copy-if-presents the torrent .so into bundle/lib', () {
     final String cmake = read('linux/CMakeLists.txt');
     const String soPath =
         'native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so';
@@ -26,14 +25,19 @@ void main() {
       r'if\(EXISTS "\$\{FUSHI_TORRENT_SO\}"\)\s*'
       r'install\(FILES "\$\{FUSHI_TORRENT_SO\}" DESTINATION "\$\{INSTALL_BUNDLE_LIB_DIR\}"',
     );
-    expect(cmake, matches(copyIfPresent),
-        reason:
-            'torrent .so must be installed into bundle/lib only when present');
+    expect(
+      cmake,
+      matches(copyIfPresent),
+      reason: 'torrent .so must be installed into bundle/lib only when present',
+    );
     final int start = cmake.indexOf('set(FUSHI_TORRENT_SO');
     final int end = cmake.indexOf('endif()', start);
     expect(start, isNonNegative);
-    expect(cmake.substring(start, end), isNot(contains('FATAL_ERROR')),
-        reason: 'a missing torrent .so must not fail the Linux build');
+    expect(
+      cmake.substring(start, end),
+      isNot(contains('FATAL_ERROR')),
+      reason: 'a missing torrent .so must not fail the Linux build',
+    );
   });
 
   test('the bundled .so name matches what build_linux_so.sh produces', () {
@@ -42,14 +46,19 @@ void main() {
     expect(script, contains('libfushi_torrent_ffi.so'));
   });
 
-  test('EmbeddedTorrentEngine looks in <exe>/lib/ on Linux before bare name',
-      () {
-    final String engine =
-        read('../packages/fushi_torrent/lib/src/embedded_torrent_engine.dart');
-    expect(engine, contains('static List<String> defaultLibraryCandidates('));
-    expect(engine, contains("'\${File(exe).parent.path}/lib'"));
-    expect(engine,
+  test(
+    'EmbeddedTorrentEngine looks in <exe>/lib/ on Linux before bare name',
+    () {
+      final String engine = read(
+        '../packages/fushi_torrent/lib/src/embedded_torrent_engine.dart',
+      );
+      expect(engine, contains('static List<String> defaultLibraryCandidates('));
+      expect(engine, contains("'\${File(exe).parent.path}/lib'"));
+      expect(
+        engine,
         contains('final List<String> names = defaultLibraryCandidates();'),
-        reason: 'the default open path must use the Linux bundle candidates');
-  });
+        reason: 'the default open path must use the Linux bundle candidates',
+      );
+    },
+  );
 }

@@ -54,31 +54,30 @@ Future<void> _insertSubscription(
   String mode = 'ongoing',
   int? startAfterEpisode,
   int? season,
-}) =>
-    database.upsertVideoDownloadSubscription(
-      VideoDownloadSubscriptionsCompanion.insert(
-        subscriptionId: id,
-        resourceProvider: resourceProvider,
-        metadataProvider: const Value<String?>('anilist'),
-        externalId: Value<String?>('media-$id'),
-        mediaKind: mediaKind,
-        discoveryCategory: Value<String?>(discoveryCategory),
-        title: 'Example Show',
-        season: Value<int?>(season),
-        searchQuery: 'Example Show',
-        filterJson: Value<String>(jsonEncode(filters)),
-        mode: Value<String>(mode),
-        startAfterEpisode: Value<int?>(startAfterEpisode),
-        backendKind: 'embedded',
-        backendProfileId: const Value<String?>('embedded'),
-        fingerprint: 'backend-fingerprint',
-        category: const Value<String?>('fushi-video'),
-        targetSourceId: Value<int?>(sourceId),
-        createdAt: _nowAt,
-        updatedAt: _nowAt,
-        nextCheckAt: const Value<int?>(_nowAt),
-      ),
-    );
+}) => database.upsertVideoDownloadSubscription(
+  VideoDownloadSubscriptionsCompanion.insert(
+    subscriptionId: id,
+    resourceProvider: resourceProvider,
+    metadataProvider: const Value<String?>('anilist'),
+    externalId: Value<String?>('media-$id'),
+    mediaKind: mediaKind,
+    discoveryCategory: Value<String?>(discoveryCategory),
+    title: 'Example Show',
+    season: Value<int?>(season),
+    searchQuery: 'Example Show',
+    filterJson: Value<String>(jsonEncode(filters)),
+    mode: Value<String>(mode),
+    startAfterEpisode: Value<int?>(startAfterEpisode),
+    backendKind: 'embedded',
+    backendProfileId: const Value<String?>('embedded'),
+    fingerprint: 'backend-fingerprint',
+    category: const Value<String?>('fushi-video'),
+    targetSourceId: Value<int?>(sourceId),
+    createdAt: _nowAt,
+    updatedAt: _nowAt,
+    nextCheckAt: const Value<int?>(_nowAt),
+  ),
+);
 
 Future<String> _persistFakeJob(
   FushiDatabase database,
@@ -122,15 +121,17 @@ VideoDownloadSubscriptionService _service({
 }) {
   final VideoDownloadSubscriptionService service =
       VideoDownloadSubscriptionService(
-    database: database,
-    resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[provider]),
-    enqueue: enqueue,
-    workerId: 'subscription-test-worker',
-    checkInterval: checkInterval,
-    leaseDuration: leaseDuration,
-    autoRetryBudget: autoRetryBudget,
-    now: now ?? () => DateTime.fromMillisecondsSinceEpoch(_nowAt),
-  );
+        database: database,
+        resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
+          provider,
+        ]),
+        enqueue: enqueue,
+        workerId: 'subscription-test-worker',
+        checkInterval: checkInterval,
+        leaseDuration: leaseDuration,
+        autoRetryBudget: autoRetryBudget,
+        now: now ?? () => DateTime.fromMillisecondsSinceEpoch(_nowAt),
+      );
   addTearDown(service.dispose);
   return service;
 }
@@ -144,13 +145,13 @@ Future<VideoDownloadSubscriptionRow> _waitForSubscription(
 ) async {
   final DateTime deadline = DateTime.now().add(const Duration(seconds: 10));
   while (DateTime.now().isBefore(deadline)) {
-    final VideoDownloadSubscriptionRow? row =
-        await database.getVideoDownloadSubscription(subscriptionId);
+    final VideoDownloadSubscriptionRow? row = await database
+        .getVideoDownloadSubscription(subscriptionId);
     if (row != null && predicate(row)) return row;
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
-  final VideoDownloadSubscriptionRow? last =
-      await database.getVideoDownloadSubscription(subscriptionId);
+  final VideoDownloadSubscriptionRow? last = await database
+      .getVideoDownloadSubscription(subscriptionId);
   throw TimeoutException(
     'subscription $subscriptionId did not reach expected state: $last',
   );
@@ -158,96 +159,100 @@ Future<VideoDownloadSubscriptionRow> _waitForSubscription(
 
 void main() {
   test(
-      'Nyaa strict rules include the selected first episode and persist outbox',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'anime',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      season: 1,
-      startAfterEpisode: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'SubsPlease',
-        'resolution': '1080p',
-        'trustedOnly': true,
-        'nyaaCategory': '1_2',
-      },
-    );
-    final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: _nyaaProviderId,
-      candidates: <VideoResourceCandidate>[
-        _candidate(remoteId: 'old', episode: 1),
-        _candidate(remoteId: 'wrong-group', episode: 2, group: 'Other'),
-        _candidate(
-            remoteId: 'wrong-resolution', episode: 2, resolution: '720p'),
-        _candidate(remoteId: 'untrusted', episode: 2, trusted: false),
-        _candidate(remoteId: 'episode-2-low', episode: 2, seeders: 2),
-        _candidate(remoteId: 'episode-2-best', episode: 2, seeders: 20),
-        _candidate(remoteId: 'episode-3', episode: 3, seeders: 5),
-      ],
-    );
-    final List<VideoDownloadEnqueueRequest> enqueued =
-        <VideoDownloadEnqueueRequest>[];
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: provider,
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        final List<VideoDownloadSubscriptionItemRow> outbox =
-            await database.getVideoDownloadSubscriptionItems('anime');
-        expect(
-          outbox.any(
-            (VideoDownloadSubscriptionItemRow item) =>
-                item.selectedResourceId == request.resource.remoteId &&
-                item.status == VideoDownloadSubscriptionItemStatus.discovered,
+    'Nyaa strict rules include the selected first episode and persist outbox',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'anime',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        startAfterEpisode: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+          'nyaaCategory': '1_2',
+        },
+      );
+      final _FakeResourceProvider provider = _FakeResourceProvider(
+        id: _nyaaProviderId,
+        candidates: <VideoResourceCandidate>[
+          _candidate(remoteId: 'old', episode: 1),
+          _candidate(remoteId: 'wrong-group', episode: 2, group: 'Other'),
+          _candidate(
+            remoteId: 'wrong-resolution',
+            episode: 2,
+            resolution: '720p',
           ),
-          isTrue,
-          reason: 'enqueue 外部动作前必须先持久化逻辑集选择',
-        );
-        enqueued.add(request);
-        return _persistFakeJob(
-          database,
-          request,
-          'job-${enqueued.length}',
-        );
-      },
-    );
+          _candidate(remoteId: 'untrusted', episode: 2, trusted: false),
+          _candidate(remoteId: 'episode-2-low', episode: 2, seeders: 2),
+          _candidate(remoteId: 'episode-2-best', episode: 2, seeders: 20),
+          _candidate(remoteId: 'episode-3', episode: 3, seeders: 5),
+        ],
+      );
+      final List<VideoDownloadEnqueueRequest> enqueued =
+          <VideoDownloadEnqueueRequest>[];
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: provider,
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          final List<VideoDownloadSubscriptionItemRow> outbox = await database
+              .getVideoDownloadSubscriptionItems('anime');
+          expect(
+            outbox.any(
+              (VideoDownloadSubscriptionItemRow item) =>
+                  item.selectedResourceId == request.resource.remoteId &&
+                  item.status == VideoDownloadSubscriptionItemStatus.discovered,
+            ),
+            isTrue,
+            reason: 'enqueue 外部动作前必须先持久化逻辑集选择',
+          );
+          enqueued.add(request);
+          return _persistFakeJob(database, request, 'job-${enqueued.length}');
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(service.checkInterval, const Duration(minutes: 15));
-    expect(
-      enqueued
-          .map((VideoDownloadEnqueueRequest value) => value.resource.remoteId),
-      <String>['old', 'episode-2-best', 'episode-3'],
-    );
-    final List<VideoDownloadSubscriptionItemRow> items =
-        await database.getVideoDownloadSubscriptionItems('anime');
-    expect(
-      items.map(
-          (VideoDownloadSubscriptionItemRow value) => value.logicalItemKey),
-      <String>['S01E01', 'S01E02', 'S01E03'],
-    );
-    expect(
-      items.every(
-        (VideoDownloadSubscriptionItemRow item) =>
-            item.status == VideoDownloadSubscriptionItemStatus.queued &&
-            item.jobId != null,
-      ),
-      isTrue,
-    );
-    final VideoDownloadSubscriptionRow row =
-        (await database.getVideoDownloadSubscription('anime'))!;
-    expect(
-        row.nextCheckAt, _nowAt + const Duration(minutes: 15).inMilliseconds);
-    expect(row.retryCount, 0);
-    expect(row.lastError, isNull);
-  });
+      expect(service.checkInterval, const Duration(minutes: 15));
+      expect(
+        enqueued.map(
+          (VideoDownloadEnqueueRequest value) => value.resource.remoteId,
+        ),
+        <String>['old', 'episode-2-best', 'episode-3'],
+      );
+      final List<VideoDownloadSubscriptionItemRow> items = await database
+          .getVideoDownloadSubscriptionItems('anime');
+      expect(
+        items.map(
+          (VideoDownloadSubscriptionItemRow value) => value.logicalItemKey,
+        ),
+        <String>['S01E01', 'S01E02', 'S01E03'],
+      );
+      expect(
+        items.every(
+          (VideoDownloadSubscriptionItemRow item) =>
+              item.status == VideoDownloadSubscriptionItemStatus.queued &&
+              item.jobId != null,
+        ),
+        isTrue,
+      );
+      final VideoDownloadSubscriptionRow row = (await database
+          .getVideoDownloadSubscription('anime'))!;
+      expect(
+        row.nextCheckAt,
+        _nowAt + const Duration(minutes: 15).inMilliseconds,
+      );
+      expect(row.retryCount, 0);
+      expect(row.lastError, isNull);
+    },
+  );
 
   /// BUG-1746：订阅曾把「派过任务」（jobId != null）当成「这一集搞定了」。
   /// 任务被取消或失败之后 jobId 依然挂在条目上，旧判据每轮都 continue，那一集
@@ -323,22 +328,24 @@ void main() {
       FushiDatabase database,
       String jobId,
       String lifecycle,
-    ) =>
-        database.customStatement(
-          'UPDATE video_download_jobs SET lifecycle = ? WHERE job_id = ?',
-          <Object?>[lifecycle, jobId],
-        );
+    ) => database.customStatement(
+      'UPDATE video_download_jobs SET lifecycle = ? WHERE job_id = ?',
+      <Object?>[lifecycle, jobId],
+    );
 
     /// 「重新派」的落地形式是**恢复既有任务**，不是再造一份：任务表对
     /// (fingerprint, resourceProvider, selectedResourceId) 没有唯一约束，克隆
     /// 会在持续性故障下每轮堆一条死任务行。
     Future<void> expectRevivedInPlace(FushiDatabase database) async {
-      final List<VideoDownloadJobRow> jobs =
-          await database.getVideoDownloadJobs();
+      final List<VideoDownloadJobRow> jobs = await database
+          .getVideoDownloadJobs();
       expect(jobs, hasLength(1), reason: '恢复既有任务，不能克隆出第二条任务行');
       expect(jobs.single.jobId, 'job-1');
-      expect(jobs.single.lifecycle, VideoDownloadJobLifecycle.active,
-          reason: '故障态的既有任务必须被放回 active，这一集才会真的继续下');
+      expect(
+        jobs.single.lifecycle,
+        VideoDownloadJobLifecycle.active,
+        reason: '故障态的既有任务必须被放回 active，这一集才会真的继续下',
+      );
       final VideoDownloadSubscriptionItemRow item =
           (await database.getVideoDownloadSubscriptionItems('anime')).single;
       expect(item.jobId, 'job-1', reason: '条目仍绑在同一条任务上');
@@ -347,8 +354,11 @@ void main() {
 
     test('needsAttention（系统故障）的一集会在下一轮被恢复', () async {
       final FushiDatabase database = await seed();
-      final List<String> first =
-          await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+      final List<String> first = await runRound(
+        database,
+        alreadyEnqueued: <String>[],
+        atMs: _nowAt,
+      );
       expect(first, <String>['ep-1'], reason: '第一轮应正常入队');
 
       await setLifecycle(
@@ -357,34 +367,49 @@ void main() {
         VideoDownloadJobLifecycle.needsAttention,
       );
 
-      final List<String> second =
-          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt);
-      expect(second, isEmpty,
-          reason: 'needsAttention 的后端 torrent 可能还在跑，再派一份同 magnet 的'
-              '任务会让两条工作流指向同一个 infohash');
+      final List<String> second = await runRound(
+        database,
+        alreadyEnqueued: first,
+        atMs: secondRoundAt,
+      );
+      expect(
+        second,
+        isEmpty,
+        reason:
+            'needsAttention 的后端 torrent 可能还在跑，再派一份同 magnet 的'
+            '任务会让两条工作流指向同一个 infohash',
+      );
       await expectRevivedInPlace(database);
     });
 
     test('failed 的一集同样会被恢复', () async {
       final FushiDatabase database = await seed();
-      final List<String> first =
-          await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+      final List<String> first = await runRound(
+        database,
+        alreadyEnqueued: <String>[],
+        atMs: _nowAt,
+      );
       expect(first, <String>['ep-1']);
 
       await setLifecycle(database, 'job-1', VideoDownloadJobLifecycle.failed);
 
       expect(
-          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
-          isEmpty,
-          reason: 'failed 是系统侧的失败，不是用户意图；但恢复既有任务即可，'
-              '不需要克隆');
+        await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
+        isEmpty,
+        reason:
+            'failed 是系统侧的失败，不是用户意图；但恢复既有任务即可，'
+            '不需要克隆',
+      );
       await expectRevivedInPlace(database);
     });
 
     test('用户取消（cancelled）的一集不会被订阅自动补回来', () async {
       final FushiDatabase database = await seed();
-      final List<String> first =
-          await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+      final List<String> first = await runRound(
+        database,
+        alreadyEnqueued: <String>[],
+        atMs: _nowAt,
+      );
       expect(first, <String>['ep-1']);
 
       await setLifecycle(
@@ -394,9 +419,10 @@ void main() {
       );
 
       expect(
-          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
-          isEmpty,
-          reason: 'cancelled 是用户明确说不要这一集；自动补回来的话用户永远取消不掉');
+        await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
+        isEmpty,
+        reason: 'cancelled 是用户明确说不要这一集；自动补回来的话用户永远取消不掉',
+      );
     });
 
     test('active / completed 的一集不重复入队（原行为不变）', () async {
@@ -405,17 +431,20 @@ void main() {
         VideoDownloadJobLifecycle.completed,
       ]) {
         final FushiDatabase database = await seed();
-        final List<String> first =
-            await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+        final List<String> first = await runRound(
+          database,
+          alreadyEnqueued: <String>[],
+          atMs: _nowAt,
+        );
         expect(first, <String>['ep-1']);
 
         await setLifecycle(database, 'job-1', lifecycle);
 
         expect(
-            await runRound(database,
-                alreadyEnqueued: first, atMs: secondRoundAt),
-            isEmpty,
-            reason: '$lifecycle 的任务仍算数，重复入队会造重复下载');
+          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
+          isEmpty,
+          reason: '$lifecycle 的任务仍算数，重复入队会造重复下载',
+        );
       }
     });
   });
@@ -473,11 +502,10 @@ void main() {
       FushiDatabase database,
       String jobId,
       String lifecycle,
-    ) =>
-        database.customStatement(
-          'UPDATE video_download_jobs SET lifecycle = ? WHERE job_id = ?',
-          <Object?>[lifecycle, jobId],
-        );
+    ) => database.customStatement(
+      'UPDATE video_download_jobs SET lifecycle = ? WHERE job_id = ?',
+      <Object?>[lifecycle, jobId],
+    );
 
     /// 跑一轮检查。[enqueuedJobIds] 累积**真的新建了任务**的 jobId —— 判克隆看
     /// 它，不要只看任务总数：两者只有在缺陷存在时才会分叉。
@@ -520,10 +548,14 @@ void main() {
         await runRound(database, round: round, enqueuedJobIds: enqueuedJobIds);
       }
 
-      expect(enqueuedJobIds, <String>['job-1'],
-          reason: '后续每一轮都必须走「恢复既有任务」，不能再 enqueue 一份克隆');
-      expect(await database.getVideoDownloadJobs(), hasLength(1),
-          reason: '15 分钟一轮的持续故障不能每轮往面板堆一条死任务行');
+      expect(enqueuedJobIds, <String>[
+        'job-1',
+      ], reason: '后续每一轮都必须走「恢复既有任务」，不能再 enqueue 一份克隆');
+      expect(
+        await database.getVideoDownloadJobs(),
+        hasLength(1),
+        reason: '15 分钟一轮的持续故障不能每轮往面板堆一条死任务行',
+      );
     });
 
     // BUG-2755：旧任务的目标来源被删（FK 清空）后，订阅改到了新来源；恢复时
@@ -532,10 +564,12 @@ void main() {
       final FushiDatabase database = await seed();
       final List<String> enqueuedJobIds = <String>[];
       await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
-      final int oldSource =
-          (await database.getVideoDownloadJob('job-1'))!.targetSourceId!;
-      final Directory newRoot =
-          await Directory.systemTemp.createTemp('fushi-sub-rebind-');
+      final int oldSource = (await database.getVideoDownloadJob(
+        'job-1',
+      ))!.targetSourceId!;
+      final Directory newRoot = await Directory.systemTemp.createTemp(
+        'fushi-sub-rebind-',
+      );
       addTearDown(() => newRoot.delete(recursive: true));
       final int newSource = await database.insertMediaSource(
         MediaSourcesCompanion.insert(
@@ -553,14 +587,20 @@ void main() {
       );
       await database.deleteMediaSource(oldSource);
       await breakJob(
-          database, 'job-1', VideoDownloadJobLifecycle.needsAttention);
-      expect((await database.getVideoDownloadJob('job-1'))!.targetSourceId,
-          isNull);
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.needsAttention,
+      );
+      expect(
+        (await database.getVideoDownloadJob('job-1'))!.targetSourceId,
+        isNull,
+      );
 
       await runRound(database, round: 1, enqueuedJobIds: enqueuedJobIds);
 
-      final VideoDownloadJobRow job =
-          (await database.getVideoDownloadJob('job-1'))!;
+      final VideoDownloadJobRow job = (await database.getVideoDownloadJob(
+        'job-1',
+      ))!;
       expect(enqueuedJobIds, <String>['job-1']);
       expect(job.lifecycle, VideoDownloadJobLifecycle.active);
       expect(job.targetSourceId, newSource);
@@ -580,10 +620,16 @@ void main() {
           (await database.getVideoDownloadJobs()).single;
       expect(after.jobId, before.jobId, reason: '恢复的必须是同一条任务，不是新任务');
       expect(after.lifecycle, VideoDownloadJobLifecycle.active);
-      expect(after.attemptCount, greaterThan(before.attemptCount),
-          reason: '自动重派要消耗持久预算，否则上限无从计数');
-      expect(after.stage, before.stage,
-          reason: '不倒回 enqueue：后端任务可能还在跑，别把同一个种子推第二遍');
+      expect(
+        after.attemptCount,
+        greaterThan(before.attemptCount),
+        reason: '自动重派要消耗持久预算，否则上限无从计数',
+      );
+      expect(
+        after.stage,
+        before.stage,
+        reason: '不倒回 enqueue：后端任务可能还在跑，别把同一个种子推第二遍',
+      );
       final VideoDownloadSubscriptionItemRow item =
           (await database.getVideoDownloadSubscriptionItems('anime')).single;
       expect(item.jobId, before.jobId);
@@ -602,16 +648,15 @@ void main() {
 
       await runRound(database, round: 1, enqueuedJobIds: enqueuedJobIds);
 
-      final List<VideoDownloadJobRow> jobs =
-          await database.getVideoDownloadJobs();
+      final List<VideoDownloadJobRow> jobs = await database
+          .getVideoDownloadJobs();
       final String? torrentHash = jobs.single.torrentHash;
       expect(torrentHash, isNotNull, reason: '这条用例要真的有 infohash 才有意义');
       expect(
-        jobs.where(
-          (VideoDownloadJobRow job) => job.torrentHash == torrentHash,
-        ),
+        jobs.where((VideoDownloadJobRow job) => job.torrentHash == torrentHash),
         hasLength(1),
-        reason: 'qBittorrent 按 infohash 去重，两条任务会各自 organize/import '
+        reason:
+            'qBittorrent 按 infohash 去重，两条任务会各自 organize/import '
             '同一份文件',
       );
     });
@@ -628,9 +673,11 @@ void main() {
           VideoDownloadJobLifecycle.needsAttention,
         );
         await runRound(database, round: round, enqueuedJobIds: enqueuedJobIds);
-        expect((await database.getVideoDownloadJobs()).single.lifecycle,
-            VideoDownloadJobLifecycle.active,
-            reason: '预算内的第 $round 次自动重派应当成功');
+        expect(
+          (await database.getVideoDownloadJobs()).single.lifecycle,
+          VideoDownloadJobLifecycle.active,
+          reason: '预算内的第 $round 次自动重派应当成功',
+        );
       }
 
       await breakJob(
@@ -646,10 +693,14 @@ void main() {
 
       final VideoDownloadJobRow job =
           (await database.getVideoDownloadJobs()).single;
-      expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention,
-          reason: '预算借满后必须停下等人处理，不能无限自动重试');
-      expect(enqueuedJobIds, <String>['job-1'],
-          reason: '停下不等于换个方式重来：也不许改走 enqueue 造克隆');
+      expect(
+        job.lifecycle,
+        VideoDownloadJobLifecycle.needsAttention,
+        reason: '预算借满后必须停下等人处理，不能无限自动重试',
+      );
+      expect(enqueuedJobIds, <String>[
+        'job-1',
+      ], reason: '停下不等于换个方式重来：也不许改走 enqueue 造克隆');
     });
 
     /// [附] `_managedEpisodeKeys` 原本只排除 cancelled/failed，**保留了
@@ -686,13 +737,19 @@ void main() {
 
       final VideoDownloadSubscriptionItemRow item =
           (await database.getVideoDownloadSubscriptionItems('anime')).single;
-      expect(item.status, isNot(VideoDownloadSubscriptionItemStatus.skipped),
-          reason: 'skipped 是终态写入，这一集会被永久判跳过，'
-              '而它其实只是卡在需要用户处理的任务上');
+      expect(
+        item.status,
+        isNot(VideoDownloadSubscriptionItemStatus.skipped),
+        reason:
+            'skipped 是终态写入，这一集会被永久判跳过，'
+            '而它其实只是卡在需要用户处理的任务上',
+      );
       expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
-      expect((await database.getVideoDownloadJobs()).single.lifecycle,
-          VideoDownloadJobLifecycle.active,
-          reason: '正确的处理是恢复这条卡住的任务，让它把文件走完 import');
+      expect(
+        (await database.getVideoDownloadJobs()).single.lifecycle,
+        VideoDownloadJobLifecycle.active,
+        reason: '正确的处理是恢复这条卡住的任务，让它把文件走完 import',
+      );
     });
 
     test('用户在面板重试后自动预算恢复（人工干预是唯一的复位入口）', () async {
@@ -707,8 +764,10 @@ void main() {
         );
         await runRound(database, round: round, enqueuedJobIds: enqueuedJobIds);
       }
-      expect((await database.getVideoDownloadJobs()).single.lifecycle,
-          VideoDownloadJobLifecycle.needsAttention);
+      expect(
+        (await database.getVideoDownloadJobs()).single.lifecycle,
+        VideoDownloadJobLifecycle.needsAttention,
+      );
 
       // 面板的重试按钮（`_canRetry` 正是针对 needsAttention / failed）。
       expect(
@@ -729,690 +788,714 @@ void main() {
         enqueuedJobIds: enqueuedJobIds,
       );
 
-      expect((await database.getVideoDownloadJobs()).single.lifecycle,
-          VideoDownloadJobLifecycle.active,
-          reason: 'retryVideoDownloadJobByUser 把 attemptCount 清零，'
-              '自动预算随之复位——不需要第二处状态');
+      expect(
+        (await database.getVideoDownloadJobs()).single.lifecycle,
+        VideoDownloadJobLifecycle.active,
+        reason:
+            'retryVideoDownloadJobByUser 把 attemptCount 清零，'
+            '自动预算随之复位——不需要第二处状态',
+      );
     });
   });
 
-  test('anime roman numeral title uses the canonical third-season key',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'mushoku-iii',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      startAfterEpisode: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'Erai-raws',
-        'resolution': '1080p',
-        'trustedOnly': true,
-      },
-    );
-    final List<VideoDownloadEnqueueRequest> enqueued =
-        <VideoDownloadEnqueueRequest>[];
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: _nyaaProviderId,
-        candidates: <VideoResourceCandidate>[
-          _candidate(
-            remoteId: 'mushoku-iii-02',
-            mediaTitle: '[Erai-raws] Mushoku Tensei III: '
-                'Isekai Ittara Honki Dasu - 02 [1080p]',
-            group: 'Erai-raws',
-          ),
-        ],
-      ),
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        enqueued.add(request);
-        return _persistFakeJob(database, request, 'mushoku-iii-job');
-      },
-    );
+  test(
+    'anime roman numeral title uses the canonical third-season key',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'mushoku-iii',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        startAfterEpisode: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'Erai-raws',
+          'resolution': '1080p',
+          'trustedOnly': true,
+        },
+      );
+      final List<VideoDownloadEnqueueRequest> enqueued =
+          <VideoDownloadEnqueueRequest>[];
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: _nyaaProviderId,
+          candidates: <VideoResourceCandidate>[
+            _candidate(
+              remoteId: 'mushoku-iii-02',
+              mediaTitle:
+                  '[Erai-raws] Mushoku Tensei III: '
+                  'Isekai Ittara Honki Dasu - 02 [1080p]',
+              group: 'Erai-raws',
+            ),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueued.add(request);
+          return _persistFakeJob(database, request, 'mushoku-iii-job');
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(enqueued, hasLength(1));
-    expect(enqueued.single.media.season, 3);
-    expect(enqueued.single.media.episode, 2);
-    final VideoDownloadSubscriptionItemRow item =
-        (await database.getVideoDownloadSubscriptionItems('mushoku-iii'))
-            .single;
-    expect(item.logicalItemKey, 'S03E02');
-    expect(item.season, 3);
-    expect(item.episode, 2);
-  });
+      expect(enqueued, hasLength(1));
+      expect(enqueued.single.media.season, 3);
+      expect(enqueued.single.media.episode, 2);
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems(
+            'mushoku-iii',
+          )).single;
+      expect(item.logicalItemKey, 'S03E02');
+      expect(item.season, 3);
+      expect(item.episode, 2);
+    },
+  );
 
-  test('confirmed local episode is skipped before another release is enqueued',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'local-episode',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      startAfterEpisode: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'Erai-raws',
-        'resolution': '1080p',
-        'trustedOnly': true,
-      },
-    );
-    final int collectionId = await database.createMediaCollection(
-      'Mushoku Tensei III',
-      collectionType: 'playlist',
-    );
-    await database.upsertVideoBook(
-      VideoBooksCompanion(
-        bookUid: const Value<String>('video/mushoku-iii-s03e02'),
-        title: const Value<String>('Mushoku Tensei III - S03E02'),
-        videoPath: const Value<String>(r'D:\Videos\Mushoku.S03E02.mkv'),
-        sourceId: Value<int?>(sourceId),
-      ),
-    );
-    await database.addToCollection(
-      collectionId,
-      MediaKind.video,
-      'video/mushoku-iii-s03e02',
-    );
-    final int workId = await database.upsertVideoMetadataWork(
-      VideoMetadataWorksCompanion.insert(
-        collectionId: Value<int?>(collectionId),
-        mediaType: 'tv',
-        title: 'Mushoku Tensei III',
-        updatedAt: _nowAt,
-      ),
-    );
-    await database.replaceVideoMetadataProviderIdentities(
-      workId: workId,
-      identities: <VideoMetadataProviderIdentitiesCompanion>[
-        VideoMetadataProviderIdentitiesCompanion.insert(
-          identityKey: 'work:$workId:anilist',
-          provider: 'anilist',
-          externalId: 'media-local-episode',
-          isPrimary: const Value<bool>(true),
+  test(
+    'confirmed local episode is skipped before another release is enqueued',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'local-episode',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        startAfterEpisode: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'Erai-raws',
+          'resolution': '1080p',
+          'trustedOnly': true,
+        },
+      );
+      final int collectionId = await database.createMediaCollection(
+        'Mushoku Tensei III',
+        collectionType: 'playlist',
+      );
+      await database.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/mushoku-iii-s03e02'),
+          title: const Value<String>('Mushoku Tensei III - S03E02'),
+          videoPath: const Value<String>(r'D:\Videos\Mushoku.S03E02.mkv'),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+      await database.addToCollection(
+        collectionId,
+        MediaKind.video,
+        'video/mushoku-iii-s03e02',
+      );
+      final int workId = await database.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          collectionId: Value<int?>(collectionId),
+          mediaType: 'tv',
+          title: 'Mushoku Tensei III',
           updatedAt: _nowAt,
         ),
-      ],
-    );
-    int enqueueCount = 0;
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: _nyaaProviderId,
-        candidates: <VideoResourceCandidate>[
-          _candidate(
-            remoteId: 'duplicate-s03e02',
-            mediaTitle: '[Erai-raws] Mushoku Tensei III: '
-                'Isekai Ittara Honki Dasu - 02 [1080p]',
-            group: 'Erai-raws',
+      );
+      await database.replaceVideoMetadataProviderIdentities(
+        workId: workId,
+        identities: <VideoMetadataProviderIdentitiesCompanion>[
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:$workId:anilist',
+            provider: 'anilist',
+            externalId: 'media-local-episode',
+            isPrimary: const Value<bool>(true),
+            updatedAt: _nowAt,
           ),
         ],
-      ),
-      enqueue: (VideoDownloadEnqueueRequest _) async {
-        enqueueCount++;
-        return 'unexpected-job';
-      },
-    );
+      );
+      int enqueueCount = 0;
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: _nyaaProviderId,
+          candidates: <VideoResourceCandidate>[
+            _candidate(
+              remoteId: 'duplicate-s03e02',
+              mediaTitle:
+                  '[Erai-raws] Mushoku Tensei III: '
+                  'Isekai Ittara Honki Dasu - 02 [1080p]',
+              group: 'Erai-raws',
+            ),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest _) async {
+          enqueueCount++;
+          return 'unexpected-job';
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(enqueueCount, 0);
-    final VideoDownloadSubscriptionItemRow item =
-        (await database.getVideoDownloadSubscriptionItems('local-episode'))
-            .single;
-    expect(item.logicalItemKey, 'S03E02');
-    expect(item.status, VideoDownloadSubscriptionItemStatus.skipped);
-    expect(item.jobId, isNull);
-  });
+      expect(enqueueCount, 0);
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems(
+            'local-episode',
+          )).single;
+      expect(item.logicalItemKey, 'S03E02');
+      expect(item.status, VideoDownloadSubscriptionItemStatus.skipped);
+      expect(item.jobId, isNull);
+    },
+  );
 
-  test('explicit Nyaa backfill traverses beyond 100 releases continuously',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'anime-backfill',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      season: 1,
-      startAfterEpisode: 70,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'SubsPlease',
-        'resolution': '1080p',
-        'trustedOnly': true,
-      },
-    );
-    final List<VideoResourceCandidate> firstPage = <VideoResourceCandidate>[
-      _candidate(remoteId: 'p1-100-low', episode: 100, seeders: 1),
-      ...List<VideoResourceCandidate>.generate(
-        74,
-        (int index) {
+  test(
+    'explicit Nyaa backfill traverses beyond 100 releases continuously',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'anime-backfill',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        startAfterEpisode: 70,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+        },
+      );
+      final List<VideoResourceCandidate> firstPage = <VideoResourceCandidate>[
+        _candidate(remoteId: 'p1-100-low', episode: 100, seeders: 1),
+        ...List<VideoResourceCandidate>.generate(74, (int index) {
           final int episode = 127 + index;
           return _candidate(
             remoteId: 'p1-$episode',
             episode: episode,
             seeders: episode,
           );
-        },
-      ),
-    ];
-    final List<VideoResourceCandidate> secondPage = <VideoResourceCandidate>[
-      ...List<VideoResourceCandidate>.generate(
-        56,
-        (int index) {
+        }),
+      ];
+      final List<VideoResourceCandidate> secondPage = <VideoResourceCandidate>[
+        ...List<VideoResourceCandidate>.generate(56, (int index) {
           final int episode = 71 + index;
           return _candidate(
             remoteId: 'p2-$episode',
             episode: episode,
             seeders: episode == 100 ? 500 : episode,
           );
-        },
-      ),
-      _candidate(
-        remoteId: 'p2-101-wrong-group',
-        episode: 101,
-        group: 'Other',
-        seeders: 9999,
-      ),
-    ];
-    final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: _nyaaProviderId,
-      resultsByPage: <int, ProviderBatchResult<VideoResourceCandidate>>{
-        1: ProviderBatchResult<VideoResourceCandidate>.success(firstPage),
-        2: ProviderBatchResult<VideoResourceCandidate>.success(secondPage),
-      },
-    );
-    final List<VideoDownloadEnqueueRequest> enqueued =
-        <VideoDownloadEnqueueRequest>[];
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: provider,
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        enqueued.add(request);
-        return _persistFakeJob(
-          database,
-          request,
-          'backfill-job-${enqueued.length}',
-        );
-      },
-    );
-
-    await service.checkNow();
-
-    expect(provider.requestedPages, <int>[1, 2]);
-    expect(provider.requestedLimits, everyElement(75));
-    expect(enqueued, hasLength(130));
-    final List<int> episodes = enqueued
-        .map((VideoDownloadEnqueueRequest request) => request.media.episode!)
-        .toList()
-      ..sort();
-    expect(episodes, List<int>.generate(130, (int index) => index + 71));
-    expect(
-      enqueued
-          .singleWhere(
-            (VideoDownloadEnqueueRequest request) =>
-                request.media.episode == 100,
-          )
-          .resource
-          .remoteId,
-      'p2-100',
-      reason: '同一 SxxExx 必须跨页选严格规则内的最佳版本且只入队一次',
-    );
-    expect(
-      enqueued
-          .singleWhere(
-            (VideoDownloadEnqueueRequest request) =>
-                request.media.episode == 101,
-          )
-          .resource
-          .remoteId,
-      'p2-101',
-      reason: '后续页的高做种错误发布组不能绕过严格版本锁定',
-    );
-    final List<VideoDownloadSubscriptionItemRow> items =
-        await database.getVideoDownloadSubscriptionItems('anime-backfill');
-    expect(items, hasLength(130));
-    expect(
-      items
-          .map((VideoDownloadSubscriptionItemRow item) => item.logicalItemKey)
-          .toSet(),
-      hasLength(130),
-    );
-  });
-
-  test('a repeated full provider page stops pagination without duplicate jobs',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'anime-repeat-page',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      season: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'SubsPlease',
-        'resolution': '1080p',
-        'trustedOnly': true,
-      },
-    );
-    final List<VideoResourceCandidate> repeated =
-        List<VideoResourceCandidate>.generate(
-      75,
-      (int index) => _candidate(
-        remoteId: 'repeat-${index + 1}',
-        episode: index + 1,
-      ),
-    );
-    final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: _nyaaProviderId,
-      resultsByPage: <int, ProviderBatchResult<VideoResourceCandidate>>{
-        1: ProviderBatchResult<VideoResourceCandidate>.success(repeated),
-        2: ProviderBatchResult<VideoResourceCandidate>.success(repeated),
-      },
-    );
-    int enqueueCount = 0;
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: provider,
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        enqueueCount++;
-        return _persistFakeJob(database, request, 'repeat-job-$enqueueCount');
-      },
-    );
-
-    await service.checkNow();
-
-    expect(provider.requestedPages, <int>[1, 2]);
-    expect(enqueueCount, 75);
-    expect(
-      await database.getVideoDownloadSubscriptionItems('anime-repeat-page'),
-      hasLength(75),
-    );
-  });
-
-  test('full changing pages stop at the bounded per-check safety limit',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'anime-page-cap',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      season: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'SubsPlease',
-        'resolution': '1080p',
-        'trustedOnly': true,
-      },
-    );
-    final Map<int, ProviderBatchResult<VideoResourceCandidate>> pages =
-        <int, ProviderBatchResult<VideoResourceCandidate>>{};
-    for (int page = 1; page <= 20; page++) {
-      pages[page] = ProviderBatchResult<VideoResourceCandidate>.success(
-        List<VideoResourceCandidate>.generate(75, (int index) {
-          final int release = page * 100 + index;
-          return _FakeResourceCandidate(
-            providerId: 'nyaa',
-            instanceId: _nyaaSiteId,
-            remoteId: 'page-$page-release-$index',
-            title: '[SubsPlease] Example Show - 1 [1080p]',
-            infoHash: release.toRadixString(16).padLeft(40, '0'),
-            releaseGroup: 'SubsPlease',
-            resolution: '1080p',
-            trusted: true,
-            seeders: release,
-            category: '1_2',
-          );
         }),
+        _candidate(
+          remoteId: 'p2-101-wrong-group',
+          episode: 101,
+          group: 'Other',
+          seeders: 9999,
+        ),
+      ];
+      final _FakeResourceProvider provider = _FakeResourceProvider(
+        id: _nyaaProviderId,
+        resultsByPage: <int, ProviderBatchResult<VideoResourceCandidate>>{
+          1: ProviderBatchResult<VideoResourceCandidate>.success(firstPage),
+          2: ProviderBatchResult<VideoResourceCandidate>.success(secondPage),
+        },
       );
-    }
-    final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: _nyaaProviderId,
-      resultsByPage: pages,
-    );
-    int enqueueCount = 0;
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: provider,
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        enqueueCount++;
-        return _persistFakeJob(database, request, 'page-cap-job');
-      },
-    );
+      final List<VideoDownloadEnqueueRequest> enqueued =
+          <VideoDownloadEnqueueRequest>[];
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: provider,
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueued.add(request);
+          return _persistFakeJob(
+            database,
+            request,
+            'backfill-job-${enqueued.length}',
+          );
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(provider.requestedPages, List<int>.generate(20, (int i) => i + 1));
-    expect(enqueueCount, 1, reason: '1,500 个版本仍只能生成一个 S01E01 逻辑项');
-  });
+      expect(provider.requestedPages, <int>[1, 2]);
+      expect(provider.requestedLimits, everyElement(75));
+      expect(enqueued, hasLength(130));
+      final List<int> episodes =
+          enqueued
+              .map(
+                (VideoDownloadEnqueueRequest request) => request.media.episode!,
+              )
+              .toList()
+            ..sort();
+      expect(episodes, List<int>.generate(130, (int index) => index + 71));
+      expect(
+        enqueued
+            .singleWhere(
+              (VideoDownloadEnqueueRequest request) =>
+                  request.media.episode == 100,
+            )
+            .resource
+            .remoteId,
+        'p2-100',
+        reason: '同一 SxxExx 必须跨页选严格规则内的最佳版本且只入队一次',
+      );
+      expect(
+        enqueued
+            .singleWhere(
+              (VideoDownloadEnqueueRequest request) =>
+                  request.media.episode == 101,
+            )
+            .resource
+            .remoteId,
+        'p2-101',
+        reason: '后续页的高做种错误发布组不能绕过严格版本锁定',
+      );
+      final List<VideoDownloadSubscriptionItemRow> items = await database
+          .getVideoDownloadSubscriptionItems('anime-backfill');
+      expect(items, hasLength(130));
+      expect(
+        items
+            .map((VideoDownloadSubscriptionItemRow item) => item.logicalItemKey)
+            .toSet(),
+        hasLength(130),
+      );
+    },
+  );
 
   test(
-      'oneShot reconciles a persisted job after crash and never enqueues twice',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'movie',
-      sourceId: sourceId,
-      resourceProvider: 'torznab:indexer-a',
-      mediaKind: 'movie',
-      discoveryCategory: 'movie',
-      mode: 'oneShot',
-      filters: <String, Object?>{
-        'strict': true,
-        'quality': '1080p',
-        'source': 'WEB-DL',
-        'codec': 'HEVC',
-        'language': 'Dual Audio',
-      },
-    );
-    final VideoResourceCandidate candidate = _candidate(
-      providerId: 'torznab',
-      instanceId: 'indexer-a',
-      remoteId: 'movie-release',
-      mediaTitle: 'Example Movie 1080p WEB-DL x265 Dual-Audio',
-      episode: null,
-      group: null,
-      resolution: null,
-      category: 'movies',
-    );
-    await database.upsertVideoDownloadSubscriptionItem(
-      VideoDownloadSubscriptionItemsCompanion.insert(
-        subscriptionId: 'movie',
-        logicalItemKey: 'movie',
+    'a repeated full provider page stops pagination without duplicate jobs',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'anime-repeat-page',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+        },
+      );
+      final List<VideoResourceCandidate> repeated =
+          List<VideoResourceCandidate>.generate(
+            75,
+            (int index) =>
+                _candidate(remoteId: 'repeat-${index + 1}', episode: index + 1),
+          );
+      final _FakeResourceProvider provider = _FakeResourceProvider(
+        id: _nyaaProviderId,
+        resultsByPage: <int, ProviderBatchResult<VideoResourceCandidate>>{
+          1: ProviderBatchResult<VideoResourceCandidate>.success(repeated),
+          2: ProviderBatchResult<VideoResourceCandidate>.success(repeated),
+        },
+      );
+      int enqueueCount = 0;
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: provider,
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueueCount++;
+          return _persistFakeJob(database, request, 'repeat-job-$enqueueCount');
+        },
+      );
+
+      await service.checkNow();
+
+      expect(provider.requestedPages, <int>[1, 2]);
+      expect(enqueueCount, 75);
+      expect(
+        await database.getVideoDownloadSubscriptionItems('anime-repeat-page'),
+        hasLength(75),
+      );
+    },
+  );
+
+  test(
+    'full changing pages stop at the bounded per-check safety limit',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'anime-page-cap',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+        },
+      );
+      final Map<int, ProviderBatchResult<VideoResourceCandidate>> pages =
+          <int, ProviderBatchResult<VideoResourceCandidate>>{};
+      for (int page = 1; page <= 20; page++) {
+        pages[page] = ProviderBatchResult<VideoResourceCandidate>.success(
+          List<VideoResourceCandidate>.generate(75, (int index) {
+            final int release = page * 100 + index;
+            return _FakeResourceCandidate(
+              providerId: 'nyaa',
+              instanceId: _nyaaSiteId,
+              remoteId: 'page-$page-release-$index',
+              title: '[SubsPlease] Example Show - 1 [1080p]',
+              infoHash: release.toRadixString(16).padLeft(40, '0'),
+              releaseGroup: 'SubsPlease',
+              resolution: '1080p',
+              trusted: true,
+              seeders: release,
+              category: '1_2',
+            );
+          }),
+        );
+      }
+      final _FakeResourceProvider provider = _FakeResourceProvider(
+        id: _nyaaProviderId,
+        resultsByPage: pages,
+      );
+      int enqueueCount = 0;
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: provider,
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueueCount++;
+          return _persistFakeJob(database, request, 'page-cap-job');
+        },
+      );
+
+      await service.checkNow();
+
+      expect(provider.requestedPages, List<int>.generate(20, (int i) => i + 1));
+      expect(enqueueCount, 1, reason: '1,500 个版本仍只能生成一个 S01E01 逻辑项');
+    },
+  );
+
+  test(
+    'oneShot reconciles a persisted job after crash and never enqueues twice',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'movie',
+        sourceId: sourceId,
         resourceProvider: 'torznab:indexer-a',
-        selectedResourceId: candidate.remoteId,
-        torrentHash: Value<String?>(candidate.infoHash),
-        title: candidate.title,
-        discoveredAt: _nowAt,
-        updatedAt: _nowAt,
-      ),
-    );
-    await database.upsertVideoDownloadJob(
-      VideoDownloadJobsCompanion.insert(
-        jobId: 'persisted-job',
-        resourceProvider: 'torznab:indexer-a',
-        selectedResourceId: candidate.remoteId,
-        torrentHash: Value<String?>(candidate.infoHash),
-        metadataProvider: const Value<String?>('anilist'),
-        externalId: const Value<String?>('media-movie'),
         mediaKind: 'movie',
-        discoveryCategory: const Value<String?>('movie'),
-        title: 'Example Movie',
-        backendKind: 'embedded',
-        backendProfileId: const Value<String?>('embedded'),
-        fingerprint: 'backend-fingerprint',
-        category: const Value<String?>('fushi-video'),
-        targetSourceId: Value<int?>(sourceId),
-        createdAt: _nowAt,
-        updatedAt: _nowAt,
-      ),
-    );
-    int enqueueCount = 0;
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: 'torznab',
-        candidates: <VideoResourceCandidate>[candidate],
-      ),
-      enqueue: (VideoDownloadEnqueueRequest _) async {
-        enqueueCount++;
-        return 'unexpected-job';
-      },
-    );
+        discoveryCategory: 'movie',
+        mode: 'oneShot',
+        filters: <String, Object?>{
+          'strict': true,
+          'quality': '1080p',
+          'source': 'WEB-DL',
+          'codec': 'HEVC',
+          'language': 'Dual Audio',
+        },
+      );
+      final VideoResourceCandidate candidate = _candidate(
+        providerId: 'torznab',
+        instanceId: 'indexer-a',
+        remoteId: 'movie-release',
+        mediaTitle: 'Example Movie 1080p WEB-DL x265 Dual-Audio',
+        episode: null,
+        group: null,
+        resolution: null,
+        category: 'movies',
+      );
+      await database.upsertVideoDownloadSubscriptionItem(
+        VideoDownloadSubscriptionItemsCompanion.insert(
+          subscriptionId: 'movie',
+          logicalItemKey: 'movie',
+          resourceProvider: 'torznab:indexer-a',
+          selectedResourceId: candidate.remoteId,
+          torrentHash: Value<String?>(candidate.infoHash),
+          title: candidate.title,
+          discoveredAt: _nowAt,
+          updatedAt: _nowAt,
+        ),
+      );
+      await database.upsertVideoDownloadJob(
+        VideoDownloadJobsCompanion.insert(
+          jobId: 'persisted-job',
+          resourceProvider: 'torznab:indexer-a',
+          selectedResourceId: candidate.remoteId,
+          torrentHash: Value<String?>(candidate.infoHash),
+          metadataProvider: const Value<String?>('anilist'),
+          externalId: const Value<String?>('media-movie'),
+          mediaKind: 'movie',
+          discoveryCategory: const Value<String?>('movie'),
+          title: 'Example Movie',
+          backendKind: 'embedded',
+          backendProfileId: const Value<String?>('embedded'),
+          fingerprint: 'backend-fingerprint',
+          category: const Value<String?>('fushi-video'),
+          targetSourceId: Value<int?>(sourceId),
+          createdAt: _nowAt,
+          updatedAt: _nowAt,
+        ),
+      );
+      int enqueueCount = 0;
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: 'torznab',
+          candidates: <VideoResourceCandidate>[candidate],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest _) async {
+          enqueueCount++;
+          return 'unexpected-job';
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(enqueueCount, 0);
-    final VideoDownloadSubscriptionItemRow item =
-        (await database.getVideoDownloadSubscriptionItems('movie')).single;
-    expect(item.jobId, 'persisted-job');
-    expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
-    final VideoDownloadSubscriptionRow subscription =
-        (await database.getVideoDownloadSubscription('movie'))!;
-    expect(subscription.enabled, isFalse);
-    expect(subscription.fulfilledAt, _nowAt);
-  });
+      expect(enqueueCount, 0);
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems('movie')).single;
+      expect(item.jobId, 'persisted-job');
+      expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+      final VideoDownloadSubscriptionRow subscription = (await database
+          .getVideoDownloadSubscription('movie'))!;
+      expect(subscription.enabled, isFalse);
+      expect(subscription.fulfilledAt, _nowAt);
+    },
+  );
 
-  test('Torznab selected codec and language never silently downgrade',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'strict-tv',
-      sourceId: sourceId,
-      resourceProvider: 'torznab:indexer-a',
-      mediaKind: 'tv',
-      discoveryCategory: 'tv',
-      season: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'quality': '1080p',
-        'source': 'WEB-DL',
-        'codec': 'HEVC',
-        'language': 'Dual Audio',
-      },
-    );
-    int enqueueCount = 0;
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: 'torznab',
-        candidates: <VideoResourceCandidate>[
-          _candidate(
-            providerId: 'torznab',
-            instanceId: 'indexer-a',
-            remoteId: 'downgraded',
-            mediaTitle: 'Example Show S01E02 1080p WEB-DL AVC Japanese',
-            episode: null,
-            group: null,
-            resolution: null,
-          ),
-        ],
-      ),
-      enqueue: (VideoDownloadEnqueueRequest _) async {
-        enqueueCount++;
-        return 'unexpected-job';
-      },
-    );
+  test(
+    'Torznab selected codec and language never silently downgrade',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'strict-tv',
+        sourceId: sourceId,
+        resourceProvider: 'torznab:indexer-a',
+        mediaKind: 'tv',
+        discoveryCategory: 'tv',
+        season: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'quality': '1080p',
+          'source': 'WEB-DL',
+          'codec': 'HEVC',
+          'language': 'Dual Audio',
+        },
+      );
+      int enqueueCount = 0;
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: 'torznab',
+          candidates: <VideoResourceCandidate>[
+            _candidate(
+              providerId: 'torznab',
+              instanceId: 'indexer-a',
+              remoteId: 'downgraded',
+              mediaTitle: 'Example Show S01E02 1080p WEB-DL AVC Japanese',
+              episode: null,
+              group: null,
+              resolution: null,
+            ),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest _) async {
+          enqueueCount++;
+          return 'unexpected-job';
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(enqueueCount, 0);
-    expect(
-      await database.getVideoDownloadSubscriptionItems('strict-tv'),
-      isEmpty,
-    );
-  });
+      expect(enqueueCount, 0);
+      expect(
+        await database.getVideoDownloadSubscriptionItems('strict-tv'),
+        isEmpty,
+      );
+    },
+  );
 
   // 「编辑订阅」写入的标题关键词（包含全部 / 一个都不含），与版本规则叠加过滤。
   test(
-      'title include / exclude keywords from subscription edit narrow releases',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'keywords',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      season: 1,
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'SubsPlease',
-        'resolution': '1080p',
-        'trustedOnly': true,
-        kVideoSubscriptionTitleIncludeKey: <String>['example show'],
-        kVideoSubscriptionTitleExcludeKey: <String>['HEVC'],
-      },
-    );
-    final List<String> enqueued = <String>[];
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: _nyaaProviderId,
-        candidates: <VideoResourceCandidate>[
-          _candidate(
-            remoteId: 'hevc',
-            episode: 1,
-            mediaTitle: '[SubsPlease] Example Show - 1 (HEVC) [1080p]',
-            seeders: 50,
-          ),
-          _candidate(remoteId: 'plain', episode: 1),
-          _candidate(
-            remoteId: 'other-show',
-            episode: 2,
-            mediaTitle: '[SubsPlease] Another Show - 2 [1080p]',
-          ),
-        ],
-      ),
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        enqueued.add(request.resource.remoteId);
-        return _persistFakeJob(database, request, 'job-${enqueued.length}');
-      },
-    );
+    'title include / exclude keywords from subscription edit narrow releases',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'keywords',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+          kVideoSubscriptionTitleIncludeKey: <String>['example show'],
+          kVideoSubscriptionTitleExcludeKey: <String>['HEVC'],
+        },
+      );
+      final List<String> enqueued = <String>[];
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: _nyaaProviderId,
+          candidates: <VideoResourceCandidate>[
+            _candidate(
+              remoteId: 'hevc',
+              episode: 1,
+              mediaTitle: '[SubsPlease] Example Show - 1 (HEVC) [1080p]',
+              seeders: 50,
+            ),
+            _candidate(remoteId: 'plain', episode: 1),
+            _candidate(
+              remoteId: 'other-show',
+              episode: 2,
+              mediaTitle: '[SubsPlease] Another Show - 2 [1080p]',
+            ),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueued.add(request.resource.remoteId);
+          return _persistFakeJob(database, request, 'job-${enqueued.length}');
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(enqueued, <String>['plain']);
-  });
+      expect(enqueued, <String>['plain']);
+    },
+  );
 
-  test('provider errors use exponential retry and redact credential URLs',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'retry',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'SubsPlease',
-        'resolution': '1080p',
-        'trustedOnly': true,
-      },
-    );
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: _nyaaProviderId,
-        result: ProviderBatchResult<VideoResourceCandidate>.failure(
-          const ExternalProviderFailure(
-            providerId: 'nyaa',
-            operation: 'search',
-            kind: ExternalProviderFailureKind.network,
-            message: 'request failed https://example.test/?apikey=top-secret',
-            retryable: true,
+  test(
+    'provider errors use exponential retry and redact credential URLs',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'retry',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+        },
+      );
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: _nyaaProviderId,
+          result: ProviderBatchResult<VideoResourceCandidate>.failure(
+            const ExternalProviderFailure(
+              providerId: 'nyaa',
+              operation: 'search',
+              kind: ExternalProviderFailureKind.network,
+              message: 'request failed https://example.test/?apikey=top-secret',
+              retryable: true,
+            ),
           ),
         ),
-      ),
-      enqueue: (VideoDownloadEnqueueRequest _) async => 'unused',
-    );
+        enqueue: (VideoDownloadEnqueueRequest _) async => 'unused',
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    final VideoDownloadSubscriptionRow first =
-        (await database.getVideoDownloadSubscription('retry'))!;
-    expect(first.retryCount, 1);
-    expect(
-        first.nextCheckAt, _nowAt + const Duration(minutes: 15).inMilliseconds);
-    expect(first.lastError, contains('<redacted>'));
-    expect(first.lastError, isNot(contains('top-secret')));
-    expect(first.claimedBy, isNull);
-  });
+      final VideoDownloadSubscriptionRow first = (await database
+          .getVideoDownloadSubscription('retry'))!;
+      expect(first.retryCount, 1);
+      expect(
+        first.nextCheckAt,
+        _nowAt + const Duration(minutes: 15).inMilliseconds,
+      );
+      expect(first.lastError, contains('<redacted>'));
+      expect(first.lastError, isNot(contains('top-secret')));
+      expect(first.claimedBy, isNull);
+    },
+  );
 
   // BUG-2619：用户从一条 BD 全集包建订阅。整包没有逐集身份，按追更建出来的规则
   // 结构上永不命中；一次性订阅的目标恰恰就是这一整包，必须能认领它。
-  test('oneShot subscription claims a batch release as one logical item',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'batch-oneshot',
-      sourceId: sourceId,
-      resourceProvider: 'nyaa',
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      mode: 'oneShot',
-      filters: <String, Object?>{
-        'strict': true,
-        'releaseGroup': 'VCB-Studio',
-        'resolution': '1080p',
-        'trustedOnly': false,
-        'trusted': true,
-        'nyaaCategory': '1_3',
-      },
-    );
-    final List<VideoDownloadEnqueueRequest> enqueued =
-        <VideoDownloadEnqueueRequest>[];
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: _FakeResourceProvider(
-        id: _nyaaProviderId,
-        candidates: <VideoResourceCandidate>[
-          _candidate(
-            remoteId: 'revue-starlight-bd',
-            mediaTitle: '[DMG&MakariHoshiyume&VCB-Studio] Shoujo Kageki Revue '
-                'Starlight 10-bit 1080p HEVC BDRip [Fin]',
-            episode: null,
-            group: 'VCB-Studio',
-            category: '1_3',
-          ),
-        ],
-      ),
-      enqueue: (VideoDownloadEnqueueRequest request) async {
-        enqueued.add(request);
-        return _persistFakeJob(database, request, 'batch-job');
-      },
-    );
+  test(
+    'oneShot subscription claims a batch release as one logical item',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'batch-oneshot',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        mode: 'oneShot',
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'VCB-Studio',
+          'resolution': '1080p',
+          'trustedOnly': false,
+          'trusted': true,
+          'nyaaCategory': '1_3',
+        },
+      );
+      final List<VideoDownloadEnqueueRequest> enqueued =
+          <VideoDownloadEnqueueRequest>[];
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: _FakeResourceProvider(
+          id: _nyaaProviderId,
+          candidates: <VideoResourceCandidate>[
+            _candidate(
+              remoteId: 'revue-starlight-bd',
+              mediaTitle:
+                  '[DMG&MakariHoshiyume&VCB-Studio] Shoujo Kageki Revue '
+                  'Starlight 10-bit 1080p HEVC BDRip [Fin]',
+              episode: null,
+              group: 'VCB-Studio',
+              category: '1_3',
+            ),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueued.add(request);
+          return _persistFakeJob(database, request, 'batch-job');
+        },
+      );
 
-    await service.checkNow();
+      await service.checkNow();
 
-    expect(
-      enqueued
-          .map((VideoDownloadEnqueueRequest value) => value.resource.remoteId),
-      <String>['revue-starlight-bd'],
-      reason: '一次性订阅必须把整包入队，否则这条订阅永远不可能命中',
-    );
-    final List<VideoDownloadSubscriptionItemRow> items =
-        await database.getVideoDownloadSubscriptionItems('batch-oneshot');
-    expect(items.single.logicalItemKey, 'batch');
-    expect(items.single.episode, isNull);
-    final VideoDownloadSubscriptionRow row =
-        (await database.getVideoDownloadSubscription('batch-oneshot'))!;
-    expect(row.fulfilledAt, _nowAt, reason: '整包下完即结束，不再周期性检查');
-    expect(row.enabled, isFalse);
-  });
+      expect(
+        enqueued.map(
+          (VideoDownloadEnqueueRequest value) => value.resource.remoteId,
+        ),
+        <String>['revue-starlight-bd'],
+        reason: '一次性订阅必须把整包入队，否则这条订阅永远不可能命中',
+      );
+      final List<VideoDownloadSubscriptionItemRow> items = await database
+          .getVideoDownloadSubscriptionItems('batch-oneshot');
+      expect(items.single.logicalItemKey, 'batch');
+      expect(items.single.episode, isNull);
+      final VideoDownloadSubscriptionRow row = (await database
+          .getVideoDownloadSubscription('batch-oneshot'))!;
+      expect(row.fulfilledAt, _nowAt, reason: '整包下完即结束，不再周期性检查');
+      expect(row.enabled, isFalse);
+    },
+  );
 
   // 反向护栏：追更订阅绝不能把整包当成「新的一集」下下来，否则每出一版合集就
   // 会把整季重下一遍。
@@ -1446,7 +1529,8 @@ void main() {
         candidates: <VideoResourceCandidate>[
           _candidate(
             remoteId: 'revue-starlight-bd',
-            mediaTitle: '[VCB-Studio] Example Show 10-bit 1080p HEVC BDRip '
+            mediaTitle:
+                '[VCB-Studio] Example Show 10-bit 1080p HEVC BDRip '
                 '[Fin]',
             episode: null,
             group: 'VCB-Studio',
@@ -1510,14 +1594,14 @@ void main() {
 
     service.start();
     for (int attempt = 0; attempt < 20; attempt++) {
-      final VideoDownloadSubscriptionRow row =
-          (await database.getVideoDownloadSubscription('startup'))!;
+      final VideoDownloadSubscriptionRow row = (await database
+          .getVideoDownloadSubscription('startup'))!;
       if (row.fulfilledAt != null) break;
       await pumpEventQueue();
     }
 
-    final VideoDownloadSubscriptionRow row =
-        (await database.getVideoDownloadSubscription('startup'))!;
+    final VideoDownloadSubscriptionRow row = (await database
+        .getVideoDownloadSubscription('startup'))!;
     expect(row.fulfilledAt, _nowAt);
     expect(row.enabled, isFalse);
   });
@@ -1569,8 +1653,8 @@ void main() {
 
     final Future<void> check = service.checkNow();
     await provider.searchEntered.future.timeout(const Duration(seconds: 2));
-    final VideoDownloadSubscriptionRow claimed =
-        (await database.getVideoDownloadSubscription('lease-heartbeat'))!;
+    final VideoDownloadSubscriptionRow claimed = (await database
+        .getVideoDownloadSubscription('lease-heartbeat'))!;
     expect(claimed.claimedBy, 'subscription-test-worker');
     expect(claimed.claimExpiresAt, _nowAt + leaseMs);
 
@@ -1592,80 +1676,82 @@ void main() {
     );
     expect(held.claimedBy, 'subscription-test-worker');
     expect(held.claimExpiresAt, greaterThan(_nowAt + leaseMs));
-    final VideoDownloadSubscriptionRow? stolen =
-        await database.claimNextVideoDownloadSubscription(
-      workerId: 'competing-subscription-worker',
-      nowAt: clockAt,
-      leaseDurationMs: 1000,
-    );
+    final VideoDownloadSubscriptionRow? stolen = await database
+        .claimNextVideoDownloadSubscription(
+          workerId: 'competing-subscription-worker',
+          nowAt: clockAt,
+          leaseDurationMs: 1000,
+        );
     expect(stolen, isNull);
 
     provider.releaseSearch();
     await check;
-    final VideoDownloadSubscriptionRow completed =
-        (await database.getVideoDownloadSubscription('lease-heartbeat'))!;
+    final VideoDownloadSubscriptionRow completed = (await database
+        .getVideoDownloadSubscription('lease-heartbeat'))!;
     expect(completed.claimedBy, isNull);
     expect(completed.enabled, isFalse);
     expect(completed.fulfilledAt, isNotNull);
   });
 
-  test('a failed completion CAS does not overwrite the new lease owner',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    await _insertSubscription(
-      database,
-      id: 'lost-subscription-lease',
-      sourceId: sourceId,
-      resourceProvider: 'torznab:indexer-a',
-      mediaKind: 'movie',
-      discoveryCategory: 'movie',
-      mode: 'oneShot',
-      filters: <String, Object?>{'strict': true, 'quality': '1080p'},
-    );
-    final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: 'torznab',
-      pauseSearch: true,
-      candidates: <VideoResourceCandidate>[
-        _candidate(
-          providerId: 'torznab',
-          instanceId: 'indexer-a',
-          remoteId: 'lost-lease-release',
-          mediaTitle: 'Example Movie 1080p',
-          episode: null,
-          group: null,
-          resolution: null,
+  test(
+    'a failed completion CAS does not overwrite the new lease owner',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'lost-subscription-lease',
+        sourceId: sourceId,
+        resourceProvider: 'torznab:indexer-a',
+        mediaKind: 'movie',
+        discoveryCategory: 'movie',
+        mode: 'oneShot',
+        filters: <String, Object?>{'strict': true, 'quality': '1080p'},
+      );
+      final _FakeResourceProvider provider = _FakeResourceProvider(
+        id: 'torznab',
+        pauseSearch: true,
+        candidates: <VideoResourceCandidate>[
+          _candidate(
+            providerId: 'torznab',
+            instanceId: 'indexer-a',
+            remoteId: 'lost-lease-release',
+            mediaTitle: 'Example Movie 1080p',
+            episode: null,
+            group: null,
+            resolution: null,
+          ),
+        ],
+      );
+      addTearDown(provider.releaseSearch);
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        provider: provider,
+        enqueue: (VideoDownloadEnqueueRequest request) =>
+            _persistFakeJob(database, request, 'lost-lease-job'),
+      );
+
+      final Future<void> check = service.checkNow();
+      await provider.searchEntered.future.timeout(const Duration(seconds: 2));
+      await database.updateVideoDownloadSubscription(
+        'lost-subscription-lease',
+        const VideoDownloadSubscriptionsCompanion(
+          claimedBy: Value<String?>('competing-subscription-worker'),
+          claimExpiresAt: Value<int?>(_nowAt + 60000),
+          updatedAt: Value<int>(_nowAt),
         ),
-      ],
-    );
-    addTearDown(provider.releaseSearch);
-    final VideoDownloadSubscriptionService service = _service(
-      database: database,
-      provider: provider,
-      enqueue: (VideoDownloadEnqueueRequest request) =>
-          _persistFakeJob(database, request, 'lost-lease-job'),
-    );
+      );
+      provider.releaseSearch();
+      await check;
 
-    final Future<void> check = service.checkNow();
-    await provider.searchEntered.future.timeout(const Duration(seconds: 2));
-    await database.updateVideoDownloadSubscription(
-      'lost-subscription-lease',
-      const VideoDownloadSubscriptionsCompanion(
-        claimedBy: Value<String?>('competing-subscription-worker'),
-        claimExpiresAt: Value<int?>(_nowAt + 60000),
-        updatedAt: Value<int>(_nowAt),
-      ),
-    );
-    provider.releaseSearch();
-    await check;
-
-    final VideoDownloadSubscriptionRow row = (await database
-        .getVideoDownloadSubscription('lost-subscription-lease'))!;
-    expect(row.claimedBy, 'competing-subscription-worker');
-    expect(row.enabled, isTrue);
-    expect(row.retryCount, 0);
-    expect(row.lastError, isNull);
-  });
+      final VideoDownloadSubscriptionRow row = (await database
+          .getVideoDownloadSubscription('lost-subscription-lease'))!;
+      expect(row.claimedBy, 'competing-subscription-worker');
+      expect(row.enabled, isTrue);
+      expect(row.retryCount, 0);
+      expect(row.lastError, isNull);
+    },
+  );
 
   test('BT 站来源找不到：订阅暂停在固定间隔，不指数退避、不发请求', () async {
     final FushiDatabase database = await _openDatabase();
@@ -1684,8 +1770,12 @@ void main() {
     final _FakeResourceProvider other = _FakeResourceProvider(
       id: 'apibay:site-apibay',
       candidates: <VideoResourceCandidate>[
-        _candidate(providerId: 'apibay', instanceId: 'site-apibay',
-            remoteId: 'x', episode: 1),
+        _candidate(
+          providerId: 'apibay',
+          instanceId: 'site-apibay',
+          remoteId: 'x',
+          episode: 1,
+        ),
       ],
     );
     int enqueued = 0;
@@ -1702,13 +1792,15 @@ void main() {
 
     for (int round = 0; round < 3; round++) {
       await service.checkNow();
-      final VideoDownloadSubscriptionRow row =
-          (await database.getVideoDownloadSubscription('no-site'))!;
+      final VideoDownloadSubscriptionRow row = (await database
+          .getVideoDownloadSubscription('no-site'))!;
       expect(row.lastError, kVideoSubscriptionBtSiteMissingError);
       expect(isVideoSubscriptionBtSiteMissingError(row.lastError), isTrue);
-      expect(row.nextCheckAt,
-          atMs + const Duration(minutes: 15).inMilliseconds,
-          reason: '第 $round 轮：等用户加站点不是故障，间隔固定为基准间隔');
+      expect(
+        row.nextCheckAt,
+        atMs + const Duration(minutes: 15).inMilliseconds,
+        reason: '第 $round 轮：等用户加站点不是故障，间隔固定为基准间隔',
+      );
       atMs = row.nextCheckAt! + 1;
     }
     expect(other.requestedPages, isEmpty, reason: '别的格式的站点不该被搜');
@@ -1727,23 +1819,22 @@ VideoResourceCandidate _candidate({
   bool trusted = true,
   int seeders = 10,
   String category = '1_2',
-}) =>
-    _FakeResourceCandidate(
-      providerId: providerId,
-      instanceId: instanceId,
-      remoteId: remoteId,
-      title: mediaTitle ?? '[SubsPlease] Example Show - $episode [1080p]',
-      infoHash: remoteId.hashCode
-          .abs()
-          .toRadixString(16)
-          .padLeft(40, '0')
-          .substring(0, 40),
-      releaseGroup: group,
-      resolution: resolution,
-      trusted: trusted,
-      seeders: seeders,
-      category: category,
-    );
+}) => _FakeResourceCandidate(
+  providerId: providerId,
+  instanceId: instanceId,
+  remoteId: remoteId,
+  title: mediaTitle ?? '[SubsPlease] Example Show - $episode [1080p]',
+  infoHash: remoteId.hashCode
+      .abs()
+      .toRadixString(16)
+      .padLeft(40, '0')
+      .substring(0, 40),
+  releaseGroup: group,
+  resolution: resolution,
+  trusted: trusted,
+  seeders: seeders,
+  category: category,
+);
 
 class _FakeResourceCandidate extends VideoResourceCandidate {
   _FakeResourceCandidate({
@@ -1758,18 +1849,18 @@ class _FakeResourceCandidate extends VideoResourceCandidate {
     required int seeders,
     required String category,
   }) : super(
-          providerId: providerId,
-          providerInstanceId: instanceId,
-          remoteId: remoteId,
-          title: title,
-          providerPriority: 10,
-          infoHash: infoHash,
-          releaseGroup: releaseGroup,
-          resolution: resolution,
-          trusted: trusted,
-          seeders: seeders,
-          category: category,
-        );
+         providerId: providerId,
+         providerInstanceId: instanceId,
+         remoteId: remoteId,
+         title: title,
+         providerPriority: 10,
+         infoHash: infoHash,
+         releaseGroup: releaseGroup,
+         resolution: resolution,
+         trusted: trusted,
+         seeders: seeders,
+         category: category,
+       );
 }
 
 class _FakeResourceProvider implements VideoResourceProvider {
@@ -1780,10 +1871,11 @@ class _FakeResourceProvider implements VideoResourceProvider {
     Map<int, ProviderBatchResult<VideoResourceCandidate>> resultsByPage =
         const <int, ProviderBatchResult<VideoResourceCandidate>>{},
     bool pauseSearch = false,
-  })  : _result = result ??
-            ProviderBatchResult<VideoResourceCandidate>.success(candidates),
-        _resultsByPage = resultsByPage,
-        _searchGate = pauseSearch ? Completer<void>() : null;
+  }) : _result =
+           result ??
+           ProviderBatchResult<VideoResourceCandidate>.success(candidates),
+       _resultsByPage = resultsByPage,
+       _searchGate = pauseSearch ? Completer<void>() : null;
 
   @override
   final String id;

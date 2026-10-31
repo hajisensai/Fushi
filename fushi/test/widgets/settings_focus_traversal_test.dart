@@ -14,9 +14,9 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 //      (ConstrainedBox -> SingleChildScrollView -> Column).
 
 Widget _app(Widget child) => MaterialApp(
-      theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
-      home: Scaffold(body: child),
-    );
+  theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
+  home: Scaffold(body: child),
+);
 
 Rect _globalRect(Finder finder, WidgetTester tester) {
   final RenderBox box = tester.renderObject<RenderBox>(finder);
@@ -25,85 +25,95 @@ Rect _globalRect(Finder finder, WidgetTester tester) {
 
 void main() {
   testWidgets(
-      'focused number stepper increments on ArrowRight (ArrowUp does NOT adjust)',
-      (
-    tester,
-  ) async {
-    double value = 10;
-    await tester.pumpWidget(
-      _app(
-        StatefulBuilder(
-          builder: (context, setState) => AdaptiveSettingsStepperRow(
-            title: 'Font size',
-            value: value,
-            step: 1,
-            min: 0,
-            max: 64,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => setState(() => value = v),
+    'focused number stepper increments on ArrowRight (ArrowUp does NOT adjust)',
+    (tester) async {
+      double value = 10;
+      await tester.pumpWidget(
+        _app(
+          StatefulBuilder(
+            builder: (context, setState) => AdaptiveSettingsStepperRow(
+              title: 'Font size',
+              value: value,
+              step: 1,
+              min: 0,
+              max: 64,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => setState(() => value = v),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    // Move focus onto the stepper (first Tab lands on its control).
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.pump();
+      // Move focus onto the stepper (first Tab lands on its control).
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
 
-    final double before = value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pump();
-    expect(value, greaterThan(before),
-        reason: 'ArrowRight should increase the stepper value');
+      final double before = value;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(
+        value,
+        greaterThan(before),
+        reason: 'ArrowRight should increase the stepper value',
+      );
 
-    // ArrowUp is reserved for row-to-row focus navigation: it must NOT nudge
-    // the value (re-binding it here is the bug this guards against).
-    final double afterRight = value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pump();
-    expect(value, afterRight,
-        reason: 'ArrowUp must not change the stepper value');
-  });
+      // ArrowUp is reserved for row-to-row focus navigation: it must NOT nudge
+      // the value (re-binding it here is the bug this guards against).
+      final double afterRight = value;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(
+        value,
+        afterRight,
+        reason: 'ArrowUp must not change the stepper value',
+      );
+    },
+  );
 
   testWidgets(
-      'focused number stepper decrements on ArrowLeft (ArrowDown does NOT adjust)',
-      (
-    tester,
-  ) async {
-    double value = 10;
-    await tester.pumpWidget(
-      _app(
-        StatefulBuilder(
-          builder: (context, setState) => AdaptiveSettingsStepperRow(
-            title: 'Font size',
-            value: value,
-            step: 1,
-            min: 0,
-            max: 64,
-            format: (v) => '${v.round()}',
-            onChanged: (v) => setState(() => value = v),
+    'focused number stepper decrements on ArrowLeft (ArrowDown does NOT adjust)',
+    (tester) async {
+      double value = 10;
+      await tester.pumpWidget(
+        _app(
+          StatefulBuilder(
+            builder: (context, setState) => AdaptiveSettingsStepperRow(
+              title: 'Font size',
+              value: value,
+              step: 1,
+              min: 0,
+              max: 64,
+              format: (v) => '${v.round()}',
+              onChanged: (v) => setState(() => value = v),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
 
-    final double before = value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-    await tester.pump();
-    expect(value, lessThan(before),
-        reason: 'ArrowLeft should decrease the stepper value');
+      final double before = value;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(
+        value,
+        lessThan(before),
+        reason: 'ArrowLeft should decrease the stepper value',
+      );
 
-    // ArrowDown is reserved for row-to-row focus navigation: it must NOT nudge
-    // the value.
-    final double afterLeft = value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(value, afterLeft,
-        reason: 'ArrowDown must not change the stepper value');
-  });
+      // ArrowDown is reserved for row-to-row focus navigation: it must NOT nudge
+      // the value.
+      final double afterLeft = value;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(
+        value,
+        afterLeft,
+        reason: 'ArrowDown must not change the stepper value',
+      );
+    },
+  );
 
   testWidgets('Tab traversal scrolls a below-the-fold control into view', (
     tester,
@@ -133,8 +143,10 @@ void main() {
       ),
     );
 
-    final Rect viewport =
-        _globalRect(find.byType(SingleChildScrollView), tester);
+    final Rect viewport = _globalRect(
+      find.byType(SingleChildScrollView),
+      tester,
+    );
 
     // Tab several times so focus must move past the visible fold.
     for (int i = 0; i < 10; i++) {
@@ -159,8 +171,7 @@ void main() {
     );
   });
 
-  testWidgets(
-      'Tab into a below-fold stepper scrolls it into view (dialog '
+  testWidgets('Tab into a below-fold stepper scrolls it into view (dialog '
       'nesting: ModalSheetFrame scrollable + AnimatedSize + Column)', (
     tester,
   ) async {
@@ -201,8 +212,10 @@ void main() {
       ),
     );
 
-    final Rect viewport =
-        _globalRect(find.byType(SingleChildScrollView), tester);
+    final Rect viewport = _globalRect(
+      find.byType(SingleChildScrollView),
+      tester,
+    );
 
     for (int i = 0; i < 14; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -276,8 +289,11 @@ void main() {
     final double mid = value;
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
-    expect(value, greaterThan(mid),
-        reason: 'the single focus stop between the buttons is the stepper');
+    expect(
+      value,
+      greaterThan(mid),
+      reason: 'the single focus stop between the buttons is the stepper',
+    );
 
     // One more Tab leaves the stepper entirely (single stop, not two).
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -323,16 +339,19 @@ void main() {
     );
 
     final SemanticsNode node = tester.getSemantics(slider);
-    tester.binding.pipelineOwner.semanticsOwner!
-        .performAction(node.id, SemanticsAction.increase);
+    tester.binding.pipelineOwner.semanticsOwner!.performAction(
+      node.id,
+      SemanticsAction.increase,
+    );
     await tester.pump();
     expect(value, 11);
 
     handle.dispose();
   });
 
-  testWidgets('Material settings rows register with Fushi focus root',
-      (WidgetTester tester) async {
+  testWidgets('Material settings rows register with Fushi focus root', (
+    WidgetTester tester,
+  ) async {
     int taps = 0;
     await tester.pumpWidget(
       _app(
@@ -355,8 +374,9 @@ void main() {
     await tester.pump();
 
     final BuildContext context = tester.element(find.text('Outer'));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
@@ -369,8 +389,7 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets(
-      'FushiFocusRing scrolls a programmatically-focused off-screen '
+  testWidgets('FushiFocusRing scrolls a programmatically-focused off-screen '
       'control into view (把视角转过去)', (tester) async {
     // Programmatic focus (node.requestFocus) does NOT go through the traversal
     // policy, so Flutter does not ensureVisible — only the focus ring does.
@@ -379,8 +398,10 @@ void main() {
     fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
     addTearDown(() => fm.highlightStrategy = previous);
 
-    final List<FocusNode> nodes =
-        List<FocusNode>.generate(20, (_) => FocusNode());
+    final List<FocusNode> nodes = List<FocusNode>.generate(
+      20,
+      (_) => FocusNode(),
+    );
     addTearDown(() {
       for (final FocusNode n in nodes) {
         n.dispose();
@@ -394,8 +415,10 @@ void main() {
           child: Scaffold(
             body: Center(
               child: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxHeight: 200, maxWidth: 400),
+                constraints: const BoxConstraints(
+                  maxHeight: 200,
+                  maxWidth: 400,
+                ),
                 child: SingleChildScrollView(
                   child: Column(
                     children: <Widget>[
@@ -415,8 +438,10 @@ void main() {
     );
     await tester.pump();
 
-    final Rect viewport =
-        _globalRect(find.byType(SingleChildScrollView), tester);
+    final Rect viewport = _globalRect(
+      find.byType(SingleChildScrollView),
+      tester,
+    );
 
     // Focus the last control directly — far below the fold.
     nodes.last.requestFocus();
@@ -430,7 +455,8 @@ void main() {
       viewport.top <= focusRect.top + 1 &&
           focusRect.bottom <= viewport.bottom + 1,
       isTrue,
-      reason: 'Off-screen focused control $focusRect should be scrolled into '
+      reason:
+          'Off-screen focused control $focusRect should be scrolled into '
           'view $viewport by FushiFocusRing',
     );
   });

@@ -58,8 +58,10 @@ void main() {
     });
 
     test('sha256OfFile 与 verifyArchive：一致为空，篡改/截断报差异', () async {
-      final File f =
-          writeBytes('a.zip', List<int>.generate(70000, (i) => i % 251));
+      final File f = writeBytes(
+        'a.zip',
+        List<int>.generate(70000, (i) => i % 251),
+      );
       final String digest = await MigrationManifest.sha256OfFile(f);
       final MigrationManifest m = MigrationManifest(
         version: 1,
@@ -167,11 +169,16 @@ void main() {
       for (final MigrationBatch b in MigrationBatch.values) {
         final Set<BackupCategory> cats = categoriesForBatch(b);
         expect(cats.containsAll(core), isTrue, reason: '$b 应带核心六类');
-        expect(cats.contains(BackupCategory.videos), isFalse,
-            reason: 'videos 永不打包');
+        expect(
+          cats.contains(BackupCategory.videos),
+          isFalse,
+          reason: 'videos 永不打包',
+        );
       }
-      expect(categoriesForBatch(MigrationBatch.books),
-          contains(BackupCategory.books));
+      expect(
+        categoriesForBatch(MigrationBatch.books),
+        contains(BackupCategory.books),
+      );
       expect(categoriesForBatch(MigrationBatch.core), core);
     });
 
@@ -193,8 +200,10 @@ void main() {
           MigrationBatch.fonts,
         ],
       );
-      expect(exporter.planBatches(includeLocalAudio: true).batches,
-          contains(MigrationBatch.localAudio));
+      expect(
+        exporter.planBatches(includeLocalAudio: true).batches,
+        contains(MigrationBatch.localAudio),
+      );
     });
 
     test('MigrationExportState 断点状态读写往返 + 损坏容错', () {
@@ -203,8 +212,9 @@ void main() {
       s.completed.addAll(<String>['core', 'books']);
       s.write(tmp);
       expect(MigrationExportState.read(tmp).completed, {'core', 'books'});
-      File(p.join(tmp.path, MigrationExportState.fileName))
-          .writeAsStringSync('not json', flush: true);
+      File(
+        p.join(tmp.path, MigrationExportState.fileName),
+      ).writeAsStringSync('not json', flush: true);
       expect(MigrationExportState.read(tmp).completed, isEmpty);
     });
   });

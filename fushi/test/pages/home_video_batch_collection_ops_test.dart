@@ -34,8 +34,7 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_batch_ops_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync('fushi_batch_ops_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -80,12 +79,14 @@ void main() {
   });
 
   Future<void> seedVideo(String uid, String title) async {
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value(uid),
-      title: Value(title),
-      videoPath: Value('/abs/$uid.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value(uid),
+        title: Value(title),
+        videoPath: Value('/abs/$uid.mp4'),
+        importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
+      ),
+    );
     // 「系列」墙只收有 AniDB 主身份的条目；本文件测的是批量选择/合并/解散，散卡
     // 不种身份的话根本不渲染，勾都勾不到。入了已刮削合集的成员照常按合集归属折叠
     // （_effectiveCollectionIdForBook 优先取合集），不会因此变成两张卡。
@@ -159,11 +160,15 @@ void main() {
 
     // 点合集卡 → 整合集入选中集，底栏计数 = 1。（TODO-2486：hero 轮播也显示
     // 合集名，裸文本 finder 歧义，按墙卡 key 点。）
-    await tester
-        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+    );
     await tester.pumpAndSettle();
-    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget,
-        reason: '整卡勾选把合集计入选中集');
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsOneWidget,
+      reason: '整卡勾选把合集计入选中集',
+    );
   });
 
   testWidgets('块3 档1：仅散卡 → 命名弹窗新建合集', (WidgetTester tester) async {
@@ -173,28 +178,34 @@ void main() {
     await pumpPage(tester);
     await enterSelectionMode(tester);
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_video/looseA')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_video/looseA')),
+    );
     await tester.pump();
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_video/looseB')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_video/looseB')),
+    );
     await tester.pump();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_batch_combine')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_combine')),
+    );
     await tester.pumpAndSettle();
     // 档1 弹命名框，确认。
     expect(find.text(t.dialog_ok), findsOneWidget, reason: '仅散卡应弹命名框');
     await tester.tap(find.text(t.dialog_ok));
     await tester.pumpAndSettle();
 
-    final List<MediaCollectionRow> collections =
-        await db.getAllMediaCollections();
+    final List<MediaCollectionRow> collections = await db
+        .getAllMediaCollections();
     expect(collections.length, 1, reason: '新建一个合集');
-    final List<MediaCollectionItemRow> members =
-        await db.getCollectionItems(collections.single.id);
-    expect(members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
-        <String>{'video/looseA', 'video/looseB'});
+    final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+      collections.single.id,
+    );
+    expect(
+      members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
+      <String>{'video/looseA', 'video/looseB'},
+    );
   });
 
   testWidgets('块3 档2：1 合集 + 散卡 → 并入该合集（不弹命名）', (WidgetTester tester) async {
@@ -209,24 +220,30 @@ void main() {
     await enterSelectionMode(tester);
 
     // TODO-2486：hero 也显示合集名，按墙卡 key 选合集。
-    await tester
-        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+    );
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_video/looseL')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_video/looseL')),
+    );
     await tester.pump();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_batch_combine')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_combine')),
+    );
     await tester.pumpAndSettle();
     // 档2 不弹命名框。
     expect(find.text(t.dialog_ok), findsNothing, reason: '并入不应弹命名框');
 
-    final List<MediaCollectionItemRow> members =
-        await db.getCollectionItems(cid);
-    expect(members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
-        <String>{'video/ep1', 'video/ep2', 'video/looseL'},
-        reason: '散卡并入现有合集');
+    final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+      cid,
+    );
+    expect(
+      members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
+      <String>{'video/ep1', 'video/ep2', 'video/looseL'},
+      reason: '散卡并入现有合集',
+    );
     expect((await db.getAllMediaCollections()).length, 1, reason: '不新建合集');
   });
 
@@ -248,15 +265,18 @@ void main() {
     await enterSelectionMode(tester);
 
     // TODO-2486：hero 也显示合集名，按墙卡 key 选合集。
-    await tester
-        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$small')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$small')),
+    );
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$big')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$big')),
+    );
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_batch_combine')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_combine')),
+    );
     await tester.pumpAndSettle();
     // 合并弹命名框，默认名 = 成员最多合集名（大集，3 > 2）。
     // 库页自 P5-A 起有常驻搜索框（key=video_search_field），全页 EditableText
@@ -268,19 +288,23 @@ void main() {
     await tester.tap(find.text(t.dialog_ok));
     await tester.pumpAndSettle();
 
-    final List<MediaCollectionRow> collections =
-        await db.getAllMediaCollections();
+    final List<MediaCollectionRow> collections = await db
+        .getAllMediaCollections();
     expect(collections.length, 1, reason: '合并成一个合集（其余解散）');
-    final List<MediaCollectionItemRow> members =
-        await db.getCollectionItems(big);
-    expect(members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
-        <String>{'video/a1', 'video/a2', 'video/b1', 'video/b2', 'video/b3'},
-        reason: '目标合集吸收其余合集全部成员');
+    final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+      big,
+    );
+    expect(
+      members.map((MediaCollectionItemRow m) => m.entryKey).toSet(),
+      <String>{'video/a1', 'video/a2', 'video/b1', 'video/b2', 'video/b3'},
+      reason: '目标合集吸收其余合集全部成员',
+    );
     expect(await db.getMediaCollectionById(small), isNull, reason: '其余合集被解散');
   });
 
-  testWidgets('块4：选中合集 → 解散（deleteMediaCollection 不删媒体本体）',
-      (WidgetTester tester) async {
+  testWidgets('块4：选中合集 → 解散（deleteMediaCollection 不删媒体本体）', (
+    WidgetTester tester,
+  ) async {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     final int cid = await createSeriesCollection(db, '待解散');
@@ -289,12 +313,14 @@ void main() {
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
-    await tester
-        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+    );
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_batch_delete')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_delete')),
+    );
     await tester.pumpAndSettle();
     // 纯合集 → 解散确认文案。
     expect(find.text(t.batch_dissolve_confirm(m: 1)), findsOneWidget);
@@ -318,30 +344,39 @@ void main() {
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
-    await tester
-        .tap(find.byKey(ValueKey<String>('home_video_collection_card_$cid')));
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+    );
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_video/looseL')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_video/looseL')),
+    );
     await tester.pump();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_batch_delete')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_delete')),
+    );
     await tester.pumpAndSettle();
-    expect(find.text(t.batch_delete_mixed_confirm(n: 1, m: 1)), findsOneWidget,
-        reason: '混选确认文案含媒体数 + 合集数');
+    expect(
+      find.text(t.batch_delete_mixed_confirm(n: 1, m: 1)),
+      findsOneWidget,
+      reason: '混选确认文案含媒体数 + 合集数',
+    );
   });
 
-  testWidgets('TODO-2486 多选纪律：横滚行卡不开播不勾选、三手势全部让位批量操作',
-      (WidgetTester tester) async {
+  testWidgets('TODO-2486 多选纪律：横滚行卡不开播不勾选、三手势全部让位批量操作', (
+    WidgetTester tester,
+  ) async {
     await seedVideo('video/ep1', '第1集');
     // 入库时刻 = 现在 → 「最近添加」横滚行出现（14 天窗口）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/fresh'),
-      title: const Value('新片'),
-      videoPath: const Value('/abs/fresh.mp4'),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/fresh'),
+        title: const Value('新片'),
+        videoPath: const Value('/abs/fresh.mp4'),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
     final int cid = await createSeriesCollection(db, '合集甲');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
 
@@ -351,8 +386,9 @@ void main() {
     // 保留——此处镜像该真实路径：home 验前置 → 切 allVideos 进多选 → 切回
     // home 断言 hero/行卡的多选态纪律。
     await pumpPage(tester, section: VideoLibrarySection.home);
-    final Finder recentCard =
-        find.byKey(const ValueKey<String>('home_video_recent_video/fresh'));
+    final Finder recentCard = find.byKey(
+      const ValueKey<String>('home_video_recent_video/fresh'),
+    );
     expect(recentCard, findsOneWidget, reason: '前置：最近添加行须出现');
 
     await tester.pumpWidget(buildApp(section: VideoLibrarySection.series));
@@ -364,10 +400,16 @@ void main() {
     // 批量操作打断）也不得改变选中计数。
     await tester.tap(recentCard, warnIfMissed: false);
     await tester.pumpAndSettle();
-    expect(find.byType(HomeVideoPage), findsOneWidget,
-        reason: '多选态点行卡不得推走库页（不开播）');
-    expect(find.text(t.batch_selected_count(n: 0)), findsOneWidget,
-        reason: '行卡不参与勾选，计数保持 0');
+    expect(
+      find.byType(HomeVideoPage),
+      findsOneWidget,
+      reason: '多选态点行卡不得推走库页（不开播）',
+    );
+    expect(
+      find.text(t.batch_selected_count(n: 0)),
+      findsOneWidget,
+      reason: '行卡不参与勾选，计数保持 0',
+    );
     // #792 dashboard 化后 home 无 hero 轮播（_buildHeroCarousel 已弃用），多选
     // 纪律由共享行卡 builder 承担：多选态行卡三个手势全部置 null（点击/长按/
     // 右键都让位给批量操作）。

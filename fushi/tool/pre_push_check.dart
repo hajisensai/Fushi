@@ -103,8 +103,11 @@ class _Leases {
   /// steps are not queued for another --gate-timeout-min each (that is hours).
   bool _refused = false;
 
-  Future<(bool, String)> run(HeavyKind kind, String what,
-      Future<(bool, String)> Function() body) async {
+  Future<(bool, String)> run(
+    HeavyKind kind,
+    String what,
+    Future<(bool, String)> Function() body,
+  ) async {
     if (!enabled) return body();
     if (_refused) {
       return (false, 'not run: an earlier step was not admitted');
@@ -124,7 +127,7 @@ class _Leases {
       return (
         false,
         'not run: the machine had no room within ${waitMax?.inMinutes} min '
-            '(see gate notes)'
+            '(see gate notes)',
       );
     }
     if (lease.skipReason != null && notes.isEmpty) {
@@ -140,8 +143,10 @@ class _Leases {
       final int? peak = job?.peakMb();
       final int? cap = job?.capMb;
       if (peak != null && cap != null && heavyCapHit(peak, cap)) {
-        notes.add('MEMORY CAP HIT during $what ($peak of $cap MB): its '
-            'failures can come from the ceiling, not from the code');
+        notes.add(
+          'MEMORY CAP HIT during $what ($peak of $cap MB): its '
+          'failures can come from the ceiling, not from the code',
+        );
       }
     }
   }
@@ -160,8 +165,9 @@ List<(int, int)> _processTable() {
         : Process.runSync('ps', <String>['-Ao', 'pid=,ppid=']);
     if (r.exitCode != 0) return const <(int, int)>[];
     return <(int, int)>[
-      for (final String line
-          in const LineSplitter().convert(r.stdout as String))
+      for (final String line in const LineSplitter().convert(
+        r.stdout as String,
+      ))
         if (RegExp(r'^\s*(\d+)\s+(\d+)\s*$').firstMatch(line)
             case final RegExpMatch m)
           (int.parse(m.group(1)!), int.parse(m.group(2)!)),
@@ -218,8 +224,10 @@ class _Budget {
   void _check() {
     if (exceeded || _active.elapsed <= limit) return;
     exceeded = true;
-    stdout.writeln('   budget: subprocesses have run '
-        '${_active.elapsed.inMinutes} min > ${limit.inMinutes}; killing them');
+    stdout.writeln(
+      '   budget: subprocesses have run '
+      '${_active.elapsed.inMinutes} min > ${limit.inMinutes}; killing them',
+    );
     for (final Process p in _running.toList()) {
       killed += _killTree(p.pid);
     }
@@ -270,14 +278,16 @@ Future<void> main(List<String> args) async {
   }
 
   // ---- changed files ------------------------------------------------------
-  final List<String> changed = (explicitFiles ?? _changedFromGit(root, base))
-      .map((String raw) => normalizeChangedPath(raw, fs))
-      .toSet()
-      .toList()
-    ..sort();
+  final List<String> changed =
+      (explicitFiles ?? _changedFromGit(root, base))
+          .map((String raw) => normalizeChangedPath(raw, fs))
+          .toSet()
+          .toList()
+        ..sort();
   if (changed.isEmpty) {
     stdout.writeln(
-        'pre-push: no changed files against the merge base; nothing to check.');
+      'pre-push: no changed files against the merge base; nothing to check.',
+    );
     return;
   }
 
@@ -286,15 +296,17 @@ Future<void> main(List<String> args) async {
     for (final String t in listAppTestFiles(fs))
       t: File('$root/$t').readAsStringSync(),
   };
-  final String fastWorkflow =
-      File('$root/docs/agent/fast-workflow.md').readAsStringSync();
-  final List<String> guards = parseEnumerationGuards(fastWorkflow)
-      .map((String t) => 'fushi/$t')
-      .where(testSources.containsKey)
-      .toList();
+  final String fastWorkflow = File(
+    '$root/docs/agent/fast-workflow.md',
+  ).readAsStringSync();
+  final List<String> guards = parseEnumerationGuards(
+    fastWorkflow,
+  ).map((String t) => 'fushi/$t').where(testSources.containsKey).toList();
   if (guards.length < 40) {
-    _fail('enumeration guard list in docs/agent/fast-workflow.md parsed to '
-        '${guards.length} entries (expected ~50): the table format changed?');
+    _fail(
+      'enumeration guard list in docs/agent/fast-workflow.md parsed to '
+      '${guards.length} entries (expected ~50): the table format changed?',
+    );
   }
   // Budget mode (default) keeps the local run to a few minutes; --wide uses
   // tests_for_changes' full rule (siblings + any-size directories, all import
@@ -307,20 +319,24 @@ Future<void> main(List<String> args) async {
   final int hubLimit = _intArg(args, '--hub-limit=', 40);
   final Map<String, int> dirFiles = <String, int>{};
   int dirFileCount(String rel) => dirFiles.putIfAbsent(
-      rel,
-      () => Directory('$root/$rel')
-          .listSync(recursive: true, followLinks: false)
-          .whereType<File>()
-          .length);
+    rel,
+    () => Directory(
+      '$root/$rel',
+    ).listSync(recursive: true, followLinks: false).whereType<File>().length,
+  );
   bool triggers(String c, String ref) => wide
       ? changeTriggersReference(c, ref, fs)
-      : budgetTrigger(c, ref,
+      : budgetTrigger(
+          c,
+          ref,
           isDirectory: fs.isDirectory,
           dirFileCount: dirFileCount,
-          maxDirFiles: maxDirFiles);
+          maxDirFiles: maxDirFiles,
+        );
   final Map<String, Set<String>> byPath = <String, Set<String>>{};
-  for (final MapEntry<String, TestTriggerFace> e
-      in buildReferenceIndex(fs).entries) {
+  for (final MapEntry<String, TestTriggerFace> e in buildReferenceIndex(
+    fs,
+  ).entries) {
     for (final String c in changed) {
       for (final String ref in e.value.triggeringPaths) {
         if (triggers(c, ref)) {
@@ -348,8 +364,8 @@ Future<void> main(List<String> args) async {
   final ({Set<String> kept, Set<String> hubs}) keys = quick
       ? (kept: <String>{}, hubs: <String>{})
       : wide
-          ? (kept: importKeys, hubs: <String>{})
-          : splitHubImportKeys(importKeys, testSources, hubLimit: hubLimit);
+      ? (kept: importKeys, hubs: <String>{})
+      : splitHubImportKeys(importKeys, testSources, hubLimit: hubLimit);
   final Set<String> byImport = directImpactTests(
     changed: changed,
     testSources: testSources,
@@ -361,14 +377,17 @@ Future<void> main(List<String> args) async {
   // per-test index cannot see it (replay of 36 regression PRs missed
   // video_orientation_fullscreen_guard_test this way).
   final Set<String> triggeredHelpers = <String>{};
-  for (final FileSystemEntity e in Directory('$root/fushi/test')
-      .listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity e in Directory(
+    '$root/fushi/test',
+  ).listSync(recursive: true, followLinks: false)) {
     final String path = e.path.replaceAll('\\', '/');
     if (e is! File || !path.endsWith('.dart') || path.endsWith('_test.dart')) {
       continue;
     }
-    final Set<String> refs =
-        extractRepoPathReferences(e.readAsStringSync(), fs);
+    final Set<String> refs = extractRepoPathReferences(
+      e.readAsStringSync(),
+      fs,
+    );
     if (changed.any((String c) => refs.any((String r) => triggers(c, r)))) {
       triggeredHelpers.add(path.split('/').last);
     }
@@ -376,7 +395,8 @@ Future<void> main(List<String> args) async {
   final Set<String> byHelper = <String>{
     for (final MapEntry<String, String> t in testSources.entries)
       if (triggeredHelpers.any(
-          (String h) => t.value.contains("/$h'") || t.value.contains("'$h'")))
+        (String h) => t.value.contains("/$h'") || t.value.contains("'$h'"),
+      ))
         t.key,
   };
 
@@ -386,42 +406,59 @@ Future<void> main(List<String> args) async {
     ...byPath.keys.where(testSources.containsKey),
     ...byHelper,
     ...byImport,
-  }.toList()
-    ..sort();
-  final List<String> packages = changedTestablePackages(changed)
-      .where((String p) => Directory('$root/packages/$p/test').existsSync())
-      .toList()
-    ..sort();
-  final List<String> analyzePackages = changedTestablePackages(changed)
-      .where(kSeparatelyAnalyzedPackages.contains)
-      .toList()
-    ..sort();
+  }.toList()..sort();
+  final List<String> packages =
+      changedTestablePackages(changed)
+          .where((String p) => Directory('$root/packages/$p/test').existsSync())
+          .toList()
+        ..sort();
+  final List<String> analyzePackages = changedTestablePackages(
+    changed,
+  ).where(kSeparatelyAnalyzedPackages.contains).toList()..sort();
   final bool js = touchesJsSuites(changed);
 
   stdout
-    ..writeln('pre-push: ${changed.length} changed file(s), '
-        '${quick ? 'QUICK (guards only; run without --quick before pushing)' : wide ? 'wide selection' : 'budget selection (--wide for everything)'}')
-    ..writeln('  app tests: ${appTests.length} = '
-        '${runBatch ? '${guards.length} enumeration guards' : 'no enumeration batch (no Dart tree changed)'}'
-        ' + ${byPath.length} path-literal + ${byHelper.length} via-helper'
-        ' + ${byImport.length} import-impact '
-        '(deduplicated)')
-    ..writeln(keys.hubs.isEmpty
-        ? '  import hubs skipped: -'
-        : '  import hubs skipped (imported by >$hubLimit tests; the sharded CI '
-            'suite covers their importers): ${keys.hubs.join(', ')}')
     ..writeln(
-        '  package tests: ${packages.isEmpty ? '-' : packages.join(', ')}')
-    ..writeln('  separate dart analyze: '
-        '${analyzePackages.isEmpty ? '-' : analyzePackages.join(', ')}')
+      'pre-push: ${changed.length} changed file(s), '
+      '${quick
+          ? 'QUICK (guards only; run without --quick before pushing)'
+          : wide
+          ? 'wide selection'
+          : 'budget selection (--wide for everything)'}',
+    )
+    ..writeln(
+      '  app tests: ${appTests.length} = '
+      '${runBatch ? '${guards.length} enumeration guards' : 'no enumeration batch (no Dart tree changed)'}'
+      ' + ${byPath.length} path-literal + ${byHelper.length} via-helper'
+      ' + ${byImport.length} import-impact '
+      '(deduplicated)',
+    )
+    ..writeln(
+      keys.hubs.isEmpty
+          ? '  import hubs skipped: -'
+          : '  import hubs skipped (imported by >$hubLimit tests; the sharded CI '
+                'suite covers their importers): ${keys.hubs.join(', ')}',
+    )
+    ..writeln(
+      '  package tests: ${packages.isEmpty ? '-' : packages.join(', ')}',
+    )
+    ..writeln(
+      '  separate dart analyze: '
+      '${analyzePackages.isEmpty ? '-' : analyzePackages.join(', ')}',
+    )
     ..writeln('  JS suites: ${js ? 'yes' : 'no'}')
     // ~3 s per test file measured on a machine shared by several agents
     // (69 files 218 s, 110 files 334 s); analyze ~2-3 min on an idle machine.
     ..writeln(
-        '  estimated: ~${(appTests.length * 3 / 60).ceil()} min app tests '
-        '(--concurrency=$concurrency, batches of <=$batchSize)'
-        '${skipAnalyze ? '' : parallel ? ', analyze alongside' : ' + ~3 min analyze after them'}'
-        '${gate.enabled ? '; each step waits for a machine-wide heavy-run slot (dart tool/heavy.dart --status)' : ''}');
+      '  estimated: ~${(appTests.length * 3 / 60).ceil()} min app tests '
+      '(--concurrency=$concurrency, batches of <=$batchSize)'
+      '${skipAnalyze
+          ? ''
+          : parallel
+          ? ', analyze alongside'
+          : ' + ~3 min analyze after them'}'
+      '${gate.enabled ? '; each step waits for a machine-wide heavy-run slot (dart tool/heavy.dart --status)' : ''}',
+    );
   if (listOnly) {
     for (final String t in appTests) {
       final List<String> why = <String>[
@@ -441,30 +478,31 @@ Future<void> main(List<String> args) async {
   // build/native_assets/windows/sqlite3.dll for the next run).
   if (gate.enabled || noLease) {
     gate.job = joinHeavyJob(
-        noLease
-            ? null
-            : prePushCheckCapMb(parallel: parallel),
-        log: stdout.writeln);
+      noLease ? null : prePushCheckCapMb(parallel: parallel),
+      log: stdout.writeln,
+    );
   }
   final String flutter = FlutterSdkExecutables.current().flutter();
   final String dart = Platform.resolvedExecutable;
   final List<_Step> steps = <_Step>[];
 
-  steps.add(await _timed('toolchain', () async {
-    final String? ci = _ciFlutterVersion(root);
-    final String? local = _localFlutterVersion(flutter);
-    if (ci == null || local == null) {
-      return (false, 'could not read versions (CI: $ci, local: $local)');
-    }
-    if (ci != local && !allowMismatch) {
-      return (
-        false,
-        'local Flutter $local != CI $ci: analyzer / lints differ between them. '
-            'Run this tool with the $ci SDK\'s dart (it uses the flutter next to it).',
-      );
-    }
-    return (true, 'Flutter $local (CI $ci)');
-  }));
+  steps.add(
+    await _timed('toolchain', () async {
+      final String? ci = _ciFlutterVersion(root);
+      final String? local = _localFlutterVersion(flutter);
+      if (ci == null || local == null) {
+        return (false, 'could not read versions (CI: $ci, local: $local)');
+      }
+      if (ci != local && !allowMismatch) {
+        return (
+          false,
+          'local Flutter $local != CI $ci: analyzer / lints differ between them. '
+              'Run this tool with the $ci SDK\'s dart (it uses the flutter next to it).',
+        );
+      }
+      return (true, 'Flutter $local (CI $ci)');
+    }),
+  );
   if (!steps.last.ok) return _report(steps);
 
   // Analyze and tests are independent, but each costs 1.5-4 GB: by default the
@@ -473,23 +511,32 @@ Future<void> main(List<String> args) async {
   Future<List<_Step>> analyzeLane() async {
     final List<_Step> out = <_Step>[];
     if (skipAnalyze) return out;
-    out.add(await _timed(
+    out.add(
+      await _timed(
         'flutter analyze (fushi/)',
         () => gate.run(HeavyKind.analyze, 'flutter analyze', () async {
-              // --no-pub: the worktree is bootstrapped; resolving the whole
-              // workspace again on every run only costs time.
-              final int code = await _stream(
-                  flutter, <String>['analyze', '--no-pub'], '$root/fushi');
-              return (code == 0, 'exit $code');
-            })));
+          // --no-pub: the worktree is bootstrapped; resolving the whole
+          // workspace again on every run only costs time.
+          final int code = await _stream(flutter, <String>[
+            'analyze',
+            '--no-pub',
+          ], '$root/fushi');
+          return (code == 0, 'exit $code');
+        }),
+      ),
+    );
     for (final String p in analyzePackages) {
-      out.add(await _timed(
+      out.add(
+        await _timed(
           'dart analyze (packages/$p)',
           () => gate.run(HeavyKind.analyze, 'packages/$p analyze', () async {
-                final int code = await _stream(
-                    dart, <String>['analyze'], '$root/packages/$p');
-                return (code == 0, 'exit $code');
-              })));
+            final int code = await _stream(dart, <String>[
+              'analyze',
+            ], '$root/packages/$p');
+            return (code == 0, 'exit $code');
+          }),
+        ),
+      );
     }
     return out;
   }
@@ -501,58 +548,82 @@ Future<void> main(List<String> args) async {
       maxFiles: batchSize,
     );
     for (int i = 0; i < batches.length; i++) {
-      out.add(await _timed(
-        'app tests ${i + 1}/${batches.length} (${batches[i].length} files)',
-        () => gate.run(
+      out.add(
+        await _timed(
+          'app tests ${i + 1}/${batches.length} (${batches[i].length} files)',
+          () => gate.run(
             HeavyKind.test,
             'app test batch ${i + 1}/${batches.length}',
-            () => _flutterTests(flutter, '$root/fushi', batches[i],
-                '$root/.codex-test/pre-push/app-$i', concurrency)),
-      ));
+            () => _flutterTests(
+              flutter,
+              '$root/fushi',
+              batches[i],
+              '$root/.codex-test/pre-push/app-$i',
+              concurrency,
+            ),
+          ),
+        ),
+      );
     }
     for (final String p in packages) {
-      out.add(await _timed(
+      out.add(
+        await _timed(
           'package tests (packages/$p)',
           () => gate.run(
-              HeavyKind.test,
-              'packages/$p tests',
-              () => _flutterTests(
-                  flutter,
-                  '$root/packages/$p',
-                  const <String>[],
-                  '$root/.codex-test/pre-push/pkg-$p',
-                  concurrency))));
+            HeavyKind.test,
+            'packages/$p tests',
+            () => _flutterTests(
+              flutter,
+              '$root/packages/$p',
+              const <String>[],
+              '$root/.codex-test/pre-push/pkg-$p',
+              concurrency,
+            ),
+          ),
+        ),
+      );
     }
     if (js) {
-      out.add(await _timed('JS behavior tests (test/js)', () async {
-        if (!Directory('$root/test/js/node_modules').existsSync()) {
-          final int install =
-              await _stream('npm', <String>['install'], '$root/test/js');
-          if (install != 0) return (false, 'npm install exit $install');
-        }
-        final int code =
-            await _stream('npm', <String>['test'], '$root/test/js');
-        return (code == 0, 'exit $code');
-      }));
-      out.add(await _timed('browser-extension JS tests', () async {
-        final List<String> files = Directory('$root/tools/browser-extension')
-            .listSync()
-            .whereType<File>()
-            .map((File f) => f.uri.pathSegments.last)
-            .where((String n) => n.endsWith('.test.js'))
-            .toList()
-          ..sort();
-        final int code = await _stream('node', <String>['--test', ...files],
-            '$root/tools/browser-extension');
-        return (code == 0, 'exit $code, ${files.length} files');
-      }));
+      out.add(
+        await _timed('JS behavior tests (test/js)', () async {
+          if (!Directory('$root/test/js/node_modules').existsSync()) {
+            final int install = await _stream('npm', <String>[
+              'install',
+            ], '$root/test/js');
+            if (install != 0) return (false, 'npm install exit $install');
+          }
+          final int code = await _stream('npm', <String>[
+            'test',
+          ], '$root/test/js');
+          return (code == 0, 'exit $code');
+        }),
+      );
+      out.add(
+        await _timed('browser-extension JS tests', () async {
+          final List<String> files =
+              Directory('$root/tools/browser-extension')
+                  .listSync()
+                  .whereType<File>()
+                  .map((File f) => f.uri.pathSegments.last)
+                  .where((String n) => n.endsWith('.test.js'))
+                  .toList()
+                ..sort();
+          final int code = await _stream('node', <String>[
+            '--test',
+            ...files,
+          ], '$root/tools/browser-extension');
+          return (code == 0, 'exit $code, ${files.length} files');
+        }),
+      );
     }
     return out;
   }
 
   if (parallel) {
-    final List<List<_Step>> lanes =
-        await Future.wait(<Future<List<_Step>>>[testLane(), analyzeLane()]);
+    final List<List<_Step>> lanes = await Future.wait(<Future<List<_Step>>>[
+      testLane(),
+      analyzeLane(),
+    ]);
     steps
       ..addAll(lanes[0])
       ..addAll(lanes[1]);
@@ -574,7 +645,9 @@ int _intArg(List<String> args, String prefix, int fallback) {
 }
 
 Future<_Step> _timed(
-    String name, Future<(bool, String)> Function() body) async {
+  String name,
+  Future<(bool, String)> Function() body,
+) async {
   stdout.writeln('\n== $name');
   if (_budget.exceeded) {
     stdout.writeln('   -> FAILED: not run (--max-minutes budget exceeded)');
@@ -584,7 +657,8 @@ Future<_Step> _timed(
   final (bool ok, String detail) = await body();
   sw.stop();
   stdout.writeln(
-      '   -> ${ok ? 'OK' : 'FAILED'}: $detail (${sw.elapsed.inSeconds}s)');
+    '   -> ${ok ? 'OK' : 'FAILED'}: $detail (${sw.elapsed.inSeconds}s)',
+  );
   return _Step(name, ok, detail, sw.elapsed);
 }
 
@@ -609,7 +683,7 @@ Future<(bool, String)> _flutterTests(
       // The default is one flutter_tester per core (a dozen+ on the agents'
       // 16-core machine, 150-450 MB each); 4 keeps a run near 2 GB.
       '--concurrency=$concurrency',
-      ...files
+      ...files,
     ],
     workingDirectory: cwd,
     runInShell: Platform.isWindows,
@@ -622,9 +696,9 @@ Future<(bool, String)> _flutterTests(
       .transform(decoder)
       .transform(const LineSplitter())
       .forEach((String l) {
-    lines.add(l);
-    log.writeln(l);
-  });
+        lines.add(l);
+        log.writeln(l);
+      });
   final Future<void> errDone = p.stderr.transform(decoder).forEach((String c) {
     err.write(c);
     stderr.write(c);
@@ -642,24 +716,31 @@ Future<(bool, String)> _flutterTests(
           '${summary.testsCompleted} test(s)',
     );
   }
-  final String? failure =
-      resolveFlutterTestVerdictFailure(flutterExitCode: code, summary: summary);
+  final String? failure = resolveFlutterTestVerdictFailure(
+    flutterExitCode: code,
+    summary: summary,
+  );
   if (failure != null) {
-    stderr.writeln(renderFlutterTestFailureSummary(
-      summary,
-      logPath: '$logBase.jsonl',
-      stderrLogPath: '$logBase.stderr.log',
-    ));
+    stderr.writeln(
+      renderFlutterTestFailureSummary(
+        summary,
+        logPath: '$logBase.jsonl',
+        stderrLogPath: '$logBase.stderr.log',
+      ),
+    );
     return (false, failure);
   }
   return (true, '${summary.testsCompleted} tests passed');
 }
 
 Future<int> _stream(String exe, List<String> args, String cwd) async {
-  final Process p = await Process.start(exe, args,
-      workingDirectory: cwd,
-      runInShell: Platform.isWindows,
-      mode: ProcessStartMode.inheritStdio);
+  final Process p = await Process.start(
+    exe,
+    args,
+    workingDirectory: cwd,
+    runInShell: Platform.isWindows,
+    mode: ProcessStartMode.inheritStdio,
+  );
   return _budget.run(p);
 }
 
@@ -668,20 +749,26 @@ void _report(List<_Step> steps, {List<String> gateNotes = const <String>[]}) {
   final bool ok = !_budget.exceeded && steps.every((_Step s) => s.ok);
   stdout.writeln('\n==== pre-push summary');
   for (final _Step s in steps) {
-    stdout.writeln('  ${s.ok ? 'OK    ' : 'FAILED'}  ${s.name}  '
-        '(${s.elapsed.inSeconds}s)  ${s.ok ? '' : s.detail}');
+    stdout.writeln(
+      '  ${s.ok ? 'OK    ' : 'FAILED'}  ${s.name}  '
+      '(${s.elapsed.inSeconds}s)  ${s.ok ? '' : s.detail}',
+    );
   }
   for (final String n in gateNotes) {
     stdout.writeln('  gate: $n');
   }
   if (_budget.exceeded) {
-    stdout.writeln('  budget: subprocess time exceeded '
-        '${_budget.limit.inMinutes} min (--max-minutes); killed '
-        '${_budget.killed} process(es)');
+    stdout.writeln(
+      '  budget: subprocess time exceeded '
+      '${_budget.limit.inMinutes} min (--max-minutes); killed '
+      '${_budget.killed} process(es)',
+    );
   }
-  stdout.writeln(ok
-      ? 'PRE-PUSH VERDICT: PASSED'
-      : 'PRE-PUSH VERDICT: FAILED - fix the steps above before pushing');
+  stdout.writeln(
+    ok
+        ? 'PRE-PUSH VERDICT: PASSED'
+        : 'PRE-PUSH VERDICT: FAILED - fix the steps above before pushing',
+  );
   exitCode = ok ? 0 : 1;
 }
 
@@ -699,11 +786,14 @@ List<String> _changedFromGit(String root, String? base) {
   if (ref == null) {
     for (final String candidate in <String>[
       'upstream/develop',
-      'origin/develop'
+      'origin/develop',
     ]) {
-      final ProcessResult r = Process.runSync(
-          'git', <String>['rev-parse', '--verify', '--quiet', candidate],
-          workingDirectory: root);
+      final ProcessResult r = Process.runSync('git', <String>[
+        'rev-parse',
+        '--verify',
+        '--quiet',
+        candidate,
+      ], workingDirectory: root);
       if (r.exitCode == 0) {
         ref = candidate;
         break;
@@ -712,19 +802,26 @@ List<String> _changedFromGit(String root, String? base) {
   }
   if (ref == null) {
     _fail(
-        'no --base given and neither upstream/develop nor origin/develop exists');
+      'no --base given and neither upstream/develop nor origin/develop exists',
+    );
   }
-  final ProcessResult mb = Process.runSync(
-      'git', <String>['merge-base', 'HEAD', ref],
-      workingDirectory: root);
+  final ProcessResult mb = Process.runSync('git', <String>[
+    'merge-base',
+    'HEAD',
+    ref,
+  ], workingDirectory: root);
   if (mb.exitCode != 0) _fail('git merge-base HEAD $ref failed: ${mb.stderr}');
   final String mergeBase = (mb.stdout as String).trim();
-  final ProcessResult diff = Process.runSync(
-      'git', <String>['diff', '--name-only', mergeBase],
-      workingDirectory: root);
-  final ProcessResult untracked = Process.runSync(
-      'git', <String>['ls-files', '--others', '--exclude-standard'],
-      workingDirectory: root);
+  final ProcessResult diff = Process.runSync('git', <String>[
+    'diff',
+    '--name-only',
+    mergeBase,
+  ], workingDirectory: root);
+  final ProcessResult untracked = Process.runSync('git', <String>[
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+  ], workingDirectory: root);
   return <String>[
     ...(diff.stdout as String).split(RegExp(r'\r?\n')),
     ...(untracked.stdout as String).split(RegExp(r'\r?\n')),
@@ -738,11 +835,14 @@ Map<String, String> _packageNames(String root) {
   for (final Directory d in dir.listSync().whereType<Directory>()) {
     final File pubspec = File('${d.path}/pubspec.yaml');
     if (!pubspec.existsSync()) continue;
-    final Match? m = RegExp(r'^name:\s*(\S+)', multiLine: true)
-        .firstMatch(pubspec.readAsStringSync());
+    final Match? m = RegExp(
+      r'^name:\s*(\S+)',
+      multiLine: true,
+    ).firstMatch(pubspec.readAsStringSync());
     if (m != null) {
-      out[d.uri.pathSegments.where((String s) => s.isNotEmpty).last] =
-          m.group(1)!;
+      out[d.uri.pathSegments.where((String s) => s.isNotEmpty).last] = m.group(
+        1,
+      )!;
     }
   }
   return out;
@@ -751,15 +851,16 @@ Map<String, String> _packageNames(String root) {
 String? _ciFlutterVersion(String root) {
   final File wf = File('$root/.github/workflows/main.yml');
   if (!wf.existsSync()) return null;
-  return RegExp(r'''flutter-version:\s*['"]?(\d+\.\d+\.\d+)''')
-      .firstMatch(wf.readAsStringSync())
-      ?.group(1);
+  return RegExp(
+    r'''flutter-version:\s*['"]?(\d+\.\d+\.\d+)''',
+  ).firstMatch(wf.readAsStringSync())?.group(1);
 }
 
 String? _localFlutterVersion(String flutter) {
-  final ProcessResult r = Process.runSync(
-      flutter, <String>['--version', '--machine'],
-      runInShell: Platform.isWindows);
+  final ProcessResult r = Process.runSync(flutter, <String>[
+    '--version',
+    '--machine',
+  ], runInShell: Platform.isWindows);
   if (r.exitCode != 0) return null;
   final String out = r.stdout as String;
   final int brace = out.indexOf('{');

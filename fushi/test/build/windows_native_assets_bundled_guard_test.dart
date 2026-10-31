@@ -51,13 +51,15 @@ void main() {
 
   group('Windows bundle 必须包含 native assets', () {
     test('windows/CMakeLists.txt 把 native_assets 目录装进 bundle', () {
-      final String cmake =
-          stripComments(cmakeFile('windows').readAsStringSync());
+      final String cmake = stripComments(
+        cmakeFile('windows').readAsStringSync(),
+      );
 
       expect(
         cmake.contains('native_assets/windows'),
         isTrue,
-        reason: '缺少 native assets 源目录。没有它，pdfium.dll 只会留在 '
+        reason:
+            '缺少 native assets 源目录。没有它，pdfium.dll 只会留在 '
             'build/native_assets/ 而进不了安装包，PDF 导入与 PDF 阅读器在用户机器上'
             '永久挂死（BUG-2419）。',
       );
@@ -65,24 +67,29 @@ void main() {
       // install(DIRECTORY ...) 与源目录必须在同一条规则里——只 set 变量不 install
       // 等于没修。用 [\s\S] 跨行匹配，因为这条规则本来就写成三行。
       expect(
-        RegExp(r'install\s*\(\s*DIRECTORY[\s\S]{0,200}NATIVE_ASSETS_DIR')
-                .hasMatch(cmake) ||
-            RegExp(r'install\s*\(\s*DIRECTORY[\s\S]{0,200}native_assets')
-                .hasMatch(cmake),
+        RegExp(
+              r'install\s*\(\s*DIRECTORY[\s\S]{0,200}NATIVE_ASSETS_DIR',
+            ).hasMatch(cmake) ||
+            RegExp(
+              r'install\s*\(\s*DIRECTORY[\s\S]{0,200}native_assets',
+            ).hasMatch(cmake),
         isTrue,
-        reason: '找到了 native assets 目录，但没有 install(DIRECTORY ...) 把它装进 '
+        reason:
+            '找到了 native assets 目录，但没有 install(DIRECTORY ...) 把它装进 '
             'bundle。set 一个没人用的变量不会让 DLL 出现在 exe 旁边。',
       );
     });
 
     test('Profile/Release 缺 pdfium.dll 必须构建失败，而不是发一个会挂死的包', () {
-      final String cmake =
-          stripComments(cmakeFile('windows').readAsStringSync());
+      final String cmake = stripComments(
+        cmakeFile('windows').readAsStringSync(),
+      );
 
       expect(
         cmake.contains('pdfium.dll'),
         isTrue,
-        reason: '缺少 pdfium.dll 的存在性守卫。补 install 规则是修复，这条守卫是防'
+        reason:
+            '缺少 pdfium.dll 的存在性守卫。补 install 规则是修复，这条守卫是防'
             '复发的另一半：没有它，下一次重写 CMakeLists 又会静默产出一个「声称支持'
             ' PDF、一导入就永久转圈」的安装包。',
       );
@@ -94,7 +101,8 @@ void main() {
       expect(
         fatalOnMissing.hasMatch(cmake),
         isTrue,
-        reason: 'pdfium.dll 出现了，但没有「Profile/Release 缺它就 FATAL_ERROR」的'
+        reason:
+            'pdfium.dll 出现了，但没有「Profile/Release 缺它就 FATAL_ERROR」的'
             '守卫。与同文件里 fushi_torrent 那条 install(CODE) 守卫同款理由：禁止'
             '产出一个运行时必然不可用的发布包。',
       );
@@ -117,7 +125,8 @@ void main() {
       expect(
         escapedPrefixInExists.hasMatch(cmake),
         isFalse,
-        reason: 'install(CODE) 的存在性判据用了转义的 \${CMAKE_INSTALL_PREFIX}。'
+        reason:
+            'install(CODE) 的存在性判据用了转义的 \${CMAKE_INSTALL_PREFIX}。'
             '脚本期它是未求值的 \$<TARGET_FILE_DIR:...> 字面量，EXISTS 恒假，'
             '守卫会在文件确实存在时也让 Release 构建失败。改用不转义的 '
             '\${INSTALL_BUNDLE_LIB_DIR}（与 install(DIRECTORY) 的 DESTINATION 同源）。',
@@ -129,7 +138,8 @@ void main() {
       expect(
         cmake.contains('native_assets/linux'),
         isTrue,
-        reason: 'Linux 侧的 native assets install 规则不见了。Windows 的洞正是这样'
+        reason:
+            'Linux 侧的 native assets install 规则不见了。Windows 的洞正是这样'
             '产生的——一份定制副本漏掉模板里的两句，然后没人发现。',
       );
     });
@@ -144,7 +154,8 @@ void main() {
       expect(
         source.contains('PdfiumUnavailableException'),
         isTrue,
-        reason: '缺少 PDFium 不可用异常。删掉它就回到了「无声挂死」：pdfrx 的 worker '
+        reason:
+            '缺少 PDFium 不可用异常。删掉它就回到了「无声挂死」：pdfrx 的 worker '
             'isolate 吞掉同步异常，主 isolate 的 await 永不完成，导入进度条永远停在'
             '原地且无任何日志（BUG-2419）。',
       );
@@ -166,7 +177,8 @@ void main() {
       expect(
         assertAt,
         lessThan(initAt),
-        reason: '可加载性断言必须排在 pdfrxFlutterInitialize 之前；排在后面时第一次'
+        reason:
+            '可加载性断言必须排在 pdfrxFlutterInitialize 之前；排在后面时第一次'
             'PDFium 触点已经进了 worker isolate，异常又会被吞掉。',
       );
     });

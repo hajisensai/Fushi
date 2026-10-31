@@ -11,21 +11,23 @@ StatLineChartPainter _painter({
   Color anomalyColor = const Color(0xFFFF0000),
   Color labelColor = const Color(0xFF000000),
   int labelEvery = 5,
-}) =>
-    StatLineChartPainter(
-      series: series ??
-          <StatLineSeries>[
-            const StatLineSeries(
-                values: <double>[1, 2, 3], color: Color(0xFF0000FF)),
-          ],
-      xLabels: xLabels ?? <String>['a', 'b', 'c'],
-      anomalies: anomalies ?? <bool>[false, false, true],
-      anomalyColor: anomalyColor,
-      labelColor: labelColor,
-      labelStyle: const TextStyle(fontSize: 10),
-      labelFormatter: formatStatCphAxis,
-      labelEvery: labelEvery,
-    );
+}) => StatLineChartPainter(
+  series:
+      series ??
+      <StatLineSeries>[
+        const StatLineSeries(
+          values: <double>[1, 2, 3],
+          color: Color(0xFF0000FF),
+        ),
+      ],
+  xLabels: xLabels ?? <String>['a', 'b', 'c'],
+  anomalies: anomalies ?? <bool>[false, false, true],
+  anomalyColor: anomalyColor,
+  labelColor: labelColor,
+  labelStyle: const TextStyle(fontSize: 10),
+  labelFormatter: formatStatCphAxis,
+  labelEvery: labelEvery,
+);
 
 void main() {
   group('StatLineChartPainter.shouldRepaint', () {
@@ -38,7 +40,9 @@ void main() {
       final StatLineChartPainter b = _painter(
         series: <StatLineSeries>[
           const StatLineSeries(
-              values: <double>[1, 2, 9], color: Color(0xFF0000FF)),
+            values: <double>[1, 2, 9],
+            color: Color(0xFF0000FF),
+          ),
         ],
       );
       expect(b.shouldRepaint(a), isTrue);
@@ -49,7 +53,9 @@ void main() {
       final StatLineChartPainter b = _painter(
         series: <StatLineSeries>[
           const StatLineSeries(
-              values: <double>[1, 2, 3], color: Color(0xFF00FF00)),
+            values: <double>[1, 2, 3],
+            color: Color(0xFF00FF00),
+          ),
         ],
       );
       expect(b.shouldRepaint(a), isTrue);
@@ -60,9 +66,10 @@ void main() {
       final StatLineChartPainter b = _painter(
         series: <StatLineSeries>[
           const StatLineSeries(
-              values: <double>[1, 2, 3],
-              color: Color(0xFF0000FF),
-              dashed: true),
+            values: <double>[1, 2, 3],
+            color: Color(0xFF0000FF),
+            dashed: true,
+          ),
         ],
       );
       expect(b.shouldRepaint(a), isTrue);
@@ -70,8 +77,9 @@ void main() {
 
     test('changed anomalies -> repaint', () {
       final StatLineChartPainter a = _painter();
-      final StatLineChartPainter b =
-          _painter(anomalies: <bool>[true, false, false]);
+      final StatLineChartPainter b = _painter(
+        anomalies: <bool>[true, false, false],
+      );
       expect(b.shouldRepaint(a), isTrue);
     });
 
@@ -89,8 +97,9 @@ void main() {
 
     test('changed anomalyColor -> repaint', () {
       final StatLineChartPainter a = _painter();
-      final StatLineChartPainter b =
-          _painter(anomalyColor: const Color(0xFF112233));
+      final StatLineChartPainter b = _painter(
+        anomalyColor: const Color(0xFF112233),
+      );
       expect(b.shouldRepaint(a), isTrue);
     });
   });
@@ -131,7 +140,9 @@ void main() {
       final StatLineChartPainter p = _painter(
         series: <StatLineSeries>[
           const StatLineSeries(
-              values: <double>[0, 0, 0], color: Color(0xFF0000FF)),
+            values: <double>[0, 0, 0],
+            color: Color(0xFF0000FF),
+          ),
         ],
         anomalies: <bool>[false, false, false],
       );

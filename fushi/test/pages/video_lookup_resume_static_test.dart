@@ -143,15 +143,24 @@ void main() {
       // media_kit/libmpv `pause()` 桌面端有 IPC 往返，await 它再 pushNestedPopup 会把首次
       // 查词的弹窗拖慢一整个 pause 延迟。pause 是副作用，必须 fire-and-forget（`unawaited`）
       // 同时立即推弹窗。
-      expect(lookup, contains('unawaited(controller.pause())'),
-          reason: 'pause must be fire-and-forget so it never blocks the popup');
-      expect(lookup.contains('await controller.pause()'), isFalse,
-          reason:
-              'awaiting pause before pushNestedPopup re-introduces the first-'
-              'lookup popup delay (perf regression)');
+      expect(
+        lookup,
+        contains('unawaited(controller.pause())'),
+        reason: 'pause must be fire-and-forget so it never blocks the popup',
+      );
+      expect(
+        lookup.contains('await controller.pause()'),
+        isFalse,
+        reason:
+            'awaiting pause before pushNestedPopup re-introduces the first-'
+            'lookup popup delay (perf regression)',
+      );
       // The resume contract (BUG-072) still requires the paused flag to be set.
-      expect(lookup, contains('_pausedForLookup = true'),
-          reason: 'must still mark paused-for-lookup for the resume path');
+      expect(
+        lookup,
+        contains('_pausedForLookup = true'),
+        reason: 'must still mark paused-for-lookup for the resume path',
+      );
     });
 
     test('_popNestedPopupAt 关栈后据纯函数恢复播放并清标记', () {
@@ -160,23 +169,38 @@ void main() {
         'void _popNestedPopupAt(',
         'Widget _buildNestedPopupLayer(',
       );
-      expect(pop.contains('VideoFushiPage.shouldResumeAfterLookupDismiss('),
-          isTrue);
+      expect(
+        pop.contains('VideoFushiPage.shouldResumeAfterLookupDismiss('),
+        isTrue,
+      );
       // BUG-094：常驻隐藏热槽使 `_popupStack` 永不为空，故「整栈已空」判定改为
       // 「无可见弹窗」(!_hasVisiblePopup)——否则关浮层后热槽仍在、恢复永不触发。
       // TODO-040 后该判定提升为局部 `stackEmpty`（恢复播放与归还焦点共用）。
-      expect(pop.contains('final bool stackEmpty = !_hasVisiblePopup;'), isTrue,
-          reason: '空栈判定必须源自 !_hasVisiblePopup（热槽不算）');
+      expect(
+        pop.contains('final bool stackEmpty = !_hasVisiblePopup;'),
+        isTrue,
+        reason: '空栈判定必须源自 !_hasVisiblePopup（热槽不算）',
+      );
       expect(pop.contains('stackEmpty: stackEmpty'), isTrue);
       expect(pop.contains('pausedForLookup: _pausedForLookup'), isTrue);
       // videoEnterCaret（PR#632 C2）：光标仍激活时暂停由光标会话接管，关栈不得续播。
-      expect(pop.contains('caretHoldsPause: _videoCaretActive'), isTrue,
-          reason: '关栈汇聚点必须把光标激活态喂进纯函数，否则关浮层会把还在选词的'
-              '视频播起来、光标当场失锚');
-      expect(pop.contains('_pausedForLookup = false'), isTrue,
-          reason: '恢复后必须清标记，否则下次关任意子层都会误续播');
-      expect(pop.contains('_controller?.play()'), isTrue,
-          reason: '整栈关闭后必须恢复播放（BUG-072 核心）');
+      expect(
+        pop.contains('caretHoldsPause: _videoCaretActive'),
+        isTrue,
+        reason:
+            '关栈汇聚点必须把光标激活态喂进纯函数，否则关浮层会把还在选词的'
+            '视频播起来、光标当场失锚',
+      );
+      expect(
+        pop.contains('_pausedForLookup = false'),
+        isTrue,
+        reason: '恢复后必须清标记，否则下次关任意子层都会误续播',
+      );
+      expect(
+        pop.contains('_controller?.play()'),
+        isTrue,
+        reason: '整栈关闭后必须恢复播放（BUG-072 核心）',
+      );
     });
   });
 
@@ -200,24 +224,37 @@ void main() {
       // A persistent hidden warm slot is seeded once the video loads successfully
       // via the shared controller (skipped in low memory inside the controller).
       expect(src, contains('void _seedWarmPopup()'));
-      expect(src, contains('_popup.seedWarmSlot()'),
-          reason: 'seeding must delegate to the shared controller');
-      expect(src, contains('DictionaryPopupController('),
-          reason: 'controller constructed (with the low-memory budget)');
-      expect(src, contains('appModel.lowMemoryMode'),
-          reason: 'low-memory budget threaded into the controller');
-      expect(src, contains('_seedWarmPopup();'),
-          reason: 'the video success path must seed the warm slot');
+      expect(
+        src,
+        contains('_popup.seedWarmSlot()'),
+        reason: 'seeding must delegate to the shared controller',
+      );
+      expect(
+        src,
+        contains('DictionaryPopupController('),
+        reason: 'controller constructed (with the low-memory budget)',
+      );
+      expect(
+        src,
+        contains('appModel.lowMemoryMode'),
+        reason: 'low-memory budget threaded into the controller',
+      );
+      expect(
+        src,
+        contains('_seedWarmPopup();'),
+        reason: 'the video success path must seed the warm slot',
+      );
 
       // Top lookups reuse that warm slot instead of recreating the WebView.
-      expect(src, contains('reuseWarmSlot: true'),
-          reason:
-              '_lookupAt must reuse the warm slot, not cold-load a new WebView');
+      expect(
+        src,
+        contains('reuseWarmSlot: true'),
+        reason:
+            '_lookupAt must reuse the warm slot, not cold-load a new WebView',
+      );
     });
 
-    test(
-        'closing hides-and-keeps the warm slot; resume/back key off visibility',
-        () {
+    test('closing hides-and-keeps the warm slot; resume/back key off visibility', () {
       final String src = readVideoFushiSource();
 
       // Close delegates to the controller, which hides-and-keeps the warm slot
@@ -232,17 +269,27 @@ void main() {
       expect(src, contains('bool get _hasVisiblePopup'));
       // TODO-040 hoisted the emptiness check into a local (shared by resume +
       // keyboard-focus reclaim); it must still derive from !_hasVisiblePopup.
-      expect(src, contains('final bool stackEmpty = !_hasVisiblePopup;'),
-          reason:
-              'resume-after-dismiss must treat the hidden warm slot as empty');
-      expect(src, contains('stackEmpty: stackEmpty'),
-          reason: 'resume must key off the visible-popup-derived emptiness');
-      expect(src, contains('if (_hasVisiblePopup)'),
-          reason:
-              'back/exit + dismiss barrier must ignore the hidden warm slot');
-      expect(src, isNot(contains('stackEmpty: _popup.entries.isEmpty')),
-          reason:
-              'must not resume off raw stack emptiness with a warm slot present');
+      expect(
+        src,
+        contains('final bool stackEmpty = !_hasVisiblePopup;'),
+        reason: 'resume-after-dismiss must treat the hidden warm slot as empty',
+      );
+      expect(
+        src,
+        contains('stackEmpty: stackEmpty'),
+        reason: 'resume must key off the visible-popup-derived emptiness',
+      );
+      expect(
+        src,
+        contains('if (_hasVisiblePopup)'),
+        reason: 'back/exit + dismiss barrier must ignore the hidden warm slot',
+      );
+      expect(
+        src,
+        isNot(contains('stackEmpty: _popup.entries.isEmpty')),
+        reason:
+            'must not resume off raw stack emptiness with a warm slot present',
+      );
     });
   });
 }

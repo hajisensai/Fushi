@@ -12,10 +12,12 @@ abstract final class FushiChannels {
   static const MethodChannel tts = MethodChannel('$_prefix/tts');
   static const MethodChannel update = MethodChannel('$_prefix/update');
   static const MethodChannel volumeKeys = MethodChannel('$_prefix/volume_keys');
-  static const MethodChannel floatingLyric =
-      MethodChannel('$_prefix/floating_lyric');
-  static const MethodChannel floatingDict =
-      MethodChannel('$_prefix/floating_dict');
+  static const MethodChannel floatingLyric = MethodChannel(
+    '$_prefix/floating_lyric',
+  );
+  static const MethodChannel floatingDict = MethodChannel(
+    '$_prefix/floating_dict',
+  );
 
   /// 查词输入框的输入法语言。桌面/iOS 上原生侧据此真的切换系统输入法；Android 做
   /// 不到切换，只把用户选的语言存下来给**原生**查词输入框（悬浮词典 / 弹窗词典
@@ -31,43 +33,54 @@ abstract final class FushiChannels {
   /// 下载保活（Android dataSync 前台服务 + 进度通知 / iOS beginBackgroundTask）。原生侧
   /// `DownloadKeepAliveService.java` / `FushiBackgroundDownload.swift`，Dart 门面
   /// `android_download_keep_alive.dart`。
-  static const MethodChannel downloadKeepAlive =
-      MethodChannel('$_prefix/download_keep_alive');
+  static const MethodChannel downloadKeepAlive = MethodChannel(
+    '$_prefix/download_keep_alive',
+  );
   static const MethodChannel iconSwitch = MethodChannel('$_prefix/icon_switch');
 
   /// 长按 app 图标的系统快捷方式（Android launcher shortcuts / iOS quick
   /// actions）。Dart 门面 `lib/src/platform/app_shortcuts.dart`。
-  static const MethodChannel appShortcuts =
-      MethodChannel('$_prefix/app_shortcuts');
-  static const MethodChannel clipboardImage =
-      MethodChannel('$_prefix/clipboard_image');
+  static const MethodChannel appShortcuts = MethodChannel(
+    '$_prefix/app_shortcuts',
+  );
+  static const MethodChannel clipboardImage = MethodChannel(
+    '$_prefix/clipboard_image',
+  );
 
   /// Android 系统代理（Wi-Fi 手动 / PAC / 全局 HTTP 代理）。原生侧
   /// `SystemProxyChannel.java`，Dart 门面 `android_system_proxy.dart`。
-  static const MethodChannel systemProxy =
-      MethodChannel('$_prefix/system_proxy');
+  static const MethodChannel systemProxy = MethodChannel(
+    '$_prefix/system_proxy',
+  );
 
   /// 上次进程退出原因（`ActivityManager.getHistoricalProcessExitReasons`）与
   /// `onTrimMemory` 记录。原生侧 `ProcessExitChannel.java`，Dart 门面
   /// `lib/src/diagnostics/previous_exit_log.dart`。
-  static const MethodChannel processExit =
-      MethodChannel('$_prefix/process_exit');
-  static const MethodChannel screenBrightness =
-      MethodChannel('$_prefix/screen_brightness');
-  static const MethodChannel selectionActions =
-      MethodChannel('$_prefix/selection_actions');
-  static const MethodChannel cloudflareProxyBrowser =
-      MethodChannel('$_prefix/cloudflare_proxy_browser');
+  static const MethodChannel processExit = MethodChannel(
+    '$_prefix/process_exit',
+  );
+  static const MethodChannel screenBrightness = MethodChannel(
+    '$_prefix/screen_brightness',
+  );
+  static const MethodChannel selectionActions = MethodChannel(
+    '$_prefix/selection_actions',
+  );
+  static const MethodChannel cloudflareProxyBrowser = MethodChannel(
+    '$_prefix/cloudflare_proxy_browser',
+  );
   // TODO-617: drives the desktop global lookup overlay (bare WebView2 window).
-  static const MethodChannel globalLookup =
-      MethodChannel('$_prefix/global_lookup');
+  static const MethodChannel globalLookup = MethodChannel(
+    '$_prefix/global_lookup',
+  );
   // Windows galgame Hook 台词浮窗：独立的 FloatingLyricWindow 实例。
-  static const MethodChannel galHookText =
-      MethodChannel('$_prefix/gal_hook_text');
+  static const MethodChannel galHookText = MethodChannel(
+    '$_prefix/gal_hook_text',
+  );
 
   /// 系统画中画（PiP）：把视频页缩成系统小窗。只有 Android 有原生侧
   /// （`PictureInPictureChannelHandler.java`），其余平台上 Dart 门面
   /// `AndroidPictureInPicture` 恒答「不支持」且不发调用。
-  static const MethodChannel pictureInPicture =
-      MethodChannel('$_prefix/picture_in_picture');
+  static const MethodChannel pictureInPicture = MethodChannel(
+    '$_prefix/picture_in_picture',
+  );
 }

@@ -37,8 +37,9 @@ final class InterconnectLinkPairingFailed
 /// 链接能否并入已有的同 hostId 组：组不存在 → 能；存在 → 双方都有证书指纹且
 /// 相等才能（指纹 = 那台 host 的私钥，冒名者给不出同一个）。
 bool _linkMayJoinHostGroup(List<FushiClientUrl> urls, FushiPairLink link) {
-  final Iterable<FushiClientUrl> group =
-      urls.where((FushiClientUrl u) => u.hostId == link.hostId);
+  final Iterable<FushiClientUrl> group = urls.where(
+    (FushiClientUrl u) => u.hostId == link.hostId,
+  );
   if (group.isEmpty) return true;
   final String? linkFp = link.fingerprint;
   if (linkFp == null || linkFp.isEmpty) return false;

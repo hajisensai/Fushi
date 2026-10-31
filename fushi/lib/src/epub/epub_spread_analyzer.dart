@@ -26,8 +26,9 @@ class EpubSpreadAnalyzer {
     try {
       final Map<String, dynamic> decoded =
           jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.map((String k, dynamic v) =>
-          MapEntry<int, bool>(int.parse(k), v as bool));
+      return decoded.map(
+        (String k, dynamic v) => MapEntry<int, bool>(int.parse(k), v as bool),
+      );
     } catch (_) {
       return null;
     }
@@ -55,7 +56,8 @@ class EpubSpreadAnalyzer {
       if (leftPath == null || rightPath == null) continue;
 
       pairs.add(
-          _EdgePair(chapterIndex: i, leftPath: leftPath, rightPath: rightPath));
+        _EdgePair(chapterIndex: i, leftPath: leftPath, rightPath: rightPath),
+      );
     }
 
     if (pairs.isEmpty) return <int, bool>{};
@@ -69,8 +71,9 @@ class EpubSpreadAnalyzer {
     String bookId,
     Map<int, bool> results,
   ) async {
-    final Map<String, bool> stringKeyed =
-        results.map((int k, bool v) => MapEntry<String, bool>(k.toString(), v));
+    final Map<String, bool> stringKeyed = results.map(
+      (int k, bool v) => MapEntry<String, bool>(k.toString(), v),
+    );
     await db.setPref(_cacheKey(bookId), jsonEncode(stringKeyed));
   }
 

@@ -36,9 +36,7 @@ Future<void> _pumpProfileSelectorRow(WidgetTester tester) async {
 
   await tester.pumpWidget(
     ProviderScope(
-      overrides: <Override>[
-        profileRepositoryProvider.overrideWithValue(repo),
-      ],
+      overrides: <Override>[profileRepositoryProvider.overrideWithValue(repo)],
       child: TranslationProvider(
         child: MaterialApp(
           home: Scaffold(
@@ -65,15 +63,14 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  testWidgets(
-    'ProfileSelector survives unbounded-width trailing measurement',
-    (WidgetTester tester) async {
-      await _pumpProfileSelectorRow(tester);
+  testWidgets('ProfileSelector survives unbounded-width trailing measurement', (
+    WidgetTester tester,
+  ) async {
+    await _pumpProfileSelectorRow(tester);
 
-      expect(tester.takeException(), isNull);
-      expect(find.byType(DropdownMenu<int>), findsOneWidget);
-    },
-  );
+    expect(tester.takeException(), isNull);
+    expect(find.byType(DropdownMenu<int>), findsOneWidget);
+  });
 
   testWidgets(
     'ProfileSelector trailing does not overflow a narrow (320px) row',

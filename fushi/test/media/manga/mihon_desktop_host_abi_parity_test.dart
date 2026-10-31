@@ -29,10 +29,12 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('Mihon 宿主 ABI 版本对齐（桌面 sidecar ↔ Android 宿主）', () {
     late final File androidGradle = File('android/app/build.gradle');
-    late final File sidecarVersions =
-        File('../third_party/m_extension_server/upstream_src/gradle/libs.versions.toml');
-    late final File sidecarPatch =
-        File('../third_party/m_extension_server/server-build.gradle.patch');
+    late final File sidecarVersions = File(
+      '../third_party/m_extension_server/upstream_src/gradle/libs.versions.toml',
+    );
+    late final File sidecarPatch = File(
+      '../third_party/m_extension_server/server-build.gradle.patch',
+    );
 
     test('三个真相源文件都在（挪位置要同步改本守卫）', () {
       for (final File file in <File>[
@@ -53,8 +55,9 @@ void main() {
         sidecarVersions.readAsStringSync(),
         sidecarPatch.readAsStringSync(),
       );
-      final Map<String, String> android =
-          _androidArtifactVersions(androidGradle.readAsStringSync());
+      final Map<String, String> android = _androidArtifactVersions(
+        androidGradle.readAsStringSync(),
+      );
 
       final List<String> mismatches = <String>[];
       _sharedAbi.forEach((String label, _SharedAbi entry) {
@@ -79,7 +82,8 @@ void main() {
       expect(
         mismatches,
         isEmpty,
-        reason: '桌面 sidecar 与 Android 宿主提供给扩展的 ABI 版本漂移了：\n'
+        reason:
+            '桌面 sidecar 与 Android 宿主提供给扩展的 ABI 版本漂移了：\n'
             '${mismatches.join('\n')}\n\n'
             '扩展只带引用不带定义，宿主版本落后就会在调用点 NoSuchMethodError，'
             '而且只在落后的那一端暴露。改法：在 '
@@ -112,37 +116,45 @@ Map<String, String> _effectiveSidecarVersions(String toml, String patch) {
       if (entry != null) versions[entry] = _versionValue(trimmed)!;
     } else {
       // 裸坐标行，如 `jsoup = "org.jsoup:jsoup:1.21.2"`
-      final RegExpMatch? coordinate =
-          RegExp(r'^(\w[\w.-]*)\s*=\s*"([^":]+:[^":]+):([^"]+)"').firstMatch(trimmed);
+      final RegExpMatch? coordinate = RegExp(
+        r'^(\w[\w.-]*)\s*=\s*"([^":]+:[^":]+):([^"]+)"',
+      ).firstMatch(trimmed);
       if (coordinate != null) {
         versions[coordinate.group(1)!] = coordinate.group(3)!;
       }
     }
   }
 
-  for (final String line in _patchAddedLines(patch, 'gradle/libs.versions.toml')) {
+  for (final String line in _patchAddedLines(
+    patch,
+    'gradle/libs.versions.toml',
+  )) {
     final String trimmed = line.trim();
     final String? entry = _versionEntry(trimmed);
     if (entry != null) {
       versions[entry] = _versionValue(trimmed)!;
       continue;
     }
-    final RegExpMatch? coordinate =
-        RegExp(r'^(\w[\w.-]*)\s*=\s*"([^":]+:[^":]+):([^"]+)"').firstMatch(trimmed);
-    if (coordinate != null) versions[coordinate.group(1)!] = coordinate.group(3)!;
+    final RegExpMatch? coordinate = RegExp(
+      r'^(\w[\w.-]*)\s*=\s*"([^":]+:[^":]+):([^"]+)"',
+    ).firstMatch(trimmed);
+    if (coordinate != null)
+      versions[coordinate.group(1)!] = coordinate.group(3)!;
   }
   return versions;
 }
 
 String? _versionEntry(String trimmed) {
-  final RegExpMatch? match =
-      RegExp(r'^(\w[\w.-]*)\s*=\s*"([^":]+)"\s*(#.*)?$').firstMatch(trimmed);
+  final RegExpMatch? match = RegExp(
+    r'^(\w[\w.-]*)\s*=\s*"([^":]+)"\s*(#.*)?$',
+  ).firstMatch(trimmed);
   return match?.group(1);
 }
 
 String? _versionValue(String trimmed) {
-  final RegExpMatch? match =
-      RegExp(r'^(\w[\w.-]*)\s*=\s*"([^":]+)"\s*(#.*)?$').firstMatch(trimmed);
+  final RegExpMatch? match = RegExp(
+    r'^(\w[\w.-]*)\s*=\s*"([^":]+)"\s*(#.*)?$',
+  ).firstMatch(trimmed);
   return match?.group(2);
 }
 

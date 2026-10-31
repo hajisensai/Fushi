@@ -54,19 +54,19 @@ void main() {
     void installNative({required bool supported, bool enterSucceeds = true}) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(FushiChannels.pictureInPicture, (
-        MethodCall call,
-      ) async {
-        calls.add(call);
-        switch (call.method) {
-          case 'isSupported':
-            return supported;
-          case 'enter':
-            return enterSucceeds;
-          case 'isActive':
-            return false;
-        }
-        return null;
-      });
+            MethodCall call,
+          ) async {
+            calls.add(call);
+            switch (call.method) {
+              case 'isSupported':
+                return supported;
+              case 'enter':
+                return enterSucceeds;
+              case 'isActive':
+                return false;
+            }
+            return null;
+          });
     }
 
     setUp(() {
@@ -86,12 +86,9 @@ void main() {
       installNative(supported: false);
 
       expect(await AndroidPictureInPicture.enter(aspectRatio: 16 / 9), isFalse);
-      expect(
-          calls.map((MethodCall c) => c.method),
-          <String>[
-            'isSupported',
-          ],
-          reason: '不支持就该止步于能力探测，不许再发 enter');
+      expect(calls.map((MethodCall c) => c.method), <String>[
+        'isSupported',
+      ], reason: '不支持就该止步于能力探测，不许再发 enter');
     });
 
     test('支持时 enter 透传钳制后的比例', () async {
@@ -165,8 +162,8 @@ void main() {
 
     test('onChanged 驱动 modeChanges 与 isActive', () async {
       final List<bool> seen = <bool>[];
-      final StreamSubscription<bool> sub =
-          AndroidPictureInPicture.modeChanges.listen(seen.add);
+      final StreamSubscription<bool> sub = AndroidPictureInPicture.modeChanges
+          .listen(seen.add);
       addTearDown(sub.cancel);
 
       AndroidPictureInPicture.debugHandleModeChanged(true);
@@ -182,8 +179,8 @@ void main() {
 
     test('重复的同值事件被去抖，不会刷屏', () async {
       final List<bool> seen = <bool>[];
-      final StreamSubscription<bool> sub =
-          AndroidPictureInPicture.modeChanges.listen(seen.add);
+      final StreamSubscription<bool> sub = AndroidPictureInPicture.modeChanges
+          .listen(seen.add);
       addTearDown(sub.cancel);
 
       AndroidPictureInPicture.debugHandleModeChanged(true);
@@ -197,10 +194,10 @@ void main() {
     test('modeChanges 支持多订阅者', () async {
       final List<bool> a = <bool>[];
       final List<bool> b = <bool>[];
-      final StreamSubscription<bool> subA =
-          AndroidPictureInPicture.modeChanges.listen(a.add);
-      final StreamSubscription<bool> subB =
-          AndroidPictureInPicture.modeChanges.listen(b.add);
+      final StreamSubscription<bool> subA = AndroidPictureInPicture.modeChanges
+          .listen(a.add);
+      final StreamSubscription<bool> subB = AndroidPictureInPicture.modeChanges
+          .listen(b.add);
       addTearDown(subA.cancel);
       addTearDown(subB.cancel);
 

@@ -97,7 +97,8 @@ class MediaSourcesView extends ConsumerStatefulWidget {
   final Future<void> Function(
     SourceLibraryRow source,
     SourceScanSummary summary,
-  )? onVideoScanCompleted;
+  )?
+  onVideoScanCompleted;
 
   /// 与页面生命周期解耦的刮削任务控制器，仅用于忙状态和进度。
   final VideoSourceScrapeTaskController? scrapeTaskController;
@@ -164,10 +165,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 换签名直链，SFTP 经回环中继按偏移读；FTP 读不了区间，扫描器会拒）。
   /// 音乐只认本地文件夹（扫描器对非 local 来源直接报错，见 `_scanMusicSource`）。
   List<String> get _networkTransports => switch (widget.mediaKind) {
-        'video' => const <String>['sftp', 'webdav', 'alist'],
-        'music' => const <String>[],
-        _ => const <String>['sftp', 'ftp', 'webdav', 'alist'],
-      };
+    'video' => const <String>['sftp', 'webdav', 'alist'],
+    'music' => const <String>[],
+    _ => const <String>['sftp', 'ftp', 'webdav', 'alist'],
+  };
 
   /// 页面页头与所有行级 mutation 共用的忙状态。
   bool get isBusy =>
@@ -188,8 +189,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
     // BUG-1560：互联总开关的另一个写入口是同步设置页；不订阅这条广播，本视图的
     // 开关就停在开页那一刻的值（反之亦然）。真值仍从 preferences 重读。
-    SyncRepository.interconnectEnabledRevision
-        .addListener(_onInterconnectEnabledChanged);
+    SyncRepository.interconnectEnabledRevision.addListener(
+      _onInterconnectEnabledChanged,
+    );
     _load();
   }
 
@@ -207,8 +209,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (widget.mediaKind == 'video') {
       videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
     }
-    SyncRepository.interconnectEnabledRevision
-        .removeListener(_onInterconnectEnabledChanged);
+    SyncRepository.interconnectEnabledRevision.removeListener(
+      _onInterconnectEnabledChanged,
+    );
     super.dispose();
   }
 
@@ -225,10 +228,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   Future<void> _load() async {
-    final List<SourceLibraryRow> rows =
-        await _db.getMediaSourcesByKind(widget.mediaKind);
-    final bool interconnectEnabled =
-        await SyncRepository(_db).isInterconnectEnabled();
+    final List<SourceLibraryRow> rows = await _db.getMediaSourcesByKind(
+      widget.mediaKind,
+    );
+    final bool interconnectEnabled = await SyncRepository(
+      _db,
+    ).isInterconnectEnabled();
     final Map<int, int> counts = await _loadCumulativeCounts(rows);
     final Map<int, VideoSourceScrapeRunRow> latestRuns =
         await _loadLatestScrapeRuns(rows);
@@ -254,16 +259,16 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final Map<int, VideoSourceScrapeRunRow> result =
         <int, VideoSourceScrapeRunRow>{};
     for (final SourceLibraryRow row in rows) {
-      final List<VideoSourceScrapeRunRow> runs =
-          await _db.getVideoSourceScrapeRuns(sourceId: row.id, limit: 1);
+      final List<VideoSourceScrapeRunRow> runs = await _db
+          .getVideoSourceScrapeRuns(sourceId: row.id, limit: 1);
       if (runs.isNotEmpty) result[row.id] = runs.first;
     }
     return result;
   }
 
   Future<void> _refreshLatestScrapeRun(int sourceId) async {
-    final List<VideoSourceScrapeRunRow> runs =
-        await _db.getVideoSourceScrapeRuns(sourceId: sourceId, limit: 1);
+    final List<VideoSourceScrapeRunRow> runs = await _db
+        .getVideoSourceScrapeRuns(sourceId: sourceId, limit: 1);
     if (!mounted) return;
     setState(() {
       if (runs.isEmpty) {
@@ -278,12 +283,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (!mounted) return;
     final VideoSourceScrapeProgress progress =
         widget.scrapeTaskController?.progress ??
-            const VideoSourceScrapeProgress();
+        const VideoSourceScrapeProgress();
     final VideoSourceScrapePhase previous = _lastObservedScrapePhase;
     _lastObservedScrapePhase = progress.phase;
     setState(() {});
     if (previous == progress.phase || progress.isRunning) return;
-    final Iterable<int> sourceIds = progress.report?.sourceIds ??
+    final Iterable<int> sourceIds =
+        progress.report?.sourceIds ??
         (progress.sourceId == null ? const <int>[] : <int>[progress.sourceId!]);
     for (final int sourceId in sourceIds) {
       unawaited(_refreshLatestScrapeRun(sourceId));
@@ -307,8 +313,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   /// 重读单个来源的累计计数（重新扫描后刷新该行用）。
   Future<void> _refreshCount(int sourceId) async {
-    final int count =
-        await _db.countMediaBySourceId(sourceId, widget.mediaKind);
+    final int count = await _db.countMediaBySourceId(
+      sourceId,
+      widget.mediaKind,
+    );
     if (!mounted) return;
     setState(() => _cumulativeCount[sourceId] = count);
   }
@@ -451,8 +459,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   Widget _buildRow(FushiDesignTokens tokens, SourceLibraryRow row) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final TextStyle subStyle =
-        context.fushiType.bodySmall.copyWith(color: cs.onSurfaceVariant);
+    final TextStyle subStyle = context.fushiType.bodySmall.copyWith(
+      color: cs.onSurfaceVariant,
+    );
     final bool isLocal = row.transport == 'local';
     final bool isVideo = widget.mediaKind == 'video';
     final bool scanning = _scanning.contains(row.id);
@@ -612,32 +621,32 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                     action.onTap?.call(),
                 itemBuilder: (BuildContext context) =>
                     <PopupMenuEntry<_SourceRowMenuAction>>[
-                  for (final _SourceRowMenuAction action in menu)
-                    PopupMenuItem<_SourceRowMenuAction>(
-                      key: action.key,
-                      value: action,
-                      enabled: action.onTap != null,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          FushiIcon(
-                            action.icon,
-                            size: 20,
-                            color: action.destructive ? cs.error : null,
+                      for (final _SourceRowMenuAction action in menu)
+                        PopupMenuItem<_SourceRowMenuAction>(
+                          key: action.key,
+                          value: action,
+                          enabled: action.onTap != null,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              FushiIcon(
+                                action.icon,
+                                size: 20,
+                                color: action.destructive ? cs.error : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Flexible(
+                                child: Text(
+                                  action.label,
+                                  style: action.destructive
+                                      ? TextStyle(color: cs.error)
+                                      : null,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Flexible(
-                            child: Text(
-                              action.label,
-                              style: action.destructive
-                                  ? TextStyle(color: cs.error)
-                                  : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
+                        ),
+                    ],
               ),
             ],
           ),
@@ -670,8 +679,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String host = (config['host'] as String?) ?? '';
     final String user = (config['username'] as String?) ?? '';
     final String prefix = row.transport.toUpperCase();
-    final String authority =
-        user.isEmpty ? host : (host.isEmpty ? user : '$user@$host');
+    final String authority = user.isEmpty
+        ? host
+        : (host.isEmpty ? user : '$user@$host');
     return '$prefix · $authority  ${row.rootPath}';
   }
 
@@ -768,15 +778,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   String _scrapePhaseLabel(VideoSourceScrapePhase phase) => switch (phase) {
-        VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
-        VideoSourceScrapePhase.recognizing =>
-          t.video_source_scrape_phase_recognizing,
-        VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
-        VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
-        VideoSourceScrapePhase.writingSidecars =>
-          t.video_source_scrape_phase_writing_sidecars,
-        _ => t.video_source_scrape_action,
-      };
+    VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
+    VideoSourceScrapePhase.recognizing =>
+      t.video_source_scrape_phase_recognizing,
+    VideoSourceScrapePhase.fetching => t.video_source_scrape_phase_fetching,
+    VideoSourceScrapePhase.applying => t.video_source_scrape_phase_applying,
+    VideoSourceScrapePhase.writingSidecars =>
+      t.video_source_scrape_phase_writing_sidecars,
+    _ => t.video_source_scrape_action,
+  };
 
   /// 上次刮削摘要 → 该次 run 的可操作详情。重刮走的是行上那颗「刮削此来源」
   /// 按钮的同一个回调，手动指定走 controller 的同一条绑定保存路径。
@@ -812,9 +822,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     return existing.isEmpty
         ? 0
         : existing
-                .map((SourceLibraryRow r) => r.sortOrder)
-                .reduce((int a, int b) => a > b ? a : b) +
-            1;
+                  .map((SourceLibraryRow r) => r.sortOrder)
+                  .reduce((int a, int b) => a > b ? a : b) +
+              1;
   }
 
   /// 添加来源：让用户选本地文件夹或网络来源（三域全开放；视频网络仅 WebDAV/AList）。
@@ -894,45 +904,46 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     };
     final _FolderImportChoice? choice =
         await showAppDialog<_FolderImportChoice>(
-      context: context,
-      builder: (BuildContext ctx) => FushiSimpleDialog(
-        title: Text(t.media_import_folder),
-        children: <Widget>[
-          FushiSimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.asSource),
-            child: Row(
-              children: <Widget>[
-                const FushiIcon(Icons.create_new_folder_outlined),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(t.media_import_folder_as_source),
-                      Text(
-                        asSourceHint,
-                        style: Theme.of(ctx).textTheme.bodySmall,
+          context: context,
+          builder: (BuildContext ctx) => FushiSimpleDialog(
+            title: Text(t.media_import_folder),
+            children: <Widget>[
+              FushiSimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(ctx, _FolderImportChoice.asSource),
+                child: Row(
+                  children: <Widget>[
+                    const FushiIcon(Icons.create_new_folder_outlined),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(t.media_import_folder_as_source),
+                          Text(
+                            asSourceHint,
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              FushiSimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
+                child: Row(
+                  children: <Widget>[
+                    const FushiIcon(Icons.file_download_outlined),
+                    const SizedBox(width: 16),
+                    Expanded(child: Text(t.media_import_folder_once)),
+                  ],
+                ),
+              ),
+            ],
           ),
-          FushiSimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
-            child: Row(
-              children: <Widget>[
-                const FushiIcon(Icons.file_download_outlined),
-                const SizedBox(width: 16),
-                Expanded(child: Text(t.media_import_folder_once)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+        );
     if (!mounted || choice == null) return;
     switch (choice) {
       case _FolderImportChoice.asSource:
@@ -988,8 +999,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     // 还会退化成 `/`），而 SAF 授的是 URI 权限不是路径权限——没有全文件访问，扫描
     // 器读它必失败，于是「加了来源却永远扫不出书」。统一走 [_pickSourceFolder]
     // （安卓先取全文件访问再经原生 SAF 解析真实路径；iOS 建安全作用域书签；桌面原样）。
-    final ({String path, String? bookmark})? pick =
-        await _pickSourceFolder(t.media_source_add_local_folder);
+    final ({String path, String? bookmark})? pick = await _pickSourceFolder(
+      t.media_source_add_local_folder,
+    );
     if (!mounted || pick == null) return;
     final String picked = pick.path;
     final String? bookmark = pick.bookmark;
@@ -1043,8 +1055,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 逐字一致。
   Future<void> importLocalFolderOnce() async {
     if (isBusy) return;
-    final ({String path, String? bookmark})? pick =
-        await _pickSourceFolder(t.media_import_folder);
+    final ({String path, String? bookmark})? pick = await _pickSourceFolder(
+      t.media_import_folder,
+    );
     if (!mounted || pick == null) return;
     final String picked = pick.path;
     if (await _importedAsAudioCd(picked) || !mounted) return;
@@ -1091,12 +1104,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           } else {
             FushiToast.show(
               msg: switch (widget.mediaKind) {
-                'book' =>
-                  t.media_source_count_book(n: summary.importedMediaCount),
-                'manga' =>
-                  t.media_source_count_manga(n: summary.importedMediaCount),
-                'music' =>
-                  t.media_source_count_music(n: summary.importedMediaCount),
+                'book' => t.media_source_count_book(
+                  n: summary.importedMediaCount,
+                ),
+                'manga' => t.media_source_count_manga(
+                  n: summary.importedMediaCount,
+                ),
+                'music' => t.media_source_count_music(
+                  n: summary.importedMediaCount,
+                ),
                 _ => t.media_source_count_video(n: summary.importedMediaCount),
               },
               severity: ToastSeverity.success,
@@ -1166,14 +1182,16 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final List<String> transports = _networkTransports;
     final _NetworkSourceResult? result =
         await showAppDialog<_NetworkSourceResult>(
-      context: context,
-      builder: (BuildContext ctx) =>
-          _NetworkSourceFormDialog(transports: transports),
-    );
+          context: context,
+          builder: (BuildContext ctx) =>
+              _NetworkSourceFormDialog(transports: transports),
+        );
     if (!mounted || result == null) return;
 
-    final String norm =
-        normalizeSourceRootPath(result.remotePath, transport: result.transport);
+    final String norm = normalizeSourceRootPath(
+      result.remotePath,
+      transport: result.transport,
+    );
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
     // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。命中时与本地分支同样处理
     // （BUG-2368）：说明原因 + 重扫已有行，而不是播一条裸路径 toast 就 return。
@@ -1250,14 +1268,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (isBusy) return;
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
     final Future<void> Function(SourceLibraryRow, SourceScanSummary)?
-        onVideoScanCompleted = widget.onVideoScanCompleted;
+    onVideoScanCompleted = widget.onVideoScanCompleted;
     SourceScanSummary? summary;
     setState(() => _scanning.add(row.id));
     try {
-      Future<SourceScanSummary> scan() => SourceLibraryScanner(_db).scan(
-            row,
-            restoreDissolvedGroups: restoreDissolvedGroups,
-          );
+      Future<SourceScanSummary> scan() => SourceLibraryScanner(
+        _db,
+      ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups);
       final VideoSourceScrapeTaskController? controller =
           widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
       summary = controller == null
@@ -1278,8 +1295,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             _scanning.remove(row.id);
             final List<SourceLibraryRow>? rows = _rows;
             if (rows != null && updated != null) {
-              final int idx =
-                  rows.indexWhere((SourceLibraryRow r) => r.id == row.id);
+              final int idx = rows.indexWhere(
+                (SourceLibraryRow r) => r.id == row.id,
+              );
               if (idx >= 0) rows[idx] = updated;
             }
           });
@@ -1330,24 +1348,23 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (widget.mediaKind != 'video' || isBusy) {
       return;
     }
-    final VideoSourceScrapeSettingRow? existing =
-        await _db.getVideoSourceScrapeSettings(row.id);
+    final VideoSourceScrapeSettingRow? existing = await _db
+        .getVideoSourceScrapeSettings(row.id);
     if (!mounted) return;
     final _VideoSourceScrapeSettingsDraft? draft =
         await showAppDialog<_VideoSourceScrapeSettingsDraft>(
-      context: context,
-      builder: (BuildContext context) => _VideoSourceScrapeSettingsDialog(
-        initial: _VideoSourceScrapeSettingsDraft.fromRow(
-          existing,
-          groupingMode: row.videoGroupingMode,
-        ),
-      ),
-    );
+          context: context,
+          builder: (BuildContext context) => _VideoSourceScrapeSettingsDialog(
+            initial: _VideoSourceScrapeSettingsDraft.fromRow(
+              existing,
+              groupingMode: row.videoGroupingMode,
+            ),
+          ),
+        );
     if (draft == null) return;
     await (_db.update(
       _db.mediaSources,
-    )..where((tbl) => tbl.id.equals(row.id)))
-        .write(
+    )..where((tbl) => tbl.id.equals(row.id))).write(
       MediaSourcesCompanion(videoGroupingMode: Value(draft.groupingMode)),
     );
     await _db.upsertVideoSourceScrapeSettings(
@@ -1441,11 +1458,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     File? temporaryPackage;
     try {
       final List<VideoBookRow> allBooks = await _db.allVideoBooks();
-      final List<VideoScrapeMetaRow> allMetadata =
-          await _db.getAllVideoScrapeMeta();
+      final List<VideoScrapeMetaRow> allMetadata = await _db
+          .getAllVideoScrapeMeta();
       final Directory temporaryDirectory = await getTemporaryDirectory();
       final DateTime now = DateTime.now();
-      final String timestamp = '${now.year.toString().padLeft(4, '0')}'
+      final String timestamp =
+          '${now.year.toString().padLeft(4, '0')}'
           '${now.month.toString().padLeft(2, '0')}'
           '${now.day.toString().padLeft(2, '0')}-'
           '${now.hour.toString().padLeft(2, '0')}'
@@ -1537,20 +1555,20 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final bool hasDownloadRefs = refs.subscriptions > 0 || refs.pendingJobs > 0;
     final List<MediaSourceRow> targets = hasDownloadRefs
         ? (await _appModel.getManagedVideoDownloadSources())
-            .where((MediaSourceRow source) => source.id != row.id)
-            .toList(growable: false)
+              .where((MediaSourceRow source) => source.id != row.id)
+              .toList(growable: false)
         : const <MediaSourceRow>[];
     if (!mounted) return;
     final _SourceRemovalChoice? choice =
         await showAppDialog<_SourceRemovalChoice>(
-      context: context,
-      builder: (BuildContext ctx) => _SourceRemovalDialog(
-        subscriptions: refs.subscriptions,
-        pendingJobs: refs.pendingJobs,
-        showDownloadMigration: hasDownloadRefs,
-        targets: targets,
-      ),
-    );
+          context: context,
+          builder: (BuildContext ctx) => _SourceRemovalDialog(
+            subscriptions: refs.subscriptions,
+            pendingJobs: refs.pendingJobs,
+            showDownloadMigration: hasDownloadRefs,
+            targets: targets,
+          ),
+        );
     if (!mounted || choice == null) return;
     await removeSourceLibrary(
       database: _db,
@@ -1707,8 +1725,9 @@ class _VideoSourceScrapeSettingsDraft {
     return _VideoSourceScrapeSettingsDraft(
       groupingMode: groupingMode,
       // 历史值（bangumi / douban / anilist / anidb）不是可选主源，按「跟随全局」显示。
-      providerOverride:
-          parseSelectableVideoMetadataProvider(row?.providerOverride)?.name,
+      providerOverride: parseSelectableVideoMetadataProvider(
+        row?.providerOverride,
+      )?.name,
       metadataLocale: switch (row?.metadataLocale?.trim()) {
         final String value when value.isNotEmpty => value,
         _ => null,
@@ -1742,8 +1761,8 @@ class _VideoSourceScrapeSettingsDraft {
 
   static String _validPolicy(String? value) =>
       const <String>{'skip', 'missingOnly', 'overwrite'}.contains(value)
-          ? value!
-          : 'missingOnly';
+      ? value!
+      : 'missingOnly';
 }
 
 class _VideoSourceScrapeSettingsDialog extends StatefulWidget {
@@ -1771,8 +1790,9 @@ class _VideoSourceScrapeSettingsDialogState
   late String _providerOverride = widget.initial.providerOverride ?? '';
 
   /// 资料语言输入框：空串 = 跟随全局。
-  late final TextEditingController _metadataLocale =
-      TextEditingController(text: widget.initial.metadataLocale ?? '');
+  late final TextEditingController _metadataLocale = TextEditingController(
+    text: widget.initial.metadataLocale ?? '',
+  );
 
   @override
   void dispose() {
@@ -2005,8 +2025,9 @@ class _NetworkSourceFormDialog extends StatefulWidget {
 class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
   late String _transport = widget.transports.first;
   final TextEditingController _hostController = TextEditingController();
-  final TextEditingController _portController =
-      TextEditingController(text: '22');
+  final TextEditingController _portController = TextEditingController(
+    text: '22',
+  );
   final TextEditingController _userController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _keyController = TextEditingController();

@@ -23,7 +23,8 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
-const String kPolicyFile = '../packages/fushi_engine/lib/epub/book_title_conflict.dart';
+const String kPolicyFile =
+    '../packages/fushi_engine/lib/epub/book_title_conflict.dart';
 
 /// 已淘汰的名字 → 换成什么。
 const Map<String, String> kRetiredNames = <String, String>{
@@ -78,8 +79,9 @@ List<String> _codeHits(List<String> roots, String needle) {
   final List<String> hits = <String>[];
   for (final File e in _scannedDartFiles(roots)) {
     final String rel = e.path.replaceAll(r'\', '/');
-    final List<String> lines =
-        maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
+    final List<String> lines = maskCommentsAndScriptLines(
+      e.readAsStringSync(),
+    ).split('\n');
     for (int i = 0; i < lines.length; i++) {
       if (lines[i].contains(needle)) {
         hits.add('$rel:${i + 1}');
@@ -100,8 +102,12 @@ void main() {
   ];
 
   test('扫描规模哨兵：淘汰词扫描确实扫到了 lib/ + test/', () {
-    expectScanScale(_scannedDartFiles(roots).length,
-        what: 'lib/ + test/ 下的 .dart（已排除本守卫自身）', atLeast: 3570, measured: 4463);
+    expectScanScale(
+      _scannedDartFiles(roots).length,
+      what: 'lib/ + test/ 下的 .dart（已排除本守卫自身）',
+      atLeast: 3570,
+      measured: 4463,
+    );
   });
 
   group('淘汰词不得复活', () {
@@ -110,7 +116,8 @@ void main() {
         expect(
           _codeHits(roots, retired),
           isEmpty,
-          reason: '`$retired` 是淘汰词，新代码请用 `$replacement`'
+          reason:
+              '`$retired` 是淘汰词，新代码请用 `$replacement`'
               '（见 CLAUDE.md 命名术语表）。讲历史的注释不受限——把它写进注释即可。',
         );
       });
@@ -121,8 +128,11 @@ void main() {
     late final String src = _codeOf(kPolicyFile);
 
     test('DuplicatePolicy 是 sealed 的（非法组合不可表达）', () {
-      expect(src.contains('sealed class DuplicatePolicy'), isTrue,
-          reason: '必须 sealed：否则外部可以再造第四种状态，穷尽 switch 失效');
+      expect(
+        src.contains('sealed class DuplicatePolicy'),
+        isTrue,
+        reason: '必须 sealed：否则外部可以再造第四种状态，穷尽 switch 失效',
+      );
     });
 
     test('三个策略 factory 都在', () {
@@ -154,12 +164,13 @@ void main() {
     expect(
       // Dart 3 里 `case _:` / `case _ when ...` 与 `default:` 等效，一样让穷尽性
       // 失效。只堵 `default:` 是假绿——实测 `case _:` 能整个穿过去。
-      RegExp(r'^\s*(default\s*:|case\s+_\s*(:|when))', multiLine: true)
-          .allMatches(body)
-          .map((RegExpMatch m) => m.group(0)!.trim())
-          .toList(),
+      RegExp(
+        r'^\s*(default\s*:|case\s+_\s*(:|when))',
+        multiLine: true,
+      ).allMatches(body).map((RegExpMatch m) => m.group(0)!.trim()).toList(),
       isEmpty,
-      reason: '写兜底分支就等于放弃穷尽检查——加第四种策略时这里必须编译报错，'
+      reason:
+          '写兜底分支就等于放弃穷尽检查——加第四种策略时这里必须编译报错，'
           '而不是悄悄走进 default / case _',
     );
   });

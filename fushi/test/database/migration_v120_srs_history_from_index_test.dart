@@ -28,7 +28,10 @@ void main() {
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = '${directory.path}/test.db';
-    final FushiDatabase fresh = FushiDatabase.atFile(path, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      path,
+      isMainProcess: false,
+    );
     await fresh.customSelect('SELECT 1').get();
     await fresh.close();
 
@@ -65,15 +68,16 @@ void main() {
     expect(rows.map((QueryRow r) => r.read<String>('field_key')), <String>[
       'historyFrom/old-card',
     ]);
-    final String plan = (await migrated
-            .customSelect(
-              'EXPLAIN QUERY PLAN SELECT entity_id, field_key '
-              'FROM srs_field_edits WHERE $kSrsHistoryFromCondition '
-              "AND +entity_kind = 'card'",
-            )
-            .get())
-        .map((QueryRow r) => r.read<String>('detail'))
-        .join(' / ');
+    final String plan =
+        (await migrated
+                .customSelect(
+                  'EXPLAIN QUERY PLAN SELECT entity_id, field_key '
+                  'FROM srs_field_edits WHERE $kSrsHistoryFromCondition '
+                  "AND +entity_kind = 'card'",
+                )
+                .get())
+            .map((QueryRow r) => r.read<String>('detail'))
+            .join(' / ');
     expect(plan, contains('COVERING INDEX $index'), reason: plan);
     await migrated.close();
 

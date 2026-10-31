@@ -28,10 +28,13 @@ class CommandHarness {
 
   /// 建临时目录；[withConfig] 为 false 时不写配置文件（测「缺配置 → 66」）。
   static Future<CommandHarness> create({bool withConfig = true}) async {
-    final Directory tmp = await Directory.systemTemp.createTemp('fushi_server_cmd_');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'fushi_server_cmd_',
+    );
     final File config = File(p.join(tmp.path, 'fushi_server.yaml'));
     final CommandHarness h = CommandHarness._(tmp, config);
-    if (withConfig) await ServerConfig.defaults(dataDir: h.dataDir).save(config);
+    if (withConfig)
+      await ServerConfig.defaults(dataDir: h.dataDir).save(config);
     return h;
   }
 
@@ -45,11 +48,17 @@ class CommandHarness {
     module.register(parser);
     final ArgResults results = parser.parse(args);
     final ArgResults command = results.command!;
-    return module.run(command.name!, command, CliContext(configFile: configFile, verbose: false));
+    return module.run(
+      command.name!,
+      command,
+      CliContext(configFile: configFile, verbose: false),
+    );
   }
 
   /// `--json` 输出解析回 map。
-  Map<String, Object?> json() => (jsonDecode(out.toString()) as Map<Object?, Object?>).cast<String, Object?>();
+  Map<String, Object?> json() =>
+      (jsonDecode(out.toString()) as Map<Object?, Object?>)
+          .cast<String, Object?>();
 
   /// 重新打开命令写过的那份库（命令结束时已关闭）。
   FushiDatabase openDb() => FushiDatabase(p.join(dataDir, 'support'));
@@ -115,7 +124,12 @@ void writeTestMokuro(String dir, String title) {
       'version': '0.2.0',
       'title': title,
       'pages': <Object?>[
-        <String, Object?>{'img_width': 800, 'img_height': 1200, 'img_path': 'images/p001.jpg', 'blocks': <Object?>[]},
+        <String, Object?>{
+          'img_width': 800,
+          'img_height': 1200,
+          'img_path': 'images/p001.jpg',
+          'blocks': <Object?>[],
+        },
       ],
     }),
   );

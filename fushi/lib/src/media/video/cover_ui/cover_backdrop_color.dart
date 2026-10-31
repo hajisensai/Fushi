@@ -45,8 +45,9 @@ class CoverBackdropSeed {
 ///
 /// 调用方负责 [image] 的生命周期——本函数只读，不 dispose。
 Future<CoverBackdropSeed?> sampleCoverBackdropSeed(ui.Image image) async {
-  final ByteData? data =
-      await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  final ByteData? data = await image.toByteData(
+    format: ui.ImageByteFormat.rawRgba,
+  );
   if (data == null) return null;
   final Uint8List bytes = data.buffer.asUint8List();
   final int pixelCount = image.width * image.height;
@@ -103,7 +104,9 @@ Color harmonizeBackdrop(Color seed, Brightness brightness) {
   final bool dark = brightness == Brightness.dark;
   final HSLColor hsl = HSLColor.fromColor(seed);
   return hsl
-      .withSaturation(hsl.saturation.clamp(0.0, backdropMaxSaturation(brightness)))
+      .withSaturation(
+        hsl.saturation.clamp(0.0, backdropMaxSaturation(brightness)),
+      )
       .withLightness(dark ? kBackdropDarkLightness : kBackdropLightLightness)
       .toColor();
 }
@@ -112,8 +115,8 @@ Color harmonizeBackdrop(Color seed, Brightness brightness) {
 /// 实测柚子社那张全黄 logo 在 0.42 下就是这个毛病；亮色主题没有这个问题。
 double backdropMaxSaturation(Brightness brightness) =>
     brightness == Brightness.dark
-        ? kBackdropMaxSaturationDark
-        : kBackdropMaxSaturationLight;
+    ? kBackdropMaxSaturationDark
+    : kBackdropMaxSaturationLight;
 
 /// 亮色主题的饱和度上限（只留色相倾向，不铺色块）。
 const double kBackdropMaxSaturationLight = 0.42;
@@ -138,12 +141,14 @@ Gradient coverBackdropGradient(Color base) {
     end: Alignment.bottomCenter,
     colors: <Color>[
       hsl
-          .withLightness((hsl.lightness + kBackdropGradientLightnessDelta)
-              .clamp(0.0, 1.0))
+          .withLightness(
+            (hsl.lightness + kBackdropGradientLightnessDelta).clamp(0.0, 1.0),
+          )
           .toColor(),
       hsl
-          .withLightness((hsl.lightness - kBackdropGradientLightnessDelta)
-              .clamp(0.0, 1.0))
+          .withLightness(
+            (hsl.lightness - kBackdropGradientLightnessDelta).clamp(0.0, 1.0),
+          )
           .toColor(),
     ],
   );

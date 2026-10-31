@@ -41,17 +41,15 @@ void main() {
       return <String>['a'];
     }
 
-    expect(
-      await cache.read(sourceId: ic, key: 'books', fetch: fetch),
-      <String>['a'],
-    );
+    expect(await cache.read(sourceId: ic, key: 'books', fetch: fetch), <String>[
+      'a',
+    ]);
     expect(calls, 1);
 
     now += 59 * 1000; // 仍在 60s TTL 内
-    expect(
-      await cache.read(sourceId: ic, key: 'books', fetch: fetch),
-      <String>['a'],
-    );
+    expect(await cache.read(sourceId: ic, key: 'books', fetch: fetch), <String>[
+      'a',
+    ]);
     expect(calls, 1, reason: 'TTL 内必须命中缓存，不得再联网');
   });
 
@@ -59,16 +57,13 @@ void main() {
     int calls = 0;
     Future<List<String>> fetch() async => <String>['v${++calls}'];
 
-    expect(
-      await cache.read(sourceId: ic, key: 'books', fetch: fetch),
-      <String>['v1'],
-    );
+    expect(await cache.read(sourceId: ic, key: 'books', fetch: fetch), <String>[
+      'v1',
+    ]);
     now += 61 * 1000;
-    expect(
-      await cache.read(sourceId: ic, key: 'books', fetch: fetch),
-      <String>['v2'],
-      reason: 'TTL 过期必须重新取数，否则对端新增的书永远看不到',
-    );
+    expect(await cache.read(sourceId: ic, key: 'books', fetch: fetch), <String>[
+      'v2',
+    ], reason: 'TTL 过期必须重新取数，否则对端新增的书永远看不到');
     expect(calls, 2);
   });
 
@@ -98,10 +93,16 @@ void main() {
     }
 
     // 书架与首页 dashboard 同帧各问一次远端书清单。
-    final Future<List<String>> first =
-        cache.read(sourceId: ic, key: 'books', fetch: fetch);
-    final Future<List<String>> second =
-        cache.read(sourceId: ic, key: 'books', fetch: fetch);
+    final Future<List<String>> first = cache.read(
+      sourceId: ic,
+      key: 'books',
+      fetch: fetch,
+    );
+    final Future<List<String>> second = cache.read(
+      sourceId: ic,
+      key: 'books',
+      fetch: fetch,
+    );
     expect(calls, 1, reason: '同槽有请求在途时不得再发一枪');
 
     gate.complete(<String>['shared']);
@@ -146,10 +147,9 @@ void main() {
 
     // 失败没有刷新 fetchedAt，也没有抹掉旧值：调用方可继续用上一次快照渲染。
     shouldFail = false;
-    expect(
-      await cache.read(sourceId: ic, key: 'books', fetch: fetch),
-      <String>['ok'],
-    );
+    expect(await cache.read(sourceId: ic, key: 'books', fetch: fetch), <String>[
+      'ok',
+    ]);
   });
 
   test('invalidate 作废单槽，不牵连其它域', () async {
@@ -169,8 +169,11 @@ void main() {
 
     cache.invalidate(ic, RemoteLibraryCacheKeys.books);
     expect(cache.isFresh(ic, RemoteLibraryCacheKeys.books), isFalse);
-    expect(cache.isFresh(ic, RemoteLibraryCacheKeys.videos), isTrue,
-        reason: '失效一个域不得连带清掉别的域');
+    expect(
+      cache.isFresh(ic, RemoteLibraryCacheKeys.videos),
+      isTrue,
+      reason: '失效一个域不得连带清掉别的域',
+    );
 
     await cache.read(
       sourceId: ic,
@@ -217,8 +220,11 @@ void main() {
     cache.invalidateAll();
     slow.complete(<String>['stale-peer']);
     expect(await pending, <String>['stale-peer'], reason: '发起方仍拿到自己那次取数的结果');
-    expect(cache.isFresh(ic, 'books'), isFalse,
-        reason: '过时结果不得写回缓存，否则 TTL 内会拿上一台 host 的清单渲染');
+    expect(
+      cache.isFresh(ic, 'books'),
+      isFalse,
+      reason: '过时结果不得写回缓存，否则 TTL 内会拿上一台 host 的清单渲染',
+    );
   });
 
   test('forceRefresh 期间的旧 in-flight 结果不覆盖新结果', () async {
@@ -307,8 +313,9 @@ void main() {
       },
     );
 
-    expect(fromCloud, <String>['云盘才有的片子'],
-        reason: 'BUG-1202：云盘视图必须拿到云盘的清单，不得命中互联那份缓存');
+    expect(fromCloud, <String>[
+      '云盘才有的片子',
+    ], reason: 'BUG-1202：云盘视图必须拿到云盘的清单，不得命中互联那份缓存');
     expect(cloudFetched, isTrue, reason: '云盘是另一个槽，必须真去问云盘要，而不是复用互联的结果');
     expect(fromCloud, isNot(contains('对端才有的片子')));
   });
@@ -330,8 +337,9 @@ void main() {
       fetch: () async => <String>['对端在读的书'],
     );
 
-    expect(fromInterconnect, <String>['对端在读的书'],
-        reason: 'BUG-1202：互联视图必须拿到对端的书，不得命中云盘那份缓存');
+    expect(fromInterconnect, <String>[
+      '对端在读的书',
+    ], reason: 'BUG-1202：互联视图必须拿到对端的书，不得命中云盘那份缓存');
   });
 
   test('BUG-1202: 换云盘后端类型（Drive→WebDAV）落不同槽，各拿各的', () async {
@@ -347,8 +355,9 @@ void main() {
     );
 
     expect(drive, <String>['Drive 上的片子']);
-    expect(webdav, <String>['WebDAV 上的片子'],
-        reason: '换后端类型后两边的 __videos__ 内容毫无关系，共用一槽 60s 内会串味');
+    expect(webdav, <String>[
+      'WebDAV 上的片子',
+    ], reason: '换后端类型后两边的 __videos__ 内容毫无关系，共用一槽 60s 内会串味');
   });
 
   test('BUG-1202: 同来源同域仍然共享（缓存没被分槽分废）', () async {
@@ -373,8 +382,11 @@ void main() {
   test('BUG-1202: 来源身份与域名拼不出歧义槽', () async {
     // 分隔符选错（比如直接字符串相加）时，('a', 'bc') 与 ('ab', 'c') 会撞成同一槽。
     await cache.read(sourceId: 'a', key: 'bc', fetch: () async => 'first');
-    final String second =
-        await cache.read(sourceId: 'ab', key: 'c', fetch: () async => 'second');
+    final String second = await cache.read(
+      sourceId: 'ab',
+      key: 'c',
+      fetch: () async => 'second',
+    );
     expect(second, 'second', reason: '(来源, 域) 的拼接必须无歧义');
   });
 
@@ -388,8 +400,9 @@ void main() {
     final ProviderContainer container = ProviderContainer();
     addTearDown(container.dispose);
 
-    final RemoteLibraryCache scoped =
-        container.read(remoteLibraryCacheProvider);
+    final RemoteLibraryCache scoped = container.read(
+      remoteLibraryCacheProvider,
+    );
     await scoped.read(
       sourceId: ic,
       key: RemoteLibraryCacheKeys.books,
@@ -400,8 +413,11 @@ void main() {
     // 模拟「对端身份变了」——真实路径是 restoreAuth 里 _sessionSignature 比对失败。
     InterconnectSyncBackend.instance.sessionIdentityRevision.value++;
 
-    expect(scoped.isFresh(ic, RemoteLibraryCacheKeys.books), isFalse,
-        reason: 'BUG-1180：换对端后不得再拿上一台 host 的清单渲染');
+    expect(
+      scoped.isFresh(ic, RemoteLibraryCacheKeys.books),
+      isFalse,
+      reason: 'BUG-1180：换对端后不得再拿上一台 host 的清单渲染',
+    );
   });
 
   group('BUG-1567 in-flight TTL 自愈', () {
@@ -413,11 +429,17 @@ void main() {
         return gate.future;
       }
 
-      final Future<List<String>> first =
-          cache.read(sourceId: ic, key: 'books', fetch: fetch);
+      final Future<List<String>> first = cache.read(
+        sourceId: ic,
+        key: 'books',
+        fetch: fetch,
+      );
       now += 30 * 1000; // 60s 信任期内
-      final Future<List<String>> second =
-          cache.read(sourceId: ic, key: 'books', fetch: fetch);
+      final Future<List<String>> second = cache.read(
+        sourceId: ic,
+        key: 'books',
+        fetch: fetch,
+      );
       expect(calls, 1, reason: '信任期内的在途请求必须被复用');
       gate.complete(<String>['a']);
       expect(await first, <String>['a']);
@@ -447,15 +469,20 @@ void main() {
           return <String>['fresh'];
         },
       );
-      expect(calls, 2,
-          reason: '超过 inFlightTtl 的在途请求不得再被复用——'
-              '否则一条漏了超时的挂死请求会让该槽永远转圈（BUG-1567）');
+      expect(
+        calls,
+        2,
+        reason:
+            '超过 inFlightTtl 的在途请求不得再被复用——'
+            '否则一条漏了超时的挂死请求会让该槽永远转圈（BUG-1567）',
+      );
       expect(fresh, <String>['fresh']);
 
       // 死 future 事后复活：迟到写回必须被 generation 比对丢弃，不得覆盖新值。
       hung.complete(<String>['stale']);
-      expect(await hungRead, <String>['stale'],
-          reason: '发起挂死那次读的调用方仍拿到自己那次的结果（语义不变）');
+      expect(await hungRead, <String>[
+        'stale',
+      ], reason: '发起挂死那次读的调用方仍拿到自己那次的结果（语义不变）');
       final List<String> after = await cache.read(
         sourceId: ic,
         key: 'books',

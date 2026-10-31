@@ -28,7 +28,8 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:args/args.dart';
-import 'package:fushi_asr_core/asr_core.dart' show DownloadableModelFile, ModelDownloadEvent, ModelFileDownloader;
+import 'package:fushi_asr_core/asr_core.dart'
+    show DownloadableModelFile, ModelDownloadEvent, ModelFileDownloader;
 import 'package:fushi_asr_onnx_ffi/asr_onnx_ffi.dart' show findUsableOrtRuntime;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -48,7 +49,8 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/native_libs.dart' show onnxRuntimeLibraryName;
-import 'package:fushi_server/src/ocr_session_factory.dart' show serverOrtLibraryPath;
+import 'package:fushi_server/src/ocr_session_factory.dart'
+    show serverOrtLibraryPath;
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
@@ -71,7 +73,9 @@ List<int> parsePageSelection(String spec, int pageCount) {
     final List<String> bounds = part.split('-');
     if (bounds.length > 2) throw FormatException('页号范围写错了: "$part"');
     final int? from = int.tryParse(bounds.first.trim());
-    final int? to = bounds.length == 2 ? int.tryParse(bounds.last.trim()) : from;
+    final int? to = bounds.length == 2
+        ? int.tryParse(bounds.last.trim())
+        : from;
     if (from == null || to == null) throw FormatException('页号范围写错了: "$part"');
     if (from < 1 || to < from || to > pageCount) {
       throw FormatException('页号 "$part" 越界（本书 1-$pageCount 页）');
@@ -85,15 +89,19 @@ List<int> parsePageSelection(String spec, int pageCount) {
 }
 
 /// 本平台能跑的本地 OCR 模型（key → 服务），与 `HeadlessHost` 的 `ocrModelServices` 同口径。
-Map<String, MangaOcrServiceImpl> serverOcrModelServices() => <String, MangaOcrServiceImpl>{
-  for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
-    if (MangaOcrLocalModel.forPlatform(model.key) == model) model.key: MangaOcrServiceImpl(localModel: model),
-};
+Map<String, MangaOcrServiceImpl> serverOcrModelServices() =>
+    <String, MangaOcrServiceImpl>{
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+        if (MangaOcrLocalModel.forPlatform(model.key) == model)
+          model.key: MangaOcrServiceImpl(localModel: model),
+    };
 
 /// 本机有没有能用的 onnxruntime（判据与 FFI 会话工厂加载时逐字一致）；没有返回原因。
 String? serverOrtProblem() {
   final String? override = serverOrtLibraryPath;
-  final String? found = findUsableOrtRuntime(candidates: override == null ? null : <String>[override]);
+  final String? found = findUsableOrtRuntime(
+    candidates: override == null ? null : <String>[override],
+  );
   if (found != null) return null;
   return 'onnxruntime 动态库不可用：在配置里设 ort_library_path，或把 ${override ?? onnxRuntimeLibraryName()} '
       '放到可执行文件旁 / 系统库路径（ASR_ONNXRUNTIME_LIB 也认）';
@@ -115,17 +123,29 @@ Future<void> _writeMangaJson(String path, MokuroPayload payload) async {
     final String source = await current.readAsString();
     if (source.contains('"pdf_text_layer')) existing = parseMangaJson(source);
   }
-  final MokuroPayload merged = preservePdfTextLayer(incoming: payload, existing: existing);
-  final File temporary = File('$path.${pid}_${DateTime.now().microsecondsSinceEpoch}.tmp');
-  await temporary.writeAsString(jsonEncode(mangaPayloadToJson(merged)), flush: true);
+  final MokuroPayload merged = preservePdfTextLayer(
+    incoming: payload,
+    existing: existing,
+  );
+  final File temporary = File(
+    '$path.${pid}_${DateTime.now().microsecondsSinceEpoch}.tmp',
+  );
+  await temporary.writeAsString(
+    jsonEncode(mangaPayloadToJson(merged)),
+    flush: true,
+  );
   await temporary.rename(path);
 }
 
 /// 把 [fresh] 里各页的文字层并进 [existing]（按归一 url 对页，其余页原样）。返回合并结果与
 /// 实际并进的页数。
-({MokuroPayload payload, int merged}) mergeMangaOcrPages(MokuroPayload existing, MokuroPayload fresh) {
+({MokuroPayload payload, int merged}) mergeMangaOcrPages(
+  MokuroPayload existing,
+  MokuroPayload fresh,
+) {
   final Map<String, MokuroImage> byUrl = <String, MokuroImage>{
-    for (final MokuroImage image in fresh.images) normalizeMangaUrl(image.url): image,
+    for (final MokuroImage image in fresh.images)
+      normalizeMangaUrl(image.url): image,
   };
   int merged = 0;
   final List<MokuroImage> images = <MokuroImage>[];
@@ -136,9 +156,14 @@ Future<void> _writeMangaJson(String path, MokuroPayload payload) async {
       continue;
     }
     merged++;
-    images.add(MokuroImage(url: image.url, size: update.size, blocks: update.blocks));
+    images.add(
+      MokuroImage(url: image.url, size: update.size, blocks: update.blocks),
+    );
   }
-  return (payload: MokuroPayload(images: images, ocr: existing.ocr), merged: merged);
+  return (
+    payload: MokuroPayload(images: images, ocr: existing.ocr),
+    merged: merged,
+  );
 }
 
 class OcrCommands extends CliModule {
@@ -154,13 +179,25 @@ class OcrCommands extends CliModule {
     final ArgParser ocr = parser.addCommand('ocr');
     addJsonFlag(ocr.addCommand('manga'))
       ..addOption('pages', help: '只识别这些页（1 起：1-20,25）；缺省整卷')
-      ..addOption('model', help: '本地模型 key（manga_ctc）', defaultsTo: kDefaultMangaOcrLocalModel.key)
+      ..addOption(
+        'model',
+        help: '本地模型 key（manga_ctc）',
+        defaultsTo: kDefaultMangaOcrLocalModel.key,
+      )
       ..addFlag('redo', negatable: false, help: '丢掉已有逐页缓存重新识别')
       ..addFlag('ai-refine', negatable: false, help: '用配置文件 ai: 段的大模型重读块内文字')
-      ..addOption('ai-mode', allowed: <String>['low_confidence', 'all'], defaultsTo: 'low_confidence');
-    addJsonFlag(ocr.addCommand('models')).addOption('model', help: '模型 key（pull 缺省 manga_ctc；rm 必填）');
+      ..addOption(
+        'ai-mode',
+        allowed: <String>['low_confidence', 'all'],
+        defaultsTo: 'low_confidence',
+      );
+    addJsonFlag(
+      ocr.addCommand('models'),
+    ).addOption('model', help: '模型 key（pull 缺省 manga_ctc；rm 必填）');
     final ArgParser manga = parser.addCommand('manga');
-    addJsonFlag(manga.addCommand('panels')).addFlag('ltr', negatable: false, help: '左→右阅读序（美漫 / 条漫）');
+    addJsonFlag(
+      manga.addCommand('panels'),
+    ).addFlag('ltr', negatable: false, help: '左→右阅读序（美漫 / 条漫）');
     addJsonFlag(manga.addCommand('panel-model'));
   }
 
@@ -173,7 +210,9 @@ class OcrCommands extends CliModule {
     if (leaf == null) {
       return _io.usage(
         '缺少子命令',
-        name == 'ocr' ? 'ocr manga <bookKey> … | ocr models [ls|pull|rm]' : 'manga panels <image…> | manga panel-model',
+        name == 'ocr'
+            ? 'ocr manga <bookKey> … | ocr models [ls|pull|rm]'
+            : 'manga panels <image…> | manga panel-model',
       );
     }
     switch ('$name ${leaf.name}') {
@@ -193,14 +232,17 @@ class OcrCommands extends CliModule {
   Future<int> _models(ArgResults leaf, CliContext ctx) async {
     const String usageLine = 'ocr models [ls|pull|rm] [--model k] [--json]';
     final String action = leaf.rest.isEmpty ? 'ls' : leaf.rest.first;
-    if (!const <String>{'ls', 'pull', 'rm'}.contains(action) || leaf.rest.length > 1) {
+    if (!const <String>{'ls', 'pull', 'rm'}.contains(action) ||
+        leaf.rest.length > 1) {
       return _io.usage('未知动作 "${leaf.rest.join(' ')}"', usageLine);
     }
     final String? key = leaf['model'] as String?;
-    if (action == 'rm' && key == null) return _io.usage('rm 要用 --model 点名删哪个模型', usageLine);
+    if (action == 'rm' && key == null)
+      return _io.usage('rm 要用 --model 点名删哪个模型', usageLine);
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
-      final Map<String, MangaOcrServiceImpl> services = serverOcrModelServices();
+      final Map<String, MangaOcrServiceImpl> services =
+          serverOcrModelServices();
       if (action == 'ls') return _modelsLs(services, json: json);
       final String target = key ?? kDefaultMangaOcrLocalModel.key;
       final MangaOcrServiceImpl? service = services[target];
@@ -217,7 +259,8 @@ class OcrCommands extends CliModule {
       String last = '';
       try {
         await for (final MangaOcrDownloadEvent e in service.downloadModels()) {
-          final String line = '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}';
+          final String line =
+              '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}';
           if (line != last) _io.err.writeln(line);
           last = line;
         }
@@ -228,7 +271,11 @@ class OcrCommands extends CliModule {
       }
       final MangaOcrModelStatus status = await service.modelStatus();
       if (json) {
-        _io.json(<String, Object?>{'model': target, 'ready': status.allReady, 'diskBytes': status.diskBytes});
+        _io.json(<String, Object?>{
+          'model': target,
+          'ready': status.allReady,
+          'diskBytes': status.diskBytes,
+        });
       } else {
         _io.out.writeln('$target: ${status.allReady ? '模型已就绪' : '下载结束但模型仍不齐'}');
       }
@@ -237,18 +284,29 @@ class OcrCommands extends CliModule {
   }
 
   int _unknownModel(String key, Map<String, MangaOcrServiceImpl> services) {
-    final bool known = MangaOcrLocalModel.values.any((MangaOcrLocalModel m) => m.key == key);
+    final bool known = MangaOcrLocalModel.values.any(
+      (MangaOcrLocalModel m) => m.key == key,
+    );
     if (!known) {
-      return _io.usage('未知模型 "$key"（可用: ${services.keys.join(' / ')}）', 'ocr … --model <key>');
+      return _io.usage(
+        '未知模型 "$key"（可用: ${services.keys.join(' / ')}）',
+        'ocr … --model <key>',
+      );
     }
-    _io.err.writeln('模型 $key 不支持本平台（${Platform.operatingSystem}）；可用: ${services.keys.join(' / ')}');
+    _io.err.writeln(
+      '模型 $key 不支持本平台（${Platform.operatingSystem}）；可用: ${services.keys.join(' / ')}',
+    );
     return kExitUnavailable;
   }
 
-  Future<int> _modelsLs(Map<String, MangaOcrServiceImpl> services, {required bool json}) async {
+  Future<int> _modelsLs(
+    Map<String, MangaOcrServiceImpl> services, {
+    required bool json,
+  }) async {
     final String? ortProblem = serverOrtProblem();
     final List<Map<String, Object?>> rows = <Map<String, Object?>>[];
-    for (final MapEntry<String, MangaOcrServiceImpl> entry in services.entries) {
+    for (final MapEntry<String, MangaOcrServiceImpl> entry
+        in services.entries) {
       final MangaOcrModelStatus status = await entry.value.modelStatus();
       rows.add(<String, Object?>{
         'key': entry.key,
@@ -260,7 +318,11 @@ class OcrCommands extends CliModule {
       });
     }
     if (json) {
-      _io.json(<String, Object?>{'runtimeAvailable': ortProblem == null, 'runtimeProblem': ortProblem, 'models': rows});
+      _io.json(<String, Object?>{
+        'runtimeAvailable': ortProblem == null,
+        'runtimeProblem': ortProblem,
+        'models': rows,
+      });
       return kExitOk;
     }
     if (ortProblem != null) _io.out.writeln('! $ortProblem');
@@ -276,7 +338,8 @@ class OcrCommands extends CliModule {
   // ── ocr manga ───────────────────────────────────────────────────────
 
   Future<int> _ocrManga(ArgResults leaf, CliContext ctx) async {
-    const String usageLine = 'ocr manga <bookKey> [--pages 1-20] [--model k] [--redo] [--ai-refine] [--json]';
+    const String usageLine =
+        'ocr manga <bookKey> [--pages 1-20] [--model k] [--redo] [--ai-refine] [--json]';
     if (leaf.rest.length != 1) return _io.usage('要且只要一个 bookKey', usageLine);
     final String bookKey = leaf.rest.single;
     final bool json = wantsJson(leaf);
@@ -306,7 +369,8 @@ class OcrCommands extends CliModule {
         }
       }
       final String key = leaf['model'] as String;
-      final Map<String, MangaOcrServiceImpl> services = serverOcrModelServices();
+      final Map<String, MangaOcrServiceImpl> services =
+          serverOcrModelServices();
       final MangaOcrServiceImpl? service = services[key];
       if (service == null) return _unknownModel(key, services);
       final String? ortProblem = serverOrtProblem();
@@ -315,7 +379,9 @@ class OcrCommands extends CliModule {
         return kExitUnavailable;
       }
       if (!(await service.modelStatus()).allReady) {
-        _io.err.writeln('$key 模型未下载：先跑 fushi_server ocr models pull --model $key');
+        _io.err.writeln(
+          '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
+        );
         return kExitUnavailable;
       }
       MangaAiOcrRefiner? refiner;
@@ -329,11 +395,18 @@ class OcrCommands extends CliModule {
           );
           return kExitUnavailable;
         }
-        refiner = MangaAiOcrRefiner(provider: provider, mode: MangaAiOcrMode.fromStorageKey(leaf['ai-mode'] as String));
+        refiner = MangaAiOcrRefiner(
+          provider: provider,
+          mode: MangaAiOcrMode.fromStorageKey(leaf['ai-mode'] as String),
+        );
       }
-      final MangaAiOcrCache? aiCache = provider == null ? null : MangaAiOcrCache.forVolume(dir, provider);
+      final MangaAiOcrCache? aiCache = provider == null
+          ? null
+          : MangaAiOcrCache.forVolume(dir, provider);
 
-      final String cacheDir = await service.resolvePageCacheDirPath(imageDirPath: dir);
+      final String cacheDir = await service.resolvePageCacheDirPath(
+        imageDirPath: dir,
+      );
       final bool redo = leaf['redo'] as bool;
       final List<MangaOcrPageFile> targets = selection == null
           ? pages
@@ -344,7 +417,9 @@ class OcrCommands extends CliModule {
           if (await cache.exists()) await cache.delete(recursive: true);
         } else {
           for (final MangaOcrPageFile page in targets) {
-            final File cached = File(p.join(cacheDir, ocrPageCacheFileName(page.relativeUrl)));
+            final File cached = File(
+              p.join(cacheDir, ocrPageCacheFileName(page.relativeUrl)),
+            );
             if (await cached.exists()) await cached.delete();
           }
         }
@@ -357,18 +432,28 @@ class OcrCommands extends CliModule {
         if (selection == null) {
           payload = await _runWholeVolume(service, dir, row.title);
         } else {
-          final MokuroPayload fresh = await _runPages(service, dir, cacheDir, targets);
+          final MokuroPayload fresh = await _runPages(
+            service,
+            dir,
+            cacheDir,
+            targets,
+          );
           final File existing = File(mangaJsonPath);
           if (!await existing.exists()) {
-            _io.err.writeln('书目录里没有 ${row.epubPath}，--pages 无处合并；去掉 --pages 跑整卷');
+            _io.err.writeln(
+              '书目录里没有 ${row.epubPath}，--pages 无处合并；去掉 --pages 跑整卷',
+            );
             return kExitFailure;
           }
-          final ({MokuroPayload payload, int merged}) merged = mergeMangaOcrPages(
-            parseMangaJson(await existing.readAsString()),
-            fresh,
-          );
+          final ({MokuroPayload payload, int merged}) merged =
+              mergeMangaOcrPages(
+                parseMangaJson(await existing.readAsString()),
+                fresh,
+              );
           if (merged.merged < fresh.images.length) {
-            _io.err.writeln('有 ${fresh.images.length - merged.merged} 页在 ${row.epubPath} 里对不上，未写入');
+            _io.err.writeln(
+              '有 ${fresh.images.length - merged.merged} 页在 ${row.epubPath} 里对不上，未写入',
+            );
           }
           payload = merged.payload;
         }
@@ -381,15 +466,18 @@ class OcrCommands extends CliModule {
 
       Map<String, Object?>? aiReport;
       if (refiner != null) {
-        final Set<String> processed = <String>{for (final MangaOcrPageFile page in targets) page.relativeUrl};
-        final ({MokuroPayload payload, Map<String, Object?> report}) refined = await _refine(
-          refiner,
-          aiCache!,
-          dir,
-          payload,
-          processed,
-          leaf['ai-mode'] as String,
-        );
+        final Set<String> processed = <String>{
+          for (final MangaOcrPageFile page in targets) page.relativeUrl,
+        };
+        final ({MokuroPayload payload, Map<String, Object?> report}) refined =
+            await _refine(
+              refiner,
+              aiCache!,
+              dir,
+              payload,
+              processed,
+              leaf['ai-mode'] as String,
+            );
         payload = refined.payload;
         aiReport = refined.report;
       }
@@ -405,7 +493,9 @@ class OcrCommands extends CliModule {
           if (aiReport != null) 'ai': aiReport,
         });
       } else {
-        _io.out.writeln('OCR 完成: $bookKey（${targets.length}/${pages.length} 页，模型 $key）→ $mangaJsonPath');
+        _io.out.writeln(
+          'OCR 完成: $bookKey（${targets.length}/${pages.length} 页，模型 $key）→ $mangaJsonPath',
+        );
         if (aiReport != null) _io.out.writeln('大模型重读: $aiReport');
       }
       return kExitOk;
@@ -413,9 +503,16 @@ class OcrCommands extends CliModule {
   }
 
   /// 整卷：`ocrFolder` 跑完给出产物 manga.json，读出来交给调用方整份覆写。
-  Future<MokuroPayload> _runWholeVolume(MangaOcrServiceImpl service, String dir, String title) async {
+  Future<MokuroPayload> _runWholeVolume(
+    MangaOcrServiceImpl service,
+    String dir,
+    String title,
+  ) async {
     String? resultPath;
-    await for (final MangaOcrVolumeEvent e in service.ocrFolder(imageDirPath: dir, volumeTitle: title)) {
+    await for (final MangaOcrVolumeEvent e in service.ocrFolder(
+      imageDirPath: dir,
+      volumeTitle: title,
+    )) {
       if (e.finished) {
         resultPath = e.mangaJsonPath;
       } else {
@@ -435,24 +532,31 @@ class OcrCommands extends CliModule {
     String cacheDir,
     List<MangaOcrPageFile> targets,
   ) async {
-    final MangaOcrPageSession session = await service.openPageSession(imageDirPath: dir);
+    final MangaOcrPageSession session = await service.openPageSession(
+      imageDirPath: dir,
+    );
     try {
       for (int i = 0; i < targets.length; i++) {
         await session.ocrPage(targets[i].relativeUrl);
-        _io.err.writeln('page ${i + 1}/${targets.length} ${targets[i].relativeUrl}');
+        _io.err.writeln(
+          'page ${i + 1}/${targets.length} ${targets[i].relativeUrl}',
+        );
       }
     } finally {
       await session.close();
     }
     final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
       cacheDir: Directory(cacheDir),
-      pageNames: <String>[for (final MangaOcrPageFile page in targets) page.relativeUrl],
+      pageNames: <String>[
+        for (final MangaOcrPageFile page in targets) page.relativeUrl,
+      ],
       pageFiles: <File>[for (final MangaOcrPageFile page in targets) page.file],
     );
     final List<OcrPageResult> results = <OcrPageResult>[];
     for (int i = 0; i < targets.length; i++) {
       final OcrPageResult? result = await cache.read('manga_ocr', i);
-      if (result == null) throw StateError('页 ${targets[i].relativeUrl} 识别后没有逐页缓存');
+      if (result == null)
+        throw StateError('页 ${targets[i].relativeUrl} 识别后没有逐页缓存');
       results.add(result);
     }
     return buildMangaPayloadFromResults(targets, results);
@@ -478,12 +582,11 @@ class OcrCommands extends CliModule {
         images.add(image);
         continue;
       }
-      final Uint8List bytes = await File(p.joinAll(<String>[dir, ...url.split('/')])).readAsBytes();
-      final ({MokuroImage page, MangaAiOcrPageStats stats}) result = await refiner.refinePage(
-        image,
-        bytes,
-        cache: cache,
-      );
+      final Uint8List bytes = await File(
+        p.joinAll(<String>[dir, ...url.split('/')]),
+      ).readAsBytes();
+      final ({MokuroImage page, MangaAiOcrPageStats stats}) result =
+          await refiner.refinePage(image, bytes, cache: cache);
       images.add(result.page);
       candidates += result.stats.candidates;
       replaced += result.stats.replaced;
@@ -509,8 +612,11 @@ class OcrCommands extends CliModule {
   // ── manga panels ────────────────────────────────────────────────────
 
   Future<int> _panels(ArgResults leaf, CliContext ctx) async {
-    if (leaf.rest.isEmpty) return _io.usage('缺少图片路径', 'manga panels <image…> [--ltr] [--json]');
-    final List<String> images = <String>[for (final String raw in leaf.rest) p.normalize(p.absolute(raw))];
+    if (leaf.rest.isEmpty)
+      return _io.usage('缺少图片路径', 'manga panels <image…> [--ltr] [--json]');
+    final List<String> images = <String>[
+      for (final String raw in leaf.rest) p.normalize(p.absolute(raw)),
+    ];
     final List<String> missing = <String>[
       for (final String path in images)
         if (!File(path).existsSync()) path,
@@ -521,7 +627,9 @@ class OcrCommands extends CliModule {
       }
       return kExitNoInput;
     }
-    final PanelReadingDirection direction = leaf['ltr'] as bool ? PanelReadingDirection.ltr : PanelReadingDirection.rtl;
+    final PanelReadingDirection direction = leaf['ltr'] as bool
+        ? PanelReadingDirection.ltr
+        : PanelReadingDirection.rtl;
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
       final File model = await _panelModelFile(rt);
@@ -535,12 +643,18 @@ class OcrCommands extends CliModule {
         return kExitUnavailable;
       }
       final OcrSessionFactory Function()? builder = ocrSessionFactoryBuilder;
-      if (builder == null) throw StateError('ocrSessionFactoryBuilder 未装配（installServerHostBindings 没跑）');
+      if (builder == null)
+        throw StateError(
+          'ocrSessionFactoryBuilder 未装配（installServerHostBindings 没跑）',
+        );
       final OcrSession session = await builder().createSession(
         model.path,
         providers: <OcrExecutionProvider>[OcrExecutionProvider.cpu],
       );
-      final PanelDetector detector = OnnxPanelDetector(session, modelRevision: kMangaPanelModelManifest.revision);
+      final PanelDetector detector = OnnxPanelDetector(
+        session,
+        modelRevision: kMangaPanelModelManifest.revision,
+      );
       final List<Map<String, Object?>> rows = <Map<String, Object?>>[];
       try {
         for (final String path in images) {
@@ -556,7 +670,13 @@ class OcrCommands extends CliModule {
             if (result.error != null) 'error': result.error,
             'panels': <Map<String, Object?>>[
               for (final PanelRect r in result.panels)
-                <String, Object?>{'left': r.left, 'top': r.top, 'right': r.right, 'bottom': r.bottom, 'score': r.score},
+                <String, Object?>{
+                  'left': r.left,
+                  'top': r.top,
+                  'right': r.right,
+                  'bottom': r.bottom,
+                  'score': r.score,
+                },
             ],
             'textBoxes': result.textBoxes.length,
           });
@@ -566,13 +686,18 @@ class OcrCommands extends CliModule {
       }
       final bool anyFailed = rows.any(
         (Map<String, Object?> r) =>
-            r['status'] == PanelDetectionStatus.failed.name || r['status'] == PanelDetectionStatus.unavailable.name,
+            r['status'] == PanelDetectionStatus.failed.name ||
+            r['status'] == PanelDetectionStatus.unavailable.name,
       );
       if (json) {
-        _io.json(<String, Object?>{'direction': direction.name, 'images': rows});
+        _io.json(<String, Object?>{
+          'direction': direction.name,
+          'images': rows,
+        });
       } else {
         for (final Map<String, Object?> row in rows) {
-          final List<Map<String, Object?>> panels = (row['panels']! as List<Object?>).cast<Map<String, Object?>>();
+          final List<Map<String, Object?>> panels =
+              (row['panels']! as List<Object?>).cast<Map<String, Object?>>();
           _io.out.writeln(
             '${row['path']}: ${row['status']}，${panels.length} 格'
             '${row['error'] == null ? '' : '（${row['error']}）'}',
@@ -592,13 +717,19 @@ class OcrCommands extends CliModule {
 
   /// 与 app `manga_panel_model_service.dart` 同一落点：`<support>/manga_panel_detector/<文件名>`
   /// （同一份数据目录理论上可被桌面 Fushi 直接打开）。
-  Future<File> _panelModelFile(ServerRuntime rt) async =>
-      File(p.join(rt.paths.support.path, 'manga_panel_detector', kMangaPanelModelManifest.fileName));
+  Future<File> _panelModelFile(ServerRuntime rt) async => File(
+    p.join(
+      rt.paths.support.path,
+      'manga_panel_detector',
+      kMangaPanelModelManifest.fileName,
+    ),
+  );
 
   Future<int> _panelModel(ArgResults leaf, CliContext ctx) async {
     const String usageLine = 'manga panel-model [status|pull] [--json]';
     final String action = leaf.rest.isEmpty ? 'status' : leaf.rest.first;
-    if (!const <String>{'status', 'pull'}.contains(action) || leaf.rest.length > 1) {
+    if (!const <String>{'status', 'pull'}.contains(action) ||
+        leaf.rest.length > 1) {
       return _io.usage('未知动作 "${leaf.rest.join(' ')}"', usageLine);
     }
     final bool json = wantsJson(leaf);
@@ -630,7 +761,9 @@ class OcrCommands extends CliModule {
           'revision': kMangaPanelModelManifest.revision,
         });
       } else {
-        _io.out.writeln('分镜模型: ${ready ? '就绪' : (bytes > 0 ? '文件损坏 / 不符' : '未下载')}  ${model.path}');
+        _io.out.writeln(
+          '分镜模型: ${ready ? '就绪' : (bytes > 0 ? '文件损坏 / 不符' : '未下载')}  ${model.path}',
+        );
       }
       return ready || action == 'status' ? kExitOk : kExitFailure;
     });
@@ -647,9 +780,12 @@ class OcrCommands extends CliModule {
     await for (final ModelDownloadEvent e in downloader.downloadAll(
       files: const <DownloadableModelFile>[_PanelModelFile()],
       targetDir: model.parent,
-      isReady: (File file) => file.existsSync() && file.lengthSync() == expected,
+      isReady: (File file) =>
+          file.existsSync() && file.lengthSync() == expected,
     )) {
-      _io.err.writeln('${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}');
+      _io.err.writeln(
+        '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}',
+      );
     }
   }
 }

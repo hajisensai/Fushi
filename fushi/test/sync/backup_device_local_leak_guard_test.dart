@@ -20,16 +20,24 @@ void main() {
     // The device-local table registry names both tables. B1 分家后它是导出侧与
     // 恢复侧共用的库级顶层常量（不再是 BackupService 的 static 成员）。
     final int listStart = s.indexOf('const List<String> _deviceLocalTables =');
-    expect(listStart, greaterThan(-1),
-        reason: '_deviceLocalTables constant must exist');
+    expect(
+      listStart,
+      greaterThan(-1),
+      reason: '_deviceLocalTables constant must exist',
+    );
     final int listEnd = s.indexOf('];', listStart);
     expect(listEnd, greaterThan(listStart));
     final String listBody = s.substring(listStart, listEnd);
-    expect(listBody.contains("'fushi_paired_peers'"), isTrue,
-        reason:
-            'pairing table (holds the plaintext token) must be device-local');
-    expect(listBody.contains("'sync_baselines'"), isTrue,
-        reason: 'sync baselines must be device-local');
+    expect(
+      listBody.contains("'fushi_paired_peers'"),
+      isTrue,
+      reason: 'pairing table (holds the plaintext token) must be device-local',
+    );
+    expect(
+      listBody.contains("'sync_baselines'"),
+      isTrue,
+      reason: 'sync baselines must be device-local',
+    );
     for (final String table in <String>[
       'manga_extension_stores',
       'manga_extensions',
@@ -53,8 +61,11 @@ void main() {
     int previousOffset = -1;
     for (final String table in videoTablesChildFirst) {
       final int offset = listBody.indexOf("'$table'");
-      expect(offset, greaterThan(previousOffset),
-          reason: '$table must be deleted after its FK children');
+      expect(
+        offset,
+        greaterThan(previousOffset),
+        reason: '$table must be deleted after its FK children',
+      );
       previousOffset = offset;
     }
 
@@ -74,8 +85,11 @@ void main() {
     previousOffset = -1;
     for (final String table in videoTablesParentFirst) {
       final int offset = parentListBody.indexOf("'$table'");
-      expect(offset, greaterThan(previousOffset),
-          reason: '$table must be restored after its FK parents');
+      expect(
+        offset,
+        greaterThan(previousOffset),
+        reason: '$table must be restored after its FK parents',
+      );
       previousOffset = offset;
     }
 
@@ -85,8 +99,10 @@ void main() {
     expect(stripStart, greaterThan(-1), reason: '_stripCredentials must exist');
     // 命名统一后备份内部子步骤 restore* → reapply*/strip*：锚到下一个 static
     // 方法声明即可，不与具体后继方法名耦合。
-    final int stripEnd =
-        s.indexOf('static Future<void> _strip', stripStart + 1);
+    final int stripEnd = s.indexOf(
+      'static Future<void> _strip',
+      stripStart + 1,
+    );
     expect(stripEnd, greaterThan(stripStart));
     final String stripBody = s.substring(stripStart, stripEnd);
     expect(
@@ -130,8 +146,11 @@ void main() {
       expect(listBody, contains("'$table'"));
     }
     for (final String table in srsData) {
-      expect(listBody, isNot(contains("'$table'")),
-          reason: '$table 是 SRS 数据本体，必须随备份走');
+      expect(
+        listBody,
+        isNot(contains("'$table'")),
+        reason: '$table 是 SRS 数据本体，必须随备份走',
+      );
     }
 
     final String s = File(
@@ -142,8 +161,11 @@ void main() {
     final int devStart = s.indexOf('const List<String> _deviceLocalTables =');
     final String devBody = s.substring(devStart, s.indexOf('];', devStart));
     for (final String table in <String>[...srsLocal, ...srsData]) {
-      expect(devBody, isNot(contains("'$table'")),
-          reason: '$table 不得从 pre-restore.bak 回灌');
+      expect(
+        devBody,
+        isNot(contains("'$table'")),
+        reason: '$table 不得从 pre-restore.bak 回灌',
+      );
     }
 
     final int stripStart = s.indexOf('_stripCredentials(String dbDirectory)');
@@ -159,10 +181,12 @@ void main() {
     // 新形态：srs.db 快照由 Rust 清空设备本地表。
     expect(s, contains('snapshotInto(path, stripDeviceLocal: true)'));
 
-    final String restore = File('lib/src/sync/backup_service/restore.part.dart')
-        .readAsStringSync();
-    final int reapplyStart = restore
-        .indexOf('static Future<bool> _reapplyDeviceLocalTablesFromBak(');
+    final String restore = File(
+      'lib/src/sync/backup_service/restore.part.dart',
+    ).readAsStringSync();
+    final int reapplyStart = restore.indexOf(
+      'static Future<bool> _reapplyDeviceLocalTablesFromBak(',
+    );
     expect(reapplyStart, greaterThan(-1));
     final String reapplyBody = restore.substring(
       reapplyStart,

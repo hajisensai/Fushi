@@ -35,7 +35,7 @@ import '../helpers/test_platform_services.dart';
 /// - 重复请求不叠第二个查词页（mainTab 分区若有两个消费者就会双消费）。
 class _HomeShellAppModel extends AppModel {
   _HomeShellAppModel(this._dir, {required this.dictionariesEnabled})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final Directory _dir;
   final bool dictionariesEnabled;
@@ -51,11 +51,11 @@ class _HomeShellAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'app.hibiki.reader',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'app.hibiki.reader',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   Directory get appDirectory => _dir;
@@ -86,8 +86,8 @@ class _HomeShellAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -125,18 +125,17 @@ ModuleVisibility _visibility({
   bool downloads = true,
   bool lookup = true,
   bool browserExtension = false,
-}) =>
-    ModuleVisibility(<ModuleId>{
-      // 首页 2026-10-09 起是可关模块；这些用例的语义是「首页开着」。
-      ModuleId.home,
-      if (books) ModuleId.books,
-      if (manga) ModuleId.manga,
-      if (video) ModuleId.video,
-      if (games) ModuleId.games,
-      if (downloads) ModuleId.browse,
-      if (lookup) ModuleId.lookup,
-      if (browserExtension) ModuleId.web,
-    });
+}) => ModuleVisibility(<ModuleId>{
+  // 首页 2026-10-09 起是可关模块；这些用例的语义是「首页开着」。
+  ModuleId.home,
+  if (books) ModuleId.books,
+  if (manga) ModuleId.manga,
+  if (video) ModuleId.video,
+  if (games) ModuleId.games,
+  if (downloads) ModuleId.browse,
+  if (lookup) ModuleId.lookup,
+  if (browserExtension) ModuleId.web,
+});
 
 Future<_HomeShellAppModel> _pumpHome(
   WidgetTester tester, {
@@ -146,20 +145,22 @@ Future<_HomeShellAppModel> _pumpHome(
   addTearDown(db.close);
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
-  final Directory tmpDir =
-      Directory.systemTemp.createTempSync('fushi_home_hidden_tab_');
+  final Directory tmpDir = Directory.systemTemp.createTempSync(
+    'fushi_home_hidden_tab_',
+  );
   addTearDown(() {
     try {
       tmpDir.deleteSync(recursive: true);
     } catch (_) {}
   });
 
-  final _HomeShellAppModel appModel = _HomeShellAppModel(
-    tmpDir,
-    dictionariesEnabled: dictionariesEnabled,
-  )
-    ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tmpDir)
-    ..wireDatabaseForTesting(db);
+  final _HomeShellAppModel appModel =
+      _HomeShellAppModel(tmpDir, dictionariesEnabled: dictionariesEnabled)
+        ..wireLocalAudioForTesting(
+          prefsRepo: prefsRepo,
+          databaseDirectory: tmpDir,
+        )
+        ..wireDatabaseForTesting(db);
 
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
     const MethodChannel('window_manager'),
@@ -185,8 +186,11 @@ Future<_HomeShellAppModel> _pumpHome(
   );
   await tester.pump();
   await tester.pump();
-  expect(HomePage.debugSelectTab, isNotNull,
-      reason: 'HomePage 必须已挂载并注册 debugSelectTab 生产钩子');
+  expect(
+    HomePage.debugSelectTab,
+    isNotNull,
+    reason: 'HomePage 必须已挂载并注册 debugSelectTab 生产钩子',
+  );
   return appModel;
 }
 
@@ -222,10 +226,13 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
 
-  testWidgets('查词模块开着：请求打开查词落在 tab 上（不推路由），pending 被消费',
-      (WidgetTester tester) async {
-    final _HomeShellAppModel appModel =
-        await _pumpHome(tester, dictionariesEnabled: true);
+  testWidgets('查词模块开着：请求打开查词落在 tab 上（不推路由），pending 被消费', (
+    WidgetTester tester,
+  ) async {
+    final _HomeShellAppModel appModel = await _pumpHome(
+      tester,
+      dictionariesEnabled: true,
+    );
 
     DesktopLookupService.instance.triggerLookup(' tabword ');
     appModel.requestHomeDictionaryTab();
@@ -242,10 +249,13 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('查词模块关掉：tab 确实隐藏，但请求改推独立路由，pending 仍被消费',
-      (WidgetTester tester) async {
-    final _HomeShellAppModel appModel =
-        await _pumpHome(tester, dictionariesEnabled: false);
+  testWidgets('查词模块关掉：tab 确实隐藏，但请求改推独立路由，pending 仍被消费', (
+    WidgetTester tester,
+  ) async {
+    final _HomeShellAppModel appModel = await _pumpHome(
+      tester,
+      dictionariesEnabled: false,
+    );
 
     // 前置：查词 tab 真的不在可见列表里，_selectTab 会拒绝切换。
     expect(
@@ -275,11 +285,9 @@ void main() {
       findsOneWidget,
       reason: '推成路由必须给得出返回路径。',
     );
-    expect(
-      appModel.searchedTerms,
-      <String>['hiddenword'],
-      reason: '否则用户按热键只会看到窗口弹到前台却什么都不显示。',
-    );
+    expect(appModel.searchedTerms, <String>[
+      'hiddenword',
+    ], reason: '否则用户按热键只会看到窗口弹到前台却什么都不显示。');
     expect(
       DesktopLookupService.instance.pendingText,
       isNull,
@@ -288,10 +296,13 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('查词模块关掉：重复请求不叠第二个查词页（mainTab 分区不得双消费）',
-      (WidgetTester tester) async {
-    final _HomeShellAppModel appModel =
-        await _pumpHome(tester, dictionariesEnabled: false);
+  testWidgets('查词模块关掉：重复请求不叠第二个查词页（mainTab 分区不得双消费）', (
+    WidgetTester tester,
+  ) async {
+    final _HomeShellAppModel appModel = await _pumpHome(
+      tester,
+      dictionariesEnabled: false,
+    );
 
     appModel.requestHomeDictionaryTab();
     await _settle(tester);
@@ -305,7 +316,8 @@ void main() {
     expect(
       find.byType(HomeDictionaryPage),
       findsOneWidget,
-      reason: '同一时刻全 app 只能有一个 HomeDictionaryPage，'
+      reason:
+          '同一时刻全 app 只能有一个 HomeDictionaryPage，'
           '否则 mainTab 分区的 pending 查词会被双消费。',
     );
     await _unmount(tester);
@@ -315,17 +327,23 @@ void main() {
   // 「正在 Fushi 里看书 / 看视频 → 切到别的程序 → 按热键」。阅读器 / 播放器 / 漫画
   // 都是 `Navigator.push` 压在 HomePage 之上的全屏路由（BUG-286 记过），此时若只
   // `_selectTab` 切底下那层 IndexedStack，用户看到的是「窗口弹到前台却什么都没变」。
-  testWidgets('查词 tab 开着但被全屏路由遮住：必须推独立路由到最上层，且不弹掉原页面',
-      (WidgetTester tester) async {
-    final _HomeShellAppModel appModel =
-        await _pumpHome(tester, dictionariesEnabled: true);
+  testWidgets('查词 tab 开着但被全屏路由遮住：必须推独立路由到最上层，且不弹掉原页面', (
+    WidgetTester tester,
+  ) async {
+    final _HomeShellAppModel appModel = await _pumpHome(
+      tester,
+      dictionariesEnabled: true,
+    );
 
     // 模拟阅读器 / 播放器：一层压在 HomePage 之上的全屏路由。
-    unawaited(Navigator.of(appModel.navigatorKey.currentContext!).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const Scaffold(body: Center(child: Text('reader-上层'))),
+    unawaited(
+      Navigator.of(appModel.navigatorKey.currentContext!).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              const Scaffold(body: Center(child: Text('reader-上层'))),
+        ),
       ),
-    ));
+    );
     await _settle(tester);
     expect(find.text('reader-上层'), findsOneWidget);
 
@@ -343,7 +361,8 @@ void main() {
       // 这里要问的是「它还在不在栈上」，不是「它可不可见」，故必须关掉 skipOffstage。
       find.text('reader-上层', skipOffstage: false),
       findsOneWidget,
-      reason: '**不得** popUntil 把用户正在读的书 / 正在放的视频弹掉'
+      reason:
+          '**不得** popUntil 把用户正在读的书 / 正在放的视频弹掉'
           '（BUG-286 定过这条边界：不能为看个词强退阅读器并停有声书）。',
     );
     expect(appModel.searchedTerms, <String>['coveredword']);
@@ -353,20 +372,25 @@ void main() {
 
   // 上一条的死角：底下那层恰好已经停在查词 tab 上。早退判据若只看 `_currentTab`，
   // 这次请求会变成**彻底的 no-op**（窗口弹到前台、一点反馈都没有）。
-  testWidgets('底层已在查词 tab 且被全屏路由遮住：仍必须推独立路由，不得早退成 no-op',
-      (WidgetTester tester) async {
-    final _HomeShellAppModel appModel =
-        await _pumpHome(tester, dictionariesEnabled: true);
+  testWidgets('底层已在查词 tab 且被全屏路由遮住：仍必须推独立路由，不得早退成 no-op', (
+    WidgetTester tester,
+  ) async {
+    final _HomeShellAppModel appModel = await _pumpHome(
+      tester,
+      dictionariesEnabled: true,
+    );
 
     HomePage.debugSelectTab!(HomeTab.dictionaries);
     await _settle(tester);
     expect(find.byType(HomeDictionaryPage), findsOneWidget);
 
-    unawaited(Navigator.of(appModel.navigatorKey.currentContext!).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const Scaffold(body: Center(child: Text('video-上层'))),
+    unawaited(
+      Navigator.of(appModel.navigatorKey.currentContext!).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Center(child: Text('video-上层'))),
+        ),
       ),
-    ));
+    );
     await _settle(tester);
 
     appModel.requestHomeDictionaryTab();

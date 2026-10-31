@@ -38,25 +38,37 @@ void main() {
     late final String source;
 
     setUpAll(() {
-      header = File('../packages/gamepads_windows/windows/gamepad.h')
-          .readAsStringSync();
-      source = File('../packages/gamepads_windows/windows/gamepad.cpp')
-          .readAsStringSync();
+      header = File(
+        '../packages/gamepads_windows/windows/gamepad.h',
+      ).readAsStringSync();
+      source = File(
+        '../packages/gamepads_windows/windows/gamepad.cpp',
+      ).readAsStringSync();
     });
 
     test('前提仍然成立：全局对象 + std::thread 成员', () {
       // 这两条是本 bug 的**成因前提**。哪天上游把全局改掉、或线程不再是成员，
       // 守卫的理由就变了，应该有人重新想一遍而不是让它继续恒真地绿着。
-      expect(source, contains('Gamepads gamepads;'),
-          reason: '不再是静态存储期全局对象了？重新评估本守卫。');
-      expect(header, contains('std::thread reaper_thread;'),
-          reason: 'reaper_thread 不再是 std::thread 成员了？重新评估本守卫。');
+      expect(
+        source,
+        contains('Gamepads gamepads;'),
+        reason: '不再是静态存储期全局对象了？重新评估本守卫。',
+      );
+      expect(
+        header,
+        contains('std::thread reaper_thread;'),
+        reason: 'reaper_thread 不再是 std::thread 成员了？重新评估本守卫。',
+      );
     });
 
     test('Gamepads 声明并实现了析构函数', () {
-      expect(header, contains('~Gamepads();'),
-          reason: '没有析构函数 = joinable 的 reaper_thread 直接走到 '
-              'std::thread 的析构函数 = std::terminate() = 每次退出必崩。');
+      expect(
+        header,
+        contains('~Gamepads();'),
+        reason:
+            '没有析构函数 = joinable 的 reaper_thread 直接走到 '
+            'std::thread 的析构函数 = std::terminate() = 每次退出必崩。',
+      );
       expect(source, contains('Gamepads::~Gamepads()'));
     });
 
@@ -68,18 +80,31 @@ void main() {
       expect(bodyEnd, greaterThan(bodyStart));
       final String body = source.substring(bodyStart, bodyEnd);
 
-      expect(body, contains('reaper_thread'),
-          reason: '析构函数没碰 reaper_thread —— 那它没有解决任何问题。');
-      expect(body, contains('reaper_stop'),
-          reason: '不置停止位就等，reaper 永远醒不过来。');
-      expect(body, contains('detach()'),
-          reason: '缺少「等不到就 detach」的兜底：一旦等超时，'
-              'std::thread 的析构函数仍会 terminate。');
-      expect(body, contains('WaitForSingleObject'),
-          reason: 'std::thread 没有带超时的 join，必须用底层句柄做有界等待。');
-      expect(body, isNot(contains('stop()')),
-          reason: '退出路径上调 stop() 会 UnregisterCallback(5s) 并 join 可能'
-              '停在 GameInput 锁里的轮询线程 —— 那是把崩溃换成卡死。');
+      expect(
+        body,
+        contains('reaper_thread'),
+        reason: '析构函数没碰 reaper_thread —— 那它没有解决任何问题。',
+      );
+      expect(body, contains('reaper_stop'), reason: '不置停止位就等，reaper 永远醒不过来。');
+      expect(
+        body,
+        contains('detach()'),
+        reason:
+            '缺少「等不到就 detach」的兜底：一旦等超时，'
+            'std::thread 的析构函数仍会 terminate。',
+      );
+      expect(
+        body,
+        contains('WaitForSingleObject'),
+        reason: 'std::thread 没有带超时的 join，必须用底层句柄做有界等待。',
+      );
+      expect(
+        body,
+        isNot(contains('stop()')),
+        reason:
+            '退出路径上调 stop() 会 UnregisterCallback(5s) 并 join 可能'
+            '停在 GameInput 锁里的轮询线程 —— 那是把崩溃换成卡死。',
+      );
     });
   });
 }

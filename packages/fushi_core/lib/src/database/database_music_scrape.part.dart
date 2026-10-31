@@ -66,20 +66,21 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
     for (final MusicMetadataRawSnapshotsCompanion s in snapshots) {
       await into(musicMetadataRawSnapshots).insert(
         s,
-        onConflict: DoUpdate<
-          $MusicMetadataRawSnapshotsTable,
-          MusicMetadataRawSnapshotRow
-        >(
-          (_) => MusicMetadataRawSnapshotsCompanion(
-            rawJson: s.rawJson,
-            fetchedAt: s.fetchedAt,
-          ),
-          target: <Column>[
-            musicMetadataRawSnapshots.provider,
-            musicMetadataRawSnapshots.snapshotKind,
-            musicMetadataRawSnapshots.externalId,
-          ],
-        ),
+        onConflict:
+            DoUpdate<
+              $MusicMetadataRawSnapshotsTable,
+              MusicMetadataRawSnapshotRow
+            >(
+              (_) => MusicMetadataRawSnapshotsCompanion(
+                rawJson: s.rawJson,
+                fetchedAt: s.fetchedAt,
+              ),
+              target: <Column>[
+                musicMetadataRawSnapshots.provider,
+                musicMetadataRawSnapshots.snapshotKind,
+                musicMetadataRawSnapshots.externalId,
+              ],
+            ),
       );
     }
     await _reapplyMusicScrapeOverlaySql(this, <String>[meta.trackUid.value]);
@@ -92,15 +93,14 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
 
   /// 清掉一首的识别结论（「取消识别」）：身份列回到标签值要等下次重扫，这里先把叠加上去
   /// 的录音 MBID 清空，避免界面继续显示旧身份。
-  Future<void> clearMusicScrapeResult(String trackUid) =>
-      transaction(() async {
-        await (delete(musicScrapeMeta)
-              ..where(($MusicScrapeMetaTable t) => t.trackUid.equals(trackUid)))
-            .go();
-        await (update(musicTracks)
-              ..where(($MusicTracksTable t) => t.trackUid.equals(trackUid)))
-            .write(const MusicTracksCompanion(mbRecordingId: Value<String?>(null)));
-      });
+  Future<void> clearMusicScrapeResult(String trackUid) => transaction(() async {
+    await (delete(
+      musicScrapeMeta,
+    )..where(($MusicScrapeMetaTable t) => t.trackUid.equals(trackUid))).go();
+    await (update(musicTracks)
+          ..where(($MusicTracksTable t) => t.trackUid.equals(trackUid)))
+        .write(const MusicTracksCompanion(mbRecordingId: Value<String?>(null)));
+  });
 
   Future<MusicMetadataRawSnapshotRow?> getMusicRawSnapshot({
     required String provider,
@@ -235,10 +235,14 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
       (select(musicVideos)
             ..where(($MusicVideosTable t) => t.trackUid.equals(trackUid))
             ..orderBy(<OrderingTerm Function($MusicVideosTable)>[
-              ($MusicVideosTable t) =>
-                  OrderingTerm(expression: t.isUserBound, mode: OrderingMode.desc),
-              ($MusicVideosTable t) =>
-                  OrderingTerm(expression: t.confidence, mode: OrderingMode.desc),
+              ($MusicVideosTable t) => OrderingTerm(
+                expression: t.isUserBound,
+                mode: OrderingMode.desc,
+              ),
+              ($MusicVideosTable t) => OrderingTerm(
+                expression: t.confidence,
+                mode: OrderingMode.desc,
+              ),
             ]))
           .get();
 
@@ -253,11 +257,15 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
             isUserBound: row.isUserBound,
             updatedAt: row.updatedAt,
           ),
-          target: <Column>[musicVideos.trackUid, musicVideos.kind, musicVideos.ref],
+          target: <Column>[
+            musicVideos.trackUid,
+            musicVideos.kind,
+            musicVideos.ref,
+          ],
         ),
       );
 
-  Future<void> deleteMusicVideo(int id) =>
-      (delete(musicVideos)..where(($MusicVideosTable t) => t.id.equals(id)))
-          .go();
+  Future<void> deleteMusicVideo(int id) => (delete(
+    musicVideos,
+  )..where(($MusicVideosTable t) => t.id.equals(id))).go();
 }

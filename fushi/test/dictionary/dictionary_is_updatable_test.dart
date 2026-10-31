@@ -9,11 +9,11 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// 旧词典 metadata 为空 → 三条件全不满足 → false（向后兼容）。
 void main() {
   Dictionary dict(Map<String, String> metadata) => Dictionary(
-        name: 'JMdict',
-        formatKey: 'yomichan',
-        order: 0,
-        metadata: metadata,
-      );
+    name: 'JMdict',
+    formatKey: 'yomichan',
+    order: 0,
+    metadata: metadata,
+  );
 
   group('Dictionary 来源 getter', () {
     test('revision/indexUrl/downloadUrl 读 metadata，缺则空串', () {

@@ -40,20 +40,32 @@ Future<ObserveShot> _capture(WidgetTester tester, String name) async {
   final OffsetLayer? layer = view.debugLayer as OffsetLayer?;
   if (layer == null) {
     return ObserveShot(
-        name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+      name: name,
+      path: '',
+      saved: false,
+      nonBlank: false,
+      bytes: 0,
+    );
   }
   final ui.Image image = await layer.toImage(view.paintBounds);
   try {
-    final ByteData? rgba =
-        await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final ByteData? rgba = await image.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
     final bool nonBlank =
         rgba != null && rgbaLooksNonBlank(rgba.buffer.asUint8List());
-    final ByteData? png =
-        await image.toByteData(format: ui.ImageByteFormat.png);
+    final ByteData? png = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
     final Uint8List? bytes = png?.buffer.asUint8List();
     if (bytes == null || bytes.isEmpty) {
       return ObserveShot(
-          name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+        name: name,
+        path: '',
+        saved: false,
+        nonBlank: false,
+        bytes: 0,
+      );
     }
     final String path = '${observeScreenshotDir().path}/$name.png';
     await File(path).writeAsBytes(bytes, flush: true);
@@ -90,9 +102,9 @@ void main() {
 
       // 打开快捷键设置页：走 app 的全局根 navigatorKey（生产弹窗/设置同路径）。
       final NavigatorState navigator = appModel.navigatorKey.currentState!;
-      navigator.push(MaterialPageRoute<void>(
-        builder: (_) => const ShortcutSettingsPage(),
-      ));
+      navigator.push(
+        MaterialPageRoute<void>(builder: (_) => const ShortcutSettingsPage()),
+      );
       final Finder page = find.byType(ShortcutSettingsPage);
       for (int i = 0; i < 20 && page.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 400));
@@ -112,8 +124,10 @@ void main() {
 
       final Finder toggle = find.byKey(const Key('shortcut_view_toggle'));
       expect(toggle, findsOneWidget, reason: '视图切换段控件应存在');
-      final SegmentedButton<bool> segmented =
-          tester.widget<SegmentedButton<bool>>(glassUnwrap<SegmentedButton<bool>>(toggle));
+      final SegmentedButton<bool> segmented = tester
+          .widget<SegmentedButton<bool>>(
+            glassUnwrap<SegmentedButton<bool>>(toggle),
+          );
       segmented.onSelectionChanged!(<bool>{true});
       await tester.pump(const Duration(milliseconds: 600));
 
@@ -144,11 +158,15 @@ void main() {
 
         final ObserveShot png = await _capture(tester, shot.fileName);
         debugPrint(
-            '[gamepad-shot] ${shot.label} -> ${png.path} (${png.bytes}B, '
-            'nonBlank=${png.nonBlank})');
+          '[gamepad-shot] ${shot.label} -> ${png.path} (${png.bytes}B, '
+          'nonBlank=${png.nonBlank})',
+        );
         expect(png.saved, isTrue, reason: '${shot.label}主题帧应落盘');
-        expect(png.nonBlank, isTrue,
-            reason: '${shot.label}主题抓图不应是空白（${png.path}）');
+        expect(
+          png.nonBlank,
+          isTrue,
+          reason: '${shot.label}主题抓图不应是空白（${png.path}）',
+        );
       }
 
       // 还原默认主题设置（隔离根内，纯礼貌性还原）。

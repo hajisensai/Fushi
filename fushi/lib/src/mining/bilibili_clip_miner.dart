@@ -158,8 +158,9 @@ BilibiliPlayStreams? parseBilibiliPgcPlayurlResponse(String body) {
   final Object? decoded = _tryDecodeJson(body);
   if (decoded is! Map) return null;
   if (decoded['code'] != 0) return null;
-  final Object? payload =
-      decoded['result'] is Map ? decoded['result'] : decoded['data'];
+  final Object? payload = decoded['result'] is Map
+      ? decoded['result']
+      : decoded['data'];
   if (payload is! Map) return null;
   return _playStreamsFrom(payload);
 }
@@ -226,8 +227,8 @@ class BilibiliClipMiner {
     BilibiliJsonFetcher? fetchJson,
     DateTime Function()? now,
     this.ttl = const Duration(minutes: 3),
-  })  : _fetchJson = fetchJson ?? _defaultFetchJson,
-        _now = now ?? DateTime.now;
+  }) : _fetchJson = fetchJson ?? _defaultFetchJson,
+       _now = now ?? DateTime.now;
 
   final BilibiliJsonFetcher _fetchJson;
   final DateTime Function() _now;
@@ -281,8 +282,9 @@ class BilibiliClipMiner {
     String? cueSentence,
     String? documentTitle,
   }) {
-    final BilibiliPlayStreams? streams =
-        parseBilibiliPgcPlayurlResponse(playurlBody);
+    final BilibiliPlayStreams? streams = parseBilibiliPgcPlayurlResponse(
+      playurlBody,
+    );
     if (streams == null) {
       throw StateError('bilibili pgc playurl has no DASH audio');
     }
@@ -308,31 +310,41 @@ class BilibiliClipMiner {
     _cache[key] = _CachedStreams(fut, t);
     // 失败即从缓存剔除（否则 TTL 内都返回同一个 rejected future，卡住重试）。这个独立监听器
     // 自己吞掉清理分支的错误（不 rethrow），调用方仍从 await fut 拿到原始异常。
-    unawaited(fut.then<void>((_) {}, onError: (Object e, StackTrace s) {
-      if (identical(_cache[key]?.future, fut)) _cache.remove(key);
-    }));
+    unawaited(
+      fut.then<void>(
+        (_) {},
+        onError: (Object e, StackTrace s) {
+          if (identical(_cache[key]?.future, fut)) _cache.remove(key);
+        },
+      ),
+    );
     return fut;
   }
 
   Future<_ResolvedBilibili> _resolveNow(String bvid, int page) async {
-    final String? viewBody = await _fetchJson(Uri.parse(
-        'https://api.bilibili.com/x/web-interface/view?bvid=$bvid'));
+    final String? viewBody = await _fetchJson(
+      Uri.parse('https://api.bilibili.com/x/web-interface/view?bvid=$bvid'),
+    );
     if (viewBody == null) {
       throw StateError('bilibili view request failed (bvid=$bvid)');
     }
-    final BilibiliVideoIdentity? identity =
-        parseBilibiliViewResponse(viewBody, page: page);
+    final BilibiliVideoIdentity? identity = parseBilibiliViewResponse(
+      viewBody,
+      page: page,
+    );
     if (identity == null) {
       throw StateError('bilibili view unparsable (bvid=$bvid, p=$page)');
     }
-    final String? playBody = await _fetchJson(Uri.parse(
+    final String? playBody = await _fetchJson(
+      Uri.parse(
         'https://api.bilibili.com/x/player/playurl?bvid=$bvid'
-        '&cid=${identity.cid}&fnval=$_kBilibiliDashFnval&fourk=1'));
+        '&cid=${identity.cid}&fnval=$_kBilibiliDashFnval&fourk=1',
+      ),
+    );
     if (playBody == null) {
       throw StateError('bilibili playurl request failed (bvid=$bvid)');
     }
-    final BilibiliPlayStreams? streams =
-        parseBilibiliPlayurlResponse(playBody);
+    final BilibiliPlayStreams? streams = parseBilibiliPlayurlResponse(playBody);
     if (streams == null) {
       throw StateError('bilibili playurl has no DASH audio (bvid=$bvid)');
     }
@@ -356,10 +368,13 @@ Future<String?> _defaultFetchJson(Uri uri) async {
   final http.Client client = createAppHttpIoClient();
   final http.Response res;
   try {
-    res = await client.get(uri, headers: <String, String>{
-      'User-Agent': kBilibiliApiUserAgent,
-      'Referer': _kBilibiliApiReferer,
-    });
+    res = await client.get(
+      uri,
+      headers: <String, String>{
+        'User-Agent': kBilibiliApiUserAgent,
+        'Referer': _kBilibiliApiReferer,
+      },
+    );
   } catch (_) {
     client.close();
     return null;

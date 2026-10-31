@@ -28,20 +28,22 @@ void main() {
       );
     });
 
-    test('keeps compatibility with flat App.framework flutter_assets bundles',
-        () {
-      final String url = appleBundleWebViewAssetUrl(
-        assetPath: asset,
-        resolvedExecutable: executable,
-        existsSync: (String path) =>
-            path.endsWith('/App.framework/flutter_assets/$asset'),
-      );
+    test(
+      'keeps compatibility with flat App.framework flutter_assets bundles',
+      () {
+        final String url = appleBundleWebViewAssetUrl(
+          assetPath: asset,
+          resolvedExecutable: executable,
+          existsSync: (String path) =>
+              path.endsWith('/App.framework/flutter_assets/$asset'),
+        );
 
-      expect(
-        Uri.parse(url).toFilePath(),
-        '/tmp/Fushi.app/Contents/Frameworks/App.framework/flutter_assets/$asset',
-      );
-    });
+        expect(
+          Uri.parse(url).toFilePath(),
+          '/tmp/Fushi.app/Contents/Frameworks/App.framework/flutter_assets/$asset',
+        );
+      },
+    );
 
     test('uses Runner.app Frameworks/App.framework on iOS bundles', () {
       const String iosExecutable =

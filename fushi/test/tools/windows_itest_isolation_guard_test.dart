@@ -143,36 +143,47 @@ void main() {
       ]) {
         expect(script, contains(marker), reason: 'Missing evidence: $marker');
       }
-      expect(script, contains('Get-CimInstance Win32_Process'),
-          reason: 'Evidence must include process Path and CommandLine.');
-      expect(script, contains('MainWindowTitle'),
-          reason: 'Evidence must include window title when available.');
+      expect(
+        script,
+        contains('Get-CimInstance Win32_Process'),
+        reason: 'Evidence must include process Path and CommandLine.',
+      );
+      expect(
+        script,
+        contains('MainWindowTitle'),
+        reason: 'Evidence must include window title when available.',
+      );
     });
 
-    test('runs with isolated test root, app data, logs, and WebView2 profile',
-        () {
-      expect(script, contains('FUSHI_TEST_ROOT'));
-      expect(script, contains('FUSHI_TEST_RUN_ID'));
-      expect(script, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
-      expect(script, contains('--dart-define=FUSHI_TEST_ROOT='));
-      expect(script, contains('--dart-define=FUSHI_TEST_RUN_ID='));
-      expect(script, contains('APPDATA'));
-      expect(script, contains('LOCALAPPDATA'));
-      expect(script, contains('TEMP'));
-      expect(script, contains('TMP'));
-      expect(script, contains('USERPROFILE'));
-    });
+    test(
+      'runs with isolated test root, app data, logs, and WebView2 profile',
+      () {
+        expect(script, contains('FUSHI_TEST_ROOT'));
+        expect(script, contains('FUSHI_TEST_RUN_ID'));
+        expect(script, contains('FUSHI_WEBVIEW2_USER_DATA_FOLDER'));
+        expect(script, contains('--dart-define=FUSHI_TEST_ROOT='));
+        expect(script, contains('--dart-define=FUSHI_TEST_RUN_ID='));
+        expect(script, contains('APPDATA'));
+        expect(script, contains('LOCALAPPDATA'));
+        expect(script, contains('TEMP'));
+        expect(script, contains('TMP'));
+        expect(script, contains('USERPROFILE'));
+      },
+    );
 
     test('app startup honors the isolated test root for app data and logs', () {
       // TODO-935 E0：三个数据根的 fushiTestDirectory 隔离判定收敛到唯一入口
       // AppPaths（lib/src/storage/app_paths.dart）；app_model 不再各自直连，改在启动期
       // 经 AppPaths.resolve() 委托解析。守卫据此校验「隔离契约仍在、且走单一入口」。
-      final String appPaths =
-          File('lib/src/storage/app_paths.dart').readAsStringSync();
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      final String errorLog =
-          File('lib/src/utils/misc/error_log_service.dart').readAsStringSync();
+      final String appPaths = File(
+        'lib/src/storage/app_paths.dart',
+      ).readAsStringSync();
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      final String errorLog = File(
+        'lib/src/utils/misc/error_log_service.dart',
+      ).readAsStringSync();
 
       // 三根的测试隔离判定落在 AppPaths 单一入口。
       expect(appPaths, contains("fushiTestDirectory('temp'"));
@@ -184,10 +195,10 @@ void main() {
       expect(errorLog, contains("fushiTestDirectory('app-documents'"));
     });
 
-    test('native logs and WebView2 profile use test-only isolation env vars',
-        () {
-      final String crashDump =
-          File('windows/runner/crash_dump.cpp').readAsStringSync();
+    test('native logs and WebView2 profile use test-only isolation env vars', () {
+      final String crashDump = File(
+        'windows/runner/crash_dump.cpp',
+      ).readAsStringSync();
       final String wgcLog = File(
         '../packages/flutter_inappwebview_windows/windows/utils/wgc_log.cpp',
       ).readAsStringSync();

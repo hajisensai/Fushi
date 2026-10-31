@@ -17,9 +17,12 @@ class LocalAudioDbEntry {
         path: json['path'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
         enabled: json['enabled'] as bool? ?? true,
-        sources: (json['sources'] as List<dynamic>?)
-                ?.map((dynamic e) =>
-                    LocalAudioSourcePref.fromJson(e as Map<String, dynamic>))
+        sources:
+            (json['sources'] as List<dynamic>?)
+                ?.map(
+                  (dynamic e) =>
+                      LocalAudioSourcePref.fromJson(e as Map<String, dynamic>),
+                )
                 .toList() ??
             const <LocalAudioSourcePref>[],
       );
@@ -36,20 +39,18 @@ class LocalAudioDbEntry {
     String? displayName,
     bool? enabled,
     List<LocalAudioSourcePref>? sources,
-  }) =>
-      LocalAudioDbEntry(
-        path: path ?? this.path,
-        displayName: displayName ?? this.displayName,
-        enabled: enabled ?? this.enabled,
-        sources: sources ?? this.sources,
-      );
+  }) => LocalAudioDbEntry(
+    path: path ?? this.path,
+    displayName: displayName ?? this.displayName,
+    enabled: enabled ?? this.enabled,
+    sources: sources ?? this.sources,
+  );
 
   Map<String, dynamic> toJson() => {
-        'path': path,
-        'displayName': displayName,
-        'enabled': enabled,
-        if (sources.isNotEmpty)
-          'sources':
-              sources.map((LocalAudioSourcePref s) => s.toJson()).toList(),
-      };
+    'path': path,
+    'displayName': displayName,
+    'enabled': enabled,
+    if (sources.isNotEmpty)
+      'sources': sources.map((LocalAudioSourcePref s) => s.toJson()).toList(),
+  };
 }

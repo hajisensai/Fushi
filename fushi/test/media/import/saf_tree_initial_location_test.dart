@@ -29,9 +29,9 @@ void main() {
     final List<MethodCall> calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(FushiChannels.saf, (MethodCall call) async {
-      calls.add(call);
-      return '/storage/emulated/0/Download/Fushi';
-    });
+          calls.add(call);
+          return '/storage/emulated/0/Download/Fushi';
+        });
     late BuildContext context;
     await tester.pumpWidget(
       MaterialApp(
@@ -110,7 +110,8 @@ void main() {
     expect(
       src,
       contains(
-          'applyTreeInitialLocation(dirIntent, call.argument("initialDirectory"))'),
+        'applyTreeInitialLocation(dirIntent, call.argument("initialDirectory"))',
+      ),
       reason: 'pickRealDirectory 必须把 Dart 交来的当前目录用作起点',
     );
   });
@@ -121,8 +122,10 @@ void main() {
     ).readAsStringSync();
     final int start = src.indexOf('Future<void> _changeDownloadFolder()');
     expect(start, isNonNegative);
-    final String body =
-        src.substring(start, src.indexOf('Future<', start + 10));
+    final String body = src.substring(
+      start,
+      src.indexOf('Future<', start + 10),
+    );
     expect(body, contains('initialDirectory:'));
   });
 }

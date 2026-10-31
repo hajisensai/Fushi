@@ -29,8 +29,11 @@ void main() {
   );
 
   test('media-type binding UI lists video alongside the other media types', () {
-    expect(bindingUi.existsSync(), isTrue,
-        reason: 'TODO-1063 binding UI lives in this file');
+    expect(
+      bindingUi.existsSync(),
+      isTrue,
+      reason: 'TODO-1063 binding UI lives in this file',
+    );
     final String src = bindingUi.readAsStringSync();
 
     // All five bindable media-type kinds must be present as binding rows.
@@ -51,7 +54,8 @@ void main() {
         src.contains('_buildMediaTypeRow(') &&
             src.contains('ProfileMediaKind.$mediaType'),
         isTrue,
-        reason: 'binding row for "$mediaType" missing — video (TODO-1063) or a '
+        reason:
+            'binding row for "$mediaType" missing — video (TODO-1063) or a '
             'sibling type was dropped from the media-type binding list',
       );
     }

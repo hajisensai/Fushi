@@ -5,16 +5,22 @@ void main() {
   group('rebasePath', () {
     test('replaces the old root prefix with the new root (posix)', () {
       expect(
-        rebasePath('/old/app/fushi_books/MyBook/original.epub',
-            '/old/app/fushi_books', '/new/app/fushi_books'),
+        rebasePath(
+          '/old/app/fushi_books/MyBook/original.epub',
+          '/old/app/fushi_books',
+          '/new/app/fushi_books',
+        ),
         '/new/app/fushi_books/MyBook/original.epub',
       );
     });
 
     test('replaces the old root prefix (windows backslash)', () {
       expect(
-        rebasePath(r'C:\OldA\fushi_books\Bk\cover.jpg', r'C:\OldA\fushi_books',
-            r'D:\NewB\fushi_books'),
+        rebasePath(
+          r'C:\OldA\fushi_books\Bk\cover.jpg',
+          r'C:\OldA\fushi_books',
+          r'D:\NewB\fushi_books',
+        ),
         r'D:\NewB\fushi_books\Bk\cover.jpg',
       );
     });
@@ -35,8 +41,11 @@ void main() {
 
     test('a mixed-separator Windows source path onto a POSIX root', () {
       expect(
-        rebasePath(r'C:\Old\fushi_books\Bk/OEBPS\cover.jpg',
-            r'C:\Old\fushi_books', '/new/fushi_books/'),
+        rebasePath(
+          r'C:\Old\fushi_books\Bk/OEBPS\cover.jpg',
+          r'C:\Old\fushi_books',
+          '/new/fushi_books/',
+        ),
         '/new/fushi_books/Bk/OEBPS/cover.jpg',
       );
     });
@@ -44,50 +53,70 @@ void main() {
     test('a Windows target keeps the source sub-path bytes verbatim', () {
       // Windows 两种分隔符都认；不改字节 = DataRootMigrator 等同机调用方零变化。
       expect(
-        rebasePath(r'C:\Old\fushi_books\Bk/f.epub', r'C:\Old\fushi_books',
-            r'D:\New\fushi_books'),
+        rebasePath(
+          r'C:\Old\fushi_books\Bk/f.epub',
+          r'C:\Old\fushi_books',
+          r'D:\New\fushi_books',
+        ),
         r'D:\New\fushi_books\Bk/f.epub',
       );
       expect(
-        rebasePath('/old/audiobooks/u1/a.mp3', '/old/audiobooks',
-            r'D:\New\audiobooks'),
+        rebasePath(
+          '/old/audiobooks/u1/a.mp3',
+          '/old/audiobooks',
+          r'D:\New\audiobooks',
+        ),
         r'D:\New\audiobooks/u1/a.mp3',
       );
     });
 
     test('returns the path unchanged when it is not under the old root', () {
       expect(
-        rebasePath('/somewhere/else/x.epub', '/old/app/fushi_books',
-            '/new/app/fushi_books'),
+        rebasePath(
+          '/somewhere/else/x.epub',
+          '/old/app/fushi_books',
+          '/new/app/fushi_books',
+        ),
         '/somewhere/else/x.epub',
       );
     });
 
     test('maps the root itself to the new root', () {
       expect(
-        rebasePath('/old/app/fushi_books', '/old/app/fushi_books',
-            '/new/app/fushi_books'),
+        rebasePath(
+          '/old/app/fushi_books',
+          '/old/app/fushi_books',
+          '/new/app/fushi_books',
+        ),
         '/new/app/fushi_books',
       );
     });
 
     test('tolerates a trailing separator on the old root', () {
       expect(
-        rebasePath('/old/fushi_books/Bk/f.epub', '/old/fushi_books/',
-            '/new/fushi_books'),
+        rebasePath(
+          '/old/fushi_books/Bk/f.epub',
+          '/old/fushi_books/',
+          '/new/fushi_books',
+        ),
         '/new/fushi_books/Bk/f.epub',
       );
     });
 
-    test('does not treat a sibling sharing a name prefix as under the root',
-        () {
-      // "/old/fushi_books_extra" must NOT match root "/old/fushi_books".
-      expect(
-        rebasePath('/old/fushi_books_extra/f.epub', '/old/fushi_books',
-            '/new/fushi_books'),
-        '/old/fushi_books_extra/f.epub',
-      );
-    });
+    test(
+      'does not treat a sibling sharing a name prefix as under the root',
+      () {
+        // "/old/fushi_books_extra" must NOT match root "/old/fushi_books".
+        expect(
+          rebasePath(
+            '/old/fushi_books_extra/f.epub',
+            '/old/fushi_books',
+            '/new/fushi_books',
+          ),
+          '/old/fushi_books_extra/f.epub',
+        );
+      },
+    );
   });
 
   group('BackupMeta content roots', () {

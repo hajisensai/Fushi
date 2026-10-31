@@ -62,9 +62,13 @@ void main() {
     test('403 的服务端原因原样保留，并进 toString', () {
       SyncAuthError? caught;
       try {
-        ops.checkStatus(403, 'GET /svc',
-            serverReason:
-                const SyncErrorBody.text('HTTPS required for service config'));
+        ops.checkStatus(
+          403,
+          'GET /svc',
+          serverReason: const SyncErrorBody.text(
+            'HTTPS required for service config',
+          ),
+        );
       } on SyncAuthError catch (e) {
         caught = e;
       }
@@ -75,11 +79,18 @@ void main() {
     test('404 / 5xx / 2xx 契约不变（都不是鉴权错误）', () {
       expect(
         () => ops.checkStatus(404, 'GET /x'),
-        throwsA(isA<SyncBackendError>().having(
-            (SyncBackendError e) => e.isRetryable, 'isRetryable', isTrue)),
+        throwsA(
+          isA<SyncBackendError>().having(
+            (SyncBackendError e) => e.isRetryable,
+            'isRetryable',
+            isTrue,
+          ),
+        ),
       );
-      expect(() => ops.checkStatus(500, 'GET /x'),
-          throwsA(isA<SyncBackendError>()));
+      expect(
+        () => ops.checkStatus(500, 'GET /x'),
+        throwsA(isA<SyncBackendError>()),
+      );
       expect(() => ops.checkStatus(207, 'PROPFIND /x'), returnsNormally);
     });
   });
@@ -171,7 +182,8 @@ void main() {
   });
 
   group('BUG-2631 403 的响应体是网页：只取标题，换一套文案', () {
-    const String cloudflare = '<!DOCTYPE html><html lang="en-US"><head>'
+    const String cloudflare =
+        '<!DOCTYPE html><html lang="en-US"><head>'
         '<title>Just a moment...</title>'
         '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
         '<meta name="robots" content="noindex,nofollow"></head>'
@@ -250,17 +262,20 @@ void main() {
 
     test('parseSyncErrorBody：标题折叠空白、解实体、长标题截断；XML 不算网页', () {
       final SyncErrorBody? multi = parseSyncErrorBody(
-          '<html><head><title>\n  Access &amp; Denied  \n</title></head></html>');
+        '<html><head><title>\n  Access &amp; Denied  \n</title></head></html>',
+      );
       expect(multi!.isHtmlPage, isTrue);
       expect(multi.reason, 'Access & Denied');
 
-      final SyncErrorBody? long =
-          parseSyncErrorBody('<!doctype html><title>${'t' * 500}</title>');
+      final SyncErrorBody? long = parseSyncErrorBody(
+        '<!doctype html><title>${'t' * 500}</title>',
+      );
       expect(long!.reason!.length, lessThan(130));
       expect(long.reason, endsWith('...'));
 
       final SyncErrorBody? xml = parseSyncErrorBody(
-          '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:multistatus>');
+        '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:multistatus>',
+      );
       expect(xml!.isHtmlPage, isFalse);
       expect(xml.reason, startsWith('<?xml'));
 
@@ -268,11 +283,11 @@ void main() {
       expect(parseSyncErrorBody('', declaredHtml: true)!.isHtmlPage, isTrue);
     });
 
-    test('nginx / Apache 默认 403 页：标题是「NNN 状态语」→ 仍是 forbidden，原因取标题',
-        () {
+    test('nginx / Apache 默认 403 页：标题是「NNN 状态语」→ 仍是 forbidden，原因取标题', () {
       // 这是真 WebDAV 服务端经反代给出的拒绝（ACL / 目录无 DAV 权限），不是「地址
       // 填成了网站」；归成网页会让用户去核对一个本来就对的地址。
-      const String nginx = '<html><head><title>403 Forbidden</title></head>'
+      const String nginx =
+          '<html><head><title>403 Forbidden</title></head>'
           '<body><center><h1>403 Forbidden</h1></center><hr>'
           '<center>nginx</center></body></html>';
       final SyncErrorBody? body = parseSyncErrorBody(nginx, declaredHtml: true);
@@ -291,18 +306,23 @@ void main() {
       // Cloudflare 挑战页与网站首页的标题不是这个形状，仍归网页。
       expect(parseSyncErrorBody(cloudflare)!.isHtmlPage, isTrue);
       expect(
-          parseSyncErrorBody('<!doctype html><title>4033 ways</title>')!
-              .isHtmlPage,
-          isTrue,
-          reason: '只认「三位数 + 空白 / 结尾」，四位数开头的标题不是状态语');
+        parseSyncErrorBody(
+          '<!doctype html><title>4033 ways</title>',
+        )!.isHtmlPage,
+        isTrue,
+        reason: '只认「三位数 + 空白 / 结尾」，四位数开头的标题不是状态语',
+      );
     });
 
     test('checkStatus 拿到网页体：kind 随体走，纯文本仍是 forbidden', () {
       final WebDavOps ops = opsFor();
       SyncAuthError? caught;
       try {
-        ops.checkStatus(403, 'GET /svc',
-            serverReason: parseSyncErrorBody(cloudflare));
+        ops.checkStatus(
+          403,
+          'GET /svc',
+          serverReason: parseSyncErrorBody(cloudflare),
+        );
       } on SyncAuthError catch (e) {
         caught = e;
       }
@@ -315,8 +335,9 @@ void main() {
       // 把 `SyncAuthError: Server refused (403): PROPFIND https://…(<!DOCTYPE html>…`
       // 整个灌进去。同步设置页早就走 friendlySyncErrorDetail，两处必须同源。
       final String src = maskComments(
-        File('lib/src/pages/implementations/media_sources_view.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/media_sources_view.dart',
+        ).readAsStringSync(),
       );
       expect(src, contains('friendlySyncErrorDetail(e)'));
       expect(src, isNot(contains(r"sync_connection_failed}: $e'")));
@@ -341,7 +362,8 @@ void main() {
       expect(
         shown,
         t.sync_err_forbidden_detail(
-            reason: 'HTTPS required for service config'),
+          reason: 'HTTPS required for service config',
+        ),
       );
     });
 
@@ -375,26 +397,33 @@ void main() {
 
   group('BUG-1323 403 不得毁掉一个好端端的会话', () {
     test('凭据类失败必须登出（TODO-836 契约）', () {
-      expect(shouldSignOutOnAuthError(SyncAuthError('Authentication failed')),
-          isTrue);
-      expect(shouldSignOutOnAuthError(SyncAuthError('insufficient_scope')),
-          isTrue);
+      expect(
+        shouldSignOutOnAuthError(SyncAuthError('Authentication failed')),
+        isTrue,
+      );
+      expect(
+        shouldSignOutOnAuthError(SyncAuthError('insufficient_scope')),
+        isTrue,
+      );
     });
 
     test('服务端拒绝不得登出', () {
       expect(
-        shouldSignOutOnAuthError(SyncAuthError(
-          'Server refused (403): GET /svc',
-          kind: SyncAuthFailureKind.forbidden,
-          serverReason: 'HTTPS required for service config',
-        )),
+        shouldSignOutOnAuthError(
+          SyncAuthError(
+            'Server refused (403): GET /svc',
+            kind: SyncAuthFailureKind.forbidden,
+            serverReason: 'HTTPS required for service config',
+          ),
+        ),
         isFalse,
       );
     });
 
     test('手动同步的 catch 走的是这个判断，不是自己再写一遍', () {
-      final String src =
-          File('lib/src/sync/manual_sync_ui.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/manual_sync_ui.dart',
+      ).readAsStringSync();
       // BUG-1578 起，登出判断多了一层「这条错误是哪条通道的」（互联通道的 signOut
       // 会清空整份配对配置，不能由一次 401 触发），但那一层**必须**把 kind 的判断
       // 委托回 shouldSignOutOnAuthError，而不是在 catch 里自己再写一遍。
@@ -405,10 +434,14 @@ void main() {
     });
 
     test('登出的对象是**出错那条通道**的后端，不是 getBackendType() 猜的那个', () {
-      final String src =
-          File('lib/src/sync/manual_sync_ui.dart').readAsStringSync();
-      expect(src, contains('e.channel.backend'),
-          reason: 'BUG-1578：互联对端的一次 401 曾去登出用户的云盘会话');
+      final String src = File(
+        'lib/src/sync/manual_sync_ui.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains('e.channel.backend'),
+        reason: 'BUG-1578：互联对端的一次 401 曾去登出用户的云盘会话',
+      );
       expect(
         src,
         isNot(contains('resolveSyncBackend(await repo.getBackendType())')),
@@ -468,8 +501,11 @@ void main() {
       );
       SyncAuthError? caught;
       try {
-        peer.checkStatus(403, 'GET /svc',
-            serverReason: const SyncErrorBody.text('HTTPS required'));
+        peer.checkStatus(
+          403,
+          'GET /svc',
+          serverReason: const SyncErrorBody.text('HTTPS required'),
+        );
       } on SyncAuthError catch (e) {
         caught = e;
       }
@@ -483,8 +519,10 @@ void main() {
         kind: SyncAuthFailureKind.pairingNotConfigured,
       );
       expect(friendlySyncError(e), t.sync_err_not_paired);
-      expect(friendlySyncError(e),
-          isNot(contains('Fushi server credentials not configured')));
+      expect(
+        friendlySyncError(e),
+        isNot(contains('Fushi server credentials not configured')),
+      );
       expect(friendlySyncError(e), isNot(equals(t.sync_err_auth_expired)));
     });
 
@@ -503,16 +541,20 @@ void main() {
     test('配对被拒**不得**登出：互联登出会清空整份配对配置', () {
       expect(
         shouldSignOutOnAuthError(
-          SyncAuthError('Authentication failed',
-              kind: SyncAuthFailureKind.pairingRejected),
+          SyncAuthError(
+            'Authentication failed',
+            kind: SyncAuthFailureKind.pairingRejected,
+          ),
         ),
         isFalse,
         reason: 'BUG-1550/BUG-1578：一台对端的 401 不得株连其余对端的配对',
       );
       expect(
         shouldSignOutOnAuthError(
-          SyncAuthError('not configured',
-              kind: SyncAuthFailureKind.pairingNotConfigured),
+          SyncAuthError(
+            'not configured',
+            kind: SyncAuthFailureKind.pairingNotConfigured,
+          ),
         ),
         isFalse,
       );
@@ -523,8 +565,8 @@ void main() {
       // 增加（探测/暂定句柄/已解析会话/测试连接…），故按出现次数配对扫描，而不是
       // 钉死行号。
       final String src = maskComments(
-          File('lib/src/sync/interconnect_sync_backend.dart')
-              .readAsStringSync());
+        File('lib/src/sync/interconnect_sync_backend.dart').readAsStringSync(),
+      );
       final int constructions = 'WebDavOps('.allMatches(src).length;
       final int declared =
           'unauthorizedKind: SyncAuthFailureKind.pairingRejected'
@@ -533,32 +575,48 @@ void main() {
       // 下限只防「文件改名/扫描面丢了」导致的空扫描恒真。XVEF3huDTF 把暂定句柄与
       // 已解析句柄两处收进唯一构造点 `_sessionOps`，构造点由 5 处合并为 4 处
       // （默认探测 / 钉指纹探测 / _sessionOps / testConnection）——凭据语义覆盖不变。
-      expect(constructions, greaterThanOrEqualTo(4),
-          reason: '互联后端至少有 4 处 WebDavOps 构造点');
-      expect(RegExp(r'_sessionOps\(').allMatches(src).length,
-          greaterThanOrEqualTo(3),
-          reason: '暂定句柄与解析后句柄都必须经 _sessionOps 构造（定义 + 两处调用）');
-      expect(declared, constructions,
-          reason: '有 WebDavOps 构造点没声明 unauthorizedKind —— '
-              '那条路径上的对端 401 会重新被说成「登录已过期」');
+      expect(
+        constructions,
+        greaterThanOrEqualTo(4),
+        reason: '互联后端至少有 4 处 WebDavOps 构造点',
+      );
+      expect(
+        RegExp(r'_sessionOps\(').allMatches(src).length,
+        greaterThanOrEqualTo(3),
+        reason: '暂定句柄与解析后句柄都必须经 _sessionOps 构造（定义 + 两处调用）',
+      );
+      expect(
+        declared,
+        constructions,
+        reason:
+            '有 WebDavOps 构造点没声明 unauthorizedKind —— '
+            '那条路径上的对端 401 会重新被说成「登录已过期」',
+      );
     });
 
     test('互联的 POST 传输层同样带类型（远程查词/制卡的 401）', () {
       final String src = maskComments(
-          File('lib/src/sync/interconnect_post_transport.dart')
-              .readAsStringSync());
+        File(
+          'lib/src/sync/interconnect_post_transport.dart',
+        ).readAsStringSync(),
+      );
       expect(src, contains('kind: SyncAuthFailureKind.pairingRejected'));
     });
 
     test('文案层对互联不再靠字符串猜：按 kind 分派先于任何 contains', () {
       final String src = maskComments(
-          File('lib/src/sync/sync_error_messages.dart').readAsStringSync());
-      final int typeDispatch =
-          src.indexOf('error.kind != SyncAuthFailureKind.credentials');
+        File('lib/src/sync/sync_error_messages.dart').readAsStringSync(),
+      );
+      final int typeDispatch = src.indexOf(
+        'error.kind != SyncAuthFailureKind.credentials',
+      );
       final int stringGuess = src.indexOf("l.contains('401')");
       expect(typeDispatch, greaterThanOrEqualTo(0));
-      expect(stringGuess, greaterThan(typeDispatch),
-          reason: '类型分派必须排在字符串猜测之前，否则新 kind 又被 contains 抢走');
+      expect(
+        stringGuess,
+        greaterThan(typeDispatch),
+        reason: '类型分派必须排在字符串猜测之前，否则新 kind 又被 contains 抢走',
+      );
     });
   });
 
@@ -566,7 +624,9 @@ void main() {
     test('日志行与改动前逐字相同（errors 的既有契约不动）', () {
       final SyncRunReport r = SyncRunReport();
       r.noteError(
-          'service config live sync', SyncAuthError('Authentication failed'));
+        'service config live sync',
+        SyncAuthError('Authentication failed'),
+      );
       expect(r.errors, <String>[
         'service config live sync: SyncAuthError: Authentication failed',
       ]);
@@ -576,15 +636,19 @@ void main() {
       final SyncRunReport r = SyncRunReport();
       r.noteError(
         'service config live sync',
-        SyncAuthError('Server refused (403): GET /svc',
-            kind: SyncAuthFailureKind.forbidden,
-            serverReason: 'HTTPS required for service config'),
+        SyncAuthError(
+          'Server refused (403): GET /svc',
+          kind: SyncAuthFailureKind.forbidden,
+          serverReason: 'HTTPS required for service config',
+        ),
       );
       expect(r.authFailures, hasLength(1));
       expect(r.authFailures.single.isForbidden, isTrue);
       expect(r.authFailures.single.label, 'service config live sync');
-      expect(r.authFailures.single.serverReason,
-          'HTTPS required for service config');
+      expect(
+        r.authFailures.single.serverReason,
+        'HTTPS required for service config',
+      );
     });
 
     test('非鉴权错误不进 authFailures（不许扩大化）', () {
@@ -599,7 +663,9 @@ void main() {
       final SyncRunReport r = SyncRunReport();
       for (int i = 0; i < 200; i++) {
         r.noteError(
-            'import book "b$i"', SyncAuthError('Authentication failed'));
+          'import book "b$i"',
+          SyncAuthError('Authentication failed'),
+        );
       }
       expect(r.errors, hasLength(200));
       expect(r.authFailures, hasLength(1));
@@ -610,9 +676,12 @@ void main() {
       final SyncRunReport r = SyncRunReport();
       r.noteError('a', SyncAuthError('Authentication failed'));
       r.noteError(
-          'b',
-          SyncAuthError('Server refused (403): x',
-              kind: SyncAuthFailureKind.forbidden));
+        'b',
+        SyncAuthError(
+          'Server refused (403): x',
+          kind: SyncAuthFailureKind.forbidden,
+        ),
+      );
       expect(r.authFailures, hasLength(2));
     });
 
@@ -622,9 +691,12 @@ void main() {
       final SyncRunReport live = SyncRunReport()
         ..noteError('b', SyncAuthError('Authentication failed'))
         ..noteError(
-            'c',
-            SyncAuthError('Server refused (403): x',
-                kind: SyncAuthFailureKind.forbidden));
+          'c',
+          SyncAuthError(
+            'Server refused (403): x',
+            kind: SyncAuthFailureKind.forbidden,
+          ),
+        );
       cloud.mergeFrom(live);
       expect(cloud.errors, hasLength(3));
       expect(cloud.authFailures, hasLength(2));
@@ -633,8 +705,10 @@ void main() {
 
   group('BUG-1324 「N 项失败」不再是唯一一句话', () {
     test('零失败时摘要逐字不变', () {
-      expect(summarizeSyncReport(SyncRunReport()),
-          t.sync_now_done(detail: t.sync_now_no_changes));
+      expect(
+        summarizeSyncReport(SyncRunReport()),
+        t.sync_now_done(detail: t.sync_now_no_changes),
+      );
     });
 
     test('非鉴权失败时摘要逐字不变（回归护栏）', () {
@@ -651,9 +725,11 @@ void main() {
       final SyncRunReport r = SyncRunReport()
         ..noteError(
           'service config live sync',
-          SyncAuthError('Server refused (403): GET /svc',
-              kind: SyncAuthFailureKind.forbidden,
-              serverReason: 'HTTPS required for service config'),
+          SyncAuthError(
+            'Server refused (403): GET /svc',
+            kind: SyncAuthFailureKind.forbidden,
+            serverReason: 'HTTPS required for service config',
+          ),
         );
       final String shown = summarizeSyncReport(r);
       expect(shown, contains('HTTPS required for service config'));

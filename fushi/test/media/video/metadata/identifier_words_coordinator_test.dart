@@ -38,19 +38,24 @@ void main() {
     required List<String> fileNames,
     String identifierWords = '',
   }) async {
-    final SourceLibraryRow source =
-        await _source(db, directory, localTitle, fileNames);
+    final SourceLibraryRow source = await _source(
+      db,
+      directory,
+      localTitle,
+      fileNames,
+    );
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-      primaryProvider: VideoMetadataProviderKind.mal,
-      database: db,
-      config: VideoSourceScrapeGlobalConfig(
-        identifierWords:
-            ScrapeIdentifierWords.parse(identifierWords).identifierWords,
-      ),
-      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
-    );
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: VideoSourceScrapeGlobalConfig(
+            identifierWords: ScrapeIdentifierWords.parse(
+              identifierWords,
+            ).identifierWords,
+          ),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+        );
     addTearDown(coordinator.close);
     return coordinator.scrapeSource(
       source,
@@ -60,10 +65,10 @@ void main() {
   }
 
   Future<Map<(int, int), String?>> boundEpisodes(String localTitle) async {
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionByNaturalKey(localTitle, 'playlist'))!;
-    final VideoMetadataWorkRow work =
-        (await db.getVideoMetadataWorkByCollection(collection.id))!;
+    final MediaCollectionRow collection = (await db
+        .getMediaCollectionByNaturalKey(localTitle, 'playlist'))!;
+    final VideoMetadataWorkRow work = (await db
+        .getVideoMetadataWorkByCollection(collection.id))!;
     final Map<(int, int), String?> result = <(int, int), String?>{};
     for (final VideoMetadataSeasonRow season
         in await db.getVideoMetadataSeasons(work.id)) {
@@ -75,16 +80,18 @@ void main() {
     return result;
   }
 
-  test('without identifier words the mismatched local title finds nothing',
-      () async {
-    final _MalProvider mal = _MalProvider();
-    final SourceScrapeReport report = await scrape(
-      mal,
-      localTitle: 'Kusuriya',
-      fileNames: <String>['Kusuriya - 01.mkv'],
-    );
-    expect(report.succeededWorks, 0);
-  });
+  test(
+    'without identifier words the mismatched local title finds nothing',
+    () async {
+      final _MalProvider mal = _MalProvider();
+      final SourceScrapeReport report = await scrape(
+        mal,
+        localTitle: 'Kusuriya',
+        fileNames: <String>['Kusuriya - 01.mkv'],
+      );
+      expect(report.succeededWorks, 0);
+    },
+  );
 
   test('a replace word rewrites the candidate so the work matches', () async {
     final _MalProvider mal = _MalProvider();
@@ -99,10 +106,9 @@ void main() {
     // 命中即止，所以原候选不会被真的搜一次；候选表本身必须保留它，
     // 规则写错时才还有按原标题搜的机会。
     expect(
-      applyScrapeIdentifierWordsToCandidates(
-        <String>['Kusuriya'],
-        ScrapeIdentifierWords.parse('Kusuriya => Frieren').identifierWords,
-      ),
+      applyScrapeIdentifierWordsToCandidates(<String>[
+        'Kusuriya',
+      ], ScrapeIdentifierWords.parse('Kusuriya => Frieren').identifierWords),
       <String>['Frieren', 'Kusuriya'],
     );
   });
@@ -153,23 +159,29 @@ Future<SourceLibraryRow> _source(
   String title,
   List<String> fileNames,
 ) async {
-  final int sourceId = await db.insertMediaSource(MediaSourcesCompanion.insert(
-    label: 'Source',
-    mediaKind: 'video',
-    rootPath: root.path,
-    createdAt: 1,
-  ));
-  final int collectionId =
-      await db.createMediaCollection(title, collectionType: 'playlist');
+  final int sourceId = await db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: 'Source',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ),
+  );
+  final int collectionId = await db.createMediaCollection(
+    title,
+    collectionType: 'playlist',
+  );
   for (int index = 0; index < fileNames.length; index++) {
     final File file = File(p.join(root.path, fileNames[index]));
     await file.writeAsBytes(<int>[0]);
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value<String>('book-$index'),
-      title: Value<String>(title),
-      videoPath: Value<String>(file.path),
-      sourceId: Value<int?>(sourceId),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value<String>('book-$index'),
+        title: Value<String>(title),
+        videoPath: Value<String>(file.path),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'book-$index');
   }
   await db.upsertVideoSourceScrapeSettings(
@@ -197,18 +209,19 @@ class _MalProvider implements VideoMetadataProvider {
   bool get isAvailable => true;
 
   VideoMetadataWork get _work => VideoMetadataWork(
-        provider: VideoMetadataProviderKind.mal,
-        kind: VideoMetadataMediaKind.tv,
-        title: _title,
-        episodeCount: _episodeCount,
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'mal', value: '52991', isDefault: true),
-        ],
-      );
+    provider: VideoMetadataProviderKind.mal,
+    kind: VideoMetadataMediaKind.tv,
+    title: _title,
+    episodeCount: _episodeCount,
+    ids: const <VideoMetadataId>[
+      VideoMetadataId(type: 'mal', value: '52991', isDefault: true),
+    ],
+  );
 
   @override
   Future<List<VideoMetadataWork>> search(
-      VideoMetadataSearchRequest request) async {
+    VideoMetadataSearchRequest request,
+  ) async {
     searchedTitles.add(request.title);
     return <VideoMetadataWork>[_work];
   }
@@ -219,18 +232,20 @@ class _MalProvider implements VideoMetadataProvider {
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
-          VideoMetadataLookup lookup) async =>
-      <VideoMetadataSeason>[
-        VideoMetadataSeason(
-          seasonNumber: 1,
-          title: _title,
-          episodeCount: _episodeCount,
-        ),
-      ];
+    VideoMetadataLookup lookup,
+  ) async => <VideoMetadataSeason>[
+    VideoMetadataSeason(
+      seasonNumber: 1,
+      title: _title,
+      episodeCount: _episodeCount,
+    ),
+  ];
 
   @override
-  Future<List<VideoMetadataEpisode>> fetchEpisodes(VideoMetadataLookup lookup,
-      {required int seasonNumber}) async {
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async {
     if (seasonNumber != 1) return const <VideoMetadataEpisode>[];
     return <VideoMetadataEpisode>[
       for (int number = 1; number <= _episodeCount; number++)

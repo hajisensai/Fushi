@@ -15,9 +15,9 @@ void main() {
   test('捕获设置弹窗的所有关闭路径收口到一次性 dismiss', () {
     final String code = maskComments(source);
     expect(
-      RegExp(r'Navigator\.of\(context\)\.(?:maybePop|pop)\s*\(')
-          .allMatches(code)
-          .length,
+      RegExp(
+        r'Navigator\.of\(context\)\.(?:maybePop|pop)\s*\(',
+      ).allMatches(code).length,
       1,
       reason: '选择成功、状态监听和关闭按钮不能各自 pop，否则会弹掉底层页面',
     );
@@ -45,11 +45,12 @@ void main() {
       isTrue,
     );
     expect(
-      RegExp(r'_dismissOnce\(yieldingToRiskConsent:\s*false\)')
-          .allMatches(code)
-          .length,
+      RegExp(
+        r'_dismissOnce\(yieldingToRiskConsent:\s*false\)',
+      ).allMatches(code).length,
       2,
-      reason: '用户主动的两条出口（选中线程、关闭按钮）必须显式声明不是让位，'
+      reason:
+          '用户主动的两条出口（选中线程、关闭按钮）必须显式声明不是让位，'
           '否则会把「已提示过」标记一起回滚，弹窗每来一行台词就弹回来',
     );
   });
@@ -77,17 +78,18 @@ void main() {
     // 零检出能力。真正要钉的是「让位」与「用户选中线程」用两个不同实参：前者要
     // 回滚「本会话已提示过」，后者不能回滚。
     expect(
-      RegExp(r'_scheduleAutoClose\(yieldingToRiskConsent:\s*true\)')
-          .allMatches(maskComments(build))
-          .length,
+      RegExp(
+        r'_scheduleAutoClose\(yieldingToRiskConsent:\s*true\)',
+      ).allMatches(maskComments(build)).length,
       0,
-      reason: '让位出口的唯一触发者（风险门）已经去掉，build 里不该还留着它；'
+      reason:
+          '让位出口的唯一触发者（风险门）已经去掉，build 里不该还留着它；'
           '`yieldingToRiskConsent` 参数本身保留，门若按引擎重开只是接回一个 else-if',
     );
     expect(
-      RegExp(r'_scheduleAutoClose\(yieldingToRiskConsent:\s*false\)')
-          .allMatches(maskComments(build))
-          .length,
+      RegExp(
+        r'_scheduleAutoClose\(yieldingToRiskConsent:\s*false\)',
+      ).allMatches(maskComments(build)).length,
       1,
       reason: '用户选中线程是用户自己的动作，不得被当成让位回滚标记',
     );
@@ -105,9 +107,9 @@ void main() {
     // 不靠它）。所以回滚必须**恰好**被让位出口门控。
     final String code = maskComments(page);
     expect(
-      RegExp(r'_captureSetupShownForSession = sessionStartedAt;')
-          .allMatches(code)
-          .length,
+      RegExp(
+        r'_captureSetupShownForSession = sessionStartedAt;',
+      ).allMatches(code).length,
       1,
     );
     expect(
@@ -131,9 +133,9 @@ void main() {
     expect(containsIdentifier(request, '_previewQueue'), isTrue);
     expect(containsIdentifierCall(request, '_togglePreview'), isTrue);
     expect(
-      RegExp(r'generation\s*!=\s*_previewGeneration')
-          .allMatches(maskCommentsAndStrings(toggle))
-          .length,
+      RegExp(
+        r'generation\s*!=\s*_previewGeneration',
+      ).allMatches(maskCommentsAndStrings(toggle)).length,
       greaterThanOrEqualTo(2),
       reason: '导出前后都必须拒绝过期请求，异步逆序返回不能覆盖最后一次点击',
     );

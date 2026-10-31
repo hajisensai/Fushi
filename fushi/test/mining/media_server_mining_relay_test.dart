@@ -260,5 +260,4 @@ void main() {
 /// [A] 是否是 [B] 的子类型（不用实例，生产 client 的构造要一堆依赖）。
 bool _implements<A, B>() => <A>[] is List<B>;
 
-String? _bundledFfmpeg() =>
-    resolveBundledUnifiedFfmpegForTests()?.ffmpeg;
+String? _bundledFfmpeg() => resolveBundledUnifiedFfmpegForTests()?.ffmpeg;

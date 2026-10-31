@@ -46,8 +46,9 @@ Future<VideoSheetHarness> _pumpSheet(
 }
 
 void main() {
-  testWidgets('video settings exposes danmaku switch and active limit',
-      (WidgetTester tester) async {
+  testWidgets('video settings exposes danmaku switch and active limit', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     bool? enabled;
@@ -75,13 +76,13 @@ void main() {
     // 门控，而该 pref **默认关闭**，所以要先打开才能看到子项。
     expect(find.text(t.video_setting_danmaku_enabled), findsOneWidget);
 
-    final AdaptiveSettingsSwitchRow enabledRow =
-        tester.widget<AdaptiveSettingsSwitchRow>(
-      find.widgetWithText(
-        AdaptiveSettingsSwitchRow,
-        t.video_setting_danmaku_enabled,
-      ),
-    );
+    final AdaptiveSettingsSwitchRow enabledRow = tester
+        .widget<AdaptiveSettingsSwitchRow>(
+          find.widgetWithText(
+            AdaptiveSettingsSwitchRow,
+            t.video_setting_danmaku_enabled,
+          ),
+        );
     enabledRow.onChanged!(true);
     await tester.pumpAndSettle();
     expect(enabled, isTrue);
@@ -89,24 +90,24 @@ void main() {
     expect(find.text(t.video_setting_danmaku_online), findsOneWidget);
     expect(find.text(t.video_setting_danmaku_max_active), findsOneWidget);
 
-    final AdaptiveSettingsSwitchRow onlineRow =
-        tester.widget<AdaptiveSettingsSwitchRow>(
-      find.widgetWithText(
-        AdaptiveSettingsSwitchRow,
-        t.video_setting_danmaku_online,
-      ),
-    );
+    final AdaptiveSettingsSwitchRow onlineRow = tester
+        .widget<AdaptiveSettingsSwitchRow>(
+          find.widgetWithText(
+            AdaptiveSettingsSwitchRow,
+            t.video_setting_danmaku_online,
+          ),
+        );
     onlineRow.onChanged!(false);
     await tester.pump();
     expect(onlineEnabled, isFalse);
 
-    final AdaptiveSettingsStepperRow maxRow =
-        tester.widget<AdaptiveSettingsStepperRow>(
-      find.widgetWithText(
-        AdaptiveSettingsStepperRow,
-        t.video_setting_danmaku_max_active,
-      ),
-    );
+    final AdaptiveSettingsStepperRow maxRow = tester
+        .widget<AdaptiveSettingsStepperRow>(
+          find.widgetWithText(
+            AdaptiveSettingsStepperRow,
+            t.video_setting_danmaku_max_active,
+          ),
+        );
     maxRow.onChanged(120);
     await tester.pump();
     expect(maxActive, 120);
@@ -120,8 +121,9 @@ void main() {
     expect(find.text(t.video_setting_danmaku_max_active), findsNothing);
   });
 
-  testWidgets('video settings exposes danmaku style, filter and manual match',
-      (WidgetTester tester) async {
+  testWidgets('video settings exposes danmaku style, filter and manual match', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     VideoDanmakuStyle? preview;
@@ -146,20 +148,26 @@ void main() {
     await tester.pumpAndSettle();
 
     // Style sliders present.
-    expect(find.textContaining(t.video_setting_danmaku_font_scale),
-        findsOneWidget);
     expect(
-        find.textContaining(t.video_setting_danmaku_opacity), findsOneWidget);
+      find.textContaining(t.video_setting_danmaku_font_scale),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(t.video_setting_danmaku_opacity),
+      findsOneWidget,
+    );
     expect(find.textContaining(t.video_setting_danmaku_speed), findsOneWidget);
     expect(find.textContaining(t.video_setting_danmaku_area), findsOneWidget);
 
     // Font-scale slider preview + commit reach the callbacks.
-    final AdaptiveSettingsSliderRow fontRow =
-        tester.widget<AdaptiveSettingsSliderRow>(
-      find.byWidgetPredicate((Widget w) =>
-          w is AdaptiveSettingsSliderRow &&
-          w.title.startsWith(t.video_setting_danmaku_font_scale)),
-    );
+    final AdaptiveSettingsSliderRow fontRow = tester
+        .widget<AdaptiveSettingsSliderRow>(
+          find.byWidgetPredicate(
+            (Widget w) =>
+                w is AdaptiveSettingsSliderRow &&
+                w.title.startsWith(t.video_setting_danmaku_font_scale),
+          ),
+        );
     fontRow.onChanged(1.5);
     await tester.pump();
     expect(preview?.fontScale, 1.5);
@@ -168,13 +176,13 @@ void main() {
     expect(committed?.fontScale, 1.5);
 
     // Manual match navigation row triggers the callback.
-    final AdaptiveSettingsNavigationRow manualRow =
-        tester.widget<AdaptiveSettingsNavigationRow>(
-      find.widgetWithText(
-        AdaptiveSettingsNavigationRow,
-        t.video_setting_danmaku_manual_match,
-      ),
-    );
+    final AdaptiveSettingsNavigationRow manualRow = tester
+        .widget<AdaptiveSettingsNavigationRow>(
+          find.widgetWithText(
+            AdaptiveSettingsNavigationRow,
+            t.video_setting_danmaku_manual_match,
+          ),
+        );
     manualRow.onTap();
     await tester.pump();
     expect(manualOpened, isTrue);
@@ -189,37 +197,52 @@ void main() {
   });
 
   test(
-      'source guard: danmaku layer is local-only, non-blocking and under subtitles',
-      () {
-    final String page = readVideoFushiSource();
-    final String overlay =
-        File('lib/src/media/video/video_danmaku_overlay.dart')
-            .readAsStringSync();
-    final String model =
-        File('lib/src/media/video/video_danmaku_model.dart').readAsStringSync();
-    final String source = File('lib/src/media/video/video_danmaku_source.dart')
-        .readAsStringSync();
+    'source guard: danmaku layer is local-only, non-blocking and under subtitles',
+    () {
+      final String page = readVideoFushiSource();
+      final String overlay = File(
+        'lib/src/media/video/video_danmaku_overlay.dart',
+      ).readAsStringSync();
+      final String model = File(
+        'lib/src/media/video/video_danmaku_model.dart',
+      ).readAsStringSync();
+      final String source = File(
+        'lib/src/media/video/video_danmaku_source.dart',
+      ).readAsStringSync();
 
-    expect(page, contains('findDanmakuSidecar'));
-    expect(page, contains('loadDanmakuSidecarFile'));
-    expect(page, contains('VideoDanmakuOverlay'));
-    expect(overlay, contains('IgnorePointer'));
-    expect(page, isNot(contains('dandanplay.com')),
-        reason: 'TODO-259/260 只做本地 MVP，不实现在线 Dandanplay endpoint');
+      expect(page, contains('findDanmakuSidecar'));
+      expect(page, contains('loadDanmakuSidecarFile'));
+      expect(page, contains('VideoDanmakuOverlay'));
+      expect(overlay, contains('IgnorePointer'));
+      expect(
+        page,
+        isNot(contains('dandanplay.com')),
+        reason: 'TODO-259/260 只做本地 MVP，不实现在线 Dandanplay endpoint',
+      );
 
-    final int danmakuIdx = page.indexOf('VideoDanmakuOverlay(');
-    final int subtitleIdx = page.indexOf('VideoSubtitleOverlay(');
-    expect(danmakuIdx, greaterThanOrEqualTo(0));
-    expect(subtitleIdx, greaterThan(danmakuIdx),
-        reason: '弹幕应画在可点击字幕下方，字幕/查词路径保持在更上层');
+      final int danmakuIdx = page.indexOf('VideoDanmakuOverlay(');
+      final int subtitleIdx = page.indexOf('VideoSubtitleOverlay(');
+      expect(danmakuIdx, greaterThanOrEqualTo(0));
+      expect(
+        subtitleIdx,
+        greaterThan(danmakuIdx),
+        reason: '弹幕应画在可点击字幕下方，字幕/查词路径保持在更上层',
+      );
 
-    for (final String src in <String>[overlay, model, source]) {
-      expect(src, isNot(contains('AudioCue')),
-          reason: '弹幕不能复用字幕/有声书 currentCue 语义');
-      expect(src, isNot(contains('currentCue')),
-          reason: '弹幕是多条同时活动，不是单 currentCue');
-    }
-  });
+      for (final String src in <String>[overlay, model, source]) {
+        expect(
+          src,
+          isNot(contains('AudioCue')),
+          reason: '弹幕不能复用字幕/有声书 currentCue 语义',
+        );
+        expect(
+          src,
+          isNot(contains('currentCue')),
+          reason: '弹幕是多条同时活动，不是单 currentCue',
+        );
+      }
+    },
+  );
 
   test('source guard: danmaku settings reload or clear the current video', () {
     final String page = readVideoFushiSource();
@@ -230,28 +253,34 @@ void main() {
     expect(page, contains('void _clearDanmakuForCurrentVideo'));
     expect(page, contains('++_danmakuLoadSeq'));
     expect(
-        page, contains('unawaited(_loadDanmakuForVideo(_currentVideoPath))'));
+      page,
+      contains('unawaited(_loadDanmakuForVideo(_currentVideoPath))'),
+    );
     expect(page, contains('onDanmakuEnabledChanged: _setVideoDanmakuEnabled'));
     expect(
       page,
       contains('onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled'),
     );
     expect(
-        page, contains('onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive'));
+      page,
+      contains('onDanmakuMaxActiveChanged: _setVideoDanmakuMaxActive'),
+    );
     expect(
       page,
       isNot(
-          contains('onDanmakuEnabledChanged: appModel.setVideoDanmakuEnabled')),
+        contains('onDanmakuEnabledChanged: appModel.setVideoDanmakuEnabled'),
+      ),
     );
   });
 
   test('source guard: danmaku style/filter/manual-match wired end to end', () {
     final String page = readVideoFushiSource();
-    final String overlay =
-        File('lib/src/media/video/video_danmaku_overlay.dart')
-            .readAsStringSync();
-    final String layout = File('lib/src/media/video/video_danmaku_layout.dart')
-        .readAsStringSync();
+    final String overlay = File(
+      'lib/src/media/video/video_danmaku_overlay.dart',
+    ).readAsStringSync();
+    final String layout = File(
+      'lib/src/media/video/video_danmaku_layout.dart',
+    ).readAsStringSync();
 
     // Overlay consumes the block-filtered list and applies the style.
     expect(page, contains('items: _danmakuVisibleItems'));
@@ -274,8 +303,7 @@ void main() {
     expect(page, contains('filterVideoDanmaku'));
   });
 
-  test(
-      'BUG-1057 source guard: manual bind gates on fetch status before '
+  test('BUG-1057 source guard: manual bind gates on fetch status before '
       'persisting the episode', () {
     final String page = readVideoFushiSource();
     final int start = page.indexOf('Future<void> _bindDanmakuEpisode');
@@ -289,10 +317,16 @@ void main() {
     final int gate = body.indexOf('result.status != DandanplayFetchStatus.hit');
     final int persist = body.indexOf('setVideoDanmakuEpisodeId');
     expect(gate, greaterThanOrEqualTo(0), reason: '手动绑定必须检查拉弹幕的状态，而不是只看是否抛异常');
-    expect(persist, greaterThan(gate),
-        reason: '拉弹幕失败时不得持久化 episodeId，否则下次自动加载会记住一个错的集');
-    expect(body.indexOf('return;', gate), lessThan(persist),
-        reason: '失败分支必须直接 return，不落库不关面板');
+    expect(
+      persist,
+      greaterThan(gate),
+      reason: '拉弹幕失败时不得持久化 episodeId，否则下次自动加载会记住一个错的集',
+    );
+    expect(
+      body.indexOf('return;', gate),
+      lessThan(persist),
+      reason: '失败分支必须直接 return，不落库不关面板',
+    );
 
     // 失败按类型给具体文案，而不是一句笼统的「请稍后重试」。
     expect(body, contains('t.video_danmaku_manual_network_error'));
@@ -302,20 +336,22 @@ void main() {
   });
 
   test(
-      'BUG-1057 source guard: cached-episode load only re-matches on a genuine '
-      'empty hit', () {
-    final String page = readVideoFushiSource();
-    final int start = page.indexOf('Future<void> _loadDanmakuForVideo');
-    expect(start, greaterThanOrEqualTo(0));
-    final int end = page.indexOf('void _clearDanmakuForCurrentVideo', start);
-    expect(end, greaterThan(start));
-    final String body = page.substring(start, end);
+    'BUG-1057 source guard: cached-episode load only re-matches on a genuine '
+    'empty hit',
+    () {
+      final String page = readVideoFushiSource();
+      final int start = page.indexOf('Future<void> _loadDanmakuForVideo');
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = page.indexOf('void _clearDanmakuForCurrentVideo', start);
+      expect(end, greaterThan(start));
+      final String body = page.substring(start, end);
 
-    expect(
-      body,
-      contains('cached.status == DandanplayFetchStatus.hit &&'),
-      reason: '记住的集拉失败时不得退回整文件匹配——那只会白算一次 16MiB hash 再失败一遍',
-    );
-    expect(body, contains('cached.items.isEmpty'));
-  });
+      expect(
+        body,
+        contains('cached.status == DandanplayFetchStatus.hit &&'),
+        reason: '记住的集拉失败时不得退回整文件匹配——那只会白算一次 16MiB hash 再失败一遍',
+      );
+      expect(body, contains('cached.items.isEmpty'));
+    },
+  );
 }

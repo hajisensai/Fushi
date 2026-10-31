@@ -62,8 +62,8 @@ class _FakeRepo extends BaseAnkiRepository {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      definition;
+    String modelName,
+  ) async => definition;
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async {
@@ -73,7 +73,9 @@ class _FakeRepo extends BaseAnkiRepository {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-      String modelName, List<AnkiCardTemplate> templates) async {
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
     pushedTemplates = templates;
     return templatesOk;
   }
@@ -86,8 +88,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -101,17 +102,17 @@ class _FakeRepo extends BaseAnkiRepository {
 
 /// 一份「被改歪了」的 Anki 端定义：模板与 CSS 都不是出厂内容。
 AnkiNoteTypeDefinition _mangledDefinition() => AnkiNoteTypeDefinition(
-      name: LapisNoteType.modelName,
-      fields: LapisNoteType.fields,
-      css: '.card { font-family: Comic Sans MS; }',
-      templates: const <AnkiCardTemplate>[
-        AnkiCardTemplate(
-          name: LapisNoteType.cardName,
-          front: '<div>坏掉的正面</div>',
-          back: '<div>坏掉的背面</div><div>多出来的一行</div>',
-        ),
-      ],
-    );
+  name: LapisNoteType.modelName,
+  fields: LapisNoteType.fields,
+  css: '.card { font-family: Comic Sans MS; }',
+  templates: const <AnkiCardTemplate>[
+    AnkiCardTemplate(
+      name: LapisNoteType.cardName,
+      front: '<div>坏掉的正面</div>',
+      back: '<div>坏掉的背面</div><div>多出来的一行</div>',
+    ),
+  ],
+);
 
 void main() {
   late Directory tempDir;
@@ -126,8 +127,10 @@ void main() {
 
   test('推送出厂 CSS 与出厂正反面模板', () async {
     final _FakeRepo repo = _FakeRepo(definition: _mangledDefinition());
-    final LapisRestoreFactoryResult result =
-        await _TempDirLapisService(repo, tempDir).restoreFactoryDefaults();
+    final LapisRestoreFactoryResult result = await _TempDirLapisService(
+      repo,
+      tempDir,
+    ).restoreFactoryDefaults();
 
     expect(result, LapisRestoreFactoryResult.restored);
     expect(repo.pushedCss, LapisNoteType.template.css);

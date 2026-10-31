@@ -4,10 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 class BangumiApiException implements Exception {
-  const BangumiApiException({
-    required this.statusCode,
-    required this.message,
-  });
+  const BangumiApiException({required this.statusCode, required this.message});
 
   final int statusCode;
   final String message;
@@ -101,10 +98,8 @@ typedef BangumiWatchedPage = ({
 Map<String, dynamic>? _map(dynamic value) {
   if (value is! Map) return null;
   return value.map(
-    (dynamic key, dynamic value) => MapEntry<String, dynamic>(
-      key.toString(),
-      value,
-    ),
+    (dynamic key, dynamic value) =>
+        MapEntry<String, dynamic>(key.toString(), value),
   );
 }
 
@@ -167,10 +162,7 @@ BangumiUser parseBangumiUser(String body) {
   if (username.isEmpty) {
     throw const FormatException('Bangumi user has no username');
   }
-  return BangumiUser(
-    username: username,
-    nickname: _string(json['nickname']),
-  );
+  return BangumiUser(username: username, nickname: _string(json['nickname']));
 }
 
 BangumiUserCollection parseBangumiCollection(String body) {
@@ -251,10 +243,7 @@ abstract interface class BangumiTrackingApi {
 
   Future<BangumiSubject> getSubject(int subjectId);
 
-  Future<BangumiUserCollection?> getCollection(
-    String username,
-    int subjectId,
-  );
+  Future<BangumiUserCollection?> getCollection(String username, int subjectId);
 
   Future<void> createCollection(
     int subjectId, {
@@ -279,9 +268,9 @@ class BangumiApiClient implements BangumiTrackingApi {
     required String accessToken,
     required String userAgent,
     http.Client? client,
-  })  : _accessToken = accessToken.trim(),
-        _userAgent = userAgent,
-        _client = client ?? createAppHttpIoClient();
+  }) : _accessToken = accessToken.trim(),
+       _userAgent = userAgent,
+       _client = client ?? createAppHttpIoClient();
 
   static const String apiBase = 'https://api.bgm.tv';
   static const String accessTokenUrl = 'https://next.bgm.tv/demo/access-token';
@@ -300,11 +289,11 @@ class BangumiApiClient implements BangumiTrackingApi {
   final http.Client _client;
 
   Map<String, String> get _headers => <String, String>{
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': _userAgent,
-        if (_accessToken.isNotEmpty) 'Authorization': 'Bearer $_accessToken',
-      };
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'User-Agent': _userAgent,
+    if (_accessToken.isNotEmpty) 'Authorization': 'Bearer $_accessToken',
+  };
 
   @override
   Future<BangumiUser> getMe() async {
@@ -324,16 +313,15 @@ class BangumiApiClient implements BangumiTrackingApi {
     final List<BangumiWatchedItem> all = <BangumiWatchedItem>[];
     final String encodedUsername = Uri.encodeComponent(username);
     while (offset < total) {
-      final Uri uri = Uri.parse(
-        '$apiBase/v0/users/$encodedUsername/collections',
-      ).replace(
-        queryParameters: <String, String>{
-          'subject_type': '2',
-          'type': '2',
-          'limit': '$pageSize',
-          'offset': '$offset',
-        },
-      );
+      final Uri uri =
+          Uri.parse('$apiBase/v0/users/$encodedUsername/collections').replace(
+            queryParameters: <String, String>{
+              'subject_type': '2',
+              'type': '2',
+              'limit': '$pageSize',
+              'offset': '$offset',
+            },
+          );
       final http.Response response = await _client.get(uri, headers: _headers);
       _require(response, const <int>{200});
       final BangumiWatchedPage page = parseBangumiWatchedPage(_body(response));
@@ -445,18 +433,12 @@ class BangumiApiClient implements BangumiTrackingApi {
   }
 
   @override
-  Future<void> markEpisodesDone(
-    int subjectId,
-    List<int> episodeIds,
-  ) async {
+  Future<void> markEpisodesDone(int subjectId, List<int> episodeIds) async {
     if (episodeIds.isEmpty) return;
     final http.Response response = await _client.patch(
       Uri.parse('$apiBase/v0/users/-/collections/$subjectId/episodes'),
       headers: _headers,
-      body: jsonEncode(<String, dynamic>{
-        'episode_id': episodeIds,
-        'type': 2,
-      }),
+      body: jsonEncode(<String, dynamic>{'episode_id': episodeIds, 'type': 2}),
     );
     _require(response, const <int>{204});
   }

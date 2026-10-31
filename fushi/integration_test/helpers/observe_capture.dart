@@ -43,9 +43,11 @@ Directory observeScreenshotDir() {
     }
   } else {
     final String? runId = fushiTestRunId();
-    final String runLeaf =
-        (runId != null && runId.isNotEmpty) ? runId : 'local';
-    final bool mobile = defaultTargetPlatform == TargetPlatform.iOS ||
+    final String runLeaf = (runId != null && runId.isNotEmpty)
+        ? runId
+        : 'local';
+    final bool mobile =
+        defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.android;
     base = mobile
         ? Directory(
@@ -62,7 +64,12 @@ Directory observeScreenshotDir() {
 Future<ObserveShot> _save(String name, Uint8List? png, bool nonBlank) async {
   if (png == null || png.isEmpty) {
     return ObserveShot(
-        name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+      name: name,
+      path: '',
+      saved: false,
+      nonBlank: false,
+      bytes: 0,
+    );
   }
   final String path = '${observeScreenshotDir().path}/$name.png';
   await File(path).writeAsBytes(png, flush: true);
@@ -80,8 +87,9 @@ Future<bool> _pngLooksNonBlank(Uint8List png) async {
   try {
     final ui.FrameInfo frame = await codec.getNextFrame();
     try {
-      final ByteData? rgba =
-          await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final ByteData? rgba = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       return rgba != null && rgbaLooksNonBlank(rgba.buffer.asUint8List());
     } finally {
       frame.image.dispose();
@@ -109,24 +117,38 @@ Future<ObserveShot> captureFlutterFrame(
     final OffsetLayer? layer = view.debugLayer as OffsetLayer?;
     if (layer == null) {
       return ObserveShot(
-          name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+        name: name,
+        path: '',
+        saved: false,
+        nonBlank: false,
+        bytes: 0,
+      );
     }
-    final ui.Image image =
-        await layer.toImage(view.paintBounds, pixelRatio: pixelRatio);
+    final ui.Image image = await layer.toImage(
+      view.paintBounds,
+      pixelRatio: pixelRatio,
+    );
     try {
-      final ByteData? rgba =
-          await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final ByteData? rgba = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       final bool nonBlank =
           rgba != null && rgbaLooksNonBlank(rgba.buffer.asUint8List());
-      final ByteData? png =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       return await _save(name, png?.buffer.asUint8List(), nonBlank);
     } finally {
       image.dispose();
     }
   } catch (_) {
     return ObserveShot(
-        name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+      name: name,
+      path: '',
+      saved: false,
+      nonBlank: false,
+      bytes: 0,
+    );
   }
 }
 
@@ -144,7 +166,12 @@ Future<ObserveShot> captureReaderWebView(String name) async {
       ReaderFushiPage.debugCaptureWebView;
   if (hook == null) {
     return ObserveShot(
-        name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+      name: name,
+      path: '',
+      saved: false,
+      nonBlank: false,
+      bytes: 0,
+    );
   }
   try {
     final Uint8List? png = await hook();
@@ -153,6 +180,11 @@ Future<ObserveShot> captureReaderWebView(String name) async {
     return await _save(name, png, nonBlank);
   } catch (_) {
     return ObserveShot(
-        name: name, path: '', saved: false, nonBlank: false, bytes: 0);
+      name: name,
+      path: '',
+      saved: false,
+      nonBlank: false,
+      bytes: 0,
+    );
   }
 }

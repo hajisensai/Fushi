@@ -9,9 +9,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 void main() {
   group('clipFramePlan', () {
     test('single cue: all frames highlight index 0, merged into one run', () {
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 0, endMs: 1000),
-      ];
+      final List<AudioCue> cues = <AudioCue>[_cue(startMs: 0, endMs: 1000)];
       // fps=10 → 100ms/frame；[0,1000) → ceil(1000/100)=10 帧，全部落在 cue 0。
       final List<ClipFrameSpec> plan = clipFramePlan(
         cues: cues,
@@ -25,9 +23,7 @@ void main() {
     });
 
     test('frame count = ceil(durationMs / (1000/fps))', () {
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 0, endMs: 2500),
-      ];
+      final List<AudioCue> cues = <AudioCue>[_cue(startMs: 0, endMs: 2500)];
       // fps=12 → 1000/12≈83.33ms/frame；2500/83.33 = 30 → ceil 30 帧。
       final List<ClipFrameSpec> plan = clipFramePlan(
         cues: cues,
@@ -35,8 +31,10 @@ void main() {
         globalEndMs: 2500,
         fps: 12,
       );
-      final int total =
-          plan.fold<int>(0, (int acc, ClipFrameSpec s) => acc + s.frameCount);
+      final int total = plan.fold<int>(
+        0,
+        (int acc, ClipFrameSpec s) => acc + s.frameCount,
+      );
       expect(total, 30);
     });
 
@@ -60,8 +58,7 @@ void main() {
       expect(plan[1].frameCount, 5);
     });
 
-    test(
-        'mid-frame cue start switches on the covering frame '
+    test('mid-frame cue start switches on the covering frame '
         '(early, never late; TODO-1147)', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(startMs: 0, endMs: 250),
@@ -80,8 +77,7 @@ void main() {
       expect(plan[1], const ClipFrameSpec(highlightCueIndex: 1, frameCount: 7));
     });
 
-    test(
-        '12fps: switch frame covers the cue start (frame 12 for a 1040ms '
+    test('12fps: switch frame covers the cue start (frame 12 for a 1040ms '
         'cue start), never one frame late (TODO-1147)', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(startMs: 0, endMs: 1040),
@@ -99,9 +95,13 @@ void main() {
       );
       expect(plan.length, 2);
       expect(
-          plan[0], const ClipFrameSpec(highlightCueIndex: 0, frameCount: 12));
+        plan[0],
+        const ClipFrameSpec(highlightCueIndex: 0, frameCount: 12),
+      );
       expect(
-          plan[1], const ClipFrameSpec(highlightCueIndex: 1, frameCount: 12));
+        plan[1],
+        const ClipFrameSpec(highlightCueIndex: 1, frameCount: 12),
+      );
     });
 
     test('adjacent same-index frames merge into one run', () {
@@ -159,14 +159,14 @@ void main() {
       expect(plan.length, 3);
       expect(plan[0], const ClipFrameSpec(highlightCueIndex: 0, frameCount: 3));
       expect(
-          plan[1], const ClipFrameSpec(highlightCueIndex: -1, frameCount: 3));
+        plan[1],
+        const ClipFrameSpec(highlightCueIndex: -1, frameCount: 3),
+      );
       expect(plan[2], const ClipFrameSpec(highlightCueIndex: 1, frameCount: 3));
     });
 
     test('leading head-padding before first cue has no previous → -1', () {
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 200, endMs: 600),
-      ];
+      final List<AudioCue> cues = <AudioCue>[_cue(startMs: 200, endMs: 600)];
       // global 从 0 起（head padding），首两帧 t=0,100 在 cue 之前无上一句 → -1；
       // t=200..500 → cue0。
       final List<ClipFrameSpec> plan = clipFramePlan(
@@ -185,26 +185,29 @@ void main() {
     test('empty cues / invalid fps / non-positive window → empty plan', () {
       expect(
         clipFramePlan(
-            cues: const <AudioCue>[],
-            globalStartMs: 0,
-            globalEndMs: 1000,
-            fps: 12),
+          cues: const <AudioCue>[],
+          globalStartMs: 0,
+          globalEndMs: 1000,
+          fps: 12,
+        ),
         isEmpty,
       );
       expect(
         clipFramePlan(
-            cues: <AudioCue>[_cue(startMs: 0, endMs: 100)],
-            globalStartMs: 0,
-            globalEndMs: 100,
-            fps: 0),
+          cues: <AudioCue>[_cue(startMs: 0, endMs: 100)],
+          globalStartMs: 0,
+          globalEndMs: 100,
+          fps: 0,
+        ),
         isEmpty,
       );
       expect(
         clipFramePlan(
-            cues: <AudioCue>[_cue(startMs: 0, endMs: 100)],
-            globalStartMs: 500,
-            globalEndMs: 500,
-            fps: 12),
+          cues: <AudioCue>[_cue(startMs: 0, endMs: 100)],
+          globalStartMs: 500,
+          globalEndMs: 500,
+          fps: 12,
+        ),
         isEmpty,
       );
     });
@@ -226,8 +229,10 @@ void main() {
       );
       const double msPerFrame = 1000.0 / fps;
       final int expectedFrames = ((end - start) / msPerFrame).ceil();
-      final int total =
-          plan.fold<int>(0, (int acc, ClipFrameSpec s) => acc + s.frameCount);
+      final int total = plan.fold<int>(
+        0,
+        (int acc, ClipFrameSpec s) => acc + s.frameCount,
+      );
       expect(total, expectedFrames);
     });
   });

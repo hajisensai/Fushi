@@ -19,7 +19,6 @@ export 'package:fushi_engine/updates/update_feed_port.dart'
     show UpdateFeedDraft, UpdateFeedPublisher;
 import 'package:fushi/src/updates/update_notifier.dart';
 
-
 /// 一次投递的结果。域侧一般不用看，[newEntries] 供调用方写日志或做后续动作。
 class UpdateFeedPublishResult {
   const UpdateFeedPublishResult({
@@ -51,12 +50,12 @@ class UpdateFeedService implements UpdateFeedPublisher {
     UpdateNotifier notifier = const NoopUpdateNotifier(),
     DateTime Function() now = DateTime.now,
     UpdateNotificationText Function(UpdateFeedKind, List<UpdateFeedDraft>)?
-        notificationText,
-  })  : _db = database,
-        _prefs = prefs,
-        _notifier = notifier,
-        _now = now,
-        _notificationText = notificationText ?? updateNotificationText;
+    notificationText,
+  }) : _db = database,
+       _prefs = prefs,
+       _notifier = notifier,
+       _now = now,
+       _notificationText = notificationText ?? updateNotificationText;
 
   final FushiDatabase _db;
   final PreferencesRepository _prefs;
@@ -68,7 +67,7 @@ class UpdateFeedService implements UpdateFeedPublisher {
   /// 走注入而不是在这里 import `t`：这一层要能在纯 Dart 单测里跑，slang 的 `t`
   /// 需要 Flutter binding。
   final UpdateNotificationText Function(UpdateFeedKind, List<UpdateFeedDraft>)
-      _notificationText;
+  _notificationText;
 
   /// 通知后端只初始化一次；null = 还没初始化过。
   bool? _notifierReady;
@@ -94,7 +93,8 @@ class UpdateFeedService implements UpdateFeedPublisher {
   /// 只是偏好的一半：真能不能发还要系统点头（[systemNotificationsGranted]）。
   /// 设置页显示 [systemNotificationsActive]，发通知也以它为准。
   bool get systemNotificationsEnabled =>
-      _prefs.getPref(kUpdateSystemNotificationsPref, defaultValue: true) as bool;
+      _prefs.getPref(kUpdateSystemNotificationsPref, defaultValue: true)
+          as bool;
 
   /// 系统当前允不允许发（最近一次查询的结果；没查过按不允许）。
   bool get systemNotificationsGranted => _permissionGranted ?? false;
@@ -285,19 +285,21 @@ class UpdateFeedService implements UpdateFeedPublisher {
     Set<UpdateFeedKind> kinds = const <UpdateFeedKind>{},
     bool unseenOnly = false,
     int limit = 200,
-  }) =>
-      _db.updateFeedEntriesPage(
-        kinds: <String>{for (final UpdateFeedKind k in kinds) k.dbValue},
-        unseenOnly: unseenOnly,
-        limit: limit,
-      );
+  }) => _db.updateFeedEntriesPage(
+    kinds: <String>{for (final UpdateFeedKind k in kinds) k.dbValue},
+    unseenOnly: unseenOnly,
+    limit: limit,
+  );
 
   /// 按主键取一条（不存在 = null）。
   Future<UpdateFeedEntryRow?> entry(String entryId) =>
       _db.getUpdateFeedEntry(entryId);
 
-  Future<void> markSeen(Iterable<String> entryIds) => _db
-      .markUpdateFeedEntriesSeen(entryIds, seenAt: _now().millisecondsSinceEpoch);
+  Future<void> markSeen(Iterable<String> entryIds) =>
+      _db.markUpdateFeedEntriesSeen(
+        entryIds,
+        seenAt: _now().millisecondsSinceEpoch,
+      );
 
   /// 全部标已读；[kind] 非空时只标该域，并撤掉该域挂着的系统通知（用户已经在
   /// 应用内看过了，通知栏还挂着就是重复打扰）。
@@ -322,8 +324,9 @@ class UpdateFeedService implements UpdateFeedPublisher {
 
   /// 撤系统通知；[kind] 为 null = 全部域。
   Future<void> _cancelNotifications(UpdateFeedKind? kind) async {
-    final List<UpdateFeedKind> kinds =
-        kind == null ? UpdateFeedKind.values : <UpdateFeedKind>[kind];
+    final List<UpdateFeedKind> kinds = kind == null
+        ? UpdateFeedKind.values
+        : <UpdateFeedKind>[kind];
     for (final UpdateFeedKind k in kinds) {
       // 域级固定 id 总撤（上个进程留下的那条不在 [_shownIds] 里）；分组 id 撤本
       // 进程发过的。
@@ -348,12 +351,12 @@ class UpdateFeedService implements UpdateFeedPublisher {
 /// id 找到上个进程发出的那条）。
 const Map<UpdateFeedKind, int> kUpdateNotificationBaseIds =
     <UpdateFeedKind, int>{
-  UpdateFeedKind.videoEpisode: 9101,
-  UpdateFeedKind.mangaChapter: 9102,
-  UpdateFeedKind.mangaExtension: 9103,
-  UpdateFeedKind.appRelease: 9104,
-  UpdateFeedKind.animeExtension: 9105,
-};
+      UpdateFeedKind.videoEpisode: 9101,
+      UpdateFeedKind.mangaChapter: 9102,
+      UpdateFeedKind.mangaExtension: 9103,
+      UpdateFeedKind.appRelease: 9104,
+      UpdateFeedKind.animeExtension: 9105,
+    };
 
 /// 通知 id：无组 = 域固定 id；有组 = 域序号占高 4 位 + 组名 FNV-1a 哈希占低
 /// 28 位（Android 通知 id 是 32 位有符号 int，取正数范围）。同域同组恒同 id，
@@ -383,10 +386,8 @@ class UpdateNotificationPayload {
   final UpdateFeedKind kind;
   final String entryId;
 
-  String encode() => jsonEncode(<String, String>{
-        'kind': kind.dbValue,
-        'entryId': entryId,
-      });
+  String encode() =>
+      jsonEncode(<String, String>{'kind': kind.dbValue, 'entryId': entryId});
 
   /// 解不出（旧版本发的裸 `kind.dbValue`、损坏）返回 null，调用方退到更新中心。
   static UpdateNotificationPayload? decode(String? raw) {
@@ -394,8 +395,9 @@ class UpdateNotificationPayload {
     try {
       final Object? decoded = jsonDecode(raw);
       if (decoded is! Map<String, Object?>) return null;
-      final UpdateFeedKind? kind =
-          UpdateFeedKind.fromDbValue(decoded['kind'] as String? ?? '');
+      final UpdateFeedKind? kind = UpdateFeedKind.fromDbValue(
+        decoded['kind'] as String? ?? '',
+      );
       final String? entryId = decoded['entryId'] as String?;
       if (kind == null || entryId == null) return null;
       return UpdateNotificationPayload(kind: kind, entryId: entryId);
@@ -411,7 +413,9 @@ Map<String, Object?> decodeUpdateFeedDetail(String? json) {
   if (json == null || json.isEmpty) return const <String, Object?>{};
   try {
     final Object? decoded = jsonDecode(json);
-    return decoded is Map<String, Object?> ? decoded : const <String, Object?>{};
+    return decoded is Map<String, Object?>
+        ? decoded
+        : const <String, Object?>{};
   } on FormatException {
     return const <String, Object?>{};
   }
@@ -455,8 +459,9 @@ UpdateNotificationText updateNotificationText(
       body: first.subtitle ?? '',
     );
   }
-  final String firstLine =
-      first.subtitle == null ? first.title : '${first.title} · ${first.subtitle}';
+  final String firstLine = first.subtitle == null
+      ? first.title
+      : '${first.title} · ${first.subtitle}';
   return UpdateNotificationText(
     title: first.title,
     body: '$firstLine +${fresh.length - 1}',

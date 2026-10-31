@@ -47,7 +47,7 @@ String trackingLastSyncLabel(MediaTrackingStatus status, DateTime now) {
 
 /// 一条映射的副标题：类别 · Bangumi 条目名 · 进度单位。
 String trackingMappingSubtitle(MediaTrackingMappingRow mapping) => <String>[
-      trackingKindLabel(mapping.kind),
-      mapping.subjectName,
-      trackingProgressModeLabel(mapping.progressMode),
-    ].join(' · ');
+  trackingKindLabel(mapping.kind),
+  mapping.subjectName,
+  trackingProgressModeLabel(mapping.progressMode),
+].join(' · ');

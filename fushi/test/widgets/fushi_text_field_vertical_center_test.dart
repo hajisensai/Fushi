@@ -123,34 +123,30 @@ void main() {
       );
     }
 
-    testWidgets(
-      '$ds · 带标题的单行框：输入文字在框内竖直居中',
-      (WidgetTester tester) async {
-        await _pump(
-          tester,
-          FushiTextField(
-            controller: TextEditingController(text: '暖纸'),
-            labelText: '名称',
-            hintText: _shortHint,
-          ),
-          apple: apple,
+    testWidgets('$ds · 带标题的单行框：输入文字在框内竖直居中', (WidgetTester tester) async {
+      await _pump(
+        tester,
+        FushiTextField(
+          controller: TextEditingController(text: '暖纸'),
+          labelText: '名称',
+          hintText: _shortHint,
+        ),
+        apple: apple,
+      );
+      final Rect text = _globalRect(
+        tester.renderObject<RenderBox>(find.byType(EditableText)),
+      );
+      final Rect shell = _shellRect(tester, apple: apple);
+      expect(text.top, greaterThanOrEqualTo(shell.top));
+      expect(text.bottom, lessThanOrEqualTo(shell.bottom));
+      if (apple) {
+        // Apple 的标题在框外上方，框内只有输入行：严格居中。MD3 填充式
+        // 文本框的浮动标题占框内上部，输入行按 M3 规格偏下，只要求不出框。
+        expect(
+          (text.center.dy - shell.center.dy).abs(),
+          lessThanOrEqualTo(1.5),
         );
-        final Rect text = _globalRect(
-          tester.renderObject<RenderBox>(find.byType(EditableText)),
-        );
-        final Rect shell = _shellRect(tester, apple: apple);
-        expect(text.top, greaterThanOrEqualTo(shell.top));
-        expect(text.bottom, lessThanOrEqualTo(shell.bottom));
-        if (apple) {
-          // Apple 的标题在框外上方，框内只有输入行：严格居中。MD3 填充式
-          // 文本框的浮动标题占框内上部，输入行按 M3 规格偏下，只要求不出框。
-          expect(
-            (text.center.dy - shell.center.dy).abs(),
-            lessThanOrEqualTo(1.5),
-          );
-        }
-      },
-      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
-    );
+      }
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   }
 }

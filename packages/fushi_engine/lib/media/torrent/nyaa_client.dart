@@ -45,7 +45,7 @@ enum NyaaFeedErrorCode {
 
 class NyaaFeedFormatException extends FormatException {
   NyaaFeedFormatException(this.code, String detail)
-      : super('Nyaa RSS ${code.name}: $detail');
+    : super('Nyaa RSS ${code.name}: $detail');
 
   final NyaaFeedErrorCode code;
 }
@@ -229,7 +229,8 @@ DateTime? parseNyaaPubDate(String raw) {
   final String? zone = m.group(7);
   if (zone != null && RegExp(r'^[+-]\d{4}$').hasMatch(zone)) {
     final int sign = zone.startsWith('-') ? -1 : 1;
-    offsetMinutes = sign *
+    offsetMinutes =
+        sign *
         (int.parse(zone.substring(1, 3)) * 60 + int.parse(zone.substring(3)));
   }
   // 其它字母时区（GMT/UT 等）按 0 偏移处理；nyaa 实际恒发 `-0000`。
@@ -547,8 +548,8 @@ class NyaaClient {
     this.requestTimeout = kDownloadDiscoveryTimeout,
     this.minRequestInterval = kNyaaMinRequestInterval,
     Duration Function()? monotonicNow,
-  })  : _client = client ?? createAppHttpIoClient(),
-        _monotonicNow = monotonicNow ?? _processMonotonicNow;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _monotonicNow = monotonicNow ?? _processMonotonicNow;
 
   final String baseUrl;
   final http.Client _client;
@@ -615,10 +616,9 @@ class NyaaClient {
     // 跨 zone 挂死的坑，别为了排队把它请回来。
     final Duration now = _monotonicNow();
     final Duration? last = _lastRequestStartByHost[host];
-    final Duration reserved =
-        (last == null || now - last >= minRequestInterval)
-            ? now
-            : last + minRequestInterval;
+    final Duration reserved = (last == null || now - last >= minRequestInterval)
+        ? now
+        : last + minRequestInterval;
     _lastRequestStartByHost[host] = reserved;
     final Duration wait = reserved - now;
     if (wait <= Duration.zero) return;
@@ -665,8 +665,9 @@ class NyaaClient {
     NyaaSortOrder order = NyaaSortOrder.desc,
   }) async {
     if (page <= 0) throw ArgumentError.value(page, 'page');
-    final int maxPages =
-        query.trim().isEmpty ? kNyaaMaxBrowsePages : kNyaaMaxSearchPages;
+    final int maxPages = query.trim().isEmpty
+        ? kNyaaMaxBrowsePages
+        : kNyaaMaxSearchPages;
     if (page > maxPages) return const <NyaaTorrent>[];
     final Uri uri = Uri.parse(baseUrl).replace(
       path: '/',
@@ -824,8 +825,8 @@ List<NyaaCategoryOption> parseNyaaCategoryOptions(String html) {
       label = title.contains(' - ')
           ? title
           : parent.isNotEmpty && shortName.isNotEmpty
-              ? '$parent - $shortName'
-              : (title.isNotEmpty ? title : shortName);
+          ? '$parent - $shortName'
+          : (title.isNotEmpty ? title : shortName);
     }
     if (label.isEmpty) continue;
     options.add(NyaaCategoryOption(value: value, label: label));
@@ -840,7 +841,9 @@ List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
   final html_dom.Document document = html_parser.parse(body);
   final html_dom.Element? table = document.querySelector('table.torrent-list');
   if (table == null) {
-    final bool noResults = document.querySelectorAll('h3').any(
+    final bool noResults = document
+        .querySelectorAll('h3')
+        .any(
           (html_dom.Element heading) =>
               heading.text.trim().toLowerCase() == 'no results found',
         );
@@ -852,8 +855,9 @@ List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
   }
 
   final List<NyaaTorrent> torrents = <NyaaTorrent>[];
-  final List<html_dom.Element> rows =
-      table.querySelectorAll('tbody tr').toList(growable: false);
+  final List<html_dom.Element> rows = table
+      .querySelectorAll('tbody tr')
+      .toList(growable: false);
   NyaaFeedFormatException? firstRowError;
   int skipped = 0;
   for (final html_dom.Element row in rows) {
@@ -898,15 +902,12 @@ NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
   final html_dom.Element? detailLink = cells[1]
       .querySelectorAll('a[href]')
       .cast<html_dom.Element?>()
-      .firstWhere(
-    (html_dom.Element? link) {
-      final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
-      return href != null &&
-          href.path.startsWith('/view/') &&
-          href.fragment.isEmpty;
-    },
-    orElse: () => null,
-  );
+      .firstWhere((html_dom.Element? link) {
+        final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
+        return href != null &&
+            href.path.startsWith('/view/') &&
+            href.fragment.isEmpty;
+      }, orElse: () => null);
   final html_dom.Element? magnetLink = cells[2]
       .querySelectorAll('a[href]')
       .cast<html_dom.Element?>()
@@ -921,8 +922,8 @@ NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
   final String? exactTopic = Uri.tryParse(magnet)?.queryParameters['xt'];
   final String infoHash =
       exactTopic?.toLowerCase().startsWith('urn:btih:') == true
-          ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
-          : '';
+      ? exactTopic!.substring('urn:btih:'.length).toLowerCase()
+      : '';
   if (title.isEmpty ||
       detailLink == null ||
       !RegExp(r'^[0-9a-f]{40}$').hasMatch(infoHash)) {
@@ -942,15 +943,17 @@ NyaaTorrent _parseNyaaHtmlRow(html_dom.Element row, Uri requestUri) {
   }
   String categoryId = '';
   for (final html_dom.Element link in cells[0].querySelectorAll('a[href]')) {
-    final String? candidate =
-        Uri.tryParse(link.attributes['href'] ?? '')?.queryParameters['c'];
+    final String? candidate = Uri.tryParse(
+      link.attributes['href'] ?? '',
+    )?.queryParameters['c'];
     if (candidate?.isNotEmpty == true) {
       categoryId = candidate!;
       break;
     }
   }
-  final int? timestampSeconds =
-      int.tryParse(cells[4].attributes['data-timestamp'] ?? '');
+  final int? timestampSeconds = int.tryParse(
+    cells[4].attributes['data-timestamp'] ?? '',
+  );
   return NyaaTorrent(
     title: title,
     torrentUrl: torrentUrl,

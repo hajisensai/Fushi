@@ -20,8 +20,9 @@ import 'package:image/image.dart' as img;
 void main() {
   // 插图尺寸的真 PNG（`Image.file` 能解码）。不能用 1x1：插图册会把宽高都
   // ≤ 256 的行内小图（外字）剔掉，见 `isInlineSizedImage`。
-  final Uint8List illustrationPng =
-      img.encodePng(img.Image(width: 300, height: 400));
+  final Uint8List illustrationPng = img.encodePng(
+    img.Image(width: 300, height: 400),
+  );
 
   const String bookUid = 'test-book';
 
@@ -151,9 +152,11 @@ void main() {
       }
     });
     await tester.pump();
-    expect(find.byKey(const ValueKey<String>('fushi_gallery_count')),
-        findsOneWidget,
-        reason: '装载完成后应渲染阅读器内的同一份插图册');
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_count')),
+      findsOneWidget,
+      reason: '装载完成后应渲染阅读器内的同一份插图册',
+    );
   }
 
   /// 锁着的卡 = 盖在真缩略图上的高斯模糊层（maskedIllustrationCover）。
@@ -181,8 +184,10 @@ void main() {
     );
     expect(find.text('Unlocked 2 / 3'), findsOneWidget);
     // 有阅读位置 → 定位按钮与「当前阅读位置」标记都在。
-    expect(find.byKey(const ValueKey<String>('fushi_gallery_position')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_position')),
+      findsOneWidget,
+    );
     expect(find.text('Current reading position'), findsOneWidget);
   });
 
@@ -200,17 +205,20 @@ void main() {
   });
 
   testWidgets(
-      'a book never opened is not blurred by progress and has no locate',
-      (WidgetTester tester) async {
-    // 没有 reader_positions 行：不能退化成 (0, 0) 把开篇之后全糊掉。
-    await openGallery(tester);
+    'a book never opened is not blurred by progress and has no locate',
+    (WidgetTester tester) async {
+      // 没有 reader_positions 行：不能退化成 (0, 0) 把开篇之后全糊掉。
+      await openGallery(tester);
 
-    expect(maskedCards(), findsNothing);
-    expect(find.text('Unlocked 3 / 3'), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('fushi_gallery_position')),
-        findsNothing);
-    expect(find.text('Current reading position'), findsNothing);
-  });
+      expect(maskedCards(), findsNothing);
+      expect(find.text('Unlocked 3 / 3'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('fushi_gallery_position')),
+        findsNothing,
+      );
+      expect(find.text('Current reading position'), findsNothing);
+    },
+  );
 
   testWidgets('revealing a blurred illustration persists to revealed_images', (
     WidgetTester tester,
@@ -244,24 +252,29 @@ void main() {
     });
   });
 
-  testWidgets('jump menu pops the page and hands the illustration to onJumpTo',
-      (WidgetTester tester) async {
-    jumped.clear();
-    await openGallery(tester);
+  testWidgets(
+    'jump menu pops the page and hands the illustration to onJumpTo',
+    (WidgetTester tester) async {
+      jumped.clear();
+      await openGallery(tester);
 
-    await tester.longPress(card('OEBPS/images/b_head.png'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(
-      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
-    );
-    await tester.pumpAndSettle();
+      await tester.longPress(card('OEBPS/images/b_head.png'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(jumped.map((EpubImageRef r) => r.src), <String>[
-      'OEBPS/images/b_head.png',
-    ]);
-    expect(jumped.single.jumpChapterIndex, 0);
-    expect(find.byType(IllustrationsViewerPage), findsNothing,
-        reason: '跳转前画廊页必须先 pop，让调用方开的阅读器落在栈顶');
-  });
+      expect(jumped.map((EpubImageRef r) => r.src), <String>[
+        'OEBPS/images/b_head.png',
+      ]);
+      expect(jumped.single.jumpChapterIndex, 0);
+      expect(
+        find.byType(IllustrationsViewerPage),
+        findsNothing,
+        reason: '跳转前画廊页必须先 pop，让调用方开的阅读器落在栈顶',
+      );
+    },
+  );
 }

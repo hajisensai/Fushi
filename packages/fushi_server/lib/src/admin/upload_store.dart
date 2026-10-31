@@ -45,7 +45,10 @@ class UploadStore {
   Future<void> _record(int delta) async {
     _used = (await used()) + delta;
     await ledgerFile.parent.create(recursive: true);
-    await ledgerFile.writeAsString(jsonEncode(<String, Object?>{'bytes': _used}), flush: true);
+    await ledgerFile.writeAsString(
+      jsonEncode(<String, Object?>{'bytes': _used}),
+      flush: true,
+    );
   }
 
   /// 目标文件的绝对路径；[relative] 不得逃出库根。
@@ -61,7 +64,8 @@ class UploadStore {
       throw const UploadRejected(400, 'bad path');
     }
     final String target = p.normalize(p.join(root, cleaned));
-    if (!p.isWithin(root, target)) throw const UploadRejected(400, 'path escapes library root');
+    if (!p.isWithin(root, target))
+      throw const UploadRejected(400, 'path escapes library root');
     return target;
   }
 
@@ -137,7 +141,9 @@ class UploadStore {
 /// `Content-Range: bytes <start>-<end>/<total>` → (start, total)。解析失败返回 null。
 ({int start, int? total})? parseContentRange(String? header) {
   if (header == null) return null;
-  final RegExpMatch? m = RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(header.trim());
+  final RegExpMatch? m = RegExp(
+    r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$',
+  ).firstMatch(header.trim());
   if (m == null) return null;
   final int start = int.parse(m.group(1)!);
   final int? total = m.group(3) == '*' ? null : int.parse(m.group(3)!);

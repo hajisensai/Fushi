@@ -64,10 +64,8 @@ typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
 
 /// 退避重试定时器工厂（BUG-1647）；生产用真 [Timer]，测试注入假实现以便
 /// 确定性地断言「安排了多久后重试」并手动触发到期回调。
-typedef TrackingRetryTimerFactory = Timer Function(
-  Duration delay,
-  void Function() callback,
-);
+typedef TrackingRetryTimerFactory =
+    Timer Function(Duration delay, void Function() callback);
 
 class MediaTrackingSyncResult {
   const MediaTrackingSyncResult({
@@ -211,10 +209,7 @@ class MediaTrackingStatus {
   }
 }
 
-typedef _PreparedTrackingTitle = ({
-  String query,
-  int? volumeNumber,
-});
+typedef _PreparedTrackingTitle = ({String query, int? volumeNumber});
 
 final RegExp _trackingVolumeSuffix = RegExp(
   r'(?:\s*[-–—:：]?\s*(?:(?:vol(?:ume)?\.?|第)\s*(\d{1,3})\s*(?:卷|巻)?|(\d{1,3})\s*(?:卷|巻))|\s+(\d{1,3}))\s*$',
@@ -226,25 +221,24 @@ final RegExp _trackingEditionSuffix = RegExp(
 
 _PreparedTrackingTitle _prepareTrackingTitle(String rawTitle) {
   final String title = rawTitle.trim();
-  final String withoutEdition =
-      title.replaceFirst(_trackingEditionSuffix, '').trim();
+  final String withoutEdition = title
+      .replaceFirst(_trackingEditionSuffix, '')
+      .trim();
   final RegExpMatch? match = _trackingVolumeSuffix.firstMatch(withoutEdition);
   if (match == null) return (query: title, volumeNumber: null);
-  final int? volumeNumber =
-      int.tryParse(match.group(1) ?? match.group(2) ?? match.group(3) ?? '');
-  final String base = withoutEdition.substring(0, match.start).trim();
-  return (
-    query: base.isEmpty ? title : base,
-    volumeNumber: volumeNumber,
+  final int? volumeNumber = int.tryParse(
+    match.group(1) ?? match.group(2) ?? match.group(3) ?? '',
   );
+  final String base = withoutEdition.substring(0, match.start).trim();
+  return (query: base.isEmpty ? title : base, volumeNumber: volumeNumber);
 }
 
 /// Bangumi 条目类型：1 书籍（含漫画/轻小说）/ 2 动画 / 4 游戏。
 int bangumiSubjectTypeOf(TrackingKind kind) => switch (kind) {
-      TrackingKind.anime => 2,
-      TrackingKind.game => 4,
-      TrackingKind.novel || TrackingKind.manga => 1,
-    };
+  TrackingKind.anime => 2,
+  TrackingKind.game => 4,
+  TrackingKind.novel || TrackingKind.manga => 1,
+};
 
 BangumiSubject? _uniqueHighConfidenceSubject(
   String query,
@@ -252,37 +246,41 @@ BangumiSubject? _uniqueHighConfidenceSubject(
   TrackingKind kind,
 ) {
   if (query.trim().isEmpty || subjects.isEmpty) return null;
-  final List<BangumiSubject> kindMatches = subjects.where((subject) {
-    // 动画与游戏在搜索阶段已按 subject type 精确过滤，无需再按 platform 二次筛。
-    if (kind == TrackingKind.anime || kind == TrackingKind.game) return true;
-    final String platform = subject.platform.toLowerCase();
-    if (kind == TrackingKind.manga) {
-      return platform.contains('漫画') ||
-          platform.contains('manga') ||
-          platform.contains('comic');
-    }
-    return platform.contains('小说') ||
-        platform.contains('小説') ||
-        platform.contains('novel');
-  }).toList(growable: false);
-  final List<BangumiSubject> candidates =
-      kindMatches.isEmpty ? subjects : kindMatches;
+  final List<BangumiSubject> kindMatches = subjects
+      .where((subject) {
+        // 动画与游戏在搜索阶段已按 subject type 精确过滤，无需再按 platform 二次筛。
+        if (kind == TrackingKind.anime || kind == TrackingKind.game)
+          return true;
+        final String platform = subject.platform.toLowerCase();
+        if (kind == TrackingKind.manga) {
+          return platform.contains('漫画') ||
+              platform.contains('manga') ||
+              platform.contains('comic');
+        }
+        return platform.contains('小说') ||
+            platform.contains('小説') ||
+            platform.contains('novel');
+      })
+      .toList(growable: false);
+  final List<BangumiSubject> candidates = kindMatches.isEmpty
+      ? subjects
+      : kindMatches;
   final String normalizedQuery = TitleNormalizer.normalize(query);
   final List<({BangumiSubject subject, double score, bool exact})> scored =
       <({BangumiSubject subject, double score, bool exact})>[
-    for (final BangumiSubject subject in candidates)
-      (
-        subject: subject,
-        score: <double>[
-          TitleNormalizer.similarity(query, subject.name),
-          TitleNormalizer.similarity(query, subject.nameCn),
-        ].reduce((double a, double b) => a > b ? a : b),
-        exact: <String>[subject.name, subject.nameCn]
-            .map(TitleNormalizer.normalize)
-            .where((String value) => value.isNotEmpty)
-            .contains(normalizedQuery),
-      ),
-  ]..sort((a, b) => b.score.compareTo(a.score));
+        for (final BangumiSubject subject in candidates)
+          (
+            subject: subject,
+            score: <double>[
+              TitleNormalizer.similarity(query, subject.name),
+              TitleNormalizer.similarity(query, subject.nameCn),
+            ].reduce((double a, double b) => a > b ? a : b),
+            exact: <String>[subject.name, subject.nameCn]
+                .map(TitleNormalizer.normalize)
+                .where((String value) => value.isNotEmpty)
+                .contains(normalizedQuery),
+          ),
+      ]..sort((a, b) => b.score.compareTo(a.score));
   final ({BangumiSubject subject, double score, bool exact}) best =
       scored.first;
   if (best.exact) {
@@ -309,16 +307,16 @@ class MediaTrackingService {
     required String userAgent,
     BangumiApiFactory? apiFactory,
     TrackingRetryTimerFactory? retryTimerFactory,
-  })  : _repository = repository,
-        _preferences = preferences,
-        _apiFactory = apiFactory ??
-            ((String token) => BangumiApiClient(
-                  accessToken: token,
-                  userAgent: userAgent,
-                )),
-        _retryTimerFactory = retryTimerFactory ??
-            ((Duration delay, void Function() callback) =>
-                Timer(delay, callback));
+  }) : _repository = repository,
+       _preferences = preferences,
+       _apiFactory =
+           apiFactory ??
+           ((String token) =>
+               BangumiApiClient(accessToken: token, userAgent: userAgent)),
+       _retryTimerFactory =
+           retryTimerFactory ??
+           ((Duration delay, void Function() callback) =>
+               Timer(delay, callback));
 
   final MediaTrackingRepository _repository;
   final PrefStore _preferences;
@@ -336,8 +334,7 @@ class MediaTrackingService {
       <String, Future<MediaTrackingMappingRow?>>{};
   final Map<String, int> _autoMappingMissAt = <String, int>{};
   final Map<String, Future<MediaTrackingMappingRow?> Function()>
-      _autoMappingRetry =
-      <String, Future<MediaTrackingMappingRow?> Function()>{};
+  _autoMappingRetry = <String, Future<MediaTrackingMappingRow?> Function()>{};
   final Map<String, String> _autoMappingErrors = <String, String>{};
 
   static const Duration _autoMappingMissRetry = Duration(minutes: 10);
@@ -408,8 +405,8 @@ class MediaTrackingService {
 
   /// 汇总当前追踪状态（映射 + 待办 + 上次同步结果），给 UI 一次读齐。
   Future<MediaTrackingStatus> loadStatus() async {
-    final List<MediaTrackingMappingRow> mappings =
-        await _repository.listMappings();
+    final List<MediaTrackingMappingRow> mappings = await _repository
+        .listMappings();
     // 计数走 COUNT(*) 而不是 allPending().length：后者带展示上限（默认 50 行），
     // 待办超过上限时会把「待发送」少报成上限值。
     final int pendingCount = await _repository.pendingCount();
@@ -420,7 +417,8 @@ class MediaTrackingService {
       lastSyncAt: _intPref(kMediaTrackingLastSyncAtPref),
       lastSucceeded: _intPref(kMediaTrackingLastSyncSucceededPref),
       lastFailed: _intPref(kMediaTrackingLastSyncFailedPref),
-      unauthorized: _preferences.getPref(
+      unauthorized:
+          _preferences.getPref(
             kMediaTrackingLastSyncUnauthorizedPref,
             defaultValue: false,
           ) ==
@@ -429,8 +427,10 @@ class MediaTrackingService {
       // bookChapter 是卷映射的伴随行（只负责 ep_status），不是用户建立的独立关联，
       // 与设置页列表同口径地隐藏，避免同一本书显示成两条。
       mappings: mappings
-          .where((MediaTrackingMappingRow row) =>
-              row.mediaType != TrackingMediaType.bookChapter.value)
+          .where(
+            (MediaTrackingMappingRow row) =>
+                row.mediaType != TrackingMediaType.bookChapter.value,
+          )
           .toList(growable: false),
       unlinked: await _repository.listUnlinkedHistory(),
       failures: <MediaTrackingFailure>[
@@ -503,14 +503,17 @@ class MediaTrackingService {
   Future<MediaTrackingMappingRetryResult> retryAutomaticMappings() async {
     final Map<String, Future<MediaTrackingMappingRow?> Function()> retries =
         Map<String, Future<MediaTrackingMappingRow?> Function()>.of(
-      _autoMappingRetry,
-    );
+          _autoMappingRetry,
+        );
     int matched = 0;
-    for (final MapEntry<String,
-        Future<MediaTrackingMappingRow?> Function()> entry in retries.entries) {
+    for (final MapEntry<String, Future<MediaTrackingMappingRow?> Function()>
+        entry
+        in retries.entries) {
       _autoMappingMissAt.remove(entry.key);
-      final MediaTrackingMappingRow? mapping =
-          await _singleFlightAutoMapping(entry.key, entry.value);
+      final MediaTrackingMappingRow? mapping = await _singleFlightAutoMapping(
+        entry.key,
+        entry.value,
+      );
       if (mapping != null) {
         matched++;
         await _enqueueCurrentProgress(mapping);
@@ -581,8 +584,8 @@ class MediaTrackingService {
     if (mediaType == null) return;
     if (mediaType == TrackingMediaType.video ||
         mediaType == TrackingMediaType.videoCollection) {
-      final List<CompletedVideoTrackingProgress> progress =
-          await _repository.loadCompletedVideoTrackingProgress(afterMs: -1);
+      final List<CompletedVideoTrackingProgress> progress = await _repository
+          .loadCompletedVideoTrackingProgress(afterMs: -1);
       for (final CompletedVideoTrackingProgress item in progress) {
         if (item.mediaType != mediaType || item.mediaKey != mapping.mediaKey) {
           continue;
@@ -598,8 +601,8 @@ class MediaTrackingService {
     }
     if (mediaType == TrackingMediaType.book ||
         mediaType == TrackingMediaType.bookChapter) {
-      final List<PersistedBookTrackingProgress> progress =
-          await _repository.loadPersistedBookTrackingProgress(afterMs: -1);
+      final List<PersistedBookTrackingProgress> progress = await _repository
+          .loadPersistedBookTrackingProgress(afterMs: -1);
       for (final PersistedBookTrackingProgress item in progress) {
         if (item.mediaType != mediaType || item.mediaKey != mapping.mediaKey) {
           continue;
@@ -614,8 +617,8 @@ class MediaTrackingService {
       return;
     }
     if (mediaType == TrackingMediaType.game) {
-      final List<PersistedGameTrackingStatus> progress =
-          await _repository.loadPersistedGameTrackingStatus(afterMs: -1);
+      final List<PersistedGameTrackingStatus> progress = await _repository
+          .loadPersistedGameTrackingStatus(afterMs: -1);
       for (final PersistedGameTrackingStatus item in progress) {
         if (item.gameId != mapping.mediaKey) continue;
         await _repository.enqueueProgress(
@@ -643,15 +646,16 @@ class MediaTrackingService {
     bool multiSeason = false;
     if (collectionId != null) {
       multiSeason = isMultiSeasonGrouped(
-          await _repository.loadCollectionVideoGroupKeys(collectionId));
+        await _repository.loadCollectionVideoGroupKeys(collectionId),
+      );
     }
     // 已有合集映射属于用户显式配置或旧版自动映射，优先沿用且绝不改写。
     if (collectionId != null && !multiSeason) {
-      final MediaTrackingMappingRow? collectionMapping =
-          await _repository.findMapping(
-        mediaType: TrackingMediaType.videoCollection,
-        mediaKey: collectionId.toString(),
-      );
+      final MediaTrackingMappingRow? collectionMapping = await _repository
+          .findMapping(
+            mediaType: TrackingMediaType.videoCollection,
+            mediaKey: collectionId.toString(),
+          );
       if (collectionMapping != null) {
         await _enqueueAndSync(
           mediaType: TrackingMediaType.videoCollection,
@@ -663,11 +667,8 @@ class MediaTrackingService {
       }
     }
 
-    final AutoVideoTrackingSource? source =
-        await _repository.loadAutoVideoSource(
-      bookUid: bookUid,
-      collectionId: collectionId,
-    );
+    final AutoVideoTrackingSource? source = await _repository
+        .loadAutoVideoSource(bookUid: bookUid, collectionId: collectionId);
     if (source == null) return;
     final int? parsedEpisode = FilenameParser.parse(source.videoTitle).episode;
     final int parsedEpisodeNumber = parsedEpisode ?? 0;
@@ -680,8 +681,9 @@ class MediaTrackingService {
     final TrackingMediaType type = itemScoped || collectionId == null
         ? TrackingMediaType.video
         : TrackingMediaType.videoCollection;
-    final String key =
-        type == TrackingMediaType.video ? bookUid : collectionId.toString();
+    final String key = type == TrackingMediaType.video
+        ? bookUid
+        : collectionId.toString();
     final MediaTrackingMappingRow? mapping = await _ensureAutoVideoMapping(
       source: source,
       mediaType: type,
@@ -690,7 +692,8 @@ class MediaTrackingService {
     );
     if (mapping == null) return;
     final int knownEpisodeCount = source.bangumiEpisodeCount ?? 0;
-    final bool itemCompletesSeries = itemScoped &&
+    final bool itemCompletesSeries =
+        itemScoped &&
         knownEpisodeCount > 0 &&
         parsedEpisodeNumber >= knownEpisodeCount;
     await _enqueueAndSync(
@@ -708,17 +711,19 @@ class MediaTrackingService {
     required int completedChapterCount,
     required bool completed,
   }) async {
-    final MediaTrackingMappingRow? mapping =
-        await _ensureAutoBookMapping(bookKey);
-    if (mapping == null) return;
-    final TrackingProgressMode? progressMode =
-        TrackingProgressMode.tryParse(mapping.progressMode);
-    if (progressMode == null) return;
-    final BookTrackingSnapshot snapshot =
-        await _repository.loadBookTrackingSnapshot(
-      bookKey: bookKey,
-      fallbackProgress: completedChapterCount,
+    final MediaTrackingMappingRow? mapping = await _ensureAutoBookMapping(
+      bookKey,
     );
+    if (mapping == null) return;
+    final TrackingProgressMode? progressMode = TrackingProgressMode.tryParse(
+      mapping.progressMode,
+    );
+    if (progressMode == null) return;
+    final BookTrackingSnapshot snapshot = await _repository
+        .loadBookTrackingSnapshot(
+          bookKey: bookKey,
+          fallbackProgress: completedChapterCount,
+        );
     final int? localProgress = resolveBookTrackingLocalProgress(
       format: snapshot.format,
       progressMode: progressMode,
@@ -727,7 +732,8 @@ class MediaTrackingService {
     );
     if (localProgress == null) return;
     final bool isVolume = progressMode == TrackingProgressMode.volume;
-    final MediaTrackingMappingRow? chapterMapping = isVolume &&
+    final MediaTrackingMappingRow? chapterMapping =
+        isVolume &&
             mapping.kind == TrackingKind.novel.value &&
             snapshot.chapterProgress != null
         ? await _ensureBookChapterMapping(mapping)
@@ -757,8 +763,9 @@ class MediaTrackingService {
     required int status,
   }) async {
     if (status < 1 || status > 5) return;
-    final MediaTrackingMappingRow? mapping =
-        await _ensureAutoGameMapping(gameId);
+    final MediaTrackingMappingRow? mapping = await _ensureAutoGameMapping(
+      gameId,
+    );
     if (mapping == null) return;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.game,
@@ -769,9 +776,7 @@ class MediaTrackingService {
     );
   }
 
-  Future<MediaTrackingMappingRow?> _ensureAutoGameMapping(
-    String gameId,
-  ) async {
+  Future<MediaTrackingMappingRow?> _ensureAutoGameMapping(String gameId) async {
     final MediaTrackingMappingRow? existing = await _repository.findMapping(
       mediaType: TrackingMediaType.game,
       mediaKey: gameId,
@@ -780,8 +785,8 @@ class MediaTrackingService {
     return _singleFlightAutoMapping(
       '${TrackingMediaType.game.value}:$gameId',
       () async {
-        final AutoGameTrackingSource? source =
-            await _repository.loadAutoGameSource(gameId);
+        final AutoGameTrackingSource? source = await _repository
+            .loadAutoGameSource(gameId);
         if (source == null) return null;
         final int? scrapedId = source.bangumiSubjectId;
         if (scrapedId != null && scrapedId > 0) {
@@ -835,46 +840,47 @@ class MediaTrackingService {
       mediaKey: mediaKey,
     );
     if (existing != null) return existing;
-    return _singleFlightAutoMapping(
-      '${mediaType.value}:$mediaKey',
-      () async {
-        final int? scrapedId = source.bangumiSubjectId;
-        if (scrapedId != null && scrapedId > 0) {
-          return _repository.saveMappingIfAbsent(
-            mediaType: mediaType,
-            mediaKey: mediaKey,
-            mediaTitle: source.mediaTitle,
-            kind: TrackingKind.anime,
-            subjectId: scrapedId,
-            subjectName: source.bangumiSubjectName ?? source.mediaTitle,
-            progressMode: TrackingProgressMode.episode,
-            progressOffset: progressOffset,
-          );
-        }
-        if (!isConfigured) return null;
-
-        final ParsedMediaName parsed = FilenameParser.parse(source.mediaTitle);
-        final String query =
-            parsed.title.isEmpty ? source.mediaTitle : parsed.title;
-        final List<BangumiSubject> subjects = await searchSubjects(
-          keyword: query,
-          kind: TrackingKind.anime,
-        );
-        final BangumiSubject? subject =
-            _uniqueHighConfidenceSubject(query, subjects, TrackingKind.anime);
-        if (subject == null) return null;
+    return _singleFlightAutoMapping('${mediaType.value}:$mediaKey', () async {
+      final int? scrapedId = source.bangumiSubjectId;
+      if (scrapedId != null && scrapedId > 0) {
         return _repository.saveMappingIfAbsent(
           mediaType: mediaType,
           mediaKey: mediaKey,
           mediaTitle: source.mediaTitle,
           kind: TrackingKind.anime,
-          subjectId: subject.id,
-          subjectName: subject.displayName,
+          subjectId: scrapedId,
+          subjectName: source.bangumiSubjectName ?? source.mediaTitle,
           progressMode: TrackingProgressMode.episode,
           progressOffset: progressOffset,
         );
-      },
-    );
+      }
+      if (!isConfigured) return null;
+
+      final ParsedMediaName parsed = FilenameParser.parse(source.mediaTitle);
+      final String query = parsed.title.isEmpty
+          ? source.mediaTitle
+          : parsed.title;
+      final List<BangumiSubject> subjects = await searchSubjects(
+        keyword: query,
+        kind: TrackingKind.anime,
+      );
+      final BangumiSubject? subject = _uniqueHighConfidenceSubject(
+        query,
+        subjects,
+        TrackingKind.anime,
+      );
+      if (subject == null) return null;
+      return _repository.saveMappingIfAbsent(
+        mediaType: mediaType,
+        mediaKey: mediaKey,
+        mediaTitle: source.mediaTitle,
+        kind: TrackingKind.anime,
+        subjectId: subject.id,
+        subjectName: subject.displayName,
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: progressOffset,
+      );
+    });
   }
 
   Future<MediaTrackingMappingRow?> _ensureAutoBookMapping(
@@ -889,23 +895,28 @@ class MediaTrackingService {
     return _singleFlightAutoMapping(
       '${TrackingMediaType.book.value}:$bookKey',
       () async {
-        final AutoBookTrackingSource? source =
-            await _repository.loadAutoBookSource(bookKey);
+        final AutoBookTrackingSource? source = await _repository
+            .loadAutoBookSource(bookKey);
         if (source == null) return null;
         final BookFormat format = BookFormat.parseOrEpub(source.format);
         final TrackingKind kind = format == BookFormat.manga
             ? TrackingKind.manga
             : TrackingKind.novel;
-        final _PreparedTrackingTitle prepared =
-            _prepareTrackingTitle(source.title);
+        final _PreparedTrackingTitle prepared = _prepareTrackingTitle(
+          source.title,
+        );
         final List<BangumiSubject> subjects = await searchSubjects(
           keyword: prepared.query,
           kind: kind,
         );
-        final BangumiSubject? subject =
-            _uniqueHighConfidenceSubject(prepared.query, subjects, kind);
+        final BangumiSubject? subject = _uniqueHighConfidenceSubject(
+          prepared.query,
+          subjects,
+          kind,
+        );
         if (subject == null) return null;
-        final bool trackAsVolume = format.isPagedImageBook ||
+        final bool trackAsVolume =
+            format.isPagedImageBook ||
             prepared.volumeNumber != null ||
             subject.volumeCount > 1;
         return _repository.saveMappingIfAbsent(
@@ -1014,11 +1025,7 @@ class MediaTrackingService {
         _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
         _autoMappingErrors[key] = error.toString();
         _statusRevision.value++;
-        engineLog.log(
-          'MediaTrackingService.autoMap',
-          error,
-          stackTrace,
-        );
+        engineLog.log('MediaTrackingService.autoMap', error, stackTrace);
         return null;
       }
     }
@@ -1055,12 +1062,13 @@ class MediaTrackingService {
     final ({int progress, bool completed})? previous = _lastQueued[cacheKey];
     // 单调事件按“没有前进就不必重复入队”去重；离散状态只在值真的没变时才跳过，
     // 否则状态回退（弃坑→在玩）会被这层内存缓存吃掉，连 outbox 都进不去。
-    final bool unchanged = previous != null &&
+    final bool unchanged =
+        previous != null &&
         (monotonic
             ? (previous.progress >= localProgress &&
-                (previous.completed || !completed))
+                  (previous.completed || !completed))
             : (previous.progress == localProgress &&
-                previous.completed == completed));
+                  previous.completed == completed));
     if (unchanged) return;
     try {
       final bool mapped = await _repository.enqueueProgress(
@@ -1083,11 +1091,7 @@ class MediaTrackingService {
         _syncAgainRequested = true;
       }
     } catch (error, stackTrace) {
-      engineLog.log(
-        'MediaTrackingService.enqueue',
-        error,
-        stackTrace,
-      );
+      engineLog.log('MediaTrackingService.enqueue', error, stackTrace);
     }
   }
 
@@ -1133,18 +1137,15 @@ class MediaTrackingService {
     try {
       earliest = await _repository.earliestNextAttemptAt();
     } catch (error, stackTrace) {
-      engineLog.log(
-        'MediaTrackingService.scheduleRetry',
-        error,
-        stackTrace,
-      );
+      engineLog.log('MediaTrackingService.scheduleRetry', error, stackTrace);
       return;
     }
     if (earliest == null) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
     // 已到期（或从未尝试）的行也至少等一小段再跑，避免与刚结束的这一轮竞争成热循环。
-    final Duration delay =
-        Duration(milliseconds: math.max(earliest - now, 5000));
+    final Duration delay = Duration(
+      milliseconds: math.max(earliest - now, 5000),
+    );
     _retryTimer = _retryTimerFactory(delay, () {
       _retryTimer = null;
       unawaited(syncNow());
@@ -1181,11 +1182,7 @@ class MediaTrackingService {
         );
       } catch (error, stackTrace) {
         // fail-open：状态记录失败不能影响已经发出去的同步结果本身。
-        engineLog.log(
-          'MediaTrackingService.persistOutcome',
-          error,
-          stackTrace,
-        );
+        engineLog.log('MediaTrackingService.persistOutcome', error, stackTrace);
       }
     }
     _statusRevision.value++;
@@ -1211,15 +1208,16 @@ class MediaTrackingService {
       defaultValue: 0,
     );
     final int watermark = stored is int ? stored : int.tryParse('$stored') ?? 0;
-    final List<PersistedGameTrackingStatus> statuses =
-        await _repository.loadPersistedGameTrackingStatus(afterMs: watermark);
+    final List<PersistedGameTrackingStatus> statuses = await _repository
+        .loadPersistedGameTrackingStatus(afterMs: watermark);
 
     int nextWatermark = watermark;
     for (final PersistedGameTrackingStatus item in statuses) {
       // 走完整入队路径：没有映射时它会尝试用刮削出的 Bangumi 条目补建。
       await recordGameStatus(gameId: item.gameId, status: item.status);
-      nextWatermark =
-          item.evidenceAt > nextWatermark ? item.evidenceAt : nextWatermark;
+      nextWatermark = item.evidenceAt > nextWatermark
+          ? item.evidenceAt
+          : nextWatermark;
     }
     if (statuses.isEmpty) {
       nextWatermark = DateTime.now().millisecondsSinceEpoch;
@@ -1239,10 +1237,8 @@ class MediaTrackingService {
       defaultValue: 0,
     );
     final int watermark = stored is int ? stored : int.tryParse('$stored') ?? 0;
-    final List<CompletedVideoTrackingProgress> progress =
-        await _repository.loadCompletedVideoTrackingProgress(
-      afterMs: watermark,
-    );
+    final List<CompletedVideoTrackingProgress> progress = await _repository
+        .loadCompletedVideoTrackingProgress(afterMs: watermark);
 
     int nextWatermark = watermark;
     for (final CompletedVideoTrackingProgress item in progress) {
@@ -1252,8 +1248,9 @@ class MediaTrackingService {
         localProgress: item.localProgress,
         completed: item.completed,
       );
-      nextWatermark =
-          item.evidenceAt > nextWatermark ? item.evidenceAt : nextWatermark;
+      nextWatermark = item.evidenceAt > nextWatermark
+          ? item.evidenceAt
+          : nextWatermark;
     }
     // 即使当前无完成条目也推进水位；以后完成时间或新 mapping.updatedAt 会越过它。
     if (progress.isEmpty) {
@@ -1274,10 +1271,8 @@ class MediaTrackingService {
       defaultValue: 0,
     );
     final int watermark = stored is int ? stored : int.tryParse('$stored') ?? 0;
-    final List<PersistedBookTrackingProgress> progress =
-        await _repository.loadPersistedBookTrackingProgress(
-      afterMs: watermark,
-    );
+    final List<PersistedBookTrackingProgress> progress = await _repository
+        .loadPersistedBookTrackingProgress(afterMs: watermark);
     int nextWatermark = watermark;
     for (final PersistedBookTrackingProgress item in progress) {
       await _repository.enqueueProgress(
@@ -1286,8 +1281,9 @@ class MediaTrackingService {
         localProgress: item.localProgress,
         completed: item.completed,
       );
-      nextWatermark =
-          item.evidenceAt > nextWatermark ? item.evidenceAt : nextWatermark;
+      nextWatermark = item.evidenceAt > nextWatermark
+          ? item.evidenceAt
+          : nextWatermark;
     }
     if (progress.isEmpty) {
       nextWatermark = DateTime.now().millisecondsSinceEpoch;
@@ -1334,11 +1330,7 @@ class MediaTrackingService {
           await _repository.markFailed(update.outbox, error);
           failed++;
           unauthorized = error is BangumiApiException && error.isUnauthorized;
-          engineLog.log(
-            'MediaTrackingService.sync',
-            error,
-            stackTrace,
-          );
+          engineLog.log('MediaTrackingService.sync', error, stackTrace);
           if (unauthorized) break;
         }
       }
@@ -1348,11 +1340,7 @@ class MediaTrackingService {
         await _repository.markFailed(update.outbox, error);
       }
       failed = updates.length;
-      engineLog.log(
-        'MediaTrackingService.authenticate',
-        error,
-        stackTrace,
-      );
+      engineLog.log('MediaTrackingService.authenticate', error, stackTrace);
     } finally {
       api.close();
     }
@@ -1371,8 +1359,10 @@ class MediaTrackingService {
     PendingTrackingUpdate update,
   ) async {
     final MediaTrackingMappingRow mapping = update.mapping;
-    final BangumiUserCollection? collection =
-        await api.getCollection(user.username, mapping.subjectId);
+    final BangumiUserCollection? collection = await api.getCollection(
+      user.username,
+      mapping.subjectId,
+    );
     if (mapping.progressMode == TrackingProgressMode.status.value) {
       await _syncCollectionStatus(api, mapping, update.outbox, collection);
       return;
@@ -1428,8 +1418,9 @@ class MediaTrackingService {
         payload: const <String, dynamic>{'type': 3},
       );
     }
-    final List<BangumiEpisode> episodes =
-        await api.getMainEpisodes(mapping.subjectId);
+    final List<BangumiEpisode> episodes = await api.getMainEpisodes(
+      mapping.subjectId,
+    );
     // Bangumi 的 sort 是作品系列全局话数，不保证从 1 开始。例如分割放送的条目
     // 可能返回 51..58；本地 progress 表示该 subject 内第 N 个正片，必须按排序后的
     // 序位取前 N 条，而不能拿 N 与 sort 数值比较。
@@ -1497,7 +1488,8 @@ class MediaTrackingService {
     final bool reachesLastUnit;
     if (isVolume) {
       final BangumiSubject subject = await api.getSubject(mapping.subjectId);
-      reachesLastUnit = outbox.completed &&
+      reachesLastUnit =
+          outbox.completed &&
           subject.volumeCount > 0 &&
           outbox.progress >= subject.volumeCount;
     } else if (outbox.completed) {

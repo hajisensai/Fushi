@@ -53,9 +53,10 @@ class EmbeddedTorrentEngine {
         .whereType<File>()
         .map((File f) => f.path)
         .where((String path) {
-      final String name = path.replaceAll('\\', '/').split('/').last;
-      return name.toLowerCase().endsWith('.dll') && name != target;
-    }).toList();
+          final String name = path.replaceAll('\\', '/').split('/').last;
+          return name.toLowerCase().endsWith('.dll') && name != target;
+        })
+        .toList();
     bool progressed = true;
     while (progressed && pending.isNotEmpty) {
       progressed = false;
@@ -136,7 +137,8 @@ class EmbeddedTorrentEngine {
     final List<String> names = defaultLibraryCandidates();
     if (names.isEmpty) {
       throw UnsupportedError(
-          'fushi_torrent: unsupported platform ${Platform.operatingSystem}');
+        'fushi_torrent: unsupported platform ${Platform.operatingSystem}',
+      );
     }
     ArgumentError? lastError;
     for (final String name in names) {
@@ -167,7 +169,8 @@ class EmbeddedTorrentEngine {
     final Pointer<Char> out = outTorrentPath.toNativeUtf8().cast<Char>();
     try {
       return FtAddResult._fromJson(
-          _consumeJson(bindings.ht_make_torrent(content, out)));
+        _consumeJson(bindings.ht_make_torrent(content, out)),
+      );
     } finally {
       malloc.free(content);
       malloc.free(out);
@@ -176,8 +179,10 @@ class EmbeddedTorrentEngine {
 
   /// 创建底层 session 句柄（低层 API；一般用 [EmbeddedTorrentSession.open]）。
   /// [listenInterfaces] null/空 = 不监听（阶段1a 空壳语义，冒烟测试用）。
-  Pointer<Void> createSession(
-      {String? listenInterfaces, bool enableDht = false}) {
+  Pointer<Void> createSession({
+    String? listenInterfaces,
+    bool enableDht = false,
+  }) {
     if (listenInterfaces == null || listenInterfaces.isEmpty) {
       return bindings.ht_session_create(nullptr, enableDht ? 1 : 0);
     }
@@ -590,9 +595,9 @@ class FtSessionStatus {
       upRate: (json['up_rate'] as num?)?.toInt() ?? -1,
       portMappings: mappings is List
           ? mappings
-              .whereType<Map<String, dynamic>>()
-              .map(FtPortMapping._fromJson)
-              .toList(growable: false)
+                .whereType<Map<String, dynamic>>()
+                .map(FtPortMapping._fromJson)
+                .toList(growable: false)
           : const <FtPortMapping>[],
     );
   }
@@ -675,7 +680,9 @@ class EmbeddedTorrentSession {
     bool enableDht = false,
   }) {
     final Pointer<Void> s = engine.createSession(
-        listenInterfaces: listenInterfaces, enableDht: enableDht);
+      listenInterfaces: listenInterfaces,
+      enableDht: enableDht,
+    );
     if (s == nullptr) return null;
     return EmbeddedTorrentSession._(engine, s);
   }
@@ -714,13 +721,23 @@ class EmbeddedTorrentSession {
   }) {
     if (isClosed) return false;
     if (!_b.hasApplyLimitsEx) {
-      final bool ok = _b.ht_apply_limits(
-              _session, downloadBps, uploadBps, connectionsLimit) ==
+      final bool ok =
+          _b.ht_apply_limits(
+            _session,
+            downloadBps,
+            uploadBps,
+            connectionsLimit,
+          ) ==
           1;
       return ok && !limitLocalPeers;
     }
-    return _b.ht_apply_limits_ex(_session, downloadBps, uploadBps,
-            connectionsLimit, limitLocalPeers ? 1 : 0) ==
+    return _b.ht_apply_limits_ex(
+          _session,
+          downloadBps,
+          uploadBps,
+          connectionsLimit,
+          limitLocalPeers ? 1 : 0,
+        ) ==
         1;
   }
 
@@ -765,15 +782,21 @@ class EmbeddedTorrentSession {
           : _b.ht_apply_proxy(_session, 0, nullptr, 0) == 1;
     }
     final int colon = value.lastIndexOf(':');
-    final int? port =
-        colon > 0 ? int.tryParse(value.substring(colon + 1)) : null;
+    final int? port = colon > 0
+        ? int.tryParse(value.substring(colon + 1))
+        : null;
     if (port == null || port <= 0 || port > 65535) return false;
     final String host = value.substring(0, colon);
     return using((Arena arena) {
       final Pointer<Char> cHost = host.toNativeUtf8(allocator: arena).cast();
       if (_b.hasApplyProxyMode) {
         return _b.ht_apply_proxy_mode(
-                _session, proxyType, cHost, port, mixed ? 2 : 1) ==
+              _session,
+              proxyType,
+              cHost,
+              port,
+              mixed ? 2 : 1,
+            ) ==
             1;
       }
       return _b.ht_apply_proxy(_session, proxyType, cHost, port) == 1;
@@ -878,8 +901,11 @@ class EmbeddedTorrentSession {
     final Pointer<Char> magnet = magnetUri.toNativeUtf8().cast<Char>();
     final Pointer<Char> save = savePath.toNativeUtf8().cast<Char>();
     try {
-      return FtAddResult._fromJson(_engine._consumeJson(
-          _b.ht_add_magnet(_session, magnet, save, sequential ? 1 : 0)));
+      return FtAddResult._fromJson(
+        _engine._consumeJson(
+          _b.ht_add_magnet(_session, magnet, save, sequential ? 1 : 0),
+        ),
+      );
     } finally {
       malloc.free(magnet);
       malloc.free(save);
@@ -896,8 +922,11 @@ class EmbeddedTorrentSession {
     final Pointer<Char> torrent = torrentPath.toNativeUtf8().cast<Char>();
     final Pointer<Char> save = savePath.toNativeUtf8().cast<Char>();
     try {
-      return FtAddResult._fromJson(_engine._consumeJson(
-          _b.ht_add_torrent_file(_session, torrent, save, sequential ? 1 : 0)));
+      return FtAddResult._fromJson(
+        _engine._consumeJson(
+          _b.ht_add_torrent_file(_session, torrent, save, sequential ? 1 : 0),
+        ),
+      );
     } finally {
       malloc.free(torrent);
       malloc.free(save);
@@ -940,8 +969,9 @@ class EmbeddedTorrentSession {
     if (isClosed) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_torrent_files(_session, id));
+      final Object? json = _engine._consumeJson(
+        _b.ht_torrent_files(_session, id),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
       final Object? files = json['files'];
       if (files is! List) return null;
@@ -959,8 +989,9 @@ class EmbeddedTorrentSession {
     if (isClosed) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_torrent_pieces(_session, id));
+      final Object? json = _engine._consumeJson(
+        _b.ht_torrent_pieces(_session, id),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
       return FtPieceMap(
         numPieces: (json['num_pieces'] as num?)?.toInt() ?? 0,
@@ -974,15 +1005,18 @@ class EmbeddedTorrentSession {
   /// 排空累计的 piece 完成事件（发生序）。
   List<FtPieceEvent> pollPieceEvents() {
     if (isClosed) return const <FtPieceEvent>[];
-    final Object? json =
-        _engine._consumeJson(_b.ht_poll_piece_events(_session));
+    final Object? json = _engine._consumeJson(
+      _b.ht_poll_piece_events(_session),
+    );
     if (json is! List) return const <FtPieceEvent>[];
     return json
         .whereType<Map<String, dynamic>>()
-        .map((Map<String, dynamic> e) => FtPieceEvent(
-              id: e['id'] as String? ?? '',
-              piece: (e['piece'] as num?)?.toInt() ?? -1,
-            ))
+        .map(
+          (Map<String, dynamic> e) => FtPieceEvent(
+            id: e['id'] as String? ?? '',
+            piece: (e['piece'] as num?)?.toInt() ?? -1,
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -1004,8 +1038,11 @@ class EmbeddedTorrentSession {
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     final Pointer<Char> target = newPath.toNativeUtf8().cast<Char>();
     try {
-      return FtStorageOpResult._fromJson(_engine._consumeJson(
-          _b.ht_rename_file(_session, id, fileIndex, target, timeoutMs)));
+      return FtStorageOpResult._fromJson(
+        _engine._consumeJson(
+          _b.ht_rename_file(_session, id, fileIndex, target, timeoutMs),
+        ),
+      );
     } finally {
       malloc.free(id);
       malloc.free(target);
@@ -1027,8 +1064,11 @@ class EmbeddedTorrentSession {
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     final Pointer<Char> target = newSavePath.toNativeUtf8().cast<Char>();
     try {
-      return FtStorageOpResult._fromJson(_engine
-          ._consumeJson(_b.ht_move_storage(_session, id, target, timeoutMs)));
+      return FtStorageOpResult._fromJson(
+        _engine._consumeJson(
+          _b.ht_move_storage(_session, id, target, timeoutMs),
+        ),
+      );
     } finally {
       malloc.free(id);
       malloc.free(target);
@@ -1044,8 +1084,9 @@ class EmbeddedTorrentSession {
     if (isClosed) return const FtResumeSaveResult(saved: 0, failed: 0);
     final Pointer<Char> out = dir.toNativeUtf8().cast<Char>();
     try {
-      final Object? json = _engine
-          ._consumeJson(_b.ht_save_resume_data(_session, out, timeoutMs));
+      final Object? json = _engine._consumeJson(
+        _b.ht_save_resume_data(_session, out, timeoutMs),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) {
         return const FtResumeSaveResult(saved: 0, failed: 0);
       }
@@ -1065,8 +1106,9 @@ class EmbeddedTorrentSession {
     if (isClosed) return const <String>[];
     final Pointer<Char> path = dir.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_load_resume_dir(_session, path));
+      final Object? json = _engine._consumeJson(
+        _b.ht_load_resume_dir(_session, path),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) {
         return const <String>[];
       }
@@ -1106,8 +1148,9 @@ class EmbeddedTorrentSession {
     if (isClosed) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_torrent_peers(_session, id));
+      final Object? json = _engine._consumeJson(
+        _b.ht_torrent_peers(_session, id),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
       final Object? peers = json['peers'];
       if (peers is! List) return null;
@@ -1130,8 +1173,9 @@ class EmbeddedTorrentSession {
     if (isClosed || !_b.hasDetailInfo) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_torrent_trackers(_session, id));
+      final Object? json = _engine._consumeJson(
+        _b.ht_torrent_trackers(_session, id),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
       final Object? trackers = json['trackers'];
       if (trackers is! List) return null;
@@ -1169,8 +1213,9 @@ class EmbeddedTorrentSession {
     if (isClosed || !_b.hasDetailInfo) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_get_file_priorities(_session, id));
+      final Object? json = _engine._consumeJson(
+        _b.ht_get_file_priorities(_session, id),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
       final Object? priorities = json['priorities'];
       if (priorities is! List) return null;
@@ -1189,8 +1234,9 @@ class EmbeddedTorrentSession {
     if (isClosed || !_b.hasPiecePriorities) return null;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
-      final Object? json =
-          _engine._consumeJson(_b.ht_get_piece_priorities(_session, id));
+      final Object? json = _engine._consumeJson(
+        _b.ht_get_piece_priorities(_session, id),
+      );
       if (json is! Map<String, dynamic> || json['ok'] != true) return null;
       final Object? priorities = json['priorities'];
       if (priorities is! List) return null;

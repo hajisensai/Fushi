@@ -71,9 +71,9 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   @override
   Future<Directory> jobDirFor(
     List<String> audioPaths,
-    AsrLanguage language,
-    {List<AsrSegmentSpan>? segments}
-  ) async {
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async {
     final Directory root = await _jobsRoot();
     return Directory(p.join(root.path, appleSpeechJobId(audioPaths, language)));
   }
@@ -150,9 +150,9 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   @override
   Future<AsrJobState?> existingState(
     List<String> audioPaths,
-    AsrLanguage language,
-    {List<AsrSegmentSpan>? segments}
-  ) async {
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async {
     final Directory dir = await jobDirFor(audioPaths, language);
     final File state = File(p.join(dir.path, AsrJobFiles.state));
     if (!state.existsSync()) return null;
@@ -171,9 +171,9 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   @override
   Future<String?> finishedSrtPath(
     List<String> audioPaths,
-    AsrLanguage language,
-    {List<AsrSegmentSpan>? segments}
-  ) async {
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async {
     final AsrJobState? state = await existingState(audioPaths, language);
     if (state == null || !state.finished) return null;
     final Directory dir = await jobDirFor(audioPaths, language);

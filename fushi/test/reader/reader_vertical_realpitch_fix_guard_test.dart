@@ -24,9 +24,7 @@ void main() {
   late String js;
 
   setUpAll(() {
-    css = File(
-      'lib/src/reader/reader_content_styles.dart',
-    ).readAsStringSync();
+    css = File('lib/src/reader/reader_content_styles.dart').readAsStringSync();
     js = File(
       'lib/src/reader/reader_pagination_scripts.dart',
     ).readAsStringSync();
@@ -38,35 +36,50 @@ void main() {
     expect(
       css.contains('height: var(--reader-viewport-height, 100vh) !important;'),
       isTrue,
-      reason: 'body(multicol 容器)高度必须用纯 V(--reader-viewport-height)，'
+      reason:
+          'body(multicol 容器)高度必须用纯 V(--reader-viewport-height)，'
           '与 column-width 基准同量纲，列才不被 V+O 容器拉伸（治累积 + 斜置）',
     );
   });
 
   test('getScrollContext 竖排不再 pageStep+=O 补偿（容器对齐后名义 pageStep 已等于真实列周期）', () {
-    expect(js.contains('pageStep += overlapO'), isFalse,
-        reason: '容器高度对齐纯 V 后 realPitch 回 815 == 名义 pageStep，'
-            '不得再加 O（会过冲反向漂移）');
-    expect(js.contains('var overlapO = this.pageHeight - this.viewportHeight;'),
-        isFalse,
-        reason: 'overlapO 补偿逻辑必须已删（根因下沉到 CSS 容器高度）');
+    expect(
+      js.contains('pageStep += overlapO'),
+      isFalse,
+      reason:
+          '容器高度对齐纯 V 后 realPitch 回 815 == 名义 pageStep，'
+          '不得再加 O（会过冲反向漂移）',
+    );
+    expect(
+      js.contains('var overlapO = this.pageHeight - this.viewportHeight;'),
+      isFalse,
+      reason: 'overlapO 补偿逻辑必须已删（根因下沉到 CSS 容器高度）',
+    );
     // pageStep 仍是名义 contentBox + gap（不动）。
-    expect(js.contains('var pageStep = columns * (contentBox + gap);'), isTrue,
-        reason: 'TODO-1285：名义 pageStep = columnCount × (contentBox + gap)，'
-            '单列(N=1)时退回 contentBox + gap 保持不变');
+    expect(
+      js.contains('var pageStep = columns * (contentBox + gap);'),
+      isTrue,
+      reason:
+          'TODO-1285：名义 pageStep = columnCount × (contentBox + gap)，'
+          '单列(N=1)时退回 contentBox + gap 保持不变',
+    );
   });
 
   test('列宽 CSS 仍用纯 V 基准（TODO-734 防漏字不回退）', () {
     expect(
       css.contains(
-          'max(\${fontSizePx}px, calc(var(--reader-viewport-height, 100vh)'),
+        'max(\${fontSizePx}px, calc(var(--reader-viewport-height, 100vh)',
+      ),
       isTrue,
       reason: 'verticalColumnWidthCss 仍以纯 V 为基准，防漏字修复不回退',
     );
   });
 
   test('图片高度用独立 --fushi-image-max-height（与 body 容器高度解耦，改容器不切图）', () {
-    expect(css.contains('var(--fushi-image-max-height'), isTrue,
-        reason: '图片 max-height 走独立变量，跟 body content-box，容器改纯 V 不切图');
+    expect(
+      css.contains('var(--fushi-image-max-height'),
+      isTrue,
+      reason: '图片 max-height 走独立变量，跟 body content-box，容器改纯 V 不切图',
+    );
   });
 }

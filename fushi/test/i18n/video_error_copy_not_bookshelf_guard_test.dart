@@ -27,8 +27,8 @@ void main() {
 
     test('en：video_load_failed_not_found 指向 library 而非 bookshelf', () {
       final Map<String, dynamic> en = _load('strings.i18n.json');
-      final String v =
-          (en['video_load_failed_not_found'] as String).toLowerCase();
+      final String v = (en['video_load_failed_not_found'] as String)
+          .toLowerCase();
       expect(v.contains('library'), isTrue);
       expect(v.contains('bookshelf'), isFalse);
     });
@@ -42,8 +42,11 @@ void main() {
         for (final MapEntry<String, dynamic> entry in json.entries) {
           if (!entry.key.startsWith('video_')) continue;
           final String v = entry.value as String;
-          expect(v.contains(banned), isFalse,
-              reason: '$file 的 ${entry.key} 不得用书侧的「$banned」描述视频侧');
+          expect(
+            v.contains(banned),
+            isFalse,
+            reason: '$file 的 ${entry.key} 不得用书侧的「$banned」描述视频侧',
+          );
         }
       }
     });

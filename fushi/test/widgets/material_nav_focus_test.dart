@@ -57,17 +57,20 @@ void main() {
     );
   }
 
-  testWidgets('bottom bar registers one focus target per destination',
-      (WidgetTester tester) async {
+  testWidgets('bottom bar registers one focus target per destination', (
+    WidgetTester tester,
+  ) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenBar(
-          index: index,
-          onTap: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenBar(
+            index: index,
+            onTap: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
@@ -85,42 +88,49 @@ void main() {
     expect(index, 0, reason: 'moving focus onto a tile must NOT switch tabs');
   });
 
-  testWidgets('along-axis moves the ring between tiles without switching tabs',
-      (WidgetTester tester) async {
-    int index = 1;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenBar(
-          index: index,
-          onTap: (int i) => setState(() => index = i),
+  testWidgets(
+    'along-axis moves the ring between tiles without switching tabs',
+    (WidgetTester tester) async {
+      int index = 1;
+      await tester.pumpWidget(
+        buildTestApp(
+          StatefulBuilder(
+            builder: (BuildContext c, StateSetter setState) => contentThenBar(
+              index: index,
+              onTap: (int i) => setState(() => index = i),
+            ),
+          ),
         ),
-      ),
-    ));
-    await tester.pump();
-    final FushiFocusController controller = FushiFocusRoot.controllerOf(
-      tester.element(find.byType(Column).first),
-    );
+      );
+      await tester.pump();
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        tester.element(find.byType(Column).first),
+      );
 
-    // Focus the middle tile directly, then step right to the next one.
-    controller.requestById(const FushiFocusId('nav-bar-1'));
-    await tester.pump();
-    expect(controller.move(FushiFocusDirection.right), isTrue);
-    await tester.pump();
-    expect(controller.activeId, const FushiFocusId('nav-bar-2'));
-    expect(index, 1, reason: 'stepping focus does not select; A/Enter does');
-  });
+      // Focus the middle tile directly, then step right to the next one.
+      controller.requestById(const FushiFocusId('nav-bar-1'));
+      await tester.pump();
+      expect(controller.move(FushiFocusDirection.right), isTrue);
+      await tester.pump();
+      expect(controller.activeId, const FushiFocusId('nav-bar-2'));
+      expect(index, 1, reason: 'stepping focus does not select; A/Enter does');
+    },
+  );
 
-  testWidgets('ActivateIntent on a focused tile selects that destination',
-      (WidgetTester tester) async {
+  testWidgets('ActivateIntent on a focused tile selects that destination', (
+    WidgetTester tester,
+  ) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenBar(
-          index: index,
-          onTap: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenBar(
+            index: index,
+            onTap: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
@@ -137,21 +147,27 @@ void main() {
     );
     await tester.pump();
     expect(index, 2);
-    expect(controller.activeId, const FushiFocusId('nav-bar-2'),
-        reason: 'focus stays on the tile after selecting');
+    expect(
+      controller.activeId,
+      const FushiFocusId('nav-bar-2'),
+      reason: 'focus stays on the tile after selecting',
+    );
   });
 
-  testWidgets('Enter key on a focused tile selects it (keyboard activation)',
-      (WidgetTester tester) async {
+  testWidgets('Enter key on a focused tile selects it (keyboard activation)', (
+    WidgetTester tester,
+  ) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenBar(
-          index: index,
-          onTap: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenBar(
+            index: index,
+            onTap: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),
@@ -164,38 +180,46 @@ void main() {
     // (gameButtonA can't be synthesized on Windows; Enter must work).
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
-    expect(index, 2,
-        reason: 'Enter on a focused nav tile must select that destination');
+    expect(
+      index,
+      2,
+      reason: 'Enter on a focused nav tile must select that destination',
+    );
   });
 
   testWidgets('a tap selects the destination', (WidgetTester tester) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenBar(
-          index: index,
-          onTap: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenBar(
+            index: index,
+            onTap: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     await tester.tap(find.text('Settings'));
     await tester.pump();
     expect(index, 2);
   });
 
-  testWidgets('rail registers one focus target per destination',
-      (WidgetTester tester) async {
+  testWidgets('rail registers one focus target per destination', (
+    WidgetTester tester,
+  ) async {
     int index = 0;
-    await tester.pumpWidget(buildTestApp(
-      StatefulBuilder(
-        builder: (BuildContext c, StateSetter setState) => contentThenBar(
-          index: index,
-          rail: true,
-          onTap: (int i) => setState(() => index = i),
+    await tester.pumpWidget(
+      buildTestApp(
+        StatefulBuilder(
+          builder: (BuildContext c, StateSetter setState) => contentThenBar(
+            index: index,
+            rail: true,
+            onTap: (int i) => setState(() => index = i),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(Column).first),

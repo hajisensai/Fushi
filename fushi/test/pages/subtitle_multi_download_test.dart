@@ -43,10 +43,12 @@ void main() {
       written.add(dest);
     }
     expect(written.toSet(), hasLength(4), reason: '四条各占一个路径');
-    expect(
-      written.map((String f) => p.basename(f)).toList(),
-      <String>['Same.srt', 'Same (2).srt', 'Same (3).srt', 'Same (4).srt'],
-    );
+    expect(written.map((String f) => p.basename(f)).toList(), <String>[
+      'Same.srt',
+      'Same (2).srt',
+      'Same (3).srt',
+      'Same (4).srt',
+    ]);
     for (int i = 0; i < 4; i++) {
       expect(File(written[i]).readAsStringSync(), 'body-$i');
     }

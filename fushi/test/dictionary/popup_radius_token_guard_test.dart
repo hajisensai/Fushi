@@ -17,10 +17,16 @@ void main() {
 
   test('共享真源把 --fushi-radius-card 从 FushiRadii.cardValue 派生', () {
     final String src = read('lib/src/utils/popup_theme_css.dart');
-    expect(src, contains("'--fushi-radius-card'"),
-        reason: 'popup_theme_css.dart 应产出 --fushi-radius-card');
-    expect(src, contains('FushiRadii.cardValue'),
-        reason: '圆角值应取自 token FushiRadii.cardValue，非硬编码');
+    expect(
+      src,
+      contains("'--fushi-radius-card'"),
+      reason: 'popup_theme_css.dart 应产出 --fushi-radius-card',
+    );
+    expect(
+      src,
+      contains('FushiRadii.cardValue'),
+      reason: '圆角值应取自 token FushiRadii.cardValue，非硬编码',
+    );
   });
 
   test('唯一注入点经 buildPopupThemeCssVars 注入 --fushi-radius-card', () {
@@ -29,26 +35,43 @@ void main() {
     final String src = read(
       'lib/src/pages/implementations/popup_settings_injection.dart',
     );
-    expect(src, contains("'--fushi-radius-card'"),
-        reason: 'popup_settings_injection 应注入 --fushi-radius-card');
-    expect(src, contains('buildPopupThemeCssVars('),
-        reason: '圆角值应经共享真源 buildPopupThemeCssVars，非硬编码');
+    expect(
+      src,
+      contains("'--fushi-radius-card'"),
+      reason: 'popup_settings_injection 应注入 --fushi-radius-card',
+    );
+    expect(
+      src,
+      contains('buildPopupThemeCssVars('),
+      reason: '圆角值应经共享真源 buildPopupThemeCssVars，非硬编码',
+    );
     final String webview = read(
       'lib/src/pages/implementations/dictionary_popup_webview.dart',
     );
-    expect(webview, isNot(contains("setProperty('--fushi-radius-card'")),
-        reason: '弹窗 WebView 不得再维护第二份主题变量注入');
-    expect(webview, contains('.themeVarsJs'),
-        reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段');
+    expect(
+      webview,
+      isNot(contains("setProperty('--fushi-radius-card'")),
+      reason: '弹窗 WebView 不得再维护第二份主题变量注入',
+    );
+    expect(
+      webview,
+      contains('.themeVarsJs'),
+      reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段',
+    );
   });
 
   test('popup.css 的卡片表面用 var(--fushi-radius-card)，不硬编码', () {
     final String css = read('assets/popup/popup.css');
-    expect(css, contains('var(--fushi-radius-card'),
-        reason: '弹窗卡片表面应引用注入的圆角 token');
+    expect(
+      css,
+      contains('var(--fushi-radius-card'),
+      reason: '弹窗卡片表面应引用注入的圆角 token',
+    );
     // .kanji-card 块不应再出现硬编码 8px 圆角。
-    expect(RegExp(r'\.kanji-card\s*\{[^}]*border-radius:\s*8px').hasMatch(css),
-        isFalse,
-        reason: '.kanji-card 不应硬编码 border-radius: 8px');
+    expect(
+      RegExp(r'\.kanji-card\s*\{[^}]*border-radius:\s*8px').hasMatch(css),
+      isFalse,
+      reason: '.kanji-card 不应硬编码 border-radius: 8px',
+    );
   });
 }

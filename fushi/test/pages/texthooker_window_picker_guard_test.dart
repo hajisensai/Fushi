@@ -43,9 +43,11 @@ void main() {
         return body;
       }
     }
-    fail('找不到承载窗口选择器对话框（showAppDialog<ExternalWindowInfo>）的方法。'
-        '候选签名：${pickerCandidates.join(' / ')}。'
-        '选择器又被挪走了就把新签名加进候选表，别删断言。');
+    fail(
+      '找不到承载窗口选择器对话框（showAppDialog<ExternalWindowInfo>）的方法。'
+      '候选签名：${pickerCandidates.join(' / ')}。'
+      '选择器又被挪走了就把新签名加进候选表，别删断言。',
+    );
   }
 
   /// 截出「把窗口列表排好序」那条语句的原文：从声明锚点起，按括号配对找到语句
@@ -61,8 +63,10 @@ void main() {
     final String structural = maskCommentsAndStrings(body);
     final int start = structural.indexOf(anchor);
     if (start < 0) {
-      fail('选择器里找不到窗口排序语句的锚点：$anchor。'
-          '排序被挪走或改名了就更新锚点，别删断言。');
+      fail(
+        '选择器里找不到窗口排序语句的锚点：$anchor。'
+        '排序被挪走或改名了就更新锚点，别删断言。',
+      );
     }
     int depth = 0;
     for (int i = start; i < structural.length; i++) {
@@ -77,40 +81,66 @@ void main() {
   /// 「挑完窗口之后怎么处置」所在方法的方法体：绑定意图那一路。
   String bindIntentBody() {
     const String signature = 'Future<void> _pickExternalWindow()';
-    expect(containsCodeLine(source, signature), isTrue,
-        reason: '绑定意图入口 $signature 不见了，选回已绑定窗口的 no-op 守卫无处可锚');
+    expect(
+      containsCodeLine(source, signature),
+      isTrue,
+      reason: '绑定意图入口 $signature 不见了，选回已绑定窗口的 no-op 守卫无处可锚',
+    );
     final String body = methodBody(source, signature);
-    expect(containsCodeLine(body, '_session.bindWindow('), isTrue,
-        reason: '$signature 必须是把选择结果交给 bindWindow 的那一路，'
-            '否则下面的 no-op 判据锚错了对象');
+    expect(
+      containsCodeLine(body, '_session.bindWindow('),
+      isTrue,
+      reason:
+          '$signature 必须是把选择结果交给 bindWindow 的那一路，'
+          '否则下面的 no-op 判据锚错了对象',
+    );
     return body;
   }
 
   test('窗口列表按会话 gamePid 把当前游戏排到最前', () {
     final String body = pickerBody();
-    expect(containsCodeLine(body, '_session.state.gamePid'), isTrue,
-        reason: '会话已经知道自己启动的游戏 pid，选择器必须用上它');
+    expect(
+      containsCodeLine(body, '_session.state.gamePid'),
+      isTrue,
+      reason: '会话已经知道自己启动的游戏 pid，选择器必须用上它',
+    );
     // 列表是「命中 gamePid 的一段」+「其余」两段拼起来的，且命中的那段必须在前。
     final String ordering = maskComments(orderingStatement(body));
     final int matching = ordering.indexOf('pid == gamePid');
     final int rest = ordering.indexOf('pid != gamePid');
-    expect(matching, isNonNegative,
-        reason: '排序语句里必须有一段按 `pid == gamePid` 挑出当前游戏的窗口');
-    expect(rest, isNonNegative,
-        reason: '排序语句里必须有互补的一段按 `pid != gamePid` 收尾其余窗口');
-    expect(matching, lessThan(rest),
-        reason: 'Fushi 启动的游戏窗口应排在列表最前，命中段必须拼在其余段之前');
+    expect(
+      matching,
+      isNonNegative,
+      reason: '排序语句里必须有一段按 `pid == gamePid` 挑出当前游戏的窗口',
+    );
+    expect(
+      rest,
+      isNonNegative,
+      reason: '排序语句里必须有互补的一段按 `pid != gamePid` 收尾其余窗口',
+    );
+    expect(
+      matching,
+      lessThan(rest),
+      reason: 'Fushi 启动的游戏窗口应排在列表最前，命中段必须拼在其余段之前',
+    );
   });
 
   test('当前游戏那一项预置焦点（打开即选中、回车即绑）', () {
     // 只断言「出现过 autofocus:」不够：把它写成常量 false 或挂到无关那一行，
     // 焦点驱动照样丢。这里取实参表达式本身，要求它由会话认定的游戏 pid 决定。
     final List<String> values = namedArgumentValues(pickerBody(), 'autofocus');
-    expect(values, isNotEmpty,
-        reason: 'BUG-1049：列表项必须有 autofocus，打开即落在正确窗口上、回车就绑');
-    expect(values.any((String v) => v.contains('gamePid')), isTrue,
-        reason: '预置焦点必须落在会话认定的游戏窗口那一行，'
-            '而不是列表第一项或某个常量；实参现在是：${values.join(' | ')}');
+    expect(
+      values,
+      isNotEmpty,
+      reason: 'BUG-1049：列表项必须有 autofocus，打开即落在正确窗口上、回车就绑',
+    );
+    expect(
+      values.any((String v) => v.contains('gamePid')),
+      isTrue,
+      reason:
+          '预置焦点必须落在会话认定的游戏窗口那一行，'
+          '而不是列表第一项或某个常量；实参现在是：${values.join(' | ')}',
+    );
   });
 
   test('选回已绑定的窗口是 no-op，不重启会话', () {
@@ -123,16 +153,24 @@ void main() {
     final RegExpMatch? guard = RegExp(
       r'picked\.hwnd\s*==\s*([\w.?]+)\s*\)\s*\{?\s*return\s*;',
     ).firstMatch(masked);
-    expect(guard, isNotNull,
-        reason: '选回已绑定窗口必须立刻 return，不能落到 _session.bindWindow(');
+    expect(
+      guard,
+      isNotNull,
+      reason: '选回已绑定窗口必须立刻 return，不能落到 _session.bindWindow(',
+    );
     final String boundExpr = guard!.group(1)!;
     final bool readsSessionBound =
         boundExpr.contains('_session.state.boundWindow?.hwnd') ||
-            RegExp('${RegExp.escape(boundExpr)}\\s*=\\s*'
-                    r'_session\.state\.boundWindow\?\.hwnd')
-                .hasMatch(masked);
-    expect(readsSessionBound, isTrue,
-        reason: '比较的右侧必须真的是会话当前已绑定窗口的 hwnd，'
-            '现在比的是 `$boundExpr`');
+        RegExp(
+          '${RegExp.escape(boundExpr)}\\s*=\\s*'
+          r'_session\.state\.boundWindow\?\.hwnd',
+        ).hasMatch(masked);
+    expect(
+      readsSessionBound,
+      isTrue,
+      reason:
+          '比较的右侧必须真的是会话当前已绑定窗口的 hwnd，'
+          '现在比的是 `$boundExpr`',
+    );
   });
 }

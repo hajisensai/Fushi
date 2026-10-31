@@ -18,20 +18,21 @@ const List<int> _webpCoverBytes = <int>[
 class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -62,8 +63,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   // ── dict stubs ──────────────────────────────────────────────────────────────
   @override
@@ -112,8 +113,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
   }
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {
     importedBooks.add(await epubFile.readAsString());
   }
 
@@ -134,8 +138,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── local audio stubs ──────────────────────────────────────────────────────
@@ -166,8 +172,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> audiobookExists(String bookKey) async => false;
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
@@ -180,29 +188,35 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -215,8 +229,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -251,29 +264,33 @@ void main() {
 
   // ── capabilities ─────────────────────────────────────────────────────────────
 
-  test('GET /api/capabilities reports books == true when service injected',
-      () async {
-    final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/capabilities'));
-    req.headers.set('authorization', authHeader());
-    final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 200);
-    final Map<String, dynamic> json =
-        jsonDecode(await res.transform(utf8.decoder).join())
-            as Map<String, dynamic>;
-    final Map<dynamic, dynamic> live =
-        json['liveLibrary'] as Map<dynamic, dynamic>;
-    expect(live['books'], true);
-    c.close();
-  });
+  test(
+    'GET /api/capabilities reports books == true when service injected',
+    () async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/capabilities'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      final Map<dynamic, dynamic> live =
+          json['liveLibrary'] as Map<dynamic, dynamic>;
+      expect(live['books'], true);
+      c.close();
+    },
+  );
 
   // ── list ─────────────────────────────────────────────────────────────────────
 
   test('GET /api/library/books lists host books with hasContent', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/books'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/books'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -305,8 +322,9 @@ void main() {
     addTearDown(() => cover.parent.deleteSync(recursive: true));
 
     final HttpClient c = HttpClient();
-    final HttpClientRequest listReq =
-        await c.getUrl(Uri.parse('$base/api/library/books'));
+    final HttpClientRequest listReq = await c.getUrl(
+      Uri.parse('$base/api/library/books'),
+    );
     listReq.headers.set('authorization', authHeader());
     final HttpClientResponse listRes = await listReq.close();
     expect(listRes.statusCode, 200);
@@ -322,19 +340,18 @@ void main() {
     final HttpClientResponse coverRes = await coverReq.close();
     expect(coverRes.statusCode, 200);
     expect(coverRes.headers.contentType?.mimeType, 'image/png');
-    final List<int> body = await coverRes.fold<List<int>>(
-      <int>[],
-      (List<int> acc, List<int> chunk) {
-        acc.addAll(chunk);
-        return acc;
-      },
-    );
+    final List<int> body = await coverRes.fold<List<int>>(<int>[], (
+      List<int> acc,
+      List<int> chunk,
+    ) {
+      acc.addAll(chunk);
+      return acc;
+    });
     expect(body, _coverBytes);
     c.close();
   });
 
-  test(
-      'BUG-1122: .webp book cover is served as image/webp, '
+  test('BUG-1122: .webp book cover is served as image/webp, '
       'not application/octet-stream', () async {
     final File cover = File(
       '${Directory.systemTemp.createTempSync('hbk_book_cover_webp').path}'
@@ -348,8 +365,9 @@ void main() {
     addTearDown(() => cover.parent.deleteSync(recursive: true));
 
     final HttpClient c = HttpClient();
-    final HttpClientRequest listReq =
-        await c.getUrl(Uri.parse('$base/api/library/books'));
+    final HttpClientRequest listReq = await c.getUrl(
+      Uri.parse('$base/api/library/books'),
+    );
     listReq.headers.set('authorization', authHeader());
     final HttpClientResponse listRes = await listReq.close();
     expect(listRes.statusCode, 200);
@@ -365,13 +383,13 @@ void main() {
     final HttpClientResponse coverRes = await coverReq.close();
     expect(coverRes.statusCode, 200);
     expect(coverRes.headers.contentType?.mimeType, 'image/webp');
-    final List<int> body = await coverRes.fold<List<int>>(
-      <int>[],
-      (List<int> acc, List<int> chunk) {
-        acc.addAll(chunk);
-        return acc;
-      },
-    );
+    final List<int> body = await coverRes.fold<List<int>>(<int>[], (
+      List<int> acc,
+      List<int> chunk,
+    ) {
+      acc.addAll(chunk);
+      return acc;
+    });
     expect(body, _webpCoverBytes);
     c.close();
   });
@@ -380,8 +398,9 @@ void main() {
 
   test('GET /api/library/books/<title> streams epub bytes', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/books/Sample'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/books/Sample'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -393,8 +412,9 @@ void main() {
 
   test('GET /api/library/books/<missing> returns 404', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/books/NoSuchBook'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/books/NoSuchBook'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
@@ -406,8 +426,9 @@ void main() {
 
   test('PUT /api/library/books/<title> imports body', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.putUrl(Uri.parse('$base/api/library/books/NewBook'));
+    final HttpClientRequest req = await c.putUrl(
+      Uri.parse('$base/api/library/books/NewBook'),
+    );
     req.headers.set('authorization', authHeader());
     req.add(utf8.encode('EPUB:NewBook'));
     final HttpClientResponse res = await req.close();
@@ -420,8 +441,9 @@ void main() {
 
   test('DELETE /api/library/books/<title> deletes and returns 204', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.deleteUrl(Uri.parse('$base/api/library/books/Sample'));
+    final HttpClientRequest req = await c.deleteUrl(
+      Uri.parse('$base/api/library/books/Sample'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, anyOf(200, 204));
@@ -433,8 +455,9 @@ void main() {
 
   test('unauthenticated request to /api/library/books returns 401', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/books'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/books'),
+    );
     // no Authorization header
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 401);
@@ -448,23 +471,34 @@ void main() {
     final HttpClient c = HttpClient();
 
     // DELETE with path-traversal → must NOT reach lib.deletedBooks.
-    final HttpClientRequest delReq =
-        await c.deleteUrl(Uri.parse('$base/api/library/books/%2e%2e%2fevil'));
+    final HttpClientRequest delReq = await c.deleteUrl(
+      Uri.parse('$base/api/library/books/%2e%2e%2fevil'),
+    );
     delReq.headers.set('authorization', authHeader());
     final HttpClientResponse delRes = await delReq.close();
-    expect(delRes.statusCode, 403,
-        reason: 'DELETE with "../evil" must be 403 Forbidden');
+    expect(
+      delRes.statusCode,
+      403,
+      reason: 'DELETE with "../evil" must be 403 Forbidden',
+    );
     await delRes.drain<void>();
-    expect(lib.deletedBooks, isEmpty,
-        reason: 'no deletion must occur for a traversal title');
+    expect(
+      lib.deletedBooks,
+      isEmpty,
+      reason: 'no deletion must occur for a traversal title',
+    );
 
     // GET with path-traversal → must also be 403.
-    final HttpClientRequest getReq =
-        await c.getUrl(Uri.parse('$base/api/library/books/%2e%2e%2fevil'));
+    final HttpClientRequest getReq = await c.getUrl(
+      Uri.parse('$base/api/library/books/%2e%2e%2fevil'),
+    );
     getReq.headers.set('authorization', authHeader());
     final HttpClientResponse getRes = await getReq.close();
-    expect(getRes.statusCode, 403,
-        reason: 'GET with "../evil" must be 403 Forbidden');
+    expect(
+      getRes.statusCode,
+      403,
+      reason: 'GET with "../evil" must be 403 Forbidden',
+    );
     await getRes.drain<void>();
 
     c.close();
@@ -477,15 +511,22 @@ void main() {
     final HttpClient c = HttpClient();
 
     // `..\evil`：反斜杠 + `..`，Windows 上是真穿越。
-    final HttpClientRequest delReq =
-        await c.deleteUrl(Uri.parse('$base/api/library/books/..%5Cevil'));
+    final HttpClientRequest delReq = await c.deleteUrl(
+      Uri.parse('$base/api/library/books/..%5Cevil'),
+    );
     delReq.headers.set('authorization', authHeader());
     final HttpClientResponse delRes = await delReq.close();
-    expect(delRes.statusCode, 403,
-        reason: r'DELETE with "..\evil" must be 403 Forbidden');
+    expect(
+      delRes.statusCode,
+      403,
+      reason: r'DELETE with "..\evil" must be 403 Forbidden',
+    );
     await delRes.drain<void>();
-    expect(lib.deletedBooks, isEmpty,
-        reason: 'no deletion must occur for a backslash traversal title');
+    expect(
+      lib.deletedBooks,
+      isEmpty,
+      reason: 'no deletion must occur for a backslash traversal title',
+    );
 
     c.close();
   });
@@ -495,16 +536,21 @@ void main() {
 
     // `C:\Windows\win.ini`——**不含** `..`、**不含** `/`，只触发闸门的反斜杠一支。
     // 这条是反斜杠分支唯一的负向验证锚点：删掉 `id.contains('\')` 只有它会红。
-    final HttpClientRequest getReq = await c
-        .getUrl(Uri.parse('$base/api/library/books/C%3A%5CWindows%5Cwin.ini'));
+    final HttpClientRequest getReq = await c.getUrl(
+      Uri.parse('$base/api/library/books/C%3A%5CWindows%5Cwin.ini'),
+    );
     getReq.headers.set('authorization', authHeader());
     final HttpClientResponse getRes = await getReq.close();
-    expect(getRes.statusCode, 403,
-        reason: r'GET with "C:\Windows\win.ini" must be 403 Forbidden');
+    expect(
+      getRes.statusCode,
+      403,
+      reason: r'GET with "C:\Windows\win.ini" must be 403 Forbidden',
+    );
     await getRes.drain<void>();
 
     final HttpClientRequest delReq = await c.deleteUrl(
-        Uri.parse('$base/api/library/books/C%3A%5CWindows%5Cwin.ini'));
+      Uri.parse('$base/api/library/books/C%3A%5CWindows%5Cwin.ini'),
+    );
     delReq.headers.set('authorization', authHeader());
     final HttpClientResponse delRes = await delReq.close();
     expect(delRes.statusCode, 403);
@@ -525,12 +571,16 @@ void main() {
       '..%5Cevil', // ..\evil
       'C%3A%5CWindows%5Cwin.ini', // C:\Windows\win.ini（无 .. 无 /）
     ]) {
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/books/$evil/cover'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/books/$evil/cover'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 403,
-          reason: 'GET /books/$evil/cover 必须 403（闸门先于封面解析）');
+      expect(
+        res.statusCode,
+        403,
+        reason: 'GET /books/$evil/cover 必须 403（闸门先于封面解析）',
+      );
       await res.drain<void>();
     }
 
@@ -550,10 +600,13 @@ void main() {
     await bare.start();
     final String bareBase = 'http://127.0.0.1:${bare.port}';
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$bareBase/api/library/books'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$bareBase/api/library/books'),
+    );
     req.headers.set(
-        'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      'authorization',
+      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    );
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
     await res.drain<void>();
@@ -567,8 +620,9 @@ void main() {
     lib.books.add(const RemoteBookInfo(title: '三体', hasContent: true));
     final HttpClient c = HttpClient();
     final String encoded = Uri.encodeComponent('三体');
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/books/$encoded'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/books/$encoded'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200, reason: 'GET 三体 应返回 200，双重解码会致 500');
@@ -580,14 +634,18 @@ void main() {
   test('PUT /api/library/books/<CJK-title> 以中文书名导入', () async {
     final HttpClient c = HttpClient();
     final String encoded = Uri.encodeComponent('三体');
-    final HttpClientRequest req =
-        await c.putUrl(Uri.parse('$base/api/library/books/$encoded'));
+    final HttpClientRequest req = await c.putUrl(
+      Uri.parse('$base/api/library/books/$encoded'),
+    );
     req.headers.set('authorization', authHeader());
     req.add(utf8.encode('EPUB:三体'));
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, anyOf(200, 201, 204), reason: 'PUT 三体 应成功（2xx）');
-    expect(lib.importedBooks, contains('EPUB:三体'),
-        reason: 'importBook 应被以正确内容调用');
+    expect(
+      lib.importedBooks,
+      contains('EPUB:三体'),
+      reason: 'importBook 应被以正确内容调用',
+    );
     c.close();
   });
 
@@ -595,29 +653,36 @@ void main() {
     lib.books.add(const RemoteBookInfo(title: '三体', hasContent: true));
     final HttpClient c = HttpClient();
     final String encoded = Uri.encodeComponent('三体');
-    final HttpClientRequest req =
-        await c.deleteUrl(Uri.parse('$base/api/library/books/$encoded'));
+    final HttpClientRequest req = await c.deleteUrl(
+      Uri.parse('$base/api/library/books/$encoded'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, anyOf(200, 204), reason: 'DELETE 三体 应成功');
-    expect(lib.deletedBooks, contains('三体'),
-        reason: 'deleteBook 应以解码后中文名「三体」被调用');
+    expect(
+      lib.deletedBooks,
+      contains('三体'),
+      reason: 'deleteBook 应以解码后中文名「三体」被调用',
+    );
     c.close();
   });
   // ── progress 端点（GET/PUT /api/library/books/<bookKey>/progress, TODO-767）──
 
   test('PUT /api/library/books/<key>/progress 写 host 进度，GET 拉回一致', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest put =
-        await c.putUrl(Uri.parse('$base/api/library/books/BookProg/progress'));
+    final HttpClientRequest put = await c.putUrl(
+      Uri.parse('$base/api/library/books/BookProg/progress'),
+    );
     put.headers.set('authorization', authHeader());
     put.headers.set('content-type', 'application/json');
-    put.write(jsonEncode(<String, Object?>{
-      'sectionIndex': 3,
-      'normCharOffset': 4200,
-      'charOffset': 99,
-      'updatedAtMs': 1700000000000,
-    }));
+    put.write(
+      jsonEncode(<String, Object?>{
+        'sectionIndex': 3,
+        'normCharOffset': 4200,
+        'charOffset': 99,
+        'updatedAtMs': 1700000000000,
+      }),
+    );
     final HttpClientResponse putRes = await put.close();
     expect(putRes.statusCode, 200);
     await putRes.drain<void>();
@@ -626,8 +691,9 @@ void main() {
     expect(lib.bookProgress['BookProg']?.sectionIndex, 3);
     expect(lib.bookProgress['BookProg']?.updatedAtMs, 1700000000000);
 
-    final HttpClientRequest get =
-        await c.getUrl(Uri.parse('$base/api/library/books/BookProg/progress'));
+    final HttpClientRequest get = await c.getUrl(
+      Uri.parse('$base/api/library/books/BookProg/progress'),
+    );
     get.headers.set('authorization', authHeader());
     final HttpClientResponse getRes = await get.close();
     expect(getRes.statusCode, 200);
@@ -643,8 +709,9 @@ void main() {
 
   test('GET 未知书 progress → empty(0/0)', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest get = await c
-        .getUrl(Uri.parse('$base/api/library/books/NoSuchBook/progress'));
+    final HttpClientRequest get = await c.getUrl(
+      Uri.parse('$base/api/library/books/NoSuchBook/progress'),
+    );
     get.headers.set('authorization', authHeader());
     final HttpClientResponse res = await get.close();
     expect(res.statusCode, 200);
@@ -658,13 +725,18 @@ void main() {
 
   test('progress 端点拒绝路径穿越 bookKey', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest get =
-        await c.getUrl(Uri.parse('$base/api/library/books/..%2Fevil/progress'));
+    final HttpClientRequest get = await c.getUrl(
+      Uri.parse('$base/api/library/books/..%2Fevil/progress'),
+    );
     get.headers.set('authorization', authHeader());
     final HttpClientResponse res = await get.close();
-    expect(res.statusCode, 403,
-        reason: '闸门必须在服务层之前判掉；放成 anyOf(403,404) 会让删掉闸门调用后'
-            '仍因「书不存在」返回 404 而测试照绿');
+    expect(
+      res.statusCode,
+      403,
+      reason:
+          '闸门必须在服务层之前判掉；放成 anyOf(403,404) 会让删掉闸门调用后'
+          '仍因「书不存在」返回 404 而测试照绿',
+    );
     await res.drain<void>();
     c.close();
   });
@@ -672,16 +744,19 @@ void main() {
   test('PUT progress 含 CJK bookKey 经 URL 解码落到 host', () async {
     final HttpClient c = HttpClient();
     final String encoded = Uri.encodeComponent('三体');
-    final HttpClientRequest put =
-        await c.putUrl(Uri.parse('$base/api/library/books/$encoded/progress'));
+    final HttpClientRequest put = await c.putUrl(
+      Uri.parse('$base/api/library/books/$encoded/progress'),
+    );
     put.headers.set('authorization', authHeader());
     put.headers.set('content-type', 'application/json');
-    put.write(jsonEncode(<String, Object?>{
-      'sectionIndex': 7,
-      'normCharOffset': 1000,
-      'charOffset': -1,
-      'updatedAtMs': 1700000001234,
-    }));
+    put.write(
+      jsonEncode(<String, Object?>{
+        'sectionIndex': 7,
+        'normCharOffset': 1000,
+        'charOffset': -1,
+        'updatedAtMs': 1700000001234,
+      }),
+    );
     final HttpClientResponse res = await put.close();
     expect(res.statusCode, 200);
     await res.drain<void>();

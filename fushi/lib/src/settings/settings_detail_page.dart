@@ -83,8 +83,10 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final SettingsContext settingsContext =
-        createSettingsContext(appModel: appModel, ref: ref);
+    final SettingsContext settingsContext = createSettingsContext(
+      appModel: appModel,
+      ref: ref,
+    );
     final SettingsDestination destination = _freshDestination(settingsContext);
     if (!destination.isVisible(settingsContext)) {
       _popInvisibleDestination();
@@ -114,8 +116,9 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
     final SettingsDestination Function()? subPage = widget.subPageBuilder;
     if (subPage != null) return subPage();
     final SettingsDestination top = widget.destination!;
-    for (final SettingsDestination destination
-        in buildSettingsSchema(settingsContext)) {
+    for (final SettingsDestination destination in buildSettingsSchema(
+      settingsContext,
+    )) {
       if (destination.id == top.id) return destination;
     }
     return top;

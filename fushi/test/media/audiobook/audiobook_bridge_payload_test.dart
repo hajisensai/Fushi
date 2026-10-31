@@ -37,8 +37,10 @@ void main() {
       final payload = AudiobookBridge.buildSentenceAudioPayload(cues, 0);
 
       expect(payload.length, 2);
-      expect(payload.first.keys,
-          containsAll(<String>['id', 'start', 'length', 'text']));
+      expect(
+        payload.first.keys,
+        containsAll(<String>['id', 'start', 'length', 'text']),
+      );
       expect(payload[0]['start'], 10);
       expect(payload[0]['length'], 8);
       expect(payload[0]['text'], '吾輩は猫である');
@@ -68,8 +70,10 @@ void main() {
         ..endMs = 0
         ..audioFileIndex = 0;
 
-      expect(AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[plain], 0),
-          isEmpty);
+      expect(
+        AudiobookBridge.buildSentenceAudioPayload(<AudioCue>[plain], 0),
+        isEmpty,
+      );
     });
   });
 }

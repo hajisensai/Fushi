@@ -27,14 +27,18 @@ void main() {
       ('video/e1', 'Show 01'),
       ('video/e2', 'Show 02'),
     ]) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(title),
-        videoPath: Value('/v/$title.mkv'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(title),
+          videoPath: Value('/v/$title.mkv'),
+        ),
+      );
     }
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'video/e1');
     await db.addToCollection(collectionId, MediaKind.video, 'video/e2');
   });
@@ -42,20 +46,23 @@ void main() {
   tearDown(() => db.close());
 
   Future<void> seedEpisodeMeta() async {
-    await db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
-      bookUid: 'video/e1',
-      source: 'bangumi',
-      subjectId: '100',
-      title: '出会い',
-      summary: const Value<String?>('主角与伙伴初次相遇的一集。'),
-      episodeNumber: const Value<int?>(1),
-      scrapedAt: DateTime(2026),
-    ));
+    await db.upsertVideoScrapeMeta(
+      VideoScrapeMetaCompanion.insert(
+        bookUid: 'video/e1',
+        source: 'bangumi',
+        subjectId: '100',
+        title: '出会い',
+        summary: const Value<String?>('主角与伙伴初次相遇的一集。'),
+        episodeNumber: const Value<int?>(1),
+        scrapedAt: DateTime(2026),
+      ),
+    );
   }
 
   Future<List<VideoBookRow>> loadMembers() async {
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     final List<VideoBookRow> all = await db.allVideoBooks();
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow r in all) r.bookUid: r,
@@ -67,29 +74,29 @@ void main() {
   }
 
   Widget buildApp() => TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: MediaCollectionRow(
-              origin: 'user',
-              organizeAliases: '',
-              id: collectionId,
-              name: 'Show',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await (loadMembers)())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (VideoBookRow _) {},
-            onChanged: () {},
-          ),
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Show',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
-      );
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (VideoBookRow _) {},
+        onChanged: () {},
+      ),
+    ),
+  );
 
   void useSurface(WidgetTester tester, Size size) {
     tester.view.physicalSize = size;
@@ -125,11 +132,13 @@ void main() {
         '[VCB-Studio] Gekijouban Hibike! Euphonium Todoketai Melody '
         '[IV][Ma10p_1080p][x265_flac] 特典映像';
     // 覆写第 1 集标题（首卡必在视口内；追加第 3 集会落在懒加载网格视口外）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e1'),
-      title: const Value(longTitle),
-      videoPath: const Value('/v/Show 01.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e1'),
+        title: const Value(longTitle),
+        videoPath: const Value('/v/Show 01.mkv'),
+      ),
+    );
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -145,11 +154,15 @@ void main() {
     expect(
       title.size.height,
       greaterThan(lineHeight * 1.5),
-      reason: '窄单列下这条发布名必然超过一行；只有一行高说明集卡标题又被 '
+      reason:
+          '窄单列下这条发布名必然超过一行；只有一行高说明集卡标题又被 '
           'maxLines:1 单行截断（BUG-1546 回归），集号/规格被省略号吃掉',
     );
-    expect(tester.takeException(), isNull,
-        reason: '两行标题 + 状态行必须仍在 128 卡高内，不得 RenderFlex 溢出');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '两行标题 + 状态行必须仍在 128 卡高内，不得 RenderFlex 溢出',
+    );
   });
 
   testWidgets('宽屏（≥900）两列：两张集卡同一行', (WidgetTester tester) async {
@@ -177,13 +190,15 @@ void main() {
 
   testWidgets('历史 Bangumi 绑定不再暴露会触网的分集外链菜单项', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
-    await db.upsertCollectionScrapeMeta(CollectionScrapeMetaCompanion.insert(
-      collectionId: Value<int>(collectionId),
-      source: 'bangumi',
-      subjectId: '100',
-      title: 'Show',
-      scrapedAt: DateTime(2026),
-    ));
+    await db.upsertCollectionScrapeMeta(
+      CollectionScrapeMetaCompanion.insert(
+        collectionId: Value<int>(collectionId),
+        source: 'bangumi',
+        subjectId: '100',
+        title: 'Show',
+        scrapedAt: DateTime(2026),
+      ),
+    );
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -219,8 +234,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.open_in_new), findsNothing);
-    expect(find.text(t.collection_remove_member), findsOneWidget,
-        reason: '菜单本身不依赖刮削绑定');
+    expect(
+      find.text(t.collection_remove_member),
+      findsOneWidget,
+      reason: '菜单本身不依赖刮削绑定',
+    );
     // 关掉菜单，别把打开的菜单留给下一个用例。
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
@@ -237,9 +255,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('本机已有文件的集：菜单不出「下载本集」，改出「打开文件位置」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('本机已有文件的集：菜单不出「下载本集」，改出「打开文件位置」', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -269,8 +285,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await openEpisodeMenu(tester, 'video/e2');
-    expect(find.text(t.video_watch_progress_clear), findsOneWidget,
-        reason: '有观看痕迹的集必须给「清除观看进度」');
+    expect(
+      find.text(t.video_watch_progress_clear),
+      findsOneWidget,
+      reason: '有观看痕迹的集必须给「清除观看进度」',
+    );
     await tester.tap(find.text(t.video_watch_progress_clear));
     await tester.pumpAndSettle();
     // 先过确认框（学习记录两条勾选默认都不勾 = 统计不动）。
@@ -289,8 +308,11 @@ void main() {
     // 清完再右键同一集：没有痕迹了，按钮不再出现。
     await openEpisodeMenu(tester, 'video/e2');
     expect(find.text(t.video_watch_progress_clear), findsNothing);
-    expect(find.text(t.collection_remove_member), findsOneWidget,
-        reason: '菜单本身仍弹，缺的只是这一条');
+    expect(
+      find.text(t.collection_remove_member),
+      findsOneWidget,
+      reason: '菜单本身仍弹，缺的只是这一条',
+    );
   });
 
   testWidgets('集卡右键菜单「移出合集」真移出（管理能力收进菜单不丢失）', (WidgetTester tester) async {
@@ -307,16 +329,20 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(find.text(t.collection_remove_member), findsOneWidget,
-        reason: '右键集卡必须弹出上下文菜单');
+    expect(
+      find.text(t.collection_remove_member),
+      findsOneWidget,
+      reason: '右键集卡必须弹出上下文菜单',
+    );
     await tester.tap(find.text(t.collection_remove_member));
     await tester.pumpAndSettle();
     // 确认框（FushiDestructiveConfirmDialog）→ 确认移出。
     await tester.tap(find.text(t.collection_remove_member).last);
     await tester.pumpAndSettle();
 
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     expect(
       items.map((MediaCollectionItemRow it) => it.entryKey).toList(),
       <String>['video/e1'],

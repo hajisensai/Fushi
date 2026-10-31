@@ -6,15 +6,7 @@
 library;
 
 /// 视频来源类型。
-enum AnimeVideoSource {
-  unknown,
-  webDl,
-  webRip,
-  bluRay,
-  remux,
-  television,
-  dvd,
-}
+enum AnimeVideoSource { unknown, webDl, webRip, bluRay, remux, television, dvd }
 
 /// 视频编码类型。
 enum AnimeVideoCodec { unknown, avc, hevc, av1, vp9, mpeg4 }
@@ -85,8 +77,8 @@ class AnimeReleaseDescriptor {
 
   /// 是否带任意 HDR 标签。
   bool get isHdr => dynamicRanges.any(
-        (AnimeDynamicRange range) => range != AnimeDynamicRange.sdr,
-      );
+    (AnimeDynamicRange range) => range != AnimeDynamicRange.sdr,
+  );
 }
 
 final RegExp _leadingReleaseGroup = RegExp(r'^\s*\[([^\]]+)\]');
@@ -109,9 +101,7 @@ AnimeReleaseDescriptor parseAnimeReleaseDescriptor(String title) {
     dynamicRanges: Set<AnimeDynamicRange>.unmodifiable(
       _parseDynamicRanges(upper, tokens),
     ),
-    audioCodecs: Set<AnimeAudioCodec>.unmodifiable(
-      _parseAudioCodecs(tokens),
-    ),
+    audioCodecs: Set<AnimeAudioCodec>.unmodifiable(_parseAudioCodecs(tokens)),
     subtitlePresentation: _parseSubtitlePresentation(tokens),
   );
 }
@@ -133,12 +123,16 @@ int? _parseResolutionHeight(String title) {
     if (height >= 240 && height <= 4320) return height;
   }
 
-  if (RegExp(r'(?:^|[^A-Za-z0-9])8K(?:[^A-Za-z0-9]|$)', caseSensitive: false)
-      .hasMatch(title)) {
+  if (RegExp(
+    r'(?:^|[^A-Za-z0-9])8K(?:[^A-Za-z0-9]|$)',
+    caseSensitive: false,
+  ).hasMatch(title)) {
     return 4320;
   }
-  if (RegExp(r'(?:^|[^A-Za-z0-9])4K(?:[^A-Za-z0-9]|$)', caseSensitive: false)
-      .hasMatch(title)) {
+  if (RegExp(
+    r'(?:^|[^A-Za-z0-9])4K(?:[^A-Za-z0-9]|$)',
+    caseSensitive: false,
+  ).hasMatch(title)) {
     return 2160;
   }
   return null;
@@ -184,8 +178,9 @@ AnimeVideoCodec _parseVideoCodec(String tokens) {
 }
 
 int? _parseBitDepth(String tokens) {
-  final RegExpMatch? explicit =
-      RegExp(r'\b(8|10|12)\s*BITS?\b').firstMatch(tokens);
+  final RegExpMatch? explicit = RegExp(
+    r'\b(8|10|12)\s*BITS?\b',
+  ).firstMatch(tokens);
   if (explicit != null) return int.parse(explicit.group(1)!);
   if (RegExp(r'\b(?:HI10P|MA10P|MAIN10|YUV420P10(?:LE)?)\b').hasMatch(tokens)) {
     return 10;

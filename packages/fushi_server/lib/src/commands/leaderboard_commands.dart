@@ -75,28 +75,53 @@ const Duration kServerLeaderboardIsbnBackfillInterval = Duration(days: 7);
 /// 一次排行榜调用失败 → 退出码 + 给人看的原因。
 ({int code, String message}) describeLeaderboardError(Object e) {
   if (e is LeaderboardUploadOwnedElsewhere) {
-    return (code: kExitTempFail, message: '本账户的上传设备是另一台设备；要改由这台服务端上传，跑 leaderboard sync --claim（会全量重传）');
+    return (
+      code: kExitTempFail,
+      message: '本账户的上传设备是另一台设备；要改由这台服务端上传，跑 leaderboard sync --claim（会全量重传）',
+    );
   }
   if (e is LeaderboardApiException) {
     if (e.status == 401 && e.code == kLeaderboardAccountGoneCode) {
-      return (code: kExitNoPerm, message: '服务端已不认识这把设备钥匙（账户已在别处删除，或本设备已被解绑）；leaderboard logout 后重新 login / import');
+      return (
+        code: kExitNoPerm,
+        message:
+            '服务端已不认识这把设备钥匙（账户已在别处删除，或本设备已被解绑）；leaderboard logout 后重新 login / import',
+      );
     }
     if (e.status == 401 || e.status == 403) {
-      return (code: kExitNoPerm, message: '鉴权失败（${e.status} ${e.code}）：签名 / 验证码 / 恢复码被服务端拒绝；签名被拒时先检查本机时钟');
+      return (
+        code: kExitNoPerm,
+        message:
+            '鉴权失败（${e.status} ${e.code}）：签名 / 验证码 / 恢复码被服务端拒绝；签名被拒时先检查本机时钟',
+      );
     }
     if (e.status == 409 && e.code == 'upload_owned_by_other_device') {
       return describeLeaderboardError(const LeaderboardUploadOwnedElsewhere());
     }
     if (e.status == 409 || e.status == 429) {
-      return (code: kExitTempFail, message: '服务端暂时拒绝（${e.status} ${e.code}），稍后重试');
+      return (
+        code: kExitTempFail,
+        message: '服务端暂时拒绝（${e.status} ${e.code}），稍后重试',
+      );
     }
     if (e.status >= 500) {
-      return (code: kExitUnavailable, message: '排行榜服务不可用（${e.status} ${e.code}）');
+      return (
+        code: kExitUnavailable,
+        message: '排行榜服务不可用（${e.status} ${e.code}）',
+      );
     }
-    return (code: kExitFailure, message: '排行榜服务拒绝了请求（${e.status} ${e.code}${e.detail == null ? '' : ': ${e.detail}'}）');
+    return (
+      code: kExitFailure,
+      message:
+          '排行榜服务拒绝了请求（${e.status} ${e.code}${e.detail == null ? '' : ': ${e.detail}'}）',
+    );
   }
-  if (e is TimeoutException) return (code: kExitUnavailable, message: '请求排行榜服务超时');
-  if (e is SocketException || e is http.ClientException || e is TlsException || e is HttpException) {
+  if (e is TimeoutException)
+    return (code: kExitUnavailable, message: '请求排行榜服务超时');
+  if (e is SocketException ||
+      e is http.ClientException ||
+      e is TlsException ||
+      e is HttpException) {
     return (code: kExitUnavailable, message: '连不上排行榜服务: $e');
   }
   return (code: kExitFailure, message: '排行榜操作失败: $e');
@@ -141,7 +166,8 @@ Future<Uint8List?> serverLeaderboardCoverThumb(LocalShelfEntry entry) async {
 }
 
 /// 缩略图的 dHash（封面投票按它归并相近的图），解码在后台 isolate。
-Future<String?> serverLeaderboardCoverHash(Uint8List thumb) => Isolate.run<String?>(() => coverDHash(thumb));
+Future<String?> serverLeaderboardCoverHash(Uint8List thumb) =>
+    Isolate.run<String?>(() => coverDHash(thumb));
 
 /// 纯函数：任意图片字节 → 长边 ≤300 的 JPEG（quality 80）；解不开返回 null。
 Uint8List? encodeLeaderboardCoverThumb(Uint8List bytes) {
@@ -154,8 +180,12 @@ Uint8List? encodeLeaderboardCoverThumb(Uint8List bytes) {
   if (decoded == null) return null;
   const int maxEdge = 300;
   final img.Image scaled = decoded.width >= decoded.height
-      ? (decoded.width > maxEdge ? img.copyResize(decoded, width: maxEdge) : decoded)
-      : (decoded.height > maxEdge ? img.copyResize(decoded, height: maxEdge) : decoded);
+      ? (decoded.width > maxEdge
+            ? img.copyResize(decoded, width: maxEdge)
+            : decoded)
+      : (decoded.height > maxEdge
+            ? img.copyResize(decoded, height: maxEdge)
+            : decoded);
   return img.encodeJpg(scaled, quality: 80);
 }
 
@@ -203,14 +233,20 @@ class LeaderboardModule extends CliModule {
   @override
   void register(ArgParser parser) {
     final ArgParser lb = parser.addCommand('leaderboard');
-    void profile(ArgParser a) => a.addOption('profile', help: 'Profile id（缺省 = 当前激活 Profile）');
-    void server(ArgParser a) => a.addOption('server', help: '排行榜服务地址（缺省 $kLeaderboardDefaultBaseUrl）');
+    void profile(ArgParser a) =>
+        a.addOption('profile', help: 'Profile id（缺省 = 当前激活 Profile）');
+    void server(ArgParser a) =>
+        a.addOption('server', help: '排行榜服务地址（缺省 $kLeaderboardDefaultBaseUrl）');
     void account(ArgParser a) {
       profile(a);
       server(a);
       a
         ..addFlag('consent', negatable: false, help: '同意把本机书架公开上传到排行榜')
-        ..addFlag('force', negatable: false, help: '本 Profile 已有账户时覆盖（旧恢复码没备份就永远丢了）');
+        ..addFlag(
+          'force',
+          negatable: false,
+          help: '本 Profile 已有账户时覆盖（旧恢复码没备份就永远丢了）',
+        );
     }
 
     addJsonFlag(lb.addCommand('status'))
@@ -223,17 +259,23 @@ class LeaderboardModule extends CliModule {
     final ArgParser rank = addJsonFlag(lb.addCommand('rank'))
       ..addOption(
         'metric',
-        allowed: <String>[for (final LeaderboardMetric m in LeaderboardMetric.values) m.wire],
+        allowed: <String>[
+          for (final LeaderboardMetric m in LeaderboardMetric.values) m.wire,
+        ],
         defaultsTo: 'book',
       )
       ..addOption(
         'window',
-        allowed: <String>[for (final LeaderboardWindow w in LeaderboardWindow.values) w.wire],
+        allowed: <String>[
+          for (final LeaderboardWindow w in LeaderboardWindow.values) w.wire,
+        ],
         defaultsTo: 'week',
       )
       ..addOption(
         'scope',
-        allowed: <String>[for (final LeaderboardScope s in LeaderboardScope.values) s.wire],
+        allowed: <String>[
+          for (final LeaderboardScope s in LeaderboardScope.values) s.wire,
+        ],
         defaultsTo: 'global',
       )
       ..addOption('limit', defaultsTo: '20', help: '1..100');
@@ -249,7 +291,9 @@ class LeaderboardModule extends CliModule {
         ..addOption('email', help: '邮箱')
         ..addOption('nickname', help: '昵称'),
     );
-    account(addJsonFlag(lb.addCommand('login'))..addOption('email', help: '邮箱'));
+    account(
+      addJsonFlag(lb.addCommand('login'))..addOption('email', help: '邮箱'),
+    );
     account(addJsonFlag(lb.addCommand('import')));
     profile(addJsonFlag(lb.addCommand('logout')));
   }
@@ -257,13 +301,19 @@ class LeaderboardModule extends CliModule {
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
     final ArgResults? sub = command.command;
-    final CliIo io = CliIo(out: out ?? stdout, err: err ?? stderr, json: sub != null && jsonFlag(sub));
+    final CliIo io = CliIo(
+      out: out ?? stdout,
+      err: err ?? stderr,
+      json: sub != null && jsonFlag(sub),
+    );
     if (sub == null) {
       io.err.writeln(_usage);
       return kExitUsage;
     }
     final int? profileArg = _intOption(sub, 'profile');
-    if (sub.options.contains('profile') && sub['profile'] != null && (profileArg == null || profileArg < 0)) {
+    if (sub.options.contains('profile') &&
+        sub['profile'] != null &&
+        (profileArg == null || profileArg < 0)) {
       return io.fail(kExitUsage, '--profile 需要非负整数');
     }
     // 不需要数据库的两条：只读看榜（无账户时匿名）在下面单独处理；请求验证码完全不碰本机。
@@ -280,7 +330,10 @@ class LeaderboardModule extends CliModule {
           case 'status':
             return await s.status(offline: sub['offline'] as bool);
           case 'sync':
-            return await s.sync(claim: sub['claim'] as bool, consent: sub['consent'] as bool);
+            return await s.sync(
+              claim: sub['claim'] as bool,
+              consent: sub['consent'] as bool,
+            );
           case 'rank':
             return await s.rank(sub);
           case 'register':
@@ -292,7 +345,10 @@ class LeaderboardModule extends CliModule {
         }
         return io.fail(kExitUsage, _usage);
       } on ServerLeaderboardStoreException catch (e) {
-        return io.fail(kExitDataError, '${e.message}；修不好就 leaderboard logout 后重新 import 恢复码');
+        return io.fail(
+          kExitDataError,
+          '${e.message}；修不好就 leaderboard logout 后重新 import 恢复码',
+        );
       }
     });
   }
@@ -300,16 +356,21 @@ class LeaderboardModule extends CliModule {
   Future<int> _requestCode(ArgResults sub, CliIo io) async {
     final String email = ((sub['email'] as String?) ?? '').trim();
     if (!isPlausibleLeaderboardEmail(email)) {
-      return io.fail(kExitUsage, '用法: leaderboard request-code --email <邮箱> [--login]');
+      return io.fail(
+        kExitUsage,
+        '用法: leaderboard request-code --email <邮箱> [--login]',
+      );
     }
     final Uri? base = _baseUrl(sub['server'] as String?, null);
-    if (base == null) return io.fail(kExitUsage, '--server 不是 http(s) 地址: ${sub['server']}');
+    if (base == null)
+      return io.fail(kExitUsage, '--server 不是 http(s) 地址: ${sub['server']}');
     final bool forLogin = sub['login'] as bool;
     try {
-      await _client(
-        base,
-        null,
-      ).requestEmailCode(email: email, purpose: forLogin ? 'login' : 'register', lang: sub['lang'] as String?);
+      await _client(base, null).requestEmailCode(
+        email: email,
+        purpose: forLogin ? 'login' : 'register',
+        lang: sub['lang'] as String?,
+      );
     } on Object catch (e) {
       final ({int code, String message}) d = describeLeaderboardError(e);
       return io.fail(d.code, d.message);
@@ -336,20 +397,25 @@ class LeaderboardModule extends CliModule {
   /// 共用同一个服务器时钟偏移（一次命令里多次建客户端时不丢校准）。
   static final LeaderboardServerClock _serverClock = LeaderboardServerClock();
 
-  LeaderboardClient _client(Uri base, LeaderboardIdentity? identity) => LeaderboardClient(
-    baseUrl: base,
-    // 出站必须经全应用代理装配。
-    httpClientFactory: httpClientFactory ?? () async => createAppHttpIoClient(),
-    identity: identity,
-    clockMs: clockMs,
-    serverClock: _serverClock,
-  );
+  LeaderboardClient _client(Uri base, LeaderboardIdentity? identity) =>
+      LeaderboardClient(
+        baseUrl: base,
+        // 出站必须经全应用代理装配。
+        httpClientFactory:
+            httpClientFactory ?? () async => createAppHttpIoClient(),
+        identity: identity,
+        clockMs: clockMs,
+        serverClock: _serverClock,
+      );
 
   /// `--server` > 账户文件里的地址 > 默认。不是 http(s) 绝对地址返回 null。
   static Uri? _baseUrl(String? flag, String? stored) {
     final String raw = (flag ?? stored ?? kLeaderboardDefaultBaseUrl).trim();
     final Uri? u = Uri.tryParse(raw);
-    if (u == null || !(u.scheme == 'http' || u.scheme == 'https') || u.host.isEmpty) return null;
+    if (u == null ||
+        !(u.scheme == 'http' || u.scheme == 'https') ||
+        u.host.isEmpty)
+      return null;
     return u;
   }
 
@@ -361,8 +427,15 @@ class LeaderboardModule extends CliModule {
 
 /// 一次命令的上下文（运行时 + Profile + 账户文件）。
 class _Session {
-  _Session({required this.module, required this.rt, required this.io, required this.profileId})
-    : store = ServerLeaderboardStore(supportRoot: rt.paths.support, profileId: profileId);
+  _Session({
+    required this.module,
+    required this.rt,
+    required this.io,
+    required this.profileId,
+  }) : store = ServerLeaderboardStore(
+         supportRoot: rt.paths.support,
+         profileId: profileId,
+       );
 
   final LeaderboardModule module;
   final ServerRuntime rt;
@@ -387,15 +460,22 @@ class _Session {
     try {
       return LeaderboardIdentity.fromRecoveryCode(account.recoveryCode);
     } on FormatException {
-      throw ServerLeaderboardStoreException('排行榜账户文件里的恢复码无效: ${store.file.path}');
+      throw ServerLeaderboardStoreException(
+        '排行榜账户文件里的恢复码无效: ${store.file.path}',
+      );
     }
   }
 
   /// 本机书架（同机多 Profile 时只有代表 Profile 计入「谁都没记录」的作品，BUG-2870）。
   Future<LocalShelf> buildShelf(DateTime now) async {
     final int? owner = leaderboardUnattributedOwner(
-      uploading: await ServerLeaderboardStore.uploadingProfileIds(rt.paths.support),
-      existing: <int>[for (final ProfileRow p in await rt.db.select(rt.db.profiles).get()) p.id],
+      uploading: await ServerLeaderboardStore.uploadingProfileIds(
+        rt.paths.support,
+      ),
+      existing: <int>[
+        for (final ProfileRow p in await rt.db.select(rt.db.profiles).get())
+          p.id,
+      ],
     );
     return buildLocalShelf(
       rt.db,
@@ -409,14 +489,22 @@ class _Session {
     final ServerLeaderboardAccount? account = await store.read();
     if (account == null) {
       if (io.json) {
-        io.writeJson(<String, Object?>{'ok': true, 'profileId': profileId, 'configured': false});
+        io.writeJson(<String, Object?>{
+          'ok': true,
+          'profileId': profileId,
+          'configured': false,
+        });
       } else {
-        io.out.writeln('Profile $profileId 没有排行榜账户（leaderboard import / login / register 建立）');
+        io.out.writeln(
+          'Profile $profileId 没有排行榜账户（leaderboard import / login / register 建立）',
+        );
       }
       return kExitOk;
     }
     final LeaderboardIdentity identity = identityOf(account);
-    final Uri base = LeaderboardModule._baseUrl(null, account.serverUrl) ?? Uri.parse(kLeaderboardDefaultBaseUrl);
+    final Uri base =
+        LeaderboardModule._baseUrl(null, account.serverUrl) ??
+        Uri.parse(kLeaderboardDefaultBaseUrl);
     final LocalShelf shelf = await buildShelf(DateTime.now());
     final Map<String, Object?> local = <String, Object?>{
       'profileId': profileId,
@@ -433,7 +521,9 @@ class _Session {
       'coverVotes': account.syncState.coverVotes.length,
       'localShelf': <String, Object?>{
         'entries': shelf.entries.length,
-        'finished': shelf.entries.where((LocalShelfEntry e) => e.upload.finished).length,
+        'finished': shelf.entries
+            .where((LocalShelfEntry e) => e.upload.finished)
+            .length,
         'dailyDays': shelf.daily.length,
       },
     };
@@ -446,16 +536,23 @@ class _Session {
         remoteError = e;
       }
     }
-    final ({int code, String message})? failure = remoteError == null ? null : describeLeaderboardError(remoteError);
+    final ({int code, String message})? failure = remoteError == null
+        ? null
+        : describeLeaderboardError(remoteError);
     if (io.json) {
       io.writeJson(<String, Object?>{
         'ok': failure == null,
-        if (failure != null) ...<String, Object?>{'exitCode': failure.code, 'error': failure.message},
+        if (failure != null) ...<String, Object?>{
+          'exitCode': failure.code,
+          'error': failure.message,
+        },
         ...local,
         if (self != null) 'remote': self.toJson(),
       });
     } else {
-      io.out.writeln('账户 ${self?.account.tag ?? account.accountId}  （设备钥匙 ${identity.accountId}）  服务 $base');
+      io.out.writeln(
+        '账户 ${self?.account.tag ?? account.accountId}  （设备钥匙 ${identity.accountId}）  服务 $base',
+      );
       io.out.writeln(
         '上传 ${account.uploadEnabled ? '开' : '关（未同意公开，sync --consent 打开）'}'
         '${account.uploadBlockedByOtherDevice ? '  被另一台上传设备挡住（sync --claim 接管）' : ''}'
@@ -482,26 +579,41 @@ class _Session {
     ServerLeaderboardAccount? account = await store.read();
     if (account == null) return noAccount();
     if (account.consentAt == null && !consent) {
-      return io.fail(kExitUnavailable, '本机账户没同意公开上传书架；确认后加 --consent 重跑（会公开读完 / 在读的作品与每日字数）');
+      return io.fail(
+        kExitUnavailable,
+        '本机账户没同意公开上传书架；确认后加 --consent 重跑（会公开读完 / 在读的作品与每日字数）',
+      );
     }
     final LeaderboardIdentity identity = identityOf(account);
-    final Uri base = LeaderboardModule._baseUrl(null, account.serverUrl) ?? Uri.parse(kLeaderboardDefaultBaseUrl);
+    final Uri base =
+        LeaderboardModule._baseUrl(null, account.serverUrl) ??
+        Uri.parse(kLeaderboardDefaultBaseUrl);
     final int now = module._now();
     if (consent && (account.consentAt == null || !account.uploadEnabled)) {
-      account = account.copyWith(consentAt: account.consentAt ?? now, uploadEnabled: true);
+      account = account.copyWith(
+        consentAt: account.consentAt ?? now,
+        uploadEnabled: true,
+      );
       await store.write(account);
     }
     if (!account.uploadEnabled) {
       return io.fail(kExitUnavailable, '本机账户的上传开关是关的；加 --consent 打开');
     }
     if (claim) {
-      account = account.copyWith(syncState: LeaderboardSyncState.empty, uploadBlockedByOtherDevice: false);
+      account = account.copyWith(
+        syncState: LeaderboardSyncState.empty,
+        uploadBlockedByOtherDevice: false,
+      );
       await store.write(account);
     }
     account = await _maybeBackfillIsbns(account, now);
     final LeaderboardClient client = module._client(base, identity);
-    final LocalShelf shelf = await buildShelf(DateTime.fromMillisecondsSinceEpoch(client.serverNowMs()));
-    io.err.writeln('同步书架（本机 ${shelf.entries.length} 部${claim ? '，接管上传、全量重传' : ''}）…');
+    final LocalShelf shelf = await buildShelf(
+      DateTime.fromMillisecondsSinceEpoch(client.serverNowMs()),
+    );
+    io.err.writeln(
+      '同步书架（本机 ${shelf.entries.length} 部${claim ? '，接管上传、全量重传' : ''}）…',
+    );
     try {
       final ShelfSyncOutcome outcome = await syncShelf(
         client,
@@ -512,7 +624,11 @@ class _Session {
         coverHash: serverLeaderboardCoverHash,
       );
       await store.write(
-        account.copyWith(syncState: outcome.state, lastSyncAt: module._now(), uploadBlockedByOtherDevice: false),
+        account.copyWith(
+          syncState: outcome.state,
+          lastSyncAt: module._now(),
+          uploadBlockedByOtherDevice: false,
+        ),
       );
       final Object? coverError = outcome.coverError;
       if (coverError != null) io.err.writeln('封面投票中断（下次同步再投）: $coverError');
@@ -542,7 +658,10 @@ class _Session {
     } on LeaderboardSyncException catch (e) {
       // 已推进的部分落盘，下次从断点续（与 app 同一纪律）。
       await store.write(
-        account.copyWith(syncState: e.partialState, uploadBlockedByOtherDevice: e.anyBatchAccepted ? false : null),
+        account.copyWith(
+          syncState: e.partialState,
+          uploadBlockedByOtherDevice: e.anyBatchAccepted ? false : null,
+        ),
       );
       return fail(e.error);
     } on Object catch (e) {
@@ -550,27 +669,40 @@ class _Session {
     }
   }
 
-  Future<ServerLeaderboardAccount> _maybeBackfillIsbns(ServerLeaderboardAccount account, int now) async {
+  Future<ServerLeaderboardAccount> _maybeBackfillIsbns(
+    ServerLeaderboardAccount account,
+    int now,
+  ) async {
     final int? last = account.isbnBackfilledAt;
-    if (last != null && now - last < kServerLeaderboardIsbnBackfillInterval.inMilliseconds) return account;
+    if (last != null &&
+        now - last < kServerLeaderboardIsbnBackfillInterval.inMilliseconds)
+      return account;
     try {
       await backfillEpubIsbns(rt.db);
     } on Object catch (e, st) {
       rt.log.log('LeaderboardCli.isbnBackfill', e, st);
     }
-    final ServerLeaderboardAccount next = account.copyWith(isbnBackfilledAt: now);
+    final ServerLeaderboardAccount next = account.copyWith(
+      isbnBackfilledAt: now,
+    );
     await store.write(next);
     return next;
   }
 
   Future<int> rank(ArgResults sub) async {
     final int? limit = LeaderboardModule._intOption(sub, 'limit');
-    if (limit == null || limit < 1 || limit > 100) return io.fail(kExitUsage, '--limit 需要 1..100');
+    if (limit == null || limit < 1 || limit > 100)
+      return io.fail(kExitUsage, '--limit 需要 1..100');
     final ServerLeaderboardAccount? account = await store.read();
-    final Uri? base = LeaderboardModule._baseUrl(sub['server'] as String?, account?.serverUrl);
-    if (base == null) return io.fail(kExitUsage, '--server 不是 http(s) 地址: ${sub['server']}');
+    final Uri? base = LeaderboardModule._baseUrl(
+      sub['server'] as String?,
+      account?.serverUrl,
+    );
+    if (base == null)
+      return io.fail(kExitUsage, '--server 不是 http(s) 地址: ${sub['server']}');
     final LeaderboardScope scope = LeaderboardScope.fromWire(sub['scope']);
-    if (scope == LeaderboardScope.friends && account == null) return noAccount();
+    if (scope == LeaderboardScope.friends && account == null)
+      return noAccount();
     final RankPage page;
     try {
       page = await module
@@ -585,7 +717,11 @@ class _Session {
       return fail(e);
     }
     if (io.json) {
-      io.writeJson(<String, Object?>{'ok': true, 'exitCode': kExitOk, ...page.toJson()});
+      io.writeJson(<String, Object?>{
+        'ok': true,
+        'exitCode': kExitOk,
+        ...page.toJson(),
+      });
       return kExitOk;
     }
     io.out.writeln(
@@ -594,10 +730,15 @@ class _Session {
       '${page.computedAt == null ? '  榜单生成中' : ''}',
     );
     for (final RankRow r in page.rows) {
-      io.out.writeln('${r.rank.toString().padLeft(4)}  ${r.value.toString().padLeft(8)}  ${r.account.tag}');
+      io.out.writeln(
+        '${r.rank.toString().padLeft(4)}  ${r.value.toString().padLeft(8)}  ${r.account.tag}',
+      );
     }
     final UserStanding? me = page.me;
-    if (me != null) io.out.writeln('我：${me.rank == null ? '未上榜' : '第 ${me.rank} 名'}（${me.value}）');
+    if (me != null)
+      io.out.writeln(
+        '我：${me.rank == null ? '未上榜' : '第 ${me.rank} 名'}（${me.value}）',
+      );
     return kExitOk;
   }
 
@@ -614,14 +755,28 @@ class _Session {
     }
     final String? serverFlag = sub['server'] as String?;
     final Uri? base = LeaderboardModule._baseUrl(serverFlag, null);
-    if (base == null) return io.fail(kExitUsage, '--server 不是 http(s) 地址: $serverFlag');
-    final String email = ((sub.options.contains('email') ? sub['email'] as String? : null) ?? '').trim();
+    if (base == null)
+      return io.fail(kExitUsage, '--server 不是 http(s) 地址: $serverFlag');
+    final String email =
+        ((sub.options.contains('email') ? sub['email'] as String? : null) ?? '')
+            .trim();
     if (kind != 'import' && !isPlausibleLeaderboardEmail(email)) {
-      return io.fail(kExitUsage, '用法: leaderboard $kind --email <邮箱>${kind == 'register' ? ' --nickname <昵称>' : ''}');
+      return io.fail(
+        kExitUsage,
+        '用法: leaderboard $kind --email <邮箱>${kind == 'register' ? ' --nickname <昵称>' : ''}',
+      );
     }
-    final String nickname = ((sub.options.contains('nickname') ? sub['nickname'] as String? : null) ?? '').trim();
+    final String nickname =
+        ((sub.options.contains('nickname')
+                    ? sub['nickname'] as String?
+                    : null) ??
+                '')
+            .trim();
     if (kind == 'register' && nickname.isEmpty) {
-      return io.fail(kExitUsage, '用法: leaderboard register --email <邮箱> --nickname <昵称>');
+      return io.fail(
+        kExitUsage,
+        '用法: leaderboard register --email <邮箱> --nickname <昵称>',
+      );
     }
 
     final String? secret = await _secret(
@@ -651,7 +806,11 @@ class _Session {
     final LeaderboardSelf self;
     try {
       self = switch (kind) {
-        'register' => await client.register(nickname: nickname, email: email, code: secret),
+        'register' => await client.register(
+          nickname: nickname,
+          email: email,
+          code: secret,
+        ),
         'login' => await client.login(email: email, code: secret),
         _ => await client.me(),
       };
@@ -688,7 +847,9 @@ class _Session {
         }}排行榜账户 ${self.account.tag}（Profile $profileId）',
       );
       io.out.writeln(
-        consent ? '已同意公开上传；跑 leaderboard sync 上报书架' : '上传未开启（没给 --consent）；确认后 leaderboard sync --consent',
+        consent
+            ? '已同意公开上传；跑 leaderboard sync 上报书架'
+            : '上传未开启（没给 --consent）；确认后 leaderboard sync --consent',
       );
       if (kind != 'import') {
         io.out.writeln('设备钥匙只存在 ${store.file.path}（含私钥，0600）；丢了它这台设备就要重新登录');
@@ -706,9 +867,18 @@ class _Session {
   Future<int> logout() async {
     final bool removed = await store.delete();
     if (io.json) {
-      io.writeJson(<String, Object?>{'ok': true, 'exitCode': kExitOk, 'profileId': profileId, 'removed': removed});
+      io.writeJson(<String, Object?>{
+        'ok': true,
+        'exitCode': kExitOk,
+        'profileId': profileId,
+        'removed': removed,
+      });
     } else {
-      io.out.writeln(removed ? '已删除 Profile $profileId 的本机排行榜账户（服务端账户不受影响）' : 'Profile $profileId 本来就没有本机排行榜账户');
+      io.out.writeln(
+        removed
+            ? '已删除 Profile $profileId 的本机排行榜账户（服务端账户不受影响）'
+            : 'Profile $profileId 本来就没有本机排行榜账户',
+      );
     }
     return kExitOk;
   }

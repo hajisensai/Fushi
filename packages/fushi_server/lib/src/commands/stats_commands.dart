@@ -75,7 +75,10 @@ enum StatShowKind {
 String? statShowWindowFromKey(DateTime now, StatShowWindow window) {
   final int? days = window.days;
   if (days == null) return null;
-  return FushiDatabase.statDateKeyPlusDays(FushiDatabase.statDateKeyOf(now), -(days - 1));
+  return FushiDatabase.statDateKeyPlusDays(
+    FushiDatabase.statDateKeyOf(now),
+    -(days - 1),
+  );
 }
 
 /// 从偏好表镜像统计日界（app 由 `AppModel._applyStatDayResetHour` 做同一件事）。
@@ -95,11 +98,20 @@ class _Bucket {
     this.pages += pages;
   }
 
-  Map<String, Object?> toJson() => <String, Object?>{'ms': ms, 'chars': chars, 'pages': pages};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'ms': ms,
+    'chars': chars,
+    'pages': pages,
+  };
 }
 
 class _MediaBucket extends _Bucket {
-  _MediaBucket({required this.kind, required this.key, required this.title, required this.format});
+  _MediaBucket({
+    required this.kind,
+    required this.key,
+    required this.title,
+    required this.format,
+  });
 
   final String kind;
   final String key;
@@ -130,8 +142,10 @@ Map<String, Object?> buildStatShowReport(
   final String todayKey = FushiDatabase.statDateKeyOf(now);
   final String? fromKey = statShowWindowFromKey(now, window);
   bool inWindow(String dateKey) =>
-      (fromKey == null || dateKey.compareTo(fromKey) >= 0) && dateKey.compareTo(todayKey) <= 0;
-  bool kindMatches(String mediaKind) => kind == null || kind.mediaKind == mediaKind;
+      (fromKey == null || dateKey.compareTo(fromKey) >= 0) &&
+      dateKey.compareTo(todayKey) <= 0;
+  bool kindMatches(String mediaKind) =>
+      kind == null || kind.mediaKind == mediaKind;
 
   final _Bucket total = _Bucket();
   final Map<String, _Bucket> byKind = <String, _Bucket>{};
@@ -144,7 +158,12 @@ Map<String, Object?> buildStatShowReport(
     byDay.putIfAbsent(f.dateKey, _Bucket.new).add(f.ms, f.chars, f.pages);
     final _MediaBucket m = byMedia.putIfAbsent(
       '${f.mediaKind}\u0000${f.identityKey}',
-      () => _MediaBucket(kind: f.mediaKind, key: f.mediaKey, title: f.title, format: f.format),
+      () => _MediaBucket(
+        kind: f.mediaKind,
+        key: f.mediaKey,
+        title: f.title,
+        format: f.format,
+      ),
     );
     m.add(f.ms, f.chars, f.pages);
     if (f.lastActiveMs >= m.lastActiveAt) {
@@ -164,7 +183,11 @@ Map<String, Object?> buildStatShowReport(
       .where(
         (StudySession s) =>
             kindMatches(s.mediaKind) &&
-            inWindow(FushiDatabase.statDateKeyOf(DateTime.fromMillisecondsSinceEpoch(s.startAt))),
+            inWindow(
+              FushiDatabase.statDateKeyOf(
+                DateTime.fromMillisecondsSinceEpoch(s.startAt),
+              ),
+            ),
       )
       .toList();
 
@@ -174,12 +197,22 @@ Map<String, Object?> buildStatShowReport(
     'to': todayKey,
     'kind': kind?.arg ?? 'all',
     'dayResetHour': FushiDatabase.statDayResetHour,
-    'totals': <String, Object?>{...total.toJson(), 'activeDays': days.length, 'sessions': sessions.length},
-    'byKind': <String, Object?>{for (final String k in byKind.keys.toList()..sort()) k: byKind[k]!.toJson()},
+    'totals': <String, Object?>{
+      ...total.toJson(),
+      'activeDays': days.length,
+      'sessions': sessions.length,
+    },
+    'byKind': <String, Object?>{
+      for (final String k in byKind.keys.toList()..sort())
+        k: byKind[k]!.toJson(),
+    },
     'byDay': <Object?>[
-      for (final String d in days) <String, Object?>{'date': d, ...byDay[d]!.toJson()},
+      for (final String d in days)
+        <String, Object?>{'date': d, ...byDay[d]!.toJson()},
     ],
-    'media': <Object?>[for (final _MediaBucket m in media.take(mediaLimit)) m.toJson()],
+    'media': <Object?>[
+      for (final _MediaBucket m in media.take(mediaLimit)) m.toJson(),
+    ],
     'sessions': <Object?>[
       for (final StudySession s in sessions.take(sessionLimit))
         <String, Object?>{
@@ -200,14 +233,18 @@ Map<String, Object?> buildStatShowReport(
 
 String _duration(int ms) {
   final int minutes = ms ~/ 60000;
-  return minutes >= 60 ? '${minutes ~/ 60}h${(minutes % 60).toString().padLeft(2, '0')}m' : '${minutes}m';
+  return minutes >= 60
+      ? '${minutes ~/ 60}h${(minutes % 60).toString().padLeft(2, '0')}m'
+      : '${minutes}m';
 }
 
 /// 人读渲染。
 void renderStatShowReport(Map<String, Object?> report, StringSink out) {
   final Map<String, Object?> totals = report['totals']! as Map<String, Object?>;
   final Object? from = report['from'];
-  out.writeln('窗口: ${report['window']}（${from ?? '最早'} ~ ${report['to']}）  种类: ${report['kind']}');
+  out.writeln(
+    '窗口: ${report['window']}（${from ?? '最早'} ~ ${report['to']}）  种类: ${report['kind']}',
+  );
   out.writeln(
     '合计: ${_duration(totals['ms']! as int)}  ${totals['chars']} 字  ${totals['pages']} 页  '
     '活跃 ${totals['activeDays']} 天  会话 ${totals['sessions']} 次',
@@ -215,15 +252,21 @@ void renderStatShowReport(Map<String, Object?> report, StringSink out) {
   final Map<String, Object?> byKind = report['byKind']! as Map<String, Object?>;
   for (final MapEntry<String, Object?> e in byKind.entries) {
     final Map<String, Object?> b = e.value! as Map<String, Object?>;
-    out.writeln('  ${e.key.padRight(6)} ${_duration(b['ms']! as int)}  ${b['chars']} 字  ${b['pages']} 页');
+    out.writeln(
+      '  ${e.key.padRight(6)} ${_duration(b['ms']! as int)}  ${b['chars']} 字  ${b['pages']} 页',
+    );
   }
   final List<Object?> media = report['media']! as List<Object?>;
   if (media.isNotEmpty) {
     out.writeln('按媒体:');
     for (final Object? row in media) {
       final Map<String, Object?> m = row! as Map<String, Object?>;
-      final String title = (m['title']! as String).isEmpty ? m['key']! as String : m['title']! as String;
-      out.writeln('  [${m['kind']}] $title  ${_duration(m['ms']! as int)}  ${m['chars']} 字');
+      final String title = (m['title']! as String).isEmpty
+          ? m['key']! as String
+          : m['title']! as String;
+      out.writeln(
+        '  [${m['kind']}] $title  ${_duration(m['ms']! as int)}  ${m['chars']} 字',
+      );
     }
   }
   final List<Object?> sessions = report['sessions']! as List<Object?>;
@@ -231,9 +274,15 @@ void renderStatShowReport(Map<String, Object?> report, StringSink out) {
     out.writeln('最近会话:');
     for (final Object? row in sessions) {
       final Map<String, Object?> s = row! as Map<String, Object?>;
-      final String at = DateTime.fromMillisecondsSinceEpoch(s['startAt']! as int).toIso8601String();
-      final String title = (s['title']! as String).isEmpty ? s['key']! as String : s['title']! as String;
-      out.writeln('  $at [${s['kind']}] $title  ${_duration(s['ms']! as int)}  ${s['chars']} 字');
+      final String at = DateTime.fromMillisecondsSinceEpoch(
+        s['startAt']! as int,
+      ).toIso8601String();
+      final String title = (s['title']! as String).isEmpty
+          ? s['key']! as String
+          : s['title']! as String;
+      out.writeln(
+        '  $at [${s['kind']}] $title  ${_duration(s['ms']! as int)}  ${s['chars']} 字',
+      );
     }
   }
 }
@@ -252,8 +301,17 @@ class StatsModule extends CliModule {
   @override
   void register(ArgParser parser) {
     parser.addCommand('stats').addCommand('show')
-      ..addOption('window', abbr: 'w', help: '统计窗口：today | 7d | 30d | all', defaultsTo: '7d')
-      ..addOption('kind', abbr: 'k', help: '只看某一域：read（书 / 漫画 / PDF / 有声书）| watch | play')
+      ..addOption(
+        'window',
+        abbr: 'w',
+        help: '统计窗口：today | 7d | 30d | all',
+        defaultsTo: '7d',
+      )
+      ..addOption(
+        'kind',
+        abbr: 'k',
+        help: '只看某一域：read（书 / 漫画 / PDF / 有声书）| watch | play',
+      )
       ..addOption('sessions', help: '最多列出几次会话', defaultsTo: '10')
       ..addOption('media', help: '按媒体最多列出几条', defaultsTo: '20')
       ..addFlag('json', negatable: false, help: '输出 JSON');
@@ -271,10 +329,14 @@ stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
     final StringSink e = err ?? stderr;
     final ArgResults? sub = command.command;
     if (sub == null || sub.name != 'show') {
-      e.writeln('用法: stats show [--window 7d] [--kind read|watch|play] [--json]');
+      e.writeln(
+        '用法: stats show [--window 7d] [--kind read|watch|play] [--json]',
+      );
       return _exitUsage;
     }
-    final StatShowWindow? window = StatShowWindow.parse(sub['window'] as String);
+    final StatShowWindow? window = StatShowWindow.parse(
+      sub['window'] as String,
+    );
     if (window == null) {
       e.writeln('--window 只接受 today / 7d / 30d / all');
       return _exitUsage;
@@ -294,7 +356,10 @@ stats show [--window today|7d|30d|all] [--kind read|watch|play] [--json]
     }
     final int? sessionLimit = int.tryParse(sub['sessions'] as String);
     final int? mediaLimit = int.tryParse(sub['media'] as String);
-    if (sessionLimit == null || sessionLimit < 0 || mediaLimit == null || mediaLimit < 0) {
+    if (sessionLimit == null ||
+        sessionLimit < 0 ||
+        mediaLimit == null ||
+        mediaLimit < 0) {
       e.writeln('--sessions / --media 需要非负整数');
       return _exitUsage;
     }

@@ -109,9 +109,7 @@ List<Widget> buildAiWebKnowledgeCustomSiteRows(
               ),
             ),
             FushiIconButtonControl(
-              key: ValueKey<String>(
-                'ai-web-knowledge-site-${site.id}-remove',
-              ),
+              key: ValueKey<String>('ai-web-knowledge-site-${site.id}-remove'),
               tooltip: t.ai_web_knowledge_custom_remove,
               icon: const FushiIcon(FushiIcons.delete),
               onPressed: () => unawaited(
@@ -238,9 +236,8 @@ SettingsCliList buildWebKnowledgeCustomCliList() {
         required: false,
       ),
     ],
-    list: (SettingsContext c) async => webKnowledgeCustomSiteRecords(
-      c.appModel.prefsRepo,
-    ),
+    list: (SettingsContext c) async =>
+        webKnowledgeCustomSiteRecords(c.appModel.prefsRepo),
     add: (SettingsContext c, Map<String, String> fields) async {
       final String endpoint = (fields['endpoint'] ?? '').trim();
       if (endpoint.isEmpty) throw ArgumentError('add 需要 endpoint');

@@ -71,42 +71,44 @@ Future<double> _settledOffset(
   final ScrollController controller = ScrollController();
   addTearDown(controller.dispose);
 
-  await tester.pumpWidget(ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-    child: MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        platform: TargetPlatform.android,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
-      ),
-      home: Scaffold(
-        body: FushiFocusRoot(
-          child: SizedBox(
-            height: 500,
-            child: Consumer(
-              builder: (BuildContext context, WidgetRef ref, _) {
-                final SettingsContext sc = SettingsContext(
-                  context: context,
-                  appModel: ref.read(appProvider),
-                  ref: ref,
-                  readerSource: ReaderFushiSource.instance,
-                  refresh: () {},
-                );
-                return const MaterialSettingsRenderer().buildDetailContent(
-                  settingsContext: sc,
-                  destination: buildSyncBackupDestination(),
-                  scrollController: controller,
-                );
-              },
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+      child: MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          platform: TargetPlatform.android,
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+          extensions: <ThemeExtension<dynamic>>[
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
+          ],
+        ),
+        home: Scaffold(
+          body: FushiFocusRoot(
+            child: SizedBox(
+              height: 500,
+              child: Consumer(
+                builder: (BuildContext context, WidgetRef ref, _) {
+                  final SettingsContext sc = SettingsContext(
+                    context: context,
+                    appModel: ref.read(appProvider),
+                    ref: ref,
+                    readerSource: ReaderFushiSource.instance,
+                    refresh: () {},
+                  );
+                  return const MaterialSettingsRenderer().buildDetailContent(
+                    settingsContext: sc,
+                    destination: buildSyncBackupDestination(),
+                    scrollController: controller,
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     ),
-  ));
+  );
 
   await tester.pumpAndSettle();
   // Content must genuinely exceed the viewport, else "no scroll" is vacuous.
@@ -138,22 +140,29 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  testWidgets('sync/backup page does not self-scroll on open in touch mode',
-      (WidgetTester tester) async {
-    final double offset =
-        await _settledOffset(tester, FocusHighlightStrategy.alwaysTouch);
+  testWidgets('sync/backup page does not self-scroll on open in touch mode', (
+    WidgetTester tester,
+  ) async {
+    final double offset = await _settledOffset(
+      tester,
+      FocusHighlightStrategy.alwaysTouch,
+    );
     expect(
       offset,
       0,
-      reason: 'touch mode has no focus cursor; the async backend reflow must '
+      reason:
+          'touch mode has no focus cursor; the async backend reflow must '
           'not yank the viewport down',
     );
   });
 
-  testWidgets('keyboard/gamepad mode still reveals the focus cursor',
-      (WidgetTester tester) async {
-    final double offset =
-        await _settledOffset(tester, FocusHighlightStrategy.alwaysTraditional);
+  testWidgets('keyboard/gamepad mode still reveals the focus cursor', (
+    WidgetTester tester,
+  ) async {
+    final double offset = await _settledOffset(
+      tester,
+      FocusHighlightStrategy.alwaysTraditional,
+    );
     expect(
       offset,
       greaterThan(0),

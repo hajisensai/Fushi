@@ -114,8 +114,9 @@ void main() {
     late File testFile;
 
     // 测试文件内容：100 字节，值为 0..99
-    final Uint8List testBytes =
-        Uint8List.fromList(List<int>.generate(100, (int i) => i));
+    final Uint8List testBytes = Uint8List.fromList(
+      List<int>.generate(100, (int i) => i),
+    );
 
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('hbk_range_test');
@@ -146,8 +147,10 @@ void main() {
     }
 
     test('无 Range 头 → 200 + 全量字节 + Accept-Ranges', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest());
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(),
+      );
       expect(res.statusCode, 200);
       expect(res.headers['accept-ranges'], 'bytes');
       expect(res.headers['content-length'], '100');
@@ -156,8 +159,10 @@ void main() {
     });
 
     test('bytes=0-9 → 206 + 前10字节 + 正确 Content-Range', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest(range: 'bytes=0-9'));
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(range: 'bytes=0-9'),
+      );
       expect(res.statusCode, 206);
       expect(res.headers['content-range'], 'bytes 0-9/100');
       expect(res.headers['content-length'], '10');
@@ -168,8 +173,10 @@ void main() {
     });
 
     test('bytes=90- → 206 + 最后10字节', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest(range: 'bytes=90-'));
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(range: 'bytes=90-'),
+      );
       expect(res.statusCode, 206);
       expect(res.headers['content-range'], 'bytes 90-99/100');
       final List<int> body = await readBody(res);
@@ -178,8 +185,10 @@ void main() {
     });
 
     test('bytes=-20 → 206 + 最后20字节', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest(range: 'bytes=-20'));
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(range: 'bytes=-20'),
+      );
       expect(res.statusCode, 206);
       expect(res.headers['content-range'], 'bytes 80-99/100');
       final List<int> body = await readBody(res);
@@ -187,37 +196,47 @@ void main() {
     });
 
     test('start 越界 → 416 + Content-Range: bytes */total', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest(range: 'bytes=200-'));
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(range: 'bytes=200-'),
+      );
       expect(res.statusCode, 416);
       expect(res.headers['content-range'], 'bytes */100');
       expect(res.headers['accept-ranges'], 'bytes');
     });
 
     test('非法格式 → 416', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest(range: 'bytes=abc-'));
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(range: 'bytes=abc-'),
+      );
       expect(res.statusCode, 416);
     });
 
     test('文件不存在 → 404', () async {
       final File missing = File('${tmp.path}/missing.mp4');
-      final shelf.Response res =
-          await serveFileWithRange(missing, makeRequest());
+      final shelf.Response res = await serveFileWithRange(
+        missing,
+        makeRequest(),
+      );
       expect(res.statusCode, 404);
     });
 
     test('Content-Type 按扩展名：.mp4 → video/mp4', () async {
-      final shelf.Response res =
-          await serveFileWithRange(testFile, makeRequest());
+      final shelf.Response res = await serveFileWithRange(
+        testFile,
+        makeRequest(),
+      );
       expect(res.headers['content-type'], contains('video/mp4'));
     });
 
     test('Content-Type：.mkv → video/x-matroska', () async {
       final File mkvFile = File('${tmp.path}/test.mkv')
         ..writeAsBytesSync(testBytes);
-      final shelf.Response res =
-          await serveFileWithRange(mkvFile, makeRequest());
+      final shelf.Response res = await serveFileWithRange(
+        mkvFile,
+        makeRequest(),
+      );
       expect(res.headers['content-type'], contains('video/x-matroska'));
     });
   });

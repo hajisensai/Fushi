@@ -158,13 +158,13 @@ class _TextSegmentationDialogPage
         final Color background = glass
             ? fushiNeutralBlockColor(context)
             : (hasPick
-                ? colors.secondaryContainer
-                : fushiNeutralBlockColor(context));
+                  ? colors.secondaryContainer
+                  : fushiNeutralBlockColor(context));
         final Color foreground = glass
             ? (hasPick ? colors.primary : tokens.surfaces.onVariant)
             : (hasPick
-                ? colors.onSecondaryContainer
-                : tokens.surfaces.onVariant);
+                  ? colors.onSecondaryContainer
+                  : tokens.surfaces.onVariant);
         final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
         return AnimatedContainer(
           duration: spring.duration,
@@ -179,8 +179,9 @@ class _TextSegmentationDialogPage
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: hasPick
-                ? context.fushiType.titleMediumEmphasized
-                    .copyWith(color: foreground)
+                ? context.fushiType.titleMediumEmphasized.copyWith(
+                    color: foreground,
+                  )
                 : tokens.type.listSubtitle.copyWith(color: foreground),
           ),
         );
@@ -228,10 +229,10 @@ class _TextSegmentationDialogPage
   }
 
   List<Widget> get actions => [
-        buildStashButton(),
-        if (widget.onSearch != null) buildSearchButton(),
-        if (widget.onSelect != null) buildSelectButton(),
-      ];
+    buildStashButton(),
+    if (widget.onSearch != null) buildSearchButton(),
+    if (widget.onSelect != null) buildSelectButton(),
+  ];
 
   Widget buildSearchButton() {
     return adaptiveDialogAction(
@@ -268,10 +269,7 @@ class _TextSegmentationDialogPage
       range = TextRange(start: start, end: end);
     }
 
-    return FushiTextSelection(
-      text: widget.sourceText,
-      range: range,
-    );
+    return FushiTextSelection(text: widget.sourceText, range: range);
   }
 
   void executeStash() {

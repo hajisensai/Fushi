@@ -1,4 +1,3 @@
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -8,18 +7,18 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 /// 独立。「哪些页算读过」的去重由 `ReadUnitLedger` 会话并集负责（2026-09-06），
 /// 本函数是无状态换算，不再持去重集合。
 MokuroImage _page(List<String> lines) => MokuroImage(
-      url: 'p.jpg',
-      size: const MokuroSize(800, 1200),
-      blocks: <MokuroBlock>[
-        MokuroBlock(
-          rectangle: const MokuroRect.fromLTRB(0, 0, 10, 10),
-          isVertical: true,
-          fontSize: 12,
-          zIndex: 0,
-          lines: lines,
-        ),
-      ],
-    );
+  url: 'p.jpg',
+  size: const MokuroSize(800, 1200),
+  blocks: <MokuroBlock>[
+    MokuroBlock(
+      rectangle: const MokuroRect.fromLTRB(0, 0, 10, 10),
+      isVertical: true,
+      fontSize: 12,
+      zIndex: 0,
+      lines: lines,
+    ),
+  ],
+);
 
 void main() {
   group('mangaPageCharCount', () {
@@ -30,11 +29,13 @@ void main() {
 
     test('无 OCR 的纯图页为 0', () {
       expect(
-        mangaPageCharCount(const MokuroImage(
-          url: 'p.jpg',
-          size: MokuroSize(800, 1200),
-          blocks: <MokuroBlock>[],
-        )),
+        mangaPageCharCount(
+          const MokuroImage(
+            url: 'p.jpg',
+            size: MokuroSize(800, 1200),
+            blocks: <MokuroBlock>[],
+          ),
+        ),
         0,
       );
     });

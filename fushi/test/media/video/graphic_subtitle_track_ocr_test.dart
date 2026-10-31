@@ -108,10 +108,7 @@ class _BinaryFfmpegBackend implements FfmpegBackend {
   /// 同一份统一 FFmpeg 的 ffprobe（两者成对）。
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
-    final ProcessResult r = await Process.run(
-      ffprobe,
-      args,
-    ).timeout(timeout);
+    final ProcessResult r = await Process.run(ffprobe, args).timeout(timeout);
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stdout}');
   }
 
@@ -480,36 +477,30 @@ void main() {
     // （单测里的 _sup() 由完整 ffmpeg 封装，mkv 把起点归零：1s/1.5s/3s → 0/0.5/2s）。
     final UnifiedFfmpegForTests? unified =
         resolveBundledUnifiedFfmpegForTests();
-    test(
-      '随包统一 FFmpeg 能把 mkv 里的 PGS 轨抽成 .sup',
-      () async {
-        final String out = p.join(dir.path, 'track.sup');
-        final List<String> failures = <String>[];
-        final bool ok = await extractGraphicSubtitleTrackToSup(
-          videoPath: 'test/fixtures/video/pgs_one_cue.mkv',
-          streamIndex: 0,
-          supPath: out,
-          onFailure: failures.add,
-          backend: _BinaryFfmpegBackend(unified!.ffmpeg, unified.ffprobe),
-        );
-        expect(ok, isTrue, reason: failures.join('\n'));
-        final List<PgsCue> cues = PgsSubtitleParser.parse(
-          File(out).readAsBytesSync(),
-        );
-        expect(cues, hasLength(1));
-        expect(cues.single.startMs, 0);
-        expect(cues.single.endMs, 2000);
-        expect(cues.single.bounds, (
-          left: 100,
-          top: 200,
-          right: 104,
-          bottom: 202,
-        ));
-      },
-      skip: unified != null
-          ? false
-          : '找不到随包统一 FFmpeg（ffmpeg + ffprobe）',
-    );
+    test('随包统一 FFmpeg 能把 mkv 里的 PGS 轨抽成 .sup', () async {
+      final String out = p.join(dir.path, 'track.sup');
+      final List<String> failures = <String>[];
+      final bool ok = await extractGraphicSubtitleTrackToSup(
+        videoPath: 'test/fixtures/video/pgs_one_cue.mkv',
+        streamIndex: 0,
+        supPath: out,
+        onFailure: failures.add,
+        backend: _BinaryFfmpegBackend(unified!.ffmpeg, unified.ffprobe),
+      );
+      expect(ok, isTrue, reason: failures.join('\n'));
+      final List<PgsCue> cues = PgsSubtitleParser.parse(
+        File(out).readAsBytesSync(),
+      );
+      expect(cues, hasLength(1));
+      expect(cues.single.startMs, 0);
+      expect(cues.single.endMs, 2000);
+      expect(cues.single.bounds, (
+        left: 100,
+        top: 200,
+        right: 104,
+        bottom: 202,
+      ));
+    }, skip: unified != null ? false : '找不到随包统一 FFmpeg（ffmpeg + ffprobe）');
   });
 
   group('buildGraphicSubtitleSrt', () {

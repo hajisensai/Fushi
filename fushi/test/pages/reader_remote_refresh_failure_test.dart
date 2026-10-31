@@ -35,8 +35,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_remote_refresh_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_refresh_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -62,8 +63,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_remote_refresh_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_refresh_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -79,43 +81,43 @@ void main() {
   // 书让主网格 + 下拉刷新入口在场——「远端拉取失败」的用户场景本就是「本地有库、
   // 远端刷不出来」。
   List<SrtBook> localSrtBooks() => <SrtBook>[
-        SrtBook()
-          ..uid = 'local-srt-uid'
-          ..title = 'Local Audiobook'
-          ..srtPath = '${pathProviderDir.path}/local.srt'
-          ..importedAt = 0,
-      ];
+    SrtBook()
+      ..uid = 'local-srt-uid'
+      ..title = 'Local Audiobook'
+      ..srtPath = '${pathProviderDir.path}/local.srt'
+      ..importedAt = 0,
+  ];
 
   Widget buildApp(RemoteBookClient client) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) =>
-                Future<List<MediaItem>>.value(const <MediaItem>[]),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(localSrtBooks()),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => client,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(localSrtBooks()),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => client,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   Future<void> triggerPullToRefresh(WidgetTester tester) async {
-    final RefreshIndicator indicator =
-        tester.widget<RefreshIndicator>(find.byType(RefreshIndicator).first);
+    final RefreshIndicator indicator = tester.widget<RefreshIndicator>(
+      find.byType(RefreshIndicator).first,
+    );
     // 下拉刷新第一步是 runManualSyncWithFeedback；只在 onRefresh 期间置全局 busy
     // 让它确定性短路（announceBusy=false 不弹提示），本测试只关心「远端清单失败要
     // 可见」这一段。不能整场置 true：同步进度条会永动，pumpAndSettle 永不收敛。
@@ -128,37 +130,52 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('P1：书清单拉取失败 → 下拉刷新弹 remote_book_list_failed（不再静默）',
-      (WidgetTester tester) async {
+  testWidgets('P1：书清单拉取失败 → 下拉刷新弹 remote_book_list_failed（不再静默）', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(buildApp(_ThrowingListRemoteBookClient()));
     await tester.pumpAndSettle();
-    expect(find.text(t.remote_book_list_failed), findsNothing,
-        reason: '被动加载失败不弹（离线语义只藏占位卡）；提示只属于显式下拉');
+    expect(
+      find.text(t.remote_book_list_failed),
+      findsNothing,
+      reason: '被动加载失败不弹（离线语义只藏占位卡）；提示只属于显式下拉',
+    );
 
     await triggerPullToRefresh(tester);
 
-    expect(find.text(t.remote_book_list_failed), findsOneWidget,
-        reason: '显式下拉失败必须可见：failed 态此前置了没人消费');
+    expect(
+      find.text(t.remote_book_list_failed),
+      findsOneWidget,
+      reason: '显式下拉失败必须可见：failed 态此前置了没人消费',
+    );
     // 冲掉 SnackBar 定时器。
     await tester.pumpAndSettle();
   });
 
-  testWidgets('P3：SRT 有声书清单单独失败 → 计入失败提示，且不连坐隐藏拉取成功的书占位卡',
-      (WidgetTester tester) async {
+  testWidgets('P3：SRT 有声书清单单独失败 → 计入失败提示，且不连坐隐藏拉取成功的书占位卡', (
+    WidgetTester tester,
+  ) async {
     final _SrtListFailingInterconnectClient client =
         _SrtListFailingInterconnectClient();
     await tester.pumpWidget(buildApp(client));
     await tester.pumpAndSettle();
 
-    final Finder bookCard = find
-        .byKey(ValueKey<String>('remote_book_card_${safeKey('Live Book')}'));
-    expect(bookCard, findsOneWidget,
-        reason: '书清单拉取成功：占位卡必须渲染（srtFailed 不得连坐门控）');
+    final Finder bookCard = find.byKey(
+      ValueKey<String>('remote_book_card_${safeKey('Live Book')}'),
+    );
+    expect(
+      bookCard,
+      findsOneWidget,
+      reason: '书清单拉取成功：占位卡必须渲染（srtFailed 不得连坐门控）',
+    );
 
     await triggerPullToRefresh(tester);
 
-    expect(find.text(t.remote_book_list_failed), findsOneWidget,
-        reason: 'P3：SRT 清单失败此前被降级成空列表，占位卡静默消失、下拉也无任何提示');
+    expect(
+      find.text(t.remote_book_list_failed),
+      findsOneWidget,
+      reason: 'P3：SRT 清单失败此前被降级成空列表，占位卡静默消失、下拉也无任何提示',
+    );
     expect(bookCard, findsOneWidget, reason: '失败提示之外，成功拉到的书占位卡仍在场');
     await tester.pumpAndSettle();
   });
@@ -199,7 +216,7 @@ class _ThrowingListRemoteBookClient implements RemoteBookClient {
 /// 只有 [InterconnectSyncBackend] 类型才会走 listRemoteAudiobooks 这条路）。
 class _SrtListFailingInterconnectClient extends InterconnectSyncBackend {
   _SrtListFailingInterconnectClient()
-      : super.withProbe((String url, String token) async => true);
+    : super.withProbe((String url, String token) async => true);
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async =>

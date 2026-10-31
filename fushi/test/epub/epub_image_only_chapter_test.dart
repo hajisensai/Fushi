@@ -31,13 +31,16 @@ void main() {
   group('isImageOnlyChapter — recognises illustration pages', () {
     test('classic single <img>, no text (regression)', () {
       expect(
-          _book('<html><body><img src="p1.jpg"/></body></html>')
-              .isImageOnlyChapter(0),
-          isTrue);
+        _book(
+          '<html><body><img src="p1.jpg"/></body></html>',
+        ).isImageOnlyChapter(0),
+        isTrue,
+      );
     });
 
     test('SVG <image xlink:href> with no <img> (Japanese fixed layout)', () {
-      const html = '<html><body><svg viewBox="0 0 800 1200" '
+      const html =
+          '<html><body><svg viewBox="0 0 800 1200" '
           'xmlns:xlink="http://www.w3.org/1999/xlink">'
           '<image width="800" height="1200" xlink:href="../image/i-001.jpg"/>'
           '</svg></body></html>';
@@ -45,27 +48,31 @@ void main() {
     });
 
     test('SVG <image href> without xlink namespace', () {
-      const html = '<html><body><svg viewBox="0 0 800 1200">'
+      const html =
+          '<html><body><svg viewBox="0 0 800 1200">'
           '<image href="../image/i-002.jpg"/></svg></body></html>';
       expect(_book(html).isImageOnlyChapter(0), isTrue);
     });
 
     test('CSS background-image via inline style', () {
-      const html = '<html><body>'
+      const html =
+          '<html><body>'
           '<div style="background-image: url(../img/bg.jpg)"></div>'
           '</body></html>';
       expect(_book(html).isImageOnlyChapter(0), isTrue);
     });
 
     test('CSS background-image via <style> block', () {
-      const html = '<html><head><style>'
+      const html =
+          '<html><head><style>'
           '.page{background-image:url("../img/bg2.png")}'
           '</style></head><body><div class="page"></div></body></html>';
       expect(_book(html).isImageOnlyChapter(0), isTrue);
     });
 
     test('image + short 「挿絵」 caption still counts', () {
-      const html = '<html><body><img src="p1.jpg"/>'
+      const html =
+          '<html><body><img src="p1.jpg"/>'
           '<figcaption>挿絵</figcaption></body></html>';
       expect(_book(html).isImageOnlyChapter(0), isTrue);
     });
@@ -76,7 +83,8 @@ void main() {
     });
 
     test('multiple <img>, short/no text (was rejected by "exactly one")', () {
-      const html = '<html><body>'
+      const html =
+          '<html><body>'
           '<img src="a.jpg"/><img src="b.jpg"/><img src="c.jpg"/>'
           '</body></html>';
       expect(_book(html).isImageOnlyChapter(0), isTrue);
@@ -84,7 +92,8 @@ void main() {
 
     test('text of exactly the threshold length + image counts', () {
       // 20-char body text, at the inclusive boundary.
-      const html = '<html><body><img src="p.jpg"/>'
+      const html =
+          '<html><body><img src="p.jpg"/>'
           '<p>abcdefghijklmnopqrst</p></body></html>';
       expect(_book(html).isImageOnlyChapter(0), isTrue);
     });
@@ -92,14 +101,16 @@ void main() {
 
   group('isImageOnlyChapter — guardrail: never absorbs prose', () {
     test('image + a real prose paragraph is NOT image-only', () {
-      const html = '<html><body><img src="p.jpg"/>'
+      const html =
+          '<html><body><img src="p.jpg"/>'
           '<p>これは本文の段落であり、ただの挿絵の説明ではありません。</p>'
           '</body></html>';
       expect(_book(html).isImageOnlyChapter(0), isFalse);
     });
 
     test('multiple long <p> paragraphs (with an image) are NOT image-only', () {
-      const html = '<html><body><img src="p.jpg"/>'
+      const html =
+          '<html><body><img src="p.jpg"/>'
           '<p>First real paragraph of the chapter body.</p>'
           '<p>Second real paragraph continues the prose.</p>'
           '</body></html>';
@@ -108,26 +119,30 @@ void main() {
 
     test('one char past the threshold + image is NOT image-only', () {
       // 21-char body text, just over the boundary.
-      const html = '<html><body><img src="p.jpg"/>'
+      const html =
+          '<html><body><img src="p.jpg"/>'
           '<p>abcdefghijklmnopqrstu</p></body></html>';
       expect(_book(html).isImageOnlyChapter(0), isFalse);
     });
 
     test('pure text chapter (no image) is NOT image-only', () {
       expect(
-          _book('<html><body><p>本文の段落。</p></body></html>')
-              .isImageOnlyChapter(0),
-          isFalse);
+        _book('<html><body><p>本文の段落。</p></body></html>').isImageOnlyChapter(0),
+        isFalse,
+      );
     });
 
     test('empty chapter (no image, no text) is NOT image-only', () {
       expect(
-          _book('<html><body></body></html>').isImageOnlyChapter(0), isFalse);
+        _book('<html><body></body></html>').isImageOnlyChapter(0),
+        isFalse,
+      );
     });
 
     test('out-of-range index is NOT image-only', () {
-      final EpubBook book =
-          _book('<html><body><img src="p.jpg"/></body></html>');
+      final EpubBook book = _book(
+        '<html><body><img src="p.jpg"/></body></html>',
+      );
       expect(book.isImageOnlyChapter(-1), isFalse);
       expect(book.isImageOnlyChapter(9), isFalse);
     });
@@ -144,15 +159,21 @@ void main() {
     test('hint > 阈值：免解析直接判非插图页（短路生效的可观测证据）', () {
       final EpubBook book = _book(illustrationHtml);
       book.setChapterCharCountHints(<int>[100]);
-      expect(book.isImageOnlyChapter(0), isFalse,
-          reason: '实义字数超阈值的章必是正文章，不该再读盘/解析');
+      expect(
+        book.isImageOnlyChapter(0),
+        isFalse,
+        reason: '实义字数超阈值的章必是正文章，不该再读盘/解析',
+      );
     });
 
     test('hint ≤ 阈值：不能反推，回落全量解析（插图页仍被识别）', () {
       final EpubBook book = _book(illustrationHtml);
       book.setChapterCharCountHints(<int>[0]);
-      expect(book.isImageOnlyChapter(0), isTrue,
-          reason: '低字数只是必要条件，仍需解析确认「有图 + 短文本」');
+      expect(
+        book.isImageOnlyChapter(0),
+        isTrue,
+        reason: '低字数只是必要条件，仍需解析确认「有图 + 短文本」',
+      );
     });
 
     test('hints 长度不足：超界章节按无提示处理（回落解析）', () {
@@ -173,54 +194,65 @@ void main() {
 
   group('chapterImageSrc / chapterImageSrcs — feed the merge renderer', () {
     test('first <img> src', () {
-      final EpubBook book =
-          _book('<html><body><img src="p1.jpg"/></body></html>');
+      final EpubBook book = _book(
+        '<html><body><img src="p1.jpg"/></body></html>',
+      );
       expect(book.chapterImageSrc(0), 'p1.jpg');
       expect(book.chapterImageSrcs(0), <String>['p1.jpg']);
     });
 
     test('SVG <image> href is extracted for the renderer', () {
-      final EpubBook book = _book('<html><body><svg '
-          'xmlns:xlink="http://www.w3.org/1999/xlink">'
-          '<image xlink:href="../image/i-001.jpg"/></svg></body></html>');
+      final EpubBook book = _book(
+        '<html><body><svg '
+        'xmlns:xlink="http://www.w3.org/1999/xlink">'
+        '<image xlink:href="../image/i-001.jpg"/></svg></body></html>',
+      );
       expect(book.chapterImageSrc(0), '../image/i-001.jpg');
     });
 
     test('background-image url is extracted for the renderer', () {
-      final EpubBook book = _book('<html><body>'
-          '<div style="background-image: url(../img/bg.jpg)"></div>'
-          '</body></html>');
+      final EpubBook book = _book(
+        '<html><body>'
+        '<div style="background-image: url(../img/bg.jpg)"></div>'
+        '</body></html>',
+      );
       expect(book.chapterImageSrc(0), '../img/bg.jpg');
     });
 
     test('all references returned so multi-image pages lose nothing', () {
-      final EpubBook book = _book('<html><body>'
-          '<img src="a.jpg"/><img src="b.jpg"/>'
-          '</body></html>');
+      final EpubBook book = _book(
+        '<html><body>'
+        '<img src="a.jpg"/><img src="b.jpg"/>'
+        '</body></html>',
+      );
       expect(book.chapterImageSrcs(0), <String>['a.jpg', 'b.jpg']);
     });
 
     test('one file referenced several times is one image (KCC Panel View)', () {
       // KCC's Kindle markup: the page image once visibly, then four hidden
       // `.PV-P` magnify regions pointing at the same file.
-      final EpubBook book = _book('<html><body>'
-          '<div><img src="../Images/kcc-0003.jpg"/></div>'
-          '<div id="PV"><div id="PV-TL"><a class="app-amzn-magnify"></a></div>'
-          '</div>'
-          '<div class="PV-P"><img src="../Images/kcc-0003.jpg"/></div>'
-          '<div class="PV-P"><img src="../Images/./kcc-0003.jpg"/></div>'
-          '<div class="PV-P"><img src="../Images/kcc%2D0003.jpg"/></div>'
-          '<div class="PV-P"><img src="../Images/kcc-0003.jpg"/></div>'
-          '</body></html>');
+      final EpubBook book = _book(
+        '<html><body>'
+        '<div><img src="../Images/kcc-0003.jpg"/></div>'
+        '<div id="PV"><div id="PV-TL"><a class="app-amzn-magnify"></a></div>'
+        '</div>'
+        '<div class="PV-P"><img src="../Images/kcc-0003.jpg"/></div>'
+        '<div class="PV-P"><img src="../Images/./kcc-0003.jpg"/></div>'
+        '<div class="PV-P"><img src="../Images/kcc%2D0003.jpg"/></div>'
+        '<div class="PV-P"><img src="../Images/kcc-0003.jpg"/></div>'
+        '</body></html>',
+      );
       expect(book.chapterImageSrcs(0), <String>['../Images/kcc-0003.jpg']);
     });
 
     test('distinct files on one page all stay, in order', () {
-      final EpubBook book = _book('<html><body>'
-          '<img src="b.jpg"/><img src="a.jpg"/><img src="b.jpg"/>'
-          '<img src="data:image/png;base64,AA=="/>'
-          '<img src="data:image/png;base64,AA=="/>'
-          '</body></html>');
+      final EpubBook book = _book(
+        '<html><body>'
+        '<img src="b.jpg"/><img src="a.jpg"/><img src="b.jpg"/>'
+        '<img src="data:image/png;base64,AA=="/>'
+        '<img src="data:image/png;base64,AA=="/>'
+        '</body></html>',
+      );
       expect(book.chapterImageSrcs(0), <String>[
         'b.jpg',
         'a.jpg',
@@ -235,8 +267,9 @@ void main() {
     });
 
     test('out-of-range → null / empty', () {
-      final EpubBook book =
-          _book('<html><body><img src="p.jpg"/></body></html>');
+      final EpubBook book = _book(
+        '<html><body><img src="p.jpg"/></body></html>',
+      );
       expect(book.chapterImageSrc(5), isNull);
       expect(book.chapterImageSrcs(5), isEmpty);
     });

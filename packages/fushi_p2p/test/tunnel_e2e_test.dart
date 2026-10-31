@@ -97,27 +97,21 @@ void main() {
       ? 'fushi_p2p native library not found (set FUSHI_P2P_LIB)'
       : null;
 
-  test(
-    '库缺失时 tryLoad 返回 null、isAvailable 为 false（干净子进程）',
-    () async {
-      final Directory empty = Directory.systemTemp.createTempSync(
-        'fp2p_missing',
+  test('库缺失时 tryLoad 返回 null、isAvailable 为 false（干净子进程）', () async {
+    final Directory empty = Directory.systemTemp.createTempSync('fp2p_missing');
+    try {
+      final ProcessResult r = await Process.run(
+        _dartExecutable(),
+        <String>['run', 'test/fixtures/missing_lib_probe.dart', empty.path],
+        environment: const <String, String>{kFushiP2pLibEnv: ''},
       );
-      try {
-        final ProcessResult r = await Process.run(
-          _dartExecutable(),
-          <String>['run', 'test/fixtures/missing_lib_probe.dart', empty.path],
-          environment: const <String, String>{kFushiP2pLibEnv: ''},
-        );
-        expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
-        expect(r.stdout as String, contains('tryLoad=null'));
-        expect(r.stdout as String, contains('isAvailable=false'));
-      } finally {
-        empty.deleteSync(recursive: true);
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 1)),
-  );
+      expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+      expect(r.stdout as String, contains('tryLoad=null'));
+      expect(r.stdout as String, contains('isAvailable=false'));
+    } finally {
+      empty.deleteSync(recursive: true);
+    }
+  }, timeout: const Timeout(Duration(minutes: 1)));
 
   test('候选顺序：显式路径 → 环境变量 → exe 同级 → bin/../lib → 裸名', () {
     final String sep = Platform.pathSeparator;

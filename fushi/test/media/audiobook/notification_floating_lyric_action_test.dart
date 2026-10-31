@@ -13,10 +13,12 @@ void main() {
   late String session;
   late String appModel;
   setUpAll(() {
-    handler =
-        File('lib/src/utils/misc/fushi_audio_handler.dart').readAsStringSync();
-    controller =
-        File('lib/src/models/audio_controller.dart').readAsStringSync();
+    handler = File(
+      'lib/src/utils/misc/fushi_audio_handler.dart',
+    ).readAsStringSync();
+    controller = File(
+      'lib/src/models/audio_controller.dart',
+    ).readAsStringSync();
     session = File(
       'lib/src/media/audiobook/audiobook_session.dart',
     ).readAsStringSync();

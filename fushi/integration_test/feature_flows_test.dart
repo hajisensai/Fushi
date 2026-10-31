@@ -71,8 +71,11 @@ void main() {
       // app 容器（应用跑完即卸载，数据不跨文件残留），依赖「别的测试种过词典」
       // 的隐式前提在 iOS 上必然落空——曾把 F2 的结果断言降级成永真 ⚠ 警告。
       // 与 comprehensive_reader_lookup_test 同范式：种生成词典，然后硬断言。
-      expect(await seedDictionary(tester), isTrue,
-          reason: 'generated test dictionary must be installed for F2');
+      expect(
+        await seedDictionary(tester),
+        isTrue,
+        reason: 'generated test dictionary must be installed for F2',
+      );
       await seedReaderBook(tester, fileName: 'feature_flow_tags.epub');
 
       // 顶层 tab 是条件化列表（video/downloads/games 按开关插入，见 home_page.dart
@@ -84,19 +87,26 @@ void main() {
 
       // === F2: Dictionary Search ===
       debugPrint('[M3] === F2: Dictionary Search ===');
-      expect(await driver.focusWidget(dictionaryTab), isTrue,
-          reason: 'Dictionary tab must be reachable by focus');
+      expect(
+        await driver.focusWidget(dictionaryTab),
+        isTrue,
+        reason: 'Dictionary tab must be reachable by focus',
+      );
       await driver.activate(); // Dictionary tab
       await tester.pump(const Duration(milliseconds: 500));
 
       // 词典 tab 恒有搜索框（home_dictionary_page 的
       // `home_dictionary_search_field`）；找不到就是真回归，必须硬失败——旧的
       // ⚠ 警告分支曾把「切错 tab」掩盖成顺滑通过。
-      final hasSearch = find.byType(TextField).evaluate().isNotEmpty ||
+      final hasSearch =
+          find.byType(TextField).evaluate().isNotEmpty ||
           find.byType(TextFormField).evaluate().isNotEmpty ||
           find.byType(SearchBar).evaluate().isNotEmpty;
-      expect(hasSearch, isTrue,
-          reason: 'Dictionary tab must render its search field');
+      expect(
+        hasSearch,
+        isTrue,
+        reason: 'Dictionary tab must render its search field',
+      );
       debugPrint('[M3] ✓ Search field found');
 
       // 搜索词必须是种入 fixture 里真实存在的词条（generated dict 含
@@ -108,9 +118,13 @@ void main() {
       final results = findDictionaryResultEvidence();
       final resultCount = results.evaluate().length;
       debugPrint('[M3] Dictionary results for "猫": $resultCount');
-      expect(resultCount, greaterThan(0),
-          reason: 'F2: seeded dictionary must return results for 猫 — an '
-              'empty result means the seed or the lookup path broke');
+      expect(
+        resultCount,
+        greaterThan(0),
+        reason:
+            'F2: seeded dictionary must return results for 猫 — an '
+            'empty result means the seed or the lookup path broke',
+      );
       debugPrint('[M3] ✓ F2: Dictionary search returned results');
 
       // Clear search
@@ -121,8 +135,11 @@ void main() {
 
       // === F5: Profile Management ===
       debugPrint('[M3] === F5: Profile Management ===');
-      expect(await driver.focusWidget(settingsTab, maxSteps: 320), isTrue,
-          reason: 'Settings tab must be reachable by focus');
+      expect(
+        await driver.focusWidget(settingsTab, maxSteps: 320),
+        isTrue,
+        reason: 'Settings tab must be reachable by focus',
+      );
       await driver.activate(); // Settings tab
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -130,10 +147,10 @@ void main() {
       // 英文在非英文 locale 的 Mac 上永远找不到，整段被静默跳过。
       final String profilesLabel = t.settings_destination_profiles;
       expect(
-          await driver.focusWidget(find.text(profilesLabel).first,
-              maxSteps: 220),
-          isTrue,
-          reason: 'Configuration Schemes entry must be reachable by focus');
+        await driver.focusWidget(find.text(profilesLabel).first, maxSteps: 220),
+        isTrue,
+        reason: 'Configuration Schemes entry must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -144,8 +161,11 @@ void main() {
       // install may legitimately have no saved profiles yet.
       final profileCount = find.byType(ListTile).evaluate().length;
       debugPrint('[M3] Profile items visible: $profileCount');
-      expect(tester.takeException(), isNull,
-          reason: 'Profile page must not throw');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'Profile page must not throw',
+      );
 
       debugPrint('[M3] ✓ F5: Profile management accessible');
       await _goBack(tester);
@@ -162,15 +182,23 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       final Finder statsButton = find.byIcon(Icons.bar_chart_outlined);
-      expect(statsButton, findsWidgets,
-          reason:
-              'Home dashboard heatmap card must expose the statistics entry');
-      expect(await driver.requestFocusInside(statsButton.first), isTrue,
-          reason: 'Statistics center icon must own a focus node');
+      expect(
+        statsButton,
+        findsWidgets,
+        reason: 'Home dashboard heatmap card must expose the statistics entry',
+      );
+      expect(
+        await driver.requestFocusInside(statsButton.first),
+        isTrue,
+        reason: 'Statistics center icon must own a focus node',
+      );
       await driver.activate();
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.byType(StatisticsCenterPage), findsOneWidget,
-          reason: 'Dashboard statistics entry must open the statistics center');
+      expect(
+        find.byType(StatisticsCenterPage),
+        findsOneWidget,
+        reason: 'Dashboard statistics entry must open the statistics center',
+      );
       // 总览 tab 是默认落点；阅读/观看/游戏内容按需切 tab，本流只验入口链路。
       debugPrint('[M3] ✓ F8: Statistics center opened from dashboard');
       await takeScreenshot(binding, 'm3_statistics_center');
@@ -184,9 +212,10 @@ void main() {
       // 'Sync & Backup' 连英文 locale 都精确匹配不上。
       final String syncLabel = t.settings_destination_sync_backup;
       expect(
-          await driver.focusWidget(find.text(syncLabel).first, maxSteps: 220),
-          isTrue,
-          reason: 'Sync & Backup entry must be reachable by focus');
+        await driver.focusWidget(find.text(syncLabel).first, maxSteps: 220),
+        isTrue,
+        reason: 'Sync & Backup entry must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -203,8 +232,11 @@ void main() {
         }
       }
 
-      expect(foundBackend, isTrue,
-          reason: 'Sync page must expose at least one backend option');
+      expect(
+        foundBackend,
+        isTrue,
+        reason: 'Sync page must expose at least one backend option',
+      );
       debugPrint('[M3] ✓ F10: Sync backend options visible');
 
       await _goBack(tester);
@@ -215,10 +247,13 @@ void main() {
 
       final String cardCreationLabel = t.settings_destination_card_creation;
       expect(
-          await driver.focusWidget(find.text(cardCreationLabel).first,
-              maxSteps: 220),
-          isTrue,
-          reason: 'Card Creation entry must be reachable by focus');
+        await driver.focusWidget(
+          find.text(cardCreationLabel).first,
+          maxSteps: 220,
+        ),
+        isTrue,
+        reason: 'Card Creation entry must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -230,9 +265,13 @@ void main() {
       // focusWidget(该文本) 在桌面两栏恰好命中主列表里 Card Creation 行自身
       // 的 subtitle（重开同页，伪通过），在 iOS 全页布局上则对不可聚焦的
       // 头部文本耗尽步数。按真实结构断言：打开本页即达 Anki 配置正文。
-      expect(find.byType(AnkiSettingsBody), findsOneWidget,
-          reason: 'Card Creation page must flat-embed AnkiSettingsBody '
-              '(settings_schema_card_creation.dart body)');
+      expect(
+        find.byType(AnkiSettingsBody),
+        findsOneWidget,
+        reason:
+            'Card Creation page must flat-embed AnkiSettingsBody '
+            '(settings_schema_card_creation.dart body)',
+      );
       debugPrint('[M3] ✓ F9: Anki settings body embedded (no crash)');
       await takeScreenshot(binding, 'm3_anki_settings');
 
@@ -243,18 +282,28 @@ void main() {
       await _selectTab(tester, HomeTab.books);
 
       final bookEntries = findBookEntries();
-      expect(bookEntries, findsWidgets,
-          reason: 'F6 seeded book must be present for tag management');
+      expect(
+        bookEntries,
+        findsWidgets,
+        reason: 'F6 seeded book must be present for tag management',
+      );
       // Focus-driven long-press: focus the book card, then dispatch the same
       // GamepadLongPressIntent the gamepad layer fires on a held A button —
       // it invokes the identical onLongPress as a mouse long-press, opening
       // the single-book context menu. Position-independent, three-end safe.
-      expect(await driver.focusWidget(bookEntries.first), isTrue,
-          reason: 'Book card must be reachable by focus');
+      expect(
+        await driver.focusWidget(bookEntries.first),
+        isTrue,
+        reason: 'Book card must be reachable by focus',
+      );
       final bool longPressed = _dispatchGamepadLongPress();
-      expect(longPressed, isTrue,
-          reason: 'focused book card must expose GamepadLongPressIntent '
-              '(the keyboard/gamepad equivalent of a long-press)');
+      expect(
+        longPressed,
+        isTrue,
+        reason:
+            'focused book card must expose GamepadLongPressIntent '
+            '(the keyboard/gamepad equivalent of a long-press)',
+      );
       await tester.pump(const Duration(milliseconds: 500));
       debugPrint('[M3] Long pressed book entry (via GamepadLongPressIntent)');
 
@@ -262,8 +311,11 @@ void main() {
 
       // Look for Tags option
       final tagsChip = find.text(t.tag_label);
-      expect(tagsChip, findsWidgets,
-          reason: 'Book context menu must expose Tags');
+      expect(
+        tagsChip,
+        findsWidgets,
+        reason: 'Book context menu must expose Tags',
+      );
       debugPrint('[M3] ✓ F6: Tags option visible in context menu');
 
       // Dismiss the context menu via the keyboard (Escape pops the menu
@@ -286,8 +338,11 @@ void main() {
 /// library_fixture 的 showBooksTab 同一机制），不做坐标点击。rail 的焦点
 /// 可达性由 F2/F5 从干净遍历起点专门断言，这里只负责把后续区块带到目标 tab。
 Future<void> _selectTab(WidgetTester tester, HomeTab tab) async {
-  expect(HomePage.debugSelectTab, isNotNull,
-      reason: 'HomePage.debugSelectTab hook must be registered (debug build)');
+  expect(
+    HomePage.debugSelectTab,
+    isNotNull,
+    reason: 'HomePage.debugSelectTab hook must be registered (debug build)',
+  );
   HomePage.debugSelectTab!(tab);
   await tester.pump(const Duration(milliseconds: 500));
 }
@@ -296,8 +351,11 @@ Future<void> _goBack(WidgetTester tester) async {
   // Coordinate-free system back: on iOS this drives the same Navigator pop
   // that a completed edge swipe reaches, without depending on an external
   // keyboard Escape mapping or a localized Back tooltip.
-  expect(await tester.binding.handlePopRoute(), isTrue,
-      reason: 'the current feature page must accept system back');
+  expect(
+    await tester.binding.handlePopRoute(),
+    isTrue,
+    reason: 'the current feature page must accept system back',
+  );
   await tester.pump(const Duration(milliseconds: 250));
 }
 

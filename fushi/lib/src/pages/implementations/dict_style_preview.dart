@@ -63,8 +63,9 @@ class DictStylePreviewDebug {
 
 class _DictStylePreviewState extends State<DictStylePreview> {
   InAppWebViewController? _controller;
-  final WebViewDeathGuard _deathGuard =
-      WebViewDeathGuard(surface: 'dict-style-preview');
+  final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
+    surface: 'dict-style-preview',
+  );
   bool _ready = false;
 
   /// 上一次真正推给 WebView 的主题标识，避免每次依赖变化都重复 evaluateJavascript。
@@ -104,7 +105,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     _pushedDark = dark;
     _pushedEink = eink;
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         document.documentElement.setAttribute('data-theme', '${dark ? 'dark' : 'light'}');
         document.documentElement.classList.toggle('eink', $eink);
       ''',
@@ -129,7 +131,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     final InAppWebViewController? controller = _controller;
     if (controller == null || !_ready) return;
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         window.__fushiStylePreviewApply(
           ${jsonEncode(widget.css)},
           ${jsonEncode(dictStylePartSelector(widget.highlightPart))}
@@ -148,7 +151,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     if (controller == null) return;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
         document.documentElement.setAttribute('data-theme', '${dark ? 'dark' : 'light'}');
         window.lookupEntries = ${jsonEncode(kDictStylePreviewEntries)};
         window.kanjiResults = [];
@@ -175,12 +179,11 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     // 空 <script>，预览白屏（BUG-1918 ②）。
     final String? inlineHtml =
         DictionaryPopupWebViewState.shouldInlinePopupAssets
-            ? DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
-                themeAttr:
-                    theme.brightness == Brightness.dark ? 'dark' : 'light',
-                bgHex: _hex(theme.colorScheme.surface),
-              )
-            : null;
+        ? DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
+            themeAttr: theme.brightness == Brightness.dark ? 'dark' : 'light',
+            bgHex: _hex(theme.colorScheme.surface),
+          )
+        : null;
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
@@ -236,11 +239,11 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         onRenderProcessGone:
             (InAppWebViewController _, RenderProcessGoneDetail detail) =>
                 unawaited(
-          _deathGuard.handleDeath(
-            didCrash: detail.didCrash,
-            rendererPriorityAtExit: detail.rendererPriorityAtExit,
-          ),
-        ),
+                  _deathGuard.handleDeath(
+                    didCrash: detail.didCrash,
+                    rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                  ),
+                ),
       ),
     );
   }
@@ -311,13 +314,10 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
 /// 注入预览 WebView 的点选逻辑。
 ///
 /// 部位 → 选择器表由 Dart 侧生成，避免两边各维护一份而漂移。
-final String _kPickerJs = '''
+final String _kPickerJs =
+    '''
   window.__fushiStylePreviewParts = ${jsonEncode(<Map<String, String>>[
-      for (final DictStylePart part in DictStylePart.values)
-        <String, String>{
-          'name': part.name,
-          'selector': dictStylePartSelector(part),
-        },
+      for (final DictStylePart part in DictStylePart.values) <String, String>{'name': part.name, 'selector': dictStylePartSelector(part)},
     ])};
 
   (function () {

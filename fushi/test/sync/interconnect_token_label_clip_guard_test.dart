@@ -41,10 +41,7 @@ Future<double> _labelTopMinusClipTop(
                     ),
                   )
                 else
-                  FushiTextField(
-                    controller: controller,
-                    labelText: '对端访问令牌',
-                  ),
+                  FushiTextField(controller: controller, labelText: '对端访问令牌'),
               ],
             ),
           ),
@@ -67,42 +64,44 @@ Future<double> _labelTopMinusClipTop(
 
 void main() {
   testWidgets(
-      'BUG-755 repro: zero childrenPadding clips the floating label top half',
-      (WidgetTester tester) async {
-    // MD3 下 FushiTextField 已改为填充式（标题浮在填充块内），零 padding 不再
-    // 裁切；但墨水屏仍是 OutlineInputBorder，标题骑在描边上——用该形态复现。
-    final double delta = await _labelTopMinusClipTop(
-      tester,
-      EdgeInsets.zero,
-      outlinedField: true,
-    );
-    expect(
-      delta < 0,
-      isTrue,
-      reason:
-          'floating label top ($delta) should be above the Expansible ClipRect '
-          'top when childrenPadding is zero (this is the clipped state)',
-    );
-  });
-
-  testWidgets(
-      'BUG-755 fix: top childrenPadding keeps the floating label inside clip',
-      (WidgetTester tester) async {
-    // Must match the value used in interconnect.part.dart.
-    for (final bool outlined in <bool>[false, true]) {
+    'BUG-755 repro: zero childrenPadding clips the floating label top half',
+    (WidgetTester tester) async {
+      // MD3 下 FushiTextField 已改为填充式（标题浮在填充块内），零 padding 不再
+      // 裁切；但墨水屏仍是 OutlineInputBorder，标题骑在描边上——用该形态复现。
       final double delta = await _labelTopMinusClipTop(
         tester,
-        const EdgeInsets.only(top: 10),
-        outlinedField: outlined,
+        EdgeInsets.zero,
+        outlinedField: true,
       );
       expect(
-        delta >= 0,
+        delta < 0,
         isTrue,
         reason:
-            'floating label top ($delta, outlined=$outlined) must sit within '
-            'the Expansible ClipRect (fully visible) once top childrenPadding '
-            'is applied',
+            'floating label top ($delta) should be above the Expansible ClipRect '
+            'top when childrenPadding is zero (this is the clipped state)',
       );
-    }
-  });
+    },
+  );
+
+  testWidgets(
+    'BUG-755 fix: top childrenPadding keeps the floating label inside clip',
+    (WidgetTester tester) async {
+      // Must match the value used in interconnect.part.dart.
+      for (final bool outlined in <bool>[false, true]) {
+        final double delta = await _labelTopMinusClipTop(
+          tester,
+          const EdgeInsets.only(top: 10),
+          outlinedField: outlined,
+        );
+        expect(
+          delta >= 0,
+          isTrue,
+          reason:
+              'floating label top ($delta, outlined=$outlined) must sit within '
+              'the Expansible ClipRect (fully visible) once top childrenPadding '
+              'is applied',
+        );
+      }
+    },
+  );
 }

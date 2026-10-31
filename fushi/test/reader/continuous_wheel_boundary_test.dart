@@ -20,13 +20,12 @@ void main() {
     required double delta,
     required bool atStart,
     required bool atEnd,
-  }) =>
-      ReaderPaginationScripts.continuousWheelBoundaryDirection(
-        vertical: vertical,
-        delta: delta,
-        atStart: atStart,
-        atEnd: atEnd,
-      );
+  }) => ReaderPaginationScripts.continuousWheelBoundaryDirection(
+    vertical: vertical,
+    delta: delta,
+    atStart: atStart,
+    atEnd: atEnd,
+  );
 
   group('horizontal continuous (scroll axis = vertical)', () {
     test('scroll down at bottom -> forward chapter turn', () {

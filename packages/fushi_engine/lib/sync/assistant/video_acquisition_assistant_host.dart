@@ -21,16 +21,16 @@ const String kHostAssistantReasonNotReady = 'not_ready';
 const String kHostAssistantReasonDisabled = 'disabled';
 
 /// 开一场本机执行的 AI 下视频会话：service + 会话结束时要释放的资源（发现服务等）。
-typedef VideoAcquisitionOpener
-    = Future<({VideoAcquisitionService service, void Function() release})>
-        Function(String locale);
+typedef VideoAcquisitionOpener =
+    Future<({VideoAcquisitionService service, void Function() release})>
+    Function(String locale);
 
 class VideoAcquisitionAssistantHost implements HostAssistantProvider {
   VideoAcquisitionAssistantHost({
     required Future<String?> Function() videoAcquireBlocker,
     required VideoAcquisitionOpener openVideoAcquisition,
-  })  : _videoAcquireBlocker = videoAcquireBlocker,
-        _openVideoAcquisition = openVideoAcquisition;
+  }) : _videoAcquireBlocker = videoAcquireBlocker,
+       _openVideoAcquisition = openVideoAcquisition;
 
   /// null = 现在就能开；否则是缺什么（[kHostAssistantReasonNoProvider] 等）。
   final Future<String?> Function() _videoAcquireBlocker;
@@ -55,7 +55,10 @@ class VideoAcquisitionAssistantHost implements HostAssistantProvider {
   }) async {
     if (feature != kHostAssistantFeatureVideoAcquire) {
       throw ArgumentError.value(
-          feature, 'feature', 'unknown assistant feature');
+        feature,
+        'feature',
+        'unknown assistant feature',
+      );
     }
     final String? reason = await _videoAcquireBlocker();
     if (reason != null) throw HostAssistantUnavailable(reason);
@@ -68,7 +71,7 @@ class VideoAcquisitionAssistantHost implements HostAssistantProvider {
 /// 把一个本机 [VideoAcquisitionService] 暴露成互联会话。
 class VideoAcquisitionHostSession implements HostAssistantSession {
   VideoAcquisitionHostSession(this._service, {void Function()? onClose})
-      : _onClose = onClose {
+    : _onClose = onClose {
     _subscription = _service.states.listen((_) {
       _revision++;
       if (!_changes.isClosed) _changes.add(null);
@@ -107,20 +110,20 @@ class VideoAcquisitionHostSession implements HostAssistantSession {
     if (_closed) throw StateError('session closed');
     final Future<void> Function() run = switch (action['type']) {
       'text' => switch (action['text']) {
-          final String text when text.trim().isNotEmpty => () =>
-              _service.submitText(text),
-          _ => throw ArgumentError('text action needs non-empty text'),
-        },
+        final String text when text.trim().isNotEmpty =>
+          () => _service.submitText(text),
+        _ => throw ArgumentError('text action needs non-empty text'),
+      },
       'choose' => _chooseAction(action),
       'confirm' => _service.confirm,
       'cancel' => _service.cancel,
       'restart' => _service.restart,
       'toggleFranchise' => switch (action['index']) {
-          final int index when index >= 0 => () =>
-              _service.toggleFranchiseEntry(index),
-          _ =>
-            throw ArgumentError('toggleFranchise needs a non-negative index'),
-        },
+        final int index when index >= 0 => () => _service.toggleFranchiseEntry(
+          index,
+        ),
+        _ => throw ArgumentError('toggleFranchise needs a non-negative index'),
+      },
       _ => throw ArgumentError('unknown action type: ${action['type']}'),
     };
     // dispatch 在第一个 await 之前就把事件归约进状态了：这里返回时快照已是新的。

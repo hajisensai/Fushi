@@ -36,13 +36,13 @@ class AppDownloadHost implements HostDownloadHost {
     required VideoResourceRegistry? Function() resourceRegistry,
     required VideoDownloadSubscriptionService? Function() subscriptionService,
     this.discoveryImportSupported = true,
-  })  : _database = database,
-        _pipeline = pipeline,
-        _backendTarget = backendTarget,
-        _readyBackend = readyBackend,
-        _targetSourceId = targetSourceId,
-        _resourceRegistry = resourceRegistry,
-        _subscriptionService = subscriptionService;
+  }) : _database = database,
+       _pipeline = pipeline,
+       _backendTarget = backendTarget,
+       _readyBackend = readyBackend,
+       _targetSourceId = targetSourceId,
+       _resourceRegistry = resourceRegistry,
+       _subscriptionService = subscriptionService;
 
   final FushiDatabase Function() _database;
   final VideoDownloadPipelineService? Function() _pipeline;
@@ -70,13 +70,13 @@ class AppDownloadHost implements HostDownloadHost {
 
   @override
   Future<Map<String, Object?>> capability() async => <String, Object?>{
-        'supported': _supported,
-        'backend': _readyBackend() ?? 'none',
-        'kinds': <String>[
-          'video',
-          if (discoveryImportSupported) ...kHostDownloadDiscoveryKinds,
-        ],
-      };
+    'supported': _supported,
+    'backend': _readyBackend() ?? 'none',
+    'kinds': <String>[
+      'video',
+      if (discoveryImportSupported) ...kHostDownloadDiscoveryKinds,
+    ],
+  };
 
   @override
   Future<List<VideoDownloadJobRow>> listJobs() =>
@@ -169,24 +169,26 @@ class AppSubscriptionHost implements HostSubscriptionHost {
   final AppDownloadHost _owner;
 
   PipelineSubscriptionHost get _delegate => PipelineSubscriptionHost(
-        db: _owner._database(),
-        registry: _owner._resourceRegistry() ??
-            VideoResourceRegistry(const <VideoResourceProvider>[]),
-        backendTarget: _owner._backendTarget,
-        targetSourceId: () async {
-          final int? id = await _owner._targetSourceId();
-          if (id == null) {
-            throw const VideoDownloadPipelineActionRequired(
-              'no managed video source on this host',
-            );
-          }
-          return id;
-        },
-        backendName: _owner._readyBackend() ?? 'none',
-        service: _owner._supported ? _owner._subscriptionService() : null,
-        releaseSeedsOutsideTarget:
-            _owner._pipeline()?.releaseSubscriptionSeedsOutsideTarget,
-      );
+    db: _owner._database(),
+    registry:
+        _owner._resourceRegistry() ??
+        VideoResourceRegistry(const <VideoResourceProvider>[]),
+    backendTarget: _owner._backendTarget,
+    targetSourceId: () async {
+      final int? id = await _owner._targetSourceId();
+      if (id == null) {
+        throw const VideoDownloadPipelineActionRequired(
+          'no managed video source on this host',
+        );
+      }
+      return id;
+    },
+    backendName: _owner._readyBackend() ?? 'none',
+    service: _owner._supported ? _owner._subscriptionService() : null,
+    releaseSeedsOutsideTarget: _owner
+        ._pipeline()
+        ?.releaseSubscriptionSeedsOutsideTarget,
+  );
 
   @override
   Future<Map<String, Object?>> capability() => _delegate.capability();
@@ -200,8 +202,7 @@ class AppSubscriptionHost implements HostSubscriptionHost {
   @override
   Future<VideoDownloadSubscriptionRow> create(
     HostSubscriptionCreateRequest request,
-  ) =>
-      _delegate.create(request);
+  ) => _delegate.create(request);
 
   @override
   Future<void> setEnabled(String subscriptionId, bool enabled) =>
@@ -223,6 +224,5 @@ class AppSubscriptionHost implements HostSubscriptionHost {
   Future<VideoDownloadSubscriptionRow> update(
     String subscriptionId,
     VideoDownloadSubscriptionRuleEdit edit,
-  ) =>
-      _delegate.update(subscriptionId, edit);
+  ) => _delegate.update(subscriptionId, edit);
 }

@@ -34,8 +34,11 @@ void main() {
     expect(ensureIndex, greaterThan(0));
     final String body = source.substring(ensureIndex);
     final int waitIndex = body.indexOf('WaitForAppAlive(kAppRelaunchWaitMs)');
-    expect(waitIndex, greaterThan(0),
-        reason: 'EnsureAppBack 必须以「app 是否已回来」为判据');
+    expect(
+      waitIndex,
+      greaterThan(0),
+      reason: 'EnsureAppBack 必须以「app 是否已回来」为判据',
+    );
     // 已经回来就直接返回，绝不重复拉起（安装成功时 [Run] 已经拉起新版）。
     expect(body.substring(waitIndex, waitIndex + 400), contains('return;'));
   });

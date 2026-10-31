@@ -83,8 +83,9 @@ void main() {
     // 关键：tap 必须能穿过 Draggable 打开选择器。
     // 「可用按钮」托盘的胶囊带名字，同名按钮（下一句字幕）可能已在编辑器里出现；
     // 选择器是否弹出按「点之后多出来的那一处」判，点选取最后一处（弹窗在最上层）。
-    final Finder nextSubtitle =
-        find.text(ShortcutAction.videoNextSubtitle.label);
+    final Finder nextSubtitle = find.text(
+      ShortcutAction.videoNextSubtitle.label,
+    );
     final int before = nextSubtitle.evaluate().length;
     await tester.tap(_slotChip(VideoControlItem.customAction1));
     await tester.pumpAndSettle();
@@ -152,15 +153,12 @@ void main() {
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
 
-    expect(
-      called,
-      isFalse,
-      reason: '取消不该触发改绑回调（否则点外部就把绑定清空了）',
-    );
+    expect(called, isFalse, reason: '取消不该触发改绑回调（否则点外部就把绑定清空了）');
   });
 
-  testWidgets('共享选择器：取消返回 null，选动作/选「不绑定」返回可区分的结果',
-      (WidgetTester tester) async {
+  testWidgets('共享选择器：取消返回 null，选动作/选「不绑定」返回可区分的结果', (
+    WidgetTester tester,
+  ) async {
     // 播放器控制条点空按钮走的就是这个函数（与编辑器同一个）。它是「未绑定也显示」
     // 得以成立的前提——空按钮不是死按钮，而是就地的配置入口，所以这里单独钉住它的
     // 三种返回，尤其是「取消 ≠ 不绑定」（两者都不带动作，混淆就会让点外部清空绑定）。
@@ -198,8 +196,9 @@ void main() {
     // ② 选一个动作 → 带动作的结果
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester
-        .ensureVisible(find.text(ShortcutAction.videoNextSubtitle.label));
+    await tester.ensureVisible(
+      find.text(ShortcutAction.videoNextSubtitle.label),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(ShortcutAction.videoNextSubtitle.label));
     await tester.pumpAndSettle();

@@ -20,8 +20,11 @@ void main() {
         expect(c.text, isNotEmpty);
         expect(c.endMs, greaterThan(c.startMs), reason: 'cue $i 必须有正时长');
         if (i > 0) {
-          expect(c.startMs, greaterThanOrEqualTo(cues[i - 1].endMs),
-              reason: 'cue $i 起点不得早于上一条终点');
+          expect(
+            c.startMs,
+            greaterThanOrEqualTo(cues[i - 1].endMs),
+            reason: 'cue $i 起点不得早于上一条终点',
+          );
         }
       }
     });
@@ -31,8 +34,10 @@ void main() {
     test('cuesToSrt → SrtParser.parseString 完整还原', () {
       final List<AudioCue> cues = buildSampleCues(bookKey: bookKey, count: 5);
       final String srt = cuesToSrt(cues);
-      final List<AudioCue> parsed =
-          SrtParser.parseString(content: srt, bookKey: bookKey);
+      final List<AudioCue> parsed = SrtParser.parseString(
+        content: srt,
+        bookKey: bookKey,
+      );
 
       expect(parsed, hasLength(cues.length));
       for (int i = 0; i < cues.length; i++) {
@@ -47,8 +52,10 @@ void main() {
     test('cuesToVtt → VttParser.parseString 完整还原', () {
       final List<AudioCue> cues = buildSampleCues(bookKey: bookKey, count: 5);
       final String vtt = cuesToVtt(cues);
-      final List<AudioCue> parsed =
-          VttParser.parseString(content: vtt, bookKey: bookKey);
+      final List<AudioCue> parsed = VttParser.parseString(
+        content: vtt,
+        bookKey: bookKey,
+      );
 
       expect(parsed, hasLength(cues.length));
       for (int i = 0; i < cues.length; i++) {
@@ -63,8 +70,10 @@ void main() {
     test('cuesToAss → AssParser.parseString 完整还原', () {
       final List<AudioCue> cues = buildSampleCues(bookKey: bookKey, count: 5);
       final String ass = cuesToAss(cues);
-      final List<AudioCue> parsed =
-          AssParser.parseString(content: ass, bookKey: bookKey);
+      final List<AudioCue> parsed = AssParser.parseString(
+        content: ass,
+        bookKey: bookKey,
+      );
 
       expect(parsed, hasLength(cues.length));
       for (int i = 0; i < cues.length; i++) {
@@ -80,8 +89,10 @@ void main() {
     test('cuesToLrc → LrcParser.parseString 还原 start + text', () {
       final List<AudioCue> cues = buildSampleCues(bookKey: bookKey, count: 5);
       final String lrc = cuesToLrc(cues);
-      final List<AudioCue> parsed =
-          LrcParser.parseString(content: lrc, bookKey: bookKey);
+      final List<AudioCue> parsed = LrcParser.parseString(
+        content: lrc,
+        bookKey: bookKey,
+      );
 
       expect(parsed, hasLength(cues.length));
       for (int i = 0; i < cues.length; i++) {

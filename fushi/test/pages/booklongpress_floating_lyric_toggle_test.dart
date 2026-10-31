@@ -42,7 +42,8 @@ void main() {
     expect(
       src.contains('FloatingLyricChannel.supported &&'),
       isTrue,
-      reason: '悬浮字幕入口只认 FloatingLyricChannel.supported（Android / Windows / '
+      reason:
+          '悬浮字幕入口只认 FloatingLyricChannel.supported（Android / Windows / '
           'macOS），不各自写 Platform 判据。',
     );
   });

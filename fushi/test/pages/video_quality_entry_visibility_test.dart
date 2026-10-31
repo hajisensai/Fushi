@@ -80,15 +80,16 @@ void main() {
     expect(find.text('1080p'), findsOneWidget);
   });
 
-  testWidgets('无画质菜单的流（onOpenQuality 未接线）不显示画质行', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('无画质菜单的流（onOpenQuality 未接线）不显示画质行', (WidgetTester tester) async {
     await _pumpPlaybackCategory(
       tester,
       qualityOptionCount: 0,
       onOpenQuality: null,
     );
-    expect(find.text(t.video_quality), findsNothing,
-        reason: '本地文件 / 单档直链不该出现一个点开只有空面板的画质入口');
+    expect(
+      find.text(t.video_quality),
+      findsNothing,
+      reason: '本地文件 / 单档直链不该出现一个点开只有空面板的画质入口',
+    );
   });
 }

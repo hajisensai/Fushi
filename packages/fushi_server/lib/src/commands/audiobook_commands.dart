@@ -15,7 +15,8 @@ import 'package:args/args.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
-import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart' show kDiscoverySubtitleExtensions;
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
+    show kDiscoverySubtitleExtensions;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart' show naturalCompare;
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
@@ -26,21 +27,28 @@ const String kAudiobookUsage = '''
 audiobook align <bookKey> --audio <dir|file> [--audio …] [--srt <file>]
                                                      给已在库的 EPUB 配音频 + 字幕并对齐（--json 可用）''';
 
-const String _kAlignUsageLine = 'audiobook align <bookKey> --audio <dir|file> [--audio …] [--srt <file>] [--json]';
+const String _kAlignUsageLine =
+    'audiobook align <bookKey> --audio <dir|file> [--audio …] [--srt <file>] [--json]';
 
-bool _isAudio(String path) => AudiobookStorage.audioExtensions.contains(p.extension(path).toLowerCase());
+bool _isAudio(String path) =>
+    AudiobookStorage.audioExtensions.contains(p.extension(path).toLowerCase());
 
-bool _isSubtitle(String path) => kDiscoverySubtitleExtensions.contains(p.extension(path).toLowerCase());
+bool _isSubtitle(String path) =>
+    kDiscoverySubtitleExtensions.contains(p.extension(path).toLowerCase());
 
 /// `--audio` 的输入（目录 = 其下一层的音频与字幕文件；文件 = 它自己）展开成
 /// 自然序的音频清单与目录里找到的字幕候选。
-({List<String> audio, List<String> subtitles}) collectAudiobookInputs(List<String> inputs) {
+({List<String> audio, List<String> subtitles}) collectAudiobookInputs(
+  List<String> inputs,
+) {
   final List<String> audio = <String>[];
   final List<String> subtitles = <String>[];
   for (final String input in inputs) {
     if (FileSystemEntity.isDirectorySync(input)) {
       final List<String> files = <String>[
-        for (final FileSystemEntity e in Directory(input).listSync(followLinks: false))
+        for (final FileSystemEntity e in Directory(
+          input,
+        ).listSync(followLinks: false))
           if (e is File) e.path,
       ]..sort(naturalCompare);
       audio.addAll(files.where(_isAudio));
@@ -64,7 +72,10 @@ class AudiobookCommands extends CliModule {
   void register(ArgParser parser) {
     addJsonFlag(parser.addCommand('audiobook').addCommand('align'))
       ..addMultiOption('audio', help: '音频目录或文件（可重复；目录取其下一层的音频，自然序）')
-      ..addOption('srt', help: '字幕（srt / vtt / lrc / ass）；缺省在 --audio 目录里找唯一一份');
+      ..addOption(
+        'srt',
+        help: '字幕（srt / vtt / lrc / ass）；缺省在 --audio 目录里找唯一一份',
+      );
   }
 
   @override
@@ -74,17 +85,20 @@ class AudiobookCommands extends CliModule {
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
     final ArgResults? leaf = command.command;
     if (leaf == null) return _io.usage('缺少子命令', _kAlignUsageLine);
-    if (leaf.rest.length != 1) return _io.usage('要且只要一个 bookKey', _kAlignUsageLine);
+    if (leaf.rest.length != 1)
+      return _io.usage('要且只要一个 bookKey', _kAlignUsageLine);
     final String bookKey = leaf.rest.single;
     final List<String> audioInputs = <String>[
-      for (final String raw in leaf['audio'] as List<String>) p.normalize(p.absolute(raw)),
+      for (final String raw in leaf['audio'] as List<String>)
+        p.normalize(p.absolute(raw)),
     ];
     if (audioInputs.isEmpty) return _io.usage('缺少 --audio', _kAlignUsageLine);
     final String? srtArg = leaf['srt'] as String?;
     final String? srt = srtArg == null ? null : p.normalize(p.absolute(srtArg));
     final List<String> missing = <String>[
       for (final String path in <String>[...audioInputs, ?srt])
-        if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound) path,
+        if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound)
+          path,
     ];
     if (missing.isNotEmpty) {
       for (final String path in missing) {
@@ -98,11 +112,17 @@ class AudiobookCommands extends CliModule {
       }
     }
     if (srt != null && !_isSubtitle(srt)) {
-      return _io.usage('不是字幕文件: $srt（支持 ${kDiscoverySubtitleExtensions.join(' / ')}）', _kAlignUsageLine);
+      return _io.usage(
+        '不是字幕文件: $srt（支持 ${kDiscoverySubtitleExtensions.join(' / ')}）',
+        _kAlignUsageLine,
+      );
     }
-    final ({List<String> audio, List<String> subtitles}) inputs = collectAudiobookInputs(audioInputs);
+    final ({List<String> audio, List<String> subtitles}) inputs =
+        collectAudiobookInputs(audioInputs);
     if (inputs.audio.isEmpty) {
-      _io.err.writeln('--audio 里没有音频文件（${AudiobookStorage.audioExtensions.join(' / ')}）');
+      _io.err.writeln(
+        '--audio 里没有音频文件（${AudiobookStorage.audioExtensions.join(' / ')}）',
+      );
       return kExitNoInput;
     }
     final String subtitle;
@@ -111,10 +131,15 @@ class AudiobookCommands extends CliModule {
     } else if (inputs.subtitles.length == 1) {
       subtitle = inputs.subtitles.single;
     } else if (inputs.subtitles.isEmpty) {
-      _io.err.writeln('--audio 目录里没有字幕：用 --srt 指定（没有字幕可先跑 fushi_server transcribe 生成）');
+      _io.err.writeln(
+        '--audio 目录里没有字幕：用 --srt 指定（没有字幕可先跑 fushi_server transcribe 生成）',
+      );
       return kExitNoInput;
     } else {
-      return _io.usage('--audio 目录里有 ${inputs.subtitles.length} 份字幕，用 --srt 指定用哪一份', _kAlignUsageLine);
+      return _io.usage(
+        '--audio 目录里有 ${inputs.subtitles.length} 份字幕，用 --srt 指定用哪一份',
+        _kAlignUsageLine,
+      );
     }
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
@@ -135,8 +160,9 @@ class AudiobookCommands extends CliModule {
         title: row.title,
         subtitlePath: subtitle,
         audioPaths: inputs.audio,
-        onProgress: (double fraction, String message) =>
-            _io.err.writeln('${(fraction * 100).round()}% $message'.trimRight()),
+        onProgress: (double fraction, String message) => _io.err.writeln(
+          '${(fraction * 100).round()}% $message'.trimRight(),
+        ),
       );
       final AudiobookHealth health = result.health;
       if (json) {

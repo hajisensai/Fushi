@@ -54,9 +54,12 @@ void main() {
 
   testWidgets('点今天格触发一次回调；再点同格收起不触发', (WidgetTester tester) async {
     final List<(String, int)> calls = <(String, int)>[];
-    await tester.pumpWidget(buildHeatmap(
-      onDaySelected: (String dateKey, int value) => calls.add((dateKey, value)),
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        onDaySelected: (String dateKey, int value) =>
+            calls.add((dateKey, value)),
+      ),
+    );
 
     // 今天 = 末列（索引 3）周三（行索引 2）。
     await tester.tapAt(cellCenter(tester, weeks - 1, 2));
@@ -71,9 +74,12 @@ void main() {
 
   testWidgets('点未来占位格不触发回调', (WidgetTester tester) async {
     final List<(String, int)> calls = <(String, int)>[];
-    await tester.pumpWidget(buildHeatmap(
-      onDaySelected: (String dateKey, int value) => calls.add((dateKey, value)),
-    ));
+    await tester.pumpWidget(
+      buildHeatmap(
+        onDaySelected: (String dateKey, int value) =>
+            calls.add((dateKey, value)),
+      ),
+    );
 
     // 末列周五（行索引 4）在 2026-07-15（周三）之后 → 占位格。
     await tester.tapAt(cellCenter(tester, weeks - 1, 4));

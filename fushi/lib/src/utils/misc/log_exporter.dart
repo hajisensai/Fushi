@@ -34,8 +34,9 @@ Future<void> saveLogToFile({
   // （参照 sync_settings_schema 的 `if (mounted)` 保护）。
   void notify(String message) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   File? tmp;
@@ -57,10 +58,9 @@ Future<void> saveLogToFile({
         notify(t.log_export_saved);
       }
     } else {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(tmpPath, mimeType: 'text/plain')],
-        subject: subject,
-      );
+      await FushiShare.shareFiles(<XFile>[
+        XFile(tmpPath, mimeType: 'text/plain'),
+      ], subject: subject);
     }
   } catch (_) {
     notify(t.log_export_failed);

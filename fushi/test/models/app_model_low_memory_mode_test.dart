@@ -12,9 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -23,8 +21,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_path_provider_lmm');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_path_provider_lmm',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -73,39 +72,43 @@ void main() {
   });
 
   test(
-      'setLowMemoryMode(true) shrinks dictionary history cap and image cache budget',
-      () async {
-    final ImageCache cache = PaintingBinding.instance.imageCache;
+    'setLowMemoryMode(true) shrinks dictionary history cap and image cache budget',
+    () async {
+      final ImageCache cache = PaintingBinding.instance.imageCache;
 
-    await appModel.setLowMemoryMode(true);
+      await appModel.setLowMemoryMode(true);
 
-    expect(appModel.lowMemoryMode, isTrue);
-    expect(appModel.maximumDictionaryHistoryItems, 5);
-    expect(cache.maximumSize, 50);
-    expect(cache.maximumSizeBytes, 20 << 20);
-  });
+      expect(appModel.lowMemoryMode, isTrue);
+      expect(appModel.maximumDictionaryHistoryItems, 5);
+      expect(cache.maximumSize, 50);
+      expect(cache.maximumSizeBytes, 20 << 20);
+    },
+  );
 
   test(
-      'setLowMemoryMode(false) restores normal dictionary history cap and image cache budget',
-      () async {
-    final ImageCache cache = PaintingBinding.instance.imageCache;
+    'setLowMemoryMode(false) restores normal dictionary history cap and image cache budget',
+    () async {
+      final ImageCache cache = PaintingBinding.instance.imageCache;
 
-    await appModel.setLowMemoryMode(true);
-    await appModel.setLowMemoryMode(false);
+      await appModel.setLowMemoryMode(true);
+      await appModel.setLowMemoryMode(false);
 
-    expect(appModel.lowMemoryMode, isFalse);
-    expect(appModel.maximumDictionaryHistoryItems, 10);
-    expect(cache.maximumSize, 1000);
-    expect(cache.maximumSizeBytes, 100 << 20);
-  });
+      expect(appModel.lowMemoryMode, isFalse);
+      expect(appModel.maximumDictionaryHistoryItems, 10);
+      expect(cache.maximumSize, 1000);
+      expect(cache.maximumSizeBytes, 100 << 20);
+    },
+  );
 
-  test('low memory mode persists to the database under low_memory_mode key',
-      () async {
-    await appModel.setLowMemoryMode(true);
+  test(
+    'low memory mode persists to the database under low_memory_mode key',
+    () async {
+      await appModel.setLowMemoryMode(true);
 
-    final PreferencesRepository reloaded = PreferencesRepository(db);
-    await reloaded.loadFromDb();
-    expect(reloaded.lowMemoryMode, isTrue);
-    reloaded.dispose();
-  });
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.lowMemoryMode, isTrue);
+      reloaded.dispose();
+    },
+  );
 }

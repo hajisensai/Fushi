@@ -63,24 +63,20 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
   );
 }
 
-Future<void> _pumpShortcutHarness(
-  WidgetTester tester,
-  List<String> log,
-) async {
+Future<void> _pumpShortcutHarness(WidgetTester tester, List<String> log) async {
   final FushiShortcutRegistry registry = FushiShortcutRegistry()
     ..loadDefaults(TargetPlatform.windows);
-  await tester.pumpWidget(MaterialApp(
-    home: CallbackShortcuts(
-      bindings: buildVideoPlayerShortcutsFromRegistry(
-        registry,
-        _recordingVideoActions(log),
-      ),
-      child: const Focus(
-        autofocus: true,
-        child: SizedBox.expand(),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: CallbackShortcuts(
+        bindings: buildVideoPlayerShortcutsFromRegistry(
+          registry,
+          _recordingVideoActions(log),
+        ),
+        child: const Focus(autofocus: true, child: SizedBox.expand()),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -100,23 +96,25 @@ Future<void> _sendWithModifiers(
 }
 
 void main() {
-  testWidgets('video shortcuts dispatch to favorite, replay, and list actions',
-      (WidgetTester tester) async {
-    final List<String> log = <String>[];
-    await _pumpShortcutHarness(tester, log);
+  testWidgets(
+    'video shortcuts dispatch to favorite, replay, and list actions',
+    (WidgetTester tester) async {
+      final List<String> log = <String>[];
+      await _pumpShortcutHarness(tester, log);
 
-    await _sendWithModifiers(tester, LogicalKeyboardKey.keyD, control: true);
-    await _sendWithModifiers(tester, LogicalKeyboardKey.keyR);
-    await _sendWithModifiers(tester, LogicalKeyboardKey.keyR, shift: true);
-    await _sendWithModifiers(tester, LogicalKeyboardKey.keyL);
+      await _sendWithModifiers(tester, LogicalKeyboardKey.keyD, control: true);
+      await _sendWithModifiers(tester, LogicalKeyboardKey.keyR);
+      await _sendWithModifiers(tester, LogicalKeyboardKey.keyR, shift: true);
+      await _sendWithModifiers(tester, LogicalKeyboardKey.keyL);
 
-    expect(log, <String>[
-      'toggleFavoriteSentence',
-      'replayCurrentSubtitle',
-      'replayPreviousSubtitle',
-      'toggleSubtitleList',
-    ]);
-  });
+      expect(log, <String>[
+        'toggleFavoriteSentence',
+        'replayCurrentSubtitle',
+        'replayPreviousSubtitle',
+        'toggleSubtitleList',
+      ]);
+    },
+  );
 
   /// PR#632 审查 B2：videoEnterCaret 默认绑**裸 Enter**，而 Enter 是本 app 唯一的
   /// 焦点确认键（裸空格已被 `global_navigation.dart` 中和成 DoNothingIntent）。
@@ -156,7 +154,8 @@ void main() {
       expect(
         log,
         <String>['buttonPressed'],
-        reason: 'Enter 是全局焦点确认键：焦点在控制条按钮上时必须触发 onPressed，'
+        reason:
+            'Enter 是全局焦点确认键：焦点在控制条按钮上时必须触发 onPressed，'
             '不能被页面主通道判成进光标（enterCaret）',
       );
 
@@ -182,8 +181,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();
 
-      expect(log, <String>['enterCaret'],
-          reason: '画面持焦时 Enter 才算选词键，且不得误按到按钮');
+      expect(log, <String>['enterCaret'], reason: '画面持焦时 Enter 才算选词键，且不得误按到按钮');
 
       videoNode.dispose();
       buttonNode.dispose();
@@ -194,9 +192,9 @@ void main() {
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> map =
           buildVideoPlayerShortcutsFromRegistry(
-        registry,
-        _recordingVideoActions(<String>[]),
-      );
+            registry,
+            _recordingVideoActions(<String>[]),
+          );
       expect(map, isNotEmpty);
       final bool hasBareEnter = map.keys
           .map((ShortcutActivator a) => (a as InputBindingActivator).exact)
@@ -208,9 +206,13 @@ void main() {
                 !a.meta &&
                 !a.shift,
           );
-      expect(hasBareEnter, isFalse,
-          reason: '这张表现在只服务字幕对轴弹窗，但它仍是一个 CallbackShortcuts：'
-              '匹配即无条件消费，一旦含裸 Enter，弹窗里每颗按钮的确认就没救了');
+      expect(
+        hasBareEnter,
+        isFalse,
+        reason:
+            '这张表现在只服务字幕对轴弹窗，但它仍是一个 CallbackShortcuts：'
+            '匹配即无条件消费，一旦含裸 Enter，弹窗里每颗按钮的确认就没救了',
+      );
     });
   });
 
@@ -229,8 +231,9 @@ void main() {
       ..loadDefaults(TargetPlatform.windows);
     // 只加鼠标键、保留 globalBack 的默认键盘绑定（整份覆盖会把 Esc 一起抹掉，
     // 那样键盘侧解析成 null，本条就变成测试环境自造的假红）。
-    final ShortcutBindingSet current =
-        registry.bindingsFor(ShortcutAction.globalBack);
+    final ShortcutBindingSet current = registry.bindingsFor(
+      ShortcutAction.globalBack,
+    );
     registry.updateBinding(
       ShortcutAction.globalBack,
       ShortcutBindingSet(
@@ -263,8 +266,9 @@ void main() {
 
     final List<String> log = <String>[];
     final VideoPlayerShortcutActions actions = _recordingVideoActions(log);
-    final Map<ShortcutAction, VoidCallback> callbacks =
-        videoActionCallbacks(actions);
+    final Map<ShortcutAction, VoidCallback> callbacks = videoActionCallbacks(
+      actions,
+    );
 
     expect(
       callbacks[byMouse],
@@ -300,46 +304,50 @@ Future<void> _pumpEnterCaretHarness(
     reason: '前置条件：videoEnterCaret 必须有键盘默认绑定，否则本组测了个寂寞',
   );
 
-  await tester.pumpWidget(MaterialApp(
-    home: Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onKeyEvent: (FocusNode node, KeyEvent event) {
-        final VideoKeyboardResolution resolution = resolveVideoKeyboardShortcut(
-          registry,
-          event,
-          modifiers: currentKeyboardModifiers(HardwareKeyboard.instance),
-          hasEditableFocus: false,
-          hasVisiblePopup: false,
-          videoSurfaceHoldsFocus: videoNode.hasPrimaryFocus,
-          videoNavigablePanelOpen: false,
-        );
-        switch (resolution.dispatch) {
-          case VideoKeyboardDispatch.swallowRepeat:
-            return KeyEventResult.handled;
-          case VideoKeyboardDispatch.ignore:
-            return KeyEventResult.ignored;
-          case VideoKeyboardDispatch.dismissPopup:
-            log.add('dismissPopup');
-            return KeyEventResult.handled;
-          case VideoKeyboardDispatch.run:
-            videoActionCallbacks(_recordingVideoActions(log))[resolution.action]
-                ?.call();
-            return KeyEventResult.handled;
-        }
-      },
-      child: Focus(
-        focusNode: videoNode,
-        autofocus: true,
-        child: Center(
-          child: ElevatedButton(
-            focusNode: buttonNode,
-            onPressed: () => log.add('buttonPressed'),
-            child: const Text('play'),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: (FocusNode node, KeyEvent event) {
+          final VideoKeyboardResolution resolution =
+              resolveVideoKeyboardShortcut(
+                registry,
+                event,
+                modifiers: currentKeyboardModifiers(HardwareKeyboard.instance),
+                hasEditableFocus: false,
+                hasVisiblePopup: false,
+                videoSurfaceHoldsFocus: videoNode.hasPrimaryFocus,
+                videoNavigablePanelOpen: false,
+              );
+          switch (resolution.dispatch) {
+            case VideoKeyboardDispatch.swallowRepeat:
+              return KeyEventResult.handled;
+            case VideoKeyboardDispatch.ignore:
+              return KeyEventResult.ignored;
+            case VideoKeyboardDispatch.dismissPopup:
+              log.add('dismissPopup');
+              return KeyEventResult.handled;
+            case VideoKeyboardDispatch.run:
+              videoActionCallbacks(
+                _recordingVideoActions(log),
+              )[resolution.action]?.call();
+              return KeyEventResult.handled;
+          }
+        },
+        child: Focus(
+          focusNode: videoNode,
+          autofocus: true,
+          child: Center(
+            child: ElevatedButton(
+              focusNode: buttonNode,
+              onPressed: () => log.add('buttonPressed'),
+              child: const Text('play'),
+            ),
           ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }

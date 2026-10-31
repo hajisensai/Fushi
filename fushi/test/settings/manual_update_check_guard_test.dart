@@ -14,85 +14,125 @@ import 'package:flutter_test/flutter_test.dart';
 /// - `UpdateChecker.scheduleCheck` 仍带默认 null 的 onUpToDate/onError 回调
 ///   （向后兼容，自动检查零变化）。
 void main() {
-  test('system settings expose a manual check-update action in update section',
-      () {
-    final String src =
-        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
-    final String systemDest = _functionSource(
-      src,
-      'SettingsDestination buildSystemDestination() {',
-      'Future<void> _exportStudyDiagLog(',
-    );
-    final int updateSectionIdx = systemDest.indexOf('title: t.section_update,');
-    expect(updateSectionIdx, isNonNegative,
-        reason: 'update section must exist');
-    final int actionIdx = systemDest.indexOf("id: 'system.check_update_now'");
-    expect(actionIdx, isNonNegative,
-        reason: 'manual check-update action must exist');
-    expect(actionIdx, greaterThan(updateSectionIdx),
-        reason: '按钮必须落在更新分区内（在 section_update 之后出现）');
-    expect(systemDest, contains('title: t.settings_check_update_now'));
-    expect(systemDest, contains('onTap: _checkUpdateNow'));
-  });
+  test(
+    'system settings expose a manual check-update action in update section',
+    () {
+      final String src = File(
+        'lib/src/settings/settings_schema_system.dart',
+      ).readAsStringSync();
+      final String systemDest = _functionSource(
+        src,
+        'SettingsDestination buildSystemDestination() {',
+        'Future<void> _exportStudyDiagLog(',
+      );
+      final int updateSectionIdx = systemDest.indexOf(
+        'title: t.section_update,',
+      );
+      expect(
+        updateSectionIdx,
+        isNonNegative,
+        reason: 'update section must exist',
+      );
+      final int actionIdx = systemDest.indexOf("id: 'system.check_update_now'");
+      expect(
+        actionIdx,
+        isNonNegative,
+        reason: 'manual check-update action must exist',
+      );
+      expect(
+        actionIdx,
+        greaterThan(updateSectionIdx),
+        reason: '按钮必须落在更新分区内（在 section_update 之后出现）',
+      );
+      expect(systemDest, contains('title: t.settings_check_update_now'));
+      expect(systemDest, contains('onTap: _checkUpdateNow'));
+    },
+  );
 
-  test('manual orchestration uses manual semantics (no silent auto-install)',
-      () {
-    final String src =
-        File('lib/src/updates/app_update_check.dart').readAsStringSync();
-    final String orchestration = _functionSource(
-      src,
-      'Future<void> checkAppUpdateNow(',
-      'UpdateChannel appUpdateChannelOf(',
-    );
-    // 设置页按钮必须委托到这条共用编排，不再各自复制一份。
-    final String settings =
-        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
-    expect(settings, contains('checkAppUpdateNow('));
-    expect(orchestration, contains('neverRemind: false'), reason: '手动检查无视免提醒');
-    expect(orchestration, contains('autoInstall: false'),
-        reason: '手动检查走确认弹窗，不静默自动装');
-    expect(orchestration, contains('onUpToDate:'));
-    expect(orchestration, contains('onError:'));
-    expect(orchestration, contains('t.update_checking_now'), reason: '点击即时反馈');
-    expect(orchestration, contains('t.update_already_latest'));
-    expect(orchestration, contains('t.update_check_failed'));
-    // 防连点旗标。
-    expect(src, contains('bool _manualCheckInFlight = false;'));
-    // 在飞时不是静默早退：更新中心 / 系统通知也从这里进来，得有一句反馈。
-    expect(orchestration, contains('if (_manualCheckInFlight) {'));
-    expect(orchestration, contains('_manualCheckInFlight = true;'));
-    expect(orchestration, contains('_manualCheckInFlight = false;'));
-  });
+  test(
+    'manual orchestration uses manual semantics (no silent auto-install)',
+    () {
+      final String src = File(
+        'lib/src/updates/app_update_check.dart',
+      ).readAsStringSync();
+      final String orchestration = _functionSource(
+        src,
+        'Future<void> checkAppUpdateNow(',
+        'UpdateChannel appUpdateChannelOf(',
+      );
+      // 设置页按钮必须委托到这条共用编排，不再各自复制一份。
+      final String settings = File(
+        'lib/src/settings/settings_schema_system.dart',
+      ).readAsStringSync();
+      expect(settings, contains('checkAppUpdateNow('));
+      expect(
+        orchestration,
+        contains('neverRemind: false'),
+        reason: '手动检查无视免提醒',
+      );
+      expect(
+        orchestration,
+        contains('autoInstall: false'),
+        reason: '手动检查走确认弹窗，不静默自动装',
+      );
+      expect(orchestration, contains('onUpToDate:'));
+      expect(orchestration, contains('onError:'));
+      expect(
+        orchestration,
+        contains('t.update_checking_now'),
+        reason: '点击即时反馈',
+      );
+      expect(orchestration, contains('t.update_already_latest'));
+      expect(orchestration, contains('t.update_check_failed'));
+      // 防连点旗标。
+      expect(src, contains('bool _manualCheckInFlight = false;'));
+      // 在飞时不是静默早退：更新中心 / 系统通知也从这里进来，得有一句反馈。
+      expect(orchestration, contains('if (_manualCheckInFlight) {'));
+      expect(orchestration, contains('_manualCheckInFlight = true;'));
+      expect(orchestration, contains('_manualCheckInFlight = false;'));
+    },
+  );
 
-  test('updates center lands app release on in-app update, not the browser',
-      () {
-    final String src =
-        File('lib/src/pages/implementations/updates_center_open.dart')
-            .readAsStringSync();
-    final String appRelease = _functionSource(
-      src,
-      'case UpdateFeedKind.appRelease:',
-      'case UpdateFeedKind.videoEpisode:',
-    );
-    expect(appRelease, contains('checkAppUpdateNow('),
-        reason: 'app 新版本必须走应用内检查 → 下载 → 安装');
-    expect(src, isNot(contains('launchUrl(')),
-        reason: '更新中心的落点全在 app 内，不该把用户送到浏览器');
-  });
+  test(
+    'updates center lands app release on in-app update, not the browser',
+    () {
+      final String src = File(
+        'lib/src/pages/implementations/updates_center_open.dart',
+      ).readAsStringSync();
+      final String appRelease = _functionSource(
+        src,
+        'case UpdateFeedKind.appRelease:',
+        'case UpdateFeedKind.videoEpisode:',
+      );
+      expect(
+        appRelease,
+        contains('checkAppUpdateNow('),
+        reason: 'app 新版本必须走应用内检查 → 下载 → 安装',
+      );
+      expect(
+        src,
+        isNot(contains('launchUrl(')),
+        reason: '更新中心的落点全在 app 内，不该把用户送到浏览器',
+      );
+    },
+  );
 
   test('update dialog / download are one per-version exclusive flow', () {
     // BUG-2487 审查：启动期自动检查弹对话框的同时更新中心 toast 已发出，点 toast
     // 触发第二轮检查——不按版本互斥就是两个「发现新版本」叠在一起。
-    final String src = File('lib/src/utils/misc/update_checker_release.dart')
-        .readAsStringSync();
+    final String src = File(
+      'lib/src/utils/misc/update_checker_release.dart',
+    ).readAsStringSync();
     final String check = _functionSource(
       src,
       'static Future<void> _check(',
       'static Future<bool> _shouldBackOffWindowsAutoInstall(',
     );
-    expect('_notifyIfUpdateFlowActive(context, version)'.allMatches(check),
-        hasLength(2),
-        reason: '有包 / 无包两条弹框路径都要先问该版本的流是否已活跃');
+    expect(
+      '_notifyIfUpdateFlowActive(context, version)'.allMatches(check),
+      hasLength(2),
+      reason: '有包 / 无包两条弹框路径都要先问该版本的流是否已活跃',
+    );
     for (final String fn in <String>[
       'static Future<void> _showUpdateDialog(',
       'static Future<void> _showFallbackDialog(',
@@ -102,27 +142,36 @@ void main() {
       expect(at, isNonNegative, reason: fn);
       final String body = src.substring(at, at + 1200);
       expect(body, contains('_runExclusiveUpdateFlow('), reason: '$fn 必须走互斥流');
-      expect(body, contains('_updateFlowKey(version)'),
-          reason: '$fn 必须挂在同一把版本锁上');
+      expect(
+        body,
+        contains('_updateFlowKey(version)'),
+        reason: '$fn 必须挂在同一把版本锁上',
+      );
     }
   });
 
   test('scheduleCheck keeps default-null callbacks (auto-check unchanged)', () {
-    final String src = File('lib/src/utils/misc/update_checker_release.dart')
-        .readAsStringSync();
+    final String src = File(
+      'lib/src/utils/misc/update_checker_release.dart',
+    ).readAsStringSync();
     expect(src, contains('void Function()? onUpToDate,'));
     expect(src, contains('void Function(Object error)? onError,'));
     // 三条「无可更新版本」早退都要触发 onUpToDate（必修1）。
     final int upToDateCalls = 'onUpToDate?.call();'.allMatches(src).length;
-    expect(upToDateCalls, greaterThanOrEqualTo(3),
-        reason: 'onUpToDate 必须覆盖三条无更新早退（selection==null / tag空 / 已最新）');
+    expect(
+      upToDateCalls,
+      greaterThanOrEqualTo(3),
+      reason: 'onUpToDate 必须覆盖三条无更新早退（selection==null / tag空 / 已最新）',
+    );
     expect(src, contains('onError?.call(e)'), reason: 'onError 挂在 catch 分支');
     // 可注入 fetcher seam（必修2），不拆网络层。
     expect(src, contains('fetchReleases'));
     expect(
-        src,
-        contains(
-            'await (fetchReleases ?? _fetchReleasesForChannel)(client, channel)'));
+      src,
+      contains(
+        'await (fetchReleases ?? _fetchReleasesForChannel)(client, channel)',
+      ),
+    );
   });
 }
 

@@ -59,9 +59,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((Ref ref) => appModel),
-        ],
+        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             theme: ThemeData(useMaterial3: true),

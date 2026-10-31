@@ -11,28 +11,27 @@ import 'dart:convert';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
-String encodeVideoMediaReference(VideoMediaReference reference) =>
-    jsonEncode(<String, Object?>{
-      'providerId': reference.providerId,
-      'mediaId': reference.mediaId,
-      'mediaKind': reference.mediaKind.name,
-      'discoveryCategory': reference.discoveryCategory.name,
-      'title': reference.title,
-      if (reference.originalTitle != null)
-        'originalTitle': reference.originalTitle,
-      if (reference.aliases.isNotEmpty) 'aliases': reference.aliases,
-      if (reference.year != null) 'year': reference.year,
-      if (reference.season != null) 'season': reference.season,
-      if (reference.episode != null) 'episode': reference.episode,
-      if (reference.tmdbId != null) 'tmdbId': reference.tmdbId,
-      if (reference.imdbId != null) 'imdbId': reference.imdbId,
-      if (reference.tvdbId != null) 'tvdbId': reference.tvdbId,
-      if (reference.anidbId != null) 'anidbId': reference.anidbId,
-      if (reference.anilistId != null) 'anilistId': reference.anilistId,
-      if (reference.bangumiId != null) 'bangumiId': reference.bangumiId,
-      if (reference.externalIds.isNotEmpty)
-        'externalIds': reference.externalIds,
-    });
+String encodeVideoMediaReference(
+  VideoMediaReference reference,
+) => jsonEncode(<String, Object?>{
+  'providerId': reference.providerId,
+  'mediaId': reference.mediaId,
+  'mediaKind': reference.mediaKind.name,
+  'discoveryCategory': reference.discoveryCategory.name,
+  'title': reference.title,
+  if (reference.originalTitle != null) 'originalTitle': reference.originalTitle,
+  if (reference.aliases.isNotEmpty) 'aliases': reference.aliases,
+  if (reference.year != null) 'year': reference.year,
+  if (reference.season != null) 'season': reference.season,
+  if (reference.episode != null) 'episode': reference.episode,
+  if (reference.tmdbId != null) 'tmdbId': reference.tmdbId,
+  if (reference.imdbId != null) 'imdbId': reference.imdbId,
+  if (reference.tvdbId != null) 'tvdbId': reference.tvdbId,
+  if (reference.anidbId != null) 'anidbId': reference.anidbId,
+  if (reference.anilistId != null) 'anilistId': reference.anilistId,
+  if (reference.bangumiId != null) 'bangumiId': reference.bangumiId,
+  if (reference.externalIds.isNotEmpty) 'externalIds': reference.externalIds,
+});
 
 VideoMediaReference? decodeVideoMediaReference(String? json) {
   if (json == null || json.trim().isEmpty) return null;

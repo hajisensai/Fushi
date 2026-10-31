@@ -27,45 +27,73 @@ void main() {
   }
 
   test('_initBook 用 top-level try/catch 包裹 _initBookInner 并确定性恢复加载态', () {
-    final String src =
-        read('lib/src/pages/implementations/reader_fushi_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
 
     // ① 真正的 init 链被抽进 _initBookInner（DB await 入口在其中）。
-    expect(src.contains('Future<void> _initBookInner() async {'), isTrue,
-        reason: 'init 逻辑应抽进 _initBookInner 由 try 包裹');
+    expect(
+      src.contains('Future<void> _initBookInner() async {'),
+      isTrue,
+      reason: 'init 逻辑应抽进 _initBookInner 由 try 包裹',
+    );
     final int innerStart = src.indexOf('Future<void> _initBookInner() async {');
-    expect(src.indexOf('_resolveProfileAndSettings(db)', innerStart),
-        greaterThan(-1),
-        reason: 'DB await 链应位于 _initBookInner 体内');
+    expect(
+      src.indexOf('_resolveProfileAndSettings(db)', innerStart),
+      greaterThan(-1),
+      reason: 'DB await 链应位于 _initBookInner 体内',
+    );
 
     // ② _initBook 体内：try → await _initBookInner → catch → 恢复路径。
     final int bookStart = src.indexOf('Future<void> _initBook() async {');
     expect(bookStart, greaterThan(-1));
     final String bookBody = src.substring(bookStart, innerStart);
-    expect(bookBody.contains('try {'), isTrue,
-        reason: '_initBook 必须有 top-level try');
-    expect(bookBody.contains('await _initBookInner();'), isTrue,
-        reason: 'try 内应 await _initBookInner');
-    expect(bookBody.contains('} catch ('), isTrue,
-        reason: '_initBook 必须 catch 任何异常（非仅 FormatException）');
+    expect(
+      bookBody.contains('try {'),
+      isTrue,
+      reason: '_initBook 必须有 top-level try',
+    );
+    expect(
+      bookBody.contains('await _initBookInner();'),
+      isTrue,
+      reason: 'try 内应 await _initBookInner',
+    );
+    expect(
+      bookBody.contains('} catch ('),
+      isTrue,
+      reason: '_initBook 必须 catch 任何异常（非仅 FormatException）',
+    );
 
     // ③ catch 分支确定性归还加载态：记异常 + toast + pop 退回书架，且 mounted 守卫。
     final int catchIdx = bookBody.indexOf('} catch (');
     final String catchBody = bookBody.substring(catchIdx);
-    expect(catchBody.contains('if (!mounted) return;'), isTrue,
-        reason: 'catch 内 setState/Navigator 前必须 mounted 守卫');
-    expect(catchBody.contains('FushiToast.show('), isTrue,
-        reason: 'catch 必须提示用户打开失败');
-    expect(catchBody.contains('Navigator.of(context).pop()'), isTrue,
-        reason: 'catch 必须退回书架，不让 spinner 永挂');
+    expect(
+      catchBody.contains('if (!mounted) return;'),
+      isTrue,
+      reason: 'catch 内 setState/Navigator 前必须 mounted 守卫',
+    );
+    expect(
+      catchBody.contains('FushiToast.show('),
+      isTrue,
+      reason: 'catch 必须提示用户打开失败',
+    );
+    expect(
+      catchBody.contains('Navigator.of(context).pop()'),
+      isTrue,
+      reason: 'catch 必须退回书架，不让 spinner 永挂',
+    );
     // 渐进重建 phase2：init 失败自动退与用户手动退（PopScope onWillPop）同窗竞发
     // 时不得连退两级——失败路径的 pop 必须共用 _popInProgress 锁（BUG-782 同款）。
-    expect(catchBody.contains('if (_popInProgress) return;'), isTrue,
-        reason: 'init 失败 pop 必须与用户退出共用 _popInProgress 合流锁');
     expect(
-        catchBody.contains('debugPrint(') ||
-            catchBody.contains('ErrorLogService.instance.log('),
-        isTrue,
-        reason: 'catch 不得吞异常不留痕');
+      catchBody.contains('if (_popInProgress) return;'),
+      isTrue,
+      reason: 'init 失败 pop 必须与用户退出共用 _popInProgress 合流锁',
+    );
+    expect(
+      catchBody.contains('debugPrint(') ||
+          catchBody.contains('ErrorLogService.instance.log('),
+      isTrue,
+      reason: 'catch 不得吞异常不留痕',
+    );
   });
 }

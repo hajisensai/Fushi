@@ -203,9 +203,7 @@ void main() {
     expect(events, isEmpty);
   });
 
-  testWidgets('竖直滑动与卡面滚动：还能往手指方向滚就是滚动，滚到头才算滑动', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('竖直滑动与卡面滚动：还能往手指方向滚就是滚动，滚到头才算滑动', (WidgetTester tester) async {
     final ScrollController scroll = ScrollController();
     addTearDown(scroll.dispose);
     final List<SrsCardGestureEvent> events = <SrsCardGestureEvent>[];

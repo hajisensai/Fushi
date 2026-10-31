@@ -95,10 +95,7 @@ String displayTitleForVideo(VideoBookRow row) => row.title;
 ///
 /// [entry] 查不到（已删游戏 / 活动行按旧名无法匹配库内条目）时回退 [rawTitle]
 /// （活动事件落库时的标题快照）。
-String displayTitleForGame({
-  GalgameEntry? entry,
-  required String rawTitle,
-}) {
+String displayTitleForGame({GalgameEntry? entry, required String rawTitle}) {
   final String? name = entry?.displayName;
   if (name == null || name.isEmpty) {
     return rawTitle;

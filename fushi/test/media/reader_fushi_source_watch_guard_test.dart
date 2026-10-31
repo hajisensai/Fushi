@@ -26,13 +26,25 @@ void main() {
 
   test('book providers subscribe to DB row-set watch streams', () {
     final String src = source.readAsStringSync();
-    expect(src.contains('watchEpubBookKeys()'), isTrue,
-        reason: 'BUG-793：EPUB 书集合响应式来源必须订阅 watchEpubBookKeys');
-    expect(src.contains('watchSrtBookUids()'), isTrue,
-        reason: 'BUG-793：有声书集合响应式来源必须订阅 watchSrtBookUids');
-    expect(src.contains('ref.watch(_epubBookKeysProvider)'), isTrue,
-        reason: 'BUG-793：fushiBooksProvider 必须订阅 EPUB 书集合以自动刷新');
-    expect(src.contains('ref.watch(_srtBookUidsProvider)'), isTrue,
-        reason: 'BUG-793：srtBooksProvider 必须订阅有声书集合以自动刷新');
+    expect(
+      src.contains('watchEpubBookKeys()'),
+      isTrue,
+      reason: 'BUG-793：EPUB 书集合响应式来源必须订阅 watchEpubBookKeys',
+    );
+    expect(
+      src.contains('watchSrtBookUids()'),
+      isTrue,
+      reason: 'BUG-793：有声书集合响应式来源必须订阅 watchSrtBookUids',
+    );
+    expect(
+      src.contains('ref.watch(_epubBookKeysProvider)'),
+      isTrue,
+      reason: 'BUG-793：fushiBooksProvider 必须订阅 EPUB 书集合以自动刷新',
+    );
+    expect(
+      src.contains('ref.watch(_srtBookUidsProvider)'),
+      isTrue,
+      reason: 'BUG-793：srtBooksProvider 必须订阅有声书集合以自动刷新',
+    );
   });
 }

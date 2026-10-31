@@ -57,7 +57,8 @@ void main() {
     test('paginateInvocation forward', () {
       expect(
         ReaderPaginationScripts.paginateInvocation(
-            ReaderNavigationDirection.forward),
+          ReaderNavigationDirection.forward,
+        ),
         "window.fushiReader && window.fushiReader.paginate('forward')",
       );
     });
@@ -65,7 +66,8 @@ void main() {
     test('paginateInvocation backward', () {
       expect(
         ReaderPaginationScripts.paginateInvocation(
-            ReaderNavigationDirection.backward),
+          ReaderNavigationDirection.backward,
+        ),
         "window.fushiReader && window.fushiReader.paginate('backward')",
       );
     });
@@ -182,14 +184,18 @@ void main() {
     // 判据（fragment > charOffset > progress 的优先级）必须原样保留。
     test('initial progress / char offset / fragment are read from config', () {
       final String script = ReaderPaginationScripts.paginatedShellSource();
-      expect(script,
-          contains('window.fushiReader.restoreProgress(C.initialProgress)'));
       expect(
-          script,
-          contains(
-              'window.fushiReader.restoreToCharOffset(C.initialCharOffset)'));
-      expect(script,
-          contains('window.fushiReader.jumpToFragment(C.initialFragment)'));
+        script,
+        contains('window.fushiReader.restoreProgress(C.initialProgress)'),
+      );
+      expect(
+        script,
+        contains('window.fushiReader.restoreToCharOffset(C.initialCharOffset)'),
+      );
+      expect(
+        script,
+        contains('window.fushiReader.jumpToFragment(C.initialFragment)'),
+      );
       final int fragIdx = script.indexOf('C.initialFragment !== null');
       final int charIdx = script.indexOf('C.initialCharOffset >= 0');
       expect(fragIdx, isNonNegative);
@@ -200,9 +206,11 @@ void main() {
     test('sentenceAudioHighlight cues are read from config when present', () {
       final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(
-          script,
-          contains(
-              'window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues)'));
+        script,
+        contains(
+          'window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues)',
+        ),
+      );
       expect(script, contains('C.sentenceAudioCues !== null'));
     });
 
@@ -284,16 +292,14 @@ void main() {
       expect(
         result,
         contains(
-            'typeof window.fushiReader.scrollToSearchMatch === "function"'),
+          'typeof window.fushiReader.scrollToSearchMatch === "function"',
+        ),
       );
     });
 
     test('scrollToSearchMatchInvocation escapes backslash and newline', () {
       final String result =
-          ReaderPaginationScripts.scrollToSearchMatchInvocation(
-        'a\\b\nc',
-        0,
-      );
+          ReaderPaginationScripts.scrollToSearchMatchInvocation('a\\b\nc', 0);
       // jsonEncode escapes backslash -> \\ and newline -> \n; the produced
       // literal must contain no raw newline that would break the one-line eval.
       expect(result, contains(r'\\'));
@@ -310,18 +316,20 @@ void main() {
       );
     });
 
-    test('highlightSentenceAudioCueInvocation escapes cue id and embeds bool',
-        () {
-      final String result =
-          ReaderPaginationScripts.highlightSentenceAudioCueInvocation(
-        'cue"1',
-        reveal: true,
-      );
-      expect(
-        result,
-        'window.fushiReader.highlightSentenceAudioCue("cue\\"1", true)',
-      );
-    });
+    test(
+      'highlightSentenceAudioCueInvocation escapes cue id and embeds bool',
+      () {
+        final String result =
+            ReaderPaginationScripts.highlightSentenceAudioCueInvocation(
+              'cue"1',
+              reveal: true,
+            );
+        expect(
+          result,
+          'window.fushiReader.highlightSentenceAudioCue("cue\\"1", true)',
+        );
+      },
+    );
   });
 
   // HBK-AUDIT-053: intResult is the JS-channel parser used for restore
@@ -355,70 +363,110 @@ void main() {
     final String paginated = ReaderPaginationScripts.paginatedShellSource();
     final String continuous = ReaderPaginationScripts.continuousShellSource();
 
-    test('paginated restore completion warms pagination metrics during idle',
-        () {
-      expect(paginated, contains('warmPaginationMetrics: function()'),
+    test(
+      'paginated restore completion warms pagination metrics during idle',
+      () {
+        expect(
+          paginated,
+          contains('warmPaginationMetrics: function()'),
           reason:
-              'Hoshi Android 在 restore 完成后 idle 预热分页 metrics，避免下次翻页才同步扫 DOM');
-      expect(paginated,
-          contains("typeof this.warmPaginationMetrics === 'function'"));
-      expect(paginated, contains('this.warmPaginationMetrics();'));
-      expect(paginated,
-          contains('window.requestIdleCallback(run, { timeout: 1000 });'));
-      expect(paginated, contains('setTimeout(run, 200);'));
-      expect(paginated, contains('this.buildPaginationMetrics();'));
-      expect(continuous,
+              'Hoshi Android 在 restore 完成后 idle 预热分页 metrics，避免下次翻页才同步扫 DOM',
+        );
+        expect(
+          paginated,
+          contains("typeof this.warmPaginationMetrics === 'function'"),
+        );
+        expect(paginated, contains('this.warmPaginationMetrics();'));
+        expect(
+          paginated,
+          contains('window.requestIdleCallback(run, { timeout: 1000 });'),
+        );
+        expect(paginated, contains('setTimeout(run, 200);'));
+        expect(paginated, contains('this.buildPaginationMetrics();'));
+        expect(
+          continuous,
           contains("typeof this.warmPaginationMetrics === 'function'"),
           reason:
-              'notifyRestoreComplete 是 shared JS，连续模式必须安全跳过 paginated-only warm');
-    });
+              'notifyRestoreComplete 是 shared JS，连续模式必须安全跳过 paginated-only warm',
+        );
+      },
+    );
 
     test(
-        'continuous calculateProgress is char-precise (countCharsBeforeViewport, '
-        'not whole-node in/out) — TODO-736 A-1', () {
-      final int idx = continuous.indexOf('calculateProgress: function() {');
-      expect(idx, greaterThanOrEqualTo(0));
-      final int end = continuous.indexOf('\n  },', idx);
-      final String body =
-          continuous.substring(idx, end < 0 ? continuous.length : end);
-      // BUG-2903：分子经章内文本索引 + 二分（_charsBeforeEdge）求，跨边节点仍逐字
-      // countCharsBeforeViewport。
-      expect(body, contains('this._charsBeforeEdge('));
-      final int edgeIdx =
-          continuous.indexOf('_charsBeforeEdge: function(vertical, edge) {');
-      expect(edgeIdx, greaterThanOrEqualTo(0));
-      final String edgeBody = continuous.substring(
-          edgeIdx, continuous.indexOf('\n  },', edgeIdx));
-      expect(edgeBody, contains('countCharsBeforeViewport'),
-          reason: '连续进度分子必须用 countCharsBeforeViewport 字符级累加（TODO-736 A-1），'
-              '替代整节点 in/out 的段落级粗粒度（长节点滚动期进度跳变/不动）');
-      // 旧实现整节点判定的标志（selectNodeContents 整节点矩形 + 整 nodeLen 累加）应消失。
-      expect(body, isNot(contains('exploredChars += nodeLen')),
-          reason: '不得再整节点累加 nodeLen（旧粗粒度路径，TODO-736 A-1）');
-    });
-
-    test(
-        'continuous getFirstVisibleCharOffset falls back to '
-        'firstVisibleCharOffsetByScan instead of returning -1 (TODO-736 A-2)',
-        () {
-      // 取连续 shell 的 getFirstVisibleCharOffset 方法体（到下一个 scrollToCharOffset 之前）。
-      final int idx =
-          continuous.lastIndexOf('getFirstVisibleCharOffset: function() {');
-      expect(idx, greaterThanOrEqualTo(0));
-      final int end = continuous.indexOf('scrollToCharOffset: function', idx);
-      final String body =
-          continuous.substring(idx, end < 0 ? continuous.length : end);
-      expect(body, contains('firstVisibleCharOffsetByScan()'),
-          reason: 'caret 失败（竖排/ruby/图片页）必须走全文扫描兜底，不退 -1 丢精确锚（TODO-736 A-2）');
-      // _sharedJs 必须定义该兜底。
-      expect(continuous, contains('firstVisibleCharOffsetByScan: function'),
+      'continuous calculateProgress is char-precise (countCharsBeforeViewport, '
+      'not whole-node in/out) — TODO-736 A-1',
+      () {
+        final int idx = continuous.indexOf('calculateProgress: function() {');
+        expect(idx, greaterThanOrEqualTo(0));
+        final int end = continuous.indexOf('\n  },', idx);
+        final String body = continuous.substring(
+          idx,
+          end < 0 ? continuous.length : end,
+        );
+        // BUG-2903：分子经章内文本索引 + 二分（_charsBeforeEdge）求，跨边节点仍逐字
+        // countCharsBeforeViewport。
+        expect(body, contains('this._charsBeforeEdge('));
+        final int edgeIdx = continuous.indexOf(
+          '_charsBeforeEdge: function(vertical, edge) {',
+        );
+        expect(edgeIdx, greaterThanOrEqualTo(0));
+        final String edgeBody = continuous.substring(
+          edgeIdx,
+          continuous.indexOf('\n  },', edgeIdx),
+        );
+        expect(
+          edgeBody,
+          contains('countCharsBeforeViewport'),
           reason:
-              'firstVisibleCharOffsetByScan 必须在 _sharedJs 定义（TODO-736 A-2）');
-      expect(continuous, contains('countCharsBeforeViewport: function'),
-          reason: 'countCharsBeforeViewport 必须在 _sharedJs 定义（TODO-736 A-1）');
-      expect(continuous, contains('isTextOffsetBeforeViewport: function'),
-          reason: 'isTextOffsetBeforeViewport 必须在 _sharedJs 定义（TODO-736 A-1）');
-    });
+              '连续进度分子必须用 countCharsBeforeViewport 字符级累加（TODO-736 A-1），'
+              '替代整节点 in/out 的段落级粗粒度（长节点滚动期进度跳变/不动）',
+        );
+        // 旧实现整节点判定的标志（selectNodeContents 整节点矩形 + 整 nodeLen 累加）应消失。
+        expect(
+          body,
+          isNot(contains('exploredChars += nodeLen')),
+          reason: '不得再整节点累加 nodeLen（旧粗粒度路径，TODO-736 A-1）',
+        );
+      },
+    );
+
+    test(
+      'continuous getFirstVisibleCharOffset falls back to '
+      'firstVisibleCharOffsetByScan instead of returning -1 (TODO-736 A-2)',
+      () {
+        // 取连续 shell 的 getFirstVisibleCharOffset 方法体（到下一个 scrollToCharOffset 之前）。
+        final int idx = continuous.lastIndexOf(
+          'getFirstVisibleCharOffset: function() {',
+        );
+        expect(idx, greaterThanOrEqualTo(0));
+        final int end = continuous.indexOf('scrollToCharOffset: function', idx);
+        final String body = continuous.substring(
+          idx,
+          end < 0 ? continuous.length : end,
+        );
+        expect(
+          body,
+          contains('firstVisibleCharOffsetByScan()'),
+          reason: 'caret 失败（竖排/ruby/图片页）必须走全文扫描兜底，不退 -1 丢精确锚（TODO-736 A-2）',
+        );
+        // _sharedJs 必须定义该兜底。
+        expect(
+          continuous,
+          contains('firstVisibleCharOffsetByScan: function'),
+          reason: 'firstVisibleCharOffsetByScan 必须在 _sharedJs 定义（TODO-736 A-2）',
+        );
+        expect(
+          continuous,
+          contains('countCharsBeforeViewport: function'),
+          reason: 'countCharsBeforeViewport 必须在 _sharedJs 定义（TODO-736 A-1）',
+        );
+        expect(
+          continuous,
+          contains('isTextOffsetBeforeViewport: function'),
+          reason: 'isTextOffsetBeforeViewport 必须在 _sharedJs 定义（TODO-736 A-1）',
+        );
+      },
+    );
   });
 }
 

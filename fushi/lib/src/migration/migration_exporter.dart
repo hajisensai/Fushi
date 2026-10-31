@@ -51,19 +51,19 @@ Set<BackupCategory> categoriesForBatch(MigrationBatch batch) {
   return switch (batch) {
     MigrationBatch.core => core,
     MigrationBatch.dictionaries => <BackupCategory>{
-        ...core,
-        BackupCategory.dictionary
-      },
+      ...core,
+      BackupCategory.dictionary,
+    },
     MigrationBatch.books => <BackupCategory>{...core, BackupCategory.books},
     MigrationBatch.audiobooks => <BackupCategory>{
-        ...core,
-        BackupCategory.audiobooks
-      },
+      ...core,
+      BackupCategory.audiobooks,
+    },
     MigrationBatch.fonts => <BackupCategory>{...core, BackupCategory.fonts},
     MigrationBatch.localAudio => <BackupCategory>{
-        ...core,
-        BackupCategory.localAudio
-      },
+      ...core,
+      BackupCategory.localAudio,
+    },
   };
 }
 
@@ -133,11 +133,11 @@ class MigrationExporter {
     required String sourcePackage,
     required String sourceAppVersion,
     required int Function() nowMs,
-  })  : _backup = backupService,
-        _transferDir = transferDir,
-        _sourcePackage = sourcePackage,
-        _sourceAppVersion = sourceAppVersion,
-        _nowMs = nowMs;
+  }) : _backup = backupService,
+       _transferDir = transferDir,
+       _sourcePackage = sourcePackage,
+       _sourceAppVersion = sourceAppVersion,
+       _nowMs = nowMs;
 
   final BackupService _backup;
   final Directory _transferDir;
@@ -172,8 +172,10 @@ class MigrationExporter {
     _transferDir.createSync(recursive: true);
     final MigrationExportState state = MigrationExportState.read(_transferDir);
     final String archivePath = p.join(_transferDir.path, archiveNameFor(batch));
-    final String manifestPath =
-        p.join(_transferDir.path, manifestNameFor(batch));
+    final String manifestPath = p.join(
+      _transferDir.path,
+      manifestNameFor(batch),
+    );
     if (state.completed.contains(batch.name) &&
         File(archivePath).existsSync() &&
         File(manifestPath).existsSync()) {
@@ -190,13 +192,13 @@ class MigrationExporter {
     );
     final MigrationManifest manifest =
         await MigrationManifest.computeForArchive(
-      archivePath: archivePath,
-      batchName: batch.name,
-      sourcePackage: _sourcePackage,
-      sourceAppVersion: _sourceAppVersion,
-      nowMs: _nowMs(),
-      archiveContainsDb: true,
-    );
+          archivePath: archivePath,
+          batchName: batch.name,
+          sourcePackage: _sourcePackage,
+          sourceAppVersion: _sourceAppVersion,
+          nowMs: _nowMs(),
+          archiveContainsDb: true,
+        );
     File(manifestPath).writeAsStringSync(manifest.encode(), flush: true);
     state.completed.add(batch.name);
     state.write(_transferDir);

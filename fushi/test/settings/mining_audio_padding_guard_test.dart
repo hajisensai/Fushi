@@ -240,13 +240,13 @@ void main() {
 
     test('ImmersionMiningRequest.stillFrameAnchorMs：不传回落窗起点、frozen 保留', () {
       ImmersionMiningRequest req({int? still}) => ImmersionMiningRequest(
-            fields: const <String, String>{},
-            clipStartMs: 4880,
-            clipEndMs: 6400,
-            stillFrameAtMs: still,
-            sentence: 'は',
-            source: AnkiMiningSource.video,
-          );
+        fields: const <String, String>{},
+        clipStartMs: 4880,
+        clipEndMs: 6400,
+        stillFrameAtMs: still,
+        sentence: 'は',
+        source: AnkiMiningSource.video,
+      );
       expect(req().stillFrameAnchorMs, 4880, reason: '其它来源不传 = 原行为');
       expect(req(still: 5000).stillFrameAnchorMs, 5000);
       expect(

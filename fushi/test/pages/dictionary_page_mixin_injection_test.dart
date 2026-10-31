@@ -135,7 +135,8 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
               index: i,
               screen: screen,
               controller: controller,
-              onPush: (String text, Rect rect, List<FushiRubySpan> _) async => 0,
+              onPush: (String text, Rect rect, List<FushiRubySpan> _) async =>
+                  0,
               onPop: (int index) {},
             ),
         ],

@@ -111,8 +111,9 @@ void main() {
       return captured;
     }
 
-    testWidgets('resolve failure keeps resolve stage and original error',
-        (WidgetTester tester) async {
+    testWidgets('resolve failure keeps resolve stage and original error', (
+      WidgetTester tester,
+    ) async {
       final TorrentMetainfoException original = TorrentMetainfoException(
         TorrentMetainfoErrorCode.invalidBencode,
         'unexpected HTML response',
@@ -131,8 +132,8 @@ void main() {
       await tester.pump();
 
       expect(result.started, isFalse);
-      final List<ErrorLogEntry> logged =
-          ErrorLogService.instance.entries.sublist(before);
+      final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
+          .sublist(before);
       expect(logged, hasLength(1));
       expect(logged.single.source, 'DiscoveryTorrent.resolve.stage-src');
       expect(logged.single.error, original.toString());
@@ -148,8 +149,9 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
     });
 
-    testWidgets('enqueue failure keeps enqueue stage and original error',
-        (WidgetTester tester) async {
+    testWidgets('enqueue failure keeps enqueue stage and original error', (
+      WidgetTester tester,
+    ) async {
       final StateError original = StateError('backend exploded');
       final _StageTestAppModel appModel = _StageTestAppModel(
         source: _ResolveThrowingSource(
@@ -173,8 +175,8 @@ void main() {
       await tester.pump();
 
       expect(result.started, isFalse);
-      final List<ErrorLogEntry> logged =
-          ErrorLogService.instance.entries.sublist(before);
+      final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
+          .sublist(before);
       expect(logged, hasLength(1));
       expect(logged.single.source, 'DiscoveryTorrent.enqueue.stage-src');
       expect(logged.single.error, original.toString());
@@ -254,8 +256,7 @@ class _ResolveThrowingSource extends MediaDiscoverySource {
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) =>
-      throw UnimplementedError();
+  ) => throw UnimplementedError();
 
   @override
   Future<DiscoveryPayload> resolvePayload(DiscoveryResourceItem item) async {
@@ -268,10 +269,8 @@ class _ResolveThrowingSource extends MediaDiscoverySource {
 /// 成功、交接下载后端失败」。
 class _StageTestAppModel extends AppModel {
   _StageTestAppModel({required MediaDiscoverySource source, this.enqueueError})
-      : _service = MediaDiscoveryService(
-          sources: <MediaDiscoverySource>[source],
-        ),
-        super(testPlatformServices());
+    : _service = MediaDiscoveryService(sources: <MediaDiscoverySource>[source]),
+      super(testPlatformServices());
 
   final MediaDiscoveryService _service;
   final Error? enqueueError;
@@ -280,6 +279,7 @@ class _StageTestAppModel extends AppModel {
   MediaDiscoveryService get mediaDiscoveryService => _service;
 
   @override
-  PreferencesRepository get prefsRepo => throw enqueueError ??
-      StateError('prefsRepo must not be reached before resolve succeeds');
+  PreferencesRepository get prefsRepo =>
+      throw enqueueError ??
+          StateError('prefsRepo must not be reached before resolve succeeds');
 }

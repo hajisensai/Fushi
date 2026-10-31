@@ -30,10 +30,15 @@ void main() {
       final int gate = body.indexOf('if (_lyricsMode)');
       final int textNav = body.indexOf('_navigateToChapter(');
       expect(gate, greaterThan(0));
-      expect(textNav, greaterThan(gate),
-          reason: '歌词分流必须在任何正文导航之前——正文导航会把歌词文档换成 EPUB 章');
       expect(
-          containsIdentifierCall(body, '_jumpToChapterInLyricsMode'), isTrue);
+        textNav,
+        greaterThan(gate),
+        reason: '歌词分流必须在任何正文导航之前——正文导航会把歌词文档换成 EPUB 章',
+      );
+      expect(
+        containsIdentifierCall(body, '_jumpToChapterInLyricsMode'),
+        isTrue,
+      );
     });
 
     test('歌词模式跳章 = 音频定位到该章首句；没有 cue 的章才退回正文', () {
@@ -41,25 +46,42 @@ void main() {
         src,
         '  Future<void> _jumpToChapterInLyricsMode(int index)',
       );
-      expect(containsIdentifierCall(body, '_firstCueOfSection'), isTrue,
-          reason: '该章在全书 cue 里的首句，三种 cue 家族各走精确反查');
+      expect(
+        containsIdentifierCall(body, '_firstCueOfSection'),
+        isTrue,
+        reason: '该章在全书 cue 里的首句，三种 cue 家族各走精确反查',
+      );
       expect(containsIdentifierCall(body, 'skipToCue'), isTrue);
       final String first = methodBody(
         src,
         '  AudioCue? _firstCueOfSection(int index)',
       );
-      expect(containsIdentifierCall(first, 'sectionFirstCue'), isTrue,
-          reason: 'fushi-cue:// 家族与有声书面板「章节」tab 同一口径');
-      expect(containsIdentifier(first, '_srtChapterRanges'), isTrue,
-          reason: '独立 SRT 书按分桶首句序号');
-      expect(containsIdentifier(first, '_chapterIndexForText'), isFalse,
-          reason: '不做文本模糊反查（每次解析全书章节 HTML，且定位错章比退回正文更糟）');
+      expect(
+        containsIdentifierCall(first, 'sectionFirstCue'),
+        isTrue,
+        reason: 'fushi-cue:// 家族与有声书面板「章节」tab 同一口径',
+      );
+      expect(
+        containsIdentifier(first, '_srtChapterRanges'),
+        isTrue,
+        reason: '独立 SRT 书按分桶首句序号',
+      );
+      expect(
+        containsIdentifier(first, '_chapterIndexForText'),
+        isFalse,
+        reason: '不做文本模糊反查（每次解析全书章节 HTML，且定位错章比退回正文更糟）',
+      );
       final int seek = body.indexOf('skipToCue(');
       final int leave = body.indexOf('_toggleLyricsMode(');
-      expect(leave, greaterThan(seek),
-          reason: '有 cue 就定位并 return；只有没 cue 的章才退出歌词模式再正文跳章');
-      expect(containsCodeLine(body, '_navigateToChapter(index, manual: true)'),
-          isTrue);
+      expect(
+        leave,
+        greaterThan(seek),
+        reason: '有 cue 就定位并 return；只有没 cue 的章才退出歌词模式再正文跳章',
+      );
+      expect(
+        containsCodeLine(body, '_navigateToChapter(index, manual: true)'),
+        isTrue,
+      );
     });
 
     test('导航抽屉在歌词模式不接书内搜索 / 字数跳转（歌词里没有落点）', () {
@@ -68,10 +90,14 @@ void main() {
         '  Widget _buildQuickSettingsSheet({',
       );
       expect(
-          containsCodeLine(sheet, 'onJumpToCharOffset: _lyricsMode'), isTrue);
+        containsCodeLine(sheet, 'onJumpToCharOffset: _lyricsMode'),
+        isTrue,
+      );
       expect(
         containsCodeLine(
-            sheet, 'onSearchJump: _lyricsMode ? null : _jumpToSearchResult'),
+          sheet,
+          'onSearchJump: _lyricsMode ? null : _jumpToSearchResult',
+        ),
         isTrue,
       );
     });
@@ -84,7 +110,9 @@ void main() {
       final int gate = body.indexOf('if (_lyricsMode)');
       expect(gate, greaterThan(0));
       final String lyricsBranch = body.substring(
-          gate, body.indexOf('}', body.indexOf('return;', gate)));
+        gate,
+        body.indexOf('}', body.indexOf('return;', gate)),
+      );
       expect(containsIdentifierCall(lyricsBranch, '_favoriteAudioCue'), isTrue);
       expect(containsIdentifierCall(lyricsBranch, 'skipToCue'), isTrue);
       expect(body.indexOf('_navigateToChapterAndWait('), greaterThan(gate));
@@ -109,12 +137,19 @@ void main() {
       final String body = methodBody(src, '  void _onCueChanged()');
       final int lyrics = body.indexOf('if (_lyricsMode) {');
       expect(lyrics, greaterThan(0));
-      final String lyricsBranch =
-          body.substring(lyrics, body.indexOf('\n    }\n', lyrics));
-      expect(containsIdentifierCall(lyricsBranch, '_syncLyricsOverlayCue'),
-          isTrue);
-      expect(lyricsBranch, isNot(contains('return;')),
-          reason: '歌词分支早返回 = 正文停止跟随 = 统计归零');
+      final String lyricsBranch = body.substring(
+        lyrics,
+        body.indexOf('\n    }\n', lyrics),
+      );
+      expect(
+        containsIdentifierCall(lyricsBranch, '_syncLyricsOverlayCue'),
+        isTrue,
+      );
+      expect(
+        lyricsBranch,
+        isNot(contains('return;')),
+        reason: '歌词分支早返回 = 正文停止跟随 = 统计归零',
+      );
       expect(lyricsBranch, isNot(contains('_readLedger')));
       // 正文跟随路径（翻页 / 高亮）在歌词分支之后照常执行。
       expect(body.indexOf('AudiobookBridge.highlight('), greaterThan(lyrics));
@@ -138,32 +173,50 @@ void main() {
           '_flushReadingStats',
           '_traceArrive',
         ]) {
-          expect(containsIdentifier(body, banned), isFalse,
-              reason: '$sig 不得碰统计（$banned）——统计归正文');
+          expect(
+            containsIdentifier(body, banned),
+            isFalse,
+            reason: '$sig 不得碰统计（$banned）——统计归正文',
+          );
         }
       }
-      final String ready =
-          methodBody(src, '  Future<void> _onLyricsDocumentReady(');
-      expect(containsIdentifier(ready, '_readerContentReady'), isFalse,
-          reason: '歌词就绪与正文就绪是两个 WebView 的事，互不相干');
+      final String ready = methodBody(
+        src,
+        '  Future<void> _onLyricsDocumentReady(',
+      );
+      expect(
+        containsIdentifier(ready, '_readerContentReady'),
+        isFalse,
+        reason: '歌词就绪与正文就绪是两个 WebView 的事，互不相干',
+      );
     });
 
     test('进歌词不结算正文页、不换控制器 cue；正文在覆盖期间强制跟随', () {
       final String body = methodBody(src, '  Future<void> _toggleLyricsMode()');
-      final int entering =
-          body.indexOf('if (entering) {', body.indexOf('try {'));
+      final int entering = body.indexOf(
+        'if (entering) {',
+        body.indexOf('try {'),
+      );
       final int exiting = body.indexOf('} else {', entering);
       expect(entering, greaterThan(0));
       expect(exiting, greaterThan(entering));
       final String enter = body.substring(entering, exiting);
       expect(containsIdentifier(enter, '_readLedger'), isFalse);
-      expect(containsIdentifierCall(enter, 'setChapterCues'), isFalse,
-          reason: '正文仍按章跟随，控制器的章 cue 不能被整书 cue 顶掉');
-      expect(containsCodeLine(enter, 'setReaderFollowOverride(true);'), isTrue,
-          reason: '用户关了「跟随音频」时被盖住的正文也必须跟着走，否则字数为 0');
+      expect(
+        containsIdentifierCall(enter, 'setChapterCues'),
+        isFalse,
+        reason: '正文仍按章跟随，控制器的章 cue 不能被整书 cue 顶掉',
+      );
+      expect(
+        containsCodeLine(enter, 'setReaderFollowOverride(true);'),
+        isTrue,
+        reason: '用户关了「跟随音频」时被盖住的正文也必须跟着走，否则字数为 0',
+      );
       final String exit = methodBody(src, '  Future<void> _exitLyricsMode()');
-      expect(containsCodeLine(exit, 'ctrl.setReaderFollowOverride(false);'),
-          isTrue);
+      expect(
+        containsCodeLine(exit, 'ctrl.setReaderFollowOverride(false);'),
+        isTrue,
+      );
     });
 
     test('正文进度采样 / 位置落库 / 跨章跟随不再按歌词态早返回', () {
@@ -173,8 +226,11 @@ void main() {
         '  Future<void> _handleCueCrossChapter(int newSection)',
         '  Future<void> _applyChromeInsets()',
       ]) {
-        expect(containsIdentifier(methodBody(src, sig), '_lyricsMode'), isFalse,
-            reason: '$sig 是正文自己的事，覆盖层在不在都要照常做');
+        expect(
+          containsIdentifier(methodBody(src, sig), '_lyricsMode'),
+          isFalse,
+          reason: '$sig 是正文自己的事，覆盖层在不在都要照常做',
+        );
       }
     });
 
@@ -186,15 +242,23 @@ void main() {
       expect(overlay, greaterThan(body), reason: '覆盖层必须叠在正文之上');
       expect(dictionary, greaterThan(overlay), reason: '查词弹窗仍要盖在歌词层之上');
       final String buildBody = methodBody(src, '  Widget _buildBody()');
-      expect(containsIdentifier(buildBody, '_lyricsMode'), isFalse,
-          reason: '正文 WebView 的挂载与视口不随进出歌词变化');
+      expect(
+        containsIdentifier(buildBody, '_lyricsMode'),
+        isFalse,
+        reason: '正文 WebView 的挂载与视口不随进出歌词变化',
+      );
       final String webCreated = src.substring(
         src.indexOf('  Widget _buildWebView() {'),
-        src.indexOf("handlerName: 'onTextSelected'",
-            src.indexOf('  Widget _buildWebView() {')),
+        src.indexOf(
+          "handlerName: 'onTextSelected'",
+          src.indexOf('  Widget _buildWebView() {'),
+        ),
       );
-      expect(containsIdentifierCall(webCreated, '_loadLyricsPage'), isFalse,
-          reason: '正文 WebView 永远装载正文章，歌词有自己的 WebView');
+      expect(
+        containsIdentifierCall(webCreated, '_loadLyricsPage'),
+        isFalse,
+        reason: '正文 WebView 永远装载正文章，歌词有自己的 WebView',
+      );
     });
   });
 }

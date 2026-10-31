@@ -164,7 +164,7 @@ Future<bool> deleteCompletedDownloadFile({
   required String destPath,
   required Future<String?> Function(String path) libraryRowFor,
   required Future<VideoLibraryDeleteResult> Function(String bookUid)
-      deleteLibraryRow,
+  deleteLibraryRow,
   required Future<LocalFileDeleteReport> Function(String path) deleteOrphanFile,
   required Future<bool> Function(String path) fileExists,
   required void Function(VideoLibraryDeleteResult result) report,
@@ -214,7 +214,8 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       : t.download_interconnect_section_title;
   final String entryId = 'interconnect:${task.id}';
   final bool restartable = manager.canRestart(task.id);
-  final bool unfinished = task.status == InterconnectDownloadStatus.paused ||
+  final bool unfinished =
+      task.status == InterconnectDownloadStatus.paused ||
       task.status == InterconnectDownloadStatus.failed;
   return DownloadTaskEntry(
     id: entryId,
@@ -236,15 +237,17 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
     collectionTitle: sectionTitle,
     searchTerms: <String>[task.title],
     actions: DownloadTaskActions(
-      pause:
-          manager.canPause(task.id) ? () async => manager.pause(task.id) : null,
+      pause: manager.canPause(task.id)
+          ? () async => manager.pause(task.id)
+          : null,
       resume: restartable && task.status == InterconnectDownloadStatus.paused
           ? () => manager.resume(task.id)
           : null,
       retry: restartable && task.status == InterconnectDownloadStatus.failed
           ? () => manager.resume(task.id)
           : null,
-      clear: task.status == InterconnectDownloadStatus.completed &&
+      clear:
+          task.status == InterconnectDownloadStatus.completed &&
               deleteCompletedFiles == null
           ? () async => manager.clearTask(task.id)
           : null,
@@ -301,7 +304,8 @@ String interconnectDownloadStatusLabel(InterconnectDownloadTask task) {
   final String? amount;
   if (received != null && total != null && total > 0) {
     final int percent = ((received / total).clamp(0.0, 1.0) * 100).floor();
-    amount = '${formatDiscoveryBytes(received)} / '
+    amount =
+        '${formatDiscoveryBytes(received)} / '
         '${formatDiscoveryBytes(total)} ($percent%)';
   } else if (received != null) {
     amount = formatDiscoveryBytes(received);

@@ -86,18 +86,21 @@ void main() {
 
   setUpAll(() {
     model = _TableModel.parse(File(tablesPath).readAsStringSync());
-    index = _MigrationIndex.parse(
-      File(databasePath).readAsStringSync(),
-      model,
-    );
+    index = _MigrationIndex.parse(File(databasePath).readAsStringSync(), model);
     declarations = model.declarations(maxVersion: index.maxVersion);
   });
 
   test('tables.dart 结构解析可信（扫不到表/列必须红，不能静默变空集）', () {
-    expect(model.tables.length, greaterThan(50),
-        reason: '只解析出 ${model.tables.length} 张表定义');
-    expect(model.columnCount, greaterThan(200),
-        reason: '只解析出 ${model.columnCount} 个列 getter');
+    expect(
+      model.tables.length,
+      greaterThan(50),
+      reason: '只解析出 ${model.tables.length} 张表定义',
+    );
+    expect(
+      model.columnCount,
+      greaterThan(200),
+      reason: '只解析出 ${model.columnCount} 个列 getter',
+    );
     // 访问器命名（类名首字母小写）是落地侧索引的连接键，错了整条守卫就对不上。
     expect(_TableModel.accessorOf('ReadingHourlyLogs'), 'readingHourlyLogs');
   });
@@ -105,68 +108,119 @@ void main() {
   test('迁移阶梯解析出的落地索引本身可信（扫描失效必须红）', () {
     // 阶梯从 v2 一路排到当前 schemaVersion。任何一项塌成 0 都说明解析器坏了，
     // 而不是「仓库真的没有迁移」——那种情况下后面的比对会全绿，是最典型的假绿。
-    expect(index.maxVersion, greaterThanOrEqualTo(67),
-        reason: '没解析到 v67 及以后的迁移块，onUpgrade 阶梯的形状变了');
-    expect(index.tableCreatedAt.length, greaterThan(30),
-        reason: 'createTable 只扫到 ${index.tableCreatedAt.length} 张表');
-    expect(index.columnAddedAt.length, greaterThan(15),
-        reason: 'addColumn/newColumns 只扫到 ${index.columnAddedAt.length} 列');
+    expect(
+      index.maxVersion,
+      greaterThanOrEqualTo(67),
+      reason: '没解析到 v67 及以后的迁移块，onUpgrade 阶梯的形状变了',
+    );
+    expect(
+      index.tableCreatedAt.length,
+      greaterThan(30),
+      reason: 'createTable 只扫到 ${index.tableCreatedAt.length} 张表',
+    );
+    expect(
+      index.columnAddedAt.length,
+      greaterThan(15),
+      reason: 'addColumn/newColumns 只扫到 ${index.columnAddedAt.length} 列',
+    );
 
     // 三条已知锚点，覆盖三种落地形态；解析器一旦漂移，这里先红并指明是哪一种。
     // 锚点都取最低 schema 门槛（kMinSupportedSchemaVersion）以上仍在阶梯里的步：
     // 门槛以下的台阶已整体删除，那里的表/列在索引里本就查不到。
-    expect(index.tableCreatedAt['mediaOpenHistory'], 80,
-        reason: 'createTable 形态');
-    expect(index.columnAddedAt['videoBooks.lastPlayedAt'], 85,
-        reason: 'addColumn 形态');
-    expect(index.columnAddedAt['galgameSessions.gameTitle'], 113,
-        reason: 'TableMigration(newColumns:) 形态');
-    expect(index.tableCreatedAt.keys, isNot(contains('collectionRelations')),
-        reason: 'v66 台阶已随最低 schema 门槛删除；还能扫到说明门槛以下的阶梯'
-            '没删干净（或解析器把注释当成了代码）');
+    expect(
+      index.tableCreatedAt['mediaOpenHistory'],
+      80,
+      reason: 'createTable 形态',
+    );
+    expect(
+      index.columnAddedAt['videoBooks.lastPlayedAt'],
+      85,
+      reason: 'addColumn 形态',
+    );
+    expect(
+      index.columnAddedAt['galgameSessions.gameTitle'],
+      113,
+      reason: 'TableMigration(newColumns:) 形态',
+    );
+    expect(
+      index.tableCreatedAt.keys,
+      isNot(contains('collectionRelations')),
+      reason:
+          'v66 台阶已随最低 schema 门槛删除；还能扫到说明门槛以下的阶梯'
+          '没删干净（或解析器把注释当成了代码）',
+    );
 
     // columnTransformer 是**改名**不是诞生：v57 把 removed_at 改叫 deleted_at，
     // 该列真正的诞生地是建表的 v40。收错会让一堆老列被错标成 v57。
     expect(
-        index.columnAddedAt.containsKey('collectionMemberTombstones.deletedAt'),
-        isFalse,
-        reason: 'columnTransformer（改名）不得被当成列的落地点');
+      index.columnAddedAt.containsKey('collectionMemberTombstones.deletedAt'),
+      isFalse,
+      reason: 'columnTransformer（改名）不得被当成列的落地点',
+    );
 
     // 重建换列惯用形锚点：v82 `CREATE TABLE bookmarks_v82` / v83
     // `CREATE TABLE shelf_entries_v83` 必须被认成对应表的重建版本；解析器漂移
     // 这里先红（否则 bookmarks.bookUid 这类「重建时诞生的列」的 doc 会被误报）。
-    expect(index.tableRebuiltAt['bookmarks'], contains(82),
-        reason: 'v82 重建（book_key→book_uid 换列）形态');
-    expect(index.tableRebuiltAt['shelfEntries'], contains(83),
-        reason: 'v83 重建（epub entryKey 换 uid）形态');
-    expect(index.tableRebuiltAt['mediaCollectionItems'], contains(83),
-        reason: 'v83 重建形态');
+    expect(
+      index.tableRebuiltAt['bookmarks'],
+      contains(82),
+      reason: 'v82 重建（book_key→book_uid 换列）形态',
+    );
+    expect(
+      index.tableRebuiltAt['shelfEntries'],
+      contains(83),
+      reason: 'v83 重建（epub entryKey 换 uid）形态',
+    );
+    expect(
+      index.tableRebuiltAt['mediaCollectionItems'],
+      contains(83),
+      reason: 'v83 重建形态',
+    );
   });
 
   test('tables.dart 里确实有一批 doc 声明了版本号（判据塌成空集必须红）', () {
-    expect(declarations.length, greaterThanOrEqualTo(15),
-        reason: '只识别出 ${declarations.length} 条版本声明，声明识别器塌了；'
-            '守卫会退化成永远绿的摆设');
+    expect(
+      declarations.length,
+      greaterThanOrEqualTo(15),
+      reason:
+          '只识别出 ${declarations.length} 条版本声明，声明识别器塌了；'
+          '守卫会退化成永远绿的摆设',
+    );
 
     final Map<String, _DocDeclaration> bySymbol = <String, _DocDeclaration>{
       for (final _DocDeclaration d in declarations) d.symbol: d,
     };
 
     // 三种书写形态各留一个锚点：前缀形 / 句首标点形 / 括号内标点形。
-    expect(bySymbol['mediaCollections.coverPath']?.version, 61,
-        reason: '前缀形 `（schema v61，BUG-1211）`');
-    expect(bySymbol['readingHourlyLogs.format']?.version, 67,
-        reason: '句首标点形 `v67：…`');
-    expect(bySymbol['videoScrapeMeta.episodeNumber']?.version, 66,
-        reason: '括号内标点形 `（v66 / TODO-2491）`');
+    expect(
+      bySymbol['mediaCollections.coverPath']?.version,
+      61,
+      reason: '前缀形 `（schema v61，BUG-1211）`',
+    );
+    expect(
+      bySymbol['readingHourlyLogs.format']?.version,
+      67,
+      reason: '句首标点形 `v67：…`',
+    );
+    expect(
+      bySymbol['videoScrapeMeta.episodeNumber']?.version,
+      66,
+      reason: '括号内标点形 `（v66 / TODO-2491）`',
+    );
 
     // 反向锚点：叙述性提法不得被误收，否则守卫会去误伤本来正确的注释。
     // `VideoBookTagMappings.bookUid` 的 doc 只写「v57 起与被引列同名」——那是
     // 改名叙述，该列真正诞生于建表的 v22，误收就会当场误报。
-    expect(bySymbol.containsKey('videoBookTagMappings.bookUid'), isFalse,
-        reason: '`vNN 起…` 是叙述不是声明，不得被识别成版本声明');
-    expect(bySymbol.containsKey('epubBooks.importedAt'), isFalse,
-        reason: '`vNN 前是…` / `vNN 迁移统一为…` 是叙述不是声明');
+    expect(
+      bySymbol.containsKey('videoBookTagMappings.bookUid'),
+      isFalse,
+      reason: '`vNN 起…` 是叙述不是声明，不得被识别成版本声明',
+    );
+    expect(
+      bySymbol.containsKey('epubBooks.importedAt'),
+      isFalse,
+      reason: '`vNN 前是…` / `vNN 迁移统一为…` 是叙述不是声明',
+    );
   });
 
   test('doc 声明的 schema 版本号 == 该表/列真正落地的迁移版本', () {
@@ -183,35 +237,47 @@ void main() {
       // 重建换列：列在宿主表的 create-copy-drop-rename 重建里诞生（如 v82 的
       // bookmarks.bookUid）。doc 声明命中该表的某次重建版本 = 说实话，放行。宿主表
       // 的建表台阶在门槛以下已删除时 [actual] 为 null，重建版本仍是唯一落地点。
-      final bool landedByRebuild = dot >= 0 &&
+      final bool landedByRebuild =
+          dot >= 0 &&
           (index.tableRebuiltAt[table]?.contains(d.version) ?? false);
       if (actual == null && landedByRebuild) {
         checked++;
         continue;
       }
       if (actual == null) {
-        offenders.add('$tablesPath:${d.line}  ${d.symbol} '
-            'doc 声明 v${d.version}，但迁移阶梯里根本找不到它的落地点'
-            '（createTable / addColumn / newColumns / 裸 SQL 都没有）\n'
-            '      doc: ${d.evidence}');
+        offenders.add(
+          '$tablesPath:${d.line}  ${d.symbol} '
+          'doc 声明 v${d.version}，但迁移阶梯里根本找不到它的落地点'
+          '（createTable / addColumn / newColumns / 裸 SQL 都没有）\n'
+          '      doc: ${d.evidence}',
+        );
         continue;
       }
       checked++;
       if (actual != d.version) {
         if (landedByRebuild) continue;
-        offenders.add('$tablesPath:${d.line}  ${d.symbol} '
-            'doc 声明 v${d.version}，实际落地于 v$actual\n'
-            '      doc: ${d.evidence}');
+        offenders.add(
+          '$tablesPath:${d.line}  ${d.symbol} '
+          'doc 声明 v${d.version}，实际落地于 v$actual\n'
+          '      doc: ${d.evidence}',
+        );
       }
     }
 
-    expect(checked, greaterThanOrEqualTo(15),
-        reason: '只真正比对了 $checked 条声明，判据塌了');
-    expect(offenders, isEmpty,
-        reason: 'doc 版本号与迁移阶梯不一致。schema 注释是后人查「这列什么时候加的」'
-            '的唯一去处，写错会把人送去看错的迁移块。\n'
-            '**改 doc 让它说实话，不要改迁移代码**——迁移号已经发出去了，改它会让'
-            '线上库的 user_version 对不上。\n违规位置：\n${offenders.join('\n')}');
+    expect(
+      checked,
+      greaterThanOrEqualTo(15),
+      reason: '只真正比对了 $checked 条声明，判据塌了',
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'doc 版本号与迁移阶梯不一致。schema 注释是后人查「这列什么时候加的」'
+          '的唯一去处，写错会把人送去看错的迁移块。\n'
+          '**改 doc 让它说实话，不要改迁移代码**——迁移号已经发出去了，改它会让'
+          '线上库的 user_version 对不上。\n违规位置：\n${offenders.join('\n')}',
+    );
   });
 }
 
@@ -261,8 +327,10 @@ class _TableModel {
   /// 表类名 → (列 getter 名 → doc 块)。
   final Map<String, Map<String, _DocBlock>> _columnDocs;
 
-  int get columnCount => _columnDocs.values
-      .fold(0, (int a, Map<String, _DocBlock> m) => a + m.length);
+  int get columnCount => _columnDocs.values.fold(
+    0,
+    (int a, Map<String, _DocBlock> m) => a + m.length,
+  );
 
   /// drift 生成的表访问器名：类名首字母小写。
   static String accessorOf(String className) =>
@@ -271,13 +339,15 @@ class _TableModel {
   /// `ReaderPositions` → `reader_positions`；`ttuCharOffset` → `ttu_char_offset`。
   static String snakeOf(String camel) => camel
       .replaceAllMapped(
-          RegExp(r'(?<=[a-z0-9])([A-Z])'), (Match m) => '_${m.group(1)}')
+        RegExp(r'(?<=[a-z0-9])([A-Z])'),
+        (Match m) => '_${m.group(1)}',
+      )
       .toLowerCase();
 
   /// snake 表名 → 表类名。裸 SQL 反查用。
   Map<String, String> get snakeTables => <String, String>{
-        for (final String t in tables) snakeOf(t): t,
-      };
+    for (final String t in tables) snakeOf(t): t,
+  };
 
   /// 表类名 → (snake 列名 → 列 getter 名)。裸 SQL 反查用。
   Map<String, Map<String, String>> get snakeColumns =>
@@ -289,13 +359,15 @@ class _TableModel {
           },
       };
 
-  static final RegExp _classLine =
-      RegExp(r'^class\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+extends\s+Table\b');
+  static final RegExp _classLine = RegExp(
+    r'^class\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+extends\s+Table\b',
+  );
   // 只认 drift 的列类型，天然把 `List<Set<Column>> get uniqueKeys` /
   // `Set<Column> get primaryKey` / `String get tableName` 排除在外。
-  static final RegExp _columnLine =
-      RegExp(r'^\s*(?:Int|Text|Bool|Real|DateTime|Blob)Column\s+get\s+'
-          r'([A-Za-z_$][A-Za-z0-9_$]*)\s*=>');
+  static final RegExp _columnLine = RegExp(
+    r'^\s*(?:Int|Text|Bool|Real|DateTime|Blob)Column\s+get\s+'
+    r'([A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
+  );
   static final RegExp _annotationLine = RegExp(r'^\s*@');
   // 剥注释前缀取正文。这不是「注释剥离」（判定谁是注释行走 maskComments），
   // 只是把已确认的注释行的 `///` / `//` 记号去掉。
@@ -363,12 +435,14 @@ class _TableModel {
       for (int i = 0; i < block.lines.length; i++) {
         final int? v = _declaredVersion(block.lines[i], maxVersion: maxVersion);
         if (v == null) continue;
-        out.add(_DocDeclaration(
-          symbol: symbol,
-          version: v,
-          line: block.firstLine + i,
-          evidence: block.lines[i].trim(),
-        ));
+        out.add(
+          _DocDeclaration(
+            symbol: symbol,
+            version: v,
+            line: block.firstLine + i,
+            evidence: block.lines[i].trim(),
+          ),
+        );
         return; // 每块只取第一个够格的版本号。
       }
     }
@@ -432,8 +506,12 @@ int? _declaredVersion(String text, {required int maxVersion}) {
 // ---------------------------------------------------------------------------
 
 class _MigrationIndex {
-  _MigrationIndex._(this.tableCreatedAt, this.columnAddedAt,
-      this.tableRebuiltAt, this.maxVersion);
+  _MigrationIndex._(
+    this.tableCreatedAt,
+    this.columnAddedAt,
+    this.tableRebuiltAt,
+    this.maxVersion,
+  );
 
   /// drift 表访问器（`mediaCollections`）→ createTable 所在的迁移版本。
   final Map<String, int> tableCreatedAt;
@@ -461,24 +539,31 @@ class _MigrationIndex {
   // 块头两种形态：`if (from < 82)` 与带附加守卫的 `if (from < 83 && …)`（v83
   // 起加了 `_tableExists` 门控）。只认闭括号会把带守卫的块整个并进上一个块，
   // 其中的建表/重建被错误归给上一个版本号。
-  static final RegExp _blockHead =
-      RegExp(r'if\s*\(\s*from\s*<\s*(\d+)\s*(?:\)|&&)');
-  static final RegExp _createTable =
-      RegExp(r'\bm\s*\.\s*createTable\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)');
-  static final RegExp _addColumn = RegExp(r'\bm\s*\.\s*addColumn\(\s*'
-      r'[A-Za-z_$][A-Za-z0-9_$]*\s*,\s*'
-      r'([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)');
+  static final RegExp _blockHead = RegExp(
+    r'if\s*\(\s*from\s*<\s*(\d+)\s*(?:\)|&&)',
+  );
+  static final RegExp _createTable = RegExp(
+    r'\bm\s*\.\s*createTable\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)',
+  );
+  static final RegExp _addColumn = RegExp(
+    r'\bm\s*\.\s*addColumn\(\s*'
+    r'[A-Za-z_$][A-Za-z0-9_$]*\s*,\s*'
+    r'([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)',
+  );
   static final RegExp _newColumns = RegExp(r'newColumns\s*:\s*\[([^\]]*)\]');
-  static final RegExp _qualified =
-      RegExp(r'([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)');
+  static final RegExp _qualified = RegExp(
+    r'([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)',
+  );
   // 裸 SQL 会被 dart format 折成相邻字符串字面量拼接
   // （`'ALTER TABLE t ' 'ADD COLUMN c ...'`），所以中间容许引号/加号/换行。
   static final RegExp _rawAddColumn = RegExp(
-      '''ALTER\\s+TABLE\\s+(\\w+)[\\s'"+]*ADD\\s+COLUMN\\s+(\\w+)''',
-      caseSensitive: false);
+    '''ALTER\\s+TABLE\\s+(\\w+)[\\s'"+]*ADD\\s+COLUMN\\s+(\\w+)''',
+    caseSensitive: false,
+  );
   static final RegExp _rawCreateTable = RegExp(
-      r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)',
-      caseSensitive: false);
+    r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)',
+    caseSensitive: false,
+  );
 
   /// 重建换列惯用形的表名后缀：`bookmarks_v82` → 基表 `bookmarks`。
   static final RegExp _rebuildSuffix = RegExp(r'^(\w+)_v\d+$');
@@ -491,8 +576,9 @@ class _MigrationIndex {
   /// 接线没断却报红，而且报的还是「改 doc 让它说实话」这种会把人带沟里的建议。
   ///
   /// 只展开一层：helper 里再调 helper 的写法本仓目前没有，真出现了就是该拆的信号。
-  static final RegExp _migratorHelperCall =
-      RegExp(r'await\s+(_[A-Za-z0-9_$]+)\s*\(\s*m\s*\)\s*;');
+  static final RegExp _migratorHelperCall = RegExp(
+    r'await\s+(_[A-Za-z0-9_$]+)\s*\(\s*m\s*\)\s*;',
+  );
 
   static String _inlineMigratorHelpers(String ladder, String databaseSrc) {
     return ladder.replaceAllMapped(_migratorHelperCall, (Match m) {
@@ -566,8 +652,9 @@ class _MigrationIndex {
         if (rebuilt != null) {
           final String? base = snakeTables[rebuilt.group(1)!];
           if (base != null) {
-            (tableRebuiltAt[_TableModel.accessorOf(base)] ??= <int>{})
-                .add(version);
+            (tableRebuiltAt[_TableModel.accessorOf(base)] ??= <int>{}).add(
+              version,
+            );
           }
         }
       }
@@ -582,6 +669,10 @@ class _MigrationIndex {
     }
 
     return _MigrationIndex._(
-        tableCreatedAt, columnAddedAt, tableRebuiltAt, maxVersion);
+      tableCreatedAt,
+      columnAddedAt,
+      tableRebuiltAt,
+      maxVersion,
+    );
   }
 }

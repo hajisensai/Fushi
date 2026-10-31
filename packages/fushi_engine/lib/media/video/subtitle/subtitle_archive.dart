@@ -21,7 +21,7 @@ const Set<String> kTextSubtitleExtensions = <String>{
   'srt',
   'ass',
   'ssa',
-  'vtt'
+  'vtt',
 };
 
 /// 字幕压缩包格式。只有 [zip] 能解。
@@ -35,10 +35,10 @@ enum SubtitleArchiveFormat {
 
   /// 给用户看的格式名。
   String get label => switch (this) {
-        SubtitleArchiveFormat.zip => 'ZIP',
-        SubtitleArchiveFormat.rar => 'RAR',
-        SubtitleArchiveFormat.sevenZip => '7z',
-      };
+    SubtitleArchiveFormat.zip => 'ZIP',
+    SubtitleArchiveFormat.rar => 'RAR',
+    SubtitleArchiveFormat.sevenZip => '7z',
+  };
 }
 
 /// 按文件名扩展名判断是不是字幕压缩包；不是返回 null。纯函数。
@@ -88,14 +88,14 @@ const String kSubtitleArchiveOperation = 'archive';
 ExternalProviderFailure unsupportedSubtitleArchiveFailure(
   String providerId,
   SubtitleArchiveFormat format,
-) =>
-    ExternalProviderFailure(
-      providerId: providerId,
-      operation: kSubtitleArchiveOperation,
-      kind: ExternalProviderFailureKind.unsupported,
-      message: '$providerId returned a ${format.label} archive, '
-          'which is not supported',
-    );
+) => ExternalProviderFailure(
+  providerId: providerId,
+  operation: kSubtitleArchiveOperation,
+  kind: ExternalProviderFailureKind.unsupported,
+  message:
+      '$providerId returned a ${format.label} archive, '
+      'which is not supported',
+);
 
 /// 把下载体（zip / 裸字幕）解成文本字幕文件列表。纯函数，便于单测。
 ///

@@ -74,14 +74,18 @@ Future<void> showManualDownloadTaskDialog({
 }) async {
   // 互联 host 代下载（设计 §3.3）：有已配对 host 宣告 downloads 能力时，本机没配
   // 下载后端也能打开对话框，把磁链交给 host。探测失败按「没有远端」处理。
-  final InterconnectDownloadClient remote = remoteClient ??
+  final InterconnectDownloadClient remote =
+      remoteClient ??
       InterconnectDownloadClient(repo: SyncRepository(appModel.database));
   // 「下载执行设备」偏好指向的 host 优先（并作为对话框的默认落点）；没设 / 连不上
   // 时退回「第一台宣告能力的 host」——对话框里有下拉，用户看得见投给了谁。
-  final DownloadExecutionResolution execution =
-      await resolveDownloadExecution(appModel, client: remote);
-  HostDownloadTarget? remoteTarget =
-      execution is DownloadExecutionRemote ? execution.target : null;
+  final DownloadExecutionResolution execution = await resolveDownloadExecution(
+    appModel,
+    client: remote,
+  );
+  HostDownloadTarget? remoteTarget = execution is DownloadExecutionRemote
+      ? execution.target
+      : null;
   if (remoteTarget == null) {
     try {
       remoteTarget = await remote.probe();
@@ -95,8 +99,8 @@ Future<void> showManualDownloadTaskDialog({
   // 远端只收磁链（`_canSubmit` 的远端分支拒绝 `.torrent`）：带种子进来时不走
   // 「仅远端」捷径，否则开出来的框一个都提交不了；照常引导配本机后端。
   if (!resolved.usable && remoteTarget != null && torrentPaths.isEmpty) {
-    final List<MediaSourceRow> sources =
-        await appModel.getManagedVideoDownloadSources();
+    final List<MediaSourceRow> sources = await appModel
+        .getManagedVideoDownloadSources();
     if (!context.mounted) return;
     await adaptiveModalSheet<bool>(
       context: context,
@@ -137,24 +141,24 @@ Future<void> showManualDownloadTaskDialog({
   }
   final VideoDownloadPipelineService pipeline = resolved.pipeline!;
   final VideoDownloadBackendTarget target = resolved.target!;
-  final List<MediaSourceRow> sources =
-      await appModel.getManagedVideoDownloadSources();
+  final List<MediaSourceRow> sources = await appModel
+      .getManagedVideoDownloadSources();
   if (!context.mounted) return;
   // 宽屏居中 M3E 面板（圆角 28、图标 hero 头部），窄屏底部 sheet。
   Future<bool?> open(String? torrentPath) => adaptiveModalSheet<bool>(
-        context: context,
-        builder: (BuildContext _) => ManualDownloadTaskDialog(
-          pipeline: pipeline,
-          target: target,
-          sources: sources,
-          defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
-          remoteClient: remote,
-          remoteTarget: remoteTarget,
-          initialUseRemote: preferRemote,
-          initialTorrentPath: torrentPath,
-          initialDiscoveryKind: initialDiscoveryKind,
-        ),
-      );
+    context: context,
+    builder: (BuildContext _) => ManualDownloadTaskDialog(
+      pipeline: pipeline,
+      target: target,
+      sources: sources,
+      defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
+      remoteClient: remote,
+      remoteTarget: remoteTarget,
+      initialUseRemote: preferRemote,
+      initialTorrentPath: torrentPath,
+      initialDiscoveryKind: initialDiscoveryKind,
+    ),
+  );
   if (torrentPaths.isEmpty) {
     await open(null);
     return;
@@ -261,9 +265,11 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   @override
   void initState() {
     super.initState();
-    _sourceId = widget.defaultSourceId ??
+    _sourceId =
+        widget.defaultSourceId ??
         (widget.sources.isEmpty ? null : widget.sources.first.id);
-    _useRemote = widget.remoteTarget != null &&
+    _useRemote =
+        widget.remoteTarget != null &&
         (widget.initialUseRemote || widget.pipeline == null);
     _discoveryKind = widget.initialDiscoveryKind;
     final String? torrentPath = widget.initialTorrentPath;
@@ -297,8 +303,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
           // 远端只收磁链（.torrent 文件不过线）；非视频域要 host 宣告能按域入库
           // （app 当 host 收全部四个域，无头 fushi_server 只收视频）。
           ? _metainfo == null &&
-              _magnetHash != null &&
-              widget.remoteTarget?.supportsKind(_discoveryKind?.name) == true
+                _magnetHash != null &&
+                widget.remoteTarget?.supportsKind(_discoveryKind?.name) == true
           : widget.pipeline != null && (!_isVideo || _sourceId != null));
 
   /// 剪贴板里有磁力链接就记下来，给一枚「使用剪贴板中的磁力链接」chip——不自动
@@ -466,9 +472,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       );
     } on Object catch (error) {
       if (mounted) {
-        setState(
-          () => _error = t.download_task_action_failed(error: '$error'),
-        );
+        setState(() => _error = t.download_task_action_failed(error: '$error'));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -498,9 +502,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       );
     } on Object catch (error) {
       if (mounted) {
-        setState(
-          () => _error = t.download_task_action_failed(error: '$error'),
-        );
+        setState(() => _error = t.download_task_action_failed(error: '$error'));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -586,25 +588,25 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   }
 
   Widget _buildSourceSwitch() => FushiSegmentedStrip<_ManualTaskSource>(
-        key: const ValueKey<String>('manual-task-source-kind'),
-        segments: <ButtonSegment<_ManualTaskSource>>[
-          ButtonSegment<_ManualTaskSource>(
-            value: _ManualTaskSource.magnet,
-            label: Text(t.download_task_add_source_magnet),
-            icon: const FushiIcon(FushiIcons.link),
-          ),
-          ButtonSegment<_ManualTaskSource>(
-            value: _ManualTaskSource.torrent,
-            label: Text(t.download_task_add_source_torrent),
-            icon: const FushiIcon(FushiIcons.file),
-          ),
-        ],
-        selected: _source,
-        onChanged: (_ManualTaskSource value) {
-          if (_submitting) return;
-          setState(() => _source = value);
-        },
-      );
+    key: const ValueKey<String>('manual-task-source-kind'),
+    segments: <ButtonSegment<_ManualTaskSource>>[
+      ButtonSegment<_ManualTaskSource>(
+        value: _ManualTaskSource.magnet,
+        label: Text(t.download_task_add_source_magnet),
+        icon: const FushiIcon(FushiIcons.link),
+      ),
+      ButtonSegment<_ManualTaskSource>(
+        value: _ManualTaskSource.torrent,
+        label: Text(t.download_task_add_source_torrent),
+        icon: const FushiIcon(FushiIcons.file),
+      ),
+    ],
+    selected: _source,
+    onChanged: (_ManualTaskSource value) {
+      if (_submitting) return;
+      setState(() => _source = value);
+    },
+  );
 
   Widget _buildMagnetInput(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -624,7 +626,9 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
               key: const ValueKey<String>('manual-task-paste'),
               tooltip: t.paste,
               icon: FushiIcons.copy,
-              onTap: _submitting ? null : () => unawaited(_pasteFromClipboard()),
+              onTap: _submitting
+                  ? null
+                  : () => unawaited(_pasteFromClipboard()),
             ),
           ),
           minLines: 3,
@@ -632,8 +636,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
           keyboardType: TextInputType.multiline,
           onChanged: _onMagnetChanged,
         ),
-        if (clipboard != null && _magnetController.text.trim().isEmpty) ...<
-            Widget>[
+        if (clipboard != null &&
+            _magnetController.text.trim().isEmpty) ...<Widget>[
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -993,8 +997,9 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
             runSpacing: tokens.spacing.gap,
             children: <Widget>[
               FushiTextButton(
-                onPressed:
-                    _submitting ? null : () => Navigator.of(context).pop(),
+                onPressed: _submitting
+                    ? null
+                    : () => Navigator.of(context).pop(),
                 child: Text(t.dialog_cancel),
               ),
               FushiFilledButton.icon(

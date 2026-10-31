@@ -46,10 +46,14 @@ void main() {
     });
 
     test('clamp 到 0.5..4.0（拖过界不溢出）', () {
-      expect(VideoFushiPage.longPressDragSpeedFor(base, 100000),
-          VideoFushiPage.longPressDragMaxSpeed);
-      expect(VideoFushiPage.longPressDragSpeedFor(base, -100000),
-          VideoFushiPage.longPressDragMinSpeed);
+      expect(
+        VideoFushiPage.longPressDragSpeedFor(base, 100000),
+        VideoFushiPage.longPressDragMaxSpeed,
+      );
+      expect(
+        VideoFushiPage.longPressDragSpeedFor(base, -100000),
+        VideoFushiPage.longPressDragMinSpeed,
+      );
     });
 
     test('上下限常量取值（0.5 / 4.0）', () {
@@ -70,10 +74,14 @@ void main() {
         reason: '没有 onLongPressMoveUpdate 就无法长按后连续拖动调速（TODO-338）',
       );
       // 仍保留长按即固定加速 + 松手恢复的基础行为。
-      expect(page.contains('onLongPressStart: _handleVideoLongPressStart,'),
-          isTrue);
       expect(
-          page.contains('onLongPressEnd: _handleVideoLongPressEnd,'), isTrue);
+        page.contains('onLongPressStart: _handleVideoLongPressStart,'),
+        isTrue,
+      );
+      expect(
+        page.contains('onLongPressEnd: _handleVideoLongPressEnd,'),
+        isTrue,
+      );
     });
 
     test('长按起点记录基准速，move 以基准速连续调速、松手清基准', () {
@@ -83,8 +91,11 @@ void main() {
         'void _handleVideoLongPressStart(',
         'void _handleVideoLongPressMoveUpdate(',
       );
-      expect(start.contains('_longPressDragBaseSpeed = speed;'), isTrue,
-          reason: 'start 必须把固定加速速记为拖动基准');
+      expect(
+        start.contains('_longPressDragBaseSpeed = speed;'),
+        isTrue,
+        reason: 'start 必须把固定加速速记为拖动基准',
+      );
 
       // move 以基准速 + 纯函数映射连续调速（不持久）。
       final String move = _functionSource(
@@ -92,22 +103,32 @@ void main() {
         'void _handleVideoLongPressMoveUpdate(',
         'void _handleVideoLongPressEnd(',
       );
-      expect(move.contains('final double? base = _longPressDragBaseSpeed;'),
-          isTrue);
-      expect(move.contains('if (base == null) return;'), isTrue,
-          reason: '非长按手势中（无基准）不响应拖动');
+      expect(
+        move.contains('final double? base = _longPressDragBaseSpeed;'),
+        isTrue,
+      );
+      expect(
+        move.contains('if (base == null) return;'),
+        isTrue,
+        reason: '非长按手势中（无基准）不响应拖动',
+      );
       expect(
         move.contains('VideoFushiPage.longPressDragSpeedFor('),
         isTrue,
         reason: 'move 必须经纯函数映射横向位移',
       );
-      expect(move.contains('localOffsetFromOrigin.dx'), isTrue,
-          reason: '用相对长按起点的横向位移驱动调速');
       expect(
-          move.contains('_setSpeed(snapped, persist: false, rebuild: false)'),
-          isTrue,
-          reason: '拖动调速不持久且不触发全页重建（BUG-965：跟随徽章实时渲染，省掉高频全页 '
-              'setState，拖动才顺滑）');
+        move.contains('localOffsetFromOrigin.dx'),
+        isTrue,
+        reason: '用相对长按起点的横向位移驱动调速',
+      );
+      expect(
+        move.contains('_setSpeed(snapped, persist: false, rebuild: false)'),
+        isTrue,
+        reason:
+            '拖动调速不持久且不触发全页重建（BUG-965：跟随徽章实时渲染，省掉高频全页 '
+            'setState，拖动才顺滑）',
+      );
 
       // end 恢复原速并清基准。
       final String end = _functionSource(
@@ -115,10 +136,16 @@ void main() {
         'void _handleVideoLongPressEnd(',
         'Future<void> _adjustSpeed(',
       );
-      expect(end.contains('_longPressDragBaseSpeed = null;'), isTrue,
-          reason: '松手必须清基准，否则下次手势误判仍在拖动中');
-      expect(end.contains('_setSpeed(previous, persist: false)'), isTrue,
-          reason: '松手恢复长按前的原速');
+      expect(
+        end.contains('_longPressDragBaseSpeed = null;'),
+        isTrue,
+        reason: '松手必须清基准，否则下次手势误判仍在拖动中',
+      );
+      expect(
+        end.contains('_setSpeed(previous, persist: false)'),
+        isTrue,
+        reason: '松手恢复长按前的原速',
+      );
     });
   });
 }

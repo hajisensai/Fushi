@@ -32,7 +32,8 @@ void main() {
     expect(
       kWebToLogicalKey.values,
       contains(LogicalKeyboardKey.process),
-      reason: 'process 是 DOM KeyboardEvent.key === "Process" 的产物；这条若不再成立，'
+      reason:
+          'process 是 DOM KeyboardEvent.key === "Process" 的产物；这条若不再成立，'
           '说明 Flutter 改了 IME 键的表达方式，整套回退层的前提要重新评估',
     );
   });
@@ -43,29 +44,30 @@ void main() {
     // 逐张列全，而不是只挑 kWindowsToLogicalKey。
     final Map<String, Map<Object, LogicalKeyboardKey>> nativeMaps =
         <String, Map<Object, LogicalKeyboardKey>>{
-      'kAndroidToLogicalKey': kAndroidToLogicalKey,
-      'kAndroidNumPadMap': kAndroidNumPadMap,
-      'kFuchsiaToLogicalKey': kFuchsiaToLogicalKey,
-      'kMacOsToLogicalKey': kMacOsToLogicalKey,
-      'kMacOsNumPadMap': kMacOsNumPadMap,
-      'kMacOsFunctionKeyMap': kMacOsFunctionKeyMap,
-      'kIosToLogicalKey': kIosToLogicalKey,
-      'kIosNumPadMap': kIosNumPadMap,
-      'kIosSpecialLogicalMap': kIosSpecialLogicalMap,
-      'kGlfwToLogicalKey': kGlfwToLogicalKey,
-      'kGlfwNumpadMap': kGlfwNumpadMap,
-      'kGtkToLogicalKey': kGtkToLogicalKey,
-      'kGtkNumpadMap': kGtkNumpadMap,
-      'kWindowsToLogicalKey': kWindowsToLogicalKey,
-      'kWindowsNumPadMap': kWindowsNumPadMap,
-    };
+          'kAndroidToLogicalKey': kAndroidToLogicalKey,
+          'kAndroidNumPadMap': kAndroidNumPadMap,
+          'kFuchsiaToLogicalKey': kFuchsiaToLogicalKey,
+          'kMacOsToLogicalKey': kMacOsToLogicalKey,
+          'kMacOsNumPadMap': kMacOsNumPadMap,
+          'kMacOsFunctionKeyMap': kMacOsFunctionKeyMap,
+          'kIosToLogicalKey': kIosToLogicalKey,
+          'kIosNumPadMap': kIosNumPadMap,
+          'kIosSpecialLogicalMap': kIosSpecialLogicalMap,
+          'kGlfwToLogicalKey': kGlfwToLogicalKey,
+          'kGlfwNumpadMap': kGlfwNumpadMap,
+          'kGtkToLogicalKey': kGtkToLogicalKey,
+          'kGtkNumpadMap': kGtkNumpadMap,
+          'kWindowsToLogicalKey': kWindowsToLogicalKey,
+          'kWindowsNumPadMap': kWindowsNumPadMap,
+        };
 
     for (final MapEntry<String, Map<Object, LogicalKeyboardKey>> entry
         in nativeMaps.entries) {
       expect(
         entry.value.values,
         isNot(contains(LogicalKeyboardKey.process)),
-        reason: '${entry.key} 出现了 process：原生端 IME 键的表达方式变了，'
+        reason:
+            '${entry.key} 出现了 process：原生端 IME 键的表达方式变了，'
             'BUG-430/853/936 的 physicalKey 回退层可能终于可达，需重新评估',
       );
     }

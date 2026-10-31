@@ -22,8 +22,9 @@ String _ownExeName() =>
 /// 那组正是断言它），于是「进程数 > 20」「注册表里必有 ProductName」这类**拿真实
 /// 系统当已知真值**的断言在 Linux CI 上必然失败。作者在 Windows 本机全绿，红只在
 /// CI 露头——本机 Windows 绿 ≠ CI Linux 绿。
-final Object? _skipOffRealWindows =
-    Platform.isWindows ? null : '真实系统断言只在 Windows 上有意义';
+final Object? _skipOffRealWindows = Platform.isWindows
+    ? null
+    : '真实系统断言只在 Windows 上有意义';
 
 void main() {
   group('非 Windows 平台契约', () {
@@ -38,12 +39,18 @@ void main() {
       expect(windowsProcessesHoldingFiles(<String>['/tmp/x']), isEmpty);
       expect(
         readWindowsRegistryString(
-            WindowsRegistryRoot.localMachine, 'SOFTWARE', 'X'),
+          WindowsRegistryRoot.localMachine,
+          'SOFTWARE',
+          'X',
+        ),
         isNull,
       );
       expect(
         readWindowsRegistryDword(
-            WindowsRegistryRoot.localMachine, 'SOFTWARE', 'X'),
+          WindowsRegistryRoot.localMachine,
+          'SOFTWARE',
+          'X',
+        ),
         isNull,
       );
     });
@@ -61,10 +68,14 @@ void main() {
         reason: '只枚举到 ${all.length} 个进程——PROCESSENTRY32W 布局或 dwSize 可能写错了',
       );
 
-      final Iterable<WindowsProcessEntry> self =
-          all.where((WindowsProcessEntry e) => e.pid == pid);
-      expect(self, hasLength(1),
-          reason: '当前进程 PID $pid 必须出现在快照里（实际 ${self.length} 条）');
+      final Iterable<WindowsProcessEntry> self = all.where(
+        (WindowsProcessEntry e) => e.pid == pid,
+      );
+      expect(
+        self,
+        hasLength(1),
+        reason: '当前进程 PID $pid 必须出现在快照里（实际 ${self.length} 条）',
+      );
     });
 
     test('当前进程的 image 名与 resolvedExecutable 的 basename 一致', () {
@@ -116,20 +127,28 @@ void main() {
         own.toUpperCase(),
         own.toLowerCase(),
       ]) {
-        final List<WindowsProcessEntry> found =
-            windowsProcessesByNames(<String>{probe});
+        final List<WindowsProcessEntry> found = windowsProcessesByNames(
+          <String>{probe},
+        );
         expect(
-            found.where((WindowsProcessEntry e) => e.pid == pid), hasLength(1),
-            reason: '用 "$probe" 查不到当前进程');
-        final WindowsProcessEntry me =
-            found.firstWhere((WindowsProcessEntry e) => e.pid == pid);
+          found.where((WindowsProcessEntry e) => e.pid == pid),
+          hasLength(1),
+          reason: '用 "$probe" 查不到当前进程',
+        );
+        final WindowsProcessEntry me = found.firstWhere(
+          (WindowsProcessEntry e) => e.pid == pid,
+        );
         expect(me.path, isNotNull, reason: '命中项必须已解析路径');
       }
     });
 
     test('按 PID 批量查询：命中自己、忽略不存在的、带路径', () {
-      final Map<int, WindowsProcessEntry> found =
-          windowsProcessesByIds(<int>[pid, 0x7FFFFFF0, 0, -5]);
+      final Map<int, WindowsProcessEntry> found = windowsProcessesByIds(<int>[
+        pid,
+        0x7FFFFFF0,
+        0,
+        -5,
+      ]);
       expect(found.keys, contains(pid));
       expect(found[pid]!.path, isNotNull);
       expect(found.keys, isNot(contains(0)));
@@ -154,20 +173,22 @@ void main() {
       // 这是本组的核心断言：RM_PROCESS_INFO 的字段顺序 / 定长数组尺寸写错，
       // 不会抛异常，只会读出垃圾 PID 或空列表。运行中的进程一定持有自己的
       // image 文件，是唯一不依赖环境的已知真值。
-      final List<WindowsProcessEntry> holders =
-          windowsProcessesHoldingFile(Platform.resolvedExecutable);
+      final List<WindowsProcessEntry> holders = windowsProcessesHoldingFile(
+        Platform.resolvedExecutable,
+      );
       expect(
         holders.map((WindowsProcessEntry e) => e.pid),
         contains(pid),
-        reason: 'RM 没把当前进程报成自己 exe 的占用者——'
+        reason:
+            'RM 没把当前进程报成自己 exe 的占用者——'
             'RM_PROCESS_INFO 布局（256/64 定长数组）可能写错了，实际拿到 $holders',
       );
     });
 
     test('报出的占用者带正确的 image 名与路径', () {
-      final WindowsProcessEntry me =
-          windowsProcessesHoldingFile(Platform.resolvedExecutable)
-              .firstWhere((WindowsProcessEntry e) => e.pid == pid);
+      final WindowsProcessEntry me = windowsProcessesHoldingFile(
+        Platform.resolvedExecutable,
+      ).firstWhere((WindowsProcessEntry e) => e.pid == pid);
       expect(me.name.toLowerCase(), _ownExeName().toLowerCase());
       expect(
         me.path!.toLowerCase().replaceAll('/', r'\'),
@@ -176,8 +197,9 @@ void main() {
     });
 
     test('无人占用的普通文件 → 空列表', () {
-      final Directory tmp =
-          Directory.systemTemp.createTempSync('fushi_rm_probe_');
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'fushi_rm_probe_',
+      );
       try {
         final File idle = File('${tmp.path}\\idle.bin')
           ..writeAsBytesSync(<int>[1, 2, 3]);
@@ -205,14 +227,13 @@ void main() {
       try {
         final File idle = File('${tmp.path}\\idle.bin')
           ..writeAsBytesSync(<int>[1, 2, 3]);
-        final List<WindowsProcessEntry> holders = windowsProcessesHoldingFiles(
-          <String>[
-            Platform.resolvedExecutable,
-            '',
-            idle.path,
-            Platform.resolvedExecutable,
-          ],
-        );
+        final List<WindowsProcessEntry> holders =
+            windowsProcessesHoldingFiles(<String>[
+              Platform.resolvedExecutable,
+              '',
+              idle.path,
+              Platform.resolvedExecutable,
+            ]);
         expect(
           holders.where((WindowsProcessEntry e) => e.pid == pid),
           hasLength(1),
@@ -249,8 +270,11 @@ void main() {
       );
       // Win10/11 都写 10；给个宽区间，只要不是 0 或垃圾值。
       expect(major, isNotNull, reason: 'Win10+ 必然有这个值');
-      expect(major, inInclusiveRange(6, 99),
-          reason: '读出 $major——DWORD 解码或类型判断写错了');
+      expect(
+        major,
+        inInclusiveRange(6, 99),
+        reason: '读出 $major——DWORD 解码或类型判断写错了',
+      );
     });
 
     test('类型不符返回 null（拿 DWORD 读法读字符串值，反之亦然）', () {

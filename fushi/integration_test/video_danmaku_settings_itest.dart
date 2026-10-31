@@ -51,17 +51,24 @@ void main() {
       final File fixture = File(_kVideoFixture);
       expect(fixture.existsSync(), isTrue, reason: '测试视频 $_kVideoFixture 应存在');
 
-      await repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: const Value(_kVideoBookUid),
-        title: const Value('danmaku itest'),
-        videoPath: Value(fixture.absolute.path),
-      ));
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value(_kVideoBookUid),
+          title: const Value('danmaku itest'),
+          videoPath: Value(fixture.absolute.path),
+        ),
+      );
 
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
-      )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
+          ),
+        ),
+      );
 
       VideoFushiTestHooks hooks() =>
           tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
@@ -81,14 +88,20 @@ void main() {
       hooks().debugOpenDanmakuSettings();
       await tester.pumpAndSettle();
 
-      expect(find.textContaining(t.video_setting_danmaku_font_scale),
-          findsWidgets);
       expect(
-          find.textContaining(t.video_setting_danmaku_opacity), findsWidgets);
+        find.textContaining(t.video_setting_danmaku_font_scale),
+        findsWidgets,
+      );
+      expect(
+        find.textContaining(t.video_setting_danmaku_opacity),
+        findsWidgets,
+      );
       expect(find.textContaining(t.video_setting_danmaku_speed), findsWidgets);
       expect(find.textContaining(t.video_setting_danmaku_area), findsWidgets);
       expect(
-          find.byKey(const Key('danmaku-block-rules-field')), findsOneWidget);
+        find.byKey(const Key('danmaku-block-rules-field')),
+        findsOneWidget,
+      );
       expect(
         find.widgetWithText(
           AdaptiveSettingsNavigationRow,
@@ -104,10 +117,14 @@ void main() {
         'spoiler',
       );
       await tester.pumpAndSettle();
-      expect(appModel.videoDanmakuBlockRulesText, contains('spoiler'),
-          reason: '屏蔽词应落盘');
-      final VideoDanmakuBlockRules rules =
-          parseVideoDanmakuBlockRules(appModel.videoDanmakuBlockRulesText);
+      expect(
+        appModel.videoDanmakuBlockRulesText,
+        contains('spoiler'),
+        reason: '屏蔽词应落盘',
+      );
+      final VideoDanmakuBlockRules rules = parseVideoDanmakuBlockRules(
+        appModel.videoDanmakuBlockRulesText,
+      );
       const VideoDanmakuItem blocked = VideoDanmakuItem(
         startMs: 0,
         text: 'a spoiler!',
@@ -124,31 +141,43 @@ void main() {
         <VideoDanmakuItem>[blocked, kept],
         rules,
       );
-      expect(visible.map((VideoDanmakuItem i) => i.text), <String>['keep me'],
-          reason: '屏蔽词过滤应真生效');
+      expect(visible.map((VideoDanmakuItem i) => i.text), <String>[
+        'keep me',
+      ], reason: '屏蔽词过滤应真生效');
       debugPrint('[danmaku-itest] block filter persisted + effective');
 
       // ── ③ 样式滑块 commit → 落盘（真生效） ──
-      final AdaptiveSettingsSliderRow fontRow =
-          tester.widget<AdaptiveSettingsSliderRow>(
-        find.byWidgetPredicate((Widget w) =>
-            w is AdaptiveSettingsSliderRow &&
-            w.title == t.video_setting_danmaku_font_scale),
-      );
+      final AdaptiveSettingsSliderRow fontRow = tester
+          .widget<AdaptiveSettingsSliderRow>(
+            find.byWidgetPredicate(
+              (Widget w) =>
+                  w is AdaptiveSettingsSliderRow &&
+                  w.title == t.video_setting_danmaku_font_scale,
+            ),
+          );
       fontRow.onChangeEnd!(1.6);
       await tester.pumpAndSettle();
-      expect(appModel.videoDanmakuStyle.fontScale, closeTo(1.6, 0.001),
-          reason: '弹幕字号样式应落盘真生效');
+      expect(
+        appModel.videoDanmakuStyle.fontScale,
+        closeTo(1.6, 0.001),
+        reason: '弹幕字号样式应落盘真生效',
+      );
       debugPrint(
-          '[danmaku-itest] style fontScale=${appModel.videoDanmakuStyle.fontScale}');
+        '[danmaku-itest] style fontScale=${appModel.videoDanmakuStyle.fontScale}',
+      );
 
       // ── ④ 手动搜索 / 选集侧栏可开 ──
       hooks().debugOpenDanmakuMatch();
       await tester.pumpAndSettle();
-      expect(find.byType(DanmakuManualMatchPanel), findsOneWidget,
-          reason: '手动匹配入口可达');
       expect(
-          find.byKey(const Key('danmaku-manual-search-field')), findsOneWidget);
+        find.byType(DanmakuManualMatchPanel),
+        findsOneWidget,
+        reason: '手动匹配入口可达',
+      );
+      expect(
+        find.byKey(const Key('danmaku-manual-search-field')),
+        findsOneWidget,
+      );
       debugPrint('[danmaku-itest] manual match panel opened');
     },
   );

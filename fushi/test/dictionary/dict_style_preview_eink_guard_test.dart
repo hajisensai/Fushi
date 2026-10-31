@@ -36,7 +36,8 @@ void main() {
     expect(
       source,
       contains("classList.toggle('eink'"),
-      reason: 'popup.css 的 html.eink 覆盖块挂在这个 class 上；'
+      reason:
+          'popup.css 的 html.eink 覆盖块挂在这个 class 上；'
           '少了它整块样式在预览里不生效',
     );
   });

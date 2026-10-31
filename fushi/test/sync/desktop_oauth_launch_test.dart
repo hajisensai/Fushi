@@ -30,20 +30,20 @@ void main() {
     launchBehaviour = 'true';
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method == 'launch') {
-        final Map<Object?, Object?> args = Map<Object?, Object?>.from(
-          call.arguments as Map,
-        );
-        launchedUrls.add(args['url'] as String);
-        switch (launchBehaviour) {
-          case 'false':
-            return false;
-          case 'throw':
-            throw PlatformException(code: 'SE_ERR_NOASSOC');
-        }
-      }
-      return true;
-    });
+          if (call.method == 'launch') {
+            final Map<Object?, Object?> args = Map<Object?, Object?>.from(
+              call.arguments as Map,
+            );
+            launchedUrls.add(args['url'] as String);
+            switch (launchBehaviour) {
+              case 'false':
+                return false;
+              case 'throw':
+                throw PlatformException(code: 'SE_ERR_NOASSOC');
+            }
+          }
+          return true;
+        });
   });
 
   tearDown(() {
@@ -52,10 +52,10 @@ void main() {
   });
 
   Uri buildAuthUrl(String redirectUri) => Uri.https(
-        'accounts.example.test',
-        'o/oauth2/auth',
-        <String, String>{'redirect_uri': redirectUri, 'scope': 'a b'},
-      );
+    'accounts.example.test',
+    'o/oauth2/auth',
+    <String, String>{'redirect_uri': redirectUri, 'scope': 'a b'},
+  );
 
   /// 模拟浏览器回调。**不能用 `HttpClient`**：flutter_test 把 `dart:io` 的 HttpClient
   /// 整个换成了假实现（永远回 400、从不真连），会让这里静静挂到超时；裸 Socket 不在
@@ -64,12 +64,16 @@ void main() {
     final Uri u = Uri.parse(redirectUri);
     final Socket socket = await Socket.connect(u.host, u.port);
     try {
-      socket.write('GET /?$query HTTP/1.1\r\n'
-          'Host: ${u.host}:${u.port}\r\n'
-          'Connection: close\r\n\r\n');
+      socket.write(
+        'GET /?$query HTTP/1.1\r\n'
+        'Host: ${u.host}:${u.port}\r\n'
+        'Connection: close\r\n\r\n',
+      );
       await socket.flush();
-      final String response =
-          await socket.cast<List<int>>().transform(utf8.decoder).join();
+      final String response = await socket
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .join();
       expect(response, startsWith('HTTP/1.1 200'));
     } finally {
       socket.destroy();
@@ -79,8 +83,11 @@ void main() {
   Future<bool> portOpen(String redirectUri) async {
     final Uri u = Uri.parse(redirectUri);
     try {
-      final Socket s = await Socket.connect(u.host, u.port,
-          timeout: const Duration(seconds: 1));
+      final Socket s = await Socket.connect(
+        u.host,
+        u.port,
+        timeout: const Duration(seconds: 1),
+      );
       s.destroy();
       return true;
     } on SocketException {
@@ -105,10 +112,12 @@ void main() {
       onLaunched: launched.complete,
     );
     // 流程抛错时别让测试卡在 launched 上。
-    unawaited(flow.catchError((Object e) {
-      if (!launched.isCompleted) launched.completeError(e);
-      return const DesktopOAuthResult(code: '', redirectUri: '');
-    }));
+    unawaited(
+      flow.catchError((Object e) {
+        if (!launched.isCompleted) launched.completeError(e);
+        return const DesktopOAuthResult(code: '', redirectUri: '');
+      }),
+    );
     final DesktopOAuthLaunch launch = await launched.future;
     return (flow, launch, redirectUri);
   }
@@ -117,7 +126,7 @@ void main() {
     final (
       Future<DesktopOAuthResult> flow,
       DesktopOAuthLaunch launch,
-      String redirectUri
+      String redirectUri,
     ) = await start();
     expect(await launch.browserOpened, isTrue);
     expect(launchedUrls, hasLength(1));
@@ -132,32 +141,36 @@ void main() {
     await launch.finished; // 授权码到达 → finished 完成
   });
 
-  test('浏览器没拉起来（插件抛 PlatformException）：句柄照常交出、流程不终止、browserOpened=false',
-      () async {
-    launchBehaviour = 'throw';
-    final (
-      Future<DesktopOAuthResult> flow,
-      DesktopOAuthLaunch launch,
-      String redirectUri
-    ) = await start();
-    expect(await launch.browserOpened, isFalse);
-    expect(launchedUrls, hasLength(1));
-    expect(await portOpen(redirectUri), isTrue, reason: '流程必须还在等，用户手里有链接');
+  test(
+    '浏览器没拉起来（插件抛 PlatformException）：句柄照常交出、流程不终止、browserOpened=false',
+    () async {
+      launchBehaviour = 'throw';
+      final (
+        Future<DesktopOAuthResult> flow,
+        DesktopOAuthLaunch launch,
+        String redirectUri,
+      ) = await start();
+      expect(await launch.browserOpened, isFalse);
+      expect(launchedUrls, hasLength(1));
+      expect(await portOpen(redirectUri), isTrue, reason: '流程必须还在等，用户手里有链接');
 
-    // 用户把链接贴到别的浏览器完成授权 → 照常拿到授权码。
-    await hitCallback(redirectUri, 'code=viaOtherBrowser');
-    expect((await flow).code, 'viaOtherBrowser');
-  });
+      // 用户把链接贴到别的浏览器完成授权 → 照常拿到授权码。
+      await hitCallback(redirectUri, 'code=viaOtherBrowser');
+      expect((await flow).code, 'viaOtherBrowser');
+    },
+  );
 
   test('浏览器回 false 且**没有**观察者：仍像以前一样抛错（没人拿得到链接）', () async {
     launchBehaviour = 'false';
     await expectLater(
       runDesktopOAuthLoopback(host: '127.0.0.1', buildAuthUrl: buildAuthUrl),
-      throwsA(isA<SyncAuthError>().having(
-        (SyncAuthError e) => e.message,
-        'message',
-        contains('Failed to launch browser'),
-      )),
+      throwsA(
+        isA<SyncAuthError>().having(
+          (SyncAuthError e) => e.message,
+          'message',
+          contains('Failed to launch browser'),
+        ),
+      ),
     );
   });
 
@@ -165,7 +178,7 @@ void main() {
     final (
       Future<DesktopOAuthResult> flow,
       DesktopOAuthLaunch launch,
-      String redirectUri
+      String redirectUri,
     ) = await start();
     expect(await portOpen(redirectUri), isTrue, reason: '等待期间端口应在监听');
 
@@ -174,11 +187,13 @@ void main() {
 
     await expectLater(
       flow,
-      throwsA(isA<SyncAuthError>().having(
-        (SyncAuthError e) => e.kind,
-        'kind',
-        SyncAuthFailureKind.cancelled,
-      )),
+      throwsA(
+        isA<SyncAuthError>().having(
+          (SyncAuthError e) => e.kind,
+          'kind',
+          SyncAuthFailureKind.cancelled,
+        ),
+      ),
     );
     await launch.finished;
     expect(await portOpen(redirectUri), isFalse, reason: '取消后端口必须释放');
@@ -189,11 +204,13 @@ void main() {
         await start(timeout: const Duration(milliseconds: 200));
     await expectLater(
       flow,
-      throwsA(isA<SyncAuthError>().having(
-        (SyncAuthError e) => e.kind,
-        'kind',
-        SyncAuthFailureKind.browserTimeout,
-      )),
+      throwsA(
+        isA<SyncAuthError>().having(
+          (SyncAuthError e) => e.kind,
+          'kind',
+          SyncAuthFailureKind.browserTimeout,
+        ),
+      ),
     );
     await launch.finished.timeout(const Duration(seconds: 1));
   });
@@ -202,7 +219,7 @@ void main() {
     final (
       Future<DesktopOAuthResult> flow,
       DesktopOAuthLaunch launch,
-      String redirectUri
+      String redirectUri,
     ) = await start();
     expect(launchedUrls, hasLength(1));
 
@@ -242,8 +259,11 @@ void main() {
       },
     );
     expect(out, 'ok');
-    expect(DesktopOAuthLaunchObserver.debugCurrent, isNull,
-        reason: '离开 observe 后监听器必须还原');
+    expect(
+      DesktopOAuthLaunchObserver.debugCurrent,
+      isNull,
+      reason: '离开 observe 后监听器必须还原',
+    );
   });
 
   test('observe 的 body 抛出时监听器同样还原', () async {
@@ -263,20 +283,30 @@ void main() {
     final Completer<void> ca = Completer<void>();
     final Completer<void> cb = Completer<void>();
 
-    final Future<void> a =
-        DesktopOAuthLaunchObserver.observe(la, () => ca.future);
-    final Future<void> b =
-        DesktopOAuthLaunchObserver.observe(lb, () => cb.future);
+    final Future<void> a = DesktopOAuthLaunchObserver.observe(
+      la,
+      () => ca.future,
+    );
+    final Future<void> b = DesktopOAuthLaunchObserver.observe(
+      lb,
+      () => cb.future,
+    );
     expect(DesktopOAuthLaunchObserver.debugCurrent, same(lb));
 
     ca.complete();
     await a;
-    expect(DesktopOAuthLaunchObserver.debugCurrent, same(lb),
-        reason: 'A 先结束不能把 B 的监听器抹成 null（正是本 PR 要修的「无对话框转圈」）');
+    expect(
+      DesktopOAuthLaunchObserver.debugCurrent,
+      same(lb),
+      reason: 'A 先结束不能把 B 的监听器抹成 null（正是本 PR 要修的「无对话框转圈」）',
+    );
 
     cb.complete();
     await b;
-    expect(DesktopOAuthLaunchObserver.debugCurrent, isNull,
-        reason: 'B 结束后不能残留已经结束的 A');
+    expect(
+      DesktopOAuthLaunchObserver.debugCurrent,
+      isNull,
+      reason: 'B 结束后不能残留已经结束的 A',
+    );
   });
 }

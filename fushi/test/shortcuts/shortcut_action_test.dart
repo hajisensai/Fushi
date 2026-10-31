@@ -31,8 +31,9 @@ void main() {
     });
 
     test('actionsForScope filters correctly', () {
-      final readerActions =
-          ShortcutAction.actionsForScope(ShortcutScope.reader);
+      final readerActions = ShortcutAction.actionsForScope(
+        ShortcutScope.reader,
+      );
       expect(readerActions, isNotEmpty);
       for (final action in readerActions) {
         expect(action.scope, ShortcutScope.reader);
@@ -43,20 +44,27 @@ void main() {
   group('ShortcutScope.coactiveScopes', () {
     test('reader and audiobook share one co-active group', () {
       expect(
-          ShortcutScope.reader.coactiveScopes,
-          containsAll(
-              <ShortcutScope>[ShortcutScope.reader, ShortcutScope.audiobook]));
-      expect(ShortcutScope.audiobook.coactiveScopes,
-          ShortcutScope.reader.coactiveScopes);
+        ShortcutScope.reader.coactiveScopes,
+        containsAll(<ShortcutScope>[
+          ShortcutScope.reader,
+          ShortcutScope.audiobook,
+        ]),
+      );
+      expect(
+        ShortcutScope.audiobook.coactiveScopes,
+        ShortcutScope.reader.coactiveScopes,
+      );
     });
 
     test('home and global share one co-active group', () {
       expect(
-          ShortcutScope.home.coactiveScopes,
-          containsAll(
-              <ShortcutScope>[ShortcutScope.home, ShortcutScope.global]));
-      expect(ShortcutScope.global.coactiveScopes,
-          ShortcutScope.home.coactiveScopes);
+        ShortcutScope.home.coactiveScopes,
+        containsAll(<ShortcutScope>[ShortcutScope.home, ShortcutScope.global]),
+      );
+      expect(
+        ShortcutScope.global.coactiveScopes,
+        ShortcutScope.home.coactiveScopes,
+      );
     });
 
     test('the two groups are disjoint', () {

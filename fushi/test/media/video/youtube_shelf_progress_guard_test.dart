@@ -62,7 +62,9 @@ void main() {
     expect(
       _flat(pageSrc),
       contains(
-        _flat('String get _activeBookUid => _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;'),
+        _flat(
+          'String get _activeBookUid => _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;',
+        ),
       ),
       reason:
           'YouTube / remote entries have no disc override and keep their original row identity',

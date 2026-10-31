@@ -24,18 +24,25 @@ void main() {
       // ICONDIR header: reserved(0) / type(1=icon) / count(4 frames).
       expect(_u16le(bytes, 0), 0, reason: 'reserved must be 0');
       expect(_u16le(bytes, 2), 1, reason: 'type must be 1 (ICO)');
-      expect(_u16le(bytes, 4), kShortcutIcoSizes.length,
-          reason: 'count must equal number of sizes');
+      expect(
+        _u16le(bytes, 4),
+        kShortcutIcoSizes.length,
+        reason: 'count must equal number of sizes',
+      );
 
       // Each 16-byte ICONDIRENTRY starts at 6 + i*16. Byte 0 = width, byte 1 =
       // height. ICO spec stores 256 as a 0 byte, so map size 256 -> 0.
       for (int i = 0; i < kShortcutIcoSizes.length; i++) {
         final int entryOffset = 6 + i * 16;
-        final int expected =
-            kShortcutIcoSizes[i] >= 256 ? 0 : kShortcutIcoSizes[i];
+        final int expected = kShortcutIcoSizes[i] >= 256
+            ? 0
+            : kShortcutIcoSizes[i];
         expect(bytes[entryOffset], expected, reason: 'frame $i width byte');
-        expect(bytes[entryOffset + 1], expected,
-            reason: 'frame $i height byte');
+        expect(
+          bytes[entryOffset + 1],
+          expected,
+          reason: 'frame $i height byte',
+        );
       }
     });
 
@@ -58,18 +65,27 @@ void main() {
       final Uint8List a = Uint8List.fromList(<int>[1, 2, 3, 4]);
       final Uint8List b = Uint8List.fromList(<int>[1, 2, 3, 4]);
       final Uint8List c = Uint8List.fromList(<int>[9, 9, 9, 9]);
-      expect(shortcutIcoFileName(a), shortcutIcoFileName(b),
-          reason: 'same content -> same file name');
-      expect(shortcutIcoFileName(a), isNot(shortcutIcoFileName(c)),
-          reason: 'different content -> different file name');
+      expect(
+        shortcutIcoFileName(a),
+        shortcutIcoFileName(b),
+        reason: 'same content -> same file name',
+      );
+      expect(
+        shortcutIcoFileName(a),
+        isNot(shortcutIcoFileName(c)),
+        reason: 'different content -> different file name',
+      );
     });
 
     test('matches the shortcut_icon_<hash>.ico shape', () {
-      final String name =
-          shortcutIcoFileName(Uint8List.fromList(<int>[7, 7, 7]));
+      final String name = shortcutIcoFileName(
+        Uint8List.fromList(<int>[7, 7, 7]),
+      );
       expect(
-          RegExp(r'^shortcut_icon_[0-9a-f]{16}\.ico$').hasMatch(name), isTrue,
-          reason: 'name was: $name');
+        RegExp(r'^shortcut_icon_[0-9a-f]{16}\.ico$').hasMatch(name),
+        isTrue,
+        reason: 'name was: $name',
+      );
     });
   });
 }

@@ -20,8 +20,10 @@ class _ModelServer {
   bool supportRange = true;
 
   static Future<_ModelServer> start(Map<String, List<int>> payloads) async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     return _ModelServer(server, payloads);
   }
 
@@ -41,8 +43,9 @@ class _ModelServer {
       return;
     }
     if (range != null && supportRange) {
-      final RegExpMatch? match =
-          RegExp(r'^bytes=(\d+)-$').firstMatch(range.trim());
+      final RegExpMatch? match = RegExp(
+        r'^bytes=(\d+)-$',
+      ).firstMatch(range.trim());
       final int offset = match == null ? 0 : int.parse(match.group(1)!);
       if (offset >= payload.length) {
         request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
@@ -65,13 +68,12 @@ class _ModelServer {
 MangaOcrModelDownloader _downloader({
   int interval = 4,
   List<String> Function(MangaOcrModelFile file)? urlCandidates,
-}) =>
-    MangaOcrModelDownloader(
-      // 测试直连 loopback，绕开环境代理变量（生产默认 findProxyFromEnvironment）。
-      createClient: HttpClient.new,
-      urlCandidates: urlCandidates,
-      progressByteInterval: interval,
-    );
+}) => MangaOcrModelDownloader(
+  // 测试直连 loopback，绕开环境代理变量（生产默认 findProxyFromEnvironment）。
+  createClient: HttpClient.new,
+  urlCandidates: urlCandidates,
+  progressByteInterval: interval,
+);
 
 List<int> _bytes(int length, [int seed = 0]) =>
     List<int>.generate(length, (int i) => (i + seed) % 251);
@@ -92,32 +94,40 @@ void main() {
     }
   });
 
-  MangaOcrModelFile file(String name, int size,
-          {MangaOcrModelRole role = MangaOcrModelRole.detector}) =>
-      MangaOcrModelFile(
-        fileName: name,
-        url: server.urlFor('/$name'),
-        expectedBytes: size,
-        role: role,
-      );
+  MangaOcrModelFile file(
+    String name,
+    int size, {
+    MangaOcrModelRole role = MangaOcrModelRole.detector,
+  }) => MangaOcrModelFile(
+    fileName: name,
+    url: server.urlFor('/$name'),
+    expectedBytes: size,
+    role: role,
+  );
 
   test('全新下载：分段进度事件、.part 原子 rename、末尾 done=true', () async {
     final List<int> payload = _bytes(16);
     server.payloads['/a.onnx'] = payload;
 
-    final List<MangaOcrDownloadEvent> events = await _downloader().downloadAll(
-      files: <MangaOcrModelFile>[file('a.onnx', 16)],
-      targetDir: tempDir,
-    ).toList();
+    final List<MangaOcrDownloadEvent> events = await _downloader()
+        .downloadAll(
+          files: <MangaOcrModelFile>[file('a.onnx', 16)],
+          targetDir: tempDir,
+        )
+        .toList();
 
     // 首事件 0 字节起步，中途有分段进度，完成事件 received==total。
     expect(events.first.receivedBytes, 0);
     expect(events.first.fileName, 'a.onnx');
     expect(
-        events.where((MangaOcrDownloadEvent e) => !e.done).last.receivedBytes,
-        16);
-    expect(events.length, greaterThanOrEqualTo(3),
-        reason: 'progressByteInterval=4 的 16 字节下载必须有中间分段事件');
+      events.where((MangaOcrDownloadEvent e) => !e.done).last.receivedBytes,
+      16,
+    );
+    expect(
+      events.length,
+      greaterThanOrEqualTo(3),
+      reason: 'progressByteInterval=4 的 16 字节下载必须有中间分段事件',
+    );
     // 收尾 done=true 恰好一次且在最后。
     expect(events.last.done, isTrue);
     expect(events.where((MangaOcrDownloadEvent e) => e.done), hasLength(1));
@@ -125,18 +135,23 @@ void main() {
     final File target = File(p.join(tempDir.path, 'a.onnx'));
     expect(target.existsSync(), isTrue);
     expect(target.readAsBytesSync(), payload);
-    expect(File('${target.path}.part').existsSync(), isFalse,
-        reason: '.part 必须已原子 rename 成最终名');
+    expect(
+      File('${target.path}.part').existsSync(),
+      isFalse,
+      reason: '.part 必须已原子 rename 成最终名',
+    );
   });
 
   test('已就绪文件跳过：不发 HTTP 请求，仍发完成进度 + done', () async {
     final File target = File(p.join(tempDir.path, 'a.onnx'));
     target.writeAsBytesSync(_bytes(16));
 
-    final List<MangaOcrDownloadEvent> events = await _downloader().downloadAll(
-      files: <MangaOcrModelFile>[file('a.onnx', 16)],
-      targetDir: tempDir,
-    ).toList();
+    final List<MangaOcrDownloadEvent> events = await _downloader()
+        .downloadAll(
+          files: <MangaOcrModelFile>[file('a.onnx', 16)],
+          targetDir: tempDir,
+        )
+        .toList();
 
     expect(server.requestedPaths, isEmpty, reason: '就绪文件绝不重下');
     expect(events.first.receivedBytes, 16);
@@ -147,13 +162,16 @@ void main() {
   test('断点续传：.part 残留触发 Range，从偏移续写', () async {
     final List<int> payload = _bytes(32);
     server.payloads['/a.onnx'] = payload;
-    File(p.join(tempDir.path, 'a.onnx.part'))
-        .writeAsBytesSync(payload.sublist(0, 10));
+    File(
+      p.join(tempDir.path, 'a.onnx.part'),
+    ).writeAsBytesSync(payload.sublist(0, 10));
 
-    final List<MangaOcrDownloadEvent> events = await _downloader().downloadAll(
-      files: <MangaOcrModelFile>[file('a.onnx', 32)],
-      targetDir: tempDir,
-    ).toList();
+    final List<MangaOcrDownloadEvent> events = await _downloader()
+        .downloadAll(
+          files: <MangaOcrModelFile>[file('a.onnx', 32)],
+          targetDir: tempDir,
+        )
+        .toList();
 
     expect(server.rangeHeaders.single, 'bytes=10-');
     // 首事件从已存偏移起步（不是 0）。
@@ -170,10 +188,12 @@ void main() {
     // 故意放一段**错误**残留：若实现未截断，内容校验会揭穿。
     File(p.join(tempDir.path, 'a.onnx.part')).writeAsBytesSync(_bytes(10, 7));
 
-    await _downloader().downloadAll(
-      files: <MangaOcrModelFile>[file('a.onnx', 32)],
-      targetDir: tempDir,
-    ).drain<void>();
+    await _downloader()
+        .downloadAll(
+          files: <MangaOcrModelFile>[file('a.onnx', 32)],
+          targetDir: tempDir,
+        )
+        .drain<void>();
 
     expect(File(p.join(tempDir.path, 'a.onnx')).readAsBytesSync(), payload);
   });
@@ -183,10 +203,12 @@ void main() {
     server.payloads['/a.onnx'] = payload;
     File(p.join(tempDir.path, 'a.onnx.part')).writeAsBytesSync(payload);
 
-    final List<MangaOcrDownloadEvent> events = await _downloader().downloadAll(
-      files: <MangaOcrModelFile>[file('a.onnx', 32)],
-      targetDir: tempDir,
-    ).toList();
+    final List<MangaOcrDownloadEvent> events = await _downloader()
+        .downloadAll(
+          files: <MangaOcrModelFile>[file('a.onnx', 32)],
+          targetDir: tempDir,
+        )
+        .toList();
 
     expect(File(p.join(tempDir.path, 'a.onnx')).readAsBytesSync(), payload);
     expect(events.last.done, isTrue);
@@ -196,34 +218,43 @@ void main() {
     server.payloads['/a.onnx'] = _bytes(16);
 
     await expectLater(
-      _downloader().downloadAll(
-        // 清单期望 99 字节，服务器只给 16 → 校验失败。
-        files: <MangaOcrModelFile>[file('a.onnx', 99)],
-        targetDir: tempDir,
-      ).drain<void>(),
+      _downloader()
+          .downloadAll(
+            // 清单期望 99 字节，服务器只给 16 → 校验失败。
+            files: <MangaOcrModelFile>[file('a.onnx', 99)],
+            targetDir: tempDir,
+          )
+          .drain<void>(),
       throwsA(isA<StateError>()),
     );
     expect(File(p.join(tempDir.path, 'a.onnx')).existsSync(), isFalse);
-    expect(File(p.join(tempDir.path, 'a.onnx.part')).existsSync(), isFalse,
-        reason: '长度不符的 .part 必须删除，避免下次在坏偏移上续传');
+    expect(
+      File(p.join(tempDir.path, 'a.onnx.part')).existsSync(),
+      isFalse,
+      reason: '长度不符的 .part 必须删除，避免下次在坏偏移上续传',
+    );
   });
 
   test('多文件：事件按文件粒度推进，done 只在全部完成后', () async {
     server.payloads['/a.onnx'] = _bytes(8);
     server.payloads['/b.txt'] = _bytes(6, 3);
 
-    final List<MangaOcrDownloadEvent> events = await _downloader().downloadAll(
-      files: <MangaOcrModelFile>[
-        file('a.onnx', 8),
-        file('b.txt', 6, role: MangaOcrModelRole.recognizer),
-      ],
-      targetDir: tempDir,
-    ).toList();
+    final List<MangaOcrDownloadEvent> events = await _downloader()
+        .downloadAll(
+          files: <MangaOcrModelFile>[
+            file('a.onnx', 8),
+            file('b.txt', 6, role: MangaOcrModelRole.recognizer),
+          ],
+          targetDir: tempDir,
+        )
+        .toList();
 
     final int lastAIndex = events.lastIndexWhere(
-        (MangaOcrDownloadEvent e) => e.fileName == 'a.onnx' && !e.done);
-    final int firstBIndex =
-        events.indexWhere((MangaOcrDownloadEvent e) => e.fileName == 'b.txt');
+      (MangaOcrDownloadEvent e) => e.fileName == 'a.onnx' && !e.done,
+    );
+    final int firstBIndex = events.indexWhere(
+      (MangaOcrDownloadEvent e) => e.fileName == 'b.txt',
+    );
     expect(lastAIndex, lessThan(firstBIndex), reason: '文件按清单顺序串行下载');
     expect(events.last.done, isTrue);
     expect(File(p.join(tempDir.path, 'a.onnx')).lengthSync(), 8);
@@ -235,43 +266,45 @@ void main() {
     server.payloads['/mirror-a.onnx'] = _bytes(12);
 
     final MangaOcrModelFile target = file('a.onnx', 12);
-    final List<MangaOcrDownloadEvent> events = await _downloader(
-      urlCandidates: (MangaOcrModelFile f) => <String>[
-        server.urlFor('/a.onnx'),
-        server.urlFor('/mirror-a.onnx'),
-      ],
-    ).downloadAll(
-      files: <MangaOcrModelFile>[target],
-      targetDir: tempDir,
-    ).toList();
+    final List<MangaOcrDownloadEvent> events =
+        await _downloader(
+              urlCandidates: (MangaOcrModelFile f) => <String>[
+                server.urlFor('/a.onnx'),
+                server.urlFor('/mirror-a.onnx'),
+              ],
+            )
+            .downloadAll(files: <MangaOcrModelFile>[target], targetDir: tempDir)
+            .toList();
 
     expect(File(p.join(tempDir.path, 'a.onnx')).lengthSync(), 12);
     expect(events.last.done, isTrue);
     expect(server.requestedPaths, contains('/a.onnx'));
-    expect(server.requestedPaths, contains('/mirror-a.onnx'),
-        reason: '主源 404 后必须真的去打镜像，而不是直接失败');
+    expect(
+      server.requestedPaths,
+      contains('/mirror-a.onnx'),
+      reason: '主源 404 后必须真的去打镜像，而不是直接失败',
+    );
   });
 
   test('全部候选都失败：抛错，不留半个转正文件', () async {
     final MangaOcrModelFile target = file('a.onnx', 12);
     await expectLater(
       _downloader(
-        urlCandidates: (MangaOcrModelFile f) => <String>[
-          server.urlFor('/missing-1.onnx'),
-          server.urlFor('/missing-2.onnx'),
-        ],
-      )
-          .downloadAll(
-            files: <MangaOcrModelFile>[target],
-            targetDir: tempDir,
+            urlCandidates: (MangaOcrModelFile f) => <String>[
+              server.urlFor('/missing-1.onnx'),
+              server.urlFor('/missing-2.onnx'),
+            ],
           )
+          .downloadAll(files: <MangaOcrModelFile>[target], targetDir: tempDir)
           .toList(),
       throwsA(isA<HttpException>()),
     );
     expect(File(p.join(tempDir.path, 'a.onnx')).existsSync(), isFalse);
-    expect(server.requestedPaths,
-        containsAll(<String>['/missing-1.onnx', '/missing-2.onnx']),
-        reason: '候选序列要走完才算失败');
+    expect(
+      server.requestedPaths,
+      containsAll(<String>['/missing-1.onnx', '/missing-2.onnx']),
+      reason: '候选序列要走完才算失败',
+    );
   });
 
   group('候选 URL 派生', () {
@@ -309,9 +342,11 @@ void main() {
         for (final MangaOcrLocalModel local in MangaOcrLocalModel.values)
           ...local.manifest,
       ]) {
-        expect(mangaOcrModelUrlCandidates(model).length,
-            kMangaOcrModelMirrorHosts.length + 1,
-            reason: '${model.fileName} 少了镜像候选');
+        expect(
+          mangaOcrModelUrlCandidates(model).length,
+          kMangaOcrModelMirrorHosts.length + 1,
+          reason: '${model.fileName} 少了镜像候选',
+        );
       }
     });
   });

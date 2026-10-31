@@ -21,8 +21,9 @@ void main() {
   late String dbPath;
 
   setUp(() {
-    tempDir =
-        Directory.systemTemp.createTempSync('fushi_v91_collection_subtitle');
+    tempDir = Directory.systemTemp.createTempSync(
+      'fushi_v91_collection_subtitle',
+    );
     dbPath = '${tempDir.path}${Platform.pathSeparator}v88-source.db';
   });
 
@@ -34,8 +35,10 @@ void main() {
 
   /// 建一个真实的 v88 形状库：当前 schema 建满，再摘掉 v91 的两列并把版本写回 88。
   Future<void> seedV88() async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     // 存量行：系列级调过主轨（-450），迁移必须无损带过去。
     await fresh.customStatement(
       'INSERT INTO media_collections (name, created_at, subtitle_delay_ms) '
@@ -45,9 +48,12 @@ void main() {
 
     final sqlite3.Database raw = sqlite3.sqlite3.open(dbPath);
     try {
-      raw.execute('ALTER TABLE media_collections DROP COLUMN subtitle_language');
       raw.execute(
-          'ALTER TABLE media_collections DROP COLUMN subtitle_release_group');
+        'ALTER TABLE media_collections DROP COLUMN subtitle_language',
+      );
+      raw.execute(
+        'ALTER TABLE media_collections DROP COLUMN subtitle_release_group',
+      );
       raw.execute('PRAGMA user_version = 88');
     } finally {
       raw.dispose();
@@ -62,14 +68,20 @@ void main() {
   test('v88 库确实缺这两列（前提自检——不然下面那条测了个寂寞）', () async {
     await seedV88();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 88);
-      expect(hasColumn(probe, 'media_collections', 'subtitle_language'),
-          isFalse);
-      expect(hasColumn(probe, 'media_collections', 'subtitle_release_group'),
-          isFalse);
+      expect(
+        hasColumn(probe, 'media_collections', 'subtitle_language'),
+        isFalse,
+      );
+      expect(
+        hasColumn(probe, 'media_collections', 'subtitle_release_group'),
+        isFalse,
+      );
     } finally {
       probe.dispose();
     }
@@ -78,28 +90,43 @@ void main() {
   test('v88 -> v91：两列补齐、默认 NULL、存量合集行与既有调轴值无损', () async {
     await seedV88();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     // 走真实查询路径：列缺失时这一句就会 SqliteException，正是线上会炸的地方。
-    final List<MediaCollectionRow> rows =
-        await migrated.select(migrated.mediaCollections).get();
+    final List<MediaCollectionRow> rows = await migrated
+        .select(migrated.mediaCollections)
+        .get();
     expect(rows, hasLength(1), reason: '迁移丢一行就是丢一个合集');
     expect(rows.single.name, '某番剧');
     expect(rows.single.subtitleDelayMs, -450, reason: '系列级主轨调轴值不许被迁移动到');
-    expect(rows.single.subtitleLanguage, isNull,
-        reason: 'NULL = 没人配过 → 回退视频内容语言链；不许因为「多半是日文」就填 ja');
-    expect(rows.single.subtitleReleaseGroup, isNull,
-        reason: 'NULL = 没人配过 → 默认选轨');
+    expect(
+      rows.single.subtitleLanguage,
+      isNull,
+      reason: 'NULL = 没人配过 → 回退视频内容语言链；不许因为「多半是日文」就填 ja',
+    );
+    expect(
+      rows.single.subtitleReleaseGroup,
+      isNull,
+      reason: 'NULL = 没人配过 → 默认选轨',
+    );
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
       expect(
-          hasColumn(probe, 'media_collections', 'subtitle_language'), isTrue);
-      expect(hasColumn(probe, 'media_collections', 'subtitle_release_group'),
-          isTrue);
+        hasColumn(probe, 'media_collections', 'subtitle_language'),
+        isTrue,
+      );
+      expect(
+        hasColumn(probe, 'media_collections', 'subtitle_release_group'),
+        isTrue,
+      );
     } finally {
       probe.dispose();
     }
@@ -108,8 +135,10 @@ void main() {
   test('升级后写入口照常：设语言 / 版本组能真写穿，设 null 能清空', () async {
     await seedV88();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     addTearDown(migrated.close);
     final int id =
         (await migrated.select(migrated.mediaCollections).getSingle()).id;
@@ -118,8 +147,9 @@ void main() {
     // `SET subtitle_language = ?` 打在没有该列的表上必然报错。
     await migrated.updateMediaCollectionSubtitleLanguage(id, 'en');
     await migrated.updateMediaCollectionSubtitleReleaseGroup(id, 'group-a');
-    MediaCollectionRow row =
-        await migrated.select(migrated.mediaCollections).getSingle();
+    MediaCollectionRow row = await migrated
+        .select(migrated.mediaCollections)
+        .getSingle();
     expect(row.subtitleLanguage, 'en');
     expect(row.subtitleReleaseGroup, 'group-a');
     expect(row.subtitleDelayMs, -450, reason: '写别的列不许碰调轴');
@@ -135,13 +165,18 @@ void main() {
   test('重复打开幂等：第二次开库不因列已存在而报错', () async {
     await seedV88();
 
-    final FushiDatabase first =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase first = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await first.close();
-    final FushiDatabase second =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
-    final List<MediaCollectionRow> rows =
-        await second.select(second.mediaCollections).get();
+    final FushiDatabase second = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
+    final List<MediaCollectionRow> rows = await second
+        .select(second.mediaCollections)
+        .get();
     expect(rows, hasLength(1));
     await second.close();
   });

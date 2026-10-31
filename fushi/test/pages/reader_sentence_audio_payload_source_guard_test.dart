@@ -23,30 +23,36 @@ import 'reader_fushi_page_source_corpus.dart';
 /// `'text': cue.text`。撤修复（退回手写漏 text 的内联 payload）会让本守卫转红。
 void main() {
   final String readerSrc = readReaderPageSource();
-  final String bridgeSrc =
-      File('lib/src/media/audiobook/audiobook_bridge.dart').readAsStringSync();
+  final String bridgeSrc = File(
+    'lib/src/media/audiobook/audiobook_bridge.dart',
+  ).readAsStringSync();
 
   /// 截取 _prepareSentenceAudioCuesJson 方法体：从其签名到下一个方法
   /// _injectAudiobookBridge 之前（reader 文件里这两个方法相邻）。
-  final int prepStart = readerSrc
-      .indexOf('Future<String?> _prepareSentenceAudioCuesJson() async {');
-  final int injectStart =
-      readerSrc.indexOf('Future<void> _injectAudiobookBridge() async {');
+  final int prepStart = readerSrc.indexOf(
+    'Future<String?> _prepareSentenceAudioCuesJson() async {',
+  );
+  final int injectStart = readerSrc.indexOf(
+    'Future<void> _injectAudiobookBridge() async {',
+  );
 
   test('方法边界可定位（防止守卫因重命名而失效）', () {
     expect(prepStart, greaterThanOrEqualTo(0));
     expect(injectStart, greaterThan(prepStart));
   });
 
-  test('_prepareSentenceAudioCuesJson 复用 buildSentenceAudioPayload（含 text 的契约）',
-      () {
-    final String body = readerSrc.substring(prepStart, injectStart);
-    expect(
-      body.contains('AudiobookBridge.buildSentenceAudioPayload('),
-      isTrue,
-      reason: 'reader 必须复用 buildSentenceAudioPayload，确保 payload 带 cue 原文 text',
-    );
-  });
+  test(
+    '_prepareSentenceAudioCuesJson 复用 buildSentenceAudioPayload（含 text 的契约）',
+    () {
+      final String body = readerSrc.substring(prepStart, injectStart);
+      expect(
+        body.contains('AudiobookBridge.buildSentenceAudioPayload('),
+        isTrue,
+        reason:
+            'reader 必须复用 buildSentenceAudioPayload，确保 payload 带 cue 原文 text',
+      );
+    },
+  );
 
   test('_prepareSentenceAudioCuesJson 不再手写内联 payload map（会漏 text）', () {
     final String body = readerSrc.substring(prepStart, injectStart);
@@ -59,7 +65,8 @@ void main() {
 
   test('buildSentenceAudioPayload 的 payload 契约必含 cue 原文 text', () {
     final int start = bridgeSrc.indexOf(
-        'static List<Map<String, dynamic>> buildSentenceAudioPayload(');
+      'static List<Map<String, dynamic>> buildSentenceAudioPayload(',
+    );
     expect(start, greaterThanOrEqualTo(0));
     final String body = bridgeSrc.substring(start);
     expect(
@@ -80,23 +87,23 @@ void main() {
     test('带 text(needle 非空)：自愈到真实 DOM 位置 7（高亮落对）', () {
       final List<int> out =
           ReaderPaginationScripts.resolveCueNormStartsForTesting(
-        fullNorm: domFull,
-        cues: const <SentenceAudioCueHint>[
-          SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
-        ],
-      );
+            fullNorm: domFull,
+            cues: const <SentenceAudioCueHint>[
+              SentenceAudioCueHint(needle: 'かきくけこ', hint: 5, length: 5),
+            ],
+          );
       expect(out.single, 7, reason: '带 cue 原文 needle 时按实时 DOM 重定位到真实位置 7');
     });
 
     test('缺 text(needle 空)：只能落到错位提示偏移 5（高亮落错/落空）', () {
       final List<int> out =
           ReaderPaginationScripts.resolveCueNormStartsForTesting(
-        fullNorm: domFull,
-        cues: const <SentenceAudioCueHint>[
-          // 模拟 reader 旧 payload：无 text → needle 空，仅有 start 提示 5。
-          SentenceAudioCueHint(needle: '', hint: 5, length: 5),
-        ],
-      );
+            fullNorm: domFull,
+            cues: const <SentenceAudioCueHint>[
+              // 模拟 reader 旧 payload：无 text → needle 空，仅有 start 提示 5。
+              SentenceAudioCueHint(needle: '', hint: 5, length: 5),
+            ],
+          );
       expect(out.single, 5, reason: 'needle 空时无法重定位，落到错位提示 5 ≠ 真实 7，即高亮错位/落空');
       expect(out.single == 7, isFalse, reason: 'BUG-300：缺 text 永远到不了真实渲染位置');
     });

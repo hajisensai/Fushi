@@ -10,10 +10,12 @@ void main() {
   group('ReaderControlLayout 模型', () {
     test('宽窗出厂布局（2026-10 精简）：左返回 / 中书名 / 右主操作三颗；中频进「更多」', () {
       final ReaderControlLayout d = ReaderControlLayout.defaults;
-      expect(d.itemsIn(ReaderControlSlot.topLeft),
-          <ReaderControlItem>[ReaderControlItem.back]);
-      expect(d.itemsIn(ReaderControlSlot.topCenter),
-          <ReaderControlItem>[ReaderControlItem.title]);
+      expect(d.itemsIn(ReaderControlSlot.topLeft), <ReaderControlItem>[
+        ReaderControlItem.back,
+      ]);
+      expect(d.itemsIn(ReaderControlSlot.topCenter), <ReaderControlItem>[
+        ReaderControlItem.title,
+      ]);
       expect(d.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
         ReaderControlItem.navigation,
         ReaderControlItem.audiobook,
@@ -52,8 +54,9 @@ void main() {
 
     test('窄窗出厂布局：顶部只留返回 + 书名，主操作下沉底部工具栏（4 颗）', () {
       final ReaderControlLayout c = ReaderControlLayout.compactDefaults;
-      expect(c.itemsIn(ReaderControlSlot.topLeft),
-          <ReaderControlItem>[ReaderControlItem.back]);
+      expect(c.itemsIn(ReaderControlSlot.topLeft), <ReaderControlItem>[
+        ReaderControlItem.back,
+      ]);
       expect(c.itemsIn(ReaderControlSlot.topRight), isEmpty);
       expect(c.itemsIn(ReaderControlSlot.bottomCenter), <ReaderControlItem>[
         ReaderControlItem.navigation,
@@ -72,7 +75,8 @@ void main() {
 
     test('存量自定义布局（2026-09 旧出厂形态）解码原样保留，不被新出厂表改写', () {
       // 旧出厂布局被用户存下来的 JSON（每颗按钮都显式在槽或 removed 里）。
-      const String legacy = '{"version":1,"slots":{'
+      const String legacy =
+          '{"version":1,"slots":{'
           '"topLeft":["back","modeToggle","navigation","gallery","statistics"],'
           '"topCenter":["title"],'
           '"topRight":["audiobook","fullscreen","settings"],'
@@ -160,16 +164,22 @@ void main() {
     });
 
     test('返回不进「更多」；其余按钮可进；书名只在顶栏中间', () {
-      expect(ReaderControlItem.back.canMoveToSlot(ReaderControlSlot.overflow),
-          isFalse);
       expect(
-          ReaderControlItem.gallery.canMoveToSlot(ReaderControlSlot.overflow),
-          isTrue);
+        ReaderControlItem.back.canMoveToSlot(ReaderControlSlot.overflow),
+        isFalse,
+      );
       expect(
-          ReaderControlItem.settings.canMoveToSlot(ReaderControlSlot.overflow),
-          isTrue);
-      expect(ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.overflow),
-          isFalse);
+        ReaderControlItem.gallery.canMoveToSlot(ReaderControlSlot.overflow),
+        isTrue,
+      );
+      expect(
+        ReaderControlItem.settings.canMoveToSlot(ReaderControlSlot.overflow),
+        isTrue,
+      );
+      expect(
+        ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.overflow),
+        isFalse,
+      );
     });
 
     test('decode 的 fallback：窄窗缺席按钮按窄窗出厂位置回填', () {
@@ -177,12 +187,17 @@ void main() {
         '{"version":1,"slots":{"topLeft":["back"]}}',
         fallback: ReaderControlLayout.compactDefaults,
       );
-      expect(c.core.slotOf(ReaderControlItem.navigation),
-          ReaderControlSlot.bottomCenter);
       expect(
-          ReaderControlLayout.decode('',
-              fallback: ReaderControlLayout.compactDefaults),
-          ReaderControlLayout.compactDefaults);
+        c.core.slotOf(ReaderControlItem.navigation),
+        ReaderControlSlot.bottomCenter,
+      );
+      expect(
+        ReaderControlLayout.decode(
+          '',
+          fallback: ReaderControlLayout.compactDefaults,
+        ),
+        ReaderControlLayout.compactDefaults,
+      );
     });
 
     test('专注模式键已删除：存过它的布局解码时丢弃，其余按钮原位', () {
@@ -209,25 +224,34 @@ void main() {
       ]);
       for (final ReaderControlItem item in ReaderControlItem.values) {
         if (item.pinnedRequired) {
-          expect(kReaderToolbarsTakeoverItems, contains(item),
-              reason: '${item.storageValue} 是栏的必需项，栏没了就只能在球上');
+          expect(
+            kReaderToolbarsTakeoverItems,
+            contains(item),
+            reason: '${item.storageValue} 是栏的必需项，栏没了就只能在球上',
+          );
         }
       }
     });
 
     test('传输键可进顶栏 / 底栏；旧布局里的悬浮球槽解码时丢弃，按钮回落出厂位置', () {
       expect(
-          ReaderControlItem.audiobookPrev
-              .canMoveToSlot(ReaderControlSlot.topLeft),
-          isTrue);
+        ReaderControlItem.audiobookPrev.canMoveToSlot(
+          ReaderControlSlot.topLeft,
+        ),
+        isTrue,
+      );
       expect(
-          ReaderControlItem.audiobookPrev
-              .canMoveToSlot(ReaderControlSlot.topCenter),
-          isFalse);
+        ReaderControlItem.audiobookPrev.canMoveToSlot(
+          ReaderControlSlot.topCenter,
+        ),
+        isFalse,
+      );
       for (final ReaderControlItem i in ReaderControlItem.values) {
-        expect(i.isAudiobookTransport,
-            i.recoverySlot == ReaderControlSlot.bottomCenter,
-            reason: '$i：传输键 ⟺ 回落槽是底栏中间');
+        expect(
+          i.isAudiobookTransport,
+          i.recoverySlot == ReaderControlSlot.bottomCenter,
+          reason: '$i：传输键 ⟺ 回落槽是底栏中间',
+        );
       }
       // 悬浮球槽已移出按钮布局（设置 → 悬浮球 是唯一入口）：旧 JSON 里的
       // floatingBall 槽按未知槽丢弃，里面的按钮回到出厂位置。
@@ -235,10 +259,14 @@ void main() {
         '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"],'
         '"floatingBall":["gallery","audiobookPrev"]}}',
       );
-      expect(legacy.itemsIn(ReaderControlSlot.overflow),
-          contains(ReaderControlItem.gallery));
       expect(
-          legacy.core.removedItems, contains(ReaderControlItem.audiobookPrev));
+        legacy.itemsIn(ReaderControlSlot.overflow),
+        contains(ReaderControlItem.gallery),
+      );
+      expect(
+        legacy.core.removedItems,
+        contains(ReaderControlItem.audiobookPrev),
+      );
     });
 
     test('encode / decode 往返；空 / 坏 JSON 回出厂', () {
@@ -260,56 +288,82 @@ void main() {
 
       expect(ReaderControlLayout.decode(''), ReaderControlLayout.defaults);
       expect(
-          ReaderControlLayout.decode('not json'), ReaderControlLayout.defaults);
-      expect(ReaderControlLayout.decode('{"version":1}'),
-          ReaderControlLayout.defaults);
-      expect(ReaderControlLayout.decode('{"version":1,"slots":{}}'),
-          ReaderControlLayout.defaults,
-          reason: '一个可见按钮都没有 → 出厂');
+        ReaderControlLayout.decode('not json'),
+        ReaderControlLayout.defaults,
+      );
+      expect(
+        ReaderControlLayout.decode('{"version":1}'),
+        ReaderControlLayout.defaults,
+      );
+      expect(
+        ReaderControlLayout.decode('{"version":1,"slots":{}}'),
+        ReaderControlLayout.defaults,
+        reason: '一个可见按钮都没有 → 出厂',
+      );
     });
 
     test('返回 / 设置是必需项：移到 hidden 被驳回并回落原槽', () {
       final ControlLayout<ReaderControlSlot, ReaderControlItem> core =
           ReaderControlLayout.defaults.core;
-      expect(ReaderControlItem.back.canMoveToSlot(ReaderControlSlot.hidden),
-          isFalse);
-      expect(ReaderControlItem.settings.canMoveToSlot(ReaderControlSlot.hidden),
-          isFalse);
-      final ControlLayout<ReaderControlSlot, ReaderControlItem> after =
-          core.moveItem(ReaderControlItem.back, ReaderControlSlot.hidden);
-      expect(after.slotOf(ReaderControlItem.back),
-          isNot(ReaderControlSlot.hidden));
+      expect(
+        ReaderControlItem.back.canMoveToSlot(ReaderControlSlot.hidden),
+        isFalse,
+      );
+      expect(
+        ReaderControlItem.settings.canMoveToSlot(ReaderControlSlot.hidden),
+        isFalse,
+      );
+      final ControlLayout<ReaderControlSlot, ReaderControlItem> after = core
+          .moveItem(ReaderControlItem.back, ReaderControlSlot.hidden);
+      expect(
+        after.slotOf(ReaderControlItem.back),
+        isNot(ReaderControlSlot.hidden),
+      );
       // 直接在持久化里把它写进 removed 也不生效。
       final ReaderControlLayout decoded = ReaderControlLayout.decode(
         '{"version":1,"slots":{"topRight":["settings"]},"removed":["back"]}',
       );
-      expect(decoded.core.slotOf(ReaderControlItem.back),
-          isNot(ReaderControlSlot.hidden));
+      expect(
+        decoded.core.slotOf(ReaderControlItem.back),
+        isNot(ReaderControlSlot.hidden),
+      );
     });
 
     test('顶栏中间只收书名；书名只去顶栏中间（后置归一化兜底）', () {
-      expect(ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.topCenter),
-          isTrue);
-      expect(ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.topLeft),
-          isFalse);
-      expect(ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.hidden),
-          isTrue,
-          reason: '书名可以移出');
       expect(
-          ReaderControlItem.gallery.canMoveToSlot(ReaderControlSlot.topCenter),
-          isFalse);
+        ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.topCenter),
+        isTrue,
+      );
+      expect(
+        ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.topLeft),
+        isFalse,
+      );
+      expect(
+        ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.hidden),
+        isTrue,
+        reason: '书名可以移出',
+      );
+      expect(
+        ReaderControlItem.gallery.canMoveToSlot(ReaderControlSlot.topCenter),
+        isFalse,
+      );
       // 坏持久化：别的按钮写进 topCenter、书名写进 topLeft → 归一化各回其位。
       final ReaderControlLayout decoded = ReaderControlLayout.decode(
         '{"version":1,"slots":{"topCenter":["gallery","title"],'
         '"topLeft":["back","title"],"topRight":["settings"]}}',
       );
-      expect(decoded.itemsIn(ReaderControlSlot.topCenter),
-          <ReaderControlItem>[ReaderControlItem.title]);
-      expect(decoded.itemsIn(ReaderControlSlot.topLeft),
-          isNot(contains(ReaderControlItem.title)));
-      expect(decoded.core.slotOf(ReaderControlItem.gallery),
-          ReaderControlLayout.defaults.core.slotOf(ReaderControlItem.gallery),
-          reason: '误进中槽的按钮解码时被拒，按出厂位置回填');
+      expect(decoded.itemsIn(ReaderControlSlot.topCenter), <ReaderControlItem>[
+        ReaderControlItem.title,
+      ]);
+      expect(
+        decoded.itemsIn(ReaderControlSlot.topLeft),
+        isNot(contains(ReaderControlItem.title)),
+      );
+      expect(
+        decoded.core.slotOf(ReaderControlItem.gallery),
+        ReaderControlLayout.defaults.core.slotOf(ReaderControlItem.gallery),
+        reason: '误进中槽的按钮解码时被拒，按出厂位置回填',
+      );
     });
 
     test('槽位 / 按钮 storageValue 与枚举名一致（持久化契约）', () {
@@ -352,7 +406,8 @@ void main() {
         for (final ReaderControlSlot slot in ReaderControlSlot.editableSlots) {
           expect(
             find.byKey(
-                ValueKey<String>('reader-control-edit-slot-${slot.name}')),
+              ValueKey<String>('reader-control-edit-slot-${slot.name}'),
+            ),
             findsOneWidget,
             reason: 'slot ${slot.name} @ $width',
           );

@@ -106,19 +106,22 @@ void main() {
     expect(second, contains('cache me'));
   });
 
-  test('eager EpubChapter still serves in-memory html (DB/legacy fallback)',
-      () {
-    final EpubChapter eager = EpubChapter(
-      id: 'x',
-      href: 'x.xhtml',
-      mediaType: 'text/html',
-      html: '<p>inline</p>',
-    );
-    expect(eager.html, '<p>inline</p>');
-  });
+  test(
+    'eager EpubChapter still serves in-memory html (DB/legacy fallback)',
+    () {
+      final EpubChapter eager = EpubChapter(
+        id: 'x',
+        href: 'x.xhtml',
+        mediaType: 'text/html',
+        html: '<p>inline</p>',
+      );
+      expect(eager.html, '<p>inline</p>');
+    },
+  );
 }
 
-String _chapter(String body) => '''
+String _chapter(String body) =>
+    '''
 <?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head><title>c</title></head>

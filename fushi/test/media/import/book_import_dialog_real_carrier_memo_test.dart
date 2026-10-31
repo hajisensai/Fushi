@@ -88,7 +88,8 @@ Future<void> _pumpUntil(
   required Future<bool> Function() condition,
 }) async {
   for (int attempt = 0; attempt < 200; attempt += 1) {
-    final bool done = await tester.runAsync<bool>(() async {
+    final bool done =
+        await tester.runAsync<bool>(() async {
           await Future<void>.delayed(const Duration(milliseconds: 10));
           return condition();
         }) ??
@@ -104,117 +105,136 @@ void main() {
 
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  test('resolver reuses one real path and recomputes for another real path',
-      () {
-    final Directory root =
-        Directory.systemTemp.createTempSync('todo_2189_real_path_cache_');
-    addTearDown(() {
-      if (root.existsSync()) root.deleteSync(recursive: true);
-    });
-    final File first = File(p.join(root.path, 'first.epub'))
-      ..writeAsBytesSync(_realEpubBytes('TODO 2189 first'));
-    final File second = File(p.join(root.path, 'second.epub'))
-      ..writeAsBytesSync(_realEpubBytes('TODO 2189 second'));
-    final List<String> probedPaths = <String>[];
-    final ImportCarrierResolver resolver = ImportCarrierResolver(
-      isDirectory: (String path) => Directory(path).existsSync(),
-      isImageArchive: (String path) {
-        probedPaths.add(path);
-        return MangaModule.isImageArchive(path);
-      },
-      directoryHasPageImages: MangaModule.directoryHasPageImages,
-      directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
-      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
-    );
+  test(
+    'resolver reuses one real path and recomputes for another real path',
+    () {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'todo_2189_real_path_cache_',
+      );
+      addTearDown(() {
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final File first = File(p.join(root.path, 'first.epub'))
+        ..writeAsBytesSync(_realEpubBytes('TODO 2189 first'));
+      final File second = File(p.join(root.path, 'second.epub'))
+        ..writeAsBytesSync(_realEpubBytes('TODO 2189 second'));
+      final List<String> probedPaths = <String>[];
+      final ImportCarrierResolver resolver = ImportCarrierResolver(
+        isDirectory: (String path) => Directory(path).existsSync(),
+        isImageArchive: (String path) {
+          probedPaths.add(path);
+          return MangaModule.isImageArchive(path);
+        },
+        directoryHasPageImages: MangaModule.directoryHasPageImages,
+        directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+        directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
+      );
 
-    expect(resolver.resolve(first.path), ImportCarrier.epub);
-    expect(resolver.resolve(first.path), ImportCarrier.epub);
-    expect(resolver.resolve(second.path), ImportCarrier.epub);
+      expect(resolver.resolve(first.path), ImportCarrier.epub);
+      expect(resolver.resolve(first.path), ImportCarrier.epub);
+      expect(resolver.resolve(second.path), ImportCarrier.epub);
 
-    expect(probedPaths, <String>[first.path, second.path],
-        reason: '同一路径只真开包一次，换真实路径必须重新调用真 MangaModule 判据');
-  });
+      expect(probedPaths, <String>[
+        first.path,
+        second.path,
+      ], reason: '同一路径只真开包一次，换真实路径必须重新调用真 MangaModule 判据');
+    },
+  );
 
   testWidgets(
-      'real EPUB + matching SRT imports through the real dialog with one '
-      'image-archive probe', (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1000, 1000);
-    addTearDown(tester.view.reset);
+    'real EPUB + matching SRT imports through the real dialog with one '
+    'image-archive probe',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 1000);
+      addTearDown(tester.view.reset);
 
-    final Directory root =
-        Directory.systemTemp.createTempSync('todo_2189_real_epub_srt_');
-    final File epub = File(p.join(root.path, 'aligned.epub'))
-      ..writeAsBytesSync(_realEpubBytes('TODO 2189 aligned'));
-    final File srt = File(p.join(root.path, 'aligned.srt'))
-      ..writeAsStringSync('''
+      final Directory root = Directory.systemTemp.createTempSync(
+        'todo_2189_real_epub_srt_',
+      );
+      final File epub = File(p.join(root.path, 'aligned.epub'))
+        ..writeAsBytesSync(_realEpubBytes('TODO 2189 aligned'));
+      final File srt = File(p.join(root.path, 'aligned.srt'))
+        ..writeAsStringSync('''
 1
 00:00:00,000 --> 00:00:03,000
 これは真の EPUB と字幕を通る回帰テストです。
 ''');
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    EpubStorage.debugBaseDirectoryOverride = root.path;
-    AudiobookStorage.documentsRootResolver = () async => root;
-    addTearDown(() async {
-      EpubStorage.debugBaseDirectoryOverride = null;
-      AudiobookStorage.documentsRootResolver = null;
-      await db.close();
-      if (root.existsSync()) root.deleteSync(recursive: true);
-    });
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      AudiobookStorage.documentsRootResolver = () async => root;
+      addTearDown(() async {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        AudiobookStorage.documentsRootResolver = null;
+        await db.close();
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
 
-    final List<String> probedPaths = <String>[];
-    bool countThenRunRealProbe(String path) {
-      probedPaths.add(path);
-      return MangaModule.isImageArchive(path);
-    }
+      final List<String> probedPaths = <String>[];
+      bool countThenRunRealProbe(String path) {
+        probedPaths.add(path);
+        return MangaModule.isImageArchive(path);
+      }
 
-    await tester.pumpWidget(
-      _host(
-        BookImportDialog(
-          repo: SrtBookRepository(db),
-          audiobookRepo: AudiobookRepository(db),
-          db: db,
-          initialEpubPath: epub.path,
-          initialSubtitlePath: srt.path,
-          imageArchiveProbe: countThenRunRealProbe,
+      await tester.pumpWidget(
+        _host(
+          BookImportDialog(
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            db: db,
+            initialEpubPath: epub.path,
+            initialSubtitlePath: srt.path,
+            imageArchiveProbe: countThenRunRealProbe,
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    await tester.tap(find.text(t.dialog_import));
-    await tester.pump();
-    await _pumpUntil(
-      tester,
-      condition: () async {
-        final List<EpubBookRow> books = await db.getAllEpubBooks();
-        if (books.length != 1) return false;
-        return AudiobookRepository(db)
-            .findByBookKey(books.single.bookKey)
-            .then((Audiobook? value) => value != null);
-      },
-    );
+      await tester.tap(find.text(t.dialog_import));
+      await tester.pump();
+      await _pumpUntil(
+        tester,
+        condition: () async {
+          final List<EpubBookRow> books = await db.getAllEpubBooks();
+          if (books.length != 1) return false;
+          return AudiobookRepository(db)
+              .findByBookKey(books.single.bookKey)
+              .then((Audiobook? value) => value != null);
+        },
+      );
 
-    expect(probedPaths, <String>[epub.path], reason: '同一路径的漫画误投闸门只能执行一次真整包判定');
-    final List<EpubBookRow> books = await db.getAllEpubBooks();
-    expect(books, hasLength(1), reason: '必须由真 EpubImporter 完成导入');
-    final Audiobook? audiobook =
-        await AudiobookRepository(db).findByBookKey(books.single.bookKey);
-    expect(audiobook, isNotNull,
-        reason: 'EPUB+SRT 必须走 _importEpubWithAlignment 并落有声书对齐记录');
-    final SrtBook? paired =
-        await SrtBookRepository(db).findByBookKey(books.single.bookKey);
-    expect(paired, isNotNull, reason: '匹配字幕必须落配对 SRT 书记录');
-  });
+      expect(probedPaths, <String>[
+        epub.path,
+      ], reason: '同一路径的漫画误投闸门只能执行一次真整包判定');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1), reason: '必须由真 EpubImporter 完成导入');
+      final Audiobook? audiobook = await AudiobookRepository(
+        db,
+      ).findByBookKey(books.single.bookKey);
+      expect(
+        audiobook,
+        isNotNull,
+        reason: 'EPUB+SRT 必须走 _importEpubWithAlignment 并落有声书对齐记录',
+      );
+      final SrtBook? paired = await SrtBookRepository(
+        db,
+      ).findByBookKey(books.single.bookKey);
+      expect(paired, isNotNull, reason: '匹配字幕必须落配对 SRT 书记录');
+    },
+  );
 
-  testWidgets('real EPUB-only import reuses the same probe at final dispatch',
-      (WidgetTester tester) async {
+  testWidgets('real EPUB-only import reuses the same probe at final dispatch', (
+    WidgetTester tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1000, 1000);
     addTearDown(tester.view.reset);
 
-    final Directory root =
-        Directory.systemTemp.createTempSync('todo_2189_real_epub_only_');
+    final Directory root = Directory.systemTemp.createTempSync(
+      'todo_2189_real_epub_only_',
+    );
     final File epub = File(p.join(root.path, 'plain.epub'))
       ..writeAsBytesSync(_realEpubBytes('TODO 2189 plain'));
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -251,23 +271,22 @@ void main() {
       condition: () async => (await db.getAllEpubBooks()).length == 1,
     );
 
-    expect(probedPaths, <String>[epub.path],
-        reason: '闸门与 _importEpubOnly 最终分派必须共用同一真实判定结果');
+    expect(probedPaths, <String>[
+      epub.path,
+    ], reason: '闸门与 _importEpubOnly 最终分派必须共用同一真实判定结果');
     expect(await db.getAllEpubBooks(), hasLength(1));
   });
 
-  testWidgets(
-      'dedicated manga dialog has no carrier confirmation while book '
+  testWidgets('dedicated manga dialog has no carrier confirmation while book '
       'misroute shows exactly one', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1000, 1000);
     addTearDown(tester.view.reset);
-    final Directory root =
-        Directory.systemTemp.createTempSync('todo_2189_manga_route_');
+    final Directory root = Directory.systemTemp.createTempSync(
+      'todo_2189_manga_route_',
+    );
     final File manga = File(p.join(root.path, 'pages.epub'))
-      ..writeAsBytesSync(
-        _realEpubBytes('TODO 2189 manga', pureImage: true),
-      );
+      ..writeAsBytesSync(_realEpubBytes('TODO 2189 manga', pureImage: true));
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(() async {
       await db.close();
@@ -284,8 +303,11 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text(t.manga_import_detected_title), findsNothing,
-        reason: '漫画专用入口已知道载体，不得再弹书籍误投确认');
+    expect(
+      find.text(t.manga_import_detected_title),
+      findsNothing,
+      reason: '漫画专用入口已知道载体，不得再弹书籍误投确认',
+    );
     expect(find.text(t.dialog_import), findsOneWidget);
 
     await tester.pumpWidget(
@@ -302,67 +324,79 @@ void main() {
     await tester.tap(find.text(t.dialog_import));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.manga_import_detected_title), findsOneWidget,
-        reason: '书籍入口误投漫画必须保留一次明确安全确认');
+    expect(
+      find.text(t.manga_import_detected_title),
+      findsOneWidget,
+      reason: '书籍入口误投漫画必须保留一次明确安全确认',
+    );
     expect(find.text(t.manga_import_detected_confirm), findsOneWidget);
   });
 
   testWidgets(
-      'image-only EPUB misdetected as manga can still be imported as a book',
-      (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1000, 1000);
-    addTearDown(tester.view.reset);
-    final Directory root =
-        Directory.systemTemp.createTempSync('force_book_import_');
-    final File manga = File(p.join(root.path, 'picture_book.epub'))
-      ..writeAsBytesSync(
-        _realEpubBytes('Force book import', pureImage: true),
+    'image-only EPUB misdetected as manga can still be imported as a book',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 1000);
+      addTearDown(tester.view.reset);
+      final Directory root = Directory.systemTemp.createTempSync(
+        'force_book_import_',
       );
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    EpubStorage.debugBaseDirectoryOverride = root.path;
-    addTearDown(() async {
-      EpubStorage.debugBaseDirectoryOverride = null;
-      await db.close();
-      if (root.existsSync()) root.deleteSync(recursive: true);
-    });
+      final File manga = File(
+        p.join(root.path, 'picture_book.epub'),
+      )..writeAsBytesSync(_realEpubBytes('Force book import', pureImage: true));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      addTearDown(() async {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        await db.close();
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
 
-    await tester.pumpWidget(
-      _host(
-        BookImportDialog(
-          repo: SrtBookRepository(db),
-          audiobookRepo: AudiobookRepository(db),
-          db: db,
+      await tester.pumpWidget(
+        _host(
+          BookImportDialog(
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            db: db,
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    // 拖入入口先过一道漫画闸门，用户在这里坚持按书导入。
-    final FushiFileDropTarget dropTarget = tester.widget<FushiFileDropTarget>(
-      find.byType(FushiFileDropTarget),
-    );
-    unawaited(
-      Future<void>.sync(
-        () => dropTarget.onDrop(<String>[manga.path], Offset.zero),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text(t.manga_import_detected_title), findsOneWidget);
-    await tester.tap(find.text(t.manga_import_detected_import_as_book));
-    await tester.pumpAndSettle();
-    expect(find.text(t.manga_import_detected_title), findsNothing);
+      // 拖入入口先过一道漫画闸门，用户在这里坚持按书导入。
+      final FushiFileDropTarget dropTarget = tester.widget<FushiFileDropTarget>(
+        find.byType(FushiFileDropTarget),
+      );
+      unawaited(
+        Future<void>.sync(
+          () => dropTarget.onDrop(<String>[manga.path], Offset.zero),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.manga_import_detected_title), findsOneWidget);
+      await tester.tap(find.text(t.manga_import_detected_import_as_book));
+      await tester.pumpAndSettle();
+      expect(find.text(t.manga_import_detected_title), findsNothing);
 
-    // 点导入时 `_doImport` 兜底闸门再问一次载体：覆盖必须生效，不得二次弹框。
-    await tester.tap(find.text(t.dialog_import));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text(t.manga_import_detected_title), findsNothing,
-        reason: '坚持按书导入后兜底闸门不得再把它判回漫画');
-    await _pumpUntil(
-      tester,
-      condition: () async => (await db.getAllEpubBooks()).length == 1,
-    );
-    expect(await db.getAllEpubBooks(), hasLength(1),
-        reason: '必须由真 EpubImporter 把图片型 EPUB 落成一本书');
-  });
+      // 点导入时 `_doImport` 兜底闸门再问一次载体：覆盖必须生效，不得二次弹框。
+      await tester.tap(find.text(t.dialog_import));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.text(t.manga_import_detected_title),
+        findsNothing,
+        reason: '坚持按书导入后兜底闸门不得再把它判回漫画',
+      );
+      await _pumpUntil(
+        tester,
+        condition: () async => (await db.getAllEpubBooks()).length == 1,
+      );
+      expect(
+        await db.getAllEpubBooks(),
+        hasLength(1),
+        reason: '必须由真 EpubImporter 把图片型 EPUB 落成一本书',
+      );
+    },
+  );
 }

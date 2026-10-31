@@ -19,14 +19,14 @@ void main() {
     LookupImeChannel.resetForTesting();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method == 'setLanguage') {
-        sent.add(call.arguments);
-      }
-      if (call.method == 'persistLanguage') {
-        persisted.add(call.arguments);
-      }
-      return null;
-    });
+          if (call.method == 'setLanguage') {
+            sent.add(call.arguments);
+          }
+          if (call.method == 'persistLanguage') {
+            persisted.add(call.arguments);
+          }
+          return null;
+        });
   });
 
   tearDown(() {

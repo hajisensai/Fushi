@@ -30,8 +30,9 @@ void main() {
       final String historySource = readReaderHistorySource();
 
       final int actionsStart = source.indexOf('List<Widget> getActions');
-      final int importButtonStart =
-          source.indexOf('Widget buildBookImportButton');
+      final int importButtonStart = source.indexOf(
+        'Widget buildBookImportButton',
+      );
       final String actionsBody = source.substring(
         actionsStart,
         importButtonStart,
@@ -50,17 +51,20 @@ void main() {
     test('内部 fushi.local 书内 URL 永不当外部链接(未解析时不弹系统浏览器)', () {
       expect(
         ReaderFushiSource.isExternalUrl(
-            'https://fushi.local/epub/OEBPS/ch2.xhtml'),
+          'https://fushi.local/epub/OEBPS/ch2.xhtml',
+        ),
         isFalse,
       );
       expect(
         ReaderFushiSource.isExternalUrl(
-            'https://fushi.local/epub/text/note.xhtml#n1'),
+          'https://fushi.local/epub/text/note.xhtml#n1',
+        ),
         isFalse,
       );
       expect(
         ReaderFushiSource.isExternalUrl(
-            '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml'),
+          '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch2.xhtml',
+        ),
         isFalse,
       );
     });
@@ -83,14 +87,8 @@ void main() {
         ReaderFushiSource.isExternalUrl('https://example.com/page'),
         isTrue,
       );
-      expect(
-        ReaderFushiSource.isExternalUrl('http://example.com/'),
-        isTrue,
-      );
-      expect(
-        ReaderFushiSource.isExternalUrl('mailto:a@b.com'),
-        isTrue,
-      );
+      expect(ReaderFushiSource.isExternalUrl('http://example.com/'), isTrue);
+      expect(ReaderFushiSource.isExternalUrl('mailto:a@b.com'), isTrue);
     });
 
     test('非外部 scheme / 无法解析 → 不外开', () {
@@ -111,67 +109,71 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-    test('canonicalizes allowed custom font paths before building CSS',
-        () async {
-      final fontsDir = Directory(p.join(tempDir.path, 'fonts'));
-      await fontsDir.create();
-      final fontFile = File(p.join(fontsDir.path, 'font.ttf'));
-      await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
-      final rawPath = p.join(fontsDir.path, '..', 'fonts', 'font.ttf');
+    test(
+      'canonicalizes allowed custom font paths before building CSS',
+      () async {
+        final fontsDir = Directory(p.join(tempDir.path, 'fonts'));
+        await fontsDir.create();
+        final fontFile = File(p.join(fontsDir.path, 'font.ttf'));
+        await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
+        final rawPath = p.join(fontsDir.path, '..', 'fonts', 'font.ttf');
 
-      final result = ReaderFushiSource.customFontCssForEntries(
-        <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'Test Font',
-            'path': rawPath,
-            'enabled': true,
-          },
-        ],
-        allowedDirectories: <String>[fontsDir.path],
-      );
+        final result = ReaderFushiSource.customFontCssForEntries(
+          <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'Test Font',
+              'path': rawPath,
+              'enabled': true,
+            },
+          ],
+          allowedDirectories: <String>[fontsDir.path],
+        );
 
-      expect(
-        result.fontFaces,
-        contains(Uri.encodeComponent(p.canonicalize(fontFile.path))),
-      );
-      expect(
-        result.fontFaces,
-        contains(
-          webViewUsesCustomSchemeTransport
-              ? '${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'
-              : 'https://fushi.local/fonts/',
-        ),
-      );
-      expect(result.fontFaces, isNot(contains('..')));
-    });
+        expect(
+          result.fontFaces,
+          contains(Uri.encodeComponent(p.canonicalize(fontFile.path))),
+        );
+        expect(
+          result.fontFaces,
+          contains(
+            webViewUsesCustomSchemeTransport
+                ? '${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'
+                : 'https://fushi.local/fonts/',
+          ),
+        );
+        expect(result.fontFaces, isNot(contains('..')));
+      },
+    );
 
-    test('reader settings font CSS uses custom scheme on macOS target',
-        () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      addTearDown(() {
-        debugDefaultTargetPlatformOverride = null;
-      });
-      final fontsDir = Directory(p.join(tempDir.path, 'fonts'));
-      await fontsDir.create();
-      final fontFile = File(p.join(fontsDir.path, 'font.ttf'));
-      await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
+    test(
+      'reader settings font CSS uses custom scheme on macOS target',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+        });
+        final fontsDir = Directory(p.join(tempDir.path, 'fonts'));
+        await fontsDir.create();
+        final fontFile = File(p.join(fontsDir.path, 'font.ttf'));
+        await fontFile.writeAsBytes(<int>[0, 1, 0, 0]);
 
-      final result = ReaderSettings.customFontCssForEntries(
-        <Map<String, dynamic>>[
-          <String, dynamic>{
-            'name': 'Body Font',
-            'path': fontFile.path,
-            'enabled': true,
-          },
-        ],
-        allowedDirectories: <String>[fontsDir.path],
-      );
+        final result = ReaderSettings.customFontCssForEntries(
+          <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'Body Font',
+              'path': fontFile.path,
+              'enabled': true,
+            },
+          ],
+          allowedDirectories: <String>[fontsDir.path],
+        );
 
-      expect(
-        result.fontFaces,
-        contains('${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'),
-      );
-    });
+        expect(
+          result.fontFaces,
+          contains('${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'),
+        );
+      },
+    );
 
     test('rejects custom font paths outside the allowed directories', () async {
       final fontsDir = Directory(p.join(tempDir.path, 'fonts'));
@@ -198,8 +200,7 @@ void main() {
   });
 
   group('MediaSource preference cache invalidation', () {
-    test(
-        'refreshPreferencesFromDb drops keys deleted from the DB '
+    test('refreshPreferencesFromDb drops keys deleted from the DB '
         '(profile switch with no custom value restores default)', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -215,7 +216,9 @@ void main() {
       );
       expect(
         source.getPreference<String?>(
-            key: 'shortcut_bindings_json', defaultValue: null),
+          key: 'shortcut_bindings_json',
+          defaultValue: null,
+        ),
         isNotNull,
       );
 
@@ -227,7 +230,9 @@ void main() {
       // The stale Profile A value must not survive in the in-memory cache.
       expect(
         source.getPreference<String?>(
-            key: 'shortcut_bindings_json', defaultValue: null),
+          key: 'shortcut_bindings_json',
+          defaultValue: null,
+        ),
         isNull,
       );
     });
@@ -243,8 +248,7 @@ void main() {
       ReaderFushiSource.readerSettings = null;
     });
 
-    test(
-        '视频上下文：DB(=当前 profile)关闭自动阅读时 autoReadOnLookup 为 false，'
+    test('视频上下文：DB(=当前 profile)关闭自动阅读时 autoReadOnLookup 为 false，'
         '即使阅读器遗留的静态 readerSettings 快照仍是 true', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -272,35 +276,34 @@ void main() {
       expect(source.autoReadOnLookup, isFalse);
 
       // 反向：DB(=当前 profile)开启时为 true。
-      await source.setPreference<bool>(
-        key: 'auto_read_on_lookup',
-        value: true,
-      );
+      await source.setPreference<bool>(key: 'auto_read_on_lookup', value: true);
       expect(source.autoReadOnLookup, isTrue);
     });
 
-    test('profile 切换(refreshPreferencesFromDb)后 autoReadOnLookup 立即跟随',
-        () async {
-      final db = FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
+    test(
+      'profile 切换(refreshPreferencesFromDb)后 autoReadOnLookup 立即跟随',
+      () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
 
-      final source = ReaderFushiSource.instance;
-      await source.refreshPreferencesFromDb();
+        final source = ReaderFushiSource.instance;
+        await source.refreshPreferencesFromDb();
 
-      // Profile A: 关闭自动阅读并落 DB。
-      await source.setPreference<bool>(
-        key: 'auto_read_on_lookup',
-        value: false,
-      );
-      expect(source.autoReadOnLookup, isFalse);
+        // Profile A: 关闭自动阅读并落 DB。
+        await source.setPreference<bool>(
+          key: 'auto_read_on_lookup',
+          value: false,
+        );
+        expect(source.autoReadOnLookup, isFalse);
 
-      // 模拟切到 Profile B(自动阅读=开)：applyProfile 写穿 DB，refreshPrefCache
-      // 重载每个 source 的 _preferences。
-      await db.setPref('src:reader_fushi:auto_read_on_lookup', 'true');
-      await source.refreshPreferencesFromDb();
-      expect(source.autoReadOnLookup, isTrue);
-    });
+        // 模拟切到 Profile B(自动阅读=开)：applyProfile 写穿 DB，refreshPrefCache
+        // 重载每个 source 的 _preferences。
+        await db.setPref('src:reader_fushi:auto_read_on_lookup', 'true');
+        await source.refreshPreferencesFromDb();
+        expect(source.autoReadOnLookup, isTrue);
+      },
+    );
 
     test('toggleAutoReadOnLookup 写穿 DB 且读写对称(不再依赖静态 readerSettings)', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -341,8 +344,7 @@ void main() {
       ReaderFushiSource.readerSettings = null;
     });
 
-    test(
-        'source enableSwipeToClose follows current DB/cache even when '
+    test('source enableSwipeToClose follows current DB/cache even when '
         'readerSettings snapshot is stale', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -394,18 +396,12 @@ void main() {
       // Enable: writes through to DB and reads back symmetrically.
       await source.setHoverAutoLookup(value: true);
       expect(source.hoverAutoLookup, isTrue);
-      expect(
-        await db.getPref('src:reader_fushi:hover_auto_lookup'),
-        'b:true',
-      );
+      expect(await db.getPref('src:reader_fushi:hover_auto_lookup'), 'b:true');
 
       // Disable: round-trips back to false.
       await source.setHoverAutoLookup(value: false);
       expect(source.hoverAutoLookup, isFalse);
-      expect(
-        await db.getPref('src:reader_fushi:hover_auto_lookup'),
-        'b:false',
-      );
+      expect(await db.getPref('src:reader_fushi:hover_auto_lookup'), 'b:false');
     });
 
     test('profile switch (refreshPreferencesFromDb) is reflected', () async {
@@ -432,8 +428,7 @@ void main() {
       ReaderFushiSource.readerSettings = null;
     });
 
-    test(
-        'defaults to false and round-trips through the global source pref '
+    test('defaults to false and round-trips through the global source pref '
         'when no reader page is open', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -455,8 +450,7 @@ void main() {
       );
     });
 
-    test(
-        'reads/writes through ReaderSettings (per-reader) when a reader page '
+    test('reads/writes through ReaderSettings (per-reader) when a reader page '
         'is open, mirroring invert_swipe / reverse_arrow', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -505,31 +499,33 @@ void main() {
       expect(ReaderFushiSource.instance.supportsAuthorEdit, isTrue);
     });
 
-    test('setAuthorFromMediaItem writes the author into epubBooks.author',
-        () async {
-      final db = FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
-      await db.insertEpubBook(bookWithAuthor('Kokoro'));
+    test(
+      'setAuthorFromMediaItem writes the author into epubBooks.author',
+      () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
+        await db.insertEpubBook(bookWithAuthor('Kokoro'));
 
-      final source = ReaderFushiSource.instance;
-      final item = MediaItem(
-        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('Kokoro'),
-        title: 'Kokoro',
-        mediaTypeIdentifier: source.mediaType.uniqueKey,
-        mediaSourceIdentifier: source.uniqueKey,
-        position: 0,
-        duration: 1,
-        canDelete: false,
-        canEdit: true,
-      );
+        final source = ReaderFushiSource.instance;
+        final item = MediaItem(
+          mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('Kokoro'),
+          title: 'Kokoro',
+          mediaTypeIdentifier: source.mediaType.uniqueKey,
+          mediaSourceIdentifier: source.uniqueKey,
+          position: 0,
+          duration: 1,
+          canDelete: false,
+          canEdit: true,
+        );
 
-      await source.setAuthorFromMediaItem(item: item, author: '夏目漱石');
+        await source.setAuthorFromMediaItem(item: item, author: '夏目漱石');
 
-      final row = await db.getEpubBook('Kokoro');
-      expect(row, isNotNull);
-      expect(row!.author, '夏目漱石');
-    });
+        final row = await db.getEpubBook('Kokoro');
+        expect(row, isNotNull);
+        expect(row!.author, '夏目漱石');
+      },
+    );
 
     test('MangaFushiSource 也支持作者编辑并委托写入 epubBooks.author（BUG-1083）', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -551,44 +547,50 @@ void main() {
         canDelete: false,
         canEdit: true,
       );
-      await MangaFushiSource.instance
-          .setAuthorFromMediaItem(item: item, author: '藤本タツキ');
-
-      final row = await db.getEpubBook('MangaVol1');
-      expect(row!.author, '藤本タツキ',
-          reason: '漫画作者编辑委托 ReaderFushiSource 写同一 epubBooks.author 列');
-    });
-
-    test('setAuthorFromMediaItem trims and clears a blank author to NULL',
-        () async {
-      final db = FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
-      await db.insertEpubBook(bookWithAuthor('Botchan', author: '夏目漱石'));
-
-      final source = ReaderFushiSource.instance;
-      final item = MediaItem(
-        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('Botchan'),
-        title: 'Botchan',
-        mediaTypeIdentifier: source.mediaType.uniqueKey,
-        mediaSourceIdentifier: source.uniqueKey,
-        position: 0,
-        duration: 1,
-        canDelete: false,
-        canEdit: true,
+      await MangaFushiSource.instance.setAuthorFromMediaItem(
+        item: item,
+        author: '藤本タツキ',
       );
 
-      // Whitespace-only edit clears the column rather than storing spaces.
-      await source.setAuthorFromMediaItem(item: item, author: '   ');
-      expect((await db.getEpubBook('Botchan'))!.author, isNull);
-
-      // A real value with surrounding whitespace is trimmed.
-      await source.setAuthorFromMediaItem(item: item, author: '  芥川  ');
-      expect((await db.getEpubBook('Botchan'))!.author, '芥川');
+      final row = await db.getEpubBook('MangaVol1');
+      expect(
+        row!.author,
+        '藤本タツキ',
+        reason: '漫画作者编辑委托 ReaderFushiSource 写同一 epubBooks.author 列',
+      );
     });
 
     test(
-        'updateEpubBookAuthor is a plain UPDATE that keeps the bookKey (not a '
+      'setAuthorFromMediaItem trims and clears a blank author to NULL',
+      () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
+        await db.insertEpubBook(bookWithAuthor('Botchan', author: '夏目漱石'));
+
+        final source = ReaderFushiSource.instance;
+        final item = MediaItem(
+          mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('Botchan'),
+          title: 'Botchan',
+          mediaTypeIdentifier: source.mediaType.uniqueKey,
+          mediaSourceIdentifier: source.uniqueKey,
+          position: 0,
+          duration: 1,
+          canDelete: false,
+          canEdit: true,
+        );
+
+        // Whitespace-only edit clears the column rather than storing spaces.
+        await source.setAuthorFromMediaItem(item: item, author: '   ');
+        expect((await db.getEpubBook('Botchan'))!.author, isNull);
+
+        // A real value with surrounding whitespace is trimmed.
+        await source.setAuthorFromMediaItem(item: item, author: '  芥川  ');
+        expect((await db.getEpubBook('Botchan'))!.author, '芥川');
+      },
+    );
+
+    test('updateEpubBookAuthor is a plain UPDATE that keeps the bookKey (not a '
         're-key like the title)', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -635,26 +637,24 @@ void main() {
       );
     }
 
-    test('returns true and removes the row when the EPUB book exists',
-        () async {
-      final db = FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
-      await db.insertEpubBook(epubBook('Kokoro'));
-
-      final DeleteBookResult result =
-          await ReaderFushiSource.instance.deleteBook(
-        db: db,
-        bookKey: 'Kokoro',
-      );
-
-      expect(result.deleted, isTrue);
-      expect(result.failureReason, isNull);
-      expect(await db.getEpubBook('Kokoro'), isNull);
-    });
-
     test(
-        'BUG-3443 推送方向：从所有设备删除经互联收下的在线漫画，墓碑写对端键 '
+      'returns true and removes the row when the EPUB book exists',
+      () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
+        await db.insertEpubBook(epubBook('Kokoro'));
+
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteBook(db: db, bookKey: 'Kokoro');
+
+        expect(result.deleted, isTrue);
+        expect(result.failureReason, isNull);
+        expect(await db.getEpubBook('Kokoro'), isNull);
+      },
+    );
+
+    test('BUG-3443 推送方向：从所有设备删除经互联收下的在线漫画，墓碑写对端键 '
         '（本机 interconnect- 键是单向哈希，对端认不出）', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -670,28 +670,36 @@ void main() {
           hasMangaChapters: true,
         ),
       ).encode();
-      await db.insertEpubBook(epubBook(localKey).copyWith(
+      await db.insertEpubBook(
+        epubBook(localKey).copyWith(
           sourceMetadata: Value(metadata),
-          format: Value(BookFormat.manga.dbValue)));
+          format: Value(BookFormat.manga.dbValue),
+        ),
+      );
       // 对照：普通书照旧写本机键。
       await db.insertEpubBook(epubBook('Kokoro'));
       // 从对端下载、落地键与对端不同的书（别名表记着对端键；deleteEpubBook 会级联
       // 删别名，所以必须删行前取）。
       await db.insertEpubBook(epubBook('Neko'));
       await db.setCollectionBookAlias(
-          (await db.resolveEpubBookUid('Neko'))!, 'Neko(2)');
+        (await db.resolveEpubBookUid('Neko'))!,
+        'Neko(2)',
+      );
 
       for (final String key in <String>[localKey, 'Kokoro', 'Neko']) {
         final DeleteBookResult result = await ReaderFushiSource.instance
             .deleteBook(
-                db: db, bookKey: key, scope: DeleteScope.syncEverywhere);
+              db: db,
+              bookKey: key,
+              scope: DeleteScope.syncEverywhere,
+            );
         expect(result.deleted, isTrue, reason: key);
       }
 
       expect(
-        (await db.getSyncDeletionTombstonesOfType('book'))
-            .map((SyncDeletionTombstoneRow r) => r.itemKey)
-            .toSet(),
+        (await db.getSyncDeletionTombstonesOfType(
+          'book',
+        )).map((SyncDeletionTombstoneRow r) => r.itemKey).toSet(),
         <String>{peerKey, 'Kokoro', 'Neko(2)'},
       );
       // 墓碑键是对端键 / 别名时不等于云盘书文件夹名：删除时按当时的书名把文件夹名
@@ -710,26 +718,27 @@ void main() {
       );
     });
 
-    test(
-        'deleteStatistics 默认 false 保留统计；true 时删行前按身份清掉该书统计 '
+    test('deleteStatistics 默认 false 保留统计；true 时删行前按身份清掉该书统计 '
         '（「同时删除统计数据」勾选的落地）', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       Future<void> seedStats(String key) async {
         await db.insertEpubBook(epubBook(key));
-        await db.upsertStudySegment(StudySegmentsCompanion.insert(
-          uid: FushiDatabase.newStudySegmentUid(),
-          deviceId: 'dev-test',
-          mediaKind: kActivityMediaBook,
-          mediaKey: key,
-          title: key,
-          startAt: 1000,
-          endAt: 61000,
-          dateKey: '2026-07-05',
-          hour: 10,
-          updatedAt: 61000,
-        ));
+        await db.upsertStudySegment(
+          StudySegmentsCompanion.insert(
+            uid: FushiDatabase.newStudySegmentUid(),
+            deviceId: 'dev-test',
+            mediaKind: kActivityMediaBook,
+            mediaKey: key,
+            title: key,
+            startAt: 1000,
+            endAt: 61000,
+            dateKey: '2026-07-05',
+            hour: 10,
+            updatedAt: 61000,
+          ),
+        );
       }
 
       await seedStats('Kept');
@@ -741,21 +750,31 @@ void main() {
 
       expect(wiped.deleted, isTrue);
       expect(
-          await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'Kept'),
-          hasLength(1),
-          reason: '默认不勾 = 书删了、统计留着');
+        await db.getStudySegmentsForMedia(
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'Kept',
+        ),
+        hasLength(1),
+        reason: '默认不勾 = 书删了、统计留着',
+      );
       expect(
-          await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'Wiped'),
-          isEmpty);
-      expect(await db.getStatisticsTombstoneKeys(), contains(('Wiped', 'book')));
-      expect(await db.getStatisticsTombstoneKeys(),
-          isNot(contains(('Kept', 'book'))));
+        await db.getStudySegmentsForMedia(
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'Wiped',
+        ),
+        isEmpty,
+      );
+      expect(
+        await db.getStatisticsTombstoneKeys(),
+        contains(('Wiped', 'book')),
+      );
+      expect(
+        await db.getStatisticsTombstoneKeys(),
+        isNot(contains(('Kept', 'book'))),
+      );
     });
 
-    test(
-        'returns false when the bookKey matches no EPUB/SRT row '
+    test('returns false when the bookKey matches no EPUB/SRT row '
         '(orphan shell / missing key must not fake success)', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -765,12 +784,11 @@ void main() {
       // have nothing to delete: deleteBook must report failure, not lie.
       // TODO-1359：失败结果必须携带原因（供 toast 展示 + 已写入 ErrorLogService），
       // 不能只回一个信息全无的 bool。
-      final DeleteBookResult emptyKeyResult =
-          await ReaderFushiSource.instance.deleteBook(db: db, bookKey: '');
+      final DeleteBookResult emptyKeyResult = await ReaderFushiSource.instance
+          .deleteBook(db: db, bookKey: '');
       expect(emptyKeyResult.deleted, isFalse);
       expect(emptyKeyResult.failureReason, isNotNull);
-      final DeleteBookResult missingKeyResult = await ReaderFushiSource
-          .instance
+      final DeleteBookResult missingKeyResult = await ReaderFushiSource.instance
           .deleteBook(db: db, bookKey: 'no-such-book');
       expect(missingKeyResult.deleted, isFalse);
       expect(missingKeyResult.failureReason, contains('no-such-book'));
@@ -788,26 +806,29 @@ void main() {
         );
 
     for (final DeleteScope scope in DeleteScope.values) {
-      test('BUG-3101 配对字幕书卡删除如实回报成功（scope=${scope.name}）',
-          () async {
+      test('BUG-3101 配对字幕书卡删除如实回报成功（scope=${scope.name}）', () async {
         final db = FushiDatabase.forTesting(NativeDatabase.memory());
         addTearDown(db.close);
         MediaSource.setDatabase(db);
         await db.insertEpubBook(epubBook('Paired'));
         await db.upsertSrtBook(srtRow('srt/paired', bookKey: 'Paired'));
-        final SrtBook book =
-            (await SrtBookRepository(db).findByUid('srt/paired'))!;
+        final SrtBook book = (await SrtBookRepository(
+          db,
+        ).findByUid('srt/paired'))!;
 
         final DeleteBookResult result = await ReaderFushiSource.instance
             .deleteSrtShelfBook(db: db, book: book, scope: scope);
 
-        expect(result.deleted, isTrue,
-            reason: 'srt 行随 deleteBook 事务级联删除，不得再判「删除书籍失败」');
+        expect(
+          result.deleted,
+          isTrue,
+          reason: 'srt 行随 deleteBook 事务级联删除，不得再判「删除书籍失败」',
+        );
         expect(result.failureReason, isNull);
         expect(await db.getEpubBook('Paired'), isNull);
         expect(await SrtBookRepository(db).findByUid('srt/paired'), isNull);
-        final List<SyncDeletionTombstoneRow> bookTombstones =
-            await db.getSyncDeletionTombstonesOfType('book');
+        final List<SyncDeletionTombstoneRow> bookTombstones = await db
+            .getSyncDeletionTombstonesOfType('book');
         expect(
           bookTombstones.map((SyncDeletionTombstoneRow r) => r.itemKey),
           scope == DeleteScope.syncEverywhere
@@ -823,17 +844,22 @@ void main() {
       addTearDown(db.close);
       MediaSource.setDatabase(db);
       await db.upsertSrtBook(srtRow('srt/lonely'));
-      final SrtBook book =
-          (await SrtBookRepository(db).findByUid('srt/lonely'))!;
+      final SrtBook book = (await SrtBookRepository(
+        db,
+      ).findByUid('srt/lonely'))!;
 
       final DeleteBookResult first = await ReaderFushiSource.instance
           .deleteSrtShelfBook(
-              db: db, book: book, scope: DeleteScope.syncEverywhere);
+            db: db,
+            book: book,
+            scope: DeleteScope.syncEverywhere,
+          );
       expect(first.deleted, isTrue);
       expect(await SrtBookRepository(db).findByUid('srt/lonely'), isNull);
       expect(
-        (await db.getSyncDeletionTombstonesOfType('srtbook'))
-            .map((SyncDeletionTombstoneRow r) => r.itemKey),
+        (await db.getSyncDeletionTombstonesOfType(
+          'srtbook',
+        )).map((SyncDeletionTombstoneRow r) => r.itemKey),
         contains('srt/lonely'),
       );
 
@@ -867,48 +893,56 @@ void main() {
     // 异常，绝不能把已提交的删除翻转成「删除失败」。旧实现把 deleteBookDir 放在外层
     // try 里裸跑，一抛就落到最外层 catch 返回失败——书还挂在架上、目录泄漏。
     test(
-        'on-disk extract-dir cleanup failure does NOT flip a committed DB '
-        'delete to failure (Windows file-lock; deleted==true, row gone)',
-        () async {
-      final db = FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
+      'on-disk extract-dir cleanup failure does NOT flip a committed DB '
+      'delete to failure (Windows file-lock; deleted==true, row gone)',
+      () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
 
-      // A real extract dir with a file we hold open so recursive delete throws
-      // on Windows (POSIX allows unlink-while-open, so there the delete just
-      // succeeds — either way the committed DB delete must report success).
-      final Directory extractDir =
-          Directory.systemTemp.createTempSync('fushi_del1359_extract');
-      final File inner = File(p.join(extractDir.path, 'content.xhtml'))
-        ..writeAsStringSync('<html></html>');
-      final RandomAccessFile handle = inner.openSync(mode: FileMode.write);
-      addTearDown(() {
-        handle.closeSync();
-        if (extractDir.existsSync()) {
-          extractDir.deleteSync(recursive: true);
-        }
-      });
+        // A real extract dir with a file we hold open so recursive delete throws
+        // on Windows (POSIX allows unlink-while-open, so there the delete just
+        // succeeds — either way the committed DB delete must report success).
+        final Directory extractDir = Directory.systemTemp.createTempSync(
+          'fushi_del1359_extract',
+        );
+        final File inner = File(p.join(extractDir.path, 'content.xhtml'))
+          ..writeAsStringSync('<html></html>');
+        final RandomAccessFile handle = inner.openSync(mode: FileMode.write);
+        addTearDown(() {
+          handle.closeSync();
+          if (extractDir.existsSync()) {
+            extractDir.deleteSync(recursive: true);
+          }
+        });
 
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'LockedBook',
-        title: 'LockedBook',
-        epubPath: '/tmp/LockedBook.epub',
-        extractDir: extractDir.path,
-        chapterCount: 1,
-        chaptersJson: '["ch1"]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+        await db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'LockedBook',
+            title: 'LockedBook',
+            epubPath: '/tmp/LockedBook.epub',
+            extractDir: extractDir.path,
+            chapterCount: 1,
+            chaptersJson: '["ch1"]',
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
 
-      final DeleteBookResult result = await ReaderFushiSource.instance
-          .deleteBook(db: db, bookKey: 'LockedBook');
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteBook(db: db, bookKey: 'LockedBook');
 
-      // The DB row (source of truth) is gone → this book is deleted for the
-      // user; a leaked on-disk dir must not be reported as a delete failure.
-      expect(result.deleted, isTrue,
-          reason: 'committed DB delete must report success even if the '
-              'on-disk extract dir could not be removed');
-      expect(await db.getEpubBook('LockedBook'), isNull);
-    });
+        // The DB row (source of truth) is gone → this book is deleted for the
+        // user; a leaked on-disk dir must not be reported as a delete failure.
+        expect(
+          result.deleted,
+          isTrue,
+          reason:
+              'committed DB delete must report success even if the '
+              'on-disk extract dir could not be removed',
+        );
+        expect(await db.getEpubBook('LockedBook'), isNull);
+      },
+    );
 
     // 源码守卫（跨平台确定性）：磁盘/偏好清理必须被一个只记日志、不翻转结果的
     // try/catch 包住，且位于 deleteEpubBook 之后、成功返回之前。撤掉这层 wrapper 会
@@ -918,48 +952,65 @@ void main() {
         'lib/src/media/sources/reader_fushi_source.dart',
       ).readAsStringSync();
       final int start = src.indexOf('Future<DeleteBookResult> deleteBook(');
-      final int end =
-          src.indexOf('static ReaderSettings? readerSettings', start);
+      final int end = src.indexOf(
+        'static ReaderSettings? readerSettings',
+        start,
+      );
       expect(start, greaterThanOrEqualTo(0));
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
 
       final int rowDelete = body.indexOf('deleteEpubBook(bookKey');
-      final int cleanupCatch =
-          body.indexOf("'ReaderFushiSource.deleteBook.cleanup'");
+      final int cleanupCatch = body.indexOf(
+        "'ReaderFushiSource.deleteBook.cleanup'",
+      );
       final int diskCleanup = body.indexOf('EpubStorage.deleteBookDir(');
       final int vacuum = body.indexOf("customStatement('VACUUM')");
       expect(rowDelete, greaterThanOrEqualTo(0));
-      expect(cleanupCatch, greaterThan(rowDelete),
-          reason: 'the tolerant cleanup catch must exist after the DB delete');
-      expect(diskCleanup, greaterThan(rowDelete),
-          reason: 'on-disk cleanup runs after the DB delete');
-      expect(diskCleanup, lessThan(cleanupCatch),
-          reason: 'the on-disk cleanup must sit inside the tolerant try, '
-              'before its catch');
-      expect(vacuum, greaterThan(cleanupCatch),
-          reason: 'VACUUM stays after the cleanup block');
+      expect(
+        cleanupCatch,
+        greaterThan(rowDelete),
+        reason: 'the tolerant cleanup catch must exist after the DB delete',
+      );
+      expect(
+        diskCleanup,
+        greaterThan(rowDelete),
+        reason: 'on-disk cleanup runs after the DB delete',
+      );
+      expect(
+        diskCleanup,
+        lessThan(cleanupCatch),
+        reason:
+            'the on-disk cleanup must sit inside the tolerant try, '
+            'before its catch',
+      );
+      expect(
+        vacuum,
+        greaterThan(cleanupCatch),
+        reason: 'VACUUM stays after the cleanup block',
+      );
     });
 
     // 失败结果必须携带面向用户/诊断的原因（fix (a)：不再只弹笼统 toast，用户「报错
     // 日志呢」有据可查）。
-    test('failure result carries a non-empty reason mentioning the bookKey',
-        () async {
-      final db = FushiDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      MediaSource.setDatabase(db);
+    test(
+      'failure result carries a non-empty reason mentioning the bookKey',
+      () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
 
-      final DeleteBookResult result = await ReaderFushiSource.instance
-          .deleteBook(db: db, bookKey: 'ghost-shelf-entry');
-      expect(result.deleted, isFalse);
-      expect(result.failureReason, isNotNull);
-      expect(result.failureReason!, isNotEmpty);
-      expect(result.failureReason!, contains('ghost-shelf-entry'));
-    });
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteBook(db: db, bookKey: 'ghost-shelf-entry');
+        expect(result.deleted, isFalse);
+        expect(result.failureReason, isNotNull);
+        expect(result.failureReason!, isNotEmpty);
+        expect(result.failureReason!, contains('ghost-shelf-entry'));
+      },
+    );
   });
 
-  group(
-      'ReaderFushiSource book-key identifier round-trip '
+  group('ReaderFushiSource book-key identifier round-trip '
       '(BUG-658 / TODO-1344 特殊字符标题导入后打不开/删不掉)', () {
     // deleteBook resolves on-disk persist/extract dirs via path_provider.
     final TestWidgetsFlutterBinding binding =
@@ -988,8 +1039,7 @@ void main() {
     const String gouTitle = '業物語 <物語> (講談社ＢＯＸ)';
     const String androidsTitle = 'Do Androids Dream of Electric Sheep?';
 
-    test(
-        'mediaIdentifierFor -> parseBookKey is a lossless round-trip for every '
+    test('mediaIdentifierFor -> parseBookKey is a lossless round-trip for every '
         'sanitize escape (the %-in-key regression)', () {
       // One representative key per forbidden char sanitizeTtuFilename encodes,
       // plus the two real book keys and the common no-% keys that must be
@@ -1025,12 +1075,14 @@ void main() {
       expect(sanitizeTtuFilename(androidsTitle), androidsKey);
       expect(
         ReaderFushiSource.parseBookKey(
-            ReaderFushiSource.mediaIdentifierFor(gouKey)),
+          ReaderFushiSource.mediaIdentifierFor(gouKey),
+        ),
         gouKey,
       );
       expect(
         ReaderFushiSource.parseBookKey(
-            ReaderFushiSource.mediaIdentifierFor(androidsKey)),
+          ReaderFushiSource.mediaIdentifierFor(androidsKey),
+        ),
         androidsKey,
       );
     });
@@ -1039,13 +1091,15 @@ void main() {
       expect(ReaderFushiSource.parseBookKey('srt_abc'), isNull);
       expect(ReaderFushiSource.parseBookKey('about:blank'), isNull);
       expect(ReaderFushiSource.parseBookKey(''), isNull);
-      expect(ReaderFushiSource.parseBookKey('fushi://book/'), isNull,
-          reason: 'empty remainder is not a valid key');
+      expect(
+        ReaderFushiSource.parseBookKey('fushi://book/'),
+        isNull,
+        reason: 'empty remainder is not a valid key',
+      );
       expect(ReaderFushiSource.parseBookKey('fushi://video/x'), isNull);
     });
 
-    test(
-        'end-to-end: a %-key book resolves and deletes through the shelf '
+    test('end-to-end: a %-key book resolves and deletes through the shelf '
         'identifier (import -> open lookup -> delete闭环)', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -1054,15 +1108,17 @@ void main() {
       // Persist the row exactly as EpubImporter does: primary key = sanitized
       // title (import verified on-disk that this folder name is creatable).
       final String key = sanitizeTtuFilename(androidsTitle);
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: key,
-        title: androidsTitle,
-        epubPath: '/tmp/x.epub',
-        extractDir: '/tmp/$key',
-        chapterCount: 1,
-        chaptersJson: '["ch1"]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: androidsTitle,
+          epubPath: '/tmp/x.epub',
+          extractDir: '/tmp/$key',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
 
       // The shelf builds the MediaItem fresh from the row; opening/deleting
       // parses the key back out of that identifier. Before the fix this decoded
@@ -1073,13 +1129,16 @@ void main() {
       expect(parsed, key);
 
       // Open path: getEpubBook(parsedKey) must find the row.
-      expect(await db.getEpubBook(parsed!), isNotNull,
-          reason: 'open lookup must resolve the %-key row');
+      expect(
+        await db.getEpubBook(parsed!),
+        isNotNull,
+        reason: 'open lookup must resolve the %-key row',
+      );
 
       // Delete path: deleteBook(parsedKey) must actually remove it and report
       // success (not the false / "删不掉" dead-end).
-      final DeleteBookResult delResult =
-          await ReaderFushiSource.instance.deleteBook(db: db, bookKey: parsed);
+      final DeleteBookResult delResult = await ReaderFushiSource.instance
+          .deleteBook(db: db, bookKey: parsed);
       expect(delResult.deleted, isTrue);
       expect(await db.getEpubBook(key), isNull);
     });
@@ -1111,8 +1170,7 @@ void main() {
       expect(source, contains('author: hasAuthor ? author : null'));
     });
 
-    test(
-        'edit dialog exposes an author field gated on supportsAuthorEdit and '
+    test('edit dialog exposes an author field gated on supportsAuthorEdit and '
         'saves via setAuthorFromMediaItem', () {
       final String source = File(
         'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
@@ -1135,8 +1193,9 @@ void main() {
 
     test('章内 charOffset 计入 position（同单位，直接相加）', () {
       final int total = adachi2.reduce((int a, int b) => a + b);
-      final int before12 =
-          adachi2.take(12).reduce((int a, int b) => a + b); // = 184
+      final int before12 = adachi2
+          .take(12)
+          .reduce((int a, int b) => a + b); // = 184
       // charOffset=0：只到本章开头。
       final ({int position, int duration}) atStart = computeBookProgress(
         sectionChars: adachi2,
@@ -1152,8 +1211,11 @@ void main() {
         charOffset: 12981,
       );
       expect(mid.position, before12 + 12981);
-      expect(mid.position, greaterThan(atStart.position),
-          reason: '章内 charOffset 必须让进度前进，而非停在章首');
+      expect(
+        mid.position,
+        greaterThan(atStart.position),
+        reason: '章内 charOffset 必须让进度前进，而非停在章首',
+      );
     });
 
     test('charOffset 超过本章字数 → clamp 进本章（绝不 >100%）', () {
@@ -1218,21 +1280,22 @@ void main() {
   // 回归守卫，锁死 PM 假设 B(修不足/没接上)永不回归。
   group('computeBookProgress wired + real-shelf data (BUG-680 复诉守卫)', () {
     test(
-        '_bookToMediaItem 把 computeBookProgress 结果喂进 MediaItem.position/duration '
-        '(锁死「算了没接上」)', () {
-      final String source = File(
-        'lib/src/media/sources/reader_fushi_source.dart',
-      ).readAsStringSync();
-      // 修复必须真接上渲染：_bookToMediaItem 调 computeBookProgress 并用它的
-      // position/duration 建 MediaItem。断了这根线(PM 怀疑的「char_offset 纳入了但渲染
-      // 分支没走到」)就退回复诉症状。
-      expect(source, contains('computeBookProgress('));
-      expect(source, contains('position = prog.position'));
-      expect(source, contains('duration = prog.duration'));
-    });
+      '_bookToMediaItem 把 computeBookProgress 结果喂进 MediaItem.position/duration '
+      '(锁死「算了没接上」)',
+      () {
+        final String source = File(
+          'lib/src/media/sources/reader_fushi_source.dart',
+        ).readAsStringSync();
+        // 修复必须真接上渲染：_bookToMediaItem 调 computeBookProgress 并用它的
+        // position/duration 建 MediaItem。断了这根线(PM 怀疑的「char_offset 纳入了但渲染
+        // 分支没走到」)就退回复诉症状。
+        expect(source, contains('computeBookProgress('));
+        expect(source, contains('position = prog.position'));
+        expect(source, contains('duration = prog.duration'));
+      },
+    );
 
-    test(
-        '用户真实 リビルド (sec=8, charOffset=11120)：章内 charOffset 让「旧包看着像 0%」'
+    test('用户真实 リビルド (sec=8, charOffset=11120)：章内 charOffset 让「旧包看着像 0%」'
         '的在读书前进', () {
       // 用户本机 reader_positions x epub_books 真值：前 8 章多为前言(0 字)，当前第 8 章
       // 23707 字。旧包(debug.6783)忽略 charOffset -> 只算前 8 章 = 286 字(<0.2%，看着像空
@@ -1250,14 +1313,19 @@ void main() {
         charOffset: 11120,
       );
       expect(prog.position, before8 + 11120); // 章内进度计入
-      expect(prog.position, greaterThan(before8),
-          reason: '修复必须让被旧包算成近 0 的在读书前进');
-      expect(prog.position / prog.duration, greaterThan(0.05),
-          reason: 'リビルド 现场进度应 ~5.96%(可见)，而非旧包的 0.15%');
+      expect(
+        prog.position,
+        greaterThan(before8),
+        reason: '修复必须让被旧包算成近 0 的在读书前进',
+      );
+      expect(
+        prog.position / prog.duration,
+        greaterThan(0.05),
+        reason: 'リビルド 现场进度应 ~5.96%(可见)，而非旧包的 0.15%',
+      );
     });
 
-    test(
-        '用户真实 安達9 (sec=6, charOffset=0，前节全前言)：诚实 0%——'
+    test('用户真实 安達9 (sec=6, charOffset=0，前节全前言)：诚实 0%——'
         '不是 BUG-659 回归也不灌水', () {
       // 前 6 节全是前言(0 字)、第 6 节是首个内容页起点。读者停在正文开头前 -> 已读字符=0。
       // 按字符计数的诚实结果(不为好看谎报进度)；用户升级后仍会见 0%，属预期。
@@ -1302,8 +1370,11 @@ void main() {
         sectionIndex: 2,
         charOffset: -1,
       );
-      expect(prog.position, greaterThan(atStart.position),
-          reason: '听书章内进度必须让书架进度前进，而非停在 charOffset=-1 的章首');
+      expect(
+        prog.position,
+        greaterThan(atStart.position),
+        reason: '听书章内进度必须让书架进度前进，而非停在 charOffset=-1 的章首',
+      );
     });
 
     test('charOffset=-1 + normCharOffset=10000（章尾）→ 满章计入', () {
@@ -1335,8 +1406,11 @@ void main() {
         charOffset: 250,
         normCharOffset: 9999,
       );
-      expect(prog.position, before + 250,
-          reason: 'charOffset>=0 是精确值，必须压过归一化分数');
+      expect(
+        prog.position,
+        before + 250,
+        reason: 'charOffset>=0 是精确值，必须压过归一化分数',
+      );
     });
 
     test('normCharOffset 越界（>10000）→ clamp，绝不 >100%', () {

@@ -39,24 +39,30 @@ class DownloadBackendSetupDialog extends StatefulWidget {
 
 class _DownloadBackendSetupDialogState
     extends State<DownloadBackendSetupDialog> {
-  late final QbConnectionConfig _initial =
-      effectiveTorrentConfig(widget.appModel.qbConnectionConfig);
+  late final QbConnectionConfig _initial = effectiveTorrentConfig(
+    widget.appModel.qbConnectionConfig,
+  );
 
-  late final bool _embeddedSupported = widget.embeddedSupportedOverride ??
+  late final bool _embeddedSupported =
+      widget.embeddedSupportedOverride ??
       widget.appModel.supportsEmbeddedTorrent;
 
   /// 当前选中的后端。初值走 [QbConnectionConfig.resolveBackend]，所以
   /// 「从没配过」（backend = auto）在有内置引擎的平台上开屏即停在内置引擎，
   /// 用户直接点「完成」就配好了。
-  late String _backend =
-      _initial.resolveBackend(embeddedSupported: _embeddedSupported);
+  late String _backend = _initial.resolveBackend(
+    embeddedSupported: _embeddedSupported,
+  );
 
-  late final TextEditingController _urlCtrl =
-      TextEditingController(text: _initial.baseUrl);
-  late final TextEditingController _userCtrl =
-      TextEditingController(text: _initial.username);
-  late final TextEditingController _passCtrl =
-      TextEditingController(text: _initial.password);
+  late final TextEditingController _urlCtrl = TextEditingController(
+    text: _initial.baseUrl,
+  );
+  late final TextEditingController _userCtrl = TextEditingController(
+    text: _initial.username,
+  );
+  late final TextEditingController _passCtrl = TextEditingController(
+    text: _initial.password,
+  );
 
   bool _probing = false;
   bool _saving = false;
@@ -83,10 +89,9 @@ class _DownloadBackendSetupDialogState
 
   /// 地址栏的错误提示：只在用户已经填了内容却解析不出身份时给。空框不报错——
   /// 那是「还没填」，不是「填错了」。
-  String? get _urlErrorText =>
-      _urlCtrl.text.trim().isEmpty || _qbAddressValid
-          ? null
-          : t.download_backend_qb_url_invalid;
+  String? get _urlErrorText => _urlCtrl.text.trim().isEmpty || _qbAddressValid
+      ? null
+      : t.download_backend_qb_url_invalid;
 
   /// 当前选择是否已经可用：内置引擎要宿主真就绪（缺 DLL 的包配了也下不了），
   /// 外接 qb 要有能解析出身份的地址。判据与 `torrentBackendReady` 同源。
@@ -97,19 +102,20 @@ class _DownloadBackendSetupDialogState
   }
 
   QbConnectionConfig _composed() => _initial.copyWith(
-        backend: _backend,
-        baseUrl: _urlCtrl.text.trim(),
-        username: _userCtrl.text.trim(),
-        password: _passCtrl.text,
-      );
+    backend: _backend,
+    baseUrl: _urlCtrl.text.trim(),
+    username: _userCtrl.text.trim(),
+    password: _passCtrl.text,
+  );
 
   /// 测试连接：用**对话框里当前填的值**建后端，而不是已保存的配置——否则用户
   /// 填完还没保存就点测试，测的是上一份配置，结果与所见不符。
   Future<void> _probeConnection() async {
     if (_probing) return;
     setState(() => _probing = true);
-    final TorrentBackend backend =
-        widget.appModel.createTorrentBackend(_composed());
+    final TorrentBackend backend = widget.appModel.createTorrentBackend(
+      _composed(),
+    );
     String? version;
     String? failure;
     try {
@@ -130,8 +136,9 @@ class _DownloadBackendSetupDialogState
     } else {
       message = t.download_test_connection_failed;
     }
-    ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _finish() async {
@@ -246,8 +253,11 @@ class _DownloadBackendSetupDialogState
             if (_isEmbedded) ...<Widget>[
               _note(theme, t.download_backend_embedded_hint),
               if (!widget.appModel.isEmbeddedTorrentReady)
-                _note(theme, t.download_backend_embedded_unavailable,
-                    warning: true)
+                _note(
+                  theme,
+                  t.download_backend_embedded_unavailable,
+                  warning: true,
+                )
               else if (saveRoot.isNotEmpty) ...<Widget>[
                 Text(
                   t.download_save_root_title,
@@ -294,8 +304,9 @@ class _DownloadBackendSetupDialogState
           mainAxisAlignment: MainAxisAlignment.end,
           children: <Widget>[
             FushiTextButton(
-              onPressed:
-                  _saving ? null : () => Navigator.of(context).pop(false),
+              onPressed: _saving
+                  ? null
+                  : () => Navigator.of(context).pop(false),
               child: Text(t.dialog_cancel),
             ),
             SizedBox(width: tokens.spacing.gap),

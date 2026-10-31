@@ -12,10 +12,12 @@ void main() {
       );
 
   group('joinMinedSentences', () {
-    test('single sentence is returned trimmed (equivalent to old behavior)',
-        () {
-      expect(joinMinedSentences(<String>['  これは一文です。 ']), 'これは一文です。');
-    });
+    test(
+      'single sentence is returned trimmed (equivalent to old behavior)',
+      () {
+        expect(joinMinedSentences(<String>['  これは一文です。 ']), 'これは一文です。');
+      },
+    );
 
     test('multiple sentences join with newline in order', () {
       expect(
@@ -38,10 +40,7 @@ void main() {
 
   group('mergeMiningAudioRanges', () {
     test('all null yields null (no audio to merge)', () {
-      expect(
-        mergeMiningAudioRanges(<AudioPlaybackRange?>[null, null]),
-        isNull,
-      );
+      expect(mergeMiningAudioRanges(<AudioPlaybackRange?>[null, null]), isNull);
     });
 
     test('same file merges to first start -> last end', () {
@@ -60,10 +59,7 @@ void main() {
 
     test('out-of-order ranges still take global min start / max end', () {
       final AudioPlaybackRange? merged = mergeMiningAudioRanges(
-        <AudioPlaybackRange?>[
-          range(0, 3200, 4100),
-          range(0, 1000, 1800),
-        ],
+        <AudioPlaybackRange?>[range(0, 3200, 4100), range(0, 1000, 1800)],
       );
       expect(merged!.startMs, 1000);
       expect(merged.endMs, 4100);
@@ -71,26 +67,21 @@ void main() {
 
     test('null gaps between present ranges are skipped, still merges', () {
       final AudioPlaybackRange? merged = mergeMiningAudioRanges(
-        <AudioPlaybackRange?>[
-          range(0, 1000, 1800),
-          null,
-          range(0, 3200, 4100),
-        ],
+        <AudioPlaybackRange?>[range(0, 1000, 1800), null, range(0, 3200, 4100)],
       );
       expect(merged!.startMs, 1000);
       expect(merged.endMs, 4100);
     });
 
-    test('cross-file (cross-chapter) degrades to null — never splice bad audio',
-        () {
-      final AudioPlaybackRange? merged = mergeMiningAudioRanges(
-        <AudioPlaybackRange?>[
-          range(0, 1000, 1800),
-          range(1, 200, 900),
-        ],
-      );
-      expect(merged, isNull);
-    });
+    test(
+      'cross-file (cross-chapter) degrades to null — never splice bad audio',
+      () {
+        final AudioPlaybackRange? merged = mergeMiningAudioRanges(
+          <AudioPlaybackRange?>[range(0, 1000, 1800), range(1, 200, 900)],
+        );
+        expect(merged, isNull);
+      },
+    );
 
     test('single present range is returned as-is', () {
       final AudioPlaybackRange? merged = mergeMiningAudioRanges(
@@ -129,10 +120,13 @@ void main() {
       );
       expect(draft.length, 3);
       expect(draft.isEmpty, isFalse);
-      expect(draft.prevSentences.map((e) => e.sentence).toList(),
-          <String>['前1。', '前2。']);
-      expect(
-          draft.nextSentences.map((e) => e.sentence).toList(), <String>['後1。']);
+      expect(draft.prevSentences.map((e) => e.sentence).toList(), <String>[
+        '前1。',
+        '前2。',
+      ]);
+      expect(draft.nextSentences.map((e) => e.sentence).toList(), <String>[
+        '後1。',
+      ]);
     });
 
     test('setContext filters blank / whitespace-only sentences', () {
@@ -218,66 +212,74 @@ void main() {
       expect(merged, isNull);
     });
 
-    test('prevSentences / nextSentences snapshots do not leak internal lists',
-        () {
-      final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.setContext(prev: <MiningDraftSentence>[s('前。')]);
-      expect(() => draft.prevSentences.add(s('x')), throwsUnsupportedError);
-      expect(() => draft.nextSentences.add(s('x')), throwsUnsupportedError);
-    });
+    test(
+      'prevSentences / nextSentences snapshots do not leak internal lists',
+      () {
+        final MiningSentenceDraft draft = MiningSentenceDraft();
+        draft.setContext(prev: <MiningDraftSentence>[s('前。')]);
+        expect(() => draft.prevSentences.add(s('x')), throwsUnsupportedError);
+        expect(() => draft.nextSentences.add(s('x')), throwsUnsupportedError);
+      },
+    );
   });
 
   group('buildSentenceContextPreview (Niratan 制卡前调整模态)', () {
     MiningDraftSentence s(String text) => MiningDraftSentence(sentence: text);
 
-    test('empty draft yields prev/next empty, total 0, current + offset echoed',
-        () {
-      final MiningSentenceDraft draft = MiningSentenceDraft();
-      final Map<String, Object?> p = buildSentenceContextPreview(
-        draft: draft,
-        current: '当前句。',
-        currentOffset: 3,
-      );
-      expect(p['prev'], <String>[]);
-      expect(p['next'], <String>[]);
-      expect(p['current'], '当前句。');
-      expect(p['currentOffset'], 3);
-      expect(p['total'], 0);
-    });
+    test(
+      'empty draft yields prev/next empty, total 0, current + offset echoed',
+      () {
+        final MiningSentenceDraft draft = MiningSentenceDraft();
+        final Map<String, Object?> p = buildSentenceContextPreview(
+          draft: draft,
+          current: '当前句。',
+          currentOffset: 3,
+        );
+        expect(p['prev'], <String>[]);
+        expect(p['next'], <String>[]);
+        expect(p['current'], '当前句。');
+        expect(p['currentOffset'], 3);
+        expect(p['total'], 0);
+      },
+    );
 
-    test('prev/next real texts echoed in reading order, total = prev + next',
-        () {
-      final MiningSentenceDraft draft = MiningSentenceDraft();
-      draft.setContext(
-        prev: <MiningDraftSentence>[s('前々。'), s('前。')],
-        next: <MiningDraftSentence>[s('后。')],
-      );
-      final Map<String, Object?> p = buildSentenceContextPreview(
-        draft: draft,
-        current: '当前。',
-        currentOffset: null,
-      );
-      expect(p['prev'], <String>['前々。', '前。']);
-      expect(p['next'], <String>['后。']);
-      expect(p['current'], '当前。');
-      expect(p['currentOffset'], isNull);
-      expect(p['total'], 3);
-    });
+    test(
+      'prev/next real texts echoed in reading order, total = prev + next',
+      () {
+        final MiningSentenceDraft draft = MiningSentenceDraft();
+        draft.setContext(
+          prev: <MiningDraftSentence>[s('前々。'), s('前。')],
+          next: <MiningDraftSentence>[s('后。')],
+        );
+        final Map<String, Object?> p = buildSentenceContextPreview(
+          draft: draft,
+          current: '当前。',
+          currentOffset: null,
+        );
+        expect(p['prev'], <String>['前々。', '前。']);
+        expect(p['next'], <String>['后。']);
+        expect(p['current'], '当前。');
+        expect(p['currentOffset'], isNull);
+        expect(p['total'], 3);
+      },
+    );
 
-    test('result is JSON-safe (bridge-serializable) — String/int/List<String>',
-        () {
-      final MiningSentenceDraft draft = MiningSentenceDraft()
-        ..setContext(prev: <MiningDraftSentence>[s('前。')]);
-      final Map<String, Object?> p = buildSentenceContextPreview(
-        draft: draft,
-        current: 'x',
-        currentOffset: 0,
-      );
-      expect(p['prev'], isA<List<String>>());
-      expect(p['next'], isA<List<String>>());
-      expect(p['current'], isA<String>());
-      expect(p['total'], isA<int>());
-    });
+    test(
+      'result is JSON-safe (bridge-serializable) — String/int/List<String>',
+      () {
+        final MiningSentenceDraft draft = MiningSentenceDraft()
+          ..setContext(prev: <MiningDraftSentence>[s('前。')]);
+        final Map<String, Object?> p = buildSentenceContextPreview(
+          draft: draft,
+          current: 'x',
+          currentOffset: 0,
+        );
+        expect(p['prev'], isA<List<String>>());
+        expect(p['next'], isA<List<String>>());
+        expect(p['current'], isA<String>());
+        expect(p['total'], isA<int>());
+      },
+    );
   });
 
   group('MiningSentenceDraft.editSentence (user-edited sentence text)', () {
@@ -296,30 +298,31 @@ void main() {
     MiningSentenceDraft draftWith({
       List<String> prev = const <String>[],
       List<String> next = const <String>[],
-    }) =>
-        MiningSentenceDraft()
-          ..setContext(
-            prev: <MiningDraftSentence>[for (final String p in prev) s(p)],
-            next: <MiningDraftSentence>[for (final String n in next) s(n)],
-          );
-
-    test('editing a context sentence feeds composeText, original text kept',
-        () {
-      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
-      expect(
-        draft.editSentence(
-          slot: SentenceContextSlot.prev,
-          index: 0,
-          text: '前一（改）。',
-        ),
-        isTrue,
+    }) => MiningSentenceDraft()
+      ..setContext(
+        prev: <MiningDraftSentence>[for (final String p in prev) s(p)],
+        next: <MiningDraftSentence>[for (final String n in next) s(n)],
       );
-      expect(draft.composeText('現在。'), '前一（改）。\n現在。');
-      // 原句仍在，供「还原」与重解析后贴回编辑用。
-      expect(draft.prevSentences.single.sentence, '前一。');
-      expect(draft.prevSentences.single.editedSentence, '前一（改）。');
-      expect(draft.prevSentences.single.effectiveSentence, '前一（改）。');
-    });
+
+    test(
+      'editing a context sentence feeds composeText, original text kept',
+      () {
+        final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+        expect(
+          draft.editSentence(
+            slot: SentenceContextSlot.prev,
+            index: 0,
+            text: '前一（改）。',
+          ),
+          isTrue,
+        );
+        expect(draft.composeText('現在。'), '前一（改）。\n現在。');
+        // 原句仍在，供「还原」与重解析后贴回编辑用。
+        expect(draft.prevSentences.single.sentence, '前一。');
+        expect(draft.prevSentences.single.editedSentence, '前一（改）。');
+        expect(draft.prevSentences.single.effectiveSentence, '前一（改）。');
+      },
+    );
 
     test('editing the current sentence overrides it in composeText', () {
       final MiningSentenceDraft draft = draftWith(next: <String>['後一。']);
@@ -340,31 +343,31 @@ void main() {
         text: '前一（改）。',
       );
       // 用户接着点「前加一句」：宿主整体重解析，前文变成两句，已改的那句后移一位。
-      draft.setContext(
-        prev: <MiningDraftSentence>[s('前二。'), s('前一。')],
-      );
+      draft.setContext(prev: <MiningDraftSentence>[s('前二。'), s('前一。')]);
       expect(draft.prevSentences[1].effectiveSentence, '前一（改）。');
       expect(draft.prevSentences[0].effectiveSentence, '前二。');
       expect(draft.composeText('現在。'), '前二。\n前一（改）。\n現在。');
     });
 
-    test('blank text restores the original instead of writing an empty line',
-        () {
-      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
-      draft.editSentence(
-        slot: SentenceContextSlot.prev,
-        index: 0,
-        text: '前一（改）。',
-      );
-      draft.editSentence(
-        slot: SentenceContextSlot.prev,
-        index: 0,
-        text: '   ',
-      );
-      expect(draft.prevSentences.single.editedSentence, isNull);
-      expect(draft.composeText('現在。'), '前一。\n現在。');
-      expect(draft.hasEdits, isFalse);
-    });
+    test(
+      'blank text restores the original instead of writing an empty line',
+      () {
+        final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+        draft.editSentence(
+          slot: SentenceContextSlot.prev,
+          index: 0,
+          text: '前一（改）。',
+        );
+        draft.editSentence(
+          slot: SentenceContextSlot.prev,
+          index: 0,
+          text: '   ',
+        );
+        expect(draft.prevSentences.single.editedSentence, isNull);
+        expect(draft.composeText('現在。'), '前一。\n現在。');
+        expect(draft.hasEdits, isFalse);
+      },
+    );
 
     test('editing back to the original text clears the edit', () {
       final MiningSentenceDraft draft = draftWith(next: <String>['後一。']);
@@ -374,11 +377,7 @@ void main() {
         text: '後一（改）。',
       );
       expect(draft.hasEdits, isTrue);
-      draft.editSentence(
-        slot: SentenceContextSlot.next,
-        index: 0,
-        text: '後一。',
-      );
+      draft.editSentence(slot: SentenceContextSlot.next, index: 0, text: '後一。');
       expect(draft.hasEdits, isFalse);
       expect(draft.nextSentences.single.editedSentence, isNull);
     });
@@ -390,11 +389,7 @@ void main() {
         index: 0,
         text: '現在（改）。',
       );
-      draft.editSentence(
-        slot: SentenceContextSlot.current,
-        index: 0,
-        text: '',
-      );
+      draft.editSentence(slot: SentenceContextSlot.current, index: 0, text: '');
       expect(draft.currentSentenceEdit, isNull);
       expect(draft.composeText('現在。'), '現在。');
     });
@@ -402,46 +397,44 @@ void main() {
     test('out-of-range index is a no-op and reports false', () {
       final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
       expect(
-        draft.editSentence(
-          slot: SentenceContextSlot.prev,
-          index: 3,
-          text: 'x',
-        ),
+        draft.editSentence(slot: SentenceContextSlot.prev, index: 3, text: 'x'),
         isFalse,
       );
       expect(draft.hasEdits, isFalse);
       expect(draft.composeText('現在。'), '前一。\n現在。');
     });
 
-    test('editing text never moves the audio range (mirrors sentenceOverride)',
-        () {
-      final MiningSentenceDraft draft = MiningSentenceDraft()
-        ..setContext(
-          prev: <MiningDraftSentence>[
-            s('前一。', file: 0, start: 100, end: 200),
-          ],
-          next: <MiningDraftSentence>[
-            s('後一。', file: 0, start: 500, end: 900),
-          ],
+    test(
+      'editing text never moves the audio range (mirrors sentenceOverride)',
+      () {
+        final MiningSentenceDraft draft = MiningSentenceDraft()
+          ..setContext(
+            prev: <MiningDraftSentence>[
+              s('前一。', file: 0, start: 100, end: 200),
+            ],
+            next: <MiningDraftSentence>[
+              s('後一。', file: 0, start: 500, end: 900),
+            ],
+          );
+        draft.editSentence(
+          slot: SentenceContextSlot.prev,
+          index: 0,
+          text: '前一（大改，长度完全不同）。',
         );
-      draft.editSentence(
-        slot: SentenceContextSlot.prev,
-        index: 0,
-        text: '前一（大改，长度完全不同）。',
-      );
-      draft.editSentence(
-        slot: SentenceContextSlot.current,
-        index: 0,
-        text: '現在（改）。',
-      );
-      final AudioPlaybackRange? merged = draft.composeAudioRange(
-        range(0, 250, 400),
-      );
-      expect(merged, isNotNull);
-      expect(merged!.startMs, 100);
-      expect(merged.endMs, 900);
-      expect(draft.prevSentences.single.audioRange?.startMs, 100);
-    });
+        draft.editSentence(
+          slot: SentenceContextSlot.current,
+          index: 0,
+          text: '現在（改）。',
+        );
+        final AudioPlaybackRange? merged = draft.composeAudioRange(
+          range(0, 250, 400),
+        );
+        expect(merged, isNotNull);
+        expect(merged!.startMs, 100);
+        expect(merged.endMs, 900);
+        expect(draft.prevSentences.single.audioRange?.startMs, 100);
+      },
+    );
 
     test('clear() drops edits along with the context', () {
       final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
@@ -515,8 +508,7 @@ void main() {
     MiningSentenceDraft draftWith({
       List<MiningDraftSentence> prev = const <MiningDraftSentence>[],
       List<MiningDraftSentence> next = const <MiningDraftSentence>[],
-    }) =>
-        MiningSentenceDraft()..setContext(prev: prev, next: next);
+    }) => MiningSentenceDraft()..setContext(prev: prev, next: next);
 
     test('removing a middle sentence drops it from composeText', () {
       final MiningSentenceDraft draft = draftWith(
@@ -674,26 +666,28 @@ void main() {
       expect(draft.composeText('現在。'), 'あい\n現在。');
     });
 
-    test('preview lists removed sentences with flags; total counts kept only',
-        () {
-      final MiningSentenceDraft draft = draftWith(
-        prev: <MiningDraftSentence>[s('前一。'), s('あい')],
-        next: <MiningDraftSentence>[s('後一。')],
-      );
-      draft.setSentenceRemoved(
-        slot: SentenceContextSlot.prev,
-        index: 1,
-        removed: true,
-      );
-      final Map<String, Object?> p = buildSentenceContextPreview(
-        draft: draft,
-        current: '現在。',
-      );
-      expect(p['prev'], <String>['前一。', 'あい']);
-      expect(p['prevRemoved'], <bool>[false, true]);
-      expect(p['nextRemoved'], <bool>[false]);
-      expect(p['total'], 2);
-    });
+    test(
+      'preview lists removed sentences with flags; total counts kept only',
+      () {
+        final MiningSentenceDraft draft = draftWith(
+          prev: <MiningDraftSentence>[s('前一。'), s('あい')],
+          next: <MiningDraftSentence>[s('後一。')],
+        );
+        draft.setSentenceRemoved(
+          slot: SentenceContextSlot.prev,
+          index: 1,
+          removed: true,
+        );
+        final Map<String, Object?> p = buildSentenceContextPreview(
+          draft: draft,
+          current: '現在。',
+        );
+        expect(p['prev'], <String>['前一。', 'あい']);
+        expect(p['prevRemoved'], <bool>[false, true]);
+        expect(p['nextRemoved'], <bool>[false]);
+        expect(p['total'], 2);
+      },
+    );
   });
 
   // BUG-3434：歌词模式与视频字幕共用的「相邻 cue 作上下文」切法。
@@ -768,22 +762,20 @@ void main() {
       int? section,
       int? ns,
       int? ne,
-    }) =>
-        AudioCue()
-          ..text = text
-          ..startMs = startMs
-          ..endMs = endMs
-          ..audioFileIndex = file
-          ..textFragmentId = section == null
-              ? ''
-              : SubtitleRematchCodec.encodeHit(
-                  sectionIndex: section,
-                  normCharStart: ns!,
-                  normCharEnd: ne!,
-                );
+    }) => AudioCue()
+      ..text = text
+      ..startMs = startMs
+      ..endMs = endMs
+      ..audioFileIndex = file
+      ..textFragmentId = section == null
+          ? ''
+          : SubtitleRematchCodec.encodeHit(
+              sectionIndex: section,
+              normCharStart: ns!,
+              normCharEnd: ne!,
+            );
 
-    test(
-        'next sentence across a chapter boundary keeps its own audio and '
+    test('next sentence across a chapter boundary keeps its own audio and '
         'never widens the merged clip to the whole chapter', () {
       // 单文件有声书（m4b）：第 0 章三句，第 1 章两句；查词句是第 0 章末句。
       final List<AudioCue> cues = <AudioCue>[
@@ -806,16 +798,18 @@ void main() {
       expect(next.startMs, 3000);
       expect(next.endMs, 4000);
 
-      final AudioPlaybackRange current =
-          miningCueAudioRange(cues: cues, cue: cues[2]);
-      final AudioPlaybackRange merged =
-          mergeMiningAudioRanges(<AudioPlaybackRange?>[current, next])!;
+      final AudioPlaybackRange current = miningCueAudioRange(
+        cues: cues,
+        cue: cues[2],
+      );
+      final AudioPlaybackRange merged = mergeMiningAudioRanges(
+        <AudioPlaybackRange?>[current, next],
+      )!;
       expect(merged.startMs, 2000, reason: 'must not start at chapter 0 head');
       expect(merged.endMs, 4000);
     });
 
-    test(
-        'previous sentence in the previous chapter on another audio file '
+    test('previous sentence in the previous chapter on another audio file '
         'stays on its own file so merging degrades to text-only', () {
       final List<AudioCue> cues = <AudioCue>[
         cue('前章末', 8000, 9000, section: 0, ns: 40, ne: 50),
@@ -842,8 +836,7 @@ void main() {
       );
     });
 
-    test(
-        'repeated short lines without positions resolve to the adjacent '
+    test('repeated short lines without positions resolve to the adjacent '
         'cue, not the first cue with the same text', () {
       final List<AudioCue> cues = <AudioCue>[
         cue('はい', 0, 500),
@@ -865,8 +858,7 @@ void main() {
       expect(prev.endMs, 2500);
     });
 
-    test(
-        'applies A/V delay, uses the supplied display text, and drops audio '
+    test('applies A/V delay, uses the supplied display text, and drops audio '
         'for a cue whose file is not loaded', () {
       final List<AudioCue> cues = <AudioCue>[
         cue('raw-a', 1000, 2000),

@@ -21,19 +21,18 @@ void main() {
   KeyDownEvent keyDown(
     LogicalKeyboardKey key, [
     ui.KeyEventDeviceType deviceType = ui.KeyEventDeviceType.keyboard,
-  ]) =>
-      KeyDownEvent(
-        physicalKey: const PhysicalKeyboardKey(0),
-        logicalKey: key,
-        timeStamp: Duration.zero,
-        deviceType: deviceType,
-      );
+  ]) => KeyDownEvent(
+    physicalKey: const PhysicalKeyboardKey(0),
+    logicalKey: key,
+    timeStamp: Duration.zero,
+    deviceType: deviceType,
+  );
 
   KeyUpEvent keyUp(LogicalKeyboardKey key) => KeyUpEvent(
-        physicalKey: const PhysicalKeyboardKey(0),
-        logicalKey: key,
-        timeStamp: Duration.zero,
-      );
+    physicalKey: const PhysicalKeyboardKey(0),
+    logicalKey: key,
+    timeStamp: Duration.zero,
+  );
 
   FushiShortcutRegistry registryWithBackOn(GamepadButton button) {
     final FushiShortcutRegistry registry = FushiShortcutRegistry()
@@ -54,28 +53,33 @@ void main() {
     required bool focusNavigationEnabled,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(MaterialApp(
-      navigatorKey: navKey,
-      home: const Scaffold(body: Text('home')),
-      builder: (BuildContext context, Widget? child) =>
-          wrapWithGlobalNavigation(
+    await tester.pumpWidget(
+      MaterialApp(
         navigatorKey: navKey,
-        registry: registry,
-        focusNavigationEnabled: focusNavigationEnabled,
-        child: child!,
+        home: const Scaffold(body: Text('home')),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(
+              navigatorKey: navKey,
+              registry: registry,
+              focusNavigationEnabled: focusNavigationEnabled,
+              child: child!,
+            ),
       ),
-    ));
-    navKey.currentState!.push(MaterialPageRoute<void>(
-      builder: (_) => const Scaffold(body: Text('second')),
-    ));
+    );
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('second')),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('second'), findsOneWidget);
     return navKey;
   }
 
   group('根因1：手柄绑定不再被实验性焦点导航开关吞掉', () {
-    testWidgets('焦点导航关闭（默认安装）时，B 绑 globalBack 仍能返回',
-        (WidgetTester tester) async {
+    testWidgets('焦点导航关闭（默认安装）时，B 绑 globalBack 仍能返回', (
+      WidgetTester tester,
+    ) async {
       await pumpTwoRoutes(
         tester,
         registry: registryWithBackOn(GamepadButton.b),
@@ -122,28 +126,27 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('second'),
-        findsOneWidget,
-        reason: 'B 已不是返回键，按它必须留在当前页',
-      );
+      expect(find.text('second'), findsOneWidget, reason: 'B 已不是返回键，按它必须留在当前页');
     });
 
-    testWidgets('未绑定的 B 被就地消费（不放行给 Android 的 BACK 兜底）',
-        (WidgetTester tester) async {
+    testWidgets('未绑定的 B 被就地消费（不放行给 Android 的 BACK 兜底）', (
+      WidgetTester tester,
+    ) async {
       await pumpTwoRoutes(
         tester,
         registry: registryWithBackOn(GamepadButton.rb),
         focusNavigationEnabled: false,
       );
 
-      final bool handled =
-          await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
+      final bool handled = await tester.sendKeyEvent(
+        LogicalKeyboardKey.gameButtonB,
+      );
 
       expect(
         handled,
         isTrue,
-        reason: 'B 未被任何处理器认领时必须由全局层吞掉，'
+        reason:
+            'B 未被任何处理器认领时必须由全局层吞掉，'
             '否则 Android 会合成 KEYCODE_BACK 绕过注册表退页',
       );
     });
@@ -153,12 +156,14 @@ void main() {
     test('B 的三个边沿都吞（返回动作发生在抬起边沿，只吞按下等于没修）', () {
       expect(
         gamepadSystemFallbackMustBeSwallowed(
-            keyDown(LogicalKeyboardKey.gameButtonB)),
+          keyDown(LogicalKeyboardKey.gameButtonB),
+        ),
         isTrue,
       );
       expect(
         gamepadSystemFallbackMustBeSwallowed(
-            keyUp(LogicalKeyboardKey.gameButtonB)),
+          keyUp(LogicalKeyboardKey.gameButtonB),
+        ),
         isTrue,
         reason: 'Android 的返回发生在 ACTION_UP，抬起边沿放行会照样合成出 BACK',
       );
@@ -177,7 +182,8 @@ void main() {
     test('A 不吞：它的系统兜底是 DPAD_CENTER（确认焦点控件），是有益能力', () {
       expect(
         gamepadSystemFallbackMustBeSwallowed(
-            keyDown(LogicalKeyboardKey.gameButtonA)),
+          keyDown(LogicalKeyboardKey.gameButtonA),
+        ),
         isFalse,
       );
     });
@@ -227,10 +233,16 @@ void main() {
         LogicalKeyboardKey.gameButtonThumbLeft,
         LogicalKeyboardKey.gameButtonThumbRight,
       ]) {
-        expect(gamepadSystemFallbackMustBeSwallowed(keyDown(key)), isTrue,
-            reason: '$key');
-        expect(gamepadSystemFallbackMustBeSwallowed(keyUp(key)), isTrue,
-            reason: '$key 抬起沿');
+        expect(
+          gamepadSystemFallbackMustBeSwallowed(keyDown(key)),
+          isTrue,
+          reason: '$key',
+        );
+        expect(
+          gamepadSystemFallbackMustBeSwallowed(keyUp(key)),
+          isTrue,
+          reason: '$key 抬起沿',
+        );
       }
     });
 
@@ -242,8 +254,11 @@ void main() {
         LogicalKeyboardKey.gameButtonRight2,
         LogicalKeyboardKey.gameButtonMode,
       ]) {
-        expect(gamepadSystemFallbackMustBeSwallowed(keyDown(key)), isFalse,
-            reason: '$key');
+        expect(
+          gamepadSystemFallbackMustBeSwallowed(keyDown(key)),
+          isFalse,
+          reason: '$key',
+        );
       }
     });
   });

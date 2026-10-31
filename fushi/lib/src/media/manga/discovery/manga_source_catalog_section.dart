@@ -63,20 +63,20 @@ class MangaSourceCatalog {
 
   /// 下拉选项（按 mokuro -> Mihon 的展示顺序，与卡片顺序一致）。
   List<DiscoverySourceOption> get sourceOptions => <DiscoverySourceOption>[
-        if (mokuroEnabled)
-          DiscoverySourceOption(
-            id: mokuroSourceId,
-            label: t.mihon_source_browse_mokuro,
-          ),
-        for (final MangaOnlineSourceRow source in mihonSources)
-          DiscoverySourceOption(
-            id: mihonSourceId(source),
-            label: mangaSourceDisplayName(
-              name: source.name,
-              language: source.language,
-            ),
-          ),
-      ];
+    if (mokuroEnabled)
+      DiscoverySourceOption(
+        id: mokuroSourceId,
+        label: t.mihon_source_browse_mokuro,
+      ),
+    for (final MangaOnlineSourceRow source in mihonSources)
+      DiscoverySourceOption(
+        id: mihonSourceId(source),
+        label: mangaSourceDisplayName(
+          name: source.name,
+          language: source.language,
+        ),
+      ),
+  ];
 
   /// 收窄到单个来源。[kDiscoveryAllSourcesId] 原样返回（「全部来源」不过滤）。
   ///
@@ -87,8 +87,9 @@ class MangaSourceCatalog {
     return MangaSourceCatalog(
       mokuroEnabled: mokuroEnabled && sourceId == mokuroSourceId,
       mihonSources: mihonSources
-          .where((MangaOnlineSourceRow source) =>
-              mihonSourceId(source) == sourceId)
+          .where(
+            (MangaOnlineSourceRow source) => mihonSourceId(source) == sourceId,
+          )
           .toList(growable: false),
       // OPDS 不在 [sourceOptions] 里，所以 [sourceId] 永远不会是某台 OPDS 服务器；
       // 用户选中了具体来源就意味着「只看这一个」，OPDS 卡片必须一并让位，
@@ -309,9 +310,9 @@ class _LanguageBadge extends StatelessWidget {
         language.isEmpty ? '?' : language.toUpperCase(),
         maxLines: 1,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: fushiNeutralSecondaryForeground(context),
-              fontWeight: FontWeight.w600,
-            ),
+          color: fushiNeutralSecondaryForeground(context),
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

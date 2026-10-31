@@ -17,7 +17,7 @@ class AnkiSyncClientRepository extends BaseAnkiRepository {
     required AnkiSyncSession? session,
     super.settingsStore,
   }) : _session = session,
-      _miner = session == null ? null : AnkiSyncMiner(session);
+       _miner = session == null ? null : AnkiSyncMiner(session);
 
   /// null = 本机没有 `fushi-anki-sync`（平台 / 安装包不带）。
   final AnkiSyncSession? _session;

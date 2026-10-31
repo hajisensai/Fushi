@@ -4,10 +4,11 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:meta/meta.dart';
 
-typedef ResumableDownloadOpen = Future<ResumableDownloadResponse> Function(
-  Uri uri,
-  Map<String, String> headers,
-);
+typedef ResumableDownloadOpen =
+    Future<ResumableDownloadResponse> Function(
+      Uri uri,
+      Map<String, String> headers,
+    );
 
 typedef ResumableDownloadProgress = void Function(int received, int? total);
 
@@ -162,8 +163,10 @@ class ResumableDownloader {
     return length;
   }
 
-  Future<File> _run(
-      {required int resumeOffset, required bool restarted}) async {
+  Future<File> _run({
+    required int resumeOffset,
+    required bool restarted,
+  }) async {
     final Uri uri = Uri.parse(url);
     final bool requestedRange = resumeOffset > 0;
     final Map<String, String> headers = <String, String>{};
@@ -194,8 +197,9 @@ class ResumableDownloader {
     }
 
     if (requestedRange && response.statusCode == HttpStatus.partialContent) {
-      final int? start =
-          _contentRangeStart(response.header(HttpHeaders.contentRangeHeader));
+      final int? start = _contentRangeStart(
+        response.header(HttpHeaders.contentRangeHeader),
+      );
       if (start != resumeOffset) {
         await response.stream.drain<void>();
         await _deleteFile(partFile);
@@ -215,13 +219,15 @@ class ResumableDownloader {
     }
 
     final int? total = _responseTotalSize(response, writeOffset);
-    onMeta?.call(ResumableDownloadMetaInfo(
-      etag: response.header(HttpHeaders.etagHeader),
-      lastModified: response.header(HttpHeaders.lastModifiedHeader),
-      totalBytes: expectedSize ?? total ?? sizeHint,
-      resumeOutcome: outcome,
-      writeOffset: writeOffset,
-    ));
+    onMeta?.call(
+      ResumableDownloadMetaInfo(
+        etag: response.header(HttpHeaders.etagHeader),
+        lastModified: response.header(HttpHeaders.lastModifiedHeader),
+        totalBytes: expectedSize ?? total ?? sizeHint,
+        resumeOutcome: outcome,
+        writeOffset: writeOffset,
+      ),
+    );
 
     final int? knownTotal = expectedSize ?? total ?? sizeHint;
     await _streamToPart(
@@ -328,8 +334,9 @@ class ResumableDownloader {
     ResumableDownloadResponse response,
     int writeOffset,
   ) {
-    final int? contentRangeTotal =
-        _contentRangeTotal(response.header(HttpHeaders.contentRangeHeader));
+    final int? contentRangeTotal = _contentRangeTotal(
+      response.header(HttpHeaders.contentRangeHeader),
+    );
     if (contentRangeTotal != null) return contentRangeTotal;
     final String? lengthText = response.header(HttpHeaders.contentLengthHeader);
     final int? contentLength = _parsePositiveInt(lengthText);

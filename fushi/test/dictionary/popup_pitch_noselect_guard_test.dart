@@ -49,43 +49,66 @@ void main() {
 
       setUpAll(() {
         final File file = File(relPath);
-        expect(file.existsSync(), isTrue,
-            reason: 'popup.css not found at ${file.absolute.path}');
+        expect(
+          file.existsSync(),
+          isTrue,
+          reason: 'popup.css not found at ${file.absolute.path}',
+        );
         css = file.readAsStringSync();
       });
 
       test('.pitch-group blocks text selection (both standard + -webkit)', () {
         final String body = _ruleBody(css, '.pitch-group');
-        expect(body, contains('user-select: none;'),
-            reason:
-                'pitch pronunciation area must set user-select:none, or the '
-                'katakana reading gets dragged into the mined SelectionText');
-        expect(body, contains('-webkit-user-select: none;'),
-            reason: 'WebKit/Blink WebView needs the -webkit- prefix too');
+        expect(
+          body,
+          contains('user-select: none;'),
+          reason:
+              'pitch pronunciation area must set user-select:none, or the '
+              'katakana reading gets dragged into the mined SelectionText',
+        );
+        expect(
+          body,
+          contains('-webkit-user-select: none;'),
+          reason: 'WebKit/Blink WebView needs the -webkit- prefix too',
+        );
       });
 
-      test('dictionary body keeps text selection (glossary lookup preserved)',
-          () {
-        // Popup body base rule stays selectable so nested lookup on glossary
-        // text still works. The fix must NOT globally disable selection.
-        expect(css, contains('-webkit-user-select: text;'),
-            reason: 'popup body must remain text-selectable for nested lookup');
-        final String glossary = _ruleBody(css, '.glossary-content');
-        expect(glossary.contains('user-select: none'), isFalse,
-            reason: 'glossary content must stay selectable (do not spill the '
-                'pitch user-select:none onto the dictionary body)');
-      });
+      test(
+        'dictionary body keeps text selection (glossary lookup preserved)',
+        () {
+          // Popup body base rule stays selectable so nested lookup on glossary
+          // text still works. The fix must NOT globally disable selection.
+          expect(
+            css,
+            contains('-webkit-user-select: text;'),
+            reason: 'popup body must remain text-selectable for nested lookup',
+          );
+          final String glossary = _ruleBody(css, '.glossary-content');
+          expect(
+            glossary.contains('user-select: none'),
+            isFalse,
+            reason:
+                'glossary content must stay selectable (do not spill the '
+                'pitch user-select:none onto the dictionary body)',
+          );
+        },
+      );
     });
   });
 
   test('the two extension vendor popup.css copies stay byte-identical', () {
     // Complements browser_extension_installer_test's drift guard: the pitch
     // user-select:none fix must land in BOTH vendor copies identically.
-    final List<int> assetsBytes =
-        File('assets/browser_extension/vendor/popup.css').readAsBytesSync();
-    final List<int> toolsBytes =
-        File('../tools/browser-extension/vendor/popup.css').readAsBytesSync();
-    expect(assetsBytes, toolsBytes,
-        reason: 'extension vendor popup.css copies diverged');
+    final List<int> assetsBytes = File(
+      'assets/browser_extension/vendor/popup.css',
+    ).readAsBytesSync();
+    final List<int> toolsBytes = File(
+      '../tools/browser-extension/vendor/popup.css',
+    ).readAsBytesSync();
+    expect(
+      assetsBytes,
+      toolsBytes,
+      reason: 'extension vendor popup.css copies diverged',
+    );
   });
 }

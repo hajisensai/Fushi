@@ -17,13 +17,17 @@ import 'package:fushi/src/shortcuts/reader_space_override.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
-  final File webviewFile =
-      File('lib/src/pages/implementations/dictionary_popup_webview.dart');
+  final File webviewFile = File(
+    'lib/src/pages/implementations/dictionary_popup_webview.dart',
+  );
   late String code;
 
   setUpAll(() {
-    expect(webviewFile.existsSync(), isTrue,
-        reason: '弹窗 WebView 源文件必须存在（测试须在 fushi/ 下运行）');
+    expect(
+      webviewFile.existsSync(),
+      isTrue,
+      reason: '弹窗 WebView 源文件必须存在（测试须在 fushi/ 下运行）',
+    );
     code = maskComments(webviewFile.readAsStringSync());
   });
 
@@ -31,8 +35,9 @@ void main() {
     test('showMenu 之前就发起 _selectedTextAcrossFrames', () {
       // 玻璃重设计后菜单走共享 showFushiMenu（自绘菜单），不变式不变：
       // 选区快照必须在 await 菜单之前发起。
-      final int menuIdx =
-          code.indexOf('showFushiMenu<_PopupContextMenuAction>');
+      final int menuIdx = code.indexOf(
+        'showFushiMenu<_PopupContextMenuAction>',
+      );
       expect(menuIdx, greaterThan(0), reason: 'Windows 右键菜单入口必须还在');
 
       final int ctxIdx = code.indexOf('Future<void> _showWindowsContextMenu');
@@ -42,7 +47,8 @@ void main() {
       expect(
         beforeMenu.contains('_selectedTextAcrossFrames()'),
         isTrue,
-        reason: '选区是易失状态：必须在 await showMenu **之前**取快照。'
+        reason:
+            '选区是易失状态：必须在 await showMenu **之前**取快照。'
             '放到菜单关闭之后再读 → 焦点转移/弹窗 dismiss 后拿空串 → 静默早退 '
             '= 用户看到的「点复制没反应」（BUG-1451）。',
       );
@@ -79,7 +85,8 @@ void main() {
       expect(
         rawSetData,
         1,
-        reason: '写剪贴板必须只有 _copySelectionToClipboard 一处；'
+        reason:
+            '写剪贴板必须只有 _copySelectionToClipboard 一处；'
             '多出的裸 Clipboard.setData 意味着某条入口绕过了统一反馈语义。',
       );
     });
@@ -90,7 +97,8 @@ void main() {
       expect(
         code.contains('onKeyEvent: _handleDesktopCopyKey'),
         isTrue,
-        reason: 'Windows fork 不转发键盘 → WebView2 内原生 Ctrl+C 永不触发，'
+        reason:
+            'Windows fork 不转发键盘 → WebView2 内原生 Ctrl+C 永不触发，'
             '必须由 Flutter 侧 Focus 接住（BUG-402 只修了阅读器，弹窗漏修）。',
       );
     });
@@ -103,7 +111,8 @@ void main() {
       );
       expect(
         code.contains(
-            "import 'package:fushi/src/shortcuts/reader_space_override.dart'"),
+          "import 'package:fushi/src/shortcuts/reader_space_override.dart'",
+        ),
         isTrue,
       );
     });
@@ -112,35 +121,52 @@ void main() {
       final int start = code.indexOf('KeyEventResult _handleDesktopCopyKey');
       expect(start, greaterThan(0));
       final String body = code.substring(start, start + 700);
-      expect(body.contains('KeyEventResult.ignored'), isTrue,
-          reason: '非 KeyDown / 非命中一律 ignored，绝不吞键。');
+      expect(
+        body.contains('KeyEventResult.ignored'),
+        isTrue,
+        reason: '非 KeyDown / 非命中一律 ignored，绝不吞键。',
+      );
       expect(body.contains('KeyEventResult.handled'), isTrue);
     });
   });
 
   group('BUG-1451 谓词边界（复用侧的回归护栏）', () {
     test('Ctrl+C 在 Windows 命中、其它组合不命中', () {
-      bool hit(LogicalKeyboardKey key, Set<ModifierKey> mods,
-              {bool isWindows = true}) =>
-          readerShouldHandleDesktopCopy(
-              key: key, modifiers: mods, isWindows: isWindows);
+      bool hit(
+        LogicalKeyboardKey key,
+        Set<ModifierKey> mods, {
+        bool isWindows = true,
+      }) => readerShouldHandleDesktopCopy(
+        key: key,
+        modifiers: mods,
+        isWindows: isWindows,
+      );
 
-      expect(hit(LogicalKeyboardKey.keyC, <ModifierKey>{ModifierKey.ctrl}),
-          isTrue);
+      expect(
+        hit(LogicalKeyboardKey.keyC, <ModifierKey>{ModifierKey.ctrl}),
+        isTrue,
+      );
       // 制卡默认 Ctrl+Enter：必须不被复制兼容层吃掉。
-      expect(hit(LogicalKeyboardKey.enter, <ModifierKey>{ModifierKey.ctrl}),
-          isFalse);
+      expect(
+        hit(LogicalKeyboardKey.enter, <ModifierKey>{ModifierKey.ctrl}),
+        isFalse,
+      );
       // 视频 scope 的裸 C（shader 对比）不受影响。
       expect(hit(LogicalKeyboardKey.keyC, <ModifierKey>{}), isFalse);
       expect(
-          hit(LogicalKeyboardKey.keyC,
-              <ModifierKey>{ModifierKey.ctrl, ModifierKey.shift}),
-          isFalse);
+        hit(LogicalKeyboardKey.keyC, <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.shift,
+        }),
+        isFalse,
+      );
       // 非 Windows 的原生 WebView 自带 copy，接管会双重处理。
       expect(
-          hit(LogicalKeyboardKey.keyC, <ModifierKey>{ModifierKey.ctrl},
-              isWindows: false),
-          isFalse);
+        hit(LogicalKeyboardKey.keyC, <ModifierKey>{
+          ModifierKey.ctrl,
+        }, isWindows: false),
+        isFalse,
+      );
     });
   });
 }

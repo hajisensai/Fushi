@@ -20,19 +20,19 @@ void main() {
   /// scope 未命中后兜底解析它。B 的默认与派发另有下面一组断言。
   const Map<GamepadButton, ShortcutAction> expected =
       <GamepadButton, ShortcutAction>{
-    GamepadButton.a: ShortcutAction.videoTogglePlayPause,
-    GamepadButton.lb: ShortcutAction.videoSeekBackward,
-    GamepadButton.dpadLeft: ShortcutAction.videoSeekBackward,
-    GamepadButton.rb: ShortcutAction.videoSeekForward,
-    GamepadButton.dpadRight: ShortcutAction.videoSeekForward,
-    GamepadButton.dpadUp: ShortcutAction.videoVolumeUp,
-    GamepadButton.dpadDown: ShortcutAction.videoVolumeDown,
-    GamepadButton.x: ShortcutAction.videoPreviousSubtitle,
-    GamepadButton.y: ShortcutAction.videoNextSubtitle,
-    GamepadButton.lt: ShortcutAction.videoReplayCurrentSubtitle,
-    GamepadButton.rt: ShortcutAction.videoToggleFullscreen,
-    GamepadButton.start: ShortcutAction.videoToggleSubtitleList,
-  };
+        GamepadButton.a: ShortcutAction.videoTogglePlayPause,
+        GamepadButton.lb: ShortcutAction.videoSeekBackward,
+        GamepadButton.dpadLeft: ShortcutAction.videoSeekBackward,
+        GamepadButton.rb: ShortcutAction.videoSeekForward,
+        GamepadButton.dpadRight: ShortcutAction.videoSeekForward,
+        GamepadButton.dpadUp: ShortcutAction.videoVolumeUp,
+        GamepadButton.dpadDown: ShortcutAction.videoVolumeDown,
+        GamepadButton.x: ShortcutAction.videoPreviousSubtitle,
+        GamepadButton.y: ShortcutAction.videoNextSubtitle,
+        GamepadButton.lt: ShortcutAction.videoReplayCurrentSubtitle,
+        GamepadButton.rt: ShortcutAction.videoToggleFullscreen,
+        GamepadButton.start: ShortcutAction.videoToggleSubtitleList,
+      };
 
   const List<TargetPlatform> platforms = <TargetPlatform>[
     TargetPlatform.windows,
@@ -49,9 +49,9 @@ void main() {
             ShortcutDefaults.forPlatform(platform);
         expected.forEach((GamepadButton button, ShortcutAction action) {
           expect(
-            defaults[action]!
-                .gamepadBindings
-                .map((GamepadBinding b) => b.button),
+            defaults[action]!.gamepadBindings.map(
+              (GamepadBinding b) => b.button,
+            ),
             contains(button),
             reason: '${button.label} → ${action.key} missing on $platform',
           );
@@ -59,19 +59,23 @@ void main() {
       }
     });
 
-    test(
-        'no video-scope gamepad button is owned by more than one action '
+    test('no video-scope gamepad button is owned by more than one action '
         '(no shadowed gamepad default on the video page)', () {
       final Map<ShortcutAction, ShortcutBindingSet> defaults =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
       final Map<GamepadButton, ShortcutAction> seen =
           <GamepadButton, ShortcutAction>{};
-      for (final ShortcutAction action
-          in ShortcutAction.actionsForScope(ShortcutScope.video)) {
+      for (final ShortcutAction action in ShortcutAction.actionsForScope(
+        ShortcutScope.video,
+      )) {
         for (final GamepadBinding gp in defaults[action]!.gamepadBindings) {
-          expect(seen.containsKey(gp.button), isFalse,
-              reason: '${gp.button} bound to both ${seen[gp.button]?.key} and '
-                  '${action.key} — the later one is shadowed');
+          expect(
+            seen.containsKey(gp.button),
+            isFalse,
+            reason:
+                '${gp.button} bound to both ${seen[gp.button]?.key} and '
+                '${action.key} — the later one is shadowed',
+          );
           seen[gp.button] = action;
         }
       }
@@ -84,9 +88,9 @@ void main() {
         final Map<ShortcutAction, ShortcutBindingSet> defaults =
             ShortcutDefaults.forPlatform(platform);
         expect(
-          defaults[ShortcutAction.globalBack]!
-              .gamepadBindings
-              .map((GamepadBinding b) => b.button),
+          defaults[ShortcutAction.globalBack]!.gamepadBindings.map(
+            (GamepadBinding b) => b.button,
+          ),
           contains(GamepadButton.b),
           reason: 'B → global_back missing on $platform',
         );
@@ -94,8 +98,9 @@ void main() {
       // 且 video scope 自己不得再有任何动作占用 B，否则兜底永远轮不到。
       final Map<ShortcutAction, ShortcutBindingSet> win =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
-      for (final ShortcutAction action
-          in ShortcutAction.actionsForScope(ShortcutScope.video)) {
+      for (final ShortcutAction action in ShortcutAction.actionsForScope(
+        ShortcutScope.video,
+      )) {
         expect(
           win[action]!.gamepadBindings.map((GamepadBinding b) => b.button),
           isNot(contains(GamepadButton.b)),
@@ -104,26 +109,28 @@ void main() {
       }
     });
 
-    test('adding video gamepad defaults did not change video keyboard defaults',
-        () {
-      // The new mapping only ADDS gamepad bindings — the keyboard defaults that
-      // users may have persisted must be untouched, so the v4→v5 migration's
-      // "keyboard untouched" judgement stays valid.
-      final Map<ShortcutAction, ShortcutBindingSet> win =
-          ShortcutDefaults.forPlatform(TargetPlatform.windows);
-      expect(
-        win[ShortcutAction.videoTogglePlayPause]!
-            .keyboardBindings
-            .map((InputBinding b) => b.key),
-        contains(LogicalKeyboardKey.space),
-      );
-      expect(
-        win[ShortcutAction.videoSeekBackward]!
-            .keyboardBindings
-            .map((InputBinding b) => b.key),
-        contains(LogicalKeyboardKey.arrowLeft),
-      );
-    });
+    test(
+      'adding video gamepad defaults did not change video keyboard defaults',
+      () {
+        // The new mapping only ADDS gamepad bindings — the keyboard defaults that
+        // users may have persisted must be untouched, so the v4→v5 migration's
+        // "keyboard untouched" judgement stays valid.
+        final Map<ShortcutAction, ShortcutBindingSet> win =
+            ShortcutDefaults.forPlatform(TargetPlatform.windows);
+        expect(
+          win[ShortcutAction.videoTogglePlayPause]!.keyboardBindings.map(
+            (InputBinding b) => b.key,
+          ),
+          contains(LogicalKeyboardKey.space),
+        );
+        expect(
+          win[ShortcutAction.videoSeekBackward]!.keyboardBindings.map(
+            (InputBinding b) => b.key,
+          ),
+          contains(LogicalKeyboardKey.arrowLeft),
+        );
+      },
+    );
   });
 
   group('resolveGamepad in the video scope', () {
@@ -144,8 +151,10 @@ void main() {
         ..loadDefaults(TargetPlatform.windows);
       // L3 / R3 / Select / Mode are intentionally left free for user rebind.
       expect(
-        registry.resolveGamepad(GamepadButton.thumbLeft,
-            scope: ShortcutScope.video),
+        registry.resolveGamepad(
+          GamepadButton.thumbLeft,
+          scope: ShortcutScope.video,
+        ),
         isNull,
       );
     });
@@ -197,8 +206,7 @@ void main() {
       });
     });
 
-    test(
-        'a video action whose keyboard the user rebound is NOT force-restored '
+    test('a video action whose keyboard the user rebound is NOT force-restored '
         '(never clobber a user edit)', () {
       // User removed Space from play/pause → the migration must leave their
       // snapshot alone, so A stays unbound for that action.
@@ -225,8 +233,10 @@ void main() {
       // Untouched siblings still get their gamepad defaults. B 现在属于
       // universal 的「返回上一级」（v8 统一），故在 universal scope 里断言。
       expect(
-        registry.resolveGamepad(GamepadButton.b,
-            scope: ShortcutScope.universal),
+        registry.resolveGamepad(
+          GamepadButton.b,
+          scope: ShortcutScope.universal,
+        ),
         ShortcutAction.globalBack,
       );
     });

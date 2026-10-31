@@ -11,8 +11,9 @@ import '../helpers/source_guard.dart';
 Directory? _findRepoRoot() {
   Directory dir = Directory.current;
   for (int i = 0; i < 6; i++) {
-    final Directory candidate =
-        Directory(p.join(dir.path, 'native', 'galgame_hook'));
+    final Directory candidate = Directory(
+      p.join(dir.path, 'native', 'galgame_hook'),
+    );
     if (candidate.existsSync()) return dir;
     final Directory parent = dir.parent;
     if (parent.path == dir.path) break;
@@ -24,38 +25,51 @@ Directory? _findRepoRoot() {
 void main() {
   group('资源↔文本配对窗口两侧同值（BUG-1159）', () {
     test(
-        'native kKirikiriFollowingTextWindowMs == Dart kGalVoicePairingWindowMs',
-        () {
-      final Directory? root = _findRepoRoot();
-      expect(
-        root,
-        isNotNull,
-        reason: '找不到仓库根（应含 native/galgame_hook），无法校验窗口一致性',
-      );
-      final File header = File(
-        p.join(root!.path, 'native', 'galgame_hook', 'hook',
-            'voice_resource_pairing.h'),
-      );
-      expect(header.existsSync(), isTrue,
-          reason: '缺少 ${header.path}——配对窗口守卫失去依据');
+      'native kKirikiriFollowingTextWindowMs == Dart kGalVoicePairingWindowMs',
+      () {
+        final Directory? root = _findRepoRoot();
+        expect(
+          root,
+          isNotNull,
+          reason: '找不到仓库根（应含 native/galgame_hook），无法校验窗口一致性',
+        );
+        final File header = File(
+          p.join(
+            root!.path,
+            'native',
+            'galgame_hook',
+            'hook',
+            'voice_resource_pairing.h',
+          ),
+        );
+        expect(
+          header.existsSync(),
+          isTrue,
+          reason: '缺少 ${header.path}——配对窗口守卫失去依据',
+        );
 
-      final RegExp pattern = RegExp(
-        r'kKirikiriFollowingTextWindowMs\s*=\s*(\d+)',
-      );
-      final Match? match = pattern.firstMatch(header.readAsStringSync());
-      expect(match, isNotNull,
+        final RegExp pattern = RegExp(
+          r'kKirikiriFollowingTextWindowMs\s*=\s*(\d+)',
+        );
+        final Match? match = pattern.firstMatch(header.readAsStringSync());
+        expect(
+          match,
+          isNotNull,
           reason:
-              'voice_resource_pairing.h 里找不到 kKirikiriFollowingTextWindowMs');
+              'voice_resource_pairing.h 里找不到 kKirikiriFollowingTextWindowMs',
+        );
 
-      final int nativeWindowMs = int.parse(match!.group(1)!);
-      expect(
-        nativeWindowMs,
-        kGalVoicePairingWindowMs,
-        reason: 'native 打标窗口与 Dart 收标窗口必须同值：native 在窗口内配上就把 '
-            'TextSlot::seq 写进资源名，Dart 若用更小的窗口就会拒收自己这条 marker，'
-            '而带 marker 的资源又不允许回退时间窗兜底，结果整句降级成 loopback。',
-      );
-    });
+        final int nativeWindowMs = int.parse(match!.group(1)!);
+        expect(
+          nativeWindowMs,
+          kGalVoicePairingWindowMs,
+          reason:
+              'native 打标窗口与 Dart 收标窗口必须同值：native 在窗口内配上就把 '
+              'TextSlot::seq 写进资源名，Dart 若用更小的窗口就会拒收自己这条 marker，'
+              '而带 marker 的资源又不允许回退时间窗兜底，结果整句降级成 loopback。',
+        );
+      },
+    );
 
     test('eventId 命中时，native 窗口上界内的资源必须被接受', () {
       // native 保证 0 <= textTs - resourceTick <= kKirikiriFollowingTextWindowMs，
@@ -116,12 +130,22 @@ void main() {
       final Directory? root = _findRepoRoot();
       expect(root, isNotNull, reason: '找不到仓库根（应含 native/galgame_hook）');
       selectorSource = File(
-        p.join(root!.path, 'native', 'galgame_hook', 'include',
-            'luna_text_selector.h'),
+        p.join(
+          root!.path,
+          'native',
+          'galgame_hook',
+          'include',
+          'luna_text_selector.h',
+        ),
       ).readAsStringSync();
       injectorSource = File(
-        p.join(root.path, 'native', 'galgame_hook', 'injector',
-            'injector_main.cpp'),
+        p.join(
+          root.path,
+          'native',
+          'galgame_hook',
+          'injector',
+          'injector_main.cpp',
+        ),
       ).readAsStringSync();
     });
 
@@ -131,15 +155,19 @@ void main() {
       final int foldStart = selectorSource.indexOf(
         'inline int LunaNormalizedTextLength(',
       );
-      expect(foldStart, greaterThanOrEqualTo(0),
-          reason: '找不到 LunaNormalizedTextLength——折叠守卫失去依据');
+      expect(
+        foldStart,
+        greaterThanOrEqualTo(0),
+        reason: '找不到 LunaNormalizedTextLength——折叠守卫失去依据',
+      );
       final int foldEnd = selectorSource.indexOf(
         'LunaNormalizedTextLengthForHook',
         foldStart,
       );
       expect(foldEnd, greaterThan(foldStart));
-      final String body =
-          maskComments(selectorSource.substring(foldStart, foldEnd));
+      final String body = maskComments(
+        selectorSource.substring(foldStart, foldEnd),
+      );
       expect(
         body.contains('if (doubled) return k;'),
         isFalse,
@@ -156,12 +184,16 @@ void main() {
       final int faceStart = selectorSource.indexOf(
         'inline uint64_t LunaTextFaceIdFrom(',
       );
-      expect(faceStart, greaterThanOrEqualTo(0),
-          reason: '找不到 LunaTextFaceIdFrom——分面守卫失去依据');
+      expect(
+        faceStart,
+        greaterThanOrEqualTo(0),
+        reason: '找不到 LunaTextFaceIdFrom——分面守卫失去依据',
+      );
       final int faceEnd = selectorSource.indexOf('\n}', faceStart);
       expect(faceEnd, greaterThan(faceStart));
-      final String body =
-          maskComments(selectorSource.substring(faceStart, faceEnd));
+      final String body = maskComments(
+        selectorSource.substring(faceStart, faceEnd),
+      );
       expect(
         body.contains('&ctx2, sizeof(ctx2)'),
         isTrue,
@@ -182,31 +214,40 @@ void main() {
       // 所以这条登记必须继续为**每一行**执行——漏一行，那一行的 face 就是 0，消费期只能
       // 退回精确匹配，BUG-1159 原样复发。
       final int fnStart = injectorSource.indexOf('bool LunaShouldWriteLine(');
-      expect(fnStart, greaterThanOrEqualTo(0),
-          reason: '找不到 LunaShouldWriteLine——face 登记守卫失去依据');
-      final int fnEnd = injectorSource.indexOf(
-        '// ── Luna_Start',
+      expect(
         fnStart,
+        greaterThanOrEqualTo(0),
+        reason: '找不到 LunaShouldWriteLine——face 登记守卫失去依据',
       );
+      final int fnEnd = injectorSource.indexOf('// ── Luna_Start', fnStart);
       expect(fnEnd, greaterThan(fnStart));
-      final String body =
-          maskComments(injectorSource.substring(fnStart, fnEnd));
+      final String body = maskComments(
+        injectorSource.substring(fnStart, fnEnd),
+      );
       // 位置在（剥过注释的）函数体内取：挡住「调用被注释掉」的假绿，也挡住「函数体里
       // 没有、却命中了文件后面别处那一处」的越界命中。
-      final int noteAt =
-          body.indexOf('g_lunaTextSelector.NoteFace(thread_id, face_id);');
-      expect(noteAt, greaterThanOrEqualTo(0),
-          reason: 'LunaShouldWriteLine 必须显式调用 NoteFace 登记 hook 面');
+      final int noteAt = body.indexOf(
+        'g_lunaTextSelector.NoteFace(thread_id, face_id);',
+      );
+      expect(
+        noteAt,
+        greaterThanOrEqualTo(0),
+        reason: 'LunaShouldWriteLine 必须显式调用 NoteFace 登记 hook 面',
+      );
       // v13：采集期不得再做选定线程准入 —— 在这里丢掉的行，用户换线程后永远追不回来。
       expect(
         body,
         isNot(contains('g_lunaTextSelector.AcceptsLine(')),
-        reason: '选定线程过滤已挪到消费期（见 GalHookSessionController.'
+        reason:
+            '选定线程过滤已挪到消费期（见 GalHookSessionController.'
             '_acceptsLineFromSelectedThread）；采集期再丢行就白分道了',
       );
       // face 登记必须**无条件**发生在伪影判定之外的路径上，否则伪影线程一转正就没有 face。
-      expect(body.indexOf('is_artifact'), lessThan(noteAt),
-          reason: '伪影行先挡掉，其余每一行都要登记 face');
+      expect(
+        body.indexOf('is_artifact'),
+        lessThan(noteAt),
+        reason: '伪影行先挡掉，其余每一行都要登记 face',
+      );
     });
   });
 }

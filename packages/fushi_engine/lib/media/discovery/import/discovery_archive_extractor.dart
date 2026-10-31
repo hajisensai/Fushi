@@ -16,17 +16,15 @@ import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
 /// 测试注入口：替换真实子进程执行。
-typedef DiscoveryProcessRunner = Future<ProcessResult> Function(
-  String executable,
-  List<String> arguments,
-);
+typedef DiscoveryProcessRunner =
+    Future<ProcessResult> Function(String executable, List<String> arguments);
 
 class DiscoveryArchiveExtractor {
   DiscoveryArchiveExtractor({
     DiscoveryProcessRunner? runProcess,
     String? sevenZipOverride,
-  })  : _runProcess = runProcess ?? Process.run,
-        _sevenZipOverride = sevenZipOverride;
+  }) : _runProcess = runProcess ?? Process.run,
+       _sevenZipOverride = sevenZipOverride;
 
   final DiscoveryProcessRunner _runProcess;
   final String? _sevenZipOverride;
@@ -62,8 +60,11 @@ class DiscoveryArchiveExtractor {
             <String>[name],
           );
           if (result.exitCode == 0) {
-            final String path =
-                (result.stdout as String).trim().split('\n').first.trim();
+            final String path = (result.stdout as String)
+                .trim()
+                .split('\n')
+                .first
+                .trim();
             if (path.isNotEmpty) return path;
           }
         } catch (_) {
@@ -79,8 +80,10 @@ class DiscoveryArchiveExtractor {
   }
 
   /// 解压 [archivePath] 到 [intoDir]（不存在会创建）。成功返回解出的目录。
-  Future<Directory> extract(String archivePath,
-      {required String intoDir}) async {
+  Future<Directory> extract(
+    String archivePath, {
+    required String intoDir,
+  }) async {
     final Directory target = Directory(intoDir);
     await target.create(recursive: true);
 

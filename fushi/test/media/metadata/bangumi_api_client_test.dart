@@ -13,37 +13,40 @@ import 'package:http/testing.dart';
 void main() {
   group('BangumiApiClient.searchSubjects', () {
     test(
-        'POST /search/subjects：UA/Content-Type 头、body 含 keyword+filter.type、limit query',
-        () async {
-      Map<String, String>? headers;
-      Object? body;
-      Uri? uri;
-      final MockClient client = MockClient((http.Request req) async {
-        headers = req.headers;
-        body = jsonDecode(req.body);
-        uri = req.url;
-        return http.Response.bytes(utf8.encode('{"data":[]}'), 200);
-      });
-      final BangumiApiClient api =
-          BangumiApiClient(client: client, userAgent: 'ua/test');
+      'POST /search/subjects：UA/Content-Type 头、body 含 keyword+filter.type、limit query',
+      () async {
+        Map<String, String>? headers;
+        Object? body;
+        Uri? uri;
+        final MockClient client = MockClient((http.Request req) async {
+          headers = req.headers;
+          body = jsonDecode(req.body);
+          uri = req.url;
+          return http.Response.bytes(utf8.encode('{"data":[]}'), 200);
+        });
+        final BangumiApiClient api = BangumiApiClient(
+          client: client,
+          userAgent: 'ua/test',
+        );
 
-      final BangumiRawResponse res = await api.searchSubjects(
-        '鬼滅',
-        subjectType: kBangumiSubjectTypeGame,
-        limit: 5,
-      );
+        final BangumiRawResponse res = await api.searchSubjects(
+          '鬼滅',
+          subjectType: kBangumiSubjectTypeGame,
+          limit: 5,
+        );
 
-      expect(res.statusCode, 200);
-      expect(res.isOk, isTrue);
-      expect(uri?.path, '/v0/search/subjects');
-      expect(uri?.queryParameters['limit'], '5');
-      expect(headers?['user-agent'], 'ua/test');
-      expect(headers?['content-type'], contains('application/json'));
-      final Map<String, Object?> decoded =
-          (body as Map).cast<String, Object?>();
-      expect(decoded['keyword'], '鬼滅');
-      expect((decoded['filter'] as Map)['type'], <int>[4]);
-    });
+        expect(res.statusCode, 200);
+        expect(res.isOk, isTrue);
+        expect(uri?.path, '/v0/search/subjects');
+        expect(uri?.queryParameters['limit'], '5');
+        expect(headers?['user-agent'], 'ua/test');
+        expect(headers?['content-type'], contains('application/json'));
+        final Map<String, Object?> decoded = (body as Map)
+            .cast<String, Object?>();
+        expect(decoded['keyword'], '鬼滅');
+        expect((decoded['filter'] as Map)['type'], <int>[4]);
+      },
+    );
 
     test('limit 超 50 被 clamp 到 50', () async {
       Uri? uri;
@@ -51,10 +54,10 @@ void main() {
         uri = req.url;
         return http.Response.bytes(utf8.encode('{}'), 200);
       });
-      await BangumiApiClient(client: client, userAgent: 'ua').searchSubjects(
-          'x',
-          subjectType: kBangumiSubjectTypeAnime,
-          limit: 999);
+      await BangumiApiClient(
+        client: client,
+        userAgent: 'ua',
+      ).searchSubjects('x', subjectType: kBangumiSubjectTypeAnime, limit: 999);
       expect(uri?.queryParameters['limit'], '50');
     });
 
@@ -64,8 +67,10 @@ void main() {
         body = jsonDecode(req.body);
         return http.Response.bytes(utf8.encode('{}'), 200);
       });
-      await BangumiApiClient(client: client, userAgent: 'ua')
-          .searchSubjects('x', subjectType: kBangumiSubjectTypeBook);
+      await BangumiApiClient(
+        client: client,
+        userAgent: 'ua',
+      ).searchSubjects('x', subjectType: kBangumiSubjectTypeBook);
       expect(((body as Map)['filter'] as Map)['type'], <int>[1]);
     });
   });
@@ -79,9 +84,10 @@ void main() {
         uri = req.url;
         return http.Response.bytes(utf8.encode('{"id":123}'), 200);
       });
-      final BangumiRawResponse res =
-          await BangumiApiClient(client: client, userAgent: 'ua/x')
-              .fetchSubject('123');
+      final BangumiRawResponse res = await BangumiApiClient(
+        client: client,
+        userAgent: 'ua/x',
+      ).fetchSubject('123');
 
       expect(uri?.path, '/v0/subjects/123');
       expect(headers?['user-agent'], 'ua/x');
@@ -95,9 +101,10 @@ void main() {
         (http.Request req) async =>
             http.Response.bytes(utf8.encode('{"name_cn":"鬼滅の刃"}'), 200),
       );
-      final BangumiRawResponse res =
-          await BangumiApiClient(client: client, userAgent: 'ua')
-              .fetchSubject('1');
+      final BangumiRawResponse res = await BangumiApiClient(
+        client: client,
+        userAgent: 'ua',
+      ).fetchSubject('1');
       expect(res.body, contains('鬼滅の刃'));
     });
   });
@@ -108,17 +115,19 @@ void main() {
         final MockClient client = MockClient(
           (http.Request req) async => http.Response('err', code),
         );
-        final BangumiRawResponse res =
-            await BangumiApiClient(client: client, userAgent: 'ua')
-                .fetchSubject('1');
+        final BangumiRawResponse res = await BangumiApiClient(
+          client: client,
+          userAgent: 'ua',
+        ).fetchSubject('1');
         expect(res.statusCode, code);
         expect(res.isOk, isFalse);
       }
     });
 
     test('传输失败 → BangumiTransportException（不吞异常）', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => throw Exception('boom'));
+      final MockClient client = MockClient(
+        (http.Request req) async => throw Exception('boom'),
+      );
       await expectLater(
         BangumiApiClient(client: client, userAgent: 'ua').fetchSubject('1'),
         throwsA(isA<BangumiTransportException>()),

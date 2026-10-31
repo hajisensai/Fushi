@@ -53,8 +53,9 @@ Future<void> _seedHostBookWithContent({
   required String extractDir,
 }) async {
   Directory(extractDir).createSync(recursive: true);
-  File(p.join(extractDir, 'mimetype'))
-      .writeAsStringSync('application/epub+zip');
+  File(
+    p.join(extractDir, 'mimetype'),
+  ).writeAsStringSync('application/epub+zip');
   final Directory metaInf = Directory(p.join(extractDir, 'META-INF'))
     ..createSync();
   File(p.join(metaInf.path, 'container.xml')).writeAsStringSync('''
@@ -111,8 +112,9 @@ Future<InterconnectSyncBackend> _buildClientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -128,22 +130,21 @@ SyncOrchestrator _audioOrchestrator({
   bool syncAudioBookFiles = false,
   List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
   Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
-}) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: tmp,
-      audioDatabaseRoot: tmp,
-      tempDir: tmp,
-      syncStats: false,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: syncAudioBookFiles,
-      syncDictionary: false,
-      localAudioEntries: localAudioEntries,
-      onLocalAudioImported: onLocalAudioImported,
-    );
+}) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: tmp,
+  audioDatabaseRoot: tmp,
+  tempDir: tmp,
+  syncStats: false,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: syncAudioBookFiles,
+  syncDictionary: false,
+  localAudioEntries: localAudioEntries,
+  onLocalAudioImported: onLocalAudioImported,
+);
 
 // ── Fake staged backend（云路径用）────────────────────────────────────────────
 
@@ -169,13 +170,18 @@ class _FakeSyncBackend implements SyncBackend {
   Future<AssetEntry?> findAsset(String namespaceId, String name) =>
       _store.findAsset(namespaceId, name);
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) =>
-      _store.putAsset(namespaceId, name, file, onProgress: onProgress);
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) => _store.putAsset(namespaceId, name, file, onProgress: onProgress);
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) =>
-      _store.getAsset(assetId, destination, onProgress: onProgress);
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) => _store.getAsset(assetId, destination, onProgress: onProgress);
   @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
@@ -191,8 +197,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _store.ensureFolder(rootFolderId, bookTitle);
+  }) => _store.ensureFolder(rootFolderId, bookTitle);
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) async =>
       const SyncFileTrio(progress: null, statistics: null, audioBook: null);
@@ -253,13 +258,16 @@ class _FakeSyncBackend implements SyncBackend {
   }) async {}
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      null;
+    String folderId,
+    String fileName,
+  ) async => null;
   @override
   void clearCache() {}
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   String? get cachedRootFolderId => 'root';
   @override
@@ -283,8 +291,9 @@ void main() {
 
   setUp(() async {
     work = await Directory.systemTemp.createTemp('orch_live_audio_');
-    epubBaseDir =
-        await Directory.systemTemp.createTemp('orch_live_audio_epub_base_');
+    epubBaseDir = await Directory.systemTemp.createTemp(
+      'orch_live_audio_epub_base_',
+    );
     EpubStorage.debugBaseDirectoryOverride = epubBaseDir.path;
   });
   tearDown(() async {
@@ -319,7 +328,7 @@ void main() {
       hostDbFile.writeAsBytesSync(
         <int>[
           0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, // "SQLite f"
-          0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00
+          0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
         ], // "ormat 3\0"
       );
 
@@ -362,8 +371,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final List<String> imported = <String>[];
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -378,23 +389,30 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncLocalAudioLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: 'live pull local audio 无错误: ${report.errors}');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'live pull local audio 无错误: ${report.errors}',
+      );
       expect(report.localAudioImported, 1, reason: 'NHK ラジオ 应从 host pull 并注册');
-      expect(imported, contains('NHK ラジオ'),
-          reason: 'onLocalAudioImported 应被调用');
+      expect(
+        imported,
+        contains('NHK ラジオ'),
+        reason: 'onLocalAudioImported 应被调用',
+      );
     });
 
-    test(
-        'BUG-3702 pull：本地有同名条目但库文件不在本机（导入别的设备的配置方案）'
+    test('BUG-3702 pull：本地有同名条目但库文件不在本机（导入别的设备的配置方案）'
         '→ 仍拉取，不被悬空引用挡住', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull_dangling'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final List<String> imported = <String>[];
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -415,10 +433,16 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncLocalAudioLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: '悬空引用不该被当成「本端有」去推送: ${report.errors}');
-      expect(report.localAudioImported, 1,
-          reason: '文件不在本机的同名条目不算「本端有」，远端那份必须被拉下来');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: '悬空引用不该被当成「本端有」去推送: ${report.errors}',
+      );
+      expect(
+        report.localAudioImported,
+        1,
+        reason: '文件不在本机的同名条目不算「本端有」，远端那份必须被拉下来',
+      );
       expect(imported, <String>['NHK ラジオ']);
     });
 
@@ -427,8 +451,9 @@ void main() {
       addTearDown(localDb.close);
 
       // 本地音频来源：写最小 SQLite 文件头（exportLocalAudioPackage 只 zip，不解析）
-      final Directory localAudioDir =
-          Directory(p.join(work.path, 'local_audio'))..createSync();
+      final Directory localAudioDir = Directory(
+        p.join(work.path, 'local_audio'),
+      )..createSync();
       final File localDbFile = File(p.join(localAudioDir.path, 'local_lib.db'));
       localDbFile.writeAsBytesSync(<int>[
         0x53,
@@ -446,7 +471,7 @@ void main() {
         0x74,
         0x20,
         0x33,
-        0x00
+        0x00,
       ]);
 
       final List<LocalAudioDbEntry> localEntries = <LocalAudioDbEntry>[
@@ -460,8 +485,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_push'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -473,8 +500,11 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncLocalAudioLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: 'live push local audio 无错误: ${report.errors}');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'live push local audio 无错误: ${report.errors}',
+      );
       expect(report.localAudioExported, 1, reason: 'Local ライブラリ 应被推送到 host');
     });
 
@@ -484,8 +514,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_no_staging'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -500,14 +532,18 @@ void main() {
       // live 路径绕过暂存：server sync-data 目录下不应出现 __local_audio__ 目录。
       final String syncDataDir = p.join(work.path, 'server_data', 'sync-data');
       if (Directory(syncDataDir).existsSync()) {
-        final List<FileSystemEntity> children =
-            Directory(syncDataDir).listSync();
+        final List<FileSystemEntity> children = Directory(
+          syncDataDir,
+        ).listSync();
         final bool hasLocalAudioFolder = children.any(
           (FileSystemEntity e) =>
               e is Directory && p.basename(e.path) == '__local_audio__',
         );
-        expect(hasLocalAudioFolder, isFalse,
-            reason: 'live 路径不应在 sync-data 下创建 __local_audio__ 暂存目录');
+        expect(
+          hasLocalAudioFolder,
+          isFalse,
+          reason: 'live 路径不应在 sync-data 下创建 __local_audio__ 暂存目录',
+        );
       }
       expect(report.errors, isEmpty);
     });
@@ -529,11 +565,12 @@ void main() {
       // BUG-2551：音频目录里必须真有一个音频文件。这里原本是个**空目录**——于是
       // 这组用例一直在验「零音频包能被打包、上传、落库」，也就是把 bug 行为当成
       // 正确行为钉死了（断言只数 imported/exported，从不问音频有没有落地）。
-      final Directory hostAudioRoot =
-          Directory(p.join(work.path, 'host_audiobook_root'))
-            ..createSync(recursive: true);
-      File(p.join(hostAudioRoot.path, 'host_track01.mp3'))
-          .writeAsStringSync('host audio bytes');
+      final Directory hostAudioRoot = Directory(
+        p.join(work.path, 'host_audiobook_root'),
+      )..createSync(recursive: true);
+      File(
+        p.join(hostAudioRoot.path, 'host_track01.mp3'),
+      ).writeAsStringSync('host audio bytes');
 
       // 先插入书籍行（audiobook 需要对应的 epub_books 行）
       await hostDb.insertEpubBook(
@@ -603,8 +640,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_pull'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -615,15 +654,20 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncAudiobooksLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: 'live audiobook upload 无错误: ${report.errors}');
-      expect(report.audiobooksImported, 0,
-          reason: 'Upload audiobook files 不能把远端独有有声书自动拉到本机');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'live audiobook upload 无错误: ${report.errors}',
+      );
+      expect(
+        report.audiobooksImported,
+        0,
+        reason: 'Upload audiobook files 不能把远端独有有声书自动拉到本机',
+      );
       expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull);
     });
 
-    test(
-        'pull（TODO-809）：本地有 HostAudioBook 的 EPUB 但缺音频，host 有 → '
+    test('pull（TODO-809）：本地有 HostAudioBook 的 EPUB 但缺音频，host 有 → '
         '双向拉取下载并解包落盘', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
@@ -641,13 +685,18 @@ void main() {
           importedAt: DateTime.now().millisecondsSinceEpoch,
         ),
       );
-      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull,
-          reason: '前置：本地此时缺音频');
+      expect(
+        await localDb.getAudiobookByBookKey('HostAudioBook'),
+        isNull,
+        reason: '前置：本地此时缺音频',
+      );
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_pull_ok'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -658,21 +707,32 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncAudiobooksLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: 'live pull audiobook 无错误: ${report.errors}');
-      expect(report.audiobooksImported, 1,
-          reason: 'host 独有有声书且本地有同 bookKey EPUB → 应被拉取导入');
-      expect(report.booksImported, 0,
-          reason: '场景B：本地已有 EPUB → 只补音频，绝不重导 EPUB（TODO-873 守护绿路径）');
-      final AudiobookRow? pulled =
-          await localDb.getAudiobookByBookKey('HostAudioBook');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'live pull audiobook 无错误: ${report.errors}',
+      );
+      expect(
+        report.audiobooksImported,
+        1,
+        reason: 'host 独有有声书且本地有同 bookKey EPUB → 应被拉取导入',
+      );
+      expect(
+        report.booksImported,
+        0,
+        reason: '场景B：本地已有 EPUB → 只补音频，绝不重导 EPUB（TODO-873 守护绿路径）',
+      );
+      final AudiobookRow? pulled = await localDb.getAudiobookByBookKey(
+        'HostAudioBook',
+      );
       expect(pulled, isNotNull, reason: '拉取后本地应出现 HostAudioBook 的 Audiobook 行');
       // BUG-2551：只断言「有行」正是这个 bug 藏了这么久的原因——一本零音频的书
       // 同样会让这行断言通过。真正要问的是音频落没落地。
       expect(
         await audiobookAudioIsIntact(
-            audioPathsJson: pulled!.audioPathsJson,
-            audioRoot: pulled.audioRoot),
+          audioPathsJson: pulled!.audioPathsJson,
+          audioRoot: pulled.audioRoot,
+        ),
         isTrue,
         reason: '拉回来的必须是一本能播的书，不是一本只有字幕的壳',
       );
@@ -685,11 +745,12 @@ void main() {
       // 插入本地有声书（本地独有，host 不含此 bookKey）。
       // BUG-2551：音频目录里要真有音频，否则这本书按新判据就是「本端缺音频」，
       // 不该被推给 host（推上去的会是个零音频包）。
-      final Directory localAudioRoot =
-          Directory(p.join(work.path, 'local_audiobook_root'))
-            ..createSync(recursive: true);
-      File(p.join(localAudioRoot.path, 'local_track01.mp3'))
-          .writeAsStringSync('local audio bytes');
+      final Directory localAudioRoot = Directory(
+        p.join(work.path, 'local_audiobook_root'),
+      )..createSync(recursive: true);
+      File(
+        p.join(localAudioRoot.path, 'local_track01.mp3'),
+      ).writeAsStringSync('local audio bytes');
 
       await localDb.insertEpubBook(
         EpubBooksCompanion.insert(
@@ -727,8 +788,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_push'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -739,10 +802,16 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncAudiobooksLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: 'live push audiobook 无错误: ${report.errors}');
-      expect(report.audiobooksExported, 1,
-          reason: 'LocalAudioBook 有声书应被推送到 host');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'live push audiobook 无错误: ${report.errors}',
+      );
+      expect(
+        report.audiobooksExported,
+        1,
+        reason: 'LocalAudioBook 有声书应被推送到 host',
+      );
     });
 
     // ── BUG-2551 自愈：union 的两侧都按「音频文件在不在」判，坏书不再是吸收态 ──
@@ -787,8 +856,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_heal_pull'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
         backend: backend,
@@ -799,14 +870,19 @@ void main() {
       await orch.syncAudiobooksLiveForTest(report, backend);
 
       expect(report.errors, isEmpty, reason: '自愈 pull 无错误: ${report.errors}');
-      expect(report.audiobooksImported, 1,
-          reason: '本端有行但没音频 = 本端缺 → 必须能从 host 拉回');
-      final AudiobookRow? healed =
-          await localDb.getAudiobookByBookKey('HostAudioBook');
+      expect(
+        report.audiobooksImported,
+        1,
+        reason: '本端有行但没音频 = 本端缺 → 必须能从 host 拉回',
+      );
+      final AudiobookRow? healed = await localDb.getAudiobookByBookKey(
+        'HostAudioBook',
+      );
       expect(
         await audiobookAudioIsIntact(
-            audioPathsJson: healed!.audioPathsJson,
-            audioRoot: healed.audioRoot),
+          audioPathsJson: healed!.audioPathsJson,
+          audioRoot: healed.audioRoot,
+        ),
         isTrue,
         reason: '拉回后这本书应该真的能播',
       );
@@ -849,9 +925,9 @@ void main() {
       );
 
       // 本端是好的：音频真在磁盘上。
-      final Directory localRoot =
-          Directory(p.join(work.path, 'heal_push_local_root'))
-            ..createSync(recursive: true);
+      final Directory localRoot = Directory(
+        p.join(work.path, 'heal_push_local_root'),
+      )..createSync(recursive: true);
       final File localTrack = File(p.join(localRoot.path, 'heal_track.mp3'))
         ..writeAsStringSync('heal audio bytes');
       final File localSrt = File(p.join(work.path, 'heal_local.srt'))
@@ -890,8 +966,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_heal_push'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
         backend: backend,
@@ -902,14 +980,19 @@ void main() {
       await orch.syncAudiobooksLiveForTest(report, backend);
 
       expect(report.errors, isEmpty, reason: '自愈 push 无错误: ${report.errors}');
-      expect(report.audiobooksExported, 1,
-          reason: 'host 清单里那本 hasAudio=false → 不算「远端有」，本端好书必须重推');
-      final AudiobookRow? onHost =
-          await hostDb.getAudiobookByBookKey('HealPushBook');
+      expect(
+        report.audiobooksExported,
+        1,
+        reason: 'host 清单里那本 hasAudio=false → 不算「远端有」，本端好书必须重推',
+      );
+      final AudiobookRow? onHost = await hostDb.getAudiobookByBookKey(
+        'HealPushBook',
+      );
       expect(
         await audiobookAudioIsIntact(
-            audioPathsJson: onHost!.audioPathsJson,
-            audioRoot: onHost.audioRoot),
+          audioPathsJson: onHost!.audioPathsJson,
+          audioRoot: onHost.audioRoot,
+        ),
         isTrue,
         reason: 'host 上那本坏书应被一本能播的书覆盖',
       );
@@ -935,9 +1018,9 @@ void main() {
     setUp(() async {
       hostDb = _memDb();
 
-      final Directory hostAudioRoot =
-          Directory(p.join(work.path, 'host_b2_audio_root'))
-            ..createSync(recursive: true);
+      final Directory hostAudioRoot = Directory(
+        p.join(work.path, 'host_b2_audio_root'),
+      )..createSync(recursive: true);
 
       // ① 带有声书的远端-only 书：有内容 EPUB + Audiobook/SrtBook 行。
       await _seedHostBookWithContent(
@@ -998,8 +1081,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test(
-        'TODO-1291 解耦：远端-only 带有声书的书 → sweep 后本地**不**新增 '
+    test('TODO-1291 解耦：远端-only 带有声书的书 → sweep 后本地**不**新增 '
         'EpubBooks/Audiobooks 行（不自动灌书架，等手动下载）', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
@@ -1009,8 +1091,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_b2_full'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -1021,24 +1105,35 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncAudiobooksLiveForTest(report, backend);
 
-      expect(report.errors, isEmpty,
-          reason: 'remote-only 解耦 sweep 无错误: ${report.errors}');
+      expect(
+        report.errors,
+        isEmpty,
+        reason: 'remote-only 解耦 sweep 无错误: ${report.errors}',
+      );
       // 决策 A：开启「同步有声书文件」不再把远端独有书自动拉进书架。
-      expect(report.booksImported, 0,
-          reason: '远端-only 书绝不应在自动同步里被灌入书架（TODO-1291 决策 A）');
+      expect(
+        report.booksImported,
+        0,
+        reason: '远端-only 书绝不应在自动同步里被灌入书架（TODO-1291 决策 A）',
+      );
       expect(report.audiobooksImported, 0, reason: '本地没有这本书时不应自动拉其音频（等手动下载）');
 
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
       expect(localBooks, isEmpty, reason: '本地书架不应新增远端-only 书');
-      expect(localBooks.map((EpubBookRow b) => b.title),
-          isNot(contains(remoteOnlyTitle)),
-          reason: '远端-only 带有声书的书不应落本地书架');
+      expect(
+        localBooks.map((EpubBookRow b) => b.title),
+        isNot(contains(remoteOnlyTitle)),
+        reason: '远端-only 带有声书的书不应落本地书架',
+      );
 
-      final List<AudiobookRow> localAudiobooks =
-          await localDb.getAllAudiobooks();
+      final List<AudiobookRow> localAudiobooks = await localDb
+          .getAllAudiobooks();
       expect(localAudiobooks, isEmpty, reason: '不灌书架 → 不应出现任何 Audiobooks 行');
-      expect(await localDb.getAudiobookByBookKey(remoteOnlyKey), isNull,
-          reason: '远端-only 书的音频不应被自动导入');
+      expect(
+        await localDb.getAudiobookByBookKey(remoteOnlyKey),
+        isNull,
+        reason: '远端-only 书的音频不应被自动导入',
+      );
     });
 
     test('回归：远端-only 纯文本书（无有声书）→ sweep 后本地仍无此书（守边界）', () async {
@@ -1047,8 +1142,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_b2_text'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
 
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -1107,93 +1204,109 @@ void main() {
 
     // 本地音频源数据库已从 run() 里整段拿掉：它没有开关，只有设置页的显式上传 /
     // 下载动作能搬它。所以这里断言的不再是「开关关着时不传」，而是**恒不传**。
-    test('run() 不触发本地音频传输（localAudioImported=0, localAudioExported=0）',
-        () async {
-      final FushiDatabase localDb = _memDb();
-      addTearDown(localDb.close);
+    test(
+      'run() 不触发本地音频传输（localAudioImported=0, localAudioExported=0）',
+      () async {
+        final FushiDatabase localDb = _memDb();
+        addTearDown(localDb.close);
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_c_audio'))
-        ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+        final Directory tmp = Directory(p.join(work.path, 'tmp_c_audio'))
+          ..createSync();
+        final InterconnectSyncBackend backend = await _buildClientBackend(
+          base: serverBase,
+          token: token,
+        );
 
-      final SyncOrchestrator orch = _audioOrchestrator(
-        db: localDb,
-        backend: backend,
-        tmp: tmp,
-        syncAudioBookFiles: false,
-        onLocalAudioImported: (LocalAudioPackageContents c) async {
-          fail('onLocalAudioImported 不应被 run() 调用');
-        },
-      );
-      final SyncRunReport report = await orch.run();
+        final SyncOrchestrator orch = _audioOrchestrator(
+          db: localDb,
+          backend: backend,
+          tmp: tmp,
+          syncAudioBookFiles: false,
+          onLocalAudioImported: (LocalAudioPackageContents c) async {
+            fail('onLocalAudioImported 不应被 run() 调用');
+          },
+        );
+        final SyncRunReport report = await orch.run();
 
-      expect(report.localAudioImported, 0, reason: 'run() 不再有本地音频维度');
-      expect(report.localAudioExported, 0);
-      expect(report.audiobooksImported, 0,
-          reason: 'syncAudioBookFiles=false 不应传输有声书');
-      expect(report.audiobooksExported, 0);
-      expect(report.errors, isEmpty, reason: '无错误: ${report.errors}');
-    });
+        expect(report.localAudioImported, 0, reason: 'run() 不再有本地音频维度');
+        expect(report.localAudioExported, 0);
+        expect(
+          report.audiobooksImported,
+          0,
+          reason: 'syncAudioBookFiles=false 不应传输有声书',
+        );
+        expect(report.audiobooksExported, 0);
+        expect(report.errors, isEmpty, reason: '无错误: ${report.errors}');
+      },
+    );
   });
 
   // ── 用例 D：云后端走原 syncLocalAudioPackages 路径 ───────────────────────
 
   group('用例D: 云后端（非 FushiClient）走 __local_audio__ 暂存路径', () {
     test(
-        'FakeSyncBackend + syncLocalAudioSources → 调用 ensureNamespace(__local_audio__)，不走 live 端点',
-        () async {
-      final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
-      final Directory tmp = Directory(p.join(work.path, 'tmp_d'))..createSync();
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
+      'FakeSyncBackend + syncLocalAudioSources → 调用 ensureNamespace(__local_audio__)，不走 live 端点',
+      () async {
+        final FakeAssetStore store = FakeAssetStore();
+        final _FakeSyncBackend backend = _FakeSyncBackend(store);
+        final Directory tmp = Directory(p.join(work.path, 'tmp_d'))
+          ..createSync();
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
 
-      final SyncOrchestrator orch = _audioOrchestrator(
-        db: db,
-        backend: backend,
-        tmp: tmp,
-        localAudioEntries: const <LocalAudioDbEntry>[],
-        onLocalAudioImported: (LocalAudioPackageContents c) async {},
-      );
-      final SyncRunReport report = SyncRunReport();
-      await orch.syncLocalAudioSources(
-        report,
-        direction: SyncAssetDirection.both,
-      );
+        final SyncOrchestrator orch = _audioOrchestrator(
+          db: db,
+          backend: backend,
+          tmp: tmp,
+          localAudioEntries: const <LocalAudioDbEntry>[],
+          onLocalAudioImported: (LocalAudioPackageContents c) async {},
+        );
+        final SyncRunReport report = SyncRunReport();
+        await orch.syncLocalAudioSources(
+          report,
+          direction: SyncAssetDirection.both,
+        );
 
-      // 云路径：ensureNamespace 被调用（__local_audio__ 命名空间）。
-      expect(backend.ensureNamespaceCalled, greaterThanOrEqualTo(1),
-          reason: '云后端路径应调用 ensureNamespace(__local_audio__)');
-      expect(report.errors, isEmpty, reason: '云后端路径运行无错误: ${report.errors}');
-    });
+        // 云路径：ensureNamespace 被调用（__local_audio__ 命名空间）。
+        expect(
+          backend.ensureNamespaceCalled,
+          greaterThanOrEqualTo(1),
+          reason: '云后端路径应调用 ensureNamespace(__local_audio__)',
+        );
+        expect(report.errors, isEmpty, reason: '云后端路径运行无错误: ${report.errors}');
+      },
+    );
 
     test(
-        'FakeSyncBackend + syncAudioBookFiles=true → 调用 ensureBookFolder，不走 live 端点',
-        () async {
-      final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
-      final Directory tmp = Directory(p.join(work.path, 'tmp_d2'))
-        ..createSync();
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
+      'FakeSyncBackend + syncAudioBookFiles=true → 调用 ensureBookFolder，不走 live 端点',
+      () async {
+        final FakeAssetStore store = FakeAssetStore();
+        final _FakeSyncBackend backend = _FakeSyncBackend(store);
+        final Directory tmp = Directory(p.join(work.path, 'tmp_d2'))
+          ..createSync();
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
 
-      // 无本地有声书，syncAudiobookPackages 扫 getAllEpubBooks 返空列表 → 无传输
-      final SyncOrchestrator orch = _audioOrchestrator(
-        db: db,
-        backend: backend,
-        tmp: tmp,
-        syncAudioBookFiles: true,
-      );
-      final SyncRunReport report = await orch.run();
+        // 无本地有声书，syncAudiobookPackages 扫 getAllEpubBooks 返空列表 → 无传输
+        final SyncOrchestrator orch = _audioOrchestrator(
+          db: db,
+          backend: backend,
+          tmp: tmp,
+          syncAudioBookFiles: true,
+        );
+        final SyncRunReport report = await orch.run();
 
-      // 云路径：root folder 被请求（syncAudiobookPackages 需要 root）。
-      // 不走 live 端点（_FakeSyncBackend 没有 listRemoteAudiobooks，调用会抛）。
-      expect(report.audiobooksImported, 0);
-      expect(report.audiobooksExported, 0);
-      expect(report.errors, isEmpty,
-          reason: '云后端 audiobook 路径运行无错误: ${report.errors}');
-    });
+        // 云路径：root folder 被请求（syncAudiobookPackages 需要 root）。
+        // 不走 live 端点（_FakeSyncBackend 没有 listRemoteAudiobooks，调用会抛）。
+        expect(report.audiobooksImported, 0);
+        expect(report.audiobooksExported, 0);
+        expect(
+          report.errors,
+          isEmpty,
+          reason: '云后端 audiobook 路径运行无错误: ${report.errors}',
+        );
+      },
+    );
   });
 
   // ── 用例 E：两条 push 路径都被「配对 SrtBook 是否存在」门控（TODO-894）─────
@@ -1213,9 +1326,9 @@ void main() {
 
     setUp(() async {
       hostDb = _memDb();
-      final Directory hostAudioRoot =
-          Directory(p.join(work.path, 'host_e_audio_root'))
-            ..createSync(recursive: true);
+      final Directory hostAudioRoot = Directory(
+        p.join(work.path, 'host_e_audio_root'),
+      )..createSync(recursive: true);
       final LocalLibraryHostService libSvc = LocalLibraryHostService(
         db: hostDb,
         dictionaryResourceRoot: Directory(work.path),
@@ -1292,8 +1405,10 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_ok'))
         ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
         backend: backend,
@@ -1307,80 +1422,105 @@ void main() {
       expect(report.audiobooksExported, 1, reason: '有配对 SrtBook → 本端独有有声书应上传');
     });
 
-    test('① live push：无配对 SrtBook → skip（audiobooksExported=0，守防御分支）',
-        () async {
-      final FushiDatabase localDb = _memDb();
-      addTearDown(localDb.close);
-      await seedLocalAudiobook(localDb, withSrtBook: false);
+    test(
+      '① live push：无配对 SrtBook → skip（audiobooksExported=0，守防御分支）',
+      () async {
+        final FushiDatabase localDb = _memDb();
+        addTearDown(localDb.close);
+        await seedLocalAudiobook(localDb, withSrtBook: false);
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_skip'))
-        ..createSync();
-      final InterconnectSyncBackend backend =
-          await _buildClientBackend(base: serverBase, token: token);
-      final SyncOrchestrator orch = _audioOrchestrator(
-        db: localDb,
-        backend: backend,
-        tmp: tmp,
-        syncAudioBookFiles: true,
-      );
-      final SyncRunReport report = SyncRunReport();
-      await orch.syncAudiobooksLiveForTest(report, backend);
+        final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_skip'))
+          ..createSync();
+        final InterconnectSyncBackend backend = await _buildClientBackend(
+          base: serverBase,
+          token: token,
+        );
+        final SyncOrchestrator orch = _audioOrchestrator(
+          db: localDb,
+          backend: backend,
+          tmp: tmp,
+          syncAudioBookFiles: true,
+        );
+        final SyncRunReport report = SyncRunReport();
+        await orch.syncAudiobooksLiveForTest(report, backend);
 
-      expect(report.audiobooksExported, 0,
-          reason: '无配对 SrtBook → live push 应 skip（防御契约）');
-      expect(report.errors.any((String e) => e.contains('srtBook not found')),
+        expect(
+          report.audiobooksExported,
+          0,
+          reason: '无配对 SrtBook → live push 应 skip（防御契约）',
+        );
+        expect(
+          report.errors.any((String e) => e.contains('srtBook not found')),
           isTrue,
-          reason: 'skip 必须落一条 srtBook not found 记录');
-    });
+          reason: 'skip 必须落一条 srtBook not found 记录',
+        );
+      },
+    );
 
-    test('② syncAudiobookPackages：有配对 SrtBook → 整本上传（audiobooksExported=1）',
-        () async {
-      final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
-      final FushiDatabase localDb = _memDb();
-      addTearDown(localDb.close);
-      await seedLocalAudiobook(localDb, withSrtBook: true);
+    test(
+      '② syncAudiobookPackages：有配对 SrtBook → 整本上传（audiobooksExported=1）',
+      () async {
+        final FakeAssetStore store = FakeAssetStore();
+        final _FakeSyncBackend backend = _FakeSyncBackend(store);
+        final FushiDatabase localDb = _memDb();
+        addTearDown(localDb.close);
+        await seedLocalAudiobook(localDb, withSrtBook: true);
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_e_pkg_ok'))
-        ..createSync();
-      final SyncOrchestrator orch = _audioOrchestrator(
-        db: localDb,
-        backend: backend,
-        tmp: tmp,
-        syncAudioBookFiles: true,
-      );
-      final SyncRunReport report = SyncRunReport();
-      await orch.syncAudiobookPackages('root', report);
+        final Directory tmp = Directory(p.join(work.path, 'tmp_e_pkg_ok'))
+          ..createSync();
+        final SyncOrchestrator orch = _audioOrchestrator(
+          db: localDb,
+          backend: backend,
+          tmp: tmp,
+          syncAudioBookFiles: true,
+        );
+        final SyncRunReport report = SyncRunReport();
+        await orch.syncAudiobookPackages('root', report);
 
-      expect(report.errors, isEmpty,
-          reason: 'syncAudiobookPackages 无错误: ${report.errors}');
-      expect(report.audiobooksExported, 1,
-          reason: 'hasLocal=(ab!=null && srt!=null) 成立 → 文件夹式 push 应上传');
-    });
+        expect(
+          report.errors,
+          isEmpty,
+          reason: 'syncAudiobookPackages 无错误: ${report.errors}',
+        );
+        expect(
+          report.audiobooksExported,
+          1,
+          reason: 'hasLocal=(ab!=null && srt!=null) 成立 → 文件夹式 push 应上传',
+        );
+      },
+    );
 
-    test('② syncAudiobookPackages：无配对 SrtBook → skip（audiobooksExported=0）',
-        () async {
-      final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
-      final FushiDatabase localDb = _memDb();
-      addTearDown(localDb.close);
-      await seedLocalAudiobook(localDb, withSrtBook: false);
+    test(
+      '② syncAudiobookPackages：无配对 SrtBook → skip（audiobooksExported=0）',
+      () async {
+        final FakeAssetStore store = FakeAssetStore();
+        final _FakeSyncBackend backend = _FakeSyncBackend(store);
+        final FushiDatabase localDb = _memDb();
+        addTearDown(localDb.close);
+        await seedLocalAudiobook(localDb, withSrtBook: false);
 
-      final Directory tmp = Directory(p.join(work.path, 'tmp_e_pkg_skip'))
-        ..createSync();
-      final SyncOrchestrator orch = _audioOrchestrator(
-        db: localDb,
-        backend: backend,
-        tmp: tmp,
-        syncAudioBookFiles: true,
-      );
-      final SyncRunReport report = SyncRunReport();
-      await orch.syncAudiobookPackages('root', report);
+        final Directory tmp = Directory(p.join(work.path, 'tmp_e_pkg_skip'))
+          ..createSync();
+        final SyncOrchestrator orch = _audioOrchestrator(
+          db: localDb,
+          backend: backend,
+          tmp: tmp,
+          syncAudioBookFiles: true,
+        );
+        final SyncRunReport report = SyncRunReport();
+        await orch.syncAudiobookPackages('root', report);
 
-      expect(report.audiobooksExported, 0,
-          reason: '无配对 SrtBook → hasLocal=false → 文件夹式 push skip（防御契约）');
-      expect(report.errors, isEmpty,
-          reason: 'syncAudiobookPackages 的 skip 是静默不导出，不落 error');
-    });
+        expect(
+          report.audiobooksExported,
+          0,
+          reason: '无配对 SrtBook → hasLocal=false → 文件夹式 push skip（防御契约）',
+        );
+        expect(
+          report.errors,
+          isEmpty,
+          reason: 'syncAudiobookPackages 的 skip 是静默不导出，不落 error',
+        );
+      },
+    );
   });
 }

@@ -53,8 +53,10 @@ class CloudVideoStreamRelay {
 
   /// 起一个绑定 loopback 随机端口的中继（测试直接调；生产走 [instance]）。
   static Future<CloudVideoStreamRelay> start() async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     final CloudVideoStreamRelay relay = CloudVideoStreamRelay._(server);
     server.listen(
       (HttpRequest request) => unawaited(relay._serve(request)),
@@ -110,9 +112,11 @@ class CloudVideoStreamRelay {
     required String fileName,
   }) {
     final String assetKey = '$source\n$assetId';
-    final String token = _tokensByAsset[assetKey] ??
-        base64Url
-            .encode(List<int>.generate(18, (int _) => _random.nextInt(256)));
+    final String token =
+        _tokensByAsset[assetKey] ??
+        base64Url.encode(
+          List<int>.generate(18, (int _) => _random.nextInt(256)),
+        );
     _tokensByAsset[assetKey] = token;
     _entries.remove(token);
     _entries[token] = _CloudRelayEntry(
@@ -137,11 +141,11 @@ class CloudVideoStreamRelay {
   }
 
   Uri _localUri(String token, String fileName) => Uri(
-        scheme: 'http',
-        host: InternetAddress.loopbackIPv4.address,
-        port: _server.port,
-        pathSegments: <String>['cloud', token, fileName],
-      );
+    scheme: 'http',
+    host: InternetAddress.loopbackIPv4.address,
+    port: _server.port,
+    pathSegments: <String>['cloud', token, fileName],
+  );
 
   Future<void> close() async {
     _closed = true;
@@ -154,8 +158,8 @@ class CloudVideoStreamRelay {
       final List<String> segments = request.uri.pathSegments;
       final _CloudRelayEntry? entry =
           segments.length >= 2 && segments.first == 'cloud'
-              ? _touch(segments[1])
-              : null;
+          ? _touch(segments[1])
+          : null;
       if (entry == null) {
         response.statusCode = HttpStatus.notFound;
         await response.close();
@@ -166,8 +170,9 @@ class CloudVideoStreamRelay {
         await response.close();
         return;
       }
-      final String? rangeHeader =
-          request.headers.value(HttpHeaders.rangeHeader);
+      final String? rangeHeader = request.headers.value(
+        HttpHeaders.rangeHeader,
+      );
       final ({int start, int? end})? range = parseRelayRange(rangeHeader);
       if (range == null) {
         response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
@@ -214,8 +219,8 @@ class CloudVideoStreamRelay {
     }
     final int end = head
         ? (range.end == null || range.end! >= upstream.totalBytes
-            ? upstream.totalBytes - 1
-            : range.end!)
+              ? upstream.totalBytes - 1
+              : range.end!)
         : upstream.end;
     response.statusCode = ranged ? HttpStatus.partialContent : HttpStatus.ok;
     response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
@@ -238,10 +243,12 @@ class CloudVideoStreamRelay {
     // 内核断连信号：mpv 每次 seek 都会关掉旧连接，此时必须停掉上游，否则旧区间会
     // 被继续整段拉完（与 YoutubeRangeRelay 同一教训）。
     bool clientGone = false;
-    unawaited(response.done.then<void>(
-      (_) => clientGone = true,
-      onError: (Object _) => clientGone = true,
-    ));
+    unawaited(
+      response.done.then<void>(
+        (_) => clientGone = true,
+        onError: (Object _) => clientGone = true,
+      ),
+    );
     // 背压：`HttpResponse.add` 只往一个同步 controller 里塞字节，socket 写不动时暂停
     // 的是那个 controller 的订阅，controller 自己的缓冲没有上限，上游订阅也从不暂停
     // （dart:io `_HttpOutgoing.addStream`）。libmpv / ffmpeg 发的是开区间

@@ -122,28 +122,31 @@ class SftpSyncBackend extends SyncBackend
 
   @override
   Future<String> findOrCreateRootFolder() => _guarded(() async {
-        if (rootFolderIdCache != null) return rootFolderIdCache!;
+    if (rootFolderIdCache != null) return rootFolderIdCache!;
 
-        final sftp = await _ensureConnected();
-        // Fushi 改名迁移三段（找新根 → 旧根 sftp.rename 改名 → 新建）。稳态仍
-        // 是一次 stat，与旧实现的 _mkdirIfAbsent 探测同价；旧根探测仅在新根缺
-        // 席时发生。结果经 rootFolderIdCache 记忆化。路径都相对登录 home。
-        final String? existing = await migrateLegacySyncRoot<String>(
-          find: (String name) async =>
-              await _directoryExists(sftp, name) ? name : null,
-          renameLegacy: (String legacyPath) async {
-            await sftp.rename(legacyPath, rootFolderName);
-            return rootFolderName;
-          },
-          onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
-              .log('SftpSyncBackend.migrateLegacyRoot', e, st),
-        );
-        if (existing == null) {
-          await _mkdirIfAbsent(sftp, rootFolderName);
-        }
-        rootFolderIdCache = rootFolderName;
+    final sftp = await _ensureConnected();
+    // Fushi 改名迁移三段（找新根 → 旧根 sftp.rename 改名 → 新建）。稳态仍
+    // 是一次 stat，与旧实现的 _mkdirIfAbsent 探测同价；旧根探测仅在新根缺
+    // 席时发生。结果经 rootFolderIdCache 记忆化。路径都相对登录 home。
+    final String? existing = await migrateLegacySyncRoot<String>(
+      find: (String name) async =>
+          await _directoryExists(sftp, name) ? name : null,
+      renameLegacy: (String legacyPath) async {
+        await sftp.rename(legacyPath, rootFolderName);
         return rootFolderName;
-      });
+      },
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+        'SftpSyncBackend.migrateLegacyRoot',
+        e,
+        st,
+      ),
+    );
+    if (existing == null) {
+      await _mkdirIfAbsent(sftp, rootFolderName);
+    }
+    rootFolderIdCache = rootFolderName;
+    return rootFolderName;
+  });
 
   @override
   Future<List<SyncFileRef>> listBooks(String rootFolderId) =>
@@ -151,12 +154,16 @@ class SftpSyncBackend extends SyncBackend
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(rootFolderId);
         return entries
-            .where((e) =>
-                e.attr.isDirectory && e.filename != '.' && e.filename != '..')
-            .map((e) => SyncFileRef(
-                  id: '$rootFolderId/${e.filename}',
-                  name: e.filename,
-                ))
+            .where(
+              (e) =>
+                  e.attr.isDirectory && e.filename != '.' && e.filename != '..',
+            )
+            .map(
+              (e) => SyncFileRef(
+                id: '$rootFolderId/${e.filename}',
+                name: e.filename,
+              ),
+            )
             .toList();
       });
 
@@ -165,54 +172,55 @@ class SftpSyncBackend extends SyncBackend
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _guarded(() async {
-        final sanitized = requireBookFolderName(bookTitle);
+  }) => _guarded(() async {
+    final sanitized = requireBookFolderName(bookTitle);
 
-        if (folderIdCache.containsKey(sanitized)) {
-          return folderIdCache[sanitized]!;
+    if (folderIdCache.containsKey(sanitized)) {
+      return folderIdCache[sanitized]!;
+    }
+
+    final sftp = await _ensureConnected();
+    final path = '$rootFolderId/$sanitized';
+    await _mkdirIfAbsent(sftp, path);
+    folderIdCache[sanitized] = path;
+
+    final Uint8List? coverData = await readCoverData?.call();
+    if (coverData != null) {
+      try {
+        final format = detectCoverFormat(coverData);
+        final coverPath = '$path/cover_1_6.${format.extension}';
+        if (!await _fileExists(sftp, coverPath)) {
+          await _writeBytes(sftp, coverPath, coverData);
         }
+      } catch (_) {
+        /* best-effort: failure is non-critical here */
+      }
+    }
 
-        final sftp = await _ensureConnected();
-        final path = '$rootFolderId/$sanitized';
-        await _mkdirIfAbsent(sftp, path);
-        folderIdCache[sanitized] = path;
-
-        final Uint8List? coverData = await readCoverData?.call();
-        if (coverData != null) {
-          try {
-            final format = detectCoverFormat(coverData);
-            final coverPath = '$path/cover_1_6.${format.extension}';
-            if (!await _fileExists(sftp, coverPath)) {
-              await _writeBytes(sftp, coverPath, coverData);
-            }
-          } catch (_) {/* best-effort: failure is non-critical here */}
-        }
-
-        return path;
-      });
+    return path;
+  });
 
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) => _guarded(() async {
-        final sftp = await _ensureConnected();
-        final entries = await sftp.listdir(folderId);
-        final files = entries
-            .where((e) =>
-                !e.attr.isDirectory && e.filename != '.' && e.filename != '..')
-            .map((e) => SyncFileRef(
-                  id: '$folderId/${e.filename}',
-                  name: e.filename,
-                ))
-            .toList();
+    final sftp = await _ensureConnected();
+    final entries = await sftp.listdir(folderId);
+    final files = entries
+        .where(
+          (e) => !e.attr.isDirectory && e.filename != '.' && e.filename != '..',
+        )
+        .map(
+          (e) => SyncFileRef(id: '$folderId/${e.filename}', name: e.filename),
+        )
+        .toList();
 
-        return SyncFileTrio(
-          progress: findSyncFileByPrefix(files, 'progress_'),
-          statistics: findSyncFileByPrefix(files, 'statistics_'),
-          audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-        );
-      });
+    return SyncFileTrio(
+      progress: findSyncFileByPrefix(files, 'progress_'),
+      statistics: findSyncFileByPrefix(files, 'statistics_'),
+      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
+    );
+  });
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
   // 这里只给出 SFTP 的下载原语（已 `_guarded` 的 temp-file → utf8 → jsonDecode）。
@@ -224,42 +232,47 @@ class SftpSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) =>
-      _guarded(() async {
-        final sftp = await _ensureConnected();
-        if (fileId != null) await _deleteIfExists(sftp, fileId);
-        final fileName =
-            progressFileName(progress.lastBookmarkModified, progress.progress);
-        await _uploadJson(sftp, folderId, fileName, progress.toJson());
-      });
+  }) => _guarded(() async {
+    final sftp = await _ensureConnected();
+    if (fileId != null) await _deleteIfExists(sftp, fileId);
+    final fileName = progressFileName(
+      progress.lastBookmarkModified,
+      progress.progress,
+    );
+    await _uploadJson(sftp, folderId, fileName, progress.toJson());
+  });
 
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) =>
-      _guarded(() async {
-        final sftp = await _ensureConnected();
-        if (fileId != null) await _deleteIfExists(sftp, fileId);
-        final fileName = statisticsFileName(stats);
-        await _uploadJson(
-            sftp, folderId, fileName, stats.map((s) => s.toJson()).toList());
-      });
+  }) => _guarded(() async {
+    final sftp = await _ensureConnected();
+    if (fileId != null) await _deleteIfExists(sftp, fileId);
+    final fileName = statisticsFileName(stats);
+    await _uploadJson(
+      sftp,
+      folderId,
+      fileName,
+      stats.map((s) => s.toJson()).toList(),
+    );
+  });
 
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) =>
-      _guarded(() async {
-        final sftp = await _ensureConnected();
-        if (fileId != null) await _deleteIfExists(sftp, fileId);
-        final fileName = audioBookFileName(
-            audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
-        await _uploadJson(sftp, folderId, fileName, audioBook.toJson());
-      });
+  }) => _guarded(() async {
+    final sftp = await _ensureConnected();
+    if (fileId != null) await _deleteIfExists(sftp, fileId);
+    final fileName = audioBookFileName(
+      audioBook.lastAudioBookModified,
+      audioBook.playbackPositionSec,
+    );
+    await _uploadJson(sftp, folderId, fileName, audioBook.toJson());
+  });
 
   // ── Content file sync ─────────────────────────────────────────────
 
@@ -269,54 +282,53 @@ class SftpSyncBackend extends SyncBackend
     required String fileName,
     required File file,
     SyncTransferProgress? onProgress,
-  }) =>
-      _guarded(() async {
-        final sftp = await _ensureConnected();
-        final remotePath = '$folderId/$fileName';
-        final length = await file.length();
+  }) => _guarded(() async {
+    final sftp = await _ensureConnected();
+    final remotePath = '$folderId/$fileName';
+    final length = await file.length();
 
-        final handle = await sftp.open(
-          remotePath,
-          mode: SftpFileOpenMode.create |
-              SftpFileOpenMode.write |
-              SftpFileOpenMode.truncate,
-        );
-        try {
-          int offset = 0;
-          await for (final chunk in file.openRead()) {
-            final bytes = Uint8List.fromList(chunk);
-            await handle.writeBytes(bytes, offset: offset);
-            offset += bytes.length;
-            if (length > 0) onProgress?.call(offset / length, offset);
-          }
-        } finally {
-          await handle.close();
-        }
-      });
+    final handle = await sftp.open(
+      remotePath,
+      mode:
+          SftpFileOpenMode.create |
+          SftpFileOpenMode.write |
+          SftpFileOpenMode.truncate,
+    );
+    try {
+      int offset = 0;
+      await for (final chunk in file.openRead()) {
+        final bytes = Uint8List.fromList(chunk);
+        await handle.writeBytes(bytes, offset: offset);
+        offset += bytes.length;
+        if (length > 0) onProgress?.call(offset / length, offset);
+      }
+    } finally {
+      await handle.close();
+    }
+  });
 
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     SyncTransferProgress? onProgress,
-  }) =>
-      _guarded(() async {
-        final sftp = await _ensureConnected();
-        final stat = await sftp.stat(fileId);
-        final totalSize = stat.size ?? 0;
+  }) => _guarded(() async {
+    final sftp = await _ensureConnected();
+    final stat = await sftp.stat(fileId);
+    final totalSize = stat.size ?? 0;
 
-        final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
-        try {
-          await writeSyncStreamToFile(
-            source: handle.read(),
-            destination: destination,
-            totalBytes: totalSize,
-            onProgress: onProgress,
-          );
-        } finally {
-          await handle.close();
-        }
-      });
+    final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
+    try {
+      await writeSyncStreamToFile(
+        source: handle.read(),
+        destination: destination,
+        totalBytes: totalSize,
+        onProgress: onProgress,
+      );
+    } finally {
+      await handle.close();
+    }
+  });
 
   @override
   Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
@@ -342,11 +354,11 @@ class SftpSyncBackend extends SyncBackend
 
   @override
   Future<String> ensureNamespace(String name) => _guarded(() async {
-        final sftp = await _ensureConnected();
-        final path = '$rootFolderName/$name';
-        await _mkdirIfAbsent(sftp, path);
-        return path;
-      });
+    final sftp = await _ensureConnected();
+    final path = '$rootFolderName/$name';
+    await _mkdirIfAbsent(sftp, path);
+    return path;
+  });
 
   @override
   Future<String> ensureFolder(String parentId, String name) =>
@@ -364,13 +376,15 @@ class SftpSyncBackend extends SyncBackend
         final entries = await sftp.listdir(namespaceId);
         return entries
             .where((e) => e.filename != '.' && e.filename != '..')
-            .map((e) => AssetEntry(
-                  id: '$namespaceId/${e.filename}',
-                  name: e.filename,
-                  isFolder: e.attr.isDirectory,
-                  sizeBytes: e.attr.size,
-                  modifiedAt: sftpMtimeToMs(e.attr.modifyTime),
-                ))
+            .map(
+              (e) => AssetEntry(
+                id: '$namespaceId/${e.filename}',
+                name: e.filename,
+                isFolder: e.attr.isDirectory,
+                sizeBytes: e.attr.size,
+                modifiedAt: sftpMtimeToMs(e.attr.modifyTime),
+              ),
+            )
             .toList();
       });
 
@@ -529,10 +543,14 @@ class SftpSyncBackend extends SyncBackend
   void _disconnect() {
     try {
       _sftpClient?.close();
-    } catch (_) {/* best-effort: failure is non-critical here */}
+    } catch (_) {
+      /* best-effort: failure is non-critical here */
+    }
     try {
       _sshClient?.close();
-    } catch (_) {/* best-effort: failure is non-critical here */}
+    } catch (_) {
+      /* best-effort: failure is non-critical here */
+    }
     _sftpClient = null;
     _sshClient = null;
   }
@@ -620,16 +638,16 @@ class SftpSyncBackend extends SyncBackend
   }
 
   Future<dynamic> _downloadJson(String fileId) => _guarded(() async {
-        final sftp = await _ensureConnected();
-        final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
-        try {
-          final bytes = await handle.readBytes();
-          final text = utf8.decode(bytes);
-          return jsonDecode(text);
-        } finally {
-          await handle.close();
-        }
-      });
+    final sftp = await _ensureConnected();
+    final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
+    try {
+      final bytes = await handle.readBytes();
+      final text = utf8.decode(bytes);
+      return jsonDecode(text);
+    } finally {
+      await handle.close();
+    }
+  });
 
   Future<void> _uploadJson(
     SftpClient sftp,
@@ -643,10 +661,14 @@ class SftpSyncBackend extends SyncBackend
   }
 
   Future<void> _writeBytes(
-      SftpClient sftp, String path, Uint8List bytes) async {
+    SftpClient sftp,
+    String path,
+    Uint8List bytes,
+  ) async {
     final handle = await sftp.open(
       path,
-      mode: SftpFileOpenMode.create |
+      mode:
+          SftpFileOpenMode.create |
           SftpFileOpenMode.write |
           SftpFileOpenMode.truncate,
     );

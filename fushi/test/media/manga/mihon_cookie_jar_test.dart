@@ -29,13 +29,12 @@ void main() {
     String value = 'v',
     String domain = 'bookwalker.jp',
     int? expiresAt,
-  }) =>
-      MangaCookie(
-        name: name,
-        value: value,
-        domain: domain,
-        expiresAt: expiresAt,
-      );
+  }) => MangaCookie(
+    name: name,
+    value: value,
+    domain: domain,
+    expiresAt: expiresAt,
+  );
 
   group('持久化与域匹配', () {
     test('写入后另一个实例读得回来（进程重启不掉登录）', () async {
@@ -64,10 +63,7 @@ void main() {
         store.cookieHeaderFor(Uri.parse('https://member.bookwalker.jp/api')),
         'session=abc',
       );
-      expect(
-        store.cookieHeaderFor(Uri.parse('https://cmoa.jp/')),
-        'other=zzz',
-      );
+      expect(store.cookieHeaderFor(Uri.parse('https://cmoa.jp/')), 'other=zzz');
     });
 
     test('过期条目不再发出', () async {
@@ -78,7 +74,9 @@ void main() {
 
       now += 5000;
       expect(
-          store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')), isNull);
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        isNull,
+      );
     });
 
     test('坏文件当作没有 cookie，而不是把整次源调用炸掉', () async {
@@ -99,7 +97,9 @@ void main() {
 
       expect(await store.clearForHost('bookwalker.jp'), isTrue);
       expect(
-          store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')), isNull);
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        isNull,
+      );
       expect(store.cookieHeaderFor(Uri.parse('https://cmoa.jp/')), 'other=v');
     });
   });
@@ -240,8 +240,10 @@ void main() {
 
       final List<MangaCookie> decoded = decodeMihonCookieWire(fromKotlin);
 
-      expect(
-          decoded.map((MangaCookie c) => c.name), <String>['session', 'csrf']);
+      expect(decoded.map((MangaCookie c) => c.name), <String>[
+        'session',
+        'csrf',
+      ]);
       expect(decoded[0].value, 'abc');
       // 域原样保留（不再重标到源站 host），且 secure/hostOnly 都过得来——
       // 这三样正是扁平 `Cookie:` 头会丢掉、进而让注入条目与站点自己那条并存的。
@@ -263,9 +265,11 @@ void main() {
 
     test('无名条目被丢掉', () {
       final String payload = base64Encode(
-        utf8.encode(jsonEncode(<Object>[
-          <String, Object?>{'name': '', 'value': 'x', 'domain': 'a.test'},
-        ])),
+        utf8.encode(
+          jsonEncode(<Object>[
+            <String, Object?>{'name': '', 'value': 'x', 'domain': 'a.test'},
+          ]),
+        ),
       );
       expect(decodeMihonCookieWire(payload), isEmpty);
     });

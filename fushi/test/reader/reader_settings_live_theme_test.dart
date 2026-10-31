@@ -293,9 +293,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(Theme.of(content).colorScheme, dark.colorScheme);
     expect(
-      tester
-          .widget<ListTile>(find.byType(ListTile))
-          .tileColor,
+      tester.widget<ListTile>(find.byType(ListTile)).tileColor,
       dark.colorScheme.surfaceContainer,
     );
     Navigator.of(content).pop();

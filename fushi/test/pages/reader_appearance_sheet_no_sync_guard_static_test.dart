@@ -23,36 +23,42 @@ void main() {
   final String stripped = _stripLineComments(source);
 
   test(
-      'dead settings self-copy bridge is gone (no sheet-open DB/WebView storm)',
-      () {
-    expect(
-      stripped.contains('_syncSettingsToHive'),
-      isFalse,
-      reason: '_syncSettingsToHive 是写回自身的死桥，会在开「调整」面板前触发 '
-          '17× setReaderPref* → onSettingsChangedLive → _applyStylesLive 风暴；勿重新引入',
-    );
-    expect(
-      stripped.contains('_syncSettingsFromHive'),
-      isFalse,
-      reason: '_syncSettingsFromHive 同为写回自身的死桥（_settings === '
-          'ReaderFushiSource.readerSettings）；勿重新引入',
-    );
-  });
+    'dead settings self-copy bridge is gone (no sheet-open DB/WebView storm)',
+    () {
+      expect(
+        stripped.contains('_syncSettingsToHive'),
+        isFalse,
+        reason:
+            '_syncSettingsToHive 是写回自身的死桥，会在开「调整」面板前触发 '
+            '17× setReaderPref* → onSettingsChangedLive → _applyStylesLive 风暴；勿重新引入',
+      );
+      expect(
+        stripped.contains('_syncSettingsFromHive'),
+        isFalse,
+        reason:
+            '_syncSettingsFromHive 同为写回自身的死桥（_settings === '
+            'ReaderFushiSource.readerSettings）；勿重新引入',
+      );
+    },
+  );
 
-  test('_showAppearanceSheet does not re-persist settings before showing sheet',
-      () {
-    final String sheet = _functionSource(
-      stripped,
-      '  Future<void> _showAppearanceSheet(',
-      '  String _currentChapterLabel() {',
-    );
-    expect(
-      sheet.contains('.setReaderPref'),
-      isFalse,
-      reason: '面板用 ReaderFushiSource.instance.ttu* 实时读 _settings；开面板前'
-          '不得再经 setReaderPref* 写回（会触发 onSettingsChangedLive 的 DB/WebView 风暴）',
-    );
-  });
+  test(
+    '_showAppearanceSheet does not re-persist settings before showing sheet',
+    () {
+      final String sheet = _functionSource(
+        stripped,
+        '  Future<void> _showAppearanceSheet(',
+        '  String _currentChapterLabel() {',
+      );
+      expect(
+        sheet.contains('.setReaderPref'),
+        isFalse,
+        reason:
+            '面板用 ReaderFushiSource.instance.ttu* 实时读 _settings；开面板前'
+            '不得再经 setReaderPref* 写回（会触发 onSettingsChangedLive 的 DB/WebView 风暴）',
+      );
+    },
+  );
 }
 
 String _functionSource(String source, String start, String end) {

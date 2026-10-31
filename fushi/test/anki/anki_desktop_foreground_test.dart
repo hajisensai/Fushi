@@ -23,8 +23,9 @@ void main() {
 
   tearDown(() {
     AnkiDesktopForeground.debugBackend = null;
-    AnkiDesktopForeground.raiseRetryInterval =
-        const Duration(milliseconds: 120);
+    AnkiDesktopForeground.raiseRetryInterval = const Duration(
+      milliseconds: 120,
+    );
   });
 
   /// 把 HTTP 侧的 action 与前台调用记进**同一条**时间线，才能钉住先后顺序。
@@ -77,16 +78,13 @@ void main() {
 
     await repo.openNoteInAnki(305);
 
-    expect(
-        events,
-        <String>[
-          'listen:8765',
-          'find',
-          'allow:4321',
-          'http:guiBrowse',
-          'foreground?'
-        ],
-        reason: 'Anki 自己已经上来了，再 SetForegroundWindow 只会抢焦点');
+    expect(events, <String>[
+      'listen:8765',
+      'find',
+      'allow:4321',
+      'http:guiBrowse',
+      'foreground?',
+    ], reason: 'Anki 自己已经上来了，再 SetForegroundWindow 只会抢焦点');
   });
 
   test('远端 AnkiConnect（非 loopback）完全不碰本机窗口', () async {
@@ -106,8 +104,9 @@ void main() {
     final bool ok = await repo.openNoteInAnki(305);
 
     expect(ok, isTrue);
-    expect(events, <String>['http:guiBrowse'],
-        reason: '另一台机器上的 Anki，激活本机窗口毫无意义');
+    expect(events, <String>[
+      'http:guiBrowse',
+    ], reason: '另一台机器上的 Anki，激活本机窗口毫无意义');
   });
 
   test('本机找不到 Anki 窗口时降级为纯 guiBrowse（不抛、不空转重试）', () async {
@@ -141,8 +140,11 @@ void main() {
 
     await repo.openNoteInAnki(305);
 
-    expect(events.where((String e) => e == 'raise:4321').length, 3,
-        reason: '重试上限，避免前台被别的程序占住时无限循环');
+    expect(
+      events.where((String e) => e == 'raise:4321').length,
+      3,
+      reason: '重试上限，避免前台被别的程序占住时无限循环',
+    );
   });
 
   test('前台激活抛错不得影响「在 Anki 中打开」的结果', () async {

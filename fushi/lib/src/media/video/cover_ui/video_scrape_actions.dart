@@ -18,8 +18,8 @@ Future<CoverScraperService> createVideoScraperService({
   final Directory covers = await VideoStorage.coversDir();
   final DatabaseSidecarGeneratedArtifactChecker? generatedArtifactChecker =
       artifactDatabase == null
-          ? null
-          : DatabaseSidecarGeneratedArtifactChecker(artifactDatabase);
+      ? null
+      : DatabaseSidecarGeneratedArtifactChecker(artifactDatabase);
   return CoverScraperService(
     repository: repository,
     coverMetaStore: CoverMetaStore(covers),

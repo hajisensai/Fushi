@@ -30,8 +30,9 @@ const Set<String> _allowedFiles = <String>{
 Directory _packageRoot() {
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
-    if (File('${dir.path}/lib/src/utils/misc/gallery_image_picker.dart')
-        .existsSync()) {
+    if (File(
+      '${dir.path}/lib/src/utils/misc/gallery_image_picker.dart',
+    ).existsSync()) {
       return dir;
     }
     final parent = dir.parent;
@@ -53,8 +54,9 @@ void main() {
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       scanned++;
-      final String relative =
-          entity.path.substring(root.path.length + 1).replaceAll('\\', '/');
+      final String relative = entity.path
+          .substring(root.path.length + 1)
+          .replaceAll('\\', '/');
       if (_allowedFiles.contains(relative)) continue;
       final String content = entity.readAsStringSync();
       if (importRe.hasMatch(content)) {
@@ -65,13 +67,18 @@ void main() {
       }
     }
 
-    expectScanScale(scanned,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
 
     expect(
       violations,
       isEmpty,
-      reason: '桌面可达代码直接用 image_picker 会在 Windows/macOS/Linux 抛 '
+      reason:
+          '桌面可达代码直接用 image_picker 会在 Windows/macOS/Linux 抛 '
           'MissingPluginException（BUG-1074）。图片选取请改走 '
           'lib/src/utils/misc/gallery_image_picker.dart 的 '
           'pickGalleryImageFile()。违规：\n${violations.join('\n')}',

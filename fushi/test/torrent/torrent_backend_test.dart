@@ -18,8 +18,11 @@ class _FakeQbServer {
 
   late final MockClient mock = MockClient((http.Request request) async {
     if (request.url.path == '/api/v2/auth/login') {
-      return http.Response('Ok.', 200,
-          headers: <String, String>{'set-cookie': 'SID=tok1; path=/'});
+      return http.Response(
+        'Ok.',
+        200,
+        headers: <String, String>{'set-cookie': 'SID=tok1; path=/'},
+      );
     }
     requests.add(request);
     return responses[request.url.path] ?? http.Response('not found', 404);
@@ -27,12 +30,14 @@ class _FakeQbServer {
 
   /// 建一个包着真实 qb 客户端的 [QbTorrentBackend]。
   TorrentBackend backend() {
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: 'http://qb.local:8080',
-      username: 'admin',
-      password: 'secret',
-      client: mock,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        client: mock,
+      ),
+    );
   }
 }
 
@@ -60,8 +65,10 @@ void main() {
     });
 
     test('prepareCategory 转发 createCategory；409 已存在也算成功', () async {
-      server.responses['/api/v2/torrents/createCategory'] =
-          http.Response('', 409);
+      server.responses['/api/v2/torrents/createCategory'] = http.Response(
+        '',
+        409,
+      );
       expect(await backend.prepareCategory('hibiki-anime'), isTrue);
       final http.Request seen = server.requests.single;
       expect(seen.url.path, '/api/v2/torrents/createCategory');
@@ -103,18 +110,17 @@ void main() {
 
     test('tracker 订阅在任务创建后附加到新磁力下载', () async {
       server.responses['/api/v2/torrents/add'] = http.Response('Ok.', 200);
-      server.responses['/api/v2/torrents/addTrackers'] =
-          http.Response('', 200);
+      server.responses['/api/v2/torrents/addTrackers'] = http.Response('', 200);
       final TrackerSubscriptionService subscription =
           TrackerSubscriptionService(
-        httpClientFactory: () async => MockClient(
-          (_) async => http.Response(
-            'udp://tracker.example:1337/announce\n'
-            'https://tracker.example/announce\n',
-            200,
-          ),
-        ),
-      );
+            httpClientFactory: () async => MockClient(
+              (_) async => http.Response(
+                'udp://tracker.example:1337/announce\n'
+                'https://tracker.example/announce\n',
+                200,
+              ),
+            ),
+          );
       final QbTorrentBackend subscribedBackend = QbTorrentBackend(
         QBittorrentClient(
           baseUrl: 'http://qb.local:8080',
@@ -164,10 +170,13 @@ void main() {
         ]),
         200,
       );
-      final List<TorrentSnapshot> torrents =
-          await backend.listTorrents(category: 'hibiki-anime');
-      expect(server.requests.single.url.queryParameters['category'],
-          'hibiki-anime');
+      final List<TorrentSnapshot> torrents = await backend.listTorrents(
+        category: 'hibiki-anime',
+      );
+      expect(
+        server.requests.single.url.queryParameters['category'],
+        'hibiki-anime',
+      );
       expect(torrents.single.hash, 'aaa111');
       expect(torrents.single.savePath, '/downloads');
       expect(torrents.single.isComplete, isFalse);

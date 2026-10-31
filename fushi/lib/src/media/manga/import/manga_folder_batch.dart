@@ -43,15 +43,18 @@ List<File> mangaCarrierFilesIn(Directory dir) {
   final List<File> files = <File>[
     for (final FileSystemEntity entity in entries)
       if (entity is File &&
-          (kMangaCarrierFileExtensions
-                  .contains(p.extension(entity.path).toLowerCase()) ||
+          (kMangaCarrierFileExtensions.contains(
+                p.extension(entity.path).toLowerCase(),
+              ) ||
               (isLegacyMokuroHtmlVolume(entity.path) &&
                   !mokuroStems.contains(
-                      p.withoutExtension(entity.path).toLowerCase()))))
+                    p.withoutExtension(entity.path).toLowerCase(),
+                  ))))
         entity,
   ];
-  files.sort((File a, File b) =>
-      naturalCompare(p.basename(a.path), p.basename(b.path)));
+  files.sort(
+    (File a, File b) => naturalCompare(p.basename(a.path), p.basename(b.path)),
+  );
   return files;
 }
 
@@ -63,11 +66,11 @@ List<File> mangaCarrierFilesIn(Directory dir) {
 /// `卷.html` + `卷/` + `_ocr/卷/` 的目录不认 manifest 的话，页图判据会把它压平成
 /// 一卷没字的纯页图，文字层丢掉、读的时候又在设备上跑一遍本地 OCR。
 List<File> mangaMokuroFilesIn(Directory dir) => <File>[
-      for (final File file in mangaCarrierFilesIn(dir))
-        if (p.extension(file.path).toLowerCase() == '.mokuro' ||
-            isMokuroLegacyHtmlPath(file.path))
-          file,
-    ];
+  for (final File file in mangaCarrierFilesIn(dir))
+    if (p.extension(file.path).toLowerCase() == '.mokuro' ||
+        isMokuroLegacyHtmlPath(file.path))
+      file,
+];
 
 /// 目录里有没有页图。判据与真正执行导入的枚举同源，不另写一套。
 bool mangaDirectoryHasPageImages(String path) {
@@ -142,15 +145,14 @@ Future<MangaBatchImportReport> importMangaBatchFolder({
   required String path,
   void Function(int done, int total)? onVolumeProgress,
   ImportCarrier Function(String path)? classify,
-}) =>
-    importMangaBatchPaths(
-      db: db,
-      paths: <String>[
-        for (final File file in mangaCarrierFilesIn(Directory(path))) file.path,
-      ],
-      onVolumeProgress: onVolumeProgress,
-      classify: classify ?? _classifyCarrierFile,
-    );
+}) => importMangaBatchPaths(
+  db: db,
+  paths: <String>[
+    for (final File file in mangaCarrierFilesIn(Directory(path))) file.path,
+  ],
+  onVolumeProgress: onVolumeProgress,
+  classify: classify ?? _classifyCarrierFile,
+);
 
 /// 一组用户**同时选中 / 拖入**的漫画载体逐卷导入：每个路径各成一本。
 ///
@@ -198,11 +200,9 @@ Future<MangaBatchImportReport> importMangaBatchPaths({
   onVolumeProgress?.call(0, volumes.length);
   for (int index = 0; index < volumes.length; index++) {
     final (String volumePath, ImportCarrier carrier) = volumes[index];
-    results.add(await _importOneVolume(
-      db: db,
-      volumePath: volumePath,
-      carrier: carrier,
-    ));
+    results.add(
+      await _importOneVolume(db: db, volumePath: volumePath, carrier: carrier),
+    );
     onVolumeProgress?.call(index + 1, volumes.length);
   }
   return MangaBatchImportReport(results);
@@ -291,23 +291,23 @@ Future<MangaBatchVolumeResult> _importOneVolume({
 /// 批量里单个候选**文件**的真定性。目录判据在这里恒为 false / 0——候选集本身
 /// 就只有文件（[mangaCarrierFilesIn] 只收 `entity is File`）。
 ImportCarrier _classifyCarrierFile(String path) => classifyImportCarrier(
-      path,
-      isDirectory: (String _) => false,
-      isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-      directoryHasPageImages: (String _) => false,
-      directoryCarrierFileCount: (String _) => 0,
-      directoryMokuroFileCount: (String _) => 0,
-    );
+  path,
+  isDirectory: (String _) => false,
+  isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
+  directoryHasPageImages: (String _) => false,
+  directoryCarrierFileCount: (String _) => 0,
+  directoryMokuroFileCount: (String _) => 0,
+);
 
 /// [importMangaBatchPaths] 的生产判据：路径可能是文件也可能是目录（拖入 / 多选），
 /// 目录判据与漫画导入框同源（[mangaDirectoryHasPageImages] / [mangaCarrierFilesIn]）。
 ImportCarrier _classifyCarrierPath(String path) => classifyImportCarrier(
-      path,
-      isDirectory: (String pth) => Directory(pth).existsSync(),
-      isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-      directoryHasPageImages: mangaDirectoryHasPageImages,
-      directoryCarrierFileCount: (String pth) =>
-          mangaCarrierFilesIn(Directory(pth)).length,
-      directoryMokuroFileCount: (String pth) =>
-          mangaMokuroFilesIn(Directory(pth)).length,
-    );
+  path,
+  isDirectory: (String pth) => Directory(pth).existsSync(),
+  isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
+  directoryHasPageImages: mangaDirectoryHasPageImages,
+  directoryCarrierFileCount: (String pth) =>
+      mangaCarrierFilesIn(Directory(pth)).length,
+  directoryMokuroFileCount: (String pth) =>
+      mangaMokuroFilesIn(Directory(pth)).length,
+);

@@ -85,32 +85,51 @@ void main() {
   group('PresentStallLog 取证与 marker', () {
     late Directory tmp;
     setUp(
-        () => tmp = Directory.systemTemp.createTempSync('present_stall_test'));
+      () => tmp = Directory.systemTemp.createTempSync('present_stall_test'),
+    );
     tearDown(() => tmp.deleteSync(recursive: true));
 
     test('resolveFile 仅 Windows + 有 LOCALAPPDATA 才返回', () {
       expect(
-          PresentStallLog.resolveFile('Fushi\\x.log',
-              isWindows: false, localAppData: 'C:\\x'),
-          isNull);
+        PresentStallLog.resolveFile(
+          'Fushi\\x.log',
+          isWindows: false,
+          localAppData: 'C:\\x',
+        ),
+        isNull,
+      );
       expect(
-          PresentStallLog.resolveFile('Fushi\\x.log',
-              isWindows: true, localAppData: null),
-          isNull);
+        PresentStallLog.resolveFile(
+          'Fushi\\x.log',
+          isWindows: true,
+          localAppData: null,
+        ),
+        isNull,
+      );
       expect(
-          PresentStallLog.resolveFile('Fushi\\x.log',
-              isWindows: true, localAppData: ''),
-          isNull);
-      final File? f = PresentStallLog.resolveFile('Fushi\\x.log',
-          isWindows: true, localAppData: 'C:\\ad');
+        PresentStallLog.resolveFile(
+          'Fushi\\x.log',
+          isWindows: true,
+          localAppData: '',
+        ),
+        isNull,
+      );
+      final File? f = PresentStallLog.resolveFile(
+        'Fushi\\x.log',
+        isWindows: true,
+        localAppData: 'C:\\ad',
+      );
       expect(f, isNotNull);
       expect(f!.path, 'C:\\ad\\Fushi\\x.log');
     });
 
     test('appendStall 写入一行含时间戳/秒数/BUG 号', () {
       final File f = File('${tmp.path}/present_stall.log');
-      PresentStallLog.appendStall(f, DateTime.utc(2026, 7, 13, 1, 2, 3),
-          afterTimeout: const Duration(seconds: 30));
+      PresentStallLog.appendStall(
+        f,
+        DateTime.utc(2026, 7, 13, 1, 2, 3),
+        afterTimeout: const Duration(seconds: 30),
+      );
       final String content = f.readAsStringSync();
       expect(content, contains('2026-07-13T01:02:03'));
       expect(content, contains('after 30s'));
@@ -119,13 +138,20 @@ void main() {
 
     test('appendStall 追加不覆盖', () {
       final File f = File('${tmp.path}/present_stall.log');
-      PresentStallLog.appendStall(f, DateTime.utc(2026, 1, 1),
-          afterTimeout: const Duration(seconds: 30));
-      PresentStallLog.appendStall(f, DateTime.utc(2026, 1, 2),
-          afterTimeout: const Duration(seconds: 30));
+      PresentStallLog.appendStall(
+        f,
+        DateTime.utc(2026, 1, 1),
+        afterTimeout: const Duration(seconds: 30),
+      );
+      PresentStallLog.appendStall(
+        f,
+        DateTime.utc(2026, 1, 2),
+        afterTimeout: const Duration(seconds: 30),
+      );
       expect(
-          f.readAsLinesSync().where((String l) => l.trim().isNotEmpty).length,
-          2);
+        f.readAsLinesSync().where((String l) => l.trim().isNotEmpty).length,
+        2,
+      );
     });
 
     test('readAndClear 读出并清空', () {

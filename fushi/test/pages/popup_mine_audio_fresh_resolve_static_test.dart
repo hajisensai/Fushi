@@ -30,13 +30,20 @@ void main() {
     source = File('assets/popup/popup.js').readAsStringSync();
     // Bound the buildMinePayload audio-resolution block: from the audio var
     // declaration to the payload return.
-    final int start =
-        source.indexOf('const audioReading = reading || expression;');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'buildMinePayload audio block not found');
+    final int start = source.indexOf(
+      'const audioReading = reading || expression;',
+    );
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'buildMinePayload audio block not found',
+    );
     final int end = source.indexOf('return {', start);
-    expect(end, greaterThan(start),
-        reason: 'buildMinePayload return not found after audio block');
+    expect(
+      end,
+      greaterThan(start),
+      reason: 'buildMinePayload return not found after audio block',
+    );
     mineBlock = source.substring(start, end);
   });
 
@@ -54,7 +61,8 @@ void main() {
     expect(
       mineBlock.contains('resolveCachedAudioUrl'),
       isFalse,
-      reason: 'buildMinePayload must NOT reuse the playback cache '
+      reason:
+          'buildMinePayload must NOT reuse the playback cache '
           '(resolveCachedAudioUrl) for mining audio — it returns an expired '
           'token URL that 404s into an empty [sound:]',
     );
@@ -66,7 +74,8 @@ void main() {
     // there. Only mining was decoupled.
     expect(
       source.contains(
-          'const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);'),
+        'const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);',
+      ),
       isTrue,
       reason:
           'createAudioButton (playback) must keep resolveCachedAudioUrl; only '
@@ -74,34 +83,41 @@ void main() {
     );
   });
 
-  test('mining JS behavior executes via node (fresh resolve on cache hit)',
-      () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS behavior execution');
-      return;
-    }
-    final File jsTest = File('test/utils/misc/popup_asset_behavior_test.js');
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
-    );
-    expect(
-      result.exitCode,
-      0,
-      reason: 'popup audio-fresh-resolve JS behavior test failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-  });
+  test(
+    'mining JS behavior executes via node (fresh resolve on cache hit)',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped(
+          'node not found on PATH; skipping JS behavior execution',
+        );
+        return;
+      }
+      final File jsTest = File('test/utils/misc/popup_asset_behavior_test.js');
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'popup audio-fresh-resolve JS behavior test failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+    },
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

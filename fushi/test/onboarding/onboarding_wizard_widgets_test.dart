@@ -50,10 +50,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('词典查词'), findsOneWidget);
-    expect(
-      find.byIcon(FushiIcons.filled(FushiIcons.success)),
-      findsOneWidget,
-    );
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
 
     await tester.tap(find.text('词典查词'));
     expect(toggled, isTrue);
@@ -79,10 +76,7 @@ void main() {
       find.byKey(const ValueKey<String>('onboarding_feature_unchecked')),
       findsOneWidget,
     );
-    expect(
-      find.byIcon(FushiIcons.filled(FushiIcons.success)),
-      findsNothing,
-    );
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsNothing);
   });
 
   testWidgets('OnboardingFeatureTile keeps equal height under loose bounds', (

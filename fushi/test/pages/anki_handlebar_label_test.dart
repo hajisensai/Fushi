@@ -76,8 +76,11 @@ void main() {
       final String label = ankiHandlebarLabel(alias);
       expect(label, isNotEmpty);
       expect(label, isNot(equals(alias)), reason: '$alias 不该退化成裸字面量');
-      expect(label, isNot(equals(t.handlebar_deprecated_label(label: ''))),
-          reason: '$alias 只剩弃用标记、丢了本体标签');
+      expect(
+        label,
+        isNot(equals(t.handlebar_deprecated_label(label: ''))),
+        reason: '$alias 只剩弃用标记、丢了本体标签',
+      );
     }
   });
 

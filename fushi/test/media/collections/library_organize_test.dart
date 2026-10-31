@@ -20,20 +20,22 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 AiProviderConfig _provider() => AiProviderConfig(
-      id: 'p1',
-      presetId: 'openai',
-      name: 'Fake',
-      baseUrl: Uri.parse('https://example.invalid/v1'),
-      apiKey: 'k',
-      model: 'm',
-    );
+  id: 'p1',
+  presetId: 'openai',
+  name: 'Fake',
+  baseUrl: Uri.parse('https://example.invalid/v1'),
+  apiKey: 'k',
+  model: 'm',
+);
 
 class _Settings implements AiSettingsSource {
   _Settings({bool assigned = true})
-      : aiFeatureAssignments = assigned
-            ? const AiFeatureAssignments()
-                .withAssignment(AiFeature.libraryOrganize, 'p1')
-            : const AiFeatureAssignments();
+    : aiFeatureAssignments = assigned
+          ? const AiFeatureAssignments().withAssignment(
+              AiFeature.libraryOrganize,
+              'p1',
+            )
+          : const AiFeatureAssignments();
 
   @override
   final AiFeatureAssignments aiFeatureAssignments;
@@ -53,30 +55,30 @@ class _FakeAi {
   final List<String> prompts = <String>[];
 
   AiChatClient create() => AiChatClient(
-        client: MockClient((http.Request request) async {
-          final Map<String, Object?> body =
-              jsonDecode(request.body) as Map<String, Object?>;
-          final List<Object?> messages = body['messages']! as List<Object?>;
-          final String user =
-              (messages.last! as Map<String, Object?>)['content']! as String;
-          prompts.add(user);
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'choices': <Object?>[
-                <String, Object?>{
-                  'message': <String, Object?>{'content': reply(user)},
-                },
-              ],
-              'usage': <String, Object?>{
-                'prompt_tokens': 100,
-                'completion_tokens': 20,
-              },
-            }),
-            200,
-            headers: <String, String>{'content-type': 'application/json'},
-          );
+    client: MockClient((http.Request request) async {
+      final Map<String, Object?> body =
+          jsonDecode(request.body) as Map<String, Object?>;
+      final List<Object?> messages = body['messages']! as List<Object?>;
+      final String user =
+          (messages.last! as Map<String, Object?>)['content']! as String;
+      prompts.add(user);
+      return http.Response(
+        jsonEncode(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{'content': reply(user)},
+            },
+          ],
+          'usage': <String, Object?>{
+            'prompt_tokens': 100,
+            'completion_tokens': 20,
+          },
         }),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
       );
+    }),
+  );
 }
 
 /// 用户提示词里某标题的条目下标。
@@ -106,38 +108,38 @@ void main() {
     test('剔除越界 / 重复下标与不认识的合集；围栏与散文照样能读', () {
       final AiOrganizeReply reply = parseAiLibraryOrganizeReply(
         'sure!\n```json\n${jsonEncode(<String, Object?>{
-              'groups': <Object?>[
-                <String, Object?>{
-                  'members': <Object?>[0, 1, 1, 9, '2'],
-                  'name': 'S',
-                  'confidence': 'high',
-                },
-                <String, Object?>{
-                  'members': <Object?>[3],
-                  'into': 'C7',
-                  'name': '',
-                  'confidence': 'high',
-                },
-                <String, Object?>{
-                  'members': <Object?>[3],
-                  'name': 'only one',
-                  'confidence': 'high',
-                },
-              ],
-              'merges': <Object?>[
-                <String, Object?>{
-                  'collections': <Object?>['C0', 'C0', 'C1'],
-                  'confidence': 'medium',
-                },
-              ],
-              'evictions': <Object?>[
-                <String, Object?>{
-                  'collection': 'C1',
-                  'members': <Object?>[3],
-                  'confidence': 'bogus',
-                },
-              ],
-            })}\n```',
+          'groups': <Object?>[
+            <String, Object?>{
+              'members': <Object?>[0, 1, 1, 9, '2'],
+              'name': 'S',
+              'confidence': 'high',
+            },
+            <String, Object?>{
+              'members': <Object?>[3],
+              'into': 'C7',
+              'name': '',
+              'confidence': 'high',
+            },
+            <String, Object?>{
+              'members': <Object?>[3],
+              'name': 'only one',
+              'confidence': 'high',
+            },
+          ],
+          'merges': <Object?>[
+            <String, Object?>{
+              'collections': <Object?>['C0', 'C0', 'C1'],
+              'confidence': 'medium',
+            },
+          ],
+          'evictions': <Object?>[
+            <String, Object?>{
+              'collection': 'C1',
+              'members': <Object?>[3],
+              'confidence': 'bogus',
+            },
+          ],
+        })}\n```',
         itemCount: 4,
         collectionIds: <String>{'C0', 'C1'},
       )!;
@@ -170,12 +172,12 @@ void main() {
           takenNames: const <String, Set<String>>{},
         );
     OrganizeEntry video(String uid, String? work) => OrganizeEntry(
-          mediaType: 'video',
-          entryKey: uid,
-          tombstoneKey: 'video\u0000$uid',
-          externalWorkKey: work,
-          item: AiOrganizeItem(title: uid),
-        );
+      mediaType: 'video',
+      entryKey: uid,
+      tombstoneKey: 'video\u0000$uid',
+      externalWorkKey: work,
+      item: AiOrganizeItem(title: uid),
+    );
 
     test('「同一部作品」成员刮到不同作品 → 改成系列标签，不建合集', () {
       final List<OrganizeEntry> entries = <OrganizeEntry>[
@@ -184,15 +186,20 @@ void main() {
       ];
       final List<OrganizeAction> plan = planFromAiReply(
         facts: videoFacts(entries),
-        chunk: OrganizeChunk(entries: entries, collections: const <OrganizeCollectionFact>[]),
-        reply: const AiOrganizeReply(groups: <AiOrganizeGroupProposal>[
-          AiOrganizeGroupProposal(
-            members: <int>[0, 1],
-            name: '物語',
-            level: AiOrganizeLevel.work,
-            confidence: AiOrganizeConfidence.high,
-          ),
-        ]),
+        chunk: OrganizeChunk(
+          entries: entries,
+          collections: const <OrganizeCollectionFact>[],
+        ),
+        reply: const AiOrganizeReply(
+          groups: <AiOrganizeGroupProposal>[
+            AiOrganizeGroupProposal(
+              members: <int>[0, 1],
+              name: '物語',
+              level: AiOrganizeLevel.work,
+              confidence: AiOrganizeConfidence.high,
+            ),
+          ],
+        ),
         trigger: OrganizeTrigger.manual,
         tagPrefix: '系列:',
       );
@@ -202,15 +209,15 @@ void main() {
 
     test('同一份回复里「合并 C1、C2」+「并入 C2」→ 改并进胜方', () {
       OrganizeCollectionFact col(int id, String name) => OrganizeCollectionFact(
-            id: id,
-            name: name,
-            collectionType: 'playlist',
-            origin: CollectionOrigin.ai,
-            organizeKey: 'k-$name',
-            organizeAliases: const <String>{},
-            memberKeys: const <String>{},
-            sampleTitles: const <String>[],
-          );
+        id: id,
+        name: name,
+        collectionType: 'playlist',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-$name',
+        organizeAliases: const <String>{},
+        memberKeys: const <String>{},
+        sampleTitles: const <String>[],
+      );
       final List<OrganizeCollectionFact> cols = <OrganizeCollectionFact>[
         col(1, 'A'),
         col(2, 'B'),
@@ -246,10 +253,12 @@ void main() {
         trigger: OrganizeTrigger.manual,
         tagPrefix: '',
       );
-      final OrganizeAction merge =
-          plan.singleWhere((OrganizeAction a) => a.kind == OrganizeActionKind.merge);
-      final OrganizeAction add =
-          plan.singleWhere((OrganizeAction a) => a.kind == OrganizeActionKind.add);
+      final OrganizeAction merge = plan.singleWhere(
+        (OrganizeAction a) => a.kind == OrganizeActionKind.merge,
+      );
+      final OrganizeAction add = plan.singleWhere(
+        (OrganizeAction a) => a.kind == OrganizeActionKind.add,
+      );
       expect(add.targetCollectionId, merge.targetCollectionId);
     });
 
@@ -258,16 +267,17 @@ void main() {
         video('e1', 'anilist:9'),
         video('e2', 'anilist:9'),
       ];
-      AiOrganizeReply reply(AiOrganizeConfidence c) =>
-          AiOrganizeReply(groups: <AiOrganizeGroupProposal>[
-            AiOrganizeGroupProposal(
-              members: const <int>[0, 1],
-              name: 'Frieren',
-              originalTitle: '葬送のフリーレン',
-              level: AiOrganizeLevel.work,
-              confidence: c,
-            ),
-          ]);
+      AiOrganizeReply reply(AiOrganizeConfidence c) => AiOrganizeReply(
+        groups: <AiOrganizeGroupProposal>[
+          AiOrganizeGroupProposal(
+            members: const <int>[0, 1],
+            name: 'Frieren',
+            originalTitle: '葬送のフリーレン',
+            level: AiOrganizeLevel.work,
+            confidence: c,
+          ),
+        ],
+      );
       final OrganizeChunk chunk = OrganizeChunk(
         entries: entries,
         collections: const <OrganizeCollectionFact>[],
@@ -324,17 +334,15 @@ void main() {
           clientFactory: ai.create,
         );
 
-    const List<String> haruhi = <String>[
-      '涼宮ハルヒの憂鬱',
-      '涼宮ハルヒの溜息',
-      '涼宮ハルヒの退屈',
-    ];
+    const List<String> haruhi = <String>['涼宮ハルヒの憂鬱', '涼宮ハルヒの溜息', '涼宮ハルヒの退屈'];
 
     String groupHaruhi(String prompt, {String confidence = 'high'}) =>
         jsonEncode(<String, Object?>{
           'groups': <Object?>[
             <String, Object?>{
-              'members': <int>[for (final String t in haruhi) _indexOf(prompt, t)],
+              'members': <int>[
+                for (final String t in haruhi) _indexOf(prompt, t),
+              ],
               'name': '涼宮ハルヒ',
               'originalTitle': '涼宮ハルヒシリーズ',
               'level': 'work',
@@ -348,17 +356,21 @@ void main() {
         await book(t);
       }
       final _FakeAi ai = _FakeAi(groupHaruhi);
-      final LibraryOrganizeResult first = await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      final LibraryOrganizeResult first = await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(first.status, LibraryOrganizeStatus.done);
       expect(first.requests, 1);
-      final MediaCollectionRow c =
-          (await db.getMediaCollectionByNaturalKey('涼宮ハルヒ', 'playlist'))!;
+      final MediaCollectionRow c = (await db.getMediaCollectionByNaturalKey(
+        '涼宮ハルヒ',
+        'playlist',
+      ))!;
       expect(c.origin, 'ai');
       expect(c.organizeKey, titleOrganizeKey('books', '涼宮ハルヒシリーズ'));
       expect(await db.getCollectionItems(c.id), hasLength(3));
-      final List<LibraryOrganizeChangeRow> changes =
-          await db.select(db.libraryOrganizeChanges).get();
+      final List<LibraryOrganizeChangeRow> changes = await db
+          .select(db.libraryOrganizeChanges)
+          .get();
       expect(changes.single.kind, 'create');
       final LibraryOrganizeRunRow run =
           (await db.select(db.libraryOrganizeRuns).get()).single;
@@ -369,8 +381,9 @@ void main() {
       expect(await db.getMediaCollectionById(c.id), isNull);
       expect(await db.getRejectedOrganizeKeys(), <String>{c.organizeKey!});
 
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(
         await db.getMediaCollectionByNaturalKey('涼宮ハルヒ', 'playlist'),
         isNull,
@@ -385,18 +398,21 @@ void main() {
       await book('魔法禁书目录 22');
       final int user = await db.createMediaCollection('禁書');
       await db.addToCollection(user, MediaKind.epub, a);
-      final _FakeAi ai = _FakeAi((String prompt) => jsonEncode(<String, Object?>{
-            'groups': <Object?>[
-              <String, Object?>{
-                'members': <int>[_indexOf(prompt, '魔法禁书目录 22')],
-                'into': _collectionIdOf(prompt, '禁書'),
-                'name': '',
-                'confidence': 'high',
-              },
-            ],
-          }));
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      final _FakeAi ai = _FakeAi(
+        (String prompt) => jsonEncode(<String, Object?>{
+          'groups': <Object?>[
+            <String, Object?>{
+              'members': <int>[_indexOf(prompt, '魔法禁书目录 22')],
+              'into': _collectionIdOf(prompt, '禁書'),
+              'name': '',
+              'confidence': 'high',
+            },
+          ],
+        }),
+      );
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(await db.getCollectionItems(user), hasLength(2));
       expect((await db.getMediaCollectionById(user))!.origin, 'user');
     });
@@ -405,13 +421,16 @@ void main() {
       for (final String t in haruhi) {
         await book(t);
       }
-      final _FakeAi ai =
-          _FakeAi((String p) => groupHaruhi(p, confidence: 'medium'));
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
+      final _FakeAi ai = _FakeAi(
+        (String p) => groupHaruhi(p, confidence: 'medium'),
+      );
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
       expect(await db.getAllMediaCollections(), isEmpty);
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(await db.getAllMediaCollections(), hasLength(1));
     });
 
@@ -447,7 +466,9 @@ void main() {
       for (final String t in haruhi) {
         await book(t);
       }
-      await db.into(db.libraryOrganizeRuns).insert(
+      await db
+          .into(db.libraryOrganizeRuns)
+          .insert(
             LibraryOrganizeRunsCompanion.insert(
               domain: 'books',
               trigger: 'auto',
@@ -460,13 +481,14 @@ void main() {
       final int? before = await s.lastCompletedAutoRunStartedAt(
         CollectionShelfDomain.books,
       );
-      final LibraryOrganizeResult r =
-          await s.run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
+      final LibraryOrganizeResult r = await s.run(
+        CollectionShelfDomain.books,
+        trigger: OrganizeTrigger.auto,
+      );
       expect(r.status, LibraryOrganizeStatus.overBudget);
-      final LibraryOrganizeRunRow row = (await (db.select(db.libraryOrganizeRuns)
-                ..where((t) => t.id.equals(r.runId)))
-              .get())
-          .single;
+      final LibraryOrganizeRunRow row = (await (db.select(
+        db.libraryOrganizeRuns,
+      )..where((t) => t.id.equals(r.runId))).get()).single;
       expect(row.status, 'partial');
       expect(
         await s.lastCompletedAutoRunStartedAt(CollectionShelfDomain.books),
@@ -480,8 +502,10 @@ void main() {
         await book(t);
       }
       final _FakeAi ai = _FakeAi(groupHaruhi);
-      final LibraryOrganizeResult r = await service(ai, assigned: false)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      final LibraryOrganizeResult r = await service(
+        ai,
+        assigned: false,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(r.status, LibraryOrganizeStatus.noProvider);
       expect(ai.prompts, isEmpty);
       expect(await db.getAllMediaCollections(), isEmpty);
@@ -491,7 +515,9 @@ void main() {
       for (final String t in haruhi) {
         await book(t);
       }
-      await db.into(db.libraryOrganizeRuns).insert(
+      await db
+          .into(db.libraryOrganizeRuns)
+          .insert(
             LibraryOrganizeRunsCompanion.insert(
               domain: 'books',
               trigger: 'auto',
@@ -501,8 +527,9 @@ void main() {
             ),
           );
       final _FakeAi ai = _FakeAi(groupHaruhi);
-      final LibraryOrganizeResult r = await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
+      final LibraryOrganizeResult r = await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
       expect(r.status, LibraryOrganizeStatus.overBudget);
       expect(ai.prompts, isEmpty);
     });
@@ -510,54 +537,68 @@ void main() {
     test('漫画与书分域：书的整理看不到漫画', () async {
       await book('ワンピース 1', format: 'manga');
       final _FakeAi ai = _FakeAi((_) => '{"groups": []}');
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(ai.prompts, isEmpty, reason: '书架里没有条目，不发请求');
-      await service(ai)
-          .run(CollectionShelfDomain.manga, trigger: OrganizeTrigger.manual);
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.manga, trigger: OrganizeTrigger.manual);
       expect(ai.prompts.single, contains('ワンピース 1'));
     });
 
     test('合并两个 AI 合集后撤销：败方按快照重建为用户合集，收敛不再合并', () async {
       final String a = await book('A1');
       final String b = await book('B1');
-      final int ca = await db.createMediaCollection('A',
-          origin: CollectionOrigin.ai, organizeKey: 'k-a');
-      final int cb = await db.createMediaCollection('B',
-          origin: CollectionOrigin.ai, organizeKey: 'k-b');
+      final int ca = await db.createMediaCollection(
+        'A',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-a',
+      );
+      final int cb = await db.createMediaCollection(
+        'B',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-b',
+      );
       await db.addToCollection(ca, MediaKind.epub, a, userIntent: false);
       await db.addToCollection(cb, MediaKind.epub, b, userIntent: false);
-      final _FakeAi ai = _FakeAi((String prompt) => jsonEncode(<String, Object?>{
-            'merges': <Object?>[
-              <String, Object?>{
-                'collections': <String>[
-                  _collectionIdOf(prompt, 'A'),
-                  _collectionIdOf(prompt, 'B'),
-                ],
-                'confidence': 'high',
-              },
-            ],
-          }));
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      final _FakeAi ai = _FakeAi(
+        (String prompt) => jsonEncode(<String, Object?>{
+          'merges': <Object?>[
+            <String, Object?>{
+              'collections': <String>[
+                _collectionIdOf(prompt, 'A'),
+                _collectionIdOf(prompt, 'B'),
+              ],
+              'confidence': 'high',
+            },
+          ],
+        }),
+      );
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       expect(await db.getMediaCollectionById(cb), isNull);
       expect(await db.getCollectionItems(ca), hasLength(2));
-      final LibraryOrganizeChangeRow merge = (await db
-              .select(db.libraryOrganizeChanges)
-              .get())
-          .singleWhere((LibraryOrganizeChangeRow r) => r.kind == 'merge');
+      final LibraryOrganizeChangeRow merge =
+          (await db.select(db.libraryOrganizeChanges).get()).singleWhere(
+            (LibraryOrganizeChangeRow r) => r.kind == 'merge',
+          );
       await undoLibraryOrganizeChanges(db, <int>[merge.id]);
       final MediaCollectionRow restored =
           (await db.getMediaCollectionByNaturalKey('B', 'playlist') ??
-              await db.getMediaCollectionByNaturalKey('B', 'collection'))!;
+          await db.getMediaCollectionByNaturalKey('B', 'collection'))!;
       expect(restored.origin, 'user');
       expect(
-        (await db.getCollectionItems(restored.id))
-            .map((MediaCollectionItemRow m) => m.entryKey),
+        (await db.getCollectionItems(
+          restored.id,
+        )).map((MediaCollectionItemRow m) => m.entryKey),
         <String>[b],
       );
       expect(
-        (await db.getCollectionItems(ca)).map((MediaCollectionItemRow m) => m.entryKey),
+        (await db.getCollectionItems(
+          ca,
+        )).map((MediaCollectionItemRow m) => m.entryKey),
         <String>[a],
       );
       expect((await db.getMediaCollectionById(ca))!.origin, 'user');
@@ -574,16 +615,24 @@ void main() {
       for (final String t in haruhi) {
         await book(t);
       }
-      final int other = await db.createMediaCollection('涼宮ハルヒ',
-          collectionType: 'playlist',
-          origin: CollectionOrigin.ai,
-          organizeKey: 'k-other');
+      final int other = await db.createMediaCollection(
+        '涼宮ハルヒ',
+        collectionType: 'playlist',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-other',
+      );
       final String filler = await book('filler');
-      await db.addToCollection(other, MediaKind.epub, filler, userIntent: false);
+      await db.addToCollection(
+        other,
+        MediaKind.epub,
+        filler,
+        userIntent: false,
+      );
       await db.deleteMediaCollection(other);
       final _FakeAi ai = _FakeAi(groupHaruhi);
-      await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       final String key = titleOrganizeKey('books', '涼宮ハルヒシリーズ')!;
       expect(
         await db.getMediaCollectionByNaturalKey(
@@ -600,47 +649,54 @@ void main() {
       }
       await book('長門有希の消失 1');
       await book('長門有希の消失 2');
-      final _FakeAi ai = _FakeAi((String prompt) => jsonEncode(<String, Object?>{
-            'groups': <Object?>[
-              <String, Object?>{
-                'members': <int>[
-                  for (final String t in haruhi) _indexOf(prompt, t),
-                ],
-                'name': 'SOS団',
-                'originalTitle': '涼宮ハルヒシリーズ',
-                'level': 'work',
-                'confidence': 'high',
-              },
-              <String, Object?>{
-                'members': <int>[
-                  _indexOf(prompt, '長門有希の消失 1'),
-                  _indexOf(prompt, '長門有希の消失 2'),
-                ],
-                'name': 'SOS団',
-                'originalTitle': '長門有希ちゃんの消失',
-                'level': 'work',
-                'confidence': 'high',
-              },
-            ],
-          }));
-      final LibraryOrganizeResult r = await service(ai)
-          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      final _FakeAi ai = _FakeAi(
+        (String prompt) => jsonEncode(<String, Object?>{
+          'groups': <Object?>[
+            <String, Object?>{
+              'members': <int>[
+                for (final String t in haruhi) _indexOf(prompt, t),
+              ],
+              'name': 'SOS団',
+              'originalTitle': '涼宮ハルヒシリーズ',
+              'level': 'work',
+              'confidence': 'high',
+            },
+            <String, Object?>{
+              'members': <int>[
+                _indexOf(prompt, '長門有希の消失 1'),
+                _indexOf(prompt, '長門有希の消失 2'),
+              ],
+              'name': 'SOS団',
+              'originalTitle': '長門有希ちゃんの消失',
+              'level': 'work',
+              'confidence': 'high',
+            },
+          ],
+        }),
+      );
+      final LibraryOrganizeResult r = await service(
+        ai,
+      ).run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
       final String haruhiKey = titleOrganizeKey('books', '涼宮ハルヒシリーズ')!;
       final String nagatoKey = titleOrganizeKey('books', '長門有希ちゃんの消失')!;
       expect(haruhiKey, isNot(nagatoKey));
-      final MediaCollectionRow first =
-          (await db.getMediaCollectionByNaturalKey('SOS団', 'playlist'))!;
-      final MediaCollectionRow second = (await db.getMediaCollectionByNaturalKey(
-        disambiguatedOrganizeName('SOS団', nagatoKey),
+      final MediaCollectionRow first = (await db.getMediaCollectionByNaturalKey(
+        'SOS団',
         'playlist',
       ))!;
+      final MediaCollectionRow second = (await db
+          .getMediaCollectionByNaturalKey(
+            disambiguatedOrganizeName('SOS団', nagatoKey),
+            'playlist',
+          ))!;
       expect(first.organizeKey, haruhiKey);
       expect(second.organizeKey, nagatoKey);
       expect(await db.getCollectionItems(first.id), hasLength(3));
       expect(await db.getCollectionItems(second.id), hasLength(2));
       expect(
-        (await db.select(db.libraryOrganizeChanges).get())
-            .map((LibraryOrganizeChangeRow c) => c.kind),
+        (await db.select(db.libraryOrganizeChanges).get()).map(
+          (LibraryOrganizeChangeRow c) => c.kind,
+        ),
         <String>['create', 'create'],
       );
 
@@ -686,8 +742,9 @@ void main() {
       expect(await undoLibraryOrganizeChanges(db, <int>[change.id]), 1);
       expect(await db.getMediaCollectionById(user), isNotNull);
       expect(
-        (await db.getCollectionItems(user))
-            .map((MediaCollectionItemRow m) => m.entryKey),
+        (await db.getCollectionItems(
+          user,
+        )).map((MediaCollectionItemRow m) => m.entryKey),
         <String>[a],
       );
     });
@@ -704,7 +761,9 @@ void main() {
       await db.addToCollection(existing, MediaKind.epub, a, userIntent: false);
       await db.addToCollection(existing, MediaKind.epub, b, userIntent: false);
       // 修复前的落盘：复用了已有行，却记成「新建」（没有 created 标记）。
-      final int changeId = await db.into(db.libraryOrganizeChanges).insert(
+      final int changeId = await db
+          .into(db.libraryOrganizeChanges)
+          .insert(
             LibraryOrganizeChangesCompanion.insert(
               runId: 1,
               kind: 'create',
@@ -723,8 +782,9 @@ void main() {
       expect(await undoLibraryOrganizeChanges(db, <int>[changeId]), 1);
       expect(await db.getMediaCollectionById(existing), isNotNull);
       expect(
-        (await db.getCollectionItems(existing))
-            .map((MediaCollectionItemRow m) => m.entryKey),
+        (await db.getCollectionItems(
+          existing,
+        )).map((MediaCollectionItemRow m) => m.entryKey),
         <String>[a],
       );
     });

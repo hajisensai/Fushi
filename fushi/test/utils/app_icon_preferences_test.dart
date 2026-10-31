@@ -69,8 +69,11 @@ void main() {
         'hibiki_transparent',
         'hibiki_full',
       ]) {
-        expect(presetIconAssets.containsKey(retired), isFalse,
-            reason: '$retired 已随换新图标下线，资源也已删除');
+        expect(
+          presetIconAssets.containsKey(retired),
+          isFalse,
+          reason: '$retired 已随换新图标下线，资源也已删除',
+        );
       }
     });
 
@@ -216,7 +219,8 @@ void main() {
       expect(
         cache.containsKey(fileKey),
         isFalse,
-        reason: '发布走的是唯一发布点，它必须逐出同路径旧解码；'
+        reason:
+            '发布走的是唯一发布点，它必须逐出同路径旧解码；'
             '否则换图后 rail 仍显示上一张',
       );
     });

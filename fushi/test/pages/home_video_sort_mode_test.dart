@@ -33,8 +33,7 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_sort_mode_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync('fushi_sort_mode_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -79,23 +78,23 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            // #792 分区化后全量墙卡只在 allVideos 分区渲染,钉住该分区。
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.allVideos,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        // #792 分区化后全量墙卡只在 allVideos 分区渲染,钉住该分区。
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.allVideos,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   /// 三张散卡从左到右的标题序（同一行内按 x 坐标）。
   List<String> cardOrder(WidgetTester tester, List<String> titles) {
@@ -109,49 +108,58 @@ void main() {
 
   Future<void> seedThreeVideos() async {
     // Beta：导入居中（1/2），有观看痕迹（watch-stats lastModified = now，最新）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/beta'),
-      title: const Value('Beta'),
-      videoPath: const Value('/abs/beta.mp4'),
-      lastPositionMs: const Value(60000),
-      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/beta'),
+        title: const Value('Beta'),
+        videoPath: const Value('/abs/beta.mp4'),
+        lastPositionMs: const Value(60000),
+        importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
+      ),
+    );
     // Alpha 第10话：导入最新（1/3），无观看记录。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/a10'),
-      title: const Value('Alpha 第10话'),
-      videoPath: const Value('/abs/a10.mp4'),
-      importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/a10'),
+        title: const Value('Alpha 第10话'),
+        videoPath: const Value('/abs/a10.mp4'),
+        importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
+      ),
+    );
     // Alpha 第9话：导入最旧（1/1），无观看记录。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/a9'),
-      title: const Value('Alpha 第9话'),
-      videoPath: const Value('/abs/a9.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/a9'),
+        title: const Value('Alpha 第9话'),
+        videoPath: const Value('/abs/a9.mp4'),
+        importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
+      ),
+    );
     // v92：观看只写 `study_segments`，「最近观看」时刻取该 uid 段的 max(endAt)。
     final DateTime watchedAt = DateTime.now();
-    await db.upsertStudySegment(StudySegmentsCompanion.insert(
-      uid: FushiDatabase.newStudySegmentUid(),
-      deviceId: await db.getOrCreateStudyDeviceId(),
-      mediaKind: kActivityMediaVideo,
-      mediaKey: 'video/beta',
-      title: 'Beta',
-      startAt: watchedAt.millisecondsSinceEpoch - 1000,
-      endAt: watchedAt.millisecondsSinceEpoch,
-      dateKey: FushiDatabase.statDateKeyOf(watchedAt),
-      hour: watchedAt.hour,
-      durationMs: const Value(1000),
-      chars: const Value(1),
-      updatedAt: watchedAt.millisecondsSinceEpoch,
-    ));
+    await db.upsertStudySegment(
+      StudySegmentsCompanion.insert(
+        uid: FushiDatabase.newStudySegmentUid(),
+        deviceId: await db.getOrCreateStudyDeviceId(),
+        mediaKind: kActivityMediaVideo,
+        mediaKey: 'video/beta',
+        title: 'Beta',
+        startAt: watchedAt.millisecondsSinceEpoch - 1000,
+        endAt: watchedAt.millisecondsSinceEpoch,
+        dateKey: FushiDatabase.statDateKeyOf(watchedAt),
+        hour: watchedAt.hour,
+        durationMs: const Value(1000),
+        chars: const Value(1),
+        updatedAt: watchedAt.millisecondsSinceEpoch,
+      ),
+    );
   }
 
   const List<String> allTitles = <String>['Beta', 'Alpha 第10话', 'Alpha 第9话'];
 
-  testWidgets('默认最近观看：看过的在前，没看过的按导入时间倒序；切名称/导入时间真重排 + 写穿偏好',
-      (WidgetTester tester) async {
+  testWidgets('默认最近观看：看过的在前，没看过的按导入时间倒序；切名称/导入时间真重排 + 写穿偏好', (
+    WidgetTester tester,
+  ) async {
     // v68 起散装也进 hero（本用例三张全是散卡，Beta 在看 → 顶部多出一块全宽
     // hero），视口抬高让墙卡仍在首屏内被懒构建出来——本用例断言的是墙卡排序，
     // 不是 hero。
@@ -165,22 +173,22 @@ void main() {
 
     // 默认 recent：Beta（watch-stats=now 最新）→ Alpha 第10话（导入 1/3）→
     // Alpha 第9话（导入 1/1）。
-    expect(
-      cardOrder(tester, allTitles),
-      <String>['Beta', 'Alpha 第10话', 'Alpha 第9话'],
-      reason: '默认「最近观看」：有观看痕迹者最前，其余退导入时间倒序',
-    );
+    expect(cardOrder(tester, allTitles), <String>[
+      'Beta',
+      'Alpha 第10话',
+      'Alpha 第9话',
+    ], reason: '默认「最近观看」：有观看痕迹者最前，其余退导入时间倒序');
 
     // 切「名称」：natural 序 → 第9话 < 第10话 < Beta。
     await tester.tap(find.byIcon(FushiIcons.sort));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sort_title).last);
     await tester.pumpAndSettle();
-    expect(
-      cardOrder(tester, allTitles),
-      <String>['Alpha 第9话', 'Alpha 第10话', 'Beta'],
-      reason: '名称模式必须 natural 排序（第9话 < 第10话，不是字典序）',
-    );
+    expect(cardOrder(tester, allTitles), <String>[
+      'Alpha 第9话',
+      'Alpha 第10话',
+      'Beta',
+    ], reason: '名称模式必须 natural 排序（第9话 < 第10话，不是字典序）');
     expect(prefs.videoSortModeName, 'title', reason: '选择必须写穿偏好');
 
     // 切「导入时间」：新导入在前。
@@ -188,16 +196,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sort_imported).last);
     await tester.pumpAndSettle();
-    expect(
-      cardOrder(tester, allTitles),
-      <String>['Alpha 第10话', 'Beta', 'Alpha 第9话'],
-      reason: '导入时间模式：新导入在前',
-    );
+    expect(cardOrder(tester, allTitles), <String>[
+      'Alpha 第10话',
+      'Beta',
+      'Alpha 第9话',
+    ], reason: '导入时间模式：新导入在前');
     expect(prefs.videoSortModeName, 'imported');
   });
 
-  testWidgets('偏好持久化：带 video_sort_mode=title 开页直接按名称序渲染',
-      (WidgetTester tester) async {
+  testWidgets('偏好持久化：带 video_sort_mode=title 开页直接按名称序渲染', (
+    WidgetTester tester,
+  ) async {
     // v68 起散装也进 hero（本用例三张全是散卡，Beta 在看 → 顶部多出一块全宽
     // hero），视口抬高让墙卡仍在首屏内被懒构建出来——本用例断言的是墙卡排序，
     // 不是 hero。
@@ -210,10 +219,10 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    expect(
-      cardOrder(tester, allTitles),
-      <String>['Alpha 第9话', 'Alpha 第10话', 'Beta'],
-      reason: '开页读偏好：上次选的名称序直接生效',
-    );
+    expect(cardOrder(tester, allTitles), <String>[
+      'Alpha 第9话',
+      'Alpha 第10话',
+      'Beta',
+    ], reason: '开页读偏好：上次选的名称序直接生效');
   });
 }

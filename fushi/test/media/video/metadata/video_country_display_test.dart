@@ -5,9 +5,10 @@ void main() {
   group('formatVideoCountriesForDisplay', () {
     test('有全称时丢弃 ISO alpha-2 代码，消除同一国家双词条堆叠', () {
       expect(
-        formatVideoCountriesForDisplay(
-          const <String>['United States of America', 'US'],
-        ),
+        formatVideoCountriesForDisplay(const <String>[
+          'United States of America',
+          'US',
+        ]),
         const <String>['United States of America'],
       );
     });
@@ -25,9 +26,14 @@ void main() {
 
     test('去空白与重复，多全称保序', () {
       expect(
-        formatVideoCountriesForDisplay(
-          const <String>[' Japan ', 'Japan', 'JP', '', 'United Kingdom', 'GB'],
-        ),
+        formatVideoCountriesForDisplay(const <String>[
+          ' Japan ',
+          'Japan',
+          'JP',
+          '',
+          'United Kingdom',
+          'GB',
+        ]),
         const <String>['Japan', 'United Kingdom'],
       );
     });

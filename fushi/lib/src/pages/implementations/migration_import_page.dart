@@ -51,7 +51,8 @@ const String kMigrationImportDonePrefKey = 'migration_import_done_v1';
 /// 老包中转目录（`<共享 Documents>/Hibiki/migration`；与导出侧同一约定）。
 Future<Directory> migrationTransferDir() async {
   final String documents = await ExternalPath.getExternalStoragePublicDirectory(
-      ExternalPath.DIRECTORY_DOCUMENTS);
+    ExternalPath.DIRECTORY_DOCUMENTS,
+  );
   return Directory(p.join(documents, 'Hibiki', 'migration'));
 }
 
@@ -110,11 +111,13 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       permissionGranted: granted,
       onProgress: (MigrationBatch batch, int done, int total) {
         if (!mounted) return;
-        setState(() => _scanningLabel = t.migration_import_verifying(
-              batch: _batchLabel(batch),
-              done: done + 1,
-              total: total,
-            ));
+        setState(
+          () => _scanningLabel = t.migration_import_verifying(
+            batch: _batchLabel(batch),
+            done: done + 1,
+            total: total,
+          ),
+        );
       },
     );
     if (!mounted) return;
@@ -144,8 +147,12 @@ class _MigrationImportPageState extends State<MigrationImportPage>
             children: <Widget>[
               for (final MapEntry<String, List<String>> e
                   in scan.problems.entries) ...<Widget>[
-                Text(t.migration_import_verify_failed(
-                    batch: e.key, detail: e.value.join('; '))),
+                Text(
+                  t.migration_import_verify_failed(
+                    batch: e.key,
+                    detail: e.value.join('; '),
+                  ),
+                ),
                 const SizedBox(height: 8),
               ],
             ],
@@ -167,13 +174,13 @@ class _MigrationImportPageState extends State<MigrationImportPage>
   }
 
   String _batchLabel(MigrationBatch batch) => switch (batch) {
-        MigrationBatch.core => t.migration_batch_core_label,
-        MigrationBatch.dictionaries => t.backup_category_dictionary,
-        MigrationBatch.books => t.backup_category_books,
-        MigrationBatch.audiobooks => t.backup_category_audiobooks,
-        MigrationBatch.fonts => t.backup_category_fonts,
-        MigrationBatch.localAudio => t.backup_category_local_audio,
-      };
+    MigrationBatch.core => t.migration_batch_core_label,
+    MigrationBatch.dictionaries => t.backup_category_dictionary,
+    MigrationBatch.books => t.backup_category_books,
+    MigrationBatch.audiobooks => t.backup_category_audiobooks,
+    MigrationBatch.fonts => t.backup_category_fonts,
+    MigrationBatch.localAudio => t.backup_category_local_audio,
+  };
 
   Future<void> _runImport() async {
     if (_running) return;
@@ -197,15 +204,23 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       appModel.beginBackupImport();
       await WidgetsBinding.instance.endOfFrame;
       await appModel.closeDatabase();
-      final String booksRoot =
-          p.join(appModel.appDirectory.path, 'fushi_books');
-      final String audiobooksRoot =
-          p.join(appModel.appDirectory.path, 'audiobooks');
-      final String fontsRoot =
-          p.join(appModel.appDirectory.path, 'custom_fonts');
+      final String booksRoot = p.join(
+        appModel.appDirectory.path,
+        'fushi_books',
+      );
+      final String audiobooksRoot = p.join(
+        appModel.appDirectory.path,
+        'audiobooks',
+      );
+      final String fontsRoot = p.join(
+        appModel.appDirectory.path,
+        'custom_fonts',
+      );
       final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
-      final String gameCoversRoot =
-          p.join(appModel.appDirectory.path, 'game_covers');
+      final String gameCoversRoot = p.join(
+        appModel.appDirectory.path,
+        'game_covers',
+      );
       for (final MigrationImportBatch batch in scan.ready) {
         // **不能裸调 setState**：beginBackupImport() 上的是全屏遮罩，本页已被
         // 移出 widget 树（State 进入 defunct）。循环第一句就会抛
@@ -215,8 +230,11 @@ class _MigrationImportPageState extends State<MigrationImportPage>
         // 进度归遮罩管（reportBackupImportProgress 已在下面传给它）；本页的
         // _status 只在页面还活着时有意义。
         if (mounted) {
-          setState(() => _status =
-              t.migration_import_running(batch: _batchLabel(batch.batch)));
+          setState(
+            () => _status = t.migration_import_running(
+              batch: _batchLabel(batch.batch),
+            ),
+          );
         }
         await BackupRestoreService.mergeRestoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
@@ -241,23 +259,32 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       // 合并导入落到的是活库 fushi.db。改名前的 legacy hibiki.db 已不再被改名：
       // 门槛以下的库（含目录里只有 hibiki.db 的情形）在 mergeRestoreBackup 开库前
       // 就以 UnsupportedLegacySchemaException 拒绝，走不到这里。
-      final String dbPath =
-          p.join(appModel.databaseDirectory.path, fushiDatabaseFileName);
+      final String dbPath = p.join(
+        appModel.databaseDirectory.path,
+        fushiDatabaseFileName,
+      );
       final List<String> countProblems = MigrationImporter.verifyImportedCounts(
-          dbPath: dbPath, expected: expected);
+        dbPath: dbPath,
+        expected: expected,
+      );
       if (countProblems.isNotEmpty) {
         // 同上：重启会带走屏幕上的说明，先落日志。
         debugPrint(
-            '[Fushi][migration] count verification failed: ${countProblems.join("; ")}');
-        ErrorLogService.instance.log('MigrationImportPage.verifyCounts',
-            StateError(countProblems.join('; ')), StackTrace.current);
+          '[Fushi][migration] count verification failed: ${countProblems.join("; ")}',
+        );
+        ErrorLogService.instance.log(
+          'MigrationImportPage.verifyCounts',
+          StateError(countProblems.join('; ')),
+          StackTrace.current,
+        );
         // BUG-1505：等落盘写完再交还控制权。ErrorLogService.log 是 fire-and-forget
         // 异步 append，这条日志此前总是随强制重启一起消失（用户机器实测：导入失败后
         // 「错误日志 (0)」，一条都没有）。
         await ErrorLogService.instance.flush();
         // 行数不足：不删中转文件、不置完成标志（绝不进卸载流程），重启后可重试。
         appModel.failBackupImport(
-            t.migration_import_counts_failed(detail: countProblems.join('; ')));
+          t.migration_import_counts_failed(detail: countProblems.join('; ')),
+        );
         // BUG-1505：**失败不再自动重启**。遮罩的失败态本来就设计成「由用户读完原因
         // 手点『立即重启』」（见 main.dart 的 BackupImportOverlayView 注释），这里
         // 却又补了 2 秒后强制 System.exit，把设计覆盖掉——用户看到的是「报个错，页面
@@ -300,11 +327,14 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       if (e is UnsupportedLegacySchemaException && mounted) {
         setState(() => _legacyRejected = true);
       }
-      appModel.failBackupImport(e is UnsupportedLegacySchemaException
-          ? t.backup_legacy_schema(
-              version: kLegacySchemaBridgeAppVersion,
-              url: kLegacySchemaBridgeReleaseUrl)
-          : t.migration_import_verify_failed(batch: '', detail: '$e'));
+      appModel.failBackupImport(
+        e is UnsupportedLegacySchemaException
+            ? t.backup_legacy_schema(
+                version: kLegacySchemaBridgeAppVersion,
+                url: kLegacySchemaBridgeReleaseUrl,
+              )
+            : t.migration_import_verify_failed(batch: '', detail: '$e'),
+      );
       // BUG-1505：失败停在遮罩上，重启交给用户点（理由同 verifyCounts 分支）。
     } finally {
       if (mounted) {
@@ -332,9 +362,11 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       severity: FushiNoticeSeverity.warning,
       icon: FushiIcons.download,
       title: t.migration_import_legacy_title(
-          version: kLegacySchemaBridgeAppVersion),
+        version: kLegacySchemaBridgeAppVersion,
+      ),
       message: t.migration_import_legacy_message(
-          version: kLegacySchemaBridgeAppVersion),
+        version: kLegacySchemaBridgeAppVersion,
+      ),
       actions: <Widget>[
         FushiFilledButton.icon(
           onPressed: () => launchUrl(
@@ -342,8 +374,11 @@ class _MigrationImportPageState extends State<MigrationImportPage>
             mode: LaunchMode.externalApplication,
           ),
           icon: const FushiIcon(FushiIcons.openInNew),
-          label: Text(t.db_legacy_schema_release_open(
-              version: kLegacySchemaBridgeAppVersion)),
+          label: Text(
+            t.db_legacy_schema_release_open(
+              version: kLegacySchemaBridgeAppVersion,
+            ),
+          ),
         ),
       ],
     );

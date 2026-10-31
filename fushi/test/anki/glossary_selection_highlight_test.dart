@@ -17,38 +17,38 @@ import 'package:flutter_test/flutter_test.dart';
 ///    `intersectsNode` 的真实语义，手写 fake DOM 测它只会变成自证，故不在本层测。
 /// ③ 三镜像逐字节一致由 `browser_extension_popup_parity_guard_test.dart` 守。
 void main() {
-  test(
-    'selection made at mining time is marked inside the exported glossary '
-    '(executes popup.js via node)',
-    () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
-        return;
-      }
+  test('selection made at mining time is marked inside the exported glossary '
+      '(executes popup.js via node)', () async {
+    final String? nodeExe = _resolveNode();
+    if (nodeExe == null) {
+      markTestSkipped('node not found on PATH; skipping JS behavior execution');
+      return;
+    }
 
-      final File jsTest =
-          File('test/anki/glossary_selection_highlight_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
+    final File jsTest = File('test/anki/glossary_selection_highlight_test.js');
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
+    );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
 
-      expect(
-        result.exitCode,
-        0,
-        reason: 'glossary selection highlight behavior test failed.\n'
-            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-      );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
-    },
-  );
+    expect(
+      result.exitCode,
+      0,
+      reason:
+          'glossary selection highlight behavior test failed.\n'
+          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+    );
+    expect(
+      result.stdout.toString(),
+      contains('all assertions passed'),
+      reason: 'behavior harness must reach its success marker',
+    );
+  });
 }
 
 String? _resolveNode() {

@@ -25,8 +25,10 @@ DiscoveryDomainImporters _recordingImporters(List<String> log) {
       return 'key-pdf';
     },
     importAudiobook: (AlignAudiobookPlan plan) async {
-      log.add('audiobook:${plan.contentPath}+${plan.subtitlePath}'
-          '+${plan.audioPaths.length}');
+      log.add(
+        'audiobook:${plan.contentPath}+${plan.subtitlePath}'
+        '+${plan.audioPaths.length}',
+      );
       return 'key-audiobook';
     },
     importSubtitleAudiobook: (SubtitleAudiobookPlan plan) async {
@@ -107,8 +109,10 @@ void main() {
     final File epub = File('${tempDir.path}${Platform.pathSeparator}a.epub');
     await epub.writeAsString('x');
 
-    final DiscoveryImportOutcome outcome =
-        await executor.importFile(DiscoveryMediaKind.novel, epub);
+    final DiscoveryImportOutcome outcome = await executor.importFile(
+      DiscoveryMediaKind.novel,
+      epub,
+    );
     expect(outcome.importedCount, 1);
     expect(outcome.summary, 'key-epub');
     expect(log.single, 'epub:${epub.path}');
@@ -127,17 +131,20 @@ void main() {
       'cover.jpg': 'ignored',
     });
 
-    final DiscoveryImportOutcome outcome =
-        await executor.importFile(DiscoveryMediaKind.novel, zip);
+    final DiscoveryImportOutcome outcome = await executor.importFile(
+      DiscoveryMediaKind.novel,
+      zip,
+    );
     expect(outcome.importedCount, 2);
     expect(log, hasLength(2));
     expect(log[0], startsWith('epub:'));
     expect(log[1], startsWith('text:'));
     // 解出的文件真实落盘在压缩包旁的同名目录。
     expect(
-      File('${tempDir.path}${Platform.pathSeparator}books'
-              '${Platform.pathSeparator}vol1${Platform.pathSeparator}a.epub')
-          .existsSync(),
+      File(
+        '${tempDir.path}${Platform.pathSeparator}books'
+        '${Platform.pathSeparator}vol1${Platform.pathSeparator}a.epub',
+      ).existsSync(),
       isTrue,
     );
   });
@@ -181,8 +188,10 @@ void main() {
       '02.mp3': 'm',
     });
 
-    final DiscoveryImportOutcome outcome =
-        await executor.importFile(DiscoveryMediaKind.audiobook, zip);
+    final DiscoveryImportOutcome outcome = await executor.importFile(
+      DiscoveryMediaKind.audiobook,
+      zip,
+    );
     expect(outcome.importedCount, 1);
     expect(log.single, contains('audiobook:'));
     expect(log.single, contains('+2'));
@@ -200,8 +209,10 @@ void main() {
       'game/data.xp3': 'd',
     });
 
-    final DiscoveryImportOutcome outcome =
-        await executor.importFile(DiscoveryMediaKind.game, zip);
+    final DiscoveryImportOutcome outcome = await executor.importFile(
+      DiscoveryMediaKind.game,
+      zip,
+    );
     expect(outcome.importedCount, 1);
     expect(log.single, startsWith('game:'));
     expect(log.single, contains('atri.exe'));

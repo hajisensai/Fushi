@@ -230,8 +230,7 @@ class _MangaReaderQuickSettingsSheetState
         value: _prefs.spreadOffset >= 1,
         // 与单双页同理：条漫恒单列，没有配对可错开。
         onChanged: _mode == MangaReadingMode.spread
-            ? (bool on) =>
-                  _apply(<String, Object?>{'spreadOffset': on ? 1 : 0})
+            ? (bool on) => _apply(<String, Object?>{'spreadOffset': on ? 1 : 0})
             : null,
       ),
       _QuickRow(

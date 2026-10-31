@@ -21,7 +21,10 @@ const int _exitUsage = 64;
 const int _exitUnavailable = 69;
 
 /// 一次搜索：返回聚合结果（结束后由调用方释放）。
-typedef DiscoverySearch = Future<ProviderBatchResult<VideoDiscoveryPage>> Function(VideoDiscoveryRequest request);
+typedef DiscoverySearch =
+    Future<ProviderBatchResult<VideoDiscoveryPage>> Function(
+      VideoDiscoveryRequest request,
+    );
 
 /// 测试注入点：按运行时造搜索端口。
 typedef DiscoveryPortsFactory = ServerDiscoveryPorts Function(ServerRuntime rt);
@@ -64,9 +67,15 @@ Map<String, Object?> buildDiscoveryReport(
     'successfulProviders': result.successfulProviderCount,
     'failures': <Object?>[
       for (final ExternalProviderFailure f in result.failures)
-        <String, Object?>{'provider': f.providerId, 'kind': f.kind.name, 'message': f.message},
+        <String, Object?>{
+          'provider': f.providerId,
+          'kind': f.kind.name,
+          'message': f.message,
+        },
     ],
-    'items': <Object?>[for (final VideoDiscoveryItem i in items) discoveryItemToJson(i)],
+    'items': <Object?>[
+      for (final VideoDiscoveryItem i in items) discoveryItemToJson(i),
+    ],
   };
 }
 
@@ -103,19 +112,28 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
     final StringSink o = out ?? stdout;
     final StringSink e = err ?? stderr;
     final ArgResults? sub = command.command;
-    if (sub == null || sub.name != 'search' || sub.rest.isEmpty || sub.rest.join(' ').trim().isEmpty) {
-      e.writeln('用法: discover search <query> [--category movie|tv|anime] [--json]');
+    if (sub == null ||
+        sub.name != 'search' ||
+        sub.rest.isEmpty ||
+        sub.rest.join(' ').trim().isEmpty) {
+      e.writeln(
+        '用法: discover search <query> [--category movie|tv|anime] [--json]',
+      );
       return _exitUsage;
     }
     final String domain = sub['domain'] as String;
     if (domain != 'video') {
       e.writeln('服务端只有视频发现（--domain video）；$domain 域的发现源在桌面 app 里');
-      return domain == 'book' || domain == 'manga' || domain == 'game' ? _exitUnavailable : _exitUsage;
+      return domain == 'book' || domain == 'manga' || domain == 'game'
+          ? _exitUnavailable
+          : _exitUsage;
     }
     VideoDiscoveryCategory? category;
     final String? rawCategory = sub['category'] as String?;
     if (rawCategory != null) {
-      category = VideoDiscoveryCategory.values.where((VideoDiscoveryCategory c) => c.name == rawCategory).firstOrNull;
+      category = VideoDiscoveryCategory.values
+          .where((VideoDiscoveryCategory c) => c.name == rawCategory)
+          .firstOrNull;
       if (category == null) {
         e.writeln('--category 只接受 movie / tv / anime');
         return _exitUsage;
@@ -125,7 +143,12 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
     final int? size = int.tryParse(sub['size'] as String);
     final String? rawYear = sub['year'] as String?;
     final int? year = rawYear == null ? null : int.tryParse(rawYear);
-    if (page == null || page < 1 || size == null || size < 1 || size > 100 || (rawYear != null && year == null)) {
+    if (page == null ||
+        page < 1 ||
+        size == null ||
+        size < 1 ||
+        size > 100 ||
+        (rawYear != null && year == null)) {
       e.writeln('--page 需 ≥1、--size 需 1..100、--year 需整数');
       return _exitUsage;
     }
@@ -142,10 +165,19 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
     return ctx.withRuntime((ServerRuntime rt) async {
       final ServerDiscoveryPorts ports =
           (portsFactory ??
-          (ServerRuntime r) => productionServerDiscovery(prefs: r.prefs, config: r.config, locale: locale ?? ''))(rt);
+          (ServerRuntime r) => productionServerDiscovery(
+            prefs: r.prefs,
+            config: r.config,
+            locale: locale ?? '',
+          ))(rt);
       try {
-        final ProviderBatchResult<VideoDiscoveryPage> result = await ports.search(request);
-        final Map<String, Object?> report = buildDiscoveryReport(query, request, result);
+        final ProviderBatchResult<VideoDiscoveryPage> result = await ports
+            .search(request);
+        final Map<String, Object?> report = buildDiscoveryReport(
+          query,
+          request,
+          result,
+        );
         for (final ExternalProviderFailure f in result.failures) {
           e.writeln('来源 ${f.providerId} 失败（${f.kind.name}）: ${f.message}');
         }
@@ -157,7 +189,9 @@ discover search <query> [--category movie|tv|anime] [--year Y] [--page N] [--siz
           for (final Object? row in items) {
             final Map<String, Object?> i = row! as Map<String, Object?>;
             final Object? year = i['year'];
-            o.writeln('[${i['provider']}:${i['id']}] ${i['title']}${year == null ? '' : ' ($year)'}  ${i['category']}');
+            o.writeln(
+              '[${i['provider']}:${i['id']}] ${i['title']}${year == null ? '' : ' ($year)'}  ${i['category']}',
+            );
           }
         }
         // 所有来源都失败（断网 / 全被限流）才算依赖不可用；部分失败照常出结果。

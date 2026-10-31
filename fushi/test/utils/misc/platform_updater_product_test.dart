@@ -17,30 +17,36 @@ import 'package:fushi/src/utils/misc/platform_updater.dart';
 /// `api.github.com/.../releases?per_page=20`，那里是全仓库所有 release 的并集，
 /// 混着两族。所以这层过滤是回退路径上的最后一道闸，不能因为「清单已经分开了」就删。
 Map<String, dynamic> _asset(String name) => <String, dynamic>{
-      'name': name,
-      'browser_download_url': 'https://example.invalid/download/$name',
-    };
+  'name': name,
+  'browser_download_url': 'https://example.invalid/download/$name',
+};
 
 void main() {
   group('assetBelongsToThisProduct（纯函数）', () {
     test('只认本族前缀', () {
       expect(assetBelongsToThisProduct('fushi-1.4.0-arm64-v8a.apk'), isTrue);
       expect(
-          assetBelongsToThisProduct('fushi-1.4.0-windows-setup.exe'), isTrue);
+        assetBelongsToThisProduct('fushi-1.4.0-windows-setup.exe'),
+        isTrue,
+      );
     });
 
     test('拒绝桥包族与无前缀历史产物', () {
       expect(assetBelongsToThisProduct('hibiki-1.2.0-arm64-v8a.apk'), isFalse);
       expect(
-          assetBelongsToThisProduct('hibiki-1.2.0-windows-setup.exe'), isFalse);
+        assetBelongsToThisProduct('hibiki-1.2.0-windows-setup.exe'),
+        isFalse,
+      );
       expect(assetBelongsToThisProduct('hibiki-1.2.0-macos.zip'), isFalse);
       // 无前缀的更早期手动发布产物同样不是本族。
       expect(assetBelongsToThisProduct('app-arm64-v8a-release.apk'), isFalse);
     });
 
     test('不能靠子串蒙混：前缀必须在开头', () {
-      expect(assetBelongsToThisProduct('hibiki-fushi-1.4.0-arm64-v8a.apk'),
-          isFalse);
+      expect(
+        assetBelongsToThisProduct('hibiki-fushi-1.4.0-arm64-v8a.apk'),
+        isFalse,
+      );
     });
   });
 
@@ -96,12 +102,11 @@ void main() {
     });
 
     test('Windows 跳过 hibiki setup 选中 fushi setup', () async {
-      final UpdateAsset? picked = await WindowsUpdater().selectAsset(
-        <Map<String, dynamic>>[
-          _asset('hibiki-1.2.0-windows-setup.exe'),
-          _asset('fushi-1.4.0-windows-setup.exe'),
-        ],
-      );
+      final UpdateAsset? picked = await WindowsUpdater()
+          .selectAsset(<Map<String, dynamic>>[
+            _asset('hibiki-1.2.0-windows-setup.exe'),
+            _asset('fushi-1.4.0-windows-setup.exe'),
+          ]);
       expect(picked?.name, 'fushi-1.4.0-windows-setup.exe');
     });
 
@@ -109,13 +114,11 @@ void main() {
       final AndroidUpdater updater = AndroidUpdater(
         abiProvider: () async => <String>['arm64-v8a'],
       );
-      final UpdateAsset? picked = await updater.selectAsset(
-        <Map<String, dynamic>>[
-          _asset('hibiki-1.2.0-abc1234-debug.apk'),
-          _asset('fushi-1.4.0-debug.10332-2cddfff-debug.apk'),
-        ],
-        channel: UpdateChannel.debug,
-      );
+      final UpdateAsset? picked = await updater
+          .selectAsset(<Map<String, dynamic>>[
+            _asset('hibiki-1.2.0-abc1234-debug.apk'),
+            _asset('fushi-1.4.0-debug.10332-2cddfff-debug.apk'),
+          ], channel: UpdateChannel.debug);
       expect(picked?.name, 'fushi-1.4.0-debug.10332-2cddfff-debug.apk');
     });
   });
@@ -129,7 +132,8 @@ void main() {
       expect(
         assetBelongsToThisProduct(name),
         isTrue,
-        reason: '$name 过不了本族判据——302 回退路径合成的候选名'
+        reason:
+            '$name 过不了本族判据——302 回退路径合成的候选名'
             '会被 selectAsset 全部滤掉，stable 自更新静默失效',
       );
     }

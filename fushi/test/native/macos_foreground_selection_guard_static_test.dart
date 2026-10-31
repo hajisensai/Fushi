@@ -17,8 +17,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String relativeToFushi) {
     final File file = File(relativeToFushi);
-    expect(file.existsSync(), isTrue,
-        reason: 'expected file at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected file at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
@@ -28,23 +31,29 @@ void main() {
       code = read('macos/Runner/AppDelegate.swift');
     });
 
-    test('registers the shared foreground_selection channel + captureContext',
-        () {
-      // Same channel name + method the Windows runner exposes and the Dart
-      // SelectionCapture.captureForegroundContext invokes.
-      expect(code, contains('app.fushi.reader/foreground_selection'));
-      expect(code, contains('call.method == "captureContext"'));
-      expect(code, contains('handleForegroundSelection'));
-    });
+    test(
+      'registers the shared foreground_selection channel + captureContext',
+      () {
+        // Same channel name + method the Windows runner exposes and the Dart
+        // SelectionCapture.captureForegroundContext invokes.
+        expect(code, contains('app.fushi.reader/foreground_selection'));
+        expect(code, contains('call.method == "captureContext"'));
+        expect(code, contains('handleForegroundSelection'));
+      },
+    );
 
     test('walks the AX selection + parameterized-range API chain', () {
       expect(code, contains('AXUIElementCreateSystemWide()'));
       expect(code, contains('kAXFocusedUIElementAttribute'));
       expect(code, contains('kAXSelectedTextAttribute'));
       expect(code, contains('kAXSelectedTextRangeAttribute'));
-      expect(code, contains('kAXStringForRangeParameterizedAttribute'),
-          reason: 'the expanded context window is fetched via the '
-              'parameterized string-for-range attribute');
+      expect(
+        code,
+        contains('kAXStringForRangeParameterizedAttribute'),
+        reason:
+            'the expanded context window is fetched via the '
+            'parameterized string-for-range attribute',
+      );
       expect(code, contains('AXUIElementCopyParameterizedAttributeValue('));
     });
 
@@ -66,8 +75,11 @@ void main() {
     });
 
     test('offsets/expansion mirror the Windows contract', () {
-      expect(code, contains('static let defaultExpand: Int = 600'),
-          reason: 'mirrors kForegroundContextExpand (Windows)');
+      expect(
+        code,
+        contains('static let defaultExpand: Int = 600'),
+        reason: 'mirrors kForegroundContextExpand (Windows)',
+      );
       // The channel reply carries the same keys the Dart side reads.
       expect(code, contains('contextText'));
       expect(code, contains('selStart'));

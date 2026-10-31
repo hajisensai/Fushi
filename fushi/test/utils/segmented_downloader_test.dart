@@ -250,21 +250,20 @@ void main() {
     int maxAttemptsPerPart = 3,
     Duration Function(int attempt)? retryBackoff,
     Duration Function()? monotonicClock,
-  }) =>
-      SegmentedDownloader(
-        plan: plan,
-        destination: dest(),
-        partFile: part(),
-        progressFile: progress(),
-        open: host.open,
-        concurrency: concurrency,
-        maxAttemptsPerPart: maxAttemptsPerPart,
-        isCancelled: isCancelled,
-        flushInterval: 64,
-        // 单测不空等真实退避。
-        retryBackoff: retryBackoff ?? (int _) => Duration.zero,
-        monotonicClock: monotonicClock,
-      );
+  }) => SegmentedDownloader(
+    plan: plan,
+    destination: dest(),
+    partFile: part(),
+    progressFile: progress(),
+    open: host.open,
+    concurrency: concurrency,
+    maxAttemptsPerPart: maxAttemptsPerPart,
+    isCancelled: isCancelled,
+    flushInterval: 64,
+    // 单测不空等真实退避。
+    retryBackoff: retryBackoff ?? (int _) => Duration.zero,
+    monotonicClock: monotonicClock,
+  );
 
   group('平台前提', () {
     test('FileMode.append + setPosition 必须是随机写，不是强制追加', () async {
@@ -284,8 +283,12 @@ void main() {
 
       final List<int> bytes = f.readAsBytesSync();
       expect(bytes.length, 16, reason: 'append 不该改变文件长度');
-      expect(bytes.sublist(4, 8), <int>[0x42, 0x42, 0x42, 0x42],
-          reason: 'setPosition 指定的偏移必须被真正写到');
+      expect(bytes.sublist(4, 8), <int>[
+        0x42,
+        0x42,
+        0x42,
+        0x42,
+      ], reason: 'setPosition 指定的偏移必须被真正写到');
       expect(bytes.sublist(8), List<int>.filled(8, 0x41), reason: '不得越界覆盖后续字节');
     });
 
@@ -415,12 +418,10 @@ void main() {
       await build(plan, host, concurrency: 8).download();
 
       expect(host.requests.length, 3);
-      final Set<String?> ranges =
-          host.requests.map((MapEntry<String, String?> e) => e.value).toSet();
-      expect(
-        ranges,
-        <String>{'bytes=0-99', 'bytes=100-199', 'bytes=200-299'},
-      );
+      final Set<String?> ranges = host.requests
+          .map((MapEntry<String, String?> e) => e.value)
+          .toSet();
+      expect(ranges, <String>{'bytes=0-99', 'bytes=100-199', 'bytes=200-299'});
     });
 
     test('进度回调单调递增并终于总字节', () async {
@@ -470,7 +471,8 @@ void main() {
       expect(out.readAsBytesSync(), body);
       expect(
         host.requests.any(
-            (MapEntry<String, String?> e) => e.key == 'https://dead/pack.zip'),
+          (MapEntry<String, String?> e) => e.key == 'https://dead/pack.zip',
+        ),
         isTrue,
         reason: '首选来源应被试过',
       );
@@ -519,17 +521,13 @@ void main() {
             index: 0,
             offset: 0,
             length: 120,
-            sources: <DownloadSource>[
-              DownloadSource(url: 'https://s/part-0'),
-            ],
+            sources: <DownloadSource>[DownloadSource(url: 'https://s/part-0')],
           ),
           DownloadPart(
             index: 1,
             offset: 120,
             length: 120,
-            sources: <DownloadSource>[
-              DownloadSource(url: 'https://s/part-1'),
-            ],
+            sources: <DownloadSource>[DownloadSource(url: 'https://s/part-1')],
           ),
         ],
       );
@@ -573,8 +571,11 @@ void main() {
       final File out = await build(plan, host).download();
 
       expect(out.readAsBytesSync(), body, reason: '换源后内容必须正确');
-      expect(host.cancelledStreams, greaterThan(0),
-          reason: '忽略 Range 的整包响应必须被断连，而不是读完');
+      expect(
+        host.cancelledStreams,
+        greaterThan(0),
+        reason: '忽略 Range 的整包响应必须被断连，而不是读完',
+      );
     });
 
     test('206 缺 Content-Range 视为畸形响应，换源而不是照写', () async {
@@ -637,17 +638,13 @@ void main() {
             index: 0,
             offset: 0,
             length: 150,
-            sources: <DownloadSource>[
-              DownloadSource(url: 'https://s/part-0'),
-            ],
+            sources: <DownloadSource>[DownloadSource(url: 'https://s/part-0')],
           ),
           DownloadPart(
             index: 1,
             offset: 150,
             length: 50,
-            sources: <DownloadSource>[
-              DownloadSource(url: 'https://s/part-1'),
-            ],
+            sources: <DownloadSource>[DownloadSource(url: 'https://s/part-1')],
           ),
         ],
       );
@@ -767,12 +764,19 @@ void main() {
       final File out = await build(plan2, second, concurrency: 1).download();
 
       expect(out.readAsBytesSync(), body);
-      final Set<String?> retried =
-          second.requests.map((MapEntry<String, String?> e) => e.value).toSet();
-      expect(retried.contains('bytes=0-99'), isFalse,
-          reason: '第 0 片上一轮已完成，不该重下');
-      expect(retried.contains('bytes=100-199'), isFalse,
-          reason: '第 1 片上一轮已完成，不该重下');
+      final Set<String?> retried = second.requests
+          .map((MapEntry<String, String?> e) => e.value)
+          .toSet();
+      expect(
+        retried.contains('bytes=0-99'),
+        isFalse,
+        reason: '第 0 片上一轮已完成，不该重下',
+      );
+      expect(
+        retried.contains('bytes=100-199'),
+        isFalse,
+        reason: '第 1 片上一轮已完成，不该重下',
+      );
     });
 
     test('计划版本变了（服务端换包）时进度整份作废', () async {
@@ -780,13 +784,15 @@ void main() {
       final _FakeHost host = _FakeHost()
         ..resources['https://a/pack.zip'] = body;
       // 预置一份「旧包」的进度。
-      progress().writeAsStringSync(json.encode(<String, Object?>{
-        'version': 1,
-        'totalBytes': 200,
-        'planVersion': 'OLD',
-        'sha256': null,
-        'parts': <String, int>{'0': 100},
-      }));
+      progress().writeAsStringSync(
+        json.encode(<String, Object?>{
+          'version': 1,
+          'totalBytes': 200,
+          'planVersion': 'OLD',
+          'sha256': null,
+          'parts': <String, int>{'0': 100},
+        }),
+      );
 
       final DownloadPlan plan = DownloadPlan.ranged(
         urls: const <String>['https://a/pack.zip'],
@@ -797,10 +803,14 @@ void main() {
       final File out = await build(plan, host).download();
 
       expect(out.readAsBytesSync(), body);
-      final Set<String?> ranges =
-          host.requests.map((MapEntry<String, String?> e) => e.value).toSet();
-      expect(ranges.contains('bytes=0-99'), isTrue,
-          reason: '换包后第 0 片必须重下，不能把旧包字节当断点');
+      final Set<String?> ranges = host.requests
+          .map((MapEntry<String, String?> e) => e.value)
+          .toSet();
+      expect(
+        ranges.contains('bytes=0-99'),
+        isTrue,
+        reason: '换包后第 0 片必须重下，不能把旧包字节当断点',
+      );
     });
   });
 

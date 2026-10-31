@@ -67,17 +67,21 @@ class PortProcessTerminator {
     }
     try {
       if (Platform.isWindows) {
-        final ProcessResult result = await Process.run(
-          'taskkill',
-          <String>['/PID', '${listener.pid}', '/T', '/F'],
-        );
+        final ProcessResult result = await Process.run('taskkill', <String>[
+          '/PID',
+          '${listener.pid}',
+          '/T',
+          '/F',
+        ]);
         return result.exitCode == 0;
       }
       // POSIX：先 SIGTERM（yomitan-api 注册了 SIGTERM 清理句柄），给它一点退出
       // 时间；仍未退出再 SIGKILL 兜底。SIGKILL 结果不能忽略：投递后复核
       // 进程确实退出，仍存活（如 EPERM）必须报失败，让 UI 走失败反馈路径。
-      final bool delivered =
-          Process.killPid(listener.pid, ProcessSignal.sigterm);
+      final bool delivered = Process.killPid(
+        listener.pid,
+        ProcessSignal.sigterm,
+      );
       if (!delivered) return false;
       await Future<void>.delayed(const Duration(milliseconds: 600));
       if (!await _isAlivePosix(listener.pid)) return true;
@@ -92,8 +96,10 @@ class PortProcessTerminator {
   /// POSIX 下探测进程是否仍存活（`ps -p` 退出码 0 = 存活）。
   static Future<bool> _isAlivePosix(int targetPid) async {
     try {
-      final ProcessResult result =
-          await Process.run('ps', <String>['-p', '$targetPid']);
+      final ProcessResult result = await Process.run('ps', <String>[
+        '-p',
+        '$targetPid',
+      ]);
       return result.exitCode == 0;
     } on ProcessException {
       return false;
@@ -101,17 +107,22 @@ class PortProcessTerminator {
   }
 
   static Future<int?> _findListenerPidWindows(int port) async {
-    final ProcessResult result =
-        await Process.run('netstat', <String>['-ano', '-p', 'tcp']);
+    final ProcessResult result = await Process.run('netstat', <String>[
+      '-ano',
+      '-p',
+      'tcp',
+    ]);
     if (result.exitCode != 0) return null;
     return parseNetstatListenerPid('${result.stdout}', port);
   }
 
   static Future<int?> _findListenerPidPosix(int port) async {
-    final ProcessResult result = await Process.run(
-      'lsof',
-      <String>['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
-    );
+    final ProcessResult result = await Process.run('lsof', <String>[
+      '-nP',
+      '-iTCP:$port',
+      '-sTCP:LISTEN',
+      '-t',
+    ]);
     if (result.exitCode != 0) return null;
     final String out = '${result.stdout}'.trim();
     if (out.isEmpty) return null;
@@ -126,8 +137,12 @@ class PortProcessTerminator {
         // 「进程 spawn LOLBin 查进程表」算高权重信号，见 windows_process_query.dart）。
         return windowsProcessById(targetPid)?.name ?? fallback;
       }
-      final ProcessResult result =
-          await Process.run('ps', <String>['-p', '$targetPid', '-o', 'comm=']);
+      final ProcessResult result = await Process.run('ps', <String>[
+        '-p',
+        '$targetPid',
+        '-o',
+        'comm=',
+      ]);
       if (result.exitCode != 0) return fallback;
       final String name = '${result.stdout}'.trim();
       if (name.isEmpty) return fallback;
@@ -151,8 +166,12 @@ class PortProcessTerminator {
         return await Link('/proc/$targetPid/exe').resolveSymbolicLinks();
       }
       // macOS：`ps -o comm=` 输出即完整可执行路径。
-      final ProcessResult result =
-          await Process.run('ps', <String>['-p', '$targetPid', '-o', 'comm=']);
+      final ProcessResult result = await Process.run('ps', <String>[
+        '-p',
+        '$targetPid',
+        '-o',
+        'comm=',
+      ]);
       if (result.exitCode != 0) return null;
       final String out = '${result.stdout}'.trim();
       return out.startsWith('/') ? out : null;
@@ -193,8 +212,9 @@ bool isProtectedSystemProcess({
   required String processName,
 }) {
   if (listenerPid <= 4) return true;
-  return kProtectedSystemProcessNames
-      .contains(processName.trim().toLowerCase());
+  return kProtectedSystemProcessNames.contains(
+    processName.trim().toLowerCase(),
+  );
 }
 
 /// 判断占用者可执行路径是否与本进程同一文件（用于识别「Fushi 自身旧实例」）。

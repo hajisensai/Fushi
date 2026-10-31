@@ -14,10 +14,14 @@ FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 void main() {
   test('prefKeyForSource is a stable per-source namespace', () {
-    expect(SourceLibraryCredentialStore.prefKeyForSource(7),
-        'media_source_secret_7');
-    expect(SourceLibraryCredentialStore.prefKeyForSource(42),
-        'media_source_secret_42');
+    expect(
+      SourceLibraryCredentialStore.prefKeyForSource(7),
+      'media_source_secret_7',
+    );
+    expect(
+      SourceLibraryCredentialStore.prefKeyForSource(42),
+      'media_source_secret_42',
+    );
   });
 
   test('save then read round-trips password + private key', () async {
@@ -25,31 +29,47 @@ void main() {
     addTearDown(db.close);
     final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
 
-    await store.saveSecret(1,
-        password: 'hunter2', privateKey: '-----BEGIN KEY-----');
+    await store.saveSecret(
+      1,
+      password: 'hunter2',
+      privateKey: '-----BEGIN KEY-----',
+    );
     final SourceLibrarySecret secret = await store.readSecret(1);
     expect(secret.password, 'hunter2');
     expect(secret.privateKey, '-----BEGIN KEY-----');
     expect(secret.isEmpty, isFalse);
   });
 
-  test('🔴 red line: stored preference is base64, not plaintext password',
-      () async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(db);
+  test(
+    '🔴 red line: stored preference is base64, not plaintext password',
+    () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final SourceLibraryCredentialStore store = SourceLibraryCredentialStore(
+        db,
+      );
 
-    await store.saveSecret(3, password: 'plaintext-should-not-appear');
-    final String? raw =
-        await db.getPref(SourceLibraryCredentialStore.prefKeyForSource(3));
-    expect(raw, isNotNull);
-    expect(raw, isNot(contains('plaintext-should-not-appear')),
-        reason: 'password must be base64-encoded, never stored in the clear');
-    // But it decodes back to the original secret.
-    expect(utf8.decode(base64Decode(raw!)),
-        contains('plaintext-should-not-appear'));
-    expect((await store.readSecret(3)).password, 'plaintext-should-not-appear');
-  });
+      await store.saveSecret(3, password: 'plaintext-should-not-appear');
+      final String? raw = await db.getPref(
+        SourceLibraryCredentialStore.prefKeyForSource(3),
+      );
+      expect(raw, isNotNull);
+      expect(
+        raw,
+        isNot(contains('plaintext-should-not-appear')),
+        reason: 'password must be base64-encoded, never stored in the clear',
+      );
+      // But it decodes back to the original secret.
+      expect(
+        utf8.decode(base64Decode(raw!)),
+        contains('plaintext-should-not-appear'),
+      );
+      expect(
+        (await store.readSecret(3)).password,
+        'plaintext-should-not-appear',
+      );
+    },
+  );
 
   test('empty credentials delete the entry (read yields empty)', () async {
     final FushiDatabase db = _memDb();
@@ -94,7 +114,9 @@ void main() {
 
     // Corrupt base64/JSON payload.
     await db.setPref(
-        SourceLibraryCredentialStore.prefKeyForSource(11), 'not-base64!!!');
+      SourceLibraryCredentialStore.prefKeyForSource(11),
+      'not-base64!!!',
+    );
     expect((await store.readSecret(11)).isEmpty, isTrue);
   });
 }

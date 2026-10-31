@@ -13,9 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///   ③ controls builder 外面必须包着 `_wrapVideoControlsBackKey`——媒体页把侧栏等
 ///      overlay 挂在 media_kit controls 的**兄弟**位置，那层快捷键表够不着它们。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_fushi_page.dart',
-  );
+  final File page = File('lib/src/pages/implementations/video_fushi_page.dart');
   final File layout = File(
     'lib/src/pages/implementations/video_fushi/layout.part.dart',
   );
@@ -43,12 +41,15 @@ void main() {
 
   test('退出汇聚点 _handleBackOrExit 第一件事是逐级关前台层', () {
     final String src = read(page);
-    final String body =
-        methodBody(src, 'Future<void> _handleBackOrExit() async {');
+    final String body = methodBody(
+      src,
+      'Future<void> _handleBackOrExit() async {',
+    );
     expect(
       body.contains('if (_dismissTopForegroundLayer()) return;'),
       isTrue,
-      reason: '_handleBackOrExit 必须先问 _dismissTopForegroundLayer 再 pop 路由，'
+      reason:
+          '_handleBackOrExit 必须先问 _dismissTopForegroundLayer 再 pop 路由，'
           '否则侧栏 / 字幕列表开着时按系统返回键会直接退掉整页（BUG-1862）',
     );
     // pop 路由必须排在关层之后（BUG-2119 起 pop 经 exitAfterPersist 的
@@ -63,8 +64,11 @@ void main() {
     // 执行体已从 `escape: () { … }` 闭包抽成具名方法 [_handleVideoEscapeAction]：它是
     // 整张动作表里唯一不需要 VideoPlayerController 的动作，加载态（`_controller == null`）
     // 下键盘 / 手柄必须能绕开表、单独调到它。锚点跟着搬。
-    expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
-        reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');
+    expect(
+      src.contains('escape: _handleVideoEscapeAction,'),
+      isTrue,
+      reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上',
+    );
     final String body = methodBody(src, 'void _handleVideoEscapeAction() {');
     expect(
       body.contains('if (_dismissTopForegroundLayer()) return;'),
@@ -79,36 +83,47 @@ void main() {
       expect(
         body.contains(forbidden),
         isFalse,
-        reason: 'escape 回调里又出现了 $forbidden —— 层级顺序被抄成第二份，'
+        reason:
+            'escape 回调里又出现了 $forbidden —— 层级顺序被抄成第二份，'
             '它必然与 _dismissTopForegroundLayer 漂开（BUG-1862 的根因形态）',
       );
     }
   });
 
   test('层级表覆盖 controls Stack 里可关的兄弟层，pinned popover 不许漏', () {
-    final String body =
-        methodBody(read(page), 'bool _dismissTopForegroundLayer() {');
+    final String body = methodBody(
+      read(page),
+      'bool _dismissTopForegroundLayer() {',
+    );
     expect(
       body.contains('controlPopoverOpen: _videoControlPopover.value != null'),
       isTrue,
-      reason: '层级表必须读控制按钮 popover 的开合：点击打开那次会被 pin 住常驻，'
+      reason:
+          '层级表必须读控制按钮 popover 的开合：点击打开那次会被 pin 住常驻，'
           '漏了就是「pinned popover 开着按 Esc，页面退了、浮层还在」（BUG-1862 同形）',
     );
-    final int popoverGate =
-        body.indexOf('controlPopoverOpen: _videoControlPopover.value != null');
+    final int popoverGate = body.indexOf(
+      'controlPopoverOpen: _videoControlPopover.value != null',
+    );
     final int popoverClose = body.indexOf('_hideControlPopover();');
-    expect(popoverClose, greaterThan(popoverGate),
-        reason: '层级表读了 popover 却没关它，等于只判不做');
+    expect(
+      popoverClose,
+      greaterThan(popoverGate),
+      reason: '层级表读了 popover 却没关它，等于只判不做',
+    );
   });
 
   test('层级表只有一处：关闭动作只在表体内，两个退出口都不许自己关层', () {
     final String src = read(page);
-    final String table =
-        methodBody(src, 'bool _dismissTopForegroundLayer() {');
-    final String exitPoint =
-        methodBody(src, 'Future<void> _handleBackOrExit() async {');
-    final String escapeBody =
-        methodBody(src, 'void _handleVideoEscapeAction() {');
+    final String table = methodBody(src, 'bool _dismissTopForegroundLayer() {');
+    final String exitPoint = methodBody(
+      src,
+      'Future<void> _handleBackOrExit() async {',
+    );
+    final String escapeBody = methodBody(
+      src,
+      'void _handleVideoEscapeAction() {',
+    );
 
     // 判据是**作用域**不是出现次数：数次数会被任何一处合法的新调用点误伤，报错
     // 文案还会误导成「层级表被抄了一份」。真正的不变式是「关闭动作只在层级表里
@@ -121,12 +136,12 @@ void main() {
       '_hideControlPopover();',
       '_hideVideoControlEditOverlay(revealControls: false);',
     ]) {
-      expect(table.contains(close), isTrue,
-          reason: '层级表里缺 $close —— 这一层没人关了');
+      expect(table.contains(close), isTrue, reason: '层级表里缺 $close —— 这一层没人关了');
       expect(
         exitPoint.contains(close),
         isFalse,
-        reason: '_handleBackOrExit 里出现了 $close —— 层级顺序被抄成第二份，'
+        reason:
+            '_handleBackOrExit 里出现了 $close —— 层级顺序被抄成第二份，'
             '它必然与 _dismissTopForegroundLayer 漂开（BUG-1862 的根因形态）',
       );
       expect(
@@ -149,7 +164,8 @@ void main() {
     expect(
       body.contains('_wrapVideoControlsBackKey('),
       isTrue,
-      reason: 'controls builder 必须包 _wrapVideoControlsBackKey：侧栏 / rail / '
+      reason:
+          'controls builder 必须包 _wrapVideoControlsBackKey：侧栏 / rail / '
           'popover 是 media_kit controls 的兄弟节点，焦点进了侧栏后 Esc 根本不经过 '
           'media_kit 的 keyboardShortcuts（BUG-1862）',
     );
@@ -171,18 +187,23 @@ void main() {
       'Widget _wrapVideoControlsBackKey(Widget child) {',
     );
     expect(body.contains('canRequestFocus: false'), isTrue, reason: '兜底层不得夺焦');
-    expect(body.contains('skipTraversal: true'), isTrue,
-        reason: '兜底层不得进 Tab 遍历');
+    expect(
+      body.contains('skipTraversal: true'),
+      isTrue,
+      reason: '兜底层不得进 Tab 遍历',
+    );
     expect(
       body.contains('return _dismissTopForegroundLayer()'),
       isTrue,
-      reason: '消费与否必须由 _dismissTopForegroundLayer() 的**返回值**决定；'
+      reason:
+          '消费与否必须由 _dismissTopForegroundLayer() 的**返回值**决定；'
           '把它调完就丢、无条件返回 handled，会把 Esc 整个吞掉——视频页再也退不出去',
     );
     expect(
       body.contains('return KeyEventResult.handled;'),
       isFalse,
-      reason: '兜底层里出现了无条件 handled：没有前台层可关时必须放行，'
+      reason:
+          '兜底层里出现了无条件 handled：没有前台层可关时必须放行，'
           '否则退全屏 / 退页语义被这层改写',
     );
     expect(

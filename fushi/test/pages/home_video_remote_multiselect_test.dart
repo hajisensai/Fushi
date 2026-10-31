@@ -35,8 +35,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_remote_video_msel_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_video_msel_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -66,8 +67,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_remote_video_msel_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_video_msel_store',
+    );
     final File cover = File('${storeDir.path}/cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     platformServices = testPlatformServices();
@@ -83,25 +85,25 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.allVideos,
-                remoteVideoClientLoader: () async => remoteClient,
-                remoteVideoDownloadDestination: (RemoteVideoInfo video) async =>
-                    File('${pathProviderDir.path}/${video.id.hashCode}.mp4'),
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.allVideos,
+            remoteVideoClientLoader: () async => remoteClient,
+            remoteVideoDownloadDestination: (RemoteVideoInfo video) async =>
+                File('${pathProviderDir.path}/${video.id.hashCode}.mp4'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   /// 默认 800×600 视口下网格第一行落在底部批量栏（多选态出现）之下，tap 命不中；
   /// 放大视口让卡片与批量栏互不遮挡。
@@ -134,17 +136,32 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(remoteClient.streamUrlRequests, isEmpty,
-        reason: '多选态点远端卡必须是勾选，不能像 BUG-2458 那样直接开流播');
+    expect(
+      remoteClient.streamUrlRequests,
+      isEmpty,
+      reason: '多选态点远端卡必须是勾选，不能像 BUG-2458 那样直接开流播',
+    );
     expect(remoteClient.downloadedIds, isEmpty);
-    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget,
-        reason: '远端卡要真进选中集（底栏计数）');
-    expect(batchButtonEnabled(tester, 'home_video_batch_download'), isTrue,
-        reason: '选了远端卡，批量「下载」可用');
-    expect(batchButtonEnabled(tester, 'home_video_batch_delete'), isFalse,
-        reason: '删除是本地动作，纯远端选中集不能启用');
-    expect(batchButtonEnabled(tester, 'home_video_batch_combine'), isFalse,
-        reason: '组合是本地动作，纯远端选中集不能启用');
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsOneWidget,
+      reason: '远端卡要真进选中集（底栏计数）',
+    );
+    expect(
+      batchButtonEnabled(tester, 'home_video_batch_download'),
+      isTrue,
+      reason: '选了远端卡，批量「下载」可用',
+    );
+    expect(
+      batchButtonEnabled(tester, 'home_video_batch_delete'),
+      isFalse,
+      reason: '删除是本地动作，纯远端选中集不能启用',
+    );
+    expect(
+      batchButtonEnabled(tester, 'home_video_batch_combine'),
+      isFalse,
+      reason: '组合是本地动作，纯远端选中集不能启用',
+    );
 
     // 再点一次 = 取消勾选。
     await tester.tap(remoteCard(1));
@@ -156,10 +173,12 @@ void main() {
   testWidgets('列表布局：多选态点远端行 = 勾选，不建流播', (WidgetTester tester) async {
     await pumpPage(tester);
     await tester.tap(
-        find.byKey(const ValueKey<String>('video-all-videos-layout-toggle')));
+      find.byKey(const ValueKey<String>('video-all-videos-layout-toggle')),
+    );
     await tester.pumpAndSettle();
-    final Finder remoteRow =
-        find.byKey(const ValueKey<String>('remote_video_list_remote_video-2'));
+    final Finder remoteRow = find.byKey(
+      const ValueKey<String>('remote_video_list_remote_video-2'),
+    );
     expect(remoteRow, findsOneWidget);
 
     await enterSelectionMode(tester);
@@ -167,8 +186,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(remoteClient.streamUrlRequests, isEmpty,
-        reason: '列表行与网格卡同走 _dispatchCardTap，多选态不能开流播');
+    expect(
+      remoteClient.streamUrlRequests,
+      isEmpty,
+      reason: '列表行与网格卡同走 _dispatchCardTap，多选态不能开流播',
+    );
     expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
     expect(batchButtonEnabled(tester, 'home_video_batch_download'), isTrue);
     expect(batchButtonEnabled(tester, 'home_video_batch_delete'), isFalse);
@@ -184,15 +206,20 @@ void main() {
     await tester.pump();
     expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home_video_batch_download')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_download')),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(remoteClient.downloadedIds, <String>['remote/video-1'],
-        reason: '串行：第一个挂在闸门上时第二个不起');
-    expect(find.byIcon(FushiIcons.checklist), findsOneWidget,
-        reason: '批量下载一开始就退出多选态');
+    expect(remoteClient.downloadedIds, <String>[
+      'remote/video-1',
+    ], reason: '串行：第一个挂在闸门上时第二个不起');
+    expect(
+      find.byIcon(FushiIcons.checklist),
+      findsOneWidget,
+      reason: '批量下载一开始就退出多选态',
+    );
 
     remoteClient.release();
     for (int i = 0; i < 200 && remoteClient.downloadedIds.length < 2; i++) {
@@ -201,9 +228,10 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 20));
     }
-    expect(remoteClient.downloadedIds,
-        <String>['remote/video-1', 'remote/video-3'],
-        reason: '只下勾选的两个、按目录序串行，未勾的 video-2 不动');
+    expect(remoteClient.downloadedIds, <String>[
+      'remote/video-1',
+      'remote/video-3',
+    ], reason: '只下勾选的两个、按目录序串行，未勾的 video-2 不动');
     expect(remoteClient.streamUrlRequests, isEmpty);
   });
 }
@@ -226,19 +254,21 @@ class _GatedRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        for (int n = 1; n <= 3; n++)
-          RemoteVideoInfo.fromJson(<String, Object?>{
-            'id': 'remote/video-$n',
-            'title': 'Remote Episode $n',
-            'sizeBytes': 1024,
-            'hasSubtitle': false,
-            'coverPath': coverPath,
-          }),
-      ];
+    for (int n = 1; n <= 3; n++)
+      RemoteVideoInfo.fromJson(<String, Object?>{
+        'id': 'remote/video-$n',
+        'title': 'Remote Episode $n',
+        'sizeBytes': 1024,
+        'hasSubtitle': false,
+        'coverPath': coverPath,
+      }),
+  ];
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-      {int episodeIndex = 0}) async {
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
     streamUrlRequests.add(id);
     return const RemoteVideoStreamUrls(
       streamUrl: 'http://127.0.0.1:1/stream',
@@ -274,8 +304,7 @@ class _GatedRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
@@ -286,6 +315,7 @@ class _GatedRemoteVideoClient implements RemoteVideoClient {
   }) async {}
 }
 
-final List<int> _tinyPngBytes =
-    base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
-        'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==');
+final List<int> _tinyPngBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+  'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==',
+);

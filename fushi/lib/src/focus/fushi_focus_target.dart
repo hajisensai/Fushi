@@ -65,8 +65,7 @@ class FushiFocusRegistration extends StatefulWidget {
   final bool enabled;
 
   @override
-  State<FushiFocusRegistration> createState() =>
-      _FushiFocusRegistrationState();
+  State<FushiFocusRegistration> createState() => _FushiFocusRegistrationState();
 }
 
 class _FushiFocusRegistrationState extends State<FushiFocusRegistration> {
@@ -84,7 +83,8 @@ class _FushiFocusRegistrationState extends State<FushiFocusRegistration> {
   @override
   void didUpdateWidget(FushiFocusRegistration oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final bool identityChanged = oldWidget.id != widget.id ||
+    final bool identityChanged =
+        oldWidget.id != widget.id ||
         !identical(oldWidget.focusNode, widget.focusNode);
     if (identityChanged) {
       _unregister(oldWidget.id, oldWidget.focusNode);
@@ -156,7 +156,8 @@ class _FushiFocusTargetState extends State<FushiFocusTarget> {
   @override
   void didUpdateWidget(FushiFocusTarget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final bool identityChanged = oldWidget.id != widget.id ||
+    final bool identityChanged =
+        oldWidget.id != widget.id ||
         !identical(oldWidget.focusNode, widget.focusNode);
     if (identityChanged) {
       _unregister(oldWidget.id, _registeredNode ?? _focusNode);
@@ -196,10 +197,7 @@ class _FushiFocusTargetState extends State<FushiFocusTarget> {
     if (!widget.enabled || !_mouseFocusNavigationEnabledForPlatform) {
       return focus;
     }
-    return Listener(
-      onPointerDown: _handleMousePointerDown,
-      child: focus,
-    );
+    return Listener(onPointerDown: _handleMousePointerDown, child: focus);
   }
 
   /// TODO-1113 P3: carries focus to this target on a mouse press. Mouse-only so
@@ -265,8 +263,9 @@ class _FushiFocusDirectionalAnchorState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final FushiFocusController? next =
-        FushiFocusRoot.maybeControllerOf(context);
+    final FushiFocusController? next = FushiFocusRoot.maybeControllerOf(
+      context,
+    );
     if (!identical(next, _controller)) {
       _clear();
       _controller = next;
@@ -304,8 +303,10 @@ class _FushiFocusDirectionalAnchorState
   void _apply() {
     final FushiFocusController? controller = _controller;
     if (controller == null) return;
-    widget.anchors
-        .forEach((FushiFocusDirection direction, FushiFocusId target) {
+    widget.anchors.forEach((
+      FushiFocusDirection direction,
+      FushiFocusId target,
+    ) {
       controller.registerDirectionalAnchor(widget.source, direction, target);
     });
   }
@@ -328,10 +329,7 @@ class _FushiFocusDirectionalAnchorState
 }
 
 class _FushiFocusTargetAnchor extends StatefulWidget {
-  const _FushiFocusTargetAnchor({
-    required this.onReady,
-    required this.child,
-  });
+  const _FushiFocusTargetAnchor({required this.onReady, required this.child});
 
   final ValueChanged<BuildContext> onReady;
   final Widget child;
@@ -360,10 +358,7 @@ class _FushiFocusTargetAnchorState extends State<_FushiFocusTargetAnchor> {
   @override
   Widget build(BuildContext context) {
     _scheduleReady();
-    return _FushiFocusRenderAnchor(
-      key: _anchorKey,
-      child: widget.child,
-    );
+    return _FushiFocusRenderAnchor(key: _anchorKey, child: widget.child);
   }
 
   void _scheduleReady() {

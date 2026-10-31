@@ -19,8 +19,7 @@ void main() {
       return c.future;
     }
 
-    Future<void> request() =>
-        rereader.request(read, stillWanted: () => wanted);
+    Future<void> request() => rereader.request(read, stillWanted: () => wanted);
 
     setUp(() {
       reads = <Completer<void>>[];

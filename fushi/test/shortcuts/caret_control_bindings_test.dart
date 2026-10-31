@@ -24,25 +24,33 @@ void main() {
       TargetPlatform.iOS,
     ]) {
       test(
-          'controller A resolves to reader lookup, not audiobook, on $platform',
-          () {
-        final registry = registryFor(platform);
-        expect(
-          registry.resolveGamepad(GamepadButton.a, scope: ShortcutScope.reader),
-          ShortcutAction.readerLookupAtCursor,
-        );
-        expect(
-          registry.resolveGamepad(GamepadButton.a,
-              scope: ShortcutScope.audiobook),
-          isNull,
-        );
-      });
+        'controller A resolves to reader lookup, not audiobook, on $platform',
+        () {
+          final registry = registryFor(platform);
+          expect(
+            registry.resolveGamepad(
+              GamepadButton.a,
+              scope: ShortcutScope.reader,
+            ),
+            ShortcutAction.readerLookupAtCursor,
+          );
+          expect(
+            registry.resolveGamepad(
+              GamepadButton.a,
+              scope: ShortcutScope.audiobook,
+            ),
+            isNull,
+          );
+        },
+      );
 
       test('audiobook play/pause is on L3, not A, on $platform', () {
         final registry = registryFor(platform);
         expect(
-          registry.resolveGamepad(GamepadButton.thumbLeft,
-              scope: ShortcutScope.audiobook),
+          registry.resolveGamepad(
+            GamepadButton.thumbLeft,
+            scope: ShortcutScope.audiobook,
+          ),
           ShortcutAction.audiobookPlayPause,
         );
       });
@@ -52,13 +60,17 @@ void main() {
       test('controller X = next sentence, B = prev sentence on $platform', () {
         final registry = registryFor(platform);
         expect(
-          registry.resolveGamepad(GamepadButton.x,
-              scope: ShortcutScope.audiobook),
+          registry.resolveGamepad(
+            GamepadButton.x,
+            scope: ShortcutScope.audiobook,
+          ),
           ShortcutAction.audiobookNextSentence,
         );
         expect(
-          registry.resolveGamepad(GamepadButton.b,
-              scope: ShortcutScope.audiobook),
+          registry.resolveGamepad(
+            GamepadButton.b,
+            scope: ShortcutScope.audiobook,
+          ),
           ShortcutAction.audiobookPrevSentence,
         );
         expect(
@@ -107,10 +119,7 @@ void main() {
         ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
         isTrue,
       );
-      expect(
-        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a),
-        isTrue,
-      );
+      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a), isTrue);
     });
   });
 }

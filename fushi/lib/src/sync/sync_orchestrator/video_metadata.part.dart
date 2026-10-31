@@ -17,18 +17,18 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
       // 数 MB JSON 不能每轮重来）。基线按通道分槽，与合集基线同纪律。
       final SyncRepository repo = SyncRepository(_db);
       final int since = await repo.getVideoMetadataSyncSinceMs(_scope);
-      final List<VideoMetadataWorkEntry>? entries =
-          await backend.getRemoteVideoMetadata(since: since > 0 ? since : null);
+      final List<VideoMetadataWorkEntry>? entries = await backend
+          .getRemoteVideoMetadata(since: since > 0 ? since : null);
       if (entries == null || entries.isEmpty) return;
       final RemoteVideoMetadataApplyResult result =
           await applyRemoteVideoMetadata(
-        _db,
-        entries,
-        onError: (Object e, StackTrace stack) {
-          debugPrint('[sync] video metadata apply failed: $e');
-          report.noteError('video metadata apply', e);
-        },
-      );
+            _db,
+            entries,
+            onError: (Object e, StackTrace stack) {
+              debugPrint('[sync] video metadata apply failed: $e');
+              report.noteError('video metadata apply', e);
+            },
+          );
       report.videoMetadataUpdated += result.applied;
       // 有条目因本机目标缺失被延后（合集下一轮才同步到 / 视频还没下载）就不推进
       // 基线，否则它们再也拉不到。

@@ -24,24 +24,28 @@ import 'package:flutter_test/flutter_test.dart';
 /// of the ~7300-line `_VideoFushiPageState`, which cannot be stood up in a widget
 /// test without a controller + ffprobe + DB.
 void main() {
-  final String subtitleSrc =
-      File('lib/src/pages/implementations/video_fushi/subtitle.part.dart')
-          .readAsStringSync();
-  final String pageSrc =
-      File('lib/src/pages/implementations/video_fushi_page.dart')
-          .readAsStringSync();
+  final String subtitleSrc = File(
+    'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+  ).readAsStringSync();
+  final String pageSrc = File(
+    'lib/src/pages/implementations/video_fushi_page.dart',
+  ).readAsStringSync();
 
   String methodBody(String source, String signatureNeedle) {
     final int start = source.indexOf(signatureNeedle);
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'Method "$signatureNeedle" must exist.');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'Method "$signatureNeedle" must exist.',
+    );
     // Stop at the next top-level method indentation (`\n  Future` / `\n  void` /
     // `\n  Widget` / `\n  String` / `\n  bool` / `\n  List`) after the start.
     final RegExp nextMethod = RegExp(
       r'\n  (Future|void|Widget|String|bool|List|int)\b',
     );
-    final Match? next =
-        nextMethod.firstMatch(source.substring(start + signatureNeedle.length));
+    final Match? next = nextMethod.firstMatch(
+      source.substring(start + signatureNeedle.length),
+    );
     final int end = next == null
         ? source.length
         : start + signatureNeedle.length + next.start;
@@ -49,17 +53,21 @@ void main() {
   }
 
   test('_subtitleMenuSourcesPath cache field is declared (BUG-939)', () {
-    expect(pageSrc.contains('String? _subtitleMenuSourcesPath'), isTrue,
-        reason:
-            'The per-video enumeration cache key must exist so the subtitle '
-            'menu does not re-run ffprobe on every open (BUG-939).');
+    expect(
+      pageSrc.contains('String? _subtitleMenuSourcesPath'),
+      isTrue,
+      reason:
+          'The per-video enumeration cache key must exist so the subtitle '
+          'menu does not re-run ffprobe on every open (BUG-939).',
+    );
   });
 
-  test(
-      '_ensureSubtitleMenuSourcesLoaded short-circuits on cached path '
+  test('_ensureSubtitleMenuSourcesLoaded short-circuits on cached path '
       '(BUG-939)', () {
     final String body = methodBody(
-        subtitleSrc, 'Future<void> _ensureSubtitleMenuSourcesLoaded(');
+      subtitleSrc,
+      'Future<void> _ensureSubtitleMenuSourcesLoaded(',
+    );
     expect(
       body.contains('_subtitleMenuSourcesPath == videoPath'),
       isTrue,
@@ -77,8 +85,10 @@ void main() {
   });
 
   test('_showSubtitleSourceMenu no longer self-enumerates (BUG-939)', () {
-    final String body =
-        methodBody(subtitleSrc, 'Future<void> _showSubtitleSourceMenu(');
+    final String body = methodBody(
+      subtitleSrc,
+      'Future<void> _showSubtitleSourceMenu(',
+    );
     // The control-bar button must delegate enumeration to
     // _ensureSubtitleMenuSourcesLoaded; it must not call the ffprobe enumerator
     // directly (that path cleared + re-enumerated on every open → flicker).
@@ -94,7 +104,8 @@ void main() {
     expect(
       body.contains('_subtitleMenuLoading = true'),
       isFalse,
-      reason: '_showSubtitleSourceMenu must not force the loading spinner on '
+      reason:
+          '_showSubtitleSourceMenu must not force the loading spinner on '
           'every open (BUG-939).',
     );
   });

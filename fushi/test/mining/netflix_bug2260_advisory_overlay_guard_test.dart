@@ -30,56 +30,87 @@ void main() {
       final String src = File('$root/content.js').readAsStringSync();
 
       test('常驻隐藏清单含 advisories 容器（含哈希类名兜底）', () {
-        final int listStart =
-            src.indexOf('function fushiNetflixNextEpisodeSelectors()');
+        final int listStart = src.indexOf(
+          'function fushiNetflixNextEpisodeSelectors()',
+        );
         expect(listStart, greaterThanOrEqualTo(0));
         final int listEnd = src.indexOf('];', listStart);
         final String list = src.substring(listStart, listEnd);
-        expect(list.contains("'$advisorySelector'"), isTrue,
-            reason: '$root content.js 常驻清单必须含 $advisorySelector');
-        expect(list.contains("'$advisoryHashSelector'"), isTrue,
-            reason: '$root content.js 常驻清单必须含哈希类名兜底 $advisoryHashSelector');
+        expect(
+          list.contains("'$advisorySelector'"),
+          isTrue,
+          reason: '$root content.js 常驻清单必须含 $advisorySelector',
+        );
+        expect(
+          list.contains("'$advisoryHashSelector'"),
+          isTrue,
+          reason: '$root content.js 常驻清单必须含哈希类名兜底 $advisoryHashSelector',
+        );
       });
 
       test('录制作用域 hideStyle 无条件藏 advisories 容器', () {
         final int start = src.indexOf('hideStyle.textContent =');
         expect(start, greaterThanOrEqualTo(0));
-        final int end =
-            src.indexOf('document.head.appendChild(hideStyle)', start);
+        final int end = src.indexOf(
+          'document.head.appendChild(hideStyle)',
+          start,
+        );
         expect(end, greaterThan(start));
         final String block = src.substring(start, end);
-        expect(block.contains(advisorySelector), isTrue,
-            reason: '$root content.js 录制期 hideStyle 必须含 $advisorySelector——'
-                '常驻隐藏受 netflixHideNextEpisode 开关门控，关掉后提示会照录进卡片');
-        expect(block.contains(advisoryHashSelector), isTrue,
-            reason: '$root content.js 录制期 hideStyle 必须含哈希类名兜底');
+        expect(
+          block.contains(advisorySelector),
+          isTrue,
+          reason:
+              '$root content.js 录制期 hideStyle 必须含 $advisorySelector——'
+              '常驻隐藏受 netflixHideNextEpisode 开关门控，关掉后提示会照录进卡片',
+        );
+        expect(
+          block.contains(advisoryHashSelector),
+          isTrue,
+          reason: '$root content.js 录制期 hideStyle 必须含哈希类名兜底',
+        );
       });
     });
   });
 
   group('内置网页播放器 glue', () {
-    final String glue =
-        File('assets/web_video/web_video_glue.js').readAsStringSync();
+    final String glue = File(
+      'assets/web_video/web_video_glue.js',
+    ).readAsStringSync();
 
     test('document-start 常驻隐藏 advisories 容器（display:none，每份文档重新注入）', () {
       final int start = glue.indexOf('NETFLIX_ADVISORY_SELECTORS =');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'glue 必须集中定义 NETFLIX_ADVISORY_SELECTORS');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'glue 必须集中定义 NETFLIX_ADVISORY_SELECTORS',
+      );
       final int end = glue.indexOf(';', start);
       final String selectors = glue.substring(start, end);
       expect(selectors.contains(advisorySelector), isTrue);
       expect(selectors.contains(advisoryHashSelector), isTrue);
-      expect(glue.contains('fushi-web-video-hide-advisory'), isTrue,
-          reason: '常驻隐藏 style 必须有稳定 id（幂等注入）');
+      expect(
+        glue.contains('fushi-web-video-hide-advisory'),
+        isTrue,
+        reason: '常驻隐藏 style 必须有稳定 id（幂等注入）',
+      );
       final int styleAt = glue.indexOf('fushi-web-video-hide-advisory');
       // document-start 时 <head>/<html> 可能还没有，glue 经 appendStyleEarly 挂（等根元素出现）。
-      final int appendAt =
-          glue.indexOf('appendStyleEarly(advisoryStyle)', styleAt);
-      expect(appendAt, greaterThan(styleAt),
-          reason: '常驻隐藏 style 必须经 appendStyleEarly 挂上（document-start 无 head 时不丢）');
+      final int appendAt = glue.indexOf(
+        'appendStyleEarly(advisoryStyle)',
+        styleAt,
+      );
+      expect(
+        appendAt,
+        greaterThan(styleAt),
+        reason: '常驻隐藏 style 必须经 appendStyleEarly 挂上（document-start 无 head 时不丢）',
+      );
       final String block = glue.substring(styleAt, appendAt);
-      expect(block.contains('display:none !important'), isTrue,
-          reason: '常驻隐藏要用 display:none——分级提示不参与取词，摘出布局最干净');
+      expect(
+        block.contains('display:none !important'),
+        isTrue,
+        reason: '常驻隐藏要用 display:none——分级提示不参与取词，摘出布局最干净',
+      );
     });
 
     test('制卡期 chrome 清单复用同一组 advisories 选择器', () {
@@ -87,9 +118,11 @@ void main() {
       expect(start, greaterThanOrEqualTo(0));
       final int end = glue.indexOf("'{visibility:hidden !important}';", start);
       expect(end, greaterThan(start));
-      expect(glue.substring(start, end).contains('NETFLIX_ADVISORY_SELECTORS'),
-          isTrue,
-          reason: 'HIDE_CHROME_CSS 必须拼入 NETFLIX_ADVISORY_SELECTORS，别再各抄一份');
+      expect(
+        glue.substring(start, end).contains('NETFLIX_ADVISORY_SELECTORS'),
+        isTrue,
+        reason: 'HIDE_CHROME_CSS 必须拼入 NETFLIX_ADVISORY_SELECTORS，别再各抄一份',
+      );
     });
   });
 
@@ -104,11 +137,12 @@ void main() {
       final int end = page.indexOf('onRenderProcessGone:', start);
       expect(end, greaterThan(start));
       expect(
-          page
-              .substring(start, end)
-              .contains('_setPlayerChromeHidden(_mineRunning)'),
-          isTrue,
-          reason: '换集 loadUrl 后上一份文档的 <style> 已没了，隐藏态归 Dart 所有，新文档必须重挂');
+        page
+            .substring(start, end)
+            .contains('_setPlayerChromeHidden(_mineRunning)'),
+        isTrue,
+        reason: '换集 loadUrl 后上一份文档的 <style> 已没了，隐藏态归 Dart 所有，新文档必须重挂',
+      );
     });
 
     test('换集就绪后开录前再挂一次（画面就绪可能早于 onLoadStop）', () {
@@ -117,8 +151,9 @@ void main() {
       final int end = page.indexOf('Future<void> _runMineQueue(', start);
       expect(end, greaterThan(start));
       expect(
-          page.substring(start, end).contains('_setPlayerChromeHidden(true)'),
-          isTrue);
+        page.substring(start, end).contains('_setPlayerChromeHidden(true)'),
+        isTrue,
+      );
     });
   });
 }

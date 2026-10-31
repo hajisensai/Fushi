@@ -26,8 +26,11 @@ void main() {
     const String end = 'List<Widget> _buildShelfGroupSlivers(';
     final int startIdx = source.indexOf(start);
     final int endIdx = source.indexOf(end);
-    expect(startIdx, greaterThanOrEqualTo(0),
-        reason: '找不到 _buildBodyWithSrtBooks');
+    expect(
+      startIdx,
+      greaterThanOrEqualTo(0),
+      reason: '找不到 _buildBodyWithSrtBooks',
+    );
     expect(endIdx, greaterThan(startIdx), reason: '找不到方法体结束锚点');
     return source.substring(startIdx, endIdx);
   }
@@ -37,10 +40,14 @@ void main() {
     // 全量来源变量必须存在，且取自 fushiBooksProvider（未过滤真值），
     // 空态兜底回退到 books 参数。
     expect(
-      body.contains(RegExp(
-          r'final List<MediaItem> allEpubBooksForBorrow\s*=\s*\n?\s*ref\.read\(fushiBooksProvider\(JapaneseLanguage\.instance\)\)\.valueOrNull\s*\?\?')),
+      body.contains(
+        RegExp(
+          r'final List<MediaItem> allEpubBooksForBorrow\s*=\s*\n?\s*ref\.read\(fushiBooksProvider\(JapaneseLanguage\.instance\)\)\.valueOrNull\s*\?\?',
+        ),
+      ),
       isTrue,
-      reason: '借用映射源须为 ref.read(fushiBooksProvider(...)) 全量列表，'
+      reason:
+          '借用映射源须为 ref.read(fushiBooksProvider(...)) 全量列表，'
           'valueOrNull 为空时回退 books',
     );
     // 三张借用映射的唯一装配循环必须遍历全量 allEpubBooksForBorrow。

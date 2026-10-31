@@ -18,28 +18,33 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discLoadStage = stage;
     debugPrint('[video-load] disc-stage=$stage');
   }
+
   bool get discNavigationSupported => _discNavigationSupported;
   bool get discMenuEntryPending => _discInitialMenuPending;
   VideoDiscTrackOwner get discTrackOwner => _discTrackOwner;
-  bool get discOwnsTracks => isBlurayNavigationSession &&
-      _discTrackOwner == VideoDiscTrackOwner.disc;
+  bool get discOwnsTracks =>
+      isBlurayNavigationSession && _discTrackOwner == VideoDiscTrackOwner.disc;
   String? get resolvedDiscAudioTrackId => _discResolvedAudioTrackId;
   String? get resolvedDiscSubtitleTrackId => _discResolvedSubtitleTrackId;
   String? get activeAudioTrackId => isBlurayNavigationSession
-      ? resolvedDiscAudioTrackId : _player?.state.track.audio.id;
+      ? resolvedDiscAudioTrackId
+      : _player?.state.track.audio.id;
   int? get activeSubtitleStreamIndex {
     final String? id = isBlurayNavigationSession
-        ? resolvedDiscSubtitleTrackId : activeSubtitleTrackId;
+        ? resolvedDiscSubtitleTrackId
+        : activeSubtitleTrackId;
     if (id == null || id == 'auto' || id == 'no') return null;
     return videoDiscResolvedTrackOrdinal(
-      id, subtitleTracks.map((SubtitleTrack track) => track.id),
+      id,
+      subtitleTracks.map((SubtitleTrack track) => track.id),
     );
   }
 
   /// Explicit Fushi subtitle files, Off and track selections own this visit.
   /// Persisted library choices remain candidates, not commands to the disc VM.
   void claimDiscTrackOwnership() {
-    if (!isBlurayNavigationSession || _discTrackOwner == VideoDiscTrackOwner.fushi) {
+    if (!isBlurayNavigationSession ||
+        _discTrackOwner == VideoDiscTrackOwner.fushi) {
       return;
     }
     _discTrackOwner = VideoDiscTrackOwner.fushi;
@@ -47,26 +52,35 @@ extension VideoDiscMenuController on VideoPlayerController {
   }
 
   void _onDiscTracksChanged(Player player) {
-    if (!identical(_player, player) || !isBlurayNavigationSession ||
+    if (!identical(_player, player) ||
+        !isBlurayNavigationSession ||
         !_discNavigationOpened) {
       return;
     }
     unawaited(_sampleDiscMenu(player, _loadToken));
     _notifyDiscMenuChanged();
   }
+
   VideoDiscNavigationState? get discNavigationState => _discState;
   int get discTitleGeneration => _discTitleGeneration;
   bool get discMenuActive =>
       isBlurayNavigationSession &&
-      (_discInitialMenuPending || _discState == null ||
-          _discState!.menuActive || _discState!.menuDomain);
+      (_discInitialMenuPending ||
+          _discState == null ||
+          _discState!.menuActive ||
+          _discState!.menuDomain);
   String? get selectedDiscPlaylistPath => _selectedDiscPlaylistPath;
   String? get discMenuError => _discMenuError;
-  bool get discMiningAvailable => discTitleReady && _discMiningAvailable &&
+  bool get discMiningAvailable =>
+      discTitleReady &&
+      _discMiningAvailable &&
       _discResolvedTracksGeneration == _discTitleGeneration &&
-      (realAudioStreamCount == 0 || videoDiscResolvedTrackOrdinal(
-        _discResolvedAudioTrackId, audioTracks.map((AudioTrack track) => track.id),
-      ) != null);
+      (realAudioStreamCount == 0 ||
+          videoDiscResolvedTrackOrdinal(
+                _discResolvedAudioTrackId,
+                audioTracks.map((AudioTrack track) => track.id),
+              ) !=
+              null);
   String? get discMiningUnavailableReason => !discTitleReady
       ? 'title-not-ready'
       : _discResolvedTracksGeneration != _discTitleGeneration
@@ -119,11 +133,19 @@ extension VideoDiscMenuController on VideoPlayerController {
     // mpv core lock (BUG-3507).
     _setDiscLoadStage('disc-capability');
     final String option =
-        await native.getPropertyAsync('option-info/disc-menu/name', waitForInitialization: false) as String;
+        await native.getPropertyAsync(
+              'option-info/disc-menu/name',
+              waitForInitialization: false,
+            )
+            as String;
     if (!_isCurrentLoad(player, loadToken)) return;
     if (!isBlurayNavigationSession) {
       if (option.isNotEmpty) {
-        await runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'no']);
+        await runCheckedVideoDiscCommand(native, <String>[
+          'set',
+          'disc-menu',
+          'no',
+        ]);
       }
       _discMenuConfigured = false;
       return;
@@ -138,7 +160,11 @@ extension VideoDiscMenuController on VideoPlayerController {
       // generic open failure; say exactly what is missing instead.
       _setDiscLoadStage('disc-remote-capability');
       final String remoteProperties =
-          await native.getPropertyAsync('property-list', waitForInitialization: false) as String;
+          await native.getPropertyAsync(
+                'property-list',
+                waitForInitialization: false,
+              )
+              as String;
       if (!_isCurrentLoad(player, loadToken)) return;
       if (!remoteProperties.split(',').contains('disc-remote-access')) {
         throw const VideoDiscMenuException(kVideoDiscRemoteRuntimeUnsupported);
@@ -167,7 +193,11 @@ extension VideoDiscMenuController on VideoPlayerController {
     // Our versioned snapshot separates IG menu focus from PGS subtitles and
     // correlates title, playlist, generation and timestamp in one native read.
     final String properties =
-        await native.getPropertyAsync('property-list', waitForInitialization: false) as String;
+        await native.getPropertyAsync(
+              'property-list',
+              waitForInitialization: false,
+            )
+            as String;
     if (!_isCurrentLoad(player, loadToken)) return;
     if (!properties.contains('disc-navigation-state-json')) {
       throw const VideoDiscMenuException('navigation-state-not-supported');
@@ -231,7 +261,11 @@ extension VideoDiscMenuController on VideoPlayerController {
       throw const VideoDiscMenuException('navigation-not-supported');
     }
     final String properties =
-        await native.getPropertyAsync('property-list', waitForInitialization: false) as String;
+        await native.getPropertyAsync(
+              'property-list',
+              waitForInitialization: false,
+            )
+            as String;
     if (!_isCurrentLoad(player, loadToken)) return;
     if (!properties.contains('disc-navigation-state-json')) {
       throw const VideoDiscMenuException('navigation-state-not-supported');
@@ -239,7 +273,11 @@ extension VideoDiscMenuController on VideoPlayerController {
     // A runtime without libmpv's dvd:// stream (-Ddvdnav) cannot open DVD menus;
     // report it instead of falling back to a longest-title guess.
     final String protocols =
-        await native.getPropertyAsync('protocol-list', waitForInitialization: false) as String;
+        await native.getPropertyAsync(
+              'protocol-list',
+              waitForInitialization: false,
+            )
+            as String;
     if (!_isCurrentLoad(player, loadToken)) return;
     if (!protocols.split(',').contains('dvd')) {
       throw const VideoDiscMenuException('navigation-not-supported');
@@ -257,12 +295,20 @@ extension VideoDiscMenuController on VideoPlayerController {
 
   Future<void> _finishDiscMenuPreparation(Player player, int loadToken) async {
     final dynamic native = player.platform;
-    await runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'yes']);
+    await runCheckedVideoDiscCommand(native, <String>[
+      'set',
+      'disc-menu',
+      'yes',
+    ]);
     // Earlier regular-video loads suppress native subtitles for Flutter cues.
     // A disc VM owns its PGS selection; restore visibility before opening it.
     await runCheckedVideoDiscCommand(native, <String>['set', 'sid', 'auto']);
     await runCheckedVideoDiscCommand(native, <String>['set', 'aid', 'auto']);
-    await runCheckedVideoDiscCommand(native, <String>['set', 'secondary-sid', 'no']);
+    await runCheckedVideoDiscCommand(native, <String>[
+      'set',
+      'secondary-sid',
+      'no',
+    ]);
     await runCheckedVideoDiscCommand(native, <String>['set', 'sub-delay', '0']);
     _delayMs = 0;
     _secondaryDelayMs = null;
@@ -384,7 +430,11 @@ extension VideoDiscMenuController on VideoPlayerController {
     try {
       final dynamic native = player.platform;
       final String raw =
-          await native.getPropertyAsync('disc-navigation-state-json', waitForInitialization: false) as String;
+          await native.getPropertyAsync(
+                'disc-navigation-state-json',
+                waitForInitialization: false,
+              )
+              as String;
       if (!_isCurrentLoad(player, loadToken)) return;
       final VideoDiscNavigationState? next = VideoDiscNavigationState.parse(
         raw,
@@ -409,13 +459,16 @@ extension VideoDiscMenuController on VideoPlayerController {
       _discNavigationConfirmed = true;
       final VideoDiscNavigationState? previous = _discState;
       if (shouldReturnDiscTrackOwnership(
-        owner: _discTrackOwner, previous: previous, next: next,
+        owner: _discTrackOwner,
+        previous: previous,
+        next: next,
       )) {
         await _returnDiscTrackOwnership(player);
       }
       if (_discInitialMenuPending) {
         final VideoDiscMenuEntryAction action = videoDiscMenuEntryAction(
-          next, requested: _discInitialMenuRequested,
+          next,
+          requested: _discInitialMenuRequested,
         );
         if (action == VideoDiscMenuEntryAction.complete) {
           _discInitialMenuPending = false;
@@ -426,7 +479,10 @@ extension VideoDiscMenuController on VideoPlayerController {
             // Mark before dispatch: a rejected command is visible and never
             // retried by the sampling loop or allowed to bind a movie instead.
             _discInitialMenuRequested = true;
-            await runCheckedVideoDiscCommand(native, <String>['discnav', 'menu']);
+            await runCheckedVideoDiscCommand(native, <String>[
+              'discnav',
+              'menu',
+            ]);
           }
           if (previous?.generation != next.generation ||
               previous?.menuActive != next.menuActive ||
@@ -447,7 +503,8 @@ extension VideoDiscMenuController on VideoPlayerController {
           : p.join(_discRootPath!, 'BDMV', 'PLAYLIST', name);
       final bool changed =
           path != _selectedDiscPlaylistPath ||
-          previous?.generation != next.generation || previous?.angle != next.angle;
+          previous?.generation != next.generation ||
+          previous?.angle != next.angle;
       if (changed) _invalidateDiscTitle();
       _discState = next;
       _selectedDiscPlaylistPath = path;
@@ -536,7 +593,9 @@ extension VideoDiscMenuController on VideoPlayerController {
       // later requests run after it; libmpv does not promise that ordering.
       unawaited(
         runCheckedVideoDiscCommand(_player!.platform, <String>[
-          'set', 'secondary-sid', 'no',
+          'set',
+          'secondary-sid',
+          'no',
         ]).catchError((Object error) {
           ErrorLogService.instance.logDiagnostic(
             'VideoDiscMenu.invalidate',
@@ -594,32 +653,58 @@ extension VideoDiscMenuController on VideoPlayerController {
     // attach to the previous MPLS.
     final List<String> values = <String>[
       ...await Future.wait<String>(<Future<String>>[
-        native.getPropertyAsync('current-tracks/audio/id', waitForInitialization: false) as Future<String>,
-        native.getPropertyAsync('current-tracks/sub/id', waitForInitialization: false) as Future<String>,
-        native.getPropertyAsync('current-tracks/sub/codec', waitForInitialization: false) as Future<String>,
+        native.getPropertyAsync(
+              'current-tracks/audio/id',
+              waitForInitialization: false,
+            )
+            as Future<String>,
+        native.getPropertyAsync(
+              'current-tracks/sub/id',
+              waitForInitialization: false,
+            )
+            as Future<String>,
+        native.getPropertyAsync(
+              'current-tracks/sub/codec',
+              waitForInitialization: false,
+            )
+            as Future<String>,
       ]),
-      await (native.getPropertyAsync('disc-navigation-state-json', waitForInitialization: false) as Future<String>),
+      await (native.getPropertyAsync(
+            'disc-navigation-state-json',
+            waitForInitialization: false,
+          )
+          as Future<String>),
     ];
-    if (!_isCurrentLoad(player, loadToken) || generation != _discTitleGeneration) {
+    if (!_isCurrentLoad(player, loadToken) ||
+        generation != _discTitleGeneration) {
       return false;
     }
-    final VideoDiscNavigationState? confirmed = VideoDiscNavigationState.parse(values[3]);
+    final VideoDiscNavigationState? confirmed = VideoDiscNavigationState.parse(
+      values[3],
+    );
     if (!videoDiscTitleIdentityMatches(expected, confirmed)) {
       _invalidateDiscTitle();
       return false;
     }
     final VideoDiscResolvedTracks resolved = VideoDiscResolvedTracks.fromMpv(
-      audioId: values[0], subtitleId: values[1], subtitleCodec: values[2], stable: true,
+      audioId: values[0],
+      subtitleId: values[1],
+      subtitleCodec: values[2],
+      stable: true,
     );
     final String? audioId = resolved.audioId;
     final String? subtitleId = resolved.subtitleId;
     final String? codec = resolved.subtitleCodec;
-    final bool changed = _discResolvedAudioTrackId != audioId ||
-        _discResolvedSubtitleTrackId != subtitleId || _discResolvedSubtitleCodec != codec;
+    final bool changed =
+        _discResolvedAudioTrackId != audioId ||
+        _discResolvedSubtitleTrackId != subtitleId ||
+        _discResolvedSubtitleCodec != codec;
     _discResolvedAudioTrackId = audioId;
     _discResolvedSubtitleTrackId = subtitleId;
     _discResolvedSubtitleCodec = codec;
-    _discResolvedTracksGeneration = audioId != null && subtitleId != null ? generation : null;
+    _discResolvedTracksGeneration = audioId != null && subtitleId != null
+        ? generation
+        : null;
     if (discOwnsTracks) {
       _graphicSubtitleActive = subtitleFormatForCodec(codec ?? '') == null;
     }
@@ -709,7 +794,9 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (!_discIsDvd && source == null) {
       throw const VideoDiscMenuException('playlist-unavailable');
     }
-    final String? extractionError = await _checkDiscExtractionSource(playlistPath);
+    final String? extractionError = await _checkDiscExtractionSource(
+      playlistPath,
+    );
     if (!_isCurrentLoad(player, token) || generation != _discTitleGeneration) {
       return;
     }
@@ -724,9 +811,8 @@ extension VideoDiscMenuController on VideoPlayerController {
     // A bind establishes identity only; it must not send sid/aid, revive old
     // cues, or overwrite an explicit selection made while identity was loading.
     if (_cues.isEmpty) {
-      _graphicSubtitleActive = subtitleFormatForCodec(
-        _discResolvedSubtitleCodec ?? '',
-      ) == null;
+      _graphicSubtitleActive =
+          subtitleFormatForCodec(_discResolvedSubtitleCodec ?? '') == null;
     }
     _markMediaOpenedIfEvident(player);
     await _refreshChaptersForLoad(player, token);
@@ -755,7 +841,8 @@ extension VideoDiscMenuController on VideoPlayerController {
       // feature clips. Checking only its primary stream falsely authorizes it.
       for (final String clip in playlist.clipIds.toSet()) {
         final String stream = p.join(root, 'BDMV', 'STREAM', '$clip.m2ts');
-        if (!await File(stream).exists()) return 'extraction-source-unavailable';
+        if (!await File(stream).exists())
+          return 'extraction-source-unavailable';
         // A keyed disc decrypts for FFmpeg too: the shared backend resolves the
         // same exact KEYDB entry through AacsMediaSession.
         if (_discAacsState != BlurayMenuAacsState.keyed &&

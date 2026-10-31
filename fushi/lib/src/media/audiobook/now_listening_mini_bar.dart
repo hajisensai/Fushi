@@ -8,8 +8,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/audio_controller.dart'
-    show MediaSessionOwner;
+import 'package:fushi/src/models/audio_controller.dart' show MediaSessionOwner;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -118,10 +117,10 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: glass
-                          ? appleColorsOf(context).secondaryLabel
-                          : scheme.onSurfaceVariant,
-                    ),
+                  color: glass
+                      ? appleColorsOf(context).secondaryLabel
+                      : scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -248,12 +247,9 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
             curve: motion.spatialDefault.curve,
             builder: (BuildContext context, double v, Widget? child) =>
                 Transform.translate(
-              offset: Offset(0, (1 - v) * 24),
-              child: Transform.scale(
-                scale: 0.92 + 0.08 * v,
-                child: child,
-              ),
-            ),
+                  offset: Offset(0, (1 - v) * 24),
+                  child: Transform.scale(scale: 0.92 + 0.08 * v, child: child),
+                ),
             child: SizedBox(
               height: kFushiFloatingToolbarExtent,
               child: DecoratedBox(
@@ -348,19 +344,18 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
   // eink：primaryContainer 塌成页面底色，补描边免得只剩一枚悬空耳机图标。
   // Apple：中性 systemFill 底 + label 色单色图标（不要彩色底块）。
   Widget _coverFallback(ColorScheme scheme) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: isGlassDesign(context)
-              ? appleColorsOf(context).fill
-              : scheme.primaryContainer,
-          border:
-              isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
-        ),
-        child: FushiIcon(
-          FushiIcons.audiobook,
-          size: 20,
-          color: isGlassDesign(context)
-              ? appleColorsOf(context).label
-              : scheme.onPrimaryContainer,
-        ),
-      );
+    decoration: BoxDecoration(
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).fill
+          : scheme.primaryContainer,
+      border: isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
+    ),
+    child: FushiIcon(
+      FushiIcons.audiobook,
+      size: 20,
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).label
+          : scheme.onPrimaryContainer,
+    ),
+  );
 }

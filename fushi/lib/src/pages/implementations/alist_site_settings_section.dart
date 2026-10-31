@@ -323,26 +323,26 @@ class _AListDraft {
   });
 
   factory _AListDraft.empty(String id) => _AListDraft(
-        id: id,
-        name: '',
-        url: '',
-        kinds: kDefaultAListSiteKinds,
-        username: '',
-        password: '',
-        enabled: true,
-        allowInsecureHttp: false,
-      );
+    id: id,
+    name: '',
+    url: '',
+    kinds: kDefaultAListSiteKinds,
+    username: '',
+    password: '',
+    enabled: true,
+    allowInsecureHttp: false,
+  );
 
   factory _AListDraft.fromConfig(AListSiteConfig config) => _AListDraft(
-        id: config.id,
-        name: config.name,
-        url: config.baseUrl.toString(),
-        kinds: config.kinds,
-        username: config.username,
-        password: config.password,
-        enabled: config.enabled,
-        allowInsecureHttp: config.allowInsecureHttp,
-      );
+    id: config.id,
+    name: config.name,
+    url: config.baseUrl.toString(),
+    kinds: config.kinds,
+    username: config.username,
+    password: config.password,
+    enabled: config.enabled,
+    allowInsecureHttp: config.allowInsecureHttp,
+  );
 
   final String id;
   final String name;
@@ -361,17 +361,16 @@ class _AListDraft {
     String? password,
     bool? enabled,
     bool? allowInsecureHttp,
-  }) =>
-      _AListDraft(
-        id: id,
-        name: name ?? this.name,
-        url: url ?? this.url,
-        kinds: kinds ?? this.kinds,
-        username: username ?? this.username,
-        password: password ?? this.password,
-        enabled: enabled ?? this.enabled,
-        allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-      );
+  }) => _AListDraft(
+    id: id,
+    name: name ?? this.name,
+    url: url ?? this.url,
+    kinds: kinds ?? this.kinds,
+    username: username ?? this.username,
+    password: password ?? this.password,
+    enabled: enabled ?? this.enabled,
+    allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+  );
 
   /// 有效即返回配置，否则 null；校验全交给 [AListSiteConfig] 构造器。
   AListSiteConfig? toConfig() {
@@ -399,7 +398,8 @@ class _AListDraft {
     if (url.trim().isEmpty) return null;
     final Uri? parsed = Uri.tryParse(url.trim());
     if (parsed != null && _urlOnlyValid(parsed)) return null;
-    final bool plainHttpBlocked = parsed != null &&
+    final bool plainHttpBlocked =
+        parsed != null &&
         parsed.scheme == 'http' &&
         !allowInsecureHttp &&
         parsed.host.isNotEmpty;
@@ -425,13 +425,10 @@ class _AListDraft {
 }
 
 class _ProbeState {
-  const _ProbeState.running()
-      : running = true,
-        ok = false,
-        message = '';
+  const _ProbeState.running() : running = true, ok = false, message = '';
 
   const _ProbeState.done({required this.ok, required this.message})
-      : running = false;
+    : running = false;
 
   final bool running;
   final bool ok;

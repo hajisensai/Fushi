@@ -318,11 +318,11 @@ void _logFontDenial(String reason) {
 WebResourceResponse dictionaryFontDeniedResponse() => _fontDenied();
 
 WebResourceResponse _fontDenied() => WebResourceResponse(
-      contentType: 'text/plain',
-      statusCode: 403,
-      reasonPhrase: 'Forbidden',
-      data: Uint8List(0),
-    );
+  contentType: 'text/plain',
+  statusCode: 403,
+  reasonPhrase: 'Forbidden',
+  data: Uint8List(0),
+);
 
 /// 制卡前把 JS 负载里的词典媒体（gaiji 外字等）字节落盘到 Anki 媒体缓存目录，
 /// 供 [BaseAnkiRepository] 的 storeMediaFile 读取嵌进卡片。
@@ -379,8 +379,9 @@ Future<void> writeDictionaryMediaCache(String dictionaryMediaJson) async {
       _logDictionaryMediaSkip('媒体条目缺 dictionary/path，无法定位字节: $raw');
       continue;
     }
-    final File file =
-        File('${dir.path}/${ankiDictionaryMediaCacheFilename(dict, path)}');
+    final File file = File(
+      '${dir.path}/${ankiDictionaryMediaCacheFilename(dict, path)}',
+    );
     if (file.existsSync()) continue; // 幂等：已缓存。
     try {
       final Uint8List? bytes = FushiDicts.instance.getMediaFile(dict, path);
@@ -461,8 +462,9 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
 
   if (url.scheme == 'dictmedia') {
     final String dictName = url.queryParameters['dictionary'] ?? '';
-    final String mediaPath =
-        normalizeDictionaryMediaPath(Uri.decodeComponent(url.host));
+    final String mediaPath = normalizeDictionaryMediaPath(
+      Uri.decodeComponent(url.host),
+    );
     if (dictName.isEmpty || mediaPath.isEmpty) {
       return _DictionaryMediaResponse.notFound();
     }
@@ -534,8 +536,10 @@ Future<_DictionaryMediaResponse?> _remoteDictionaryMediaResponse(
     return _DictionaryMediaResponse.notFound();
   }
   try {
-    final DictionaryPopupMedia? media =
-        await source.mediaFile(dictName, mediaPath);
+    final DictionaryPopupMedia? media = await source.mediaFile(
+      dictName,
+      mediaPath,
+    );
     if (media == null) return _DictionaryMediaResponse.notFound();
     // dictmedia:// 只承载词典样式表（与本机路径同口径强制 text/css）。
     final String mime = stylesheet ? 'text/css' : media.contentType;

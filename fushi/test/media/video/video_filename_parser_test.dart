@@ -9,8 +9,9 @@ import 'package:path/path.dart' as p;
 void main() {
   group('parseVideoFilename', () {
     test('字幕组式 [组] 标题 - 12 [画质]', () {
-      final VideoNameInfo info =
-          parseVideoFilename('[SubGroup] Title - 12 [1080p][x264].mkv');
+      final VideoNameInfo info = parseVideoFilename(
+        '[SubGroup] Title - 12 [1080p][x264].mkv',
+      );
       expect(info.series, 'Title');
       expect(info.episode, 12);
       expect(info.season, isNull);
@@ -27,16 +28,18 @@ void main() {
     });
 
     test('SxxEyy 季+集（点分隔）', () {
-      final VideoNameInfo info =
-          parseVideoFilename('Title.S02E05.1080p.WEB-DL.mkv');
+      final VideoNameInfo info = parseVideoFilename(
+        'Title.S02E05.1080p.WEB-DL.mkv',
+      );
       expect(info.series, 'Title');
       expect(info.season, 2);
       expect(info.episode, 5);
     });
 
     test('SxxEyy 带字幕组与空格', () {
-      final VideoNameInfo info =
-          parseVideoFilename('[Group] Series Name - S01E03 [x265].mkv');
+      final VideoNameInfo info = parseVideoFilename(
+        '[Group] Series Name - S01E03 [x265].mkv',
+      );
       expect(info.series, 'Series Name');
       expect(info.season, 1);
       expect(info.episode, 3);
@@ -49,8 +52,9 @@ void main() {
     });
 
     test('日文番名 + 破折号集号', () {
-      final VideoNameInfo info =
-          parseVideoFilename('[ABC] 鬼滅の刃 - 08 [1080p][x264].mkv');
+      final VideoNameInfo info = parseVideoFilename(
+        '[ABC] 鬼滅の刃 - 08 [1080p][x264].mkv',
+      );
       expect(info.series, '鬼滅の刃');
       expect(info.episode, 8);
     });
@@ -112,15 +116,11 @@ void main() {
     test('Second / Third Season 目录给季号（文件名只有 [01]）', () {
       // 文件名不带季名的形态：季号只能来自目录。
       expect(
-        parseVideoPath(
-          '/pack/$vcb Second Season [Ma10p_1080p]/01.mkv',
-        ).season,
+        parseVideoPath('/pack/$vcb Second Season [Ma10p_1080p]/01.mkv').season,
         2,
       );
       expect(
-        parseVideoPath(
-          '/pack/$vcb Third Season [Ma10p_1080p]/01.mkv',
-        ).season,
+        parseVideoPath('/pack/$vcb Third Season [Ma10p_1080p]/01.mkv').season,
         3,
       );
     });
@@ -245,8 +245,11 @@ void main() {
       expect(g.series, 'Show A', reason: '系列名必须是解码后的（不能是 Show%20A）');
       expect(g.isPlaylist, isTrue);
       expect(g.episodes.first.title, 'Show A S01E01', reason: '集标题同理解码');
-      expect(g.episodes.first.path, '$base/Show%20A%20S01E01.mkv',
-          reason: 'path 保持原始 URL（播放/入库身份不动）');
+      expect(
+        g.episodes.first.path,
+        '$base/Show%20A%20S01E01.mkv',
+        reason: 'path 保持原始 URL（播放/入库身份不动）',
+      );
     });
 
     test('整季分集标题各不相同 → 仍归一组，按集号排序（BUG-1435）', () {
@@ -266,10 +269,16 @@ void main() {
       final VideoGroup g = groups.single;
       expect(g.series, '日々は過ぎれど飯うまし');
       expect(g.isPlaylist, isTrue);
-      expect(
-        g.episodes.map((VideoEpisode e) => e.episode).toList(),
-        <int>[3, 4, 5, 7, 9, 10, 11, 12],
-      );
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(), <int>[
+        3,
+        4,
+        5,
+        7,
+        9,
+        10,
+        11,
+        12,
+      ]);
     });
 
     test('同系列多集 → 一组，按集号排序', () {
@@ -282,8 +291,11 @@ void main() {
       final VideoGroup g = groups.single;
       expect(g.series, 'Title');
       expect(g.isPlaylist, isTrue);
-      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(),
-          <int>[1, 2, 3]);
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(), <int>[
+        1,
+        2,
+        3,
+      ]);
     });
 
     test('多系列 → 多组，按系列名排序', () {
@@ -292,8 +304,10 @@ void main() {
         '/v/Alpha - 02.mkv',
         '/v/Alpha - 01.mkv',
       ]);
-      expect(groups.map((VideoGroup g) => g.series).toList(),
-          <String>['Alpha', 'Beta']);
+      expect(groups.map((VideoGroup g) => g.series).toList(), <String>[
+        'Alpha',
+        'Beta',
+      ]);
       expect(groups[0].episodes, hasLength(2));
       expect(groups[1].episodes, hasLength(1));
       expect(groups[1].isPlaylist, isFalse);
@@ -314,8 +328,9 @@ void main() {
     });
 
     test('单文件 → 单片组（非播放列表）', () {
-      final List<VideoGroup> groups =
-          groupVideosIntoPlaylists(<String>['/v/Standalone Movie.mkv']);
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '/v/Standalone Movie.mkv',
+      ]);
       expect(groups, hasLength(1));
       expect(groups.single.isPlaylist, isFalse);
       expect(groups.single.episodes.single.title, 'Standalone Movie');
@@ -335,10 +350,11 @@ void main() {
       final VideoGroup g = groups.single;
       expect(g.series, '葬送的芙莉莲');
       expect(g.isPlaylist, isTrue);
-      expect(
-        g.episodes.map((VideoEpisode e) => e.episode).toList(),
-        <int>[1, 2, 13],
-      );
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(), <int>[
+        1,
+        2,
+        13,
+      ]);
     });
 
     test('第NN集 / SxxEyy 形态同样回落父目录', () {
@@ -363,14 +379,18 @@ void main() {
         '/v/Show/Season 1/01.mkv',
         '/v/Show/Season 2/01.mkv',
       ]);
-      expect(groups.map((VideoGroup g) => g.series).toList(),
-          <String>['Season 1', 'Season 2']);
+      expect(groups.map((VideoGroup g) => g.series).toList(), <String>[
+        'Season 1',
+        'Season 2',
+      ]);
       expect(groups.every((VideoGroup g) => g.episodes.length == 1), isTrue);
     });
 
     test('目录里混着不同番的纯集号文件仍按目录归一组（可由用户拆分）', () {
-      final List<VideoGroup> groups =
-          groupVideosIntoPlaylists(<String>['/v/杂/01.mkv', '/v/杂/02.mkv']);
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '/v/杂/01.mkv',
+        '/v/杂/02.mkv',
+      ]);
       expect(groups.single.series, '杂');
     });
 
@@ -379,8 +399,10 @@ void main() {
         '/v/合集目录/Alpha - 01.mkv',
         '/v/合集目录/Beta - 01.mkv',
       ]);
-      expect(groups.map((VideoGroup g) => g.series).toList(),
-          <String>['Alpha', 'Beta']);
+      expect(groups.map((VideoGroup g) => g.series).toList(), <String>[
+        'Alpha',
+        'Beta',
+      ]);
     });
 
     test('网络来源的百分号编码目录名解码后再做系列名', () {
@@ -409,10 +431,20 @@ void main() {
       final VideoGroup g = groups.single;
       expect(g.series, 'Chuunibyou', reason: '系列名里不能留着集号');
       expect(g.isPlaylist, isTrue);
-      expect(
-        g.episodes.map((VideoEpisode e) => e.episode).toList(),
-        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      );
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(), <int>[
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+      ]);
     });
 
     test('集号紧贴标题（无分隔符）同样定号', () {
@@ -420,19 +452,26 @@ void main() {
         for (int i = 1; i <= 12; i++) '/anime/Show/Show!$i.mkv',
       ];
       final VideoGroup g = groupVideosIntoPlaylists(paths).single;
-      expect(
-        g.episodes.map((VideoEpisode e) => e.episode).toList(),
-        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      );
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(), <int>[
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+      ]);
     });
 
     test('公共前缀不得切断数字段：只有 10/11/12 的目录不能解成 0/1/2', () {
-      final SiblingEpisodeNumbering? sib =
-          resolveSiblingEpisodeNumbers(<String>[
-        '/a/Show 10.mkv',
-        '/a/Show 11.mkv',
-        '/a/Show 12.mkv',
-      ]);
+      final SiblingEpisodeNumbering? sib = resolveSiblingEpisodeNumbers(
+        <String>['/a/Show 10.mkv', '/a/Show 11.mkv', '/a/Show 12.mkv'],
+      );
       expect(sib, isNotNull);
       expect(sib!.numbers.values.toList(), <int>[10, 11, 12]);
       expect(sib.series, 'Show');
@@ -442,10 +481,20 @@ void main() {
       final List<String> paths = <String>[
         for (int i = 1; i <= 12; i++) '/anime/Show/Show $i.mkv',
       ];
-      expect(
-        parsedEpisodeNumbersOf(paths),
-        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      );
+      expect(parsedEpisodeNumbersOf(paths), <int>[
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+      ]);
     });
 
     test('已解出的集号只补不覆盖（后缀带画质块的真实命名）', () {
@@ -477,12 +526,18 @@ void main() {
         '/a/[Nekomoe] Show - 03 [1080p].mkv',
       ];
       // 每个文件都自带集号 → 差分整条通路不介入。
-      expect(fillEpisodeNumbersFromSiblings(paths, <int?>[1, 2, 3]),
-          <int>[1, 2, 3]);
+      expect(fillEpisodeNumbersFromSiblings(paths, <int?>[1, 2, 3]), <int>[
+        1,
+        2,
+        3,
+      ]);
       final VideoGroup g = groupVideosIntoPlaylists(paths).single;
       expect(g.series, 'Show');
-      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(),
-          <int>[1, 2, 3]);
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(), <int>[
+        1,
+        2,
+        3,
+      ]);
     });
   });
 
@@ -539,16 +594,16 @@ void main() {
         '/a/Show - Talk 9 (x).mkv',
       ];
       final VideoGroup g = groupVideosIntoPlaylists(paths).single;
-      expect(g.episodes.every((VideoEpisode e) => e.episode == null), isTrue,
-          reason: '前提：这三个都解不出集号，否则这条用例没在测末位判据');
       expect(
-        g.episodes.map((VideoEpisode e) => e.title).toList(),
-        <String>[
-          'Show - Talk 9 (x)',
-          'Show - Talk 100 (x)',
-          'Show - Talk extra (x)',
-        ],
+        g.episodes.every((VideoEpisode e) => e.episode == null),
+        isTrue,
+        reason: '前提：这三个都解不出集号，否则这条用例没在测末位判据',
       );
+      expect(g.episodes.map((VideoEpisode e) => e.title).toList(), <String>[
+        'Show - Talk 9 (x)',
+        'Show - Talk 100 (x)',
+        'Show - Talk extra (x)',
+      ]);
     });
   });
 
@@ -580,14 +635,11 @@ void main() {
 
       final List<String> found = listVideoFilesInDirectory(root.path);
 
-      expect(
-        found.map(p.normalize).toSet(),
-        <String>{
-          p.normalize(e01.path),
-          p.normalize(e02.path),
-          p.normalize(movie.path),
-        },
-      );
+      expect(found.map(p.normalize).toSet(), <String>{
+        p.normalize(e01.path),
+        p.normalize(e02.path),
+        p.normalize(movie.path),
+      });
     });
 
     test('顶层视频也能扫到（与子目录视频混合）', () {
@@ -596,10 +648,10 @@ void main() {
 
       final List<String> found = listVideoFilesInDirectory(root.path);
 
-      expect(
-        found.map(p.normalize).toSet(),
-        <String>{p.normalize(top.path), p.normalize(nested.path)},
-      );
+      expect(found.map(p.normalize).toSet(), <String>{
+        p.normalize(top.path),
+        p.normalize(nested.path),
+      });
     });
 
     test('蓝光 .m2ts / .ts 扩展名被识别', () {
@@ -608,10 +660,10 @@ void main() {
 
       final List<String> found = listVideoFilesInDirectory(root.path);
 
-      expect(
-        found.map(p.normalize).toSet(),
-        <String>{p.normalize(m2ts.path), p.normalize(ts.path)},
-      );
+      expect(found.map(p.normalize).toSet(), <String>{
+        p.normalize(m2ts.path),
+        p.normalize(ts.path),
+      });
     });
 
     test('无视频文件 → 空列表', () {
@@ -622,10 +674,7 @@ void main() {
     });
 
     test('不存在的目录 → 空列表', () {
-      expect(
-        listVideoFilesInDirectory(p.join(root.path, 'nope')),
-        isEmpty,
-      );
+      expect(listVideoFilesInDirectory(p.join(root.path, 'nope')), isEmpty);
     });
   });
 }

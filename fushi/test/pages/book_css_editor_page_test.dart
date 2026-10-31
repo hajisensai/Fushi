@@ -31,9 +31,7 @@ void main() {
 
   Widget buildApp(String extractDir) {
     return TranslationProvider(
-      child: MaterialApp(
-        home: BookCssEditorPage(extractDir: extractDir),
-      ),
+      child: MaterialApp(home: BookCssEditorPage(extractDir: extractDir)),
     );
   }
 
@@ -46,7 +44,8 @@ void main() {
   // indefinite animation).
   Future<void> settleAsyncLoad(WidgetTester tester) async {
     for (int i = 0; i < 50; i++) {
-      if (find.byType(FushiExpressiveLoadingIndicator).evaluate().isEmpty) return;
+      if (find.byType(FushiExpressiveLoadingIndicator).evaluate().isEmpty)
+        return;
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
@@ -125,73 +124,73 @@ void main() {
       expect(find.byType(FushiExpressiveLoadingIndicator), findsNothing);
       expect(find.text('a.css'), findsOneWidget);
       expect(find.text('b.css'), findsOneWidget);
-      final TextField tf =
-          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
+      final TextField tf = tester.widget<TextField>(
+        glassUnwrap<TextField>(find.byType(TextField).first),
+      );
       expect(tf.controller!.text, 'aaa');
     },
   );
 
-  testWidgets(
-    'cancel tab switch keeps _selectedIndex on original tab',
-    (WidgetTester tester) async {
-      createCss(tmpDir, 'a.css', 'aaa');
-      createCss(tmpDir, 'b.css', 'bbb');
-      seedEpubManifest(tmpDir, ['a.css', 'b.css']);
+  testWidgets('cancel tab switch keeps _selectedIndex on original tab', (
+    WidgetTester tester,
+  ) async {
+    createCss(tmpDir, 'a.css', 'aaa');
+    createCss(tmpDir, 'b.css', 'bbb');
+    seedEpubManifest(tmpDir, ['a.css', 'b.css']);
 
-      await pumpEditor(tester, tmpDir.path);
+    await pumpEditor(tester, tmpDir.path);
 
-      // Verify two chips rendered, first selected
-      expect(find.text('a.css'), findsOneWidget);
-      expect(find.text('b.css'), findsOneWidget);
+    // Verify two chips rendered, first selected
+    expect(find.text('a.css'), findsOneWidget);
+    expect(find.text('b.css'), findsOneWidget);
 
-      // Type in the editor to create unsaved changes
-      await tester.enterText(find.byType(TextField).first, 'modified');
-      await tester.pumpAndSettle();
+    // Type in the editor to create unsaved changes
+    await tester.enterText(find.byType(TextField).first, 'modified');
+    await tester.pumpAndSettle();
 
-      // Tab label should now show *
-      expect(find.text('* a.css'), findsOneWidget);
+    // Tab label should now show *
+    expect(find.text('* a.css'), findsOneWidget);
 
-      // Tap the second chip to trigger guard dialog
-      await tester.tap(find.text('b.css'));
-      await tester.pumpAndSettle();
+    // Tap the second chip to trigger guard dialog
+    await tester.tap(find.text('b.css'));
+    await tester.pumpAndSettle();
 
-      // Dialog should appear
-      expect(find.text(t.book_css_editor_unsaved_changes), findsOneWidget);
+    // Dialog should appear
+    expect(find.text(t.book_css_editor_unsaved_changes), findsOneWidget);
 
-      // Tap Cancel
-      await tester.tap(find.text(t.book_css_editor_cancel));
-      await tester.pumpAndSettle();
+    // Tap Cancel
+    await tester.tap(find.text(t.book_css_editor_cancel));
+    await tester.pumpAndSettle();
 
-      // First chip should still be selected (editor still shows modified text)
-      final TextField tf =
-          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
-      expect(tf.controller!.text, 'modified');
-    },
-  );
+    // First chip should still be selected (editor still shows modified text)
+    final TextField tf = tester.widget<TextField>(
+      glassUnwrap<TextField>(find.byType(TextField).first),
+    );
+    expect(tf.controller!.text, 'modified');
+  });
 
-  testWidgets(
-    'unsaved changes dialog fits a compact desktop window',
-    (WidgetTester tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(320, 240);
-      addTearDown(tester.view.reset);
+  testWidgets('unsaved changes dialog fits a compact desktop window', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 240);
+    addTearDown(tester.view.reset);
 
-      createCss(tmpDir, 'a.css', 'aaa');
-      createCss(tmpDir, 'b.css', 'bbb');
-      seedEpubManifest(tmpDir, ['a.css', 'b.css']);
+    createCss(tmpDir, 'a.css', 'aaa');
+    createCss(tmpDir, 'b.css', 'bbb');
+    seedEpubManifest(tmpDir, ['a.css', 'b.css']);
 
-      await pumpEditor(tester, tmpDir.path);
+    await pumpEditor(tester, tmpDir.path);
 
-      await tester.enterText(find.byType(TextField).first, 'modified');
-      await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'modified');
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('b.css'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('b.css'));
+    await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(find.text(t.book_css_editor_unsaved_changes), findsOneWidget);
-    },
-  );
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.book_css_editor_unsaved_changes), findsOneWidget);
+  });
 
   testWidgets(
     'reset current discards editor changes when no .original exists',
@@ -217,14 +216,16 @@ void main() {
       await tester.pumpAndSettle();
 
       // Editor should be back to disk content
-      final TextField tf =
-          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
+      final TextField tf = tester.widget<TextField>(
+        glassUnwrap<TextField>(find.byType(TextField).first),
+      );
       expect(tf.controller!.text, 'original content');
 
       // No .original file should exist on disk
       expect(
-          File('${tmpDir.path}${p.separator}style.css.original').existsSync(),
-          isFalse);
+        File('${tmpDir.path}${p.separator}style.css.original').existsSync(),
+        isFalse,
+      );
     },
   );
 
@@ -247,10 +248,15 @@ void main() {
       // 找出所有约束到共享设置弹窗宽度的 ConstrainedBox（正文 + 底部动作栏各一个）。
       final Iterable<ConstrainedBox> capped = tester
           .widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
-          .where((ConstrainedBox b) =>
-              b.constraints.maxWidth == kFushiSettingsDialogMaxWidth);
-      expect(capped.length, greaterThanOrEqualTo(2),
-          reason: '正文与底部动作栏都应被约束到 kFushiSettingsDialogMaxWidth');
+          .where(
+            (ConstrainedBox b) =>
+                b.constraints.maxWidth == kFushiSettingsDialogMaxWidth,
+          );
+      expect(
+        capped.length,
+        greaterThanOrEqualTo(2),
+        reason: '正文与底部动作栏都应被约束到 kFushiSettingsDialogMaxWidth',
+      );
 
       // 编辑器正文仍正常渲染（TextField expands:true 需要有界高度，包裹层用
       // SizedBox(height: infinity) 保留满高，不应抛布局异常）。

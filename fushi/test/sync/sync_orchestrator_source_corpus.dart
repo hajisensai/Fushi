@@ -14,9 +14,9 @@ const String kSyncOrchestratorPartDir = 'lib/src/sync/sync_orchestrator';
 
 /// 主库 + 磁盘上全部 `*.part.dart`（按路径排序）。
 List<String> syncOrchestratorFiles() => partCorpusFiles(
-      shell: _syncOrchestratorShell,
-      partDir: kSyncOrchestratorPartDir,
-    );
+  shell: _syncOrchestratorShell,
+  partDir: kSyncOrchestratorPartDir,
+);
 
 /// 读「同步编排器合并语料」：主库 + 全部 part 拼成单个字符串，换行统一成 '\n'。
 String readSyncOrchestratorSource() => readPartCorpus(syncOrchestratorFiles());

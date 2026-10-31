@@ -88,15 +88,18 @@ void main() {
   AnkiConnectRepository repoWith(http.Client client) {
     AnkiConnectRepository.resetDuplicateCheckCooldown();
     return AnkiConnectRepository(
-      service: AnkiConnectService(host: '127.0.0.1', port: 8765, client: client),
+      service: AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: client,
+      ),
     );
   }
 
   Map<String, dynamic> onlyCall(
     List<Map<String, dynamic>> sink,
     String action,
-  ) =>
-      sink.singleWhere((Map<String, dynamic> b) => b['action'] == action);
+  ) => sink.singleWhere((Map<String, dynamic> b) => b['action'] == action);
 
   group('BUG-1915 跨笔记类型的重复必须被查重看见', () {
     test('第一字段撞车但字段名不同的卡 → isDuplicate 为 true', () async {
@@ -143,8 +146,10 @@ void main() {
       // 比的是各自真正发出去的 HTTP 请求体，不是同一次取值。
       final Map<String, dynamic> probeNote =
           ((onlyCall(probeSink, 'canAddNotesWithErrorDetail')['params']
-                  as Map)['notes'] as List)
-              .single as Map<String, dynamic>;
+                          as Map)['notes']
+                      as List)
+                  .single
+              as Map<String, dynamic>;
       final Map<String, dynamic> addedNote =
           (onlyCall(addSink, 'addNote')['params'] as Map)['note']
               as Map<String, dynamic>;
@@ -161,8 +166,10 @@ void main() {
 
       final Map<String, dynamic> note =
           ((onlyCall(sink, 'canAddNotesWithErrorDetail')['params']
-                  as Map)['notes'] as List)
-              .single as Map<String, dynamic>;
+                          as Map)['notes']
+                      as List)
+                  .single
+              as Map<String, dynamic>;
       final Map<String, dynamic> options =
           note['options'] as Map<String, dynamic>;
       final Map<String, dynamic> scopeOptions =
@@ -185,8 +192,10 @@ void main() {
 
       final Map<String, dynamic> note =
           ((onlyCall(sink, 'canAddNotesWithErrorDetail')['params']
-                  as Map)['notes'] as List)
-              .single as Map<String, dynamic>;
+                          as Map)['notes']
+                      as List)
+                  .single
+              as Map<String, dynamic>;
       expect(
         (note['options'] as Map<String, dynamic>)['allowDuplicate'],
         isFalse,
@@ -200,8 +209,10 @@ void main() {
 
       final Map<String, dynamic> note =
           ((onlyCall(sink, 'canAddNotesWithErrorDetail')['params']
-                  as Map)['notes'] as List)
-              .single as Map<String, dynamic>;
+                          as Map)['notes']
+                      as List)
+                  .single
+              as Map<String, dynamic>;
       expect(note['fields'], <String, String>{'Expression': kWord});
     });
   });
@@ -230,8 +241,7 @@ void main() {
       expect(await repoWith(client).isDuplicate(kWord, ''), isFalse);
     });
 
-    test('老版 AnkiConnect 不认识该动作 → 退回按字段名查的旧判据，不集体失去 ✓',
-        () async {
+    test('老版 AnkiConnect 不认识该动作 → 退回按字段名查的旧判据，不集体失去 ✓', () async {
       await installSettings();
       final actions = <String>[];
       final client = MockClient((http.Request request) async {
@@ -241,15 +251,19 @@ void main() {
         actions.add(action);
         if (action == 'canAddNotesWithErrorDetail') {
           return http.Response(
-            jsonEncode(
-              <String, Object?>{'result': null, 'error': 'unsupported action'},
-            ),
+            jsonEncode(<String, Object?>{
+              'result': null,
+              'error': 'unsupported action',
+            }),
             200,
             headers: <String, String>{'content-type': 'application/json'},
           );
         }
         return http.Response(
-          jsonEncode(<String, Object?>{'result': const <int>[42], 'error': null}),
+          jsonEncode(<String, Object?>{
+            'result': const <int>[42],
+            'error': null,
+          }),
           200,
           headers: <String, String>{'content-type': 'application/json'},
         );
@@ -262,8 +276,10 @@ void main() {
     test('空词不问 Anki', () async {
       await installSettings();
       final sink = <Map<String, dynamic>>[];
-      expect(await repoWith(crossModelDuplicateHost(sink)).isDuplicate('', ''),
-          isFalse);
+      expect(
+        await repoWith(crossModelDuplicateHost(sink)).isDuplicate('', ''),
+        isFalse,
+      );
       expect(sink, isEmpty);
     });
   });

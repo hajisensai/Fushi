@@ -26,8 +26,7 @@ class _ThrowingMetadataProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataWork>> search(
     VideoMetadataSearchRequest request,
-  ) async =>
-      throw error;
+  ) async => throw error;
 
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
@@ -36,15 +35,13 @@ class _ThrowingMetadataProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      const <VideoMetadataSeason>[];
+  ) async => const <VideoMetadataSeason>[];
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      const <VideoMetadataEpisode>[];
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}
@@ -86,22 +83,19 @@ void main() {
     expect(
       (await _searchFailure(
         const VideoMetadataNetworkException('nope', statusCode: 401),
-      ))
-          .kind,
+      )).kind,
       ExternalProviderFailureKind.unauthorized,
     );
     expect(
       (await _searchFailure(
         const VideoMetadataNetworkException('boom', statusCode: 503),
-      ))
-          .kind,
+      )).kind,
       ExternalProviderFailureKind.network,
     );
     expect(
       (await _searchFailure(
         const VideoMetadataNetworkException('gone', statusCode: 404),
-      ))
-          .kind,
+      )).kind,
       ExternalProviderFailureKind.notFound,
     );
   });

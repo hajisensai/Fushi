@@ -31,13 +31,13 @@ void main() {
   test('available embedded runtime keeps its installation-bound identity', () {
     final VideoDownloadBackendIdentity identity =
         buildVideoDownloadBackendIdentity(
-      config: const QbConnectionConfig(
-        backend: QbConnectionConfig.backendEmbedded,
-        category: 'fushi',
-      ),
-      resolvedBackend: QbConnectionConfig.backendEmbedded,
-      embeddedInstallationId: 'installation-1',
-    );
+          config: const QbConnectionConfig(
+            backend: QbConnectionConfig.backendEmbedded,
+            category: 'fushi',
+          ),
+          resolvedBackend: QbConnectionConfig.backendEmbedded,
+          embeddedInstallationId: 'installation-1',
+        );
 
     expect(identity.kind, QbConnectionConfig.backendEmbedded);
     expect(identity.profileId, 'embedded');

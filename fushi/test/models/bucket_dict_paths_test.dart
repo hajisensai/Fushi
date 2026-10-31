@@ -6,21 +6,23 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// （依赖真词典 + 真目录 + FFI）。本测试钉死分桶规则：隐藏的词典四种类型一律不进桶
 /// （BUG-177/TODO-094/BUG-3454）；不存在的目录跳过。
 void main() {
-  DictPathEntry e(DictionaryType type, String path,
-          {bool exists = true,
-          bool hidden = false,
-          bool hasKanji = false,
-          bool kanjiHidden = false,
-          int kanjiOrder = 0}) =>
-      (
-        type: type,
-        path: path,
-        exists: exists,
-        hidden: hidden,
-        hasKanji: hasKanji,
-        kanjiHidden: kanjiHidden,
-        kanjiOrder: kanjiOrder,
-      );
+  DictPathEntry e(
+    DictionaryType type,
+    String path, {
+    bool exists = true,
+    bool hidden = false,
+    bool hasKanji = false,
+    bool kanjiHidden = false,
+    int kanjiOrder = 0,
+  }) => (
+    type: type,
+    path: path,
+    exists: exists,
+    hidden: hidden,
+    hasKanji: hasKanji,
+    kanjiHidden: kanjiHidden,
+    kanjiOrder: kanjiOrder,
+  );
 
   group('bucketDictPaths 词典分桶单一真相', () {
     test('按类型分四桶', () {
@@ -42,9 +44,13 @@ void main() {
         e(DictionaryType.term, '/hidden', hidden: true),
         e(DictionaryType.term, '/visible'),
       ]);
-      expect(b.term, <String>['/visible'],
-          reason: '引擎在 Dart 过滤之前就按最长匹配截断到 maxResults：关掉的词典的'
-              '长匹配会把可见词典的结果挤出 top-N，高亮也按它的长度画');
+      expect(
+        b.term,
+        <String>['/visible'],
+        reason:
+            '引擎在 Dart 过滤之前就按最长匹配截断到 maxResults：关掉的词典的'
+            '长匹配会把可见词典的结果挤出 top-N，高亮也按它的长度画',
+      );
     });
 
     test('freq/pitch/kanji 隐藏不进桶（BUG-177/TODO-094）', () {
@@ -81,10 +87,12 @@ void main() {
       final b = bucketDictPaths(<DictPathEntry>[
         e(DictionaryType.term, '/mixed', hasKanji: true),
       ]);
-      expect(b.term, <String>['/mixed'],
-          reason: '混合词典首先是词条词典,必须进 term 桶让划词查词命中');
-      expect(b.kanji, <String>['/mixed'],
-          reason: '混合词典内含 kanji,也要进 kanji 桶让单字查汉字命中');
+      expect(b.term, <String>[
+        '/mixed',
+      ], reason: '混合词典首先是词条词典,必须进 term 桶让划词查词命中');
+      expect(b.kanji, <String>[
+        '/mixed',
+      ], reason: '混合词典内含 kanji,也要进 kanji 桶让单字查汉字命中');
     });
 
     test('纯 term 词典(hasKanji=false)不进 kanji 桶', () {
@@ -110,8 +118,7 @@ void main() {
         e(DictionaryType.term, '/mixed', hidden: true, hasKanji: true),
       ]);
       expect(b.term, isEmpty, reason: '隐藏的 term 不进 term 桶(BUG-3454)');
-      expect(b.kanji, <String>['/mixed'],
-          reason: '汉字分区里那一行仍开着,汉字卡就该照常出来');
+      expect(b.kanji, <String>['/mixed'], reason: '汉字分区里那一行仍开着,汉字卡就该照常出来');
     });
 
     test('kanji 桶按「汉字」分区顺序输出,而不是全局 order 的交错顺序', () {

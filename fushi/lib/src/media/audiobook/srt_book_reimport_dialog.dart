@@ -197,8 +197,10 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
     if (_pickerActive || importing) return;
     _pickerActive = true;
     try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final AppModel appModel = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider);
       final List<String> paths = await pickRealFilePaths(
         context: context,
         appModel: appModel,

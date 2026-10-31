@@ -25,8 +25,11 @@ void main() {
       'html.global-lookup .favorite-button:not(:disabled)',
       'html.global-lookup .mine-button:not(:disabled)',
     ]) {
-      expect(css.contains(sel), isTrue,
-          reason: 'BUG-751：$sel 必须存在（半透明面板上按钮才可见）');
+      expect(
+        css.contains(sel),
+        isTrue,
+        reason: 'BUG-751：$sel 必须存在（半透明面板上按钮才可见）',
+      );
     }
     // The rule body raises opacity to 1 (was 0.5). Guard the intent, not layout.
     final RegExp rule = RegExp(
@@ -34,8 +37,11 @@ void main() {
       r'html\.global-lookup \.favorite-button:not\(:disabled\),\s*'
       r'html\.global-lookup \.mine-button:not\(:disabled\)\s*\{\s*opacity:\s*1;',
     );
-    expect(rule.hasMatch(css), isTrue,
-        reason: 'BUG-751：三个外部面头部按钮必须整体提到 opacity:1');
+    expect(
+      rule.hasMatch(css),
+      isTrue,
+      reason: 'BUG-751：三个外部面头部按钮必须整体提到 opacity:1',
+    );
   });
 
   test('the washout fix does NOT leak into the extension content.css', () {
@@ -47,8 +53,11 @@ void main() {
       '../tools/browser-extension',
     ]) {
       final String content = read('$root/vendor/content.css');
-      expect(content.contains('.mine-button:not(:disabled)'), isFalse,
-          reason: '$root/vendor/content.css 不应含 global-lookup 专属按钮规则');
+      expect(
+        content.contains('.mine-button:not(:disabled)'),
+        isFalse,
+        reason: '$root/vendor/content.css 不应含 global-lookup 专属按钮规则',
+      );
     }
   });
 
@@ -61,14 +70,16 @@ void main() {
   // Removing it makes the wired backend reachable. This pin stops the hide from
   // creeping back (opacity:1 above is inert while a display:none exists).
   test('BUG-774: global-lookup injection does NOT hide the mine button', () {
-    final String inj =
-        read('lib/src/pages/implementations/popup_settings_injection.dart');
+    final String inj = read(
+      'lib/src/pages/implementations/popup_settings_injection.dart',
+    );
     // Match the JS string-literal form only (leading single quote), so this
     // guard's own prose mentioning the retired rule doesn't self-trip.
     expect(
       RegExp(r"'\.mine-button\s*\{\s*display\s*:\s*none").hasMatch(inj),
       isFalse,
-      reason: '制卡桥已接通（TODO-1188）+ popup.css opacity:1（BUG-751），'
+      reason:
+          '制卡桥已接通（TODO-1188）+ popup.css opacity:1（BUG-751），'
           '不得再注入隐藏制卡按钮的 display:none 样式',
     );
   });

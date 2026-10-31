@@ -13,12 +13,12 @@ import 'package:fushi_core/fushi_core.dart';
 /// 自己的 `reader_positions` DB（修复根因：旧路径只把进度写进 host 永不回灌 DB 的
 /// WebDAV 文件箱 progress_*.json）。
 LocalLibraryHostService _svc(FushiDatabase db) => LocalLibraryHostService(
-      db: db,
-      dictionaryResourceRoot: Directory.systemTemp,
-      packages: SyncAssetPackageService(db: db),
-      refreshDictionaryCache: () async {},
-      runExclusive: (Future<void> Function() body) => body(),
-    );
+  db: db,
+  dictionaryResourceRoot: Directory.systemTemp,
+  packages: SyncAssetPackageService(db: db),
+  refreshDictionaryCache: () async {},
+  runExclusive: (Future<void> Function() body) => body(),
+);
 
 Future<void> _seedLocalPosition(
   FushiDatabase db, {
@@ -31,13 +31,15 @@ Future<void> _seedLocalPosition(
   // v82：reader_positions 键 = epub_books.uid；wire 仍是 bookKey，造数前书行
   // 必须已存在（_seedHostBook），经 resolveEpubBookUid 换算。
   final String bookUid = (await db.resolveEpubBookUid(bookKey))!;
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: Value(sectionIndex),
-    normCharOffset: Value(normCharOffset),
-    charOffset: Value(charOffset),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: Value(sectionIndex),
+      normCharOffset: Value(normCharOffset),
+      charOffset: Value(charOffset),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 /// bookKey → uid 换算后的直查 DB 口（v82 后 getReaderPosition 只认 uid）。
@@ -50,15 +52,17 @@ Future<ReaderPositionRow?> _positionOf(FushiDatabase db, String bookKey) async {
 /// 把书 [bookKey] 插进 host 自己的 epub_books 表（真实场景：host 有这本书才允许
 /// 接受其进度 PUT；putBookProgress 的存在性闸门要求 host 书库先有该书）。
 Future<void> _seedHostBook(FushiDatabase db, String bookKey) =>
-    db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: bookKey,
-      epubPath: '/tmp/$bookKey.epub',
-      extractDir: '/tmp/$bookKey',
-      chapterCount: 3,
-      chaptersJson: '["ch1","ch2","ch3"]',
-      importedAt: 1700000000000,
-    ));
+    db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: '/tmp/$bookKey.epub',
+        extractDir: '/tmp/$bookKey',
+        chapterCount: 3,
+        chaptersJson: '["ch1","ch2","ch3"]',
+        importedAt: 1700000000000,
+      ),
+    );
 
 void main() {
   late FushiDatabase db;
@@ -75,15 +79,17 @@ void main() {
     test('remote 时间戳更新 → 取 remote', () {
       final RemoteBookProgress winner = resolveBookProgressSync(
         local: const RemoteBookProgress(
-            sectionIndex: 1,
-            normCharOffset: 100,
-            charOffset: 5,
-            updatedAtMs: 10),
+          sectionIndex: 1,
+          normCharOffset: 100,
+          charOffset: 5,
+          updatedAtMs: 10,
+        ),
         remote: const RemoteBookProgress(
-            sectionIndex: 3,
-            normCharOffset: 200,
-            charOffset: 9,
-            updatedAtMs: 20),
+          sectionIndex: 3,
+          normCharOffset: 200,
+          charOffset: 9,
+          updatedAtMs: 20,
+        ),
       );
       expect(winner.sectionIndex, 3);
       expect(winner.normCharOffset, 200);
@@ -93,12 +99,17 @@ void main() {
     test('local 时间戳更新 → 取 local', () {
       final RemoteBookProgress winner = resolveBookProgressSync(
         local: const RemoteBookProgress(
-            sectionIndex: 5,
-            normCharOffset: 50,
-            charOffset: 1,
-            updatedAtMs: 99),
+          sectionIndex: 5,
+          normCharOffset: 50,
+          charOffset: 1,
+          updatedAtMs: 99,
+        ),
         remote: const RemoteBookProgress(
-            sectionIndex: 1, normCharOffset: 10, charOffset: 1, updatedAtMs: 1),
+          sectionIndex: 1,
+          normCharOffset: 10,
+          charOffset: 1,
+          updatedAtMs: 1,
+        ),
       );
       expect(winner.sectionIndex, 5);
       expect(winner.updatedAtMs, 99);
@@ -107,15 +118,17 @@ void main() {
     test('时间戳相等 → 取读得更远者（先比 section 再比 normCharOffset）', () {
       final RemoteBookProgress winner = resolveBookProgressSync(
         local: const RemoteBookProgress(
-            sectionIndex: 2,
-            normCharOffset: 100,
-            charOffset: 1,
-            updatedAtMs: 7),
+          sectionIndex: 2,
+          normCharOffset: 100,
+          charOffset: 1,
+          updatedAtMs: 7,
+        ),
         remote: const RemoteBookProgress(
-            sectionIndex: 2,
-            normCharOffset: 300,
-            charOffset: 1,
-            updatedAtMs: 7),
+          sectionIndex: 2,
+          normCharOffset: 300,
+          charOffset: 1,
+          updatedAtMs: 7,
+        ),
       );
       expect(winner.normCharOffset, 300); // remote 更远
     });
@@ -124,7 +137,11 @@ void main() {
       final RemoteBookProgress winner = resolveBookProgressSync(
         local: RemoteBookProgress.empty,
         remote: const RemoteBookProgress(
-            sectionIndex: 1, normCharOffset: 0, charOffset: -1, updatedAtMs: 0),
+          sectionIndex: 1,
+          normCharOffset: 0,
+          charOffset: -1,
+          updatedAtMs: 0,
+        ),
       );
       expect(winner.sectionIndex, 1);
     });
@@ -142,12 +159,14 @@ void main() {
     test('host 有 reader_positions 行 → 返回真实字段', () async {
       // v82：进度行必须挂在 host 书行的 uid 上，无书行的进度不可见。
       await _seedHostBook(db, 'BookA');
-      await _seedLocalPosition(db,
-          bookKey: 'BookA',
-          sectionIndex: 4,
-          normCharOffset: 4500,
-          charOffset: 1234,
-          updatedAt: 1700000000000);
+      await _seedLocalPosition(
+        db,
+        bookKey: 'BookA',
+        sectionIndex: 4,
+        normCharOffset: 4500,
+        charOffset: 1234,
+        updatedAt: 1700000000000,
+      );
       final LocalLibraryHostService svc = _svc(db);
       final RemoteBookProgress p = await svc.getBookProgress('BookA');
       expect(p.sectionIndex, 4);
@@ -164,10 +183,11 @@ void main() {
       await svc.putBookProgress(
         'BookB',
         const RemoteBookProgress(
-            sectionIndex: 2,
-            normCharOffset: 3000,
-            charOffset: 777,
-            updatedAtMs: 1700000000000),
+          sectionIndex: 2,
+          normCharOffset: 3000,
+          charOffset: 777,
+          updatedAtMs: 1700000000000,
+        ),
       );
 
       // 直查 DB：真行落地（这正是旧路径缺失的——host 从不回灌 DB）。
@@ -185,24 +205,25 @@ void main() {
       expect(got.updatedAtMs, 1700000000000);
     });
 
-    test('对端 PUT 落库 → watchReaderPositionsChanged 发信号（host 书架据此刷新）',
-        () async {
+    test('对端 PUT 落库 → watchReaderPositionsChanged 发信号（host 书架据此刷新）', () async {
       // 用户报告：手机读到 2%（推给作 host 的电脑并已落库），电脑书架仍显示
       // 17%——书架只听本机同步收尾的 refreshTab，对端 PUT 不经那里。书架现在
       // 订阅这条表信号，这里钉住「对端 PUT 一定发出它」。
       await _seedHostBook(db, 'BookW');
       final LocalLibraryHostService svc = _svc(db);
       int signals = 0;
-      final StreamSubscription<void> sub =
-          db.watchReaderPositionsChanged().listen((_) => signals++);
+      final StreamSubscription<void> sub = db
+          .watchReaderPositionsChanged()
+          .listen((_) => signals++);
       await pumpEventQueue();
       await svc.putBookProgress(
         'BookW',
         const RemoteBookProgress(
-            sectionIndex: 1,
-            normCharOffset: 100,
-            charOffset: 10,
-            updatedAtMs: 1700000000000),
+          sectionIndex: 1,
+          normCharOffset: 100,
+          charOffset: 10,
+          updatedAtMs: 1700000000000,
+        ),
       );
       await pumpEventQueue();
       await sub.cancel();
@@ -211,21 +232,24 @@ void main() {
 
     test('上报旧时间戳 → 不覆盖 host 已存新进度（取较新）', () async {
       await _seedHostBook(db, 'BookC');
-      await _seedLocalPosition(db,
-          bookKey: 'BookC',
-          sectionIndex: 9,
-          normCharOffset: 9000,
-          charOffset: 90,
-          updatedAt: 2000);
+      await _seedLocalPosition(
+        db,
+        bookKey: 'BookC',
+        sectionIndex: 9,
+        normCharOffset: 9000,
+        charOffset: 90,
+        updatedAt: 2000,
+      );
       final LocalLibraryHostService svc = _svc(db);
 
       await svc.putBookProgress(
         'BookC',
         const RemoteBookProgress(
-            sectionIndex: 1,
-            normCharOffset: 10,
-            charOffset: 1,
-            updatedAtMs: 1000), // 更旧
+          sectionIndex: 1,
+          normCharOffset: 10,
+          charOffset: 1,
+          updatedAtMs: 1000,
+        ), // 更旧
       );
 
       final ReaderPositionRow? row = await _positionOf(db, 'BookC');
@@ -235,21 +259,24 @@ void main() {
 
     test('上报新时间戳 → 覆盖 host 旧进度', () async {
       await _seedHostBook(db, 'BookD');
-      await _seedLocalPosition(db,
-          bookKey: 'BookD',
-          sectionIndex: 1,
-          normCharOffset: 100,
-          charOffset: 1,
-          updatedAt: 1000);
+      await _seedLocalPosition(
+        db,
+        bookKey: 'BookD',
+        sectionIndex: 1,
+        normCharOffset: 100,
+        charOffset: 1,
+        updatedAt: 1000,
+      );
       final LocalLibraryHostService svc = _svc(db);
 
       await svc.putBookProgress(
         'BookD',
         const RemoteBookProgress(
-            sectionIndex: 6,
-            normCharOffset: 6000,
-            charOffset: 66,
-            updatedAtMs: 5000), // 更新
+          sectionIndex: 6,
+          normCharOffset: 6000,
+          charOffset: 66,
+          updatedAtMs: 5000,
+        ), // 更新
       );
 
       final ReaderPositionRow? row = await _positionOf(db, 'BookD');
@@ -263,10 +290,11 @@ void main() {
       await svc.putBookProgress(
         'BookE',
         const RemoteBookProgress(
-            sectionIndex: 0,
-            normCharOffset: -50,
-            charOffset: -1,
-            updatedAtMs: 1234),
+          sectionIndex: 0,
+          normCharOffset: -50,
+          charOffset: -1,
+          updatedAtMs: 1234,
+        ),
       );
       final ReaderPositionRow? row = await _positionOf(db, 'BookE');
       expect(row!.normCharOffset, 0);
@@ -279,10 +307,11 @@ void main() {
       await svc.putBookProgress(
         'BookOrphan',
         const RemoteBookProgress(
-            sectionIndex: 7,
-            normCharOffset: 7000,
-            charOffset: 77,
-            updatedAtMs: 1700000000000),
+          sectionIndex: 7,
+          normCharOffset: 7000,
+          charOffset: 77,
+          updatedAtMs: 1700000000000,
+        ),
       );
 
       final ReaderPositionRow? row = await _positionOf(db, 'BookOrphan');

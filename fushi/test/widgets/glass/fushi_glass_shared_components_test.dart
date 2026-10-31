@@ -27,11 +27,11 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 //    不被重建（结构恒定，见 FushiGlassBackdrop / _NavSurfaceBackdrop）。
 void main() {
   ThemeData theme({required bool glass}) => buildFushiThemeData(
-        scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        textTheme: Typography.material2021().black,
-        glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
-        glassDesign: glass,
-      );
+    scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+    textTheme: Typography.material2021().black,
+    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glassDesign: glass,
+  );
 
   /// liquid_glass_widgets 的组件 / 渲染类型（按类名前缀）。GlassTheme 是挂在
   /// app 根部的主题作用域，不是组件，排除在外。
@@ -39,22 +39,16 @@ void main() {
     r'^(Glass|Liquid|AdaptiveGlass|AdaptiveLiquid|LightweightLiquid|InheritedLiquid)',
   );
   Finder liquidWidgets() => find.byWidgetPredicate((Widget w) {
-        final String name = w.runtimeType.toString();
-        return liquidType.hasMatch(name) && !name.startsWith('GlassTheme');
-      });
+    final String name = w.runtimeType.toString();
+    return liquidType.hasMatch(name) && !name.startsWith('GlassTheme');
+  });
 
-  Widget host(
-    ThemeData data,
-    Widget child, {
-    bool focusRoot = false,
-  }) {
+  Widget host(ThemeData data, Widget child, {bool focusRoot = false}) {
     final Widget body = focusRoot ? FushiFocusRoot(child: child) : child;
     return MaterialApp(
       theme: data,
       themeAnimationDuration: Duration.zero,
-      home: FushiGlassScope(
-        child: Scaffold(body: body),
-      ),
+      home: FushiGlassScope(child: Scaffold(body: body)),
     );
   }
 
@@ -73,11 +67,7 @@ void main() {
           onSubmitted: (_) {},
         ),
         const FushiTextField(hintText: 'text', labelText: 'label'),
-        FushiSelectableChip(
-          label: 'chip',
-          selected: true,
-          onSelected: (_) {},
-        ),
+        FushiSelectableChip(label: 'chip', selected: true, onSelected: (_) {}),
         FushiActionChip(label: 'act', icon: Icons.add, onPressed: () {}),
         FushiTagChip(label: 'tag', onTap: () {}),
         const FushiTagChip(label: 'static-tag'),
@@ -121,11 +111,8 @@ void main() {
           ),
         ),
         Builder(
-          builder: (BuildContext context) => adaptiveSlider(
-            context: context,
-            value: 0.5,
-            onChanged: (_) {},
-          ),
+          builder: (BuildContext context) =>
+              adaptiveSlider(context: context, value: 0.5, onChanged: (_) {}),
         ),
         Builder(
           builder: (BuildContext context) => adaptiveSegmentedButton<int>(
@@ -215,7 +202,10 @@ void main() {
     // 卡片点击面 / 设置行 / 列表行都是 FushiAppleRow；列表项本身也在其中。
     expect(find.byType(FushiAppleRow), findsWidgets);
     expect(
-      find.ancestor(of: find.text('item'), matching: find.byType(FushiAppleRow)),
+      find.ancestor(
+        of: find.text('item'),
+        matching: find.byType(FushiAppleRow),
+      ),
       findsOneWidget,
     );
     // 输入框与 chip 也是内容层实色控件（FushiTextFieldControl /
@@ -262,7 +252,10 @@ void main() {
 
     expect(find.byType(Switch), findsNothing);
     expect(find.byType(Slider), findsNothing);
-    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<int>), findsNothing);
+    expect(
+      find.byWidgetPredicate((Widget w) => w is SegmentedButton<int>),
+      findsNothing,
+    );
     expect(find.byType(ChoiceChip), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byType(PopupMenuButton<int>), findsNothing);
@@ -292,10 +285,7 @@ void main() {
       await tester.pumpWidget(
         host(
           theme(glass: true),
-          FushiListItem(
-            title: const Text('row'),
-            onTap: () => taps++,
-          ),
+          FushiListItem(title: const Text('row'), onTap: () => taps++),
           focusRoot: true,
         ),
       );
@@ -350,10 +340,10 @@ void main() {
           StatefulBuilder(
             builder: (BuildContext context, StateSetter setState) =>
                 AdaptiveSettingsSwitchRow(
-              title: 'toggle me',
-              value: value,
-              onChanged: (bool next) => setState(() => value = next),
-            ),
+                  title: 'toggle me',
+                  value: value,
+                  onChanged: (bool next) => setState(() => value = next),
+                ),
           ),
           focusRoot: true,
         ),
@@ -420,8 +410,10 @@ void main() {
         identical(tester.element(find.byKey(fushiMaterialNavKey)), navBefore),
         isTrue,
       );
-      expect(identical(tester.element(find.byKey(actionKey)), actionBefore),
-          isTrue);
+      expect(
+        identical(tester.element(find.byKey(actionKey)), actionBefore),
+        isTrue,
+      );
       // 玻璃底栏是悬浮胶囊（离底 ≥16、胶囊 62 高），比 MD3 底栏高；同一个
       // Material 元素只是换了几何。
       expect(
@@ -435,8 +427,10 @@ void main() {
         identical(tester.element(find.byKey(fushiMaterialNavKey)), navBefore),
         isTrue,
       );
-      expect(identical(tester.element(find.byKey(actionKey)), actionBefore),
-          isTrue);
+      expect(
+        identical(tester.element(find.byKey(actionKey)), actionBefore),
+        isTrue,
+      );
       expect(tester.getRect(find.byKey(fushiMaterialNavKey)), navRect);
       expect(liquidWidgets(), findsNothing);
     },
@@ -602,6 +596,5 @@ void main() {
 
 /// 玻璃设计系统下 [FushiIcon] 把 Material 图标映射成 SF 风格字形，按调用点
 /// 传入的原始图标找它。
-Finder _fushiIcon(IconData icon) => find.byWidgetPredicate(
-      (Widget w) => w is FushiIcon && w.icon == icon,
-    );
+Finder _fushiIcon(IconData icon) =>
+    find.byWidgetPredicate((Widget w) => w is FushiIcon && w.icon == icon);

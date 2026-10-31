@@ -33,8 +33,13 @@ void main() {
     });
 
     test('subtitle extensions go to subtitles', () {
-      final r = classifyDroppedFiles(
-          ['/x/a.srt', '/x/b.vtt', '/x/c.ass', '/x/d.ssa', '/x/e.lrc']);
+      final r = classifyDroppedFiles([
+        '/x/a.srt',
+        '/x/b.vtt',
+        '/x/c.ass',
+        '/x/d.ssa',
+        '/x/e.lrc',
+      ]);
       expect(r.subtitles, hasLength(5));
     });
 
@@ -134,8 +139,10 @@ void main() {
     // TODO-1306: 浏览器地址栏/链接拖进来的 http(s) URL 不是文件路径，按 scheme 甄别
     // 落到 urls，绝不当 unknown 丢弃。
     test('http/https url goes to urls (not unknown, not video)', () {
-      final r = classifyDroppedFiles(
-          ['https://youtu.be/abc', 'http://example.com/live']);
+      final r = classifyDroppedFiles([
+        'https://youtu.be/abc',
+        'http://example.com/live',
+      ]);
       expect(r.urls, ['https://youtu.be/abc', 'http://example.com/live']);
       expect(r.unknown, isEmpty);
       expect(r.videos, isEmpty);
@@ -159,8 +166,11 @@ void main() {
 
     // 非 http(s)（file:// / 裸路径 / ftp）不是可导入 URL。
     test('non-http schemes and bare paths are not urls', () {
-      final r =
-          classifyDroppedFiles(['file:///x/a.mkv', '/x/a.epub', 'ftp://h/x']);
+      final r = classifyDroppedFiles([
+        'file:///x/a.mkv',
+        '/x/a.epub',
+        'ftp://h/x',
+      ]);
       expect(r.urls, isEmpty);
     });
 
@@ -181,34 +191,38 @@ void main() {
     });
   });
 
-  test('kDragVideoExtensions stays in sync with kVideoExtensions (folder scan)',
-      () {
-    // 文件夹扫描用 kVideoExtensions（带点），拖放用 kDragVideoExtensions（不带点）。
-    // 两者漂移会导致「文件夹按钮能扫到、拖放却识别不出」同一个视频（TODO-558）。
-    final Set<String> scan =
-        kVideoExtensions.map((String e) => e.replaceFirst('.', '')).toSet();
-    expect(
-      kDragVideoExtensions,
-      equals(scan),
-      reason:
-          '视频扩展名漂移：更新 kDragVideoExtensions 与 kVideoExtensions（media_extensions.dart）保持一致',
-    );
-  });
+  test(
+    'kDragVideoExtensions stays in sync with kVideoExtensions (folder scan)',
+    () {
+      // 文件夹扫描用 kVideoExtensions（带点），拖放用 kDragVideoExtensions（不带点）。
+      // 两者漂移会导致「文件夹按钮能扫到、拖放却识别不出」同一个视频（TODO-558）。
+      final Set<String> scan = kVideoExtensions
+          .map((String e) => e.replaceFirst('.', ''))
+          .toSet();
+      expect(
+        kDragVideoExtensions,
+        equals(scan),
+        reason:
+            '视频扩展名漂移：更新 kDragVideoExtensions 与 kVideoExtensions（media_extensions.dart）保持一致',
+      );
+    },
+  );
 
   test(
-      'kDragAudioExtensions stays in sync with AudiobookStorage.audioExtensions',
-      () {
-    // AudiobookStorage 用带点小写扩展名；本表不带点。规整后比较。
-    final Set<String> storage = AudiobookStorage.audioExtensions
-        .map((String e) => e.replaceFirst('.', ''))
-        .toSet();
-    expect(
-      kDragAudioExtensions,
-      equals(storage),
-      reason:
-          '音频扩展名漂移：更新 kDragAudioExtensions 与 AudiobookStorage.audioExtensions 保持一致',
-    );
-  });
+    'kDragAudioExtensions stays in sync with AudiobookStorage.audioExtensions',
+    () {
+      // AudiobookStorage 用带点小写扩展名；本表不带点。规整后比较。
+      final Set<String> storage = AudiobookStorage.audioExtensions
+          .map((String e) => e.replaceFirst('.', ''))
+          .toSet();
+      expect(
+        kDragAudioExtensions,
+        equals(storage),
+        reason:
+            '音频扩展名漂移：更新 kDragAudioExtensions 与 AudiobookStorage.audioExtensions 保持一致',
+      );
+    },
+  );
 
   group('Blu-ray discs (drag a disc in, not a fragment)', () {
     // 按宿主平台拼路径：盘根判据走 package:path，Linux CI 与 Windows 本机都要成立。
@@ -217,13 +231,14 @@ void main() {
     final String season = p.join('video', 'Season 1');
 
     // 真实盘目录不在测试机上；目录判据由 widget 层注入，这里注入等价的假判据。
-    String? fakeDiscRoot(String dir) => dir == root || dir == bdmv ? root : null;
+    String? fakeDiscRoot(String dir) =>
+        dir == root || dir == bdmv ? root : null;
 
     DroppedFiles classify(List<String> paths) => classifyDroppedFiles(
-          paths,
-          isDirectory: (String path) => p.extension(path).isEmpty,
-          blurayDiscRootForDirectory: fakeDiscRoot,
-        );
+      paths,
+      isDirectory: (String path) => p.extension(path).isEmpty,
+      blurayDiscRootForDirectory: fakeDiscRoot,
+    );
 
     test('index.bdmv / MovieObject.bdmv resolve to the disc (was unknown)', () {
       final DroppedFiles r = classify(<String>[
@@ -273,10 +288,9 @@ void main() {
     });
 
     test('without the directory predicate folders are not probed', () {
-      final DroppedFiles r = classifyDroppedFiles(
-        <String>[root],
-        isDirectory: (String path) => true,
-      );
+      final DroppedFiles r = classifyDroppedFiles(<String>[
+        root,
+      ], isDirectory: (String path) => true);
       expect(r.blurayDiscs, isEmpty);
       expect(r.videoSourceFolders, <String>[root]);
     });
@@ -294,15 +308,21 @@ void main() {
 
     test('audio and video sets are disjoint; library set is their union', () {
       expect(kAudioExtensions.intersection(kVideoExtensions), isEmpty);
-      expect(kAudioExtensions.intersection(kPlaylistManifestExtensions),
-          isEmpty);
-      expect(kVideoLibraryMediaExtensions,
-          equals(<String>{...kVideoExtensions, ...kAudioExtensions}));
+      expect(
+        kAudioExtensions.intersection(kPlaylistManifestExtensions),
+        isEmpty,
+      );
+      expect(
+        kVideoLibraryMediaExtensions,
+        equals(<String>{...kVideoExtensions, ...kAudioExtensions}),
+      );
     });
 
     test('isAudioOnlyMediaPath', () {
-      expect(isAudioOnlyMediaPath(r'D:\音乐\K-ON\01 - One more tea？.flac'),
-          isTrue);
+      expect(
+        isAudioOnlyMediaPath(r'D:\音乐\K-ON\01 - One more tea？.flac'),
+        isTrue,
+      );
       expect(isAudioOnlyMediaPath('/music/a.MP3'), isTrue);
       expect(isAudioOnlyMediaPath('https://h/x/a.m4a?sig=1'), isTrue);
       expect(isAudioOnlyMediaPath('/v/ep01.mp4'), isFalse);

@@ -32,8 +32,9 @@ void main() {
 
   group('BUG-2498：ensureReady 不申请权限，申请只在 requestPermission', () {
     // 插件五端共用这一条 channel（platform_flutter_local_notifications.dart）。
-    const MethodChannel channel =
-        MethodChannel('dexterous.com/flutter/local_notifications');
+    const MethodChannel channel = MethodChannel(
+      'dexterous.com/flutter/local_notifications',
+    );
     late List<String> calls;
     late bool enabled;
 
@@ -47,21 +48,21 @@ void main() {
       AndroidFlutterLocalNotificationsPlugin.registerWith();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        calls.add(call.method);
-        switch (call.method) {
-          case 'initialize':
-            return true;
-          case 'getNotificationAppLaunchDetails':
-            return null;
-          case 'areNotificationsEnabled':
-            return enabled;
-          case 'requestNotificationsPermission':
-            enabled = true;
-            return true;
-          default:
-            return null;
-        }
-      });
+            calls.add(call.method);
+            switch (call.method) {
+              case 'initialize':
+                return true;
+              case 'getNotificationAppLaunchDetails':
+                return null;
+              case 'areNotificationsEnabled':
+                return enabled;
+              case 'requestNotificationsPermission':
+                enabled = true;
+                return true;
+              default:
+                return null;
+            }
+          });
     });
 
     tearDown(() {
@@ -70,24 +71,34 @@ void main() {
           .setMockMethodCallHandler(channel, null);
     });
 
-    test('初始化只做 initialize + 冷启动回放，不碰 requestNotificationsPermission',
-        () async {
-      final LocalUpdateNotifier notifier = LocalUpdateNotifier(
-        appName: 'Fushi',
-        onResponse: (_) {},
-        windowsIconPath: 'unused',
-      );
-      expect(await notifier.ensureReady(), isTrue);
-      expect(calls, <String>['initialize'], reason: '初始化不回放冷启动点击——回放是启动期单独一步');
-      await notifier.replayLaunchResponse();
-      expect(calls, <String>['initialize', 'getNotificationAppLaunchDetails']);
-      expect(calls, isNot(contains('requestNotificationsPermission')),
-          reason: '启动期弹系统权限框 = 退出新手引导即在 MIUI 上被连坐杀掉');
+    test(
+      '初始化只做 initialize + 冷启动回放，不碰 requestNotificationsPermission',
+      () async {
+        final LocalUpdateNotifier notifier = LocalUpdateNotifier(
+          appName: 'Fushi',
+          onResponse: (_) {},
+          windowsIconPath: 'unused',
+        );
+        expect(await notifier.ensureReady(), isTrue);
+        expect(calls, <String>[
+          'initialize',
+        ], reason: '初始化不回放冷启动点击——回放是启动期单独一步');
+        await notifier.replayLaunchResponse();
+        expect(calls, <String>[
+          'initialize',
+          'getNotificationAppLaunchDetails',
+        ]);
+        expect(
+          calls,
+          isNot(contains('requestNotificationsPermission')),
+          reason: '启动期弹系统权限框 = 退出新手引导即在 MIUI 上被连坐杀掉',
+        );
 
-      expect(await notifier.hasPermission(), isFalse);
-      expect(calls.last, 'areNotificationsEnabled', reason: '查询只查询');
-      expect(calls, isNot(contains('requestNotificationsPermission')));
-    });
+        expect(await notifier.hasPermission(), isFalse);
+        expect(calls.last, 'areNotificationsEnabled', reason: '查询只查询');
+        expect(calls, isNot(contains('requestNotificationsPermission')));
+      },
+    );
 
     test('requestPermission 才真的申请，且申请前不重复初始化', () async {
       final LocalUpdateNotifier notifier = LocalUpdateNotifier(
@@ -96,10 +107,15 @@ void main() {
       );
       expect(await notifier.ensureReady(), isTrue);
       expect(await notifier.requestPermission(), isTrue);
-      expect(calls.where((String m) => m == 'requestNotificationsPermission'),
-          hasLength(1));
-      expect(calls.where((String m) => m == 'initialize'), hasLength(1),
-          reason: '申请复用已有初始化');
+      expect(
+        calls.where((String m) => m == 'requestNotificationsPermission'),
+        hasLength(1),
+      );
+      expect(
+        calls.where((String m) => m == 'initialize'),
+        hasLength(1),
+        reason: '申请复用已有初始化',
+      );
       expect(await notifier.hasPermission(), isTrue);
     });
   });
@@ -174,10 +190,10 @@ void main() {
         appName: 'Fushi',
         windowsIconPath: icon.path,
       );
-      final WindowsNotificationDetails details =
-          notifier.windowsDetailsForTesting(
-        const UpdateNotification(id: 1, title: '2.6.0', body: ''),
-      );
+      final WindowsNotificationDetails details = notifier
+          .windowsDetailsForTesting(
+            const UpdateNotification(id: 1, title: '2.6.0', body: ''),
+          );
       final List<WindowsImage> logos = details.images
           .where(
             (WindowsImage image) =>
@@ -194,10 +210,10 @@ void main() {
         appName: 'Fushi',
         windowsIconPath: p.join(Directory.systemTemp.path, 'nope', 'x.png'),
       );
-      final WindowsNotificationDetails details =
-          notifier.windowsDetailsForTesting(
-        const UpdateNotification(id: 1, title: '2.6.0', body: ''),
-      );
+      final WindowsNotificationDetails details = notifier
+          .windowsDetailsForTesting(
+            const UpdateNotification(id: 1, title: '2.6.0', body: ''),
+          );
       expect(details.images, isEmpty);
     });
   });
@@ -207,17 +223,17 @@ void main() {
       final DateTime published = DateTime(2026, 9, 10, 18, 30);
       final UpdateNotificationText text =
           AppModel.localizedUpdateNotificationText(
-        UpdateFeedKind.videoEpisode,
-        <UpdateFeedDraft>[
-          UpdateFeedDraft(
-            kind: UpdateFeedKind.videoEpisode,
-            targetKey: '1',
-            title: 'グロウアップショウ',
-            subtitle: 'S01E02 · 1080p',
-            publishedAt: published.millisecondsSinceEpoch,
-          ),
-        ],
-      );
+            UpdateFeedKind.videoEpisode,
+            <UpdateFeedDraft>[
+              UpdateFeedDraft(
+                kind: UpdateFeedKind.videoEpisode,
+                targetKey: '1',
+                title: 'グロウアップショウ',
+                subtitle: 'S01E02 · 1080p',
+                publishedAt: published.millisecondsSinceEpoch,
+              ),
+            ],
+          );
       expect(text.title, 'グロウアップショウ');
       expect(text.body, 'S01E02 · 1080p · 09-10 18:30');
       expect(text.openLabel, isNotEmpty);
@@ -227,33 +243,33 @@ void main() {
     test('单条无副标题无时刻：正文只剩空串，不留孤零零的分隔符', () {
       final UpdateNotificationText text =
           AppModel.localizedUpdateNotificationText(
-        UpdateFeedKind.appRelease,
-        const <UpdateFeedDraft>[
-          UpdateFeedDraft(
-            kind: UpdateFeedKind.appRelease,
-            targetKey: '2.4.0',
-            title: '2.4.0',
-          ),
-        ],
-      );
+            UpdateFeedKind.appRelease,
+            const <UpdateFeedDraft>[
+              UpdateFeedDraft(
+                kind: UpdateFeedKind.appRelease,
+                targetKey: '2.4.0',
+                title: '2.4.0',
+              ),
+            ],
+          );
       expect(text.body, '');
     });
 
     test('多条：汇总句不带时刻（时刻属于谁说不清）', () {
       final UpdateNotificationText text =
           AppModel.localizedUpdateNotificationText(
-        UpdateFeedKind.videoEpisode,
-        <UpdateFeedDraft>[
-          for (int i = 1; i <= 3; i++)
-            UpdateFeedDraft(
-              kind: UpdateFeedKind.videoEpisode,
-              targetKey: '$i',
-              title: 'Show',
-              subtitle: 'S01E0$i',
-              publishedAt: 1700000000000,
-            ),
-        ],
-      );
+            UpdateFeedKind.videoEpisode,
+            <UpdateFeedDraft>[
+              for (int i = 1; i <= 3; i++)
+                UpdateFeedDraft(
+                  kind: UpdateFeedKind.videoEpisode,
+                  targetKey: '$i',
+                  title: 'Show',
+                  subtitle: 'S01E0$i',
+                  publishedAt: 1700000000000,
+                ),
+            ],
+          );
       expect(text.body, contains('S01E01'));
       expect(text.body, isNot(contains(':')));
       expect(text.body, contains('2'));
@@ -266,10 +282,11 @@ void main() {
         kWindowsNotificationIconAsset,
       );
       expect(path, p.normalize(path));
-      expect(
-        p.split(path).sublist(p.split(path).length - 3),
-        <String>['assets', 'meta', 'icon.png'],
-      );
+      expect(p.split(path).sublist(p.split(path).length - 3), <String>[
+        'assets',
+        'meta',
+        'icon.png',
+      ]);
       expect(p.isAbsolute(path), isTrue);
     });
 
@@ -286,7 +303,8 @@ void main() {
       expect(
         image.getAttribute('src'),
         cover,
-        reason: 'ci/patches/hosted/flutter_local_notifications_windows-2.0.1 '
+        reason:
+            'ci/patches/hosted/flutter_local_notifications_windows-2.0.1 '
             '没打上（跑 ci/apply-patches.sh）：src 被 Uri.file 百分号编码后 '
             'Windows 不渲染非 ASCII 路径的配图',
       );

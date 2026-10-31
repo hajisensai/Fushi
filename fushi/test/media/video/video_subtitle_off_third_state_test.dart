@@ -26,8 +26,9 @@ void main() {
       expect(SubtitleSource.offSentinel, 'off:');
       // 与内嵌前缀不同命名空间：embedded:<n> 永不等于裸 off:。
       expect(
-          SubtitleSource.offSentinel.startsWith(SubtitleSource.embeddedPrefix),
-          isFalse);
+        SubtitleSource.offSentinel.startsWith(SubtitleSource.embeddedPrefix),
+        isFalse,
+      );
       // 没有任何真实外挂路径会恰好是裸 "off:"（无扩展名、无目录分隔）。
       expect(SubtitleSource.offSentinel.contains('/'), isFalse);
       expect(SubtitleSource.offSentinel.contains(r'\'), isFalse);
@@ -73,8 +74,11 @@ void main() {
       final int start = src.indexOf(startSig);
       expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
       final int end = src.indexOf(endSig, start + startSig.length);
-      expect(end, greaterThan(start),
-          reason: 'missing $endSig after $startSig');
+      expect(
+        end,
+        greaterThan(start),
+        reason: 'missing $endSig after $startSig',
+      );
       return src.substring(start, end);
     }
 
@@ -83,12 +87,18 @@ void main() {
         'Future<void> _selectSubtitleOff(',
         'Widget _subtitleJumpSidePanel(',
       );
-      expect(body.contains('SubtitleSource.offSentinel'), isTrue,
-          reason: '关字幕必须存哨兵，否则与「无偏好」null 撞、重启又自动选上');
+      expect(
+        body.contains('SubtitleSource.offSentinel'),
+        isTrue,
+        reason: '关字幕必须存哨兵，否则与「无偏好」null 撞、重启又自动选上',
+      );
       // 不再把 null 当关闭写入：本方法体内的 saveSubtitleSelection / updateSubtitleSource
       // 不应再传 `subtitleSource: null`。
-      expect(body.contains('subtitleSource: null'), isFalse,
-          reason: '关闭不能再写 null（会被恢复路径当无偏好自动选默认）');
+      expect(
+        body.contains('subtitleSource: null'),
+        isFalse,
+        reason: '关闭不能再写 null（会被恢复路径当无偏好自动选默认）',
+      );
     });
 
     test('_loadSingle 见哨兵短路：不退 sidecar 探测', () {
@@ -96,8 +106,11 @@ void main() {
         'Future<void> _loadSingle(',
         'Future<({String persisted, List<AudioCue> cues, int? graphicStreamIndex})?>',
       );
-      expect(body.contains('SubtitleSource.isOff(row.subtitleSource)'), isTrue,
-          reason: '单视频恢复必须先识别显式关闭哨兵');
+      expect(
+        body.contains('SubtitleSource.isOff(row.subtitleSource)'),
+        isTrue,
+        reason: '单视频恢复必须先识别显式关闭哨兵',
+      );
       // 哨兵分支必须先于 sidecar 探测，且 isOff 判据在 _detectSidecar 之前出现。
       final int offIdx = body.indexOf('SubtitleSource.isOff');
       final int sidecarIdx = body.indexOf('_detectSidecar');
@@ -115,7 +128,8 @@ void main() {
       );
       expect(
         body.contains(
-            'subtitleExplicitlyOff: SubtitleSource.isOff(externalSubtitlePath)'),
+          'subtitleExplicitlyOff: SubtitleSource.isOff(externalSubtitlePath)',
+        ),
         isTrue,
         reason: '显式关闭时必须告诉 controller 别后台抽内嵌文本轨成 cue',
       );
@@ -135,15 +149,21 @@ void main() {
 
       // load() 必须接受显式关闭入参。
       expect(
-          controllerSrc.contains('bool subtitleExplicitlyOff = false'), isTrue,
-          reason: 'load 需要明确的「显式关闭」入参');
+        controllerSrc.contains('bool subtitleExplicitlyOff = false'),
+        isTrue,
+        reason: 'load 需要明确的「显式关闭」入参',
+      );
       // 内嵌文本轨自动抽取分支必须先判 !subtitleExplicitlyOff 才进。
-      final int branchIdx =
-          controllerSrc.indexOf('_loadEmbeddedSubtitleIfNeeded(');
+      final int branchIdx = controllerSrc.indexOf(
+        '_loadEmbeddedSubtitleIfNeeded(',
+      );
       expect(branchIdx, greaterThanOrEqualTo(0));
       final int gateIdx = controllerSrc.indexOf('!subtitleExplicitlyOff');
-      expect(gateIdx, greaterThanOrEqualTo(0),
-          reason: '内嵌轨自动抽取必须被 !subtitleExplicitlyOff 门控');
+      expect(
+        gateIdx,
+        greaterThanOrEqualTo(0),
+        reason: '内嵌轨自动抽取必须被 !subtitleExplicitlyOff 门控',
+      );
       expect(gateIdx, lessThan(branchIdx), reason: '门控判据必须在自动抽取调用之前');
     });
   });

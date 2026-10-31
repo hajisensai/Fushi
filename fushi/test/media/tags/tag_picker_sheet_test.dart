@@ -43,29 +43,31 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     bool? result;
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(testPlatformServices()),
-        appProvider.overrideWith((Ref ref) => _TestAppModel(db)),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          theme: ThemeData(splashFactory: NoSplash.splashFactory),
-          home: Builder(
-            builder: (BuildContext context) => Scaffold(
-              body: Center(
-                child: TextButton(
-                  onPressed: () async {
-                    result = await showTagPicker(context, targets: targets);
-                  },
-                  child: const Text('open'),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(testPlatformServices()),
+          appProvider.overrideWith((Ref ref) => _TestAppModel(db)),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: NoSplash.splashFactory),
+            home: Builder(
+              builder: (BuildContext context) => Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () async {
+                      result = await showTagPicker(context, targets: targets);
+                    },
+                    child: const Text('open'),
+                  ),
                 ),
               ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await settle(tester);
     return result;
@@ -93,11 +95,12 @@ void main() {
     await settle(tester);
     expect(find.byType(FushiTagToggleChip), findsOneWidget);
     expect(
-        find.descendant(
-          of: find.byType(FushiTagToggleChip),
-          matching: find.text('推理'),
-        ),
-        findsOneWidget);
+      find.descendant(
+        of: find.byType(FushiTagToggleChip),
+        matching: find.text('推理'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('tag_picker_search')),
@@ -108,13 +111,16 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('tag_picker_create')));
     await settle(tester);
 
-    final List<BookTagRow> all =
-        (await tester.runAsync(() => db.getAllTags()))!;
+    final List<BookTagRow> all = (await tester.runAsync(
+      () => db.getAllTags(),
+    ))!;
     expect(all.map((BookTagRow t) => t.name), contains('冒险'));
-    final List<BookTagRow> onBook =
-        (await tester.runAsync(() => db.getTagsForBook('b1')))!;
-    expect(onBook.map((BookTagRow t) => t.name).toList(), <String>['冒险'],
-        reason: '单目标即时落库：新建的标签直接挂上');
+    final List<BookTagRow> onBook = (await tester.runAsync(
+      () => db.getTagsForBook('b1'),
+    ))!;
+    expect(onBook.map((BookTagRow t) => t.name).toList(), <String>[
+      '冒险',
+    ], reason: '单目标即时落库：新建的标签直接挂上');
     // 已选行出现 input chip。
     expect(find.byType(FushiTagInputChip), findsOneWidget);
   });
@@ -129,14 +135,18 @@ void main() {
     await pumpAndOpen(
       tester,
       db,
-      const TagTargets(media: <MediaRef>[
-        MediaRef(kind: MediaKind.epub, entryKey: 'b1'),
-        MediaRef(kind: MediaKind.srt, entryKey: 's1'),
-      ]),
+      const TagTargets(
+        media: <MediaRef>[
+          MediaRef(kind: MediaKind.epub, entryKey: 'b1'),
+          MediaRef(kind: MediaKind.srt, entryKey: 's1'),
+        ],
+      ),
     );
     final Finder chip = find.byKey(ValueKey<String>('tag_picker_chip_$tagId'));
     expect(
-        tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.partial);
+      tester.widget<FushiTagToggleChip>(chip).state,
+      TagCheckState.partial,
+    );
 
     await tester.tap(chip);
     await settle(tester);
@@ -147,13 +157,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('tag_picker_apply')));
     await settle(tester);
     expect(
-      (await tester.runAsync(() => db.getTagsForSrtBook('s1')))!
-          .map((BookTagRow t) => t.id),
+      (await tester.runAsync(
+        () => db.getTagsForSrtBook('s1'),
+      ))!.map((BookTagRow t) => t.id),
       <int>[tagId],
     );
     expect(
-      (await tester.runAsync(() => db.getTagsForBook('b1')))!
-          .map((BookTagRow t) => t.id),
+      (await tester.runAsync(
+        () => db.getTagsForBook('b1'),
+      ))!.map((BookTagRow t) => t.id),
       <int>[tagId],
     );
   });
@@ -176,8 +188,9 @@ void main() {
     await tester.tap(find.byKey(ValueKey<String>('tag_picker_chip_$tagA')));
     await settle(tester);
     expect(
-      (await tester.runAsync(() => db.getTagsForCollection(cid)))!
-          .map((BookTagRow t) => t.id),
+      (await tester.runAsync(
+        () => db.getTagsForCollection(cid),
+      ))!.map((BookTagRow t) => t.id),
       <int>[tagA],
     );
 
@@ -194,18 +207,21 @@ void main() {
 
     // epub 成员行 entryKey 是 uid；没有 epub_books 行可换算时沿用原值。
     expect(
-      (await tester.runAsync(() => db.getTagsForBook('u1')))!
-          .map((BookTagRow t) => t.id),
+      (await tester.runAsync(
+        () => db.getTagsForBook('u1'),
+      ))!.map((BookTagRow t) => t.id),
       <int>[tagB],
     );
     expect(
-      (await tester.runAsync(() => db.getTagsForSrtBook('s9')))!
-          .map((BookTagRow t) => t.id),
+      (await tester.runAsync(
+        () => db.getTagsForSrtBook('s9'),
+      ))!.map((BookTagRow t) => t.id),
       <int>[tagB],
     );
     expect(
-      (await tester.runAsync(() => db.getTagsForCollection(cid)))!
-          .map((BookTagRow t) => t.id),
+      (await tester.runAsync(
+        () => db.getTagsForCollection(cid),
+      ))!.map((BookTagRow t) => t.id),
       <int>[tagA],
       reason: '成员模式不动合集自身的标签',
     );

@@ -36,8 +36,10 @@ void main() {
       expect(rows.first.expression, '新しい');
       expect(rows.last.expression, '古い');
       // 跨来源都在。
-      expect(rows.map((FavoriteWordRow r) => r.sourceType).toSet(),
-          <String>{'book', 'video'});
+      expect(rows.map((FavoriteWordRow r) => r.sourceType).toSet(), <String>{
+        'book',
+        'video',
+      });
     });
 
     test('returns empty list when there are no favorite words', () async {
@@ -70,30 +72,34 @@ void main() {
         bookKey: 'book/こころ',
         title: 'こころ',
       );
-      final List<FavoriteWordRow> rows =
-          await db.getFavoriteWordsBySource('book');
+      final List<FavoriteWordRow> rows = await db.getFavoriteWordsBySource(
+        'book',
+      );
       expect(rows, hasLength(1));
       expect(rows.single.bookKey, 'book/こころ');
       expect(rows.single.title, 'こころ');
     });
 
-    test('omitting bookKey/title defaults to null/empty (no tile attribution)',
-        () async {
-      final FushiDatabase db = await _openDb();
-      // 无书来源（首页 / 独立查词 / 同步回灌）不传归属 → title 空 → 只进汇总。
-      await db.addFavoriteWord(
-        expression: '無所属',
-        reading: 'むしょぞく',
-        glossary: 'x',
-        sourceType: 'book',
-        dateKey: '2026-07-06',
-      );
-      final List<FavoriteWordRow> rows =
-          await db.getFavoriteWordsBySource('book');
-      expect(rows.single.bookKey, isNull);
-      expect(rows.single.title, '');
-      expect(aggByTitle(rows), isEmpty);
-    });
+    test(
+      'omitting bookKey/title defaults to null/empty (no tile attribution)',
+      () async {
+        final FushiDatabase db = await _openDb();
+        // 无书来源（首页 / 独立查词 / 同步回灌）不传归属 → title 空 → 只进汇总。
+        await db.addFavoriteWord(
+          expression: '無所属',
+          reading: 'むしょぞく',
+          glossary: 'x',
+          sourceType: 'book',
+          dateKey: '2026-07-06',
+        );
+        final List<FavoriteWordRow> rows = await db.getFavoriteWordsBySource(
+          'book',
+        );
+        expect(rows.single.bookKey, isNull);
+        expect(rows.single.title, '');
+        expect(aggByTitle(rows), isEmpty);
+      },
+    );
 
     test('aggregates favorites per title; empty title excluded', () async {
       final FushiDatabase db = await _openDb();
@@ -132,8 +138,9 @@ void main() {
         sourceType: 'book',
         dateKey: '2026-07-06',
       );
-      final Map<String, int> agg =
-          aggByTitle(await db.getFavoriteWordsBySource('book'));
+      final Map<String, int> agg = aggByTitle(
+        await db.getFavoriteWordsBySource('book'),
+      );
       expect(agg, <String, int>{'X': 2, 'Y': 1});
     });
 
@@ -157,13 +164,20 @@ void main() {
         bookKey: 'book/X',
         title: 'X',
       );
-      expect(aggByTitle(await db.getFavoriteWordsBySource('book')),
-          <String, int>{'X': 2});
+      expect(
+        aggByTitle(await db.getFavoriteWordsBySource('book')),
+        <String, int>{'X': 2},
+      );
       // 取消收藏 A → 活行删除 → X 计数回落到 1（收藏是集合，非单调计数器）。
       await db.removeFavoriteWord(
-          expression: 'A', reading: 'a', sourceType: 'book');
-      expect(aggByTitle(await db.getFavoriteWordsBySource('book')),
-          <String, int>{'X': 1});
+        expression: 'A',
+        reading: 'a',
+        sourceType: 'book',
+      );
+      expect(
+        aggByTitle(await db.getFavoriteWordsBySource('book')),
+        <String, int>{'X': 1},
+      );
     });
 
     test('global dedup unchanged: same word twice stays one row', () async {
@@ -190,8 +204,9 @@ void main() {
       );
       expect(first, isTrue);
       expect(second, isFalse);
-      final List<FavoriteWordRow> rows =
-          await db.getFavoriteWordsBySource('book');
+      final List<FavoriteWordRow> rows = await db.getFavoriteWordsBySource(
+        'book',
+      );
       expect(rows, hasLength(1));
       expect(rows.single.title, 'X');
     });

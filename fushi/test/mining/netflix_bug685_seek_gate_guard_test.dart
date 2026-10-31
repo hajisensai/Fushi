@@ -26,66 +26,100 @@ void main() {
   };
 
   mirrors.forEach((String name, String root) {
-    test(
-        '[$name] batch record gates on seek-settle + advancing, not a '
+    test('[$name] batch record gates on seek-settle + advancing, not a '
         'fixed-delay v.paused snapshot', () {
       final String content = File('$root/content.js').readAsStringSync();
 
       // The fragile 480ms fixed-retry + single v.paused skip must be gone.
-      expect(content.contains('for (let i = 0; i < 8 && v.paused'), isFalse,
-          reason: '$root content.js must not reintroduce the 480ms fixed-retry '
-              'v.paused skip (BUG-685 seek-in-then-out root cause)');
+      expect(
+        content.contains('for (let i = 0; i < 8 && v.paused'),
+        isFalse,
+        reason:
+            '$root content.js must not reintroduce the 480ms fixed-retry '
+            'v.paused skip (BUG-685 seek-in-then-out root cause)',
+      );
 
       // Seek must be confirmed settled at the <video> element level.
-      expect(content.contains('function fushiWaitForSeekSettled'), isTrue,
-          reason: '$root content.js missing fushiWaitForSeekSettled helper');
       expect(
-          content.contains('await fushiWaitForSeekSettled(v, targetSec, 4000)'),
-          isTrue,
-          reason: '$root content.js must await seek-settle before recording');
+        content.contains('function fushiWaitForSeekSettled'),
+        isTrue,
+        reason: '$root content.js missing fushiWaitForSeekSettled helper',
+      );
+      expect(
+        content.contains('await fushiWaitForSeekSettled(v, targetSec, 4000)'),
+        isTrue,
+        reason: '$root content.js must await seek-settle before recording',
+      );
       // Settle judged by "not seeking AND currentTime near target".
-      expect(content.contains('!v.seeking'), isTrue,
-          reason:
-              '$root content.js seek-settle must wait for v.seeking to clear');
+      expect(
+        content.contains('!v.seeking'),
+        isTrue,
+        reason: '$root content.js seek-settle must wait for v.seeking to clear',
+      );
 
       // Recording must wait for the video to genuinely advance.
-      expect(content.contains('function fushiWaitForPlaying'), isTrue,
-          reason: '$root content.js missing fushiWaitForPlaying helper');
-      expect(content.contains('const advancing = await fushiWaitForPlaying'),
-          isTrue,
-          reason: '$root content.js must gate the clip on the video advancing');
+      expect(
+        content.contains('function fushiWaitForPlaying'),
+        isTrue,
+        reason: '$root content.js missing fushiWaitForPlaying helper',
+      );
+      expect(
+        content.contains('const advancing = await fushiWaitForPlaying'),
+        isTrue,
+        reason: '$root content.js must gate the clip on the video advancing',
+      );
       // The advancing judge must be "currentTime moved past a baseline",
       // NOT merely "!v.paused".
-      expect(content.contains('v.currentTime > base + 0.02'), isTrue,
-          reason:
-              '$root content.js advancing gate must use currentTime progress, '
-              'not just v.paused');
+      expect(
+        content.contains('v.currentTime > base + 0.02'),
+        isTrue,
+        reason:
+            '$root content.js advancing gate must use currentTime progress, '
+            'not just v.paused',
+      );
 
       // Ordering: the advancing gate runs BEFORE beginClip (record start).
       final int advancingIdx = content.indexOf('fushiWaitForPlaying(v, 4000)');
       final int beginClipIdx = content.indexOf("type: 'beginClip'");
-      expect(advancingIdx, greaterThan(0),
-          reason: '$root content.js missing advancing gate call');
-      expect(beginClipIdx, greaterThan(advancingIdx),
-          reason: '$root content.js must confirm the video is advancing before '
-              'beginClip');
+      expect(
+        advancingIdx,
+        greaterThan(0),
+        reason: '$root content.js missing advancing gate call',
+      );
+      expect(
+        beginClipIdx,
+        greaterThan(advancingIdx),
+        reason:
+            '$root content.js must confirm the video is advancing before '
+            'beginClip',
+      );
 
       // A recordable sentence that never advances still fails (BUG-675 path):
       // the skip must be gated on the advancing result, not removed.
-      expect(content.contains('if (!advancing) { fail++;'), isTrue,
-          reason:
-              '$root content.js must still fail-count (not silently drop) a '
-              'sentence that never starts advancing (BUG-675 leftover count)');
+      expect(
+        content.contains('if (!advancing) { fail++;'),
+        isTrue,
+        reason:
+            '$root content.js must still fail-count (not silently drop) a '
+            'sentence that never starts advancing (BUG-675 leftover count)',
+      );
 
       // Content-script version marker bumped so a stale cached extension is
       // visibly distinguishable.
-      expect(content.contains("data-fushi-cs', 'v48'"), isTrue,
-          reason: '$root content.js version marker must be bumped to v48 '
-              '(v44=seek gate, v45=BUG-688 shadow-DOM popup + TODO-1219/1363 subtitle list replay/universal providers, v46=TODO-1391 hide Netflix maturity-rating overlay, v47=BUG-2170 play past that overlay before batch capture, v48=BUG-2260 Netflix advisories-container selector drift)');
+      expect(
+        content.contains("data-fushi-cs', 'v48'"),
+        isTrue,
+        reason:
+            '$root content.js version marker must be bumped to v48 '
+            '(v44=seek gate, v45=BUG-688 shadow-DOM popup + TODO-1219/1363 subtitle list replay/universal providers, v46=TODO-1391 hide Netflix maturity-rating overlay, v47=BUG-2170 play past that overlay before batch capture, v48=BUG-2260 Netflix advisories-container selector drift)',
+      );
 
       // Adjacent BUG-681 tail-pad fix must remain intact (no regression).
-      expect(content.contains('kNfClipTailPadSec'), isTrue,
-          reason: '$root content.js must keep the BUG-681 clip tail pad');
+      expect(
+        content.contains('kNfClipTailPadSec'),
+        isTrue,
+        reason: '$root content.js must keep the BUG-681 clip tail pad',
+      );
     });
   });
 }

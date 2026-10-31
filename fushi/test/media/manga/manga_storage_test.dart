@@ -21,18 +21,23 @@ void main() {
   });
 
   group('bookDirectory / bookPath (reuse fushi_books root, PDF 同惯例)', () {
-    test('bookDirectory is <base>/fushi_books/<bookKey> and is created',
-        () async {
-      final String path = await MangaStorage.bookPath('vol1');
-      expect(Directory(path).existsSync(), isFalse,
-          reason: 'bookPath must not create the directory');
+    test(
+      'bookDirectory is <base>/fushi_books/<bookKey> and is created',
+      () async {
+        final String path = await MangaStorage.bookPath('vol1');
+        expect(
+          Directory(path).existsSync(),
+          isFalse,
+          reason: 'bookPath must not create the directory',
+        );
 
-      final String dir = await MangaStorage.bookDirectory('vol1');
-      expect(Directory(dir).existsSync(), isTrue);
-      expect(p.basename(dir), 'vol1');
-      expect(p.basename(p.dirname(dir)), 'fushi_books');
-      expect(dir, path);
-    });
+        final String dir = await MangaStorage.bookDirectory('vol1');
+        expect(Directory(dir).existsSync(), isTrue);
+        expect(p.basename(dir), 'vol1');
+        expect(p.basename(p.dirname(dir)), 'fushi_books');
+        expect(dir, path);
+      },
+    );
 
     test('deleteBookDir removes the directory', () async {
       final String dir = await MangaStorage.bookDirectory('vol2');
@@ -46,41 +51,56 @@ void main() {
 
   group('sanitizeRelSegments', () {
     test('preserves sub-directory structure', () {
-      expect(MangaStorage.sanitizeRelSegments('vol1/p001.jpg'),
-          <String>['vol1', 'p001.jpg']);
+      expect(MangaStorage.sanitizeRelSegments('vol1/p001.jpg'), <String>[
+        'vol1',
+        'p001.jpg',
+      ]);
     });
 
     test('strips a single leading images/ segment (avoid images/images)', () {
-      expect(MangaStorage.sanitizeRelSegments('images/p001.jpg'),
-          <String>['p001.jpg']);
+      expect(MangaStorage.sanitizeRelSegments('images/p001.jpg'), <String>[
+        'p001.jpg',
+      ]);
       // Only the FIRST images/ is stripped; nested images/ kept.
-      expect(MangaStorage.sanitizeRelSegments('images/images/p001.jpg'),
-          <String>['images', 'p001.jpg']);
+      expect(
+        MangaStorage.sanitizeRelSegments('images/images/p001.jpg'),
+        <String>['images', 'p001.jpg'],
+      );
     });
 
     test('normalises backslashes and drops "." segments', () {
-      expect(MangaStorage.sanitizeRelSegments(r'vol1\.\p001.jpg'),
-          <String>['vol1', 'p001.jpg']);
+      expect(MangaStorage.sanitizeRelSegments(r'vol1\.\p001.jpg'), <String>[
+        'vol1',
+        'p001.jpg',
+      ]);
     });
 
     test('rejects path traversal ("..") with MangaImportException', () {
-      expect(() => MangaStorage.sanitizeRelSegments('../secret.jpg'),
-          throwsA(isA<MangaImportException>()));
-      expect(() => MangaStorage.sanitizeRelSegments('vol1/../../etc/passwd'),
-          throwsA(isA<MangaImportException>()));
+      expect(
+        () => MangaStorage.sanitizeRelSegments('../secret.jpg'),
+        throwsA(isA<MangaImportException>()),
+      );
+      expect(
+        () => MangaStorage.sanitizeRelSegments('vol1/../../etc/passwd'),
+        throwsA(isA<MangaImportException>()),
+      );
     });
 
     test('replaces illegal characters per segment, keeps structure', () {
-      expect(MangaStorage.sanitizeRelSegments('vol1/p:00?1.jpg'),
-          <String>['vol1', 'p_00_1.jpg']);
+      expect(MangaStorage.sanitizeRelSegments('vol1/p:00?1.jpg'), <String>[
+        'vol1',
+        'p_00_1.jpg',
+      ]);
     });
   });
 
   group('uniqueDestRel', () {
     test('non-colliding paths keep their forward-slash images/ path', () {
       final Set<String> used = <String>{};
-      expect(MangaStorage.uniqueDestRel(<String>['vol1', 'p001.jpg'], used),
-          'images/vol1/p001.jpg');
+      expect(
+        MangaStorage.uniqueDestRel(<String>['vol1', 'p001.jpg'], used),
+        'images/vol1/p001.jpg',
+      );
     });
 
     test('colliding basenames get numeric suffix, never alias', () {
@@ -95,8 +115,10 @@ void main() {
     test('collision suffix only affects the basename, keeps sub-dir', () {
       final Set<String> used = <String>{};
       MangaStorage.uniqueDestRel(<String>['vol1', 'p.jpg'], used);
-      final String b =
-          MangaStorage.uniqueDestRel(<String>['vol1', 'p.jpg'], used);
+      final String b = MangaStorage.uniqueDestRel(<String>[
+        'vol1',
+        'p.jpg',
+      ], used);
       expect(b, 'images/vol1/p (2).jpg');
     });
   });

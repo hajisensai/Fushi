@@ -5,41 +5,43 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 void main() {
-  test('anime category keeps canonical movie/tv identity and metadata lookup',
-      () {
-    final VideoMetadataWork work = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.tmdb,
-      kind: VideoMetadataMediaKind.movie,
-      title: 'Anime Film',
-      plot: 'Plot',
-      episodeGroupId: 'group-1',
-      ids: const <VideoMetadataId>[
-        VideoMetadataId(type: 'tmdb', value: '123', isDefault: true),
-        VideoMetadataId(type: 'imdb', value: 'tt1234567'),
-      ],
-      images: const <VideoMetadataImage>[
-        VideoMetadataImage(
-          kind: VideoMetadataImageKind.cover,
-          url: 'https://image.example/poster.jpg',
-          provider: VideoMetadataProviderKind.tmdb,
-        ),
-      ],
-    );
+  test(
+    'anime category keeps canonical movie/tv identity and metadata lookup',
+    () {
+      final VideoMetadataWork work = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.tmdb,
+        kind: VideoMetadataMediaKind.movie,
+        title: 'Anime Film',
+        plot: 'Plot',
+        episodeGroupId: 'group-1',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'tmdb', value: '123', isDefault: true),
+          VideoMetadataId(type: 'imdb', value: 'tt1234567'),
+        ],
+        images: const <VideoMetadataImage>[
+          VideoMetadataImage(
+            kind: VideoMetadataImageKind.cover,
+            url: 'https://image.example/poster.jpg',
+            provider: VideoMetadataProviderKind.tmdb,
+          ),
+        ],
+      );
 
-    final VideoDiscoveryItem item = VideoDiscoveryItem.fromMetadataWork(
-      work: work,
-      discoveryCategory: VideoDiscoveryCategory.anime,
-    );
+      final VideoDiscoveryItem item = VideoDiscoveryItem.fromMetadataWork(
+        work: work,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+      );
 
-    expect(item.reference.discoveryCategory, VideoDiscoveryCategory.anime);
-    expect(item.reference.mediaKind, VideoMetadataMediaKind.movie);
-    expect(item.reference.identityKeys, contains('imdb:tt1234567'));
-    expect(item.reference.identityKeys, contains('tmdb-movie:123'));
-    expect(item.metadataWork, same(work));
-    expect(item.confirmedLookup!.externalId, '123');
-    expect(item.confirmedLookup!.episodeGroupId, 'group-1');
-    expect(item.posterUrl, 'https://image.example/poster.jpg');
-  });
+      expect(item.reference.discoveryCategory, VideoDiscoveryCategory.anime);
+      expect(item.reference.mediaKind, VideoMetadataMediaKind.movie);
+      expect(item.reference.identityKeys, contains('imdb:tt1234567'));
+      expect(item.reference.identityKeys, contains('tmdb-movie:123'));
+      expect(item.metadataWork, same(work));
+      expect(item.confirmedLookup!.externalId, '123');
+      expect(item.confirmedLookup!.episodeGroupId, 'group-1');
+      expect(item.posterUrl, 'https://image.example/poster.jpg');
+    },
+  );
 
   test('null request category is the all-filter sentinel', () {
     const VideoDiscoveryRequest request = VideoDiscoveryRequest();
@@ -87,19 +89,18 @@ void main() {
   });
 
   test('empty success plus provider failure remains a partial batch', () {
-    final ProviderBatchResult<int> result = ProviderBatchResult.merge<int>(
-      <ProviderBatchResult<int>>[
-        ProviderBatchResult<int>.success(const <int>[]),
-        ProviderBatchResult<int>.failure(
-          const ExternalProviderFailure(
-            providerId: 'secondary',
-            operation: 'search',
-            kind: ExternalProviderFailureKind.unavailable,
-            message: 'provider unavailable',
+    final ProviderBatchResult<int> result =
+        ProviderBatchResult.merge<int>(<ProviderBatchResult<int>>[
+          ProviderBatchResult<int>.success(const <int>[]),
+          ProviderBatchResult<int>.failure(
+            const ExternalProviderFailure(
+              providerId: 'secondary',
+              operation: 'search',
+              kind: ExternalProviderFailureKind.unavailable,
+              message: 'provider unavailable',
+            ),
           ),
-        ),
-      ],
-    );
+        ]);
 
     expect(result.items, isEmpty);
     expect(result.isPartial, isTrue);

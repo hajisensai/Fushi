@@ -48,39 +48,40 @@ void main() {
   }
 
   SettingsDestination childPage({bool visible = true}) => SettingsDestination(
-        id: SettingsDestinationId.syncBackup,
-        title: '子页',
-        icon: Icons.folder_outlined,
-        visible: (_) => visible,
-        sections: <SettingsSection>[
-          SettingsSection(
-            title: '分区',
-            items: <SettingsItem>[
-              SettingsSwitchItem(
-                id: 'c.x',
-                title: '子页开关',
-                value: (_) => true,
-                onChanged: (_, __) {},
-              ),
-            ],
-          ),
-          SettingsSection(
-            items: <SettingsItem>[
-              const SettingsStatusItem(
-                id: 'c.status',
-                title: '状态行',
-                subtitle: '正在运行',
-              ),
-            ],
+    id: SettingsDestinationId.syncBackup,
+    title: '子页',
+    icon: Icons.folder_outlined,
+    visible: (_) => visible,
+    sections: <SettingsSection>[
+      SettingsSection(
+        title: '分区',
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'c.x',
+            title: '子页开关',
+            value: (_) => true,
+            onChanged: (_, __) {},
           ),
         ],
-      );
+      ),
+      SettingsSection(
+        items: <SettingsItem>[
+          const SettingsStatusItem(
+            id: 'c.status',
+            title: '状态行',
+            subtitle: '正在运行',
+          ),
+        ],
+      ),
+    ],
+  );
 
   SettingsNavigationItem navTo(SettingsDestination Function() child) =>
       SettingsNavigationItem(id: 'p.sub', title: '进入子页', child: child);
 
-  testWidgets('game receiver belongs to interconnect settings',
-      (WidgetTester tester) async {
+  testWidgets('game receiver belongs to interconnect settings', (
+    WidgetTester tester,
+  ) async {
     await pumpContext(tester);
     final SettingsDestination destination = buildInterconnectDestination();
     final List<SettingsItem> entries = destination.sections
@@ -115,44 +116,55 @@ void main() {
       );
 
   group('搜索索引递归进子页', () {
-    testWidgets('子页的行进索引：destination 指顶层、subPagePath 记链、面包屑带子页名',
-        (WidgetTester tester) async {
+    testWidgets('子页的行进索引：destination 指顶层、subPagePath 记链、面包屑带子页名', (
+      WidgetTester tester,
+    ) async {
       await pumpContext(tester);
       final SettingsNavigationItem nav = navTo(childPage);
       final SettingsDestination parent = parentPage(nav);
 
-      final List<SettingsSearchEntry> entries =
-          flattenVisibleSettings(<SettingsDestination>[parent], sctx);
+      final List<SettingsSearchEntry> entries = flattenVisibleSettings(
+        <SettingsDestination>[parent],
+        sctx,
+      );
 
-      expect(entries.map((SettingsSearchEntry e) => e.item.id),
-          <String>['p.a', 'p.sub', 'c.x', 'c.status']);
-      final SettingsSearchEntry cx =
-          entries.firstWhere((SettingsSearchEntry e) => e.item.id == 'c.x');
+      expect(entries.map((SettingsSearchEntry e) => e.item.id), <String>[
+        'p.a',
+        'p.sub',
+        'c.x',
+        'c.status',
+      ]);
+      final SettingsSearchEntry cx = entries.firstWhere(
+        (SettingsSearchEntry e) => e.item.id == 'c.x',
+      );
       expect(identical(cx.destination, parent), isTrue);
       expect(cx.subPagePath, <SettingsNavigationItem>[nav]);
       expect(cx.sectionTitle, '子页 › 分区');
       expect(settingsSearchBreadcrumb(cx), 'Parent › 子页 › 分区');
-      final SettingsSearchEntry status = entries
-          .firstWhere((SettingsSearchEntry e) => e.item.id == 'c.status');
+      final SettingsSearchEntry status = entries.firstWhere(
+        (SettingsSearchEntry e) => e.item.id == 'c.status',
+      );
       expect(status.sectionTitle, '子页', reason: '无题分区只显示子页名');
       expect(status.title, '状态行', reason: '状态行默认可搜');
       // 顶层行的既有语义不变：无路径、分区名原样。
-      final SettingsSearchEntry pa =
-          entries.firstWhere((SettingsSearchEntry e) => e.item.id == 'p.a');
+      final SettingsSearchEntry pa = entries.firstWhere(
+        (SettingsSearchEntry e) => e.item.id == 'p.a',
+      );
       expect(pa.subPagePath, isEmpty);
       expect(pa.sectionTitle, 'A');
     });
 
-    testWidgets('子页 visible=false：导航行仍可搜，子页里的行不进索引',
-        (WidgetTester tester) async {
+    testWidgets('子页 visible=false：导航行仍可搜，子页里的行不进索引', (
+      WidgetTester tester,
+    ) async {
       await pumpContext(tester);
-      final SettingsDestination parent =
-          parentPage(navTo(() => childPage(visible: false)));
+      final SettingsDestination parent = parentPage(
+        navTo(() => childPage(visible: false)),
+      );
 
-      final List<String> ids =
-          flattenVisibleSettings(<SettingsDestination>[parent], sctx)
-              .map((SettingsSearchEntry e) => e.item.id)
-              .toList();
+      final List<String> ids = flattenVisibleSettings(<SettingsDestination>[
+        parent,
+      ], sctx).map((SettingsSearchEntry e) => e.item.id).toList();
 
       expect(ids, <String>['p.a', 'p.sub']);
     });
@@ -174,9 +186,10 @@ void main() {
       );
       final SettingsDestination parent = parentPage(outer);
 
-      final SettingsSearchEntry cx =
-          flattenVisibleSettings(<SettingsDestination>[parent], sctx)
-              .firstWhere((SettingsSearchEntry e) => e.item.id == 'c.x');
+      final SettingsSearchEntry cx = flattenVisibleSettings(
+        <SettingsDestination>[parent],
+        sctx,
+      ).firstWhere((SettingsSearchEntry e) => e.item.id == 'c.x');
 
       expect(cx.subPagePath, <SettingsNavigationItem>[outer, inner]);
       expect(cx.sectionTitle, '中间 › 子页 › 分区');
@@ -184,8 +197,9 @@ void main() {
   });
 
   group('渲染', () {
-    testWidgets('带 child 的导航行：点击推 SettingsDetailPage.subPage（不是 builder 页）',
-        (WidgetTester tester) async {
+    testWidgets('带 child 的导航行：点击推 SettingsDetailPage.subPage（不是 builder 页）', (
+      WidgetTester tester,
+    ) async {
       WidgetBuilder? pushed;
       await pumpContext(
         tester,
@@ -197,7 +211,8 @@ void main() {
             routeBuilder: (BuildContext ctx, WidgetBuilder builder) {
               pushed = builder;
               return MaterialPageRoute<void>(
-                  builder: (_) => const SizedBox.shrink());
+                builder: (_) => const SizedBox.shrink(),
+              );
             },
           ),
         ),
@@ -215,8 +230,9 @@ void main() {
       expect(detail.subPageBuilder!().title, '子页');
     });
 
-    testWidgets('带 child 的导航行：子页弹回后 refresh 父页（实时摘要要重算，BUG-2586）',
-        (WidgetTester tester) async {
+    testWidgets('带 child 的导航行：子页弹回后 refresh 父页（实时摘要要重算，BUG-2586）', (
+      WidgetTester tester,
+    ) async {
       await pumpContext(
         tester,
         child: Builder(
@@ -228,13 +244,13 @@ void main() {
             // resolveSubtitle，只能靠导航行在返回后主动 refresh。
             routeBuilder: (BuildContext ctx, WidgetBuilder builder) =>
                 MaterialPageRoute<void>(
-              builder: (BuildContext c) => Scaffold(
-                body: TextButton(
-                  onPressed: () => Navigator.of(c).pop(),
-                  child: const Text('返回父页'),
+                  builder: (BuildContext c) => Scaffold(
+                    body: TextButton(
+                      onPressed: () => Navigator.of(c).pop(),
+                      child: const Text('返回父页'),
+                    ),
+                  ),
                 ),
-              ),
-            ),
           ),
         ),
       );
@@ -276,8 +292,9 @@ void main() {
       expect(find.byType(FilledButton), findsNothing);
     });
 
-    testWidgets('状态行：有动作时渲染行尾按钮，点击调 onAction 并 refresh',
-        (WidgetTester tester) async {
+    testWidgets('状态行：有动作时渲染行尾按钮，点击调 onAction 并 refresh', (
+      WidgetTester tester,
+    ) async {
       int calls = 0;
       await pumpContext(
         tester,
@@ -305,8 +322,9 @@ void main() {
       expect(refreshes, 1);
     });
 
-    testWidgets('状态行：有动作时必须有行级 onTap（否则方向导航到不了这一行，BUG-016）',
-        (WidgetTester tester) async {
+    testWidgets('状态行：有动作时必须有行级 onTap（否则方向导航到不了这一行，BUG-016）', (
+      WidgetTester tester,
+    ) async {
       // 上面那条用 tester.tap 点行尾按钮，对本条完全不敏感：有没有行级 onTap，
       // 鼠标点按钮都过。而 `AdaptiveSettingsRow` 里
       // `if (onTap == null) return content;` —— 没有 onTap 的行根本不包
@@ -333,11 +351,16 @@ void main() {
         ),
       );
 
-      final AdaptiveSettingsRow row =
-          tester.widget<AdaptiveSettingsRow>(find.byType(AdaptiveSettingsRow));
-      expect(row.onTap, isNotNull,
-          reason: '有行尾动作的状态行必须同时有行级 onTap —— 那是它进入'
-              'FushiFocusController 注册表的唯一条件（BUG-016）');
+      final AdaptiveSettingsRow row = tester.widget<AdaptiveSettingsRow>(
+        find.byType(AdaptiveSettingsRow),
+      );
+      expect(
+        row.onTap,
+        isNotNull,
+        reason:
+            '有行尾动作的状态行必须同时有行级 onTap —— 那是它进入'
+            'FushiFocusController 注册表的唯一条件（BUG-016）',
+      );
 
       // 行级 onTap 必须跑同一个动作：手柄 A / Enter 落在行上，用户预期与按按钮一致。
       await tester.tap(find.text('主机服务'));
@@ -366,8 +389,9 @@ void main() {
         ),
       );
 
-      final AdaptiveSettingsRow row =
-          tester.widget<AdaptiveSettingsRow>(find.byType(AdaptiveSettingsRow));
+      final AdaptiveSettingsRow row = tester.widget<AdaptiveSettingsRow>(
+        find.byType(AdaptiveSettingsRow),
+      );
       expect(row.onTap, isNull, reason: '纯状态行没有动作，不该是焦点停靠点');
     });
   });
@@ -380,23 +404,33 @@ void main() {
     }
 
     test('渲染分发：状态行有专属分支；child 导航行推 SettingsDetailPage.subPage', () {
-      final String widgets =
-          read('lib/src/settings/settings_schema_widgets.dart');
+      final String widgets = read(
+        'lib/src/settings/settings_schema_widgets.dart',
+      );
       // _status 现在额外接收 BuildContext（按设计系统分派状态行外观），
       // 契约仍是「状态行有专属分支」。
-      expect(widgets, contains('SettingsStatusItem status => _status(context, status)'));
+      expect(
+        widgets,
+        contains('SettingsStatusItem status => _status(context, status)'),
+      );
       expect(widgets, contains('SettingsDetailPage.subPage(child)'));
     });
 
     test('搜索：索引递归进子页；命中后逐级推子页', () {
-      expect(read('lib/src/settings/settings_search.dart'),
-          contains('_flattenPageInto('));
+      expect(
+        read('lib/src/settings/settings_search.dart'),
+        contains('_flattenPageInto('),
+      );
       // 「逐级推子页」已从主页抽到共享入口 openSettingsSearchEntry（窄屏 /
       // 子页页头搜索 / 宽屏主从三处共用），主页只负责调用它。
-      expect(read('lib/src/settings/settings_search_sheet.dart'),
-          contains('in entry.subPagePath'));
-      expect(read('lib/src/settings/settings_home_page.dart'),
-          contains('openSettingsSearchEntry('));
+      expect(
+        read('lib/src/settings/settings_search_sheet.dart'),
+        contains('in entry.subPagePath'),
+      );
+      expect(
+        read('lib/src/settings/settings_home_page.dart'),
+        contains('openSettingsSearchEntry('),
+      );
     });
 
     test('详情页：子页靠闭包取新鲜树，不按 id 到顶层找', () {

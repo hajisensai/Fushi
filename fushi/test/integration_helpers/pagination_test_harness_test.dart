@@ -5,18 +5,16 @@ import '../../integration_test/helpers/pagination_test_harness.dart';
 void main() {
   group('PaginationState', () {
     test('preserves raw fractional pagination geometry', () {
-      final PaginationState state = PaginationState.fromJson(
-        <String, dynamic>{
-          'scroll': 1234.75,
-          'columnPitch': 582.482759,
-          'pageSize': 582.482759,
-          'maxScroll': 17474.482759,
-          'physicalMaxScroll': 17462.25,
-          'minScroll': 12.125,
-          'totalChars': 9000,
-          'vertical': true,
-        },
-      );
+      final PaginationState state = PaginationState.fromJson(<String, dynamic>{
+        'scroll': 1234.75,
+        'columnPitch': 582.482759,
+        'pageSize': 582.482759,
+        'maxScroll': 17474.482759,
+        'physicalMaxScroll': 17462.25,
+        'minScroll': 12.125,
+        'totalChars': 9000,
+        'vertical': true,
+      });
 
       expect(state.scroll, 1234.75);
       expect(state.columnPitch, 582.482759);
@@ -30,48 +28,52 @@ void main() {
   group('validateChapterScan fractional grid', () {
     const double pitch = 582.482759;
 
-    test('accepts 30 browser-floor page positions without I1 or I6 failures',
-        () {
-      final List<PageData> pages = List<PageData>.generate(
-        30,
-        (int page) => _page(
-          page: page,
-          scroll: (page * pitch).floor(),
-          pitch: pitch,
-          maxScroll: (29 * pitch).floorToDouble(),
-        ),
-      );
+    test(
+      'accepts 30 browser-floor page positions without I1 or I6 failures',
+      () {
+        final List<PageData> pages = List<PageData>.generate(
+          30,
+          (int page) => _page(
+            page: page,
+            scroll: (page * pitch).floor(),
+            pitch: pitch,
+            maxScroll: (29 * pitch).floorToDouble(),
+          ),
+        );
 
-      final List<InvariantViolation> violations = validateChapterScan(
-        pages,
-        expectedMarkerCount: 0,
-      );
+        final List<InvariantViolation> violations = validateChapterScan(
+          pages,
+          expectedMarkerCount: 0,
+        );
 
-      expect(_violationsFor(violations, 'I1'), isEmpty);
-      expect(_violationsFor(violations, 'I6'), isEmpty);
-    });
+        expect(_violationsFor(violations, 'I1'), isEmpty);
+        expect(_violationsFor(violations, 'I6'), isEmpty);
+      },
+    );
 
-    test('accepts a nonzero minScroll only when it is on the absolute grid',
-        () {
-      const double minScroll = 2 * pitch;
-      final List<PageData> pages = List<PageData>.generate(
-        4,
-        (int page) => _page(
-          page: page,
-          scroll: minScroll + (page * pitch).floor(),
-          pitch: pitch,
-          minScroll: minScroll,
-          maxScroll: minScroll + (3 * pitch).floor(),
-        ),
-      );
+    test(
+      'accepts a nonzero minScroll only when it is on the absolute grid',
+      () {
+        const double minScroll = 2 * pitch;
+        final List<PageData> pages = List<PageData>.generate(
+          4,
+          (int page) => _page(
+            page: page,
+            scroll: minScroll + (page * pitch).floor(),
+            pitch: pitch,
+            minScroll: minScroll,
+            maxScroll: minScroll + (3 * pitch).floor(),
+          ),
+        );
 
-      final List<InvariantViolation> violations = validateChapterScan(
-        pages,
-        expectedMarkerCount: 0,
-      );
+        final List<InvariantViolation> violations = validateChapterScan(
+          pages,
+          expectedMarkerCount: 0,
+        );
 
-      expect(_violationsFor(violations, 'I1'), isEmpty);
-    });
+        expect(_violationsFor(violations, 'I1'), isEmpty);
+      },
+    );
 
     test('I1 rejects an arbitrary minScroll-relative grid', () {
       const double minScroll = 37.375;
@@ -92,8 +94,11 @@ void main() {
         expectedMarkerCount: 0,
       );
 
-      expect(_violationsFor(violations, 'I1'), isNotEmpty,
-          reason: 'minScroll 本身偏离 N*pitch 时，不得把它当任意新原点掩盖漂移');
+      expect(
+        _violationsFor(violations, 'I1'),
+        isNotEmpty,
+        reason: 'minScroll 本身偏离 N*pitch 时，不得把它当任意新原点掩盖漂移',
+      );
     });
 
     test('I1 catches a cumulative integer-pitch grid', () {
@@ -121,25 +126,23 @@ void main() {
       const double scroll = expectedScroll + 1;
       expect((scroll - expectedScroll).abs(), 1);
 
-      final List<InvariantViolation> violations = validateChapterScan(
-        <PageData>[
-          _page(
-            page: 2,
-            scroll: scroll,
-            pitch: pitch,
-            minScroll: minScroll,
-            maxScroll: expectedScroll + pitch,
-          ),
-          _page(
-            page: 3,
-            scroll: scroll + pitch,
-            pitch: pitch,
-            minScroll: minScroll,
-            maxScroll: expectedScroll + pitch,
-          ),
-        ],
-        expectedMarkerCount: 0,
-      );
+      final List<InvariantViolation> violations =
+          validateChapterScan(<PageData>[
+            _page(
+              page: 2,
+              scroll: scroll,
+              pitch: pitch,
+              minScroll: minScroll,
+              maxScroll: expectedScroll + pitch,
+            ),
+            _page(
+              page: 3,
+              scroll: scroll + pitch,
+              pitch: pitch,
+              minScroll: minScroll,
+              maxScroll: expectedScroll + pitch,
+            ),
+          ], expectedMarkerCount: 0);
 
       expect(_violationsFor(violations, 'I1'), isEmpty);
     });
@@ -149,25 +152,23 @@ void main() {
       const double expectedScroll = 4 * pitch;
       const double scroll = expectedScroll + 1.001;
 
-      final List<InvariantViolation> violations = validateChapterScan(
-        <PageData>[
-          _page(
-            page: 2,
-            scroll: scroll,
-            pitch: pitch,
-            minScroll: minScroll,
-            maxScroll: scroll + pitch,
-          ),
-          _page(
-            page: 3,
-            scroll: scroll + pitch,
-            pitch: pitch,
-            minScroll: minScroll,
-            maxScroll: scroll + pitch,
-          ),
-        ],
-        expectedMarkerCount: 0,
-      );
+      final List<InvariantViolation> violations =
+          validateChapterScan(<PageData>[
+            _page(
+              page: 2,
+              scroll: scroll,
+              pitch: pitch,
+              minScroll: minScroll,
+              maxScroll: scroll + pitch,
+            ),
+            _page(
+              page: 3,
+              scroll: scroll + pitch,
+              pitch: pitch,
+              minScroll: minScroll,
+              maxScroll: scroll + pitch,
+            ),
+          ], expectedMarkerCount: 0);
 
       expect(_violationsFor(violations, 'I1'), isNotEmpty);
     });
@@ -175,24 +176,9 @@ void main() {
     test('I1 accepts an off-grid final page clamped to maxScroll', () {
       const double maxScroll = 2 * pitch - 123;
       final List<PageData> pages = <PageData>[
-        _page(
-          page: 0,
-          scroll: 0,
-          pitch: pitch,
-          maxScroll: maxScroll,
-        ),
-        _page(
-          page: 1,
-          scroll: pitch,
-          pitch: pitch,
-          maxScroll: maxScroll,
-        ),
-        _page(
-          page: 2,
-          scroll: maxScroll,
-          pitch: pitch,
-          maxScroll: maxScroll,
-        ),
+        _page(page: 0, scroll: 0, pitch: pitch, maxScroll: maxScroll),
+        _page(page: 1, scroll: pitch, pitch: pitch, maxScroll: maxScroll),
+        _page(page: 2, scroll: maxScroll, pitch: pitch, maxScroll: maxScroll),
       ];
 
       final List<InvariantViolation> violations = validateChapterScan(
@@ -203,41 +189,46 @@ void main() {
       expect(_violationsFor(violations, 'I1'), isEmpty);
     });
 
-    test('I1 rejects an off-grid final page that is not the physical endpoint',
-        () {
-      const double maxScroll = 2 * pitch - 123;
-      final List<PageData> pages = <PageData>[
-        _page(
-          page: 0,
-          scroll: 0,
-          pitch: pitch,
-          maxScroll: maxScroll,
-          physicalMaxScroll: maxScroll + 80,
-        ),
-        _page(
-          page: 1,
-          scroll: pitch,
-          pitch: pitch,
-          maxScroll: maxScroll,
-          physicalMaxScroll: maxScroll + 80,
-        ),
-        _page(
-          page: 2,
-          scroll: maxScroll,
-          pitch: pitch,
-          maxScroll: maxScroll,
-          physicalMaxScroll: maxScroll + 80,
-        ),
-      ];
+    test(
+      'I1 rejects an off-grid final page that is not the physical endpoint',
+      () {
+        const double maxScroll = 2 * pitch - 123;
+        final List<PageData> pages = <PageData>[
+          _page(
+            page: 0,
+            scroll: 0,
+            pitch: pitch,
+            maxScroll: maxScroll,
+            physicalMaxScroll: maxScroll + 80,
+          ),
+          _page(
+            page: 1,
+            scroll: pitch,
+            pitch: pitch,
+            maxScroll: maxScroll,
+            physicalMaxScroll: maxScroll + 80,
+          ),
+          _page(
+            page: 2,
+            scroll: maxScroll,
+            pitch: pitch,
+            maxScroll: maxScroll,
+            physicalMaxScroll: maxScroll + 80,
+          ),
+        ];
 
-      final List<InvariantViolation> violations = validateChapterScan(
-        pages,
-        expectedMarkerCount: 0,
-      );
+        final List<InvariantViolation> violations = validateChapterScan(
+          pages,
+          expectedMarkerCount: 0,
+        );
 
-      expect(_violationsFor(violations, 'I1'), isNotEmpty,
-          reason: '任意 metrics max 不得冒充浏览器真实 terminal clamp');
-    });
+        expect(
+          _violationsFor(violations, 'I1'),
+          isNotEmpty,
+          reason: '任意 metrics max 不得冒充浏览器真实 terminal clamp',
+        );
+      },
+    );
 
     test('I1 requires the scan to start at minScroll and end at maxScroll', () {
       final List<PageData> pages = <PageData>[
@@ -262,32 +253,25 @@ void main() {
         expectedMarkerCount: 0,
       );
 
-      expect(_violationsFor(violations, 'I1'), hasLength(2),
-          reason: '只检查逐页对齐会漏掉未扫到章首/章尾');
+      expect(
+        _violationsFor(violations, 'I1'),
+        hasLength(2),
+        reason: '只检查逐页对齐会漏掉未扫到章首/章尾',
+      );
     });
 
     test('I6 catches a greater-than-1px step error before the final page', () {
       const double badSecondPage = pitch + 1.25;
       const double finalPage = badSecondPage + pitch;
       final List<PageData> pages = <PageData>[
-        _page(
-          page: 0,
-          scroll: 0,
-          pitch: pitch,
-          maxScroll: finalPage,
-        ),
+        _page(page: 0, scroll: 0, pitch: pitch, maxScroll: finalPage),
         _page(
           page: 1,
           scroll: badSecondPage,
           pitch: pitch,
           maxScroll: finalPage,
         ),
-        _page(
-          page: 2,
-          scroll: finalPage,
-          pitch: pitch,
-          maxScroll: finalPage,
-        ),
+        _page(page: 2, scroll: finalPage, pitch: pitch, maxScroll: finalPage),
       ];
 
       final List<InvariantViolation> violations = validateChapterScan(
@@ -303,10 +287,7 @@ void main() {
 
   group('JavaScript probe keeps raw fractional mappings', () {
     const Map<String, List<String>> mappings = <String, List<String>>{
-      'scroll': <String>[
-        'scroll: scroll,',
-        'scroll: Math.round(scroll),',
-      ],
+      'scroll': <String>['scroll: scroll,', 'scroll: Math.round(scroll),'],
       'columnPitch': <String>[
         'columnPitch: ctx.pageSize,',
         'columnPitch: Math.round(ctx.pageSize),',
@@ -345,10 +326,7 @@ void main() {
         pitch: 800,
         maxScroll: 0,
         markers: const <String>['m001', 'm002'],
-        markerFractions: const <String, double>{
-          'm001': 1,
-          'm002': 0.12,
-        },
+        markerFractions: const <String, double>{'m001': 1, 'm002': 0.12},
       ),
     ];
 

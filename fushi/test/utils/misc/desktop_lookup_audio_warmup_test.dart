@@ -23,9 +23,8 @@ void main() {
       final Uint8List bytes = DesktopAudioPlayback.debugSilentWavBytes();
       final ByteData bd = ByteData.sublistView(bytes);
 
-      String ascii(int offset, int len) => String.fromCharCodes(
-            bytes.sublist(offset, offset + len),
-          );
+      String ascii(int offset, int len) =>
+          String.fromCharCodes(bytes.sublist(offset, offset + len));
 
       // 头部标记。
       expect(ascii(0, 4), 'RIFF');
@@ -62,8 +61,11 @@ void main() {
         r'[\s\S]{0,600}?_ensureWarmUpQueued\(\);'
         r'[\s\S]{0,600}?_activation\.generation',
       );
-      expect(playPrelude.hasMatch(desktop), isTrue,
-          reason: '_play 必须先 _ensureWarmUpQueued() 再捕获 generation/入队真实周期');
+      expect(
+        playPrelude.hasMatch(desktop),
+        isTrue,
+        reason: '_play 必须先 _ensureWarmUpQueued() 再捕获 generation/入队真实周期',
+      );
 
       // _ensureWarmUpQueued 必须是同步入队：方法体在 _activation.run 之前不得有
       // await（否则真实周期可能抢先入队，首个真实播放又撞冷激活）。
@@ -73,12 +75,18 @@ void main() {
         r'_warmUpQueued\s*=\s*true;\s*'
         r'_activation\.run<void>\(',
       );
-      expect(queuedBody.hasMatch(desktop), isTrue,
-          reason: '_ensureWarmUpQueued 必须同步（无 await）把预热 body 排进 _activation');
+      expect(
+        queuedBody.hasMatch(desktop),
+        isTrue,
+        reason: '_ensureWarmUpQueued 必须同步（无 await）把预热 body 排进 _activation',
+      );
 
       // 预热 body 必须 volume 0（绝对无声）。
-      expect(desktop.contains('await _player.setVolume(0.0);'), isTrue,
-          reason: '预热必须以 volume 0 静音播放');
+      expect(
+        desktop.contains('await _player.setVolume(0.0);'),
+        isTrue,
+        reason: '预热必须以 volume 0 静音播放',
+      );
     });
 
     test('startup path opens NO audio stream (BUG-1690)', () {
@@ -90,20 +98,26 @@ void main() {
         'DesktopAudioPlayback.',
         '_ensureWarmUpQueued',
       ]) {
-        expect(main.contains(banned), isFalse,
-            reason: 'main.dart 启动路径不得调用 $banned（BUG-1690：启动不开音频流）');
+        expect(
+          main.contains(banned),
+          isFalse,
+          reason: 'main.dart 启动路径不得调用 $banned（BUG-1690：启动不开音频流）',
+        );
       }
 
       // TtsChannel 也不再暴露启动预热入口（唯一消费者曾是 main 启动路径；留着这个
       // 入口 = API 层面允许再次接回启动，删口子而不是靠调用点自觉）。
-      final String tts =
-          File('lib/src/utils/misc/tts_channel.dart').readAsStringSync();
-      expect(tts.contains('warmUpLookupAudioPlayer'), isFalse,
-          reason: 'TtsChannel 不得再暴露启动预热入口');
+      final String tts = File(
+        'lib/src/utils/misc/tts_channel.dart',
+      ).readAsStringSync();
+      expect(
+        tts.contains('warmUpLookupAudioPlayer'),
+        isFalse,
+        reason: 'TtsChannel 不得再暴露启动预热入口',
+      );
     });
 
-    test(
-        'BUG-2495: warm-up wait is driven by player terminal states, '
+    test('BUG-2495: warm-up wait is driven by player terminal states, '
         'not a fixed budget clock', () {
       final String desktop = File(
         'lib/src/utils/misc/desktop_audio_playback.dart',
@@ -121,33 +135,45 @@ void main() {
         r'firstWhere\([\s\S]*?ProcessingState\.completed[\s\S]*?\|\|'
         r'[\s\S]*?ProcessingState\.idle',
       );
-      expect(terminal.hasMatch(warmUp!), isTrue,
-          reason: '预热等待的终态必须是 completed || idle');
+      expect(
+        terminal.hasMatch(warmUp!),
+        isTrue,
+        reason: '预热等待的终态必须是 completed || idle',
+      );
 
       // 不得再用固定的短预算时钟截断等待：2s 到期 → 队列放行 → 真实周期 stop() 把
       // 正在冷启动的 mpv 播放器拆掉，BUG-1015 复发。时钟只允许是卡死保险丝常量。
-      expect(warmUp.contains('.timeout(_warmUpStuckValve)'), isTrue,
-          reason: '等待超时只能引用卡死保险丝 _warmUpStuckValve');
-      expect(RegExp(r'timeout\(\s*const\s+Duration').hasMatch(warmUp), isFalse,
-          reason: '预热 body 不得内联固定 Duration 作为等待预算');
+      expect(
+        warmUp.contains('.timeout(_warmUpStuckValve)'),
+        isTrue,
+        reason: '等待超时只能引用卡死保险丝 _warmUpStuckValve',
+      );
+      expect(
+        RegExp(r'timeout\(\s*const\s+Duration').hasMatch(warmUp),
+        isFalse,
+        reason: '预热 body 不得内联固定 Duration 作为等待预算',
+      );
       final RegExp valve = RegExp(
         r'static\s+const\s+Duration\s+_warmUpStuckValve\s*=\s*'
         r'Duration\(seconds:\s*(\d+)\)',
       );
       final Match? valveMatch = valve.firstMatch(desktop);
       expect(valveMatch, isNotNull, reason: '缺少 _warmUpStuckValve 常量');
-      expect(int.parse(valveMatch!.group(1)!), greaterThanOrEqualTo(10),
-          reason: '保险丝必须远大于任何真实设备唤醒耗时（≥10s），否则又变回预算');
+      expect(
+        int.parse(valveMatch!.group(1)!),
+        greaterThanOrEqualTo(10),
+        reason: '保险丝必须远大于任何真实设备唤醒耗时（≥10s），否则又变回预算',
+      );
 
       // 无论结果都要记一条带耗时的诊断：这是下次定量判断「设备冷启动多慢」的唯一证据。
       expect(
-          warmUp.contains(
-            "logDiagnostic(\n          'DesktopAudioPlayback.warmUp'",
-          ),
-          isTrue,
-          reason: '预热必须 logDiagnostic 记录终态与耗时');
-      expect(warmUp.contains('elapsedMilliseconds'), isTrue,
-          reason: '诊断必须带耗时');
+        warmUp.contains(
+          "logDiagnostic(\n          'DesktopAudioPlayback.warmUp'",
+        ),
+        isTrue,
+        reason: '预热必须 logDiagnostic 记录终态与耗时',
+      );
+      expect(warmUp.contains('elapsedMilliseconds'), isTrue, reason: '诊断必须带耗时');
     });
   });
 }

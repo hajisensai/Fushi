@@ -24,21 +24,39 @@ void main() {
 
   test('自定义图标页不得引入 / 使用 image_picker', () {
     final String src = read(page);
-    expect(src.contains('package:image_picker/image_picker.dart'), isFalse,
-        reason: 'image_picker 桌面无实现，自定义图标页禁止 import image_picker（TODO-1239）');
-    expect(src.contains('ImagePicker('), isFalse,
-        reason: 'image_picker 桌面无实现，禁止调 ImagePicker()（TODO-1239）');
-    expect(src.contains('.pickImage('), isFalse,
-        reason: 'pickImage 在桌面抛 MissingPluginException，禁止使用（TODO-1239）');
+    expect(
+      src.contains('package:image_picker/image_picker.dart'),
+      isFalse,
+      reason: 'image_picker 桌面无实现，自定义图标页禁止 import image_picker（TODO-1239）',
+    );
+    expect(
+      src.contains('ImagePicker('),
+      isFalse,
+      reason: 'image_picker 桌面无实现，禁止调 ImagePicker()（TODO-1239）',
+    );
+    expect(
+      src.contains('.pickImage('),
+      isFalse,
+      reason: 'pickImage 在桌面抛 MissingPluginException，禁止使用（TODO-1239）',
+    );
   });
 
   test('自定义图标选图走 file_picker 的 pickFiles(FileType.image)', () {
     final String src = read(page);
-    expect(src.contains('package:file_picker/file_picker.dart'), isTrue,
-        reason: '必须 import file_picker（两平台均有实现）');
-    expect(src.contains('FilePicker.platform.pickFiles('), isTrue,
-        reason: '必须用 FilePicker.platform.pickFiles 选图');
-    expect(src.contains('FileType.image'), isTrue,
-        reason: '选图必须限定 FileType.image');
+    expect(
+      src.contains('package:file_picker/file_picker.dart'),
+      isTrue,
+      reason: '必须 import file_picker（两平台均有实现）',
+    );
+    expect(
+      src.contains('FilePicker.platform.pickFiles('),
+      isTrue,
+      reason: '必须用 FilePicker.platform.pickFiles 选图',
+    );
+    expect(
+      src.contains('FileType.image'),
+      isTrue,
+      reason: '选图必须限定 FileType.image',
+    );
   });
 }

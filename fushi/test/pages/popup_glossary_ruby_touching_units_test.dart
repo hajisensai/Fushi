@@ -47,17 +47,15 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-          nodeExe,
-          <String>[
-            jsTest.path,
-          ],
-          workingDirectory: Directory.current.path);
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'touching-ruby JS behavior test failed.\n'
+        reason:
+            'touching-ruby JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -68,8 +66,7 @@ void main() {
     },
   );
 
-  test(
-      'popup.css restores the horizontal reserve ONLY for .ruby-tight units '
+  test('popup.css restores the horizontal reserve ONLY for .ruby-tight units '
       '(BUG-1898 without regressing BUG-1778)', () {
     final String css = File('assets/popup/popup.css').readAsStringSync();
 
@@ -99,7 +96,8 @@ void main() {
     expect(
       tightMatch,
       isNotNull,
-      reason: 'popup.css 必须为 .ruby-unit.ruby-tight 的 .ruby-reserve 提供规则，'
+      reason:
+          'popup.css 必须为 .ruby-unit.ruby-tight 的 .ruby-reserve 提供规则，'
           '否则紧邻的两条读音重新撞在一起（BUG-850 / BUG-1898）',
     );
     expect(
@@ -109,8 +107,7 @@ void main() {
     );
   });
 
-  test(
-      'postProcessRuby marks touching units through markTouchingRubyUnits '
+  test('postProcessRuby marks touching units through markTouchingRubyUnits '
       'without depending on Range/:scope (BUG-1898)', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
 
@@ -140,7 +137,8 @@ void main() {
     expect(
       body.contains('createRange'),
       isFalse,
-      reason: '相邻判定不得依赖 Range —— 行为测试的假 DOM 不提供它，'
+      reason:
+          '相邻判定不得依赖 Range —— 行为测试的假 DOM 不提供它，'
           '依赖了就等于这条逻辑没有任何行为级守护',
     );
     expect(body.contains(':scope'), isFalse, reason: '相邻判定不得依赖 :scope 选择器，同上');
@@ -149,8 +147,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

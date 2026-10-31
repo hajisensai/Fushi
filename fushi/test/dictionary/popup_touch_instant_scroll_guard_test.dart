@@ -22,26 +22,29 @@ void main() {
     '../tools/browser-extension/vendor/popup.js', // 扩展 tools 镜像
   ];
 
-  test('BUG-2877 touchmove passive gate (executes popup.js via node)',
-      () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS behavior execution');
-      return;
-    }
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>['test/dictionary/popup_touchmove_passive_gate_test.js'],
-      workingDirectory: Directory.current.path,
-    );
-    expect(
-      result.exitCode,
-      0,
-      reason: 'popup touchmove passive gate JS behavior test failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-    expect(result.stdout.toString(), contains('all assertions passed'));
-  });
+  test(
+    'BUG-2877 touchmove passive gate (executes popup.js via node)',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped(
+          'node not found on PATH; skipping JS behavior execution',
+        );
+        return;
+      }
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        'test/dictionary/popup_touchmove_passive_gate_test.js',
+      ], workingDirectory: Directory.current.path);
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'popup touchmove passive gate JS behavior test failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(result.stdout.toString(), contains('all assertions passed'));
+    },
+  );
 
   group('BUG-2415 popup touch instant-scroll guard', () {
     for (final String path in popupCopies) {
@@ -80,21 +83,31 @@ void main() {
         );
         // BUG-2877：但它只能挂在开关门控里。常驻挂着（开关默认关）会让每次起滑
         // 都等主线程应答，所有用户的词典滑动都跟着卡。
-        final int gateAt =
-            src.indexOf('function __fushiInstallPopupEinkTouchMoveGate(');
-        expect(gateAt, greaterThanOrEqualTo(0),
-            reason: '阻塞 touchmove 必须由开关门控挂卸');
-        final int addAt = src.indexOf(
-            "document.addEventListener('touchmove', __fushiPopupEinkTouchMove");
-        expect(addAt, greaterThan(gateAt),
-            reason: '阻塞 touchmove 只能在门控函数里挂，不得常驻');
+        final int gateAt = src.indexOf(
+          'function __fushiInstallPopupEinkTouchMoveGate(',
+        );
         expect(
-            src.indexOf(
-                "document.addEventListener('touchmove', "
-                '__fushiPopupEinkTouchMove',
-                addAt + 1),
-            -1,
-            reason: '阻塞 touchmove 只允许一个挂载点');
+          gateAt,
+          greaterThanOrEqualTo(0),
+          reason: '阻塞 touchmove 必须由开关门控挂卸',
+        );
+        final int addAt = src.indexOf(
+          "document.addEventListener('touchmove', __fushiPopupEinkTouchMove",
+        );
+        expect(
+          addAt,
+          greaterThan(gateAt),
+          reason: '阻塞 touchmove 只能在门控函数里挂，不得常驻',
+        );
+        expect(
+          src.indexOf(
+            "document.addEventListener('touchmove', "
+            '__fushiPopupEinkTouchMove',
+            addAt + 1,
+          ),
+          -1,
+          reason: '阻塞 touchmove 只允许一个挂载点',
+        );
         final int moveAt = src.indexOf('function __fushiPopupEinkTouchMove(');
         final int tailAt = src.indexOf(
           "if (typeof chrome !== 'undefined'",
@@ -239,10 +252,7 @@ void main() {
         final String src = File(path).readAsStringSync();
         final int from = src.indexOf('/* BUG-2415:');
         expect(from, greaterThanOrEqualTo(0), reason: '$path 缺少 BUG-2415 触摸块');
-        final int to = src.indexOf(
-          'let _popupMouseDownPos = null;',
-          from,
-        );
+        final int to = src.indexOf('let _popupMouseDownPos = null;', from);
         expect(to, greaterThan(from));
         return src.substring(from, to);
       }).toList();
@@ -277,8 +287,9 @@ void main() {
 }
 
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

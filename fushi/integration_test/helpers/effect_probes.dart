@@ -34,10 +34,9 @@ String firstChangedLine(EffectSnapshot before, EffectSnapshot after) {
     if (t.isEmpty) continue;
     if (!beforeLines.contains(line)) return t;
   }
-  return after.output.split('\n').firstWhere(
-        (String l) => l.trim().isNotEmpty,
-        orElse: () => '',
-      );
+  return after.output
+      .split('\n')
+      .firstWhere((String l) => l.trim().isNotEmpty, orElse: () => '');
 }
 
 EffectVerdict _compareSnapshots(EffectSnapshot before, EffectSnapshot after) {
@@ -45,7 +44,9 @@ EffectVerdict _compareSnapshots(EffectSnapshot before, EffectSnapshot after) {
     return const EffectVerdict(changed: false, evidence: '');
   }
   return EffectVerdict(
-      changed: true, evidence: firstChangedLine(before, after));
+    changed: true,
+    evidence: firstChangedLine(before, after),
+  );
 }
 
 /// T1：阅读器 CSS 渲染输入探针。比对 `ReaderContentStyles.css` 的输出串，

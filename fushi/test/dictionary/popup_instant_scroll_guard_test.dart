@@ -141,7 +141,8 @@ void main() {
         contains(
           "'window.fushiCaret && window.fushiCaret.setInstantScroll(\$enabled)'",
         ),
-        reason: '该调用被拼进 _pushResults 的整条 evaluateJavascript；裸调用在 fushiCaret '
+        reason:
+            '该调用被拼进 _pushResults 的整条 evaluateJavascript；裸调用在 fushiCaret '
             '尚未落地时抛 TypeError，会连带吃掉后面的 __fushiRenderToken / renderPopup()',
       );
     });

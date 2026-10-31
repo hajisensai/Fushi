@@ -28,41 +28,51 @@ void main() {
     r'html\[data-theme="dark"\][^{]*\[class\^="gloss-sc-"\]\[style\*="background"\]\s*\{([^}]*)\}',
   );
 
-  test(
-      'popup.css neutralizes dict inline-coloured text tags in dark mode only '
+  test('popup.css neutralizes dict inline-coloured text tags in dark mode only '
       '(BUG-851)', () {
     final RegExpMatch? match = darkTagRule.firstMatch(css);
-    expect(match, isNotNull,
-        reason: 'popup.css must carry a dark-mode-only rule scoped to '
-            '[class^="gloss-sc-"][style*="background"] that re-tones dictionary '
-            'inline background colours so usage tags stay legible on the black '
-            'surface (BUG-851)');
+    expect(
+      match,
+      isNotNull,
+      reason:
+          'popup.css must carry a dark-mode-only rule scoped to '
+          '[class^="gloss-sc-"][style*="background"] that re-tones dictionary '
+          'inline background colours so usage tags stay legible on the black '
+          'surface (BUG-851)',
+    );
     final String body = match!.group(1)!;
     expect(
-        RegExp(r'background-color\s*:[^;]*!important').hasMatch(body), isTrue,
-        reason:
-            'the rule must override the inline background with !important — '
-            'an inline style otherwise wins the cascade (BUG-851)');
-    expect(RegExp(r'color\s*:[^;]*!important').hasMatch(body), isTrue,
-        reason: 'the rule must also restore a legible text colour so the '
-            'inherited light body text is not washed out on the chip (BUG-851)');
+      RegExp(r'background-color\s*:[^;]*!important').hasMatch(body),
+      isTrue,
+      reason:
+          'the rule must override the inline background with !important — '
+          'an inline style otherwise wins the cascade (BUG-851)',
+    );
+    expect(
+      RegExp(r'color\s*:[^;]*!important').hasMatch(body),
+      isTrue,
+      reason:
+          'the rule must also restore a legible text colour so the '
+          'inherited light body text is not washed out on the chip (BUG-851)',
+    );
   });
 
-  test(
-      'the dark tag rule targets the text class prefix, never the image mask '
+  test('the dark tag rule targets the text class prefix, never the image mask '
       '(BUG-851)', () {
     // The image mask (.gloss-image-background) also carries an inline
     // background-color:currentColor; the rule must not match it.
     final RegExpMatch match = darkTagRule.firstMatch(css)!;
-    expect(match.group(0)!.contains('gloss-image'), isFalse,
-        reason:
-            'the dark tag rule must be scoped to [class^="gloss-sc-"] only, '
-            'so the image mask (.gloss-image-background) is never re-toned '
-            '(BUG-851)');
+    expect(
+      match.group(0)!.contains('gloss-image'),
+      isFalse,
+      reason:
+          'the dark tag rule must be scoped to [class^="gloss-sc-"] only, '
+          'so the image mask (.gloss-image-background) is never re-toned '
+          '(BUG-851)',
+    );
   });
 
-  test(
-      'the scoped dark tag rule reached both extension content.css mirrors '
+  test('the scoped dark tag rule reached both extension content.css mirrors '
       '(BUG-851)', () {
     for (final String path in const <String>[
       'assets/browser_extension/vendor/content.css',
@@ -73,7 +83,8 @@ void main() {
         content.contains('[data-theme="dark"]') &&
             content.contains('[class^="gloss-sc-"][style*="background"]'),
         isTrue,
-        reason: '$path is missing the re-rooted dark tag rule — re-run '
+        reason:
+            '$path is missing the re-rooted dark tag rule — re-run '
             'node tools/browser-extension/scripts/generate-content-css.mjs '
             '(BUG-851)',
       );

@@ -15,17 +15,17 @@ void main() {
     required GlobalKey<NavigatorState> navigatorKey,
     required Widget caller,
   }) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      home: caller,
-    );
+    return MaterialApp(navigatorKey: navigatorKey, home: caller);
   }
 
   testWidgets('遮罩路由压在调用方页面之上：调用方 State 不被销毁', (WidgetTester tester) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final _CallerProbeState probe = _CallerProbeState();
     await tester.pumpWidget(
-      host(navigatorKey: navKey, caller: _CallerProbe(state: probe)),
+      host(
+        navigatorKey: navKey,
+        caller: _CallerProbe(state: probe),
+      ),
     );
     expect(find.text('caller'), findsOneWidget);
     expect(probe.disposed, isFalse);
@@ -39,15 +39,17 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
 
-    expect(find.byType(BackupImportOverlayView), findsOneWidget,
-        reason: '校验遮罩应已在栈顶');
     expect(
-      probe.disposed,
-      isFalse,
-      reason: 'BUG-2106：调用方页面（引导向导）不得随遮罩上屏而被销毁',
+      find.byType(BackupImportOverlayView),
+      findsOneWidget,
+      reason: '校验遮罩应已在栈顶',
     );
-    expect(find.text('caller', skipOffstage: false), findsOneWidget,
-        reason: '调用方页面仍在树里（只是被不透明遮罩盖住）');
+    expect(probe.disposed, isFalse, reason: 'BUG-2106：调用方页面（引导向导）不得随遮罩上屏而被销毁');
+    expect(
+      find.text('caller', skipOffstage: false),
+      findsOneWidget,
+      reason: '调用方页面仍在树里（只是被不透明遮罩盖住）',
+    );
 
     // 摘除必须走 removeRoute：路由带 PopScope(canPop:false)，pop 摘不掉。
     navKey.currentState!.removeRoute<void>(route);
@@ -63,7 +65,10 @@ void main() {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final _CallerProbeState probe = _CallerProbeState();
     await tester.pumpWidget(
-      host(navigatorKey: navKey, caller: _CallerProbe(state: probe)),
+      host(
+        navigatorKey: navKey,
+        caller: _CallerProbe(state: probe),
+      ),
     );
     // 调用方页面之上再压一层「向导页」，模拟真实栈：home → 向导 → 遮罩。
     navKey.currentState!.push<void>(
@@ -85,10 +90,16 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
     expect(popped, isTrue, reason: '返回事件应被栈顶的遮罩路由消费（而不是冒泡到 app 退出）');
-    expect(find.byType(BackupImportOverlayView), findsOneWidget,
-        reason: 'PopScope(canPop:false)：遮罩自身也不该被返回键弹掉');
-    expect(find.text('wizard', skipOffstage: false), findsOneWidget,
-        reason: 'BUG-2106：返回键绝不能把遮罩底下的向导页 pop 掉');
+    expect(
+      find.byType(BackupImportOverlayView),
+      findsOneWidget,
+      reason: 'PopScope(canPop:false)：遮罩自身也不该被返回键弹掉',
+    );
+    expect(
+      find.text('wizard', skipOffstage: false),
+      findsOneWidget,
+      reason: 'BUG-2106：返回键绝不能把遮罩底下的向导页 pop 掉',
+    );
 
     navKey.currentState!.removeRoute<void>(route);
     await tester.pump();

@@ -50,8 +50,11 @@ void main() {
         probe: present,
       );
       expect(v.supported, isFalse);
-      expect(v.blocker, BookConvertBlocker.textOnlyBook,
-          reason: '文字书没有页图，转过去只会得到一本空漫画');
+      expect(
+        v.blocker,
+        BookConvertBlocker.textOnlyBook,
+        reason: '文字书没有页图，转过去只会得到一本空漫画',
+      );
       expect(v.sourcePath, isNull);
     });
 
@@ -154,7 +157,10 @@ void main() {
       ).blocker!,
       verdictToBook(format: BookFormat.manga, probe: present).blocker!,
     };
-    expect(produced, BookConvertBlocker.values.toSet(),
-        reason: '新增 blocker 必须同时有产出它的判定路径与说明文案');
+    expect(
+      produced,
+      BookConvertBlocker.values.toSet(),
+      reason: '新增 blocker 必须同时有产出它的判定路径与说明文案',
+    );
   });
 }

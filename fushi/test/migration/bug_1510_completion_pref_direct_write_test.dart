@@ -28,8 +28,10 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('bug1510');
     dbPath = p.join(tmp.path, 'fushi.db');
     final sqlite.Database db = sqlite.sqlite3.open(dbPath);
-    db.execute('CREATE TABLE preferences (key TEXT NOT NULL PRIMARY KEY, '
-        'value TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0)');
+    db.execute(
+      'CREATE TABLE preferences (key TEXT NOT NULL PRIMARY KEY, '
+      'value TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0)',
+    );
     db.dispose();
   });
 
@@ -38,12 +40,15 @@ void main() {
   });
 
   Map<String, String> readPrefs() {
-    final sqlite.Database db =
-        sqlite.sqlite3.open(dbPath, mode: sqlite.OpenMode.readOnly);
+    final sqlite.Database db = sqlite.sqlite3.open(
+      dbPath,
+      mode: sqlite.OpenMode.readOnly,
+    );
     try {
       return <String, String>{
-        for (final sqlite.Row r
-            in db.select('SELECT key, value FROM preferences'))
+        for (final sqlite.Row r in db.select(
+          'SELECT key, value FROM preferences',
+        ))
           r['key'] as String: r['value'] as String,
       };
     } finally {
@@ -64,8 +69,11 @@ void main() {
       final Map<String, String> prefs = readPrefs();
       expect(prefs['migration_import_done_v1'], 'b:true');
       expect(prefs['migration_readonly_v1'], 'b:false');
-      expect(prefs[FushiDatabase.prefsVersionKey], 'i:1',
-          reason: '跨进程变更信号必须抬，否则别的进程读到新值配旧版本号');
+      expect(
+        prefs[FushiDatabase.prefsVersionKey],
+        'i:1',
+        reason: '跨进程变更信号必须抬，否则别的进程读到新值配旧版本号',
+      );
     });
 
     test('重复写是 upsert 且版本单调递增', () {
@@ -84,33 +92,43 @@ void main() {
 
     test('空输入不建连接也不抬版本', () {
       MigrationImporter.writeCompletionPrefs(
-          dbPath: dbPath, encodedValues: const <String, String>{});
+        dbPath: dbPath,
+        encodedValues: const <String, String>{},
+      );
       expect(readPrefs(), isEmpty);
     });
   });
 
   group('BUG-1510 导入页顺序契约', () {
-    final String source =
-        File('lib/src/pages/implementations/migration_import_page.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/pages/implementations/migration_import_page.dart',
+    ).readAsStringSync();
 
     test('不再用 prefsRepo.setPref 写完成标志（那条 drift 连接已关）', () {
-      expect(source.contains('prefsRepo.setPref(kMigrationImportDonePrefKey'),
-          isFalse,
-          reason: '关库之后走 drift 必抛 connection was closed');
-      expect(source.contains('prefsRepo.setPref(kMigrationReadonlyPrefKey'),
-          isFalse);
+      expect(
+        source.contains('prefsRepo.setPref(kMigrationImportDonePrefKey'),
+        isFalse,
+        reason: '关库之后走 drift 必抛 connection was closed',
+      );
+      expect(
+        source.contains('prefsRepo.setPref(kMigrationReadonlyPrefKey'),
+        isFalse,
+      );
       expect(source, contains('MigrationImporter.writeCompletionPrefs('));
     });
 
     test('标志落盘在删中转文件之前', () {
-      final int write =
-          source.indexOf('MigrationImporter.writeCompletionPrefs(');
+      final int write = source.indexOf(
+        'MigrationImporter.writeCompletionPrefs(',
+      );
       final int delete = source.indexOf('_importer.deleteBatchFiles(');
       expect(write, isNot(-1));
       expect(delete, isNot(-1));
-      expect(write, lessThan(delete),
-          reason: '反过来的话，写标志一炸就变成「文件已删 + 谎报已保留待重传」');
+      expect(
+        write,
+        lessThan(delete),
+        reason: '反过来的话，写标志一炸就变成「文件已删 + 谎报已保留待重传」',
+      );
     });
   });
 }

@@ -29,23 +29,41 @@ void main() {
   late final String wiring = read('windows/runner/flutter_window.cpp');
 
   test('正文窗有周期性置顶重申，且真的挂在定时器上', () {
-    expect(body.contains('void FloatingLyricWindow::ReassertTopmost()'), isTrue,
-        reason: 'BUG-2365：正文窗必须有置顶重申实现');
-    expect(body.contains('kTopmostGuardTimerId'), isTrue,
-        reason: '置顶守卫必须有自己的定时器 id');
+    expect(
+      body.contains('void FloatingLyricWindow::ReassertTopmost()'),
+      isTrue,
+      reason: 'BUG-2365：正文窗必须有置顶重申实现',
+    );
+    expect(
+      body.contains('kTopmostGuardTimerId'),
+      isTrue,
+      reason: '置顶守卫必须有自己的定时器 id',
+    );
     // 光有函数不算接线：WM_TIMER 必须真的把这个 id 分派到重申上，否则守卫永不触发。
     final int timerCase = body.indexOf('case WM_TIMER:');
     expect(timerCase, greaterThan(0), reason: '找不到 WM_TIMER 分支');
     final int dispatch = body.indexOf('kTopmostGuardTimerId', timerCase);
-    expect(dispatch, greaterThan(0),
-        reason: 'WM_TIMER 必须分派 kTopmostGuardTimerId → ReassertTopmost');
-    expect(body.indexOf('ReassertTopmost();', dispatch), greaterThan(0),
-        reason: 'kTopmostGuardTimerId 分支必须调 ReassertTopmost');
+    expect(
+      dispatch,
+      greaterThan(0),
+      reason: 'WM_TIMER 必须分派 kTopmostGuardTimerId → ReassertTopmost',
+    );
+    expect(
+      body.indexOf('ReassertTopmost();', dispatch),
+      greaterThan(0),
+      reason: 'kTopmostGuardTimerId 分支必须调 ReassertTopmost',
+    );
     // 显示时起表、隐藏 / 句柄失效时停表——留着就是后台空转，且下一次 Show 不再起表。
-    expect(body.contains('StartTopmostGuard();'), isTrue,
-        reason: 'Show 成功后必须起置顶守卫');
-    expect(body.contains('StopTopmostGuard();'), isTrue,
-        reason: '隐藏 / 句柄失效时必须停置顶守卫');
+    expect(
+      body.contains('StartTopmostGuard();'),
+      isTrue,
+      reason: 'Show 成功后必须起置顶守卫',
+    );
+    expect(
+      body.contains('StopTopmostGuard();'),
+      isTrue,
+      reason: '隐藏 / 句柄失效时必须停置顶守卫',
+    );
   });
 
   test('置顶守卫尊重 pin：用户取消置顶后不得把正文窗顶回去', () {
@@ -55,37 +73,59 @@ void main() {
     final int end = body.indexOf('\n}\n', fn);
     expect(end, greaterThan(fn));
     final String bodyBlock = body.substring(fn, end);
-    expect(bodyBlock.contains('!topmost_'), isTrue,
-        reason: 'BUG-2365：topmost_ 为假（用户取消置顶）时守卫必须早退');
+    expect(
+      bodyBlock.contains('!topmost_'),
+      isTrue,
+      reason: 'BUG-2365：topmost_ 为假（用户取消置顶）时守卫必须早退',
+    );
   });
 
   test('置顶守卫让位给查词卡，两个守卫不互相抢最顶', () {
     // 查词卡自己也有 800ms 置顶守卫（BUG-1479）。两边都抢 HWND_TOPMOST 的话，
     // 卡片会周期性闪到浮窗底下——所以正文窗有卡片时插在卡片正下方。
-    expect(card.contains('kTopmostGuardTimerId'), isTrue,
-        reason: 'BUG-1479：查词卡的置顶守卫是本条让位逻辑的前提');
     expect(
-        card.contains('HWND GlobalLookupWindow::TopmostCeilingHandle() const'),
-        isTrue,
-        reason: '查词卡必须暴露 Z 序天花板句柄');
-    expect(bodyHeader.contains('void SetTopmostCeilingProvider('), isTrue,
-        reason: '正文窗必须能接收 Z 序天花板');
+      card.contains('kTopmostGuardTimerId'),
+      isTrue,
+      reason: 'BUG-1479：查词卡的置顶守卫是本条让位逻辑的前提',
+    );
+    expect(
+      card.contains('HWND GlobalLookupWindow::TopmostCeilingHandle() const'),
+      isTrue,
+      reason: '查词卡必须暴露 Z 序天花板句柄',
+    );
+    expect(
+      bodyHeader.contains('void SetTopmostCeilingProvider('),
+      isTrue,
+      reason: '正文窗必须能接收 Z 序天花板',
+    );
     final int fn = body.indexOf('void FloatingLyricWindow::ReassertTopmost()');
     final int end = body.indexOf('\n}\n', fn);
     final String bodyBlock = body.substring(fn, end);
-    expect(bodyBlock.contains('topmost_ceiling_'), isTrue,
-        reason: 'BUG-2365：重申时必须查天花板');
+    expect(
+      bodyBlock.contains('topmost_ceiling_'),
+      isTrue,
+      reason: 'BUG-2365：重申时必须查天花板',
+    );
     // 有天花板时是「插到它下面」（insertAfter = ceiling），不是抢最顶。
-    expect(bodyBlock.contains('SetWindowPos(hwnd_, ceiling,'), isTrue,
-        reason: '有可见查词卡时正文窗必须插在卡片之下，而不是 HWND_TOPMOST');
+    expect(
+      bodyBlock.contains('SetWindowPos(hwnd_, ceiling,'),
+      isTrue,
+      reason: '有可见查词卡时正文窗必须插在卡片之下，而不是 HWND_TOPMOST',
+    );
     // 抬完正文窗必须把逃生工具条重新顶上去，否则 BUG-951 的唯一出路被自己的正文盖住。
-    expect(bodyBlock.contains('SyncPassThroughToolbar();'), isTrue,
-        reason: 'BUG-951：重申后必须把逃生工具条重新顶到正文之上');
+    expect(
+      bodyBlock.contains('SyncPassThroughToolbar();'),
+      isTrue,
+      reason: 'BUG-951：重申后必须把逃生工具条重新顶到正文之上',
+    );
   });
 
   test('两个 FloatingLyricWindow 实例都接了 Z 序天花板', () {
     // 有声书悬浮字幕与 galgame 台词浮窗是同一个类的两个实例，Z 策略必须同一份。
-    expect('SetTopmostCeilingProvider'.allMatches(wiring).length, 2,
-        reason: 'floating_lyric_window_ 与 gal_hook_text_window_ 都要接天花板');
+    expect(
+      'SetTopmostCeilingProvider'.allMatches(wiring).length,
+      2,
+      reason: 'floating_lyric_window_ 与 gal_hook_text_window_ 都要接天花板',
+    );
   });
 }

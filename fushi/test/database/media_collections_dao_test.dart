@@ -14,8 +14,10 @@ void main() {
   test('create/getAll/getById/rename/sortOrder/cover/delete', () async {
     final db = await _openDb();
     final int a = await db.createMediaCollection('A');
-    final int b =
-        await db.createMediaCollection('B', collectionType: 'playlist');
+    final int b = await db.createMediaCollection(
+      'B',
+      collectionType: 'playlist',
+    );
 
     final all = await db.getAllMediaCollections();
     expect(all.map((c) => c.name), containsAll(<String>['A', 'B']));
@@ -40,20 +42,22 @@ void main() {
     expect(await db.getMediaCollectionById(b), isNull);
   });
 
-  test('addToCollection 尾插 + insertOrIgnore 幂等；getCollectionItems 有序',
-      () async {
-    final db = await _openDb();
-    final int c = await db.createMediaCollection('C');
-    await db.addToCollection(c, MediaKind.video, 'v1');
-    await db.addToCollection(c, MediaKind.video, 'v2');
-    await db.addToCollection(c, MediaKind.epub, 'b1');
-    // 重复加同成员 → 幂等（不新增、不改序）。
-    await db.addToCollection(c, MediaKind.video, 'v1');
+  test(
+    'addToCollection 尾插 + insertOrIgnore 幂等；getCollectionItems 有序',
+    () async {
+      final db = await _openDb();
+      final int c = await db.createMediaCollection('C');
+      await db.addToCollection(c, MediaKind.video, 'v1');
+      await db.addToCollection(c, MediaKind.video, 'v2');
+      await db.addToCollection(c, MediaKind.epub, 'b1');
+      // 重复加同成员 → 幂等（不新增、不改序）。
+      await db.addToCollection(c, MediaKind.video, 'v1');
 
-    final items = await db.getCollectionItems(c);
-    expect(items.map((m) => m.entryKey).toList(), <String>['v1', 'v2', 'b1']);
-    expect(items.map((m) => m.sortIndex).toList(), <int>[0, 1, 2]);
-  });
+      final items = await db.getCollectionItems(c);
+      expect(items.map((m) => m.entryKey).toList(), <String>['v1', 'v2', 'b1']);
+      expect(items.map((m) => m.sortIndex).toList(), <int>[0, 1, 2]);
+    },
+  );
 
   test('deleteMediaCollection cascade 删成员引用', () async {
     final db = await _openDb();
@@ -84,8 +88,9 @@ void main() {
     await db.addToCollection(c, MediaKind.video, 'v2');
 
     await db.removeFromCollection(c, MediaKind.video, 'v1');
-    expect((await db.getCollectionItems(c)).map((m) => m.entryKey),
-        <String>['v2']);
+    expect((await db.getCollectionItems(c)).map((m) => m.entryKey), <String>[
+      'v2',
+    ]);
     expect(await db.getMediaCollectionById(c), isNotNull);
 
     // 移出最后一个 → 合集自删。
@@ -130,14 +135,14 @@ void main() {
     }
 
     Future<List<String>> members(FushiDatabase db, int c) async => <String>[
-          for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
-            '${r.mediaType}|${r.entryKey}',
-        ];
+      for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
+        '${r.mediaType}|${r.entryKey}',
+    ];
 
     Future<List<int>> indices(FushiDatabase db, int c) async => <int>[
-          for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
-            r.sortIndex,
-        ];
+      for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
+        r.sortIndex,
+    ];
 
     test('只传可见 video 子集：非 video 成员留原槽位，全表致密无碰撞', () async {
       final db = await _openDb();
@@ -150,13 +155,20 @@ void main() {
         (mediaType: 'video', entryKey: 'v1'),
       ]);
 
-      expect(
-        await members(db, c),
-        <String>['video|v3', 'game|g1', 'video|v2', 'epub|e1', 'video|v1'],
-        reason: 'video 依次填回原来的三个 video 槽位（0/2/4），g1/e1 留在 1/3 不被挤走',
-      );
-      expect(await indices(db, c), <int>[0, 1, 2, 3, 4],
-          reason: 'sortIndex 必须致密 0..n-1；有重复即说明漏写了未点名成员');
+      expect(await members(db, c), <String>[
+        'video|v3',
+        'game|g1',
+        'video|v2',
+        'epub|e1',
+        'video|v1',
+      ], reason: 'video 依次填回原来的三个 video 槽位（0/2/4），g1/e1 留在 1/3 不被挤走');
+      expect(await indices(db, c), <int>[
+        0,
+        1,
+        2,
+        3,
+        4,
+      ], reason: 'sortIndex 必须致密 0..n-1；有重复即说明漏写了未点名成员');
     });
 
     test('历史遗留的碰撞 sortIndex：任何一次重排都自愈成致密序，相对顺序不变', () async {
@@ -170,16 +182,26 @@ void main() {
       await db.upsertCollectionItemAt(c, 'video', 'v3', 2);
       await db.upsertCollectionItemAt(c, 'game', 'g1', 1);
       await db.upsertCollectionItemAt(c, 'epub', 'e1', 3);
-      expect(await indices(db, c), <int>[0, 1, 1, 2, 3],
-          reason: '前置条件：现场确实有碰撞（sortIndex 1 两行）');
+      expect(await indices(db, c), <int>[
+        0,
+        1,
+        1,
+        2,
+        3,
+      ], reason: '前置条件：现场确实有碰撞（sortIndex 1 两行）');
 
       // 碰撞下 getCollectionItems 平手退化按 entryKey 排 —— 这就是用户此刻看到的序。
       final List<String> before = await members(db, c);
       await db.reorderCollectionItems(c, const <CollectionMemberKey>[]);
 
       expect(await members(db, c), before, reason: '没点名任何成员 → 相对顺序零变化');
-      expect(await indices(db, c), <int>[0, 1, 2, 3, 4],
-          reason: '重排把全表写成致密序，历史碰撞就此消除（不再依赖 entryKey 兜底）');
+      expect(await indices(db, c), <int>[
+        0,
+        1,
+        2,
+        3,
+        4,
+      ], reason: '重排把全表写成致密序，历史碰撞就此消除（不再依赖 entryKey 兜底）');
     });
 
     test('sortIndex 碰撞时按 entryKey 定序，并被一次重排冻结成致密序', () async {
@@ -203,15 +225,22 @@ void main() {
       expect(
         await members(db, c),
         <String>['video|aa', 'game|mm', 'epub|zz'],
-        reason: 'sortIndex 全碰撞 → 按 entryKey 升序（aa < mm < zz），'
+        reason:
+            'sortIndex 全碰撞 → 按 entryKey 升序（aa < mm < zz），'
             '与插入序、与 mediaType 序都无关',
       );
 
       await db.reorderCollectionItems(c, const <CollectionMemberKey>[]);
-      expect(await members(db, c), <String>['video|aa', 'game|mm', 'epub|zz'],
-          reason: '冻结不改相对顺序');
-      expect(await indices(db, c), <int>[0, 1, 2],
-          reason: '冻结后 sortIndex 致密，展示序不再依赖并列兜底');
+      expect(await members(db, c), <String>[
+        'video|aa',
+        'game|mm',
+        'epub|zz',
+      ], reason: '冻结不改相对顺序');
+      expect(await indices(db, c), <int>[
+        0,
+        1,
+        2,
+      ], reason: '冻结后 sortIndex 致密，展示序不再依赖并列兜底');
     });
 
     test('点名了已被并发移出的成员：丢弃该键，其余成员照常重排不越界', () async {
@@ -226,8 +255,12 @@ void main() {
         (mediaType: 'video', entryKey: 'v1'),
       ]);
 
-      expect(await members(db, c),
-          <String>['video|v3', 'game|g1', 'epub|e1', 'video|v1']);
+      expect(await members(db, c), <String>[
+        'video|v3',
+        'game|g1',
+        'epub|e1',
+        'video|v1',
+      ]);
       expect(await indices(db, c), <int>[0, 1, 2, 3]);
     });
   });
@@ -243,12 +276,12 @@ void main() {
     await db.removeEntryFromAllCollections(MediaKind.video, 'v1');
     // c1 只有 v1 → 清空自删；c2 还有 v2 → 保留。
     expect(await db.getMediaCollectionById(c1), isNull);
-    expect((await db.getCollectionItems(c2)).map((m) => m.entryKey),
-        <String>['v2']);
+    expect((await db.getCollectionItems(c2)).map((m) => m.entryKey), <String>[
+      'v2',
+    ]);
   });
 
-  test(
-      'getAllCollectionItems 覆盖全部合集全部成员，按 collectionId 分组逐组等于 '
+  test('getAllCollectionItems 覆盖全部合集全部成员，按 collectionId 分组逐组等于 '
       'getCollectionItems（BUG-959 消除 N+1）', () async {
     final db = await _openDb();
     final int c1 = await db.createMediaCollection('C1');
@@ -274,53 +307,60 @@ void main() {
       final List<MediaCollectionItemRow> per = await db.getCollectionItems(cid);
       expect(
         grouped[cid]!
-            .map((MediaCollectionItemRow m) =>
-                '${m.mediaType}|${m.entryKey}#${m.sortIndex}')
+            .map(
+              (MediaCollectionItemRow m) =>
+                  '${m.mediaType}|${m.entryKey}#${m.sortIndex}',
+            )
             .toList(),
         per
-            .map((MediaCollectionItemRow m) =>
-                '${m.mediaType}|${m.entryKey}#${m.sortIndex}')
+            .map(
+              (MediaCollectionItemRow m) =>
+                  '${m.mediaType}|${m.entryKey}#${m.sortIndex}',
+            )
             .toList(),
       );
     }
   });
 
-  test('memberSortIndex 内存分组（primaryMap[key]==m.collectionId）与旧逐合集逻辑等价',
-      () async {
-    final db = await _openDb();
-    final int c1 = await db.createMediaCollection('C1');
-    final int c2 = await db.createMediaCollection('C2');
-    await db.addToCollection(c1, MediaKind.video, 'v1'); // c1 内 sortIndex 0
-    await db.addToCollection(c1, MediaKind.video, 'v2'); // c1 内 sortIndex 1
-    await db.addToCollection(c2, MediaKind.video, 'v1'); // c2 内 sortIndex 0
-    await db.addToCollection(c2, MediaKind.video, 'v3'); // c2 内 sortIndex 1
+  test(
+    'memberSortIndex 内存分组（primaryMap[key]==m.collectionId）与旧逐合集逻辑等价',
+    () async {
+      final db = await _openDb();
+      final int c1 = await db.createMediaCollection('C1');
+      final int c2 = await db.createMediaCollection('C2');
+      await db.addToCollection(c1, MediaKind.video, 'v1'); // c1 内 sortIndex 0
+      await db.addToCollection(c1, MediaKind.video, 'v2'); // c1 内 sortIndex 1
+      await db.addToCollection(c2, MediaKind.video, 'v1'); // c2 内 sortIndex 0
+      await db.addToCollection(c2, MediaKind.video, 'v3'); // c2 内 sortIndex 1
 
-    final Map<String, int> primaryMap =
-        await db.getPrimaryCollectionIdByEntry();
+      final Map<String, int> primaryMap = await db
+          .getPrimaryCollectionIdByEntry();
 
-    // 新实现：一次 getAllCollectionItems + 内存分组。
-    final Map<String, int> newMap = <String, int>{};
-    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
-      final String key = '${m.mediaType}|${m.entryKey}';
-      if (primaryMap[key] == m.collectionId) newMap[key] = m.sortIndex;
-    }
-
-    // 旧实现：逐合集 getCollectionItems（判据 == c.id）。
-    final Map<String, int> oldMap = <String, int>{};
-    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      for (final MediaCollectionItemRow m
-          in await db.getCollectionItems(c.id)) {
+      // 新实现：一次 getAllCollectionItems + 内存分组。
+      final Map<String, int> newMap = <String, int>{};
+      for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
         final String key = '${m.mediaType}|${m.entryKey}';
-        if (primaryMap[key] == c.id) oldMap[key] = m.sortIndex;
+        if (primaryMap[key] == m.collectionId) newMap[key] = m.sortIndex;
       }
-    }
 
-    expect(newMap, oldMap);
-    // v1 折叠归 c1(min)，取 c1 内 sortIndex 0；v2→1；v3 在 c2 内 1。
-    expect(newMap['video|v1'], 0);
-    expect(newMap['video|v2'], 1);
-    expect(newMap['video|v3'], 1);
-  });
+      // 旧实现：逐合集 getCollectionItems（判据 == c.id）。
+      final Map<String, int> oldMap = <String, int>{};
+      for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+        for (final MediaCollectionItemRow m in await db.getCollectionItems(
+          c.id,
+        )) {
+          final String key = '${m.mediaType}|${m.entryKey}';
+          if (primaryMap[key] == c.id) oldMap[key] = m.sortIndex;
+        }
+      }
+
+      expect(newMap, oldMap);
+      // v1 折叠归 c1(min)，取 c1 内 sortIndex 0；v2→1；v3 在 c2 内 1。
+      expect(newMap['video|v1'], 0);
+      expect(newMap['video|v2'], 1);
+      expect(newMap['video|v3'], 1);
+    },
+  );
 
   // P5 未知种类透传：合集成员行值可能是**对端未来新增的种类**（同步引擎原样
   // 透传，不经 tryParse 过滤）。详情页移出走 `removeFromCollectionRaw`
@@ -335,14 +375,17 @@ void main() {
 
     await db.addToCollectionRaw(c, unknownKind, 'm1');
     await db.addToCollection(c, MediaKind.video, 'v1');
-    expect((await db.getCollectionItems(c)).map((m) => m.mediaType).toList(),
-        <String>[unknownKind, 'video'],
-        reason: 'raw 入口原样落库未知种类，不被静默丢弃');
+    expect(
+      (await db.getCollectionItems(c)).map((m) => m.mediaType).toList(),
+      <String>[unknownKind, 'video'],
+      reason: 'raw 入口原样落库未知种类，不被静默丢弃',
+    );
 
     await db.removeFromCollectionRaw(c, unknownKind, 'm1');
     final List<MediaCollectionItemRow> after = await db.getCollectionItems(c);
-    expect(after.map((m) => m.entryKey).toList(), <String>['v1'],
-        reason: '未知种类成员必须移得掉');
+    expect(after.map((m) => m.entryKey).toList(), <String>[
+      'v1',
+    ], reason: '未知种类成员必须移得掉');
 
     // 同时写出成员移出墓碑（否则跨端并集会把它复活）——墓碑里也是原样种类串。
     final List<CollectionMemberTombstoneRow> tombs =
@@ -363,8 +406,10 @@ void main() {
     await db.addToCollection(c, MediaKind.epub, 'b1');
 
     await db.removeFromCollectionRaw(c, MediaKind.video.dbValue, 'v1');
-    expect((await db.getCollectionItems(c)).map((m) => m.entryKey).toList(),
-        <String>['b1']);
+    expect(
+      (await db.getCollectionItems(c)).map((m) => m.entryKey).toList(),
+      <String>['b1'],
+    );
   });
 
   // BUG-1699：库页折叠映射的数据层刷新信号——任一合集表写入即 emit，任何写入者
@@ -395,25 +440,28 @@ void main() {
   // 条目查折叠归属主合集 + 组内 sortIndex。口径必须与「getPrimaryCollectionIdByEntry
   // + getAllCollectionItems 内存分组」逐键一致，只是把本机不存在的成员（在线源 /
   // 播放列表挂进来的集数）挡在 SQL 侧，不再整表搬进 Dart。
-  test('BUG-3034 getLocalPrimaryCollectionMembership：本机条目口径与旧两步一致',
-      () async {
+  test('BUG-3034 getLocalPrimaryCollectionMembership：本机条目口径与旧两步一致', () async {
     final db = await _openDb();
     for (final String uid in <String>['v1', 'v2']) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(uid),
-        videoPath: Value('/abs/$uid.mp4'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(uid),
+          videoPath: Value('/abs/$uid.mp4'),
+        ),
+      );
     }
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'book-a',
-      title: 'Book A',
-      epubPath: '/x/a.epub',
-      extractDir: '/x/a',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1000,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'book-a',
+        title: 'Book A',
+        epubPath: '/x/a.epub',
+        extractDir: '/x/a',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+      ),
+    );
     final String epubUid = (await db.resolveEpubBookUid('book-a'))!;
     final int c1 = await db.createMediaCollection('C1');
     final int c2 = await db.createMediaCollection('C2');
@@ -424,19 +472,20 @@ void main() {
     await db.addToCollection(c1, MediaKind.epub, epubUid); // c1 内 1
     await db.addToCollection(c2, MediaKind.epub, 'book-a'); // 旧 bookKey 键行
 
-    final Map<String, ({int collectionId, int sortIndex})> local =
-        await db.getLocalPrimaryCollectionMembership();
+    final Map<String, ({int collectionId, int sortIndex})> local = await db
+        .getLocalPrimaryCollectionMembership();
 
     final Map<String, int> primary = await db.getPrimaryCollectionIdByEntry();
     final Map<String, ({int collectionId, int sortIndex})> legacy =
         <String, ({int collectionId, int sortIndex})>{
-      for (final MediaCollectionItemRow m in await db.getAllCollectionItems())
-        if (primary['${m.mediaType}|${m.entryKey}'] == m.collectionId)
-          '${m.mediaType}|${m.entryKey}': (
-            collectionId: m.collectionId,
-            sortIndex: m.sortIndex,
-          ),
-    };
+          for (final MediaCollectionItemRow m
+              in await db.getAllCollectionItems())
+            if (primary['${m.mediaType}|${m.entryKey}'] == m.collectionId)
+              '${m.mediaType}|${m.entryKey}': (
+                collectionId: m.collectionId,
+                sortIndex: m.sortIndex,
+              ),
+        };
     // 本机不存在的成员被挡掉，其余逐键一致。
     expect(local.containsKey('video|ghost'), isFalse);
     expect(legacy.containsKey('video|ghost'), isTrue);

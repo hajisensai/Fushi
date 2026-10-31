@@ -28,8 +28,10 @@ void main() {
   /// 建一个真实的 v93 形状库：当前 schema 建满，摘掉两张表的 identity_json，
   /// 版本写回 93。
   Future<void> seedV93() async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await fresh.customStatement(
       'INSERT INTO video_download_jobs (job_id, resource_provider, '
       'selected_resource_id, media_kind, title, backend_kind, fingerprint, '
@@ -50,7 +52,8 @@ void main() {
     try {
       raw.execute('ALTER TABLE video_download_jobs DROP COLUMN identity_json');
       raw.execute(
-          'ALTER TABLE video_download_subscriptions DROP COLUMN identity_json');
+        'ALTER TABLE video_download_subscriptions DROP COLUMN identity_json',
+      );
       raw.execute('PRAGMA user_version = 93');
     } finally {
       raw.dispose();
@@ -65,13 +68,17 @@ void main() {
   test('v93 库确实缺 identity_json（前提自检）', () async {
     await seedV93();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 93);
       expect(hasColumn(probe, 'video_download_jobs', 'identity_json'), isFalse);
-      expect(hasColumn(probe, 'video_download_subscriptions', 'identity_json'),
-          isFalse);
+      expect(
+        hasColumn(probe, 'video_download_subscriptions', 'identity_json'),
+        isFalse,
+      );
     } finally {
       probe.dispose();
     }
@@ -80,29 +87,43 @@ void main() {
   test('v93 -> v94：两表补列、默认 NULL、存量行无损', () async {
     await seedV93();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
-    final List<VideoDownloadJobRow> jobs =
-        await migrated.select(migrated.videoDownloadJobs).get();
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
+    final List<VideoDownloadJobRow> jobs = await migrated
+        .select(migrated.videoDownloadJobs)
+        .get();
     expect(jobs, hasLength(1), reason: '迁移丢一行就是丢一个任务');
     expect(jobs.single.title, '某番剧');
-    expect(jobs.single.identityJson, isNull,
-        reason: 'NULL = 旧任务无身份快照，走修前重建路径，绝不臆造身份');
-    final List<VideoDownloadSubscriptionRow> subscriptions =
-        await migrated.select(migrated.videoDownloadSubscriptions).get();
+    expect(
+      jobs.single.identityJson,
+      isNull,
+      reason: 'NULL = 旧任务无身份快照，走修前重建路径，绝不臆造身份',
+    );
+    final List<VideoDownloadSubscriptionRow> subscriptions = await migrated
+        .select(migrated.videoDownloadSubscriptions)
+        .get();
     expect(subscriptions, hasLength(1));
-    expect(subscriptions.single.searchQuery, 'Some Query',
-        reason: '订阅搜索词不许被迁移动到');
+    expect(
+      subscriptions.single.searchQuery,
+      'Some Query',
+      reason: '订阅搜索词不许被迁移动到',
+    );
     expect(subscriptions.single.identityJson, isNull);
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
       expect(hasColumn(probe, 'video_download_jobs', 'identity_json'), isTrue);
-      expect(hasColumn(probe, 'video_download_subscriptions', 'identity_json'),
-          isTrue);
+      expect(
+        hasColumn(probe, 'video_download_subscriptions', 'identity_json'),
+        isTrue,
+      );
     } finally {
       probe.dispose();
     }
@@ -111,11 +132,15 @@ void main() {
   test('重复打开幂等：第二次开库不因列已存在而报错', () async {
     await seedV93();
 
-    final FushiDatabase first =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase first = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await first.close();
-    final FushiDatabase second =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase second = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     expect(await second.select(second.videoDownloadJobs).get(), hasLength(1));
     await second.close();
   });

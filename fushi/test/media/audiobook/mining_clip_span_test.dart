@@ -26,44 +26,53 @@ import 'package:flutter_test/flutter_test.dart';
 /// exists in the shipped source.
 void main() {
   test(
-      'audiobook mining spans the dragged sentence range (executes selection JS '
-      'via node)', () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS execution');
-      return;
-    }
+    'audiobook mining spans the dragged sentence range (executes selection JS '
+    'via node)',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped('node not found on PATH; skipping JS execution');
+        return;
+      }
 
-    final File jsTest = File(
-      'test/media/audiobook/mining_clip_span_test.js',
-    );
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'span harness ${jsTest.path} must exist');
+      final File jsTest = File('test/media/audiobook/mining_clip_span_test.js');
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'span harness ${jsTest.path} must exist',
+      );
 
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
-    );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
-    expect(
-      result.exitCode,
-      0,
-      reason: 'mining clip span harness failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-    final String stdout = result.stdout.toString();
-    expect(stdout, contains('all assertions passed'),
-        reason: 'harness must reach its success marker');
-    expect(stdout, contains('passed 7 cases'),
-        reason: 'all seven span cases must run');
-  });
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'mining clip span harness failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(
+        stdout,
+        contains('all assertions passed'),
+        reason: 'harness must reach its success marker',
+      );
+      expect(
+        stdout,
+        contains('passed 7 cases'),
+        reason: 'all seven span cases must run',
+      );
+    },
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

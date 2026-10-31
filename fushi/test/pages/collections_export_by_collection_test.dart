@@ -32,8 +32,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_export_by_collection_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_export_by_collection_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -70,21 +71,23 @@ void main() {
     required String bookKey,
     String source = kFavoriteSentenceSourceVideo,
   }) {
-    return FavoriteSentenceRepository(db).add(FavoriteSentence(
-      text: text,
-      bookTitle: bookTitle,
-      createdAt: DateTime.now(),
-      source: source,
-      bookKey: bookKey,
-    ));
+    return FavoriteSentenceRepository(db).add(
+      FavoriteSentence(
+        text: text,
+        bookTitle: bookTitle,
+        createdAt: DateTime.now(),
+        source: source,
+        bookKey: bookKey,
+      ),
+    );
   }
 
   Widget buildPage() => ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((_) => appModel)],
-        child: TranslationProvider(
-          child: const MaterialApp(home: CollectionsPage()),
-        ),
-      );
+    overrides: <Override>[appProvider.overrideWith((_) => appModel)],
+    child: TranslationProvider(
+      child: const MaterialApp(home: CollectionsPage()),
+    ),
+  );
 
   Finder exportButton() =>
       find.widgetWithIcon(FushiIconButton, FushiIcons.share);
@@ -120,8 +123,9 @@ void main() {
     fail('未能通过焦点遍历到达导出按钮');
   }
 
-  testWidgets('同一合集的多集折叠成一个合集来源；散书单列；「全部来源」仍在（BUG-1906）',
-      (WidgetTester tester) async {
+  testWidgets('同一合集的多集折叠成一个合集来源；散书单列；「全部来源」仍在（BUG-1906）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 1800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -170,10 +174,16 @@ void main() {
     expect(inDialog(t.collection_export_all_sources), findsOneWidget);
 
     // 合集折叠成一项：显示合集名，而不是两条剧集标题。
-    expect(inDialog('Re Zero S4'), findsOneWidget,
-        reason: '合集必须作为一个可选来源出现 —— 这正是用户报「没办法按合集导出」的那一条');
-    expect(inDialog('Re Zero S4 - S04E01'), findsNothing,
-        reason: '已归入合集的单集不再单列，否则用户还是只能一集一集导');
+    expect(
+      inDialog('Re Zero S4'),
+      findsOneWidget,
+      reason: '合集必须作为一个可选来源出现 —— 这正是用户报「没办法按合集导出」的那一条',
+    );
+    expect(
+      inDialog('Re Zero S4 - S04E01'),
+      findsNothing,
+      reason: '已归入合集的单集不再单列，否则用户还是只能一集一集导',
+    );
     expect(inDialog('Re Zero S4 - S04E02'), findsNothing);
 
     // 散书仍单列。
@@ -186,19 +196,19 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await seedSentence(
-      text: 'テスト',
-      bookTitle: 'Solo',
-      bookKey: 'video/solo',
-    );
+    await seedSentence(text: 'テスト', bookTitle: 'Solo', bookKey: 'video/solo');
 
     await tester.pumpWidget(buildPage());
     await tester.pumpAndSettle();
     await openExportPanel(tester);
 
-    expect(find.byType(Dialog), findsOneWidget,
-        reason: '导出面板必须是对话框；旧的裸 showModalBottomSheet 没传 '
-            'isScrollControlled，被默认 9/16 屏高上限卡死');
+    expect(
+      find.byType(Dialog),
+      findsOneWidget,
+      reason:
+          '导出面板必须是对话框；旧的裸 showModalBottomSheet 没传 '
+          'isScrollControlled，被默认 9/16 屏高上限卡死',
+    );
     expect(find.byType(BottomSheet), findsNothing);
   });
 }

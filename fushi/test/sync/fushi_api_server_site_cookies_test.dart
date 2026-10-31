@@ -171,15 +171,12 @@ void main() {
 
     handle.end();
     expect(BrowserCookieImportGate.pending, isNull);
-    final HttpClientResponse ended = await _post(
-      server.port,
-      '/api/extension/site-cookies',
-      {
-        'nonce': handle.request.nonce,
-        'host': 'bookwalker.jp',
-        'cookies': <Object?>[],
-      },
-    );
+    final HttpClientResponse ended =
+        await _post(server.port, '/api/extension/site-cookies', {
+          'nonce': handle.request.nonce,
+          'host': 'bookwalker.jp',
+          'cookies': <Object?>[],
+        });
     expect(ended.statusCode, 409);
   });
 

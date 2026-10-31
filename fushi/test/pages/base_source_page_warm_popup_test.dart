@@ -22,7 +22,7 @@ import '../helpers/test_platform_services.dart';
 /// A source-scan guard locks the WebView-mount wiring that rendering can't.
 class WarmPopupTestAppModel extends AppModel {
   WarmPopupTestAppModel({this.lowMemory = false})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final bool lowMemory;
 
@@ -101,15 +101,11 @@ Widget buildWarmPopupTestApp({
   required GlobalKey<WarmPopupHostPageState> hostKey,
 }) {
   return ProviderScope(
-    overrides: [
-      appProvider.overrideWith((ref) => appModel),
-    ],
+    overrides: [appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),
-        home: Scaffold(
-          body: WarmPopupHostPage(key: hostKey),
-        ),
+        home: Scaffold(body: WarmPopupHostPage(key: hostKey)),
       ),
     ),
   );
@@ -120,8 +116,9 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  testWidgets('warm popup slot is seeded on open (hidden) before any lookup',
-      (WidgetTester tester) async {
+  testWidgets('warm popup slot is seeded on open (hidden) before any lookup', (
+    WidgetTester tester,
+  ) async {
     final appModel = WarmPopupTestAppModel();
     final hostKey = GlobalKey<WarmPopupHostPageState>();
 
@@ -140,35 +137,37 @@ void main() {
   });
 
   testWidgets(
-      'reader-style lookup reuses the warm slot key across prunePopupStack(0)',
-      (WidgetTester tester) async {
-    final appModel = WarmPopupTestAppModel();
-    final hostKey = GlobalKey<WarmPopupHostPageState>();
+    'reader-style lookup reuses the warm slot key across prunePopupStack(0)',
+    (WidgetTester tester) async {
+      final appModel = WarmPopupTestAppModel();
+      final hostKey = GlobalKey<WarmPopupHostPageState>();
 
-    await tester.pumpWidget(
-      buildWarmPopupTestApp(appModel: appModel, hostKey: hostKey),
-    );
-    await tester.pump();
-    await tester.pump();
+      await tester.pumpWidget(
+        buildWarmPopupTestApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    await hostKey.currentState!.resetThenSearch('first');
-    final firstStack = hostKey.currentState!.debugPopupStack;
-    expect(firstStack, hasLength(1));
-    expect(firstStack.single.visible, isTrue);
-    final firstKey = firstStack.single.webViewKey;
+      await hostKey.currentState!.resetThenSearch('first');
+      final firstStack = hostKey.currentState!.debugPopupStack;
+      expect(firstStack, hasLength(1));
+      expect(firstStack.single.visible, isTrue);
+      final firstKey = firstStack.single.webViewKey;
 
-    // A fresh reader lookup prunes to 0 first; the warm slot (and its loaded
-    // WebView) must survive so the second lookup reuses the SAME webViewKey
-    // rather than cold-loading a new WebView (the white flash).
-    await hostKey.currentState!.resetThenSearch('second');
-    final secondStack = hostKey.currentState!.debugPopupStack;
-    expect(secondStack, hasLength(1));
-    expect(secondStack.single.visible, isTrue);
-    expect(secondStack.single.webViewKey, same(firstKey));
-  });
+      // A fresh reader lookup prunes to 0 first; the warm slot (and its loaded
+      // WebView) must survive so the second lookup reuses the SAME webViewKey
+      // rather than cold-loading a new WebView (the white flash).
+      await hostKey.currentState!.resetThenSearch('second');
+      final secondStack = hostKey.currentState!.debugPopupStack;
+      expect(secondStack, hasLength(1));
+      expect(secondStack.single.visible, isTrue);
+      expect(secondStack.single.webViewKey, same(firstKey));
+    },
+  );
 
-  testWidgets('low memory mode seeds no warm slot and clears on prune',
-      (WidgetTester tester) async {
+  testWidgets('low memory mode seeds no warm slot and clears on prune', (
+    WidgetTester tester,
+  ) async {
     final appModel = WarmPopupTestAppModel(lowMemory: true);
     final hostKey = GlobalKey<WarmPopupHostPageState>();
 
@@ -189,40 +188,54 @@ void main() {
     expect(hostKey.currentState!.debugPopupStack, isEmpty);
   });
 
-  test('source guard: warm slot wiring keeps the WebView mounted and preserved',
-      () {
+  test('source guard: warm slot wiring keeps the WebView mounted and preserved', () {
     final base = File('lib/src/pages/base_source_page.dart').readAsStringSync();
-    final layer =
-        File('lib/src/pages/implementations/dictionary_popup_layer.dart')
-            .readAsStringSync();
+    final layer = File(
+      'lib/src/pages/implementations/dictionary_popup_layer.dart',
+    ).readAsStringSync();
 
     // base_source_page passes the warm flag to the popup layer.
-    expect(base.contains('keepWebViewWarm: item.isWarmSlot'), isTrue,
-        reason: 'warm slot must request a persistently mounted WebView');
+    expect(
+      base.contains('keepWebViewWarm: item.isWarmSlot'),
+      isTrue,
+      reason: 'warm slot must request a persistently mounted WebView',
+    );
     // base_source_page seeds the warm slot on open via the shared controller.
-    expect(base.contains('_popup.seedWarmSlot('), isTrue,
-        reason: 'a persistent warm slot must be seeded via the controller');
+    expect(
+      base.contains('_popup.seedWarmSlot('),
+      isTrue,
+      reason: 'a persistent warm slot must be seeded via the controller',
+    );
     // prunePopupStack preserves the warm slot instead of discarding it
     // (delegated to the controller's pruneToWarmSlot).
-    expect(base.contains('pruneToWarmSlot()'), isTrue,
-        reason: 'prunePopupStack(0) must preserve the warm slot');
-    expect(base.contains('first.isWarmSlot'), isTrue,
-        reason: 'warm-slot reuse condition keys off isWarmSlot');
+    expect(
+      base.contains('pruneToWarmSlot()'),
+      isTrue,
+      reason: 'prunePopupStack(0) must preserve the warm slot',
+    );
+    expect(
+      base.contains('first.isWarmSlot'),
+      isTrue,
+      reason: 'warm-slot reuse condition keys off isWarmSlot',
+    );
     // BUG-2588: the popup layer keeps the warm slot's WebView mounted for EVERY
     // result state (seed empty / searching / real empty). A completed real
     // empty lookup must NOT unmount it (that tore down WebView2 synchronously
     // on the platform thread mid-lookup and lost the prewarm); the blank warm
     // shell is hidden by an opaque no-results cover instead.
     expect(
-        layer
-            .contains('hasRenderableResults || isSearching || keepWebViewWarm'),
-        isTrue,
-        reason:
-            'keepWebViewWarm must keep the WebView mounted regardless of result');
+      layer.contains('hasRenderableResults || isSearching || keepWebViewWarm'),
+      isTrue,
+      reason:
+          'keepWebViewWarm must keep the WebView mounted regardless of result',
+    );
     // 加载盖板（FushiDeferredLoading）常驻在树里，真实空结果的盖板是它之后的
     // 独立 if（两者不会同时成立：isRealEmptyResult 要求查询已结束）。
-    expect(layer.contains('if (isRealEmptyResult)'), isTrue,
-        reason:
-            'a real empty lookup on the warm slot must be covered, not unmounted');
+    expect(
+      layer.contains('if (isRealEmptyResult)'),
+      isTrue,
+      reason:
+          'a real empty lookup on the warm slot must be covered, not unmounted',
+    );
   });
 }

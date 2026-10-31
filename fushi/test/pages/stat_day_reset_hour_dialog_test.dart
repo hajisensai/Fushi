@@ -32,12 +32,15 @@ void main() {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_day_reset_dialog_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_day_reset_dialog_',
+    );
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir);
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      );
     return (db, appModel, tmpDir);
   }
 
@@ -91,8 +94,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('01:00'), findsOneWidget);
     expect(appModel.statDayResetHour, 1);
-    expect(FushiDatabase.statDayResetHour, 1,
-        reason: '弹窗写穿必须走 AppModel.setStatDayResetHour，镜像到 DB 静态量');
+    expect(
+      FushiDatabase.statDayResetHour,
+      1,
+      reason: '弹窗写穿必须走 AppModel.setStatDayResetHour，镜像到 DB 静态量',
+    );
 
     // 真落库：新建仓储重读同一个 DB 得到同一值。
     final PreferencesRepository reread = PreferencesRepository(db);
@@ -111,8 +117,9 @@ void main() {
     expect(appModel.statDayResetHour, 0);
   });
 
-  testWidgets('opens through showStatSettingsDialog without layout errors',
-      (WidgetTester tester) async {
+  testWidgets('opens through showStatSettingsDialog without layout errors', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, AppModel appModel, Directory tmpDir) =
         await harness();
     addTearDown(() async {
@@ -184,8 +191,11 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull,
-        reason: '定宽 480 的内容在 360dp 窄屏必须被对话框约束夹住而不是溢出');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '定宽 480 的内容在 360dp 窄屏必须被对话框约束夹住而不是溢出',
+    );
     expect(find.text('00:00'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
@@ -193,9 +203,7 @@ void main() {
     expect(find.text('01:00'), findsOneWidget);
   });
 
-  testWidgets('清空统计：有 tab 设置时出现，点了先关弹窗再交给 tab', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('清空统计：有 tab 设置时出现，点了先关弹窗再交给 tab', (WidgetTester tester) async {
     final (FushiDatabase db, AppModel appModel, Directory tmpDir) =
         await harness();
     addTearDown(() async {
@@ -229,8 +237,9 @@ void main() {
       findsOneWidget,
       reason: '当前 Profile 从页头副标题挪进统计设置',
     );
-    final Finder clear =
-        find.byKey(const ValueKey<String>('stat-settings-clear-all'));
+    final Finder clear = find.byKey(
+      const ValueKey<String>('stat-settings-clear-all'),
+    );
     await tester.ensureVisible(clear);
     await tester.pumpAndSettle();
     await tester.tap(clear);
@@ -246,8 +255,7 @@ void main() {
     expect(center, contains('trailing: StatRangeActions('));
     expect(center, contains('settings: _statSettings,'));
     expect(center, isNot(contains('actions:')), reason: '页头不再有动作按钮');
-    expect(center, contains('headerTitle: tabBar,'),
-        reason: '页签在页头第一行、与返回键同排');
+    expect(center, contains('headerTitle: tabBar,'), reason: '页签在页头第一行、与返回键同排');
     for (final String gone in <String>[
       'Icons.flag_outlined',
       't.stat_refresh',
@@ -261,8 +269,11 @@ void main() {
     final String reading = File(
       'lib/src/settings/settings_schema_reading.dart',
     ).readAsStringSync();
-    expect(reading, isNot(contains("id: 'reading.stats_day_reset_hour'")),
-        reason: '是挪走不是复制：阅读设置里不再有「今日从几点开始」');
+    expect(
+      reading,
+      isNot(contains("id: 'reading.stats_day_reset_hour'")),
+      reason: '是挪走不是复制：阅读设置里不再有「今日从几点开始」',
+    );
     expect(reading, isNot(contains('setStatDayResetHour(')));
   });
 }

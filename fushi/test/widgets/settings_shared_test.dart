@@ -48,8 +48,9 @@ String _formatEm(double value) => '${value.toStringAsFixed(1)}em';
 
 void main() {
   test('settings shared chrome uses design token radii and typography', () {
-    final String source = File('lib/src/utils/components/settings_shared.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/utils/components/settings_shared.dart',
+    ).readAsStringSync();
 
     expect(source, contains('tokens.radii.groupRadius'));
     expect(source, contains('tokens.radii.controlRadius'));
@@ -60,16 +61,22 @@ void main() {
     expect(source, isNot(contains('fontSize: 16')));
   });
 
-  test('settings sections can opt into putting the title inside the surface',
-      () {
-    final String source = File('lib/src/utils/components/settings_shared.dart')
-        .readAsStringSync();
+  test(
+    'settings sections can opt into putting the title inside the surface',
+    () {
+      final String source = File(
+        'lib/src/utils/components/settings_shared.dart',
+      ).readAsStringSync();
 
-    expect(source, contains('class AdaptiveSettingsSurface'),
-        reason: 'shared settings surfaces should be reusable beyond row lists');
-    expect(source, contains('enum SettingsSectionTitlePlacement'));
-    expect(source, contains('SettingsSectionTitlePlacement.inside'));
-  });
+      expect(
+        source,
+        contains('class AdaptiveSettingsSurface'),
+        reason: 'shared settings surfaces should be reusable beyond row lists',
+      );
+      expect(source, contains('enum SettingsSectionTitlePlacement'));
+      expect(source, contains('SettingsSectionTitlePlacement.inside'));
+    },
+  );
 
   testWidgets('switch rows use Material switch on Android', (tester) async {
     await tester.pumpWidget(
@@ -97,8 +104,9 @@ void main() {
     expect(find.byType(CupertinoSwitch), findsNothing);
   });
 
-  testWidgets('Material settings sections use shared MD3 card shell',
-      (tester) async {
+  testWidgets('Material settings sections use shared MD3 card shell', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.android,
@@ -132,53 +140,59 @@ void main() {
   // 分组标题（含 titlePlacement.inside）是组上方的组头，不再塞进行卡里；只有
   // 可折叠分组的折叠头自己是第一张分段卡。
   testWidgets(
-      'Material contained section title heads the segmented group above the '
-      'row cards', (tester) async {
-    await tester.pumpWidget(
-      _buildHarness(
-        platform: TargetPlatform.android,
-        child: Scaffold(
-          body: AdaptiveSettingsSection(
-            title: 'Behavior',
-            titlePlacement: SettingsSectionTitlePlacement.inside,
-            children: [
-              AdaptiveSettingsSwitchRow(
-                title: 'Highlight on tap',
-                value: true,
-                onChanged: (_) {},
-              ),
-            ],
+    'Material contained section title heads the segmented group above the '
+    'row cards',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildHarness(
+          platform: TargetPlatform.android,
+          child: Scaffold(
+            body: AdaptiveSettingsSection(
+              title: 'Behavior',
+              titlePlacement: SettingsSectionTitlePlacement.inside,
+              children: [
+                AdaptiveSettingsSwitchRow(
+                  title: 'Highlight on tap',
+                  value: true,
+                  onChanged: (_) {},
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.byType(FushiCard), findsOneWidget,
-        reason: 'one row → one segment card');
-    expect(
-      find.ancestor(
-        of: find.text('Behavior'),
-        matching: find.byType(FushiCard),
-      ),
-      findsNothing,
-      reason: 'the group title is a header above the cards',
-    );
-    expect(
-      find.ancestor(
-        of: find.text('Highlight on tap'),
-        matching: find.byType(FushiCard),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      tester.getRect(find.text('Behavior')).bottom,
-      lessThanOrEqualTo(tester.getRect(find.byType(FushiCard)).top),
-      reason: 'the title sits directly above the segmented group',
-    );
-  });
+      expect(
+        find.byType(FushiCard),
+        findsOneWidget,
+        reason: 'one row → one segment card',
+      );
+      expect(
+        find.ancestor(
+          of: find.text('Behavior'),
+          matching: find.byType(FushiCard),
+        ),
+        findsNothing,
+        reason: 'the group title is a header above the cards',
+      );
+      expect(
+        find.ancestor(
+          of: find.text('Highlight on tap'),
+          matching: find.byType(FushiCard),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getRect(find.text('Behavior')).bottom,
+        lessThanOrEqualTo(tester.getRect(find.byType(FushiCard)).top),
+        reason: 'the title sits directly above the segmented group',
+      );
+    },
+  );
 
-  testWidgets('Material setting leading icons use shared MD3 badge shell',
-      (tester) async {
+  testWidgets('Material setting leading icons use shared MD3 badge shell', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.android,
@@ -201,8 +215,9 @@ void main() {
     expect(find.byIcon(Icons.tune_outlined), findsOneWidget);
   });
 
-  testWidgets('leaf setting rows omit leading icons by default',
-      (tester) async {
+  testWidgets('leaf setting rows omit leading icons by default', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.android,
@@ -311,8 +326,9 @@ void main() {
     expect(find.text('Done'), findsNothing);
   });
 
-  testWidgets('segmented rows use Material segmented button on Android',
-      (tester) async {
+  testWidgets('segmented rows use Material segmented button on Android', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.android,
@@ -325,11 +341,20 @@ void main() {
                   title: 'Spread mode',
                   segments: const [
                     ButtonSegment(
-                        value: 'off', label: Text('Off'), tooltip: 'Off'),
+                      value: 'off',
+                      label: Text('Off'),
+                      tooltip: 'Off',
+                    ),
                     ButtonSegment(
-                        value: 'on', label: Text('On'), tooltip: 'On'),
+                      value: 'on',
+                      label: Text('On'),
+                      tooltip: 'On',
+                    ),
                     ButtonSegment(
-                        value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
+                      value: 'auto',
+                      label: Text('Auto'),
+                      tooltip: 'Auto',
+                    ),
                   ],
                   selected: 'auto',
                   onChanged: (_) {},
@@ -341,8 +366,10 @@ void main() {
       ),
     );
 
-    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsOneWidget);
+    expect(
+      find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+      findsOneWidget,
+    );
     expect(
       find.byWidgetPredicate(
         (widget) => widget is CupertinoSlidingSegmentedControl,
@@ -351,8 +378,9 @@ void main() {
     );
   });
 
-  testWidgets('segmented rows use Cupertino segmented control on iOS',
-      (tester) async {
+  testWidgets('segmented rows use Cupertino segmented control on iOS', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.iOS,
@@ -366,11 +394,20 @@ void main() {
                   title: 'Spread mode',
                   segments: const [
                     ButtonSegment(
-                        value: 'off', label: Text('Off'), tooltip: 'Off'),
+                      value: 'off',
+                      label: Text('Off'),
+                      tooltip: 'Off',
+                    ),
                     ButtonSegment(
-                        value: 'on', label: Text('On'), tooltip: 'On'),
+                      value: 'on',
+                      label: Text('On'),
+                      tooltip: 'On',
+                    ),
                     ButtonSegment(
-                        value: 'auto', label: Text('Auto'), tooltip: 'Auto'),
+                      value: 'auto',
+                      label: Text('Auto'),
+                      tooltip: 'Auto',
+                    ),
                   ],
                   selected: 'auto',
                   onChanged: (_) {},
@@ -388,8 +425,10 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsNothing);
+    expect(
+      find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+      findsNothing,
+    );
   });
 
   testWidgets('picker rows use Material dropdown on Android', (tester) async {
@@ -409,10 +448,7 @@ void main() {
                       value: 'default',
                       label: 'Default',
                     ),
-                    AdaptiveSettingsPickerOption(
-                      value: 'news',
-                      label: 'News',
-                    ),
+                    AdaptiveSettingsPickerOption(value: 'news', label: 'News'),
                   ],
                   onChanged: (_) {},
                 ),
@@ -428,105 +464,111 @@ void main() {
   });
 
   testWidgets(
-      'CJK long labels at 2x scale keep switch segmented slider and picker rows '
-      'inside the settings surface', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 760));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    'CJK long labels at 2x scale keep switch segmented slider and picker rows '
+    'inside the settings surface',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 760));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(
-      _buildHarness(
-        platform: TargetPlatform.android,
-        textScaler: const TextScaler.linear(2),
-        child: Scaffold(
-          body: ListView(
-            children: [
-              Center(
-                child: SizedBox(
-                  width: 320,
-                  child: AdaptiveSettingsSection(
-                    title: '表示と操作',
-                    children: [
-                      AdaptiveSettingsSwitchRow(
-                        title: '辞書ポップアップを開いたときに現在の単語を自動的に読み上げる',
-                        subtitle: '長い日本語の説明文でもタイトルと副題は決めた行数で収まり、右端のスイッチを押し出さない',
-                        value: true,
-                        onChanged: (_) {},
-                      ),
-                      AdaptiveSettingsSegmentedRow<String>(
-                        title: '閱讀方向和雙頁顯示模式',
-                        subtitle: '選項文字很長時預設下置，必要時水平捲動',
-                        segments: const [
-                          ButtonSegment<String>(
-                            value: 'auto',
-                            label: Text('自動判定'),
-                          ),
-                          ButtonSegment<String>(
-                            value: 'vertical',
-                            label: Text('縦書き優先'),
-                          ),
-                          ButtonSegment<String>(
-                            value: 'spread',
-                            label: Text('見開きページ'),
-                          ),
-                        ],
-                        selected: 'auto',
-                        onChanged: (_) {},
-                      ),
-                      AdaptiveSettingsSliderRow(
-                        title: 'インターフェイスの表示倍率',
-                        subtitle: '大きい文字でもスライダーは下段で全幅を使う',
-                        value: 1.2,
-                        min: 0.5,
-                        max: 2,
-                        divisions: 15,
-                        label: '120%',
-                        onChanged: (_) {},
-                      ),
-                      AdaptiveSettingsPickerRow<String>(
-                        title: '既定の単語帳',
-                        subtitle: '短い選択肢は行内ドロップダウンのまま親幅に合わせて縮む',
-                        selected: 'deck_a',
-                        options: const [
-                          AdaptiveSettingsPickerOption<String>(
-                            value: 'deck_a',
-                            label: '日本語学習・長文カード',
-                          ),
-                          AdaptiveSettingsPickerOption<String>(
-                            value: 'deck_b',
-                            label: '読書メモ',
-                          ),
-                        ],
-                        onChanged: (_) {},
-                      ),
-                    ],
+      await tester.pumpWidget(
+        _buildHarness(
+          platform: TargetPlatform.android,
+          textScaler: const TextScaler.linear(2),
+          child: Scaffold(
+            body: ListView(
+              children: [
+                Center(
+                  child: SizedBox(
+                    width: 320,
+                    child: AdaptiveSettingsSection(
+                      title: '表示と操作',
+                      children: [
+                        AdaptiveSettingsSwitchRow(
+                          title: '辞書ポップアップを開いたときに現在の単語を自動的に読み上げる',
+                          subtitle:
+                              '長い日本語の説明文でもタイトルと副題は決めた行数で収まり、右端のスイッチを押し出さない',
+                          value: true,
+                          onChanged: (_) {},
+                        ),
+                        AdaptiveSettingsSegmentedRow<String>(
+                          title: '閱讀方向和雙頁顯示模式',
+                          subtitle: '選項文字很長時預設下置，必要時水平捲動',
+                          segments: const [
+                            ButtonSegment<String>(
+                              value: 'auto',
+                              label: Text('自動判定'),
+                            ),
+                            ButtonSegment<String>(
+                              value: 'vertical',
+                              label: Text('縦書き優先'),
+                            ),
+                            ButtonSegment<String>(
+                              value: 'spread',
+                              label: Text('見開きページ'),
+                            ),
+                          ],
+                          selected: 'auto',
+                          onChanged: (_) {},
+                        ),
+                        AdaptiveSettingsSliderRow(
+                          title: 'インターフェイスの表示倍率',
+                          subtitle: '大きい文字でもスライダーは下段で全幅を使う',
+                          value: 1.2,
+                          min: 0.5,
+                          max: 2,
+                          divisions: 15,
+                          label: '120%',
+                          onChanged: (_) {},
+                        ),
+                        AdaptiveSettingsPickerRow<String>(
+                          title: '既定の単語帳',
+                          subtitle: '短い選択肢は行内ドロップダウンのまま親幅に合わせて縮む',
+                          selected: 'deck_a',
+                          options: const [
+                            AdaptiveSettingsPickerOption<String>(
+                              value: 'deck_a',
+                              label: '日本語学習・長文カード',
+                            ),
+                            AdaptiveSettingsPickerOption<String>(
+                              value: 'deck_b',
+                              label: '読書メモ',
+                            ),
+                          ],
+                          onChanged: (_) {},
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(
-      tester.takeException(),
-      isNull,
-      reason:
-          'settings rows must not throw RenderFlex overflow with CJK text at 2x',
-    );
-    expect(find.byType(Switch), findsOneWidget);
-    // 长 CJK 选项在 2x 下放不进行宽 55%：分段行按唯一判据
-    // settingsChoiceUsesSegments 退回菜单行（当前值写进说明行），不溢出。
-    expect(find.byType(SettingsChoiceMenuRow), findsOneWidget);
-    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsNothing);
-    expect(find.byType(Slider), findsOneWidget);
-    expect(find.byType(DropdownMenu<int>), findsOneWidget);
-  });
+      expect(
+        tester.takeException(),
+        isNull,
+        reason:
+            'settings rows must not throw RenderFlex overflow with CJK text at 2x',
+      );
+      expect(find.byType(Switch), findsOneWidget);
+      // 长 CJK 选项在 2x 下放不进行宽 55%：分段行按唯一判据
+      // settingsChoiceUsesSegments 退回菜单行（当前值写进说明行），不溢出。
+      expect(find.byType(SettingsChoiceMenuRow), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing,
+      );
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.byType(DropdownMenu<int>), findsOneWidget);
+    },
+  );
 
-  testWidgets('narrow non-flex trailing rows stack without overflow',
-      (tester) async {
+  testWidgets('narrow non-flex trailing rows stack without overflow', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(320, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -619,58 +661,61 @@ void main() {
   });
 
   testWidgets(
-      'normal-width switch rows stay horizontal at 1x scale (no spurious stack)',
-      (tester) async {
-    // Regression guard (TODO-599 / BUG-340): a fixed `maxWidth < 360` auto-stack
-    // wrongly pushed the trailing control below the label on nearly every phone
-    // row at default text scale. At 1x a label + switch must stay side by side
-    // for common settings-row widths (360 and 400).
-    for (final double width in <double>[360, 400]) {
-      await tester.binding.setSurfaceSize(Size(width, 700));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+    'normal-width switch rows stay horizontal at 1x scale (no spurious stack)',
+    (tester) async {
+      // Regression guard (TODO-599 / BUG-340): a fixed `maxWidth < 360` auto-stack
+      // wrongly pushed the trailing control below the label on nearly every phone
+      // row at default text scale. At 1x a label + switch must stay side by side
+      // for common settings-row widths (360 and 400).
+      for (final double width in <double>[360, 400]) {
+        await tester.binding.setSurfaceSize(Size(width, 700));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(
-        _buildHarness(
-          platform: TargetPlatform.android,
-          child: Scaffold(
-            body: SizedBox(
-              width: width,
-              child: AdaptiveSettingsSection(
-                children: [
-                  AdaptiveSettingsSwitchRow(
-                    title: 'Highlight on tap',
-                    value: true,
-                    onChanged: (_) {},
-                  ),
-                ],
+        await tester.pumpWidget(
+          _buildHarness(
+            platform: TargetPlatform.android,
+            child: Scaffold(
+              body: SizedBox(
+                width: width,
+                child: AdaptiveSettingsSection(
+                  children: [
+                    AdaptiveSettingsSwitchRow(
+                      title: 'Highlight on tap',
+                      value: true,
+                      onChanged: (_) {},
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      expect(tester.takeException(), isNull);
-      final Rect label = tester.getRect(find.text('Highlight on tap'));
-      final Rect control = tester.getRect(find.byType(Switch));
-      expect(
-        control.left,
-        greaterThanOrEqualTo(label.right - 0.5),
-        reason:
-            'at width=$width / 1x the switch should sit to the RIGHT of the '
-            'label (horizontal row), not stacked below it',
-      );
-      expect(
-        control.top,
-        lessThan(label.bottom),
-        reason: 'at width=$width / 1x the switch must share the label row '
-            '(vertically overlapping), not be pushed onto a new line',
-      );
-    }
-  });
+        expect(tester.takeException(), isNull);
+        final Rect label = tester.getRect(find.text('Highlight on tap'));
+        final Rect control = tester.getRect(find.byType(Switch));
+        expect(
+          control.left,
+          greaterThanOrEqualTo(label.right - 0.5),
+          reason:
+              'at width=$width / 1x the switch should sit to the RIGHT of the '
+              'label (horizontal row), not stacked below it',
+        );
+        expect(
+          control.top,
+          lessThan(label.bottom),
+          reason:
+              'at width=$width / 1x the switch must share the label row '
+              '(vertically overlapping), not be pushed onto a new line',
+        );
+      }
+    },
+  );
 
-  testWidgets('truly narrow switch rows stack the control below the label',
-      (tester) async {
+  testWidgets('truly narrow switch rows stack the control below the label', (
+    tester,
+  ) async {
     // The fix must STILL stack when the row is genuinely too narrow to host the
     // label and control side by side (Never break userspace: the responsive
     // stacking that motivated d95923c6c must keep working at extreme widths).
@@ -729,10 +774,7 @@ void main() {
                       value: 'default',
                       label: 'Default',
                     ),
-                    AdaptiveSettingsPickerOption(
-                      value: 'news',
-                      label: 'News',
-                    ),
+                    AdaptiveSettingsPickerOption(value: 'news', label: 'News'),
                   ],
                   onChanged: (value) => selected = value,
                 ),
@@ -757,8 +799,9 @@ void main() {
     expect(selected, 'news');
   });
 
-  testWidgets('desktop picker uses a gamepad-enterable MenuAnchor dropdown',
-      (tester) async {
+  testWidgets('desktop picker uses a gamepad-enterable MenuAnchor dropdown', (
+    tester,
+  ) async {
     String selected = 'news';
     await tester.pumpWidget(
       _buildHarness(
@@ -773,7 +816,9 @@ void main() {
                   selected: selected,
                   options: const [
                     AdaptiveSettingsPickerOption(
-                        value: 'default', label: 'Default'),
+                      value: 'default',
+                      label: 'Default',
+                    ),
                     AdaptiveSettingsPickerOption(value: 'news', label: 'News'),
                     AdaptiveSettingsPickerOption(value: 'work', label: 'Work'),
                   ],
@@ -798,10 +843,12 @@ void main() {
 
     // The selected entry autofocuses so a gamepad lands INSIDE the menu; others
     // do not. (autofocus is what drives focus into the menu on open.)
-    final MenuItemButton newsItem =
-        tester.widget(find.widgetWithText(MenuItemButton, 'News'));
-    final MenuItemButton defaultItem =
-        tester.widget(find.widgetWithText(MenuItemButton, 'Default'));
+    final MenuItemButton newsItem = tester.widget(
+      find.widgetWithText(MenuItemButton, 'News'),
+    );
+    final MenuItemButton defaultItem = tester.widget(
+      find.widgetWithText(MenuItemButton, 'Default'),
+    );
     expect(newsItem.autofocus, isTrue);
     expect(defaultItem.autofocus, isFalse);
 
@@ -816,52 +863,57 @@ void main() {
     // Gamepad B IS consumed (returns true so the GamepadService skips maybePop —
     // i.e. it must NOT pop the whole settings page) and closes the menu,
     // returning focus to the trigger.
-    final Object? bResult =
-        Actions.invoke(itemCtx, const GamepadButtonIntent(GamepadButton.b));
+    final Object? bResult = Actions.invoke(
+      itemCtx,
+      const GamepadButtonIntent(GamepadButton.b),
+    );
     expect(bResult, isTrue);
     await tester.pumpAndSettle();
     expect(find.widgetWithText(MenuItemButton, 'Work'), findsNothing);
   });
 
   testWidgets(
-      'collapsible section header title is vertically centered with its chevron '
-      '(BUG-886)', (tester) async {
-    // Regression guard (BUG-886): the collapsible header reused the label-above-
-    // rows padding (top-heavy 10/4), so the title text sat ~3px below the chevron
-    // (which is center-aligned in the header Row). The interactive header must use
-    // symmetric vertical padding so title and chevron share one vertical center.
-    await tester.pumpWidget(
-      _buildHarness(
-        platform: TargetPlatform.android,
-        child: Scaffold(
-          body: AdaptiveSettingsSection(
-            title: 'Local backup',
-            titlePlacement: SettingsSectionTitlePlacement.inside,
-            collapsible: true,
-            children: [
-              AdaptiveSettingsSwitchRow(
-                title: 'Highlight on tap',
-                value: true,
-                onChanged: (_) {},
-              ),
-            ],
+    'collapsible section header title is vertically centered with its chevron '
+    '(BUG-886)',
+    (tester) async {
+      // Regression guard (BUG-886): the collapsible header reused the label-above-
+      // rows padding (top-heavy 10/4), so the title text sat ~3px below the chevron
+      // (which is center-aligned in the header Row). The interactive header must use
+      // symmetric vertical padding so title and chevron share one vertical center.
+      await tester.pumpWidget(
+        _buildHarness(
+          platform: TargetPlatform.android,
+          child: Scaffold(
+            body: AdaptiveSettingsSection(
+              title: 'Local backup',
+              titlePlacement: SettingsSectionTitlePlacement.inside,
+              collapsible: true,
+              children: [
+                AdaptiveSettingsSwitchRow(
+                  title: 'Highlight on tap',
+                  value: true,
+                  onChanged: (_) {},
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    // The collapsible header renders the folding chevron alongside the title.
-    expect(find.byIcon(Icons.expand_more), findsOneWidget);
-    final double titleCenter = tester.getCenter(find.text('Local backup')).dy;
-    final double chevronCenter =
-        tester.getCenter(find.byIcon(Icons.expand_more)).dy;
-    expect(
-      (titleCenter - chevronCenter).abs(),
-      lessThan(1.5),
-      reason:
-          'collapsible header title and chevron must be on the same vertical '
-          'center; a top-heavy label padding would drop the title below it',
-    );
-  });
+      // The collapsible header renders the folding chevron alongside the title.
+      expect(find.byIcon(Icons.expand_more), findsOneWidget);
+      final double titleCenter = tester.getCenter(find.text('Local backup')).dy;
+      final double chevronCenter = tester
+          .getCenter(find.byIcon(Icons.expand_more))
+          .dy;
+      expect(
+        (titleCenter - chevronCenter).abs(),
+        lessThan(1.5),
+        reason:
+            'collapsible header title and chevron must be on the same vertical '
+            'center; a top-heavy label padding would drop the title below it',
+      );
+    },
+  );
 }

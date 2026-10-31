@@ -15,39 +15,53 @@ void main() {
     ).readAsStringSync();
   });
 
-  test('section restore completion replays unchanged current cue highlight',
-      () {
-    final String restore = _functionSource(
-      controllerSource,
-      'void notifySectionRestoreCompleted({',
-      'void cancelChapterTransition()',
-    );
-    expect(
-      restore,
-      contains('_updateCurrentCue(_player.position.inMilliseconds, '
-          'forceNotify: success)'),
-      reason: 'after reader restore, the same current cue must notify again so '
-          'the WebView can replay highlight after cue maps are rebuilt',
-    );
+  test(
+    'section restore completion replays unchanged current cue highlight',
+    () {
+      final String restore = _functionSource(
+        controllerSource,
+        'void notifySectionRestoreCompleted({',
+        'void cancelChapterTransition()',
+      );
+      expect(
+        restore,
+        contains(
+          '_updateCurrentCue(_player.position.inMilliseconds, '
+          'forceNotify: success)',
+        ),
+        reason:
+            'after reader restore, the same current cue must notify again so '
+            'the WebView can replay highlight after cue maps are rebuilt',
+      );
 
-    final String update = _functionSource(
-      controllerSource,
-      'void _updateCurrentCue(int posMs, {bool forceNotify = false})',
-      'bool get shouldRevealCurrentCue',
-    );
-    final int sameCueIndex =
-        update.indexOf('if (chapterIdx == _currentCueIndex)');
-    final int forceNotifyIndex =
-        update.indexOf('if (forceNotify)', sameCueIndex);
-    final int returnIndex = update.indexOf('return;', sameCueIndex);
-    expect(sameCueIndex, isNonNegative);
-    expect(forceNotifyIndex, greaterThan(sameCueIndex));
-    expect(forceNotifyIndex, lessThan(returnIndex),
-        reason: 'same-cue restore replay must happen before the unchanged-cue '
-            'early return');
-    expect(update.substring(forceNotifyIndex, returnIndex),
-        contains('notifyListeners()'));
-  });
+      final String update = _functionSource(
+        controllerSource,
+        'void _updateCurrentCue(int posMs, {bool forceNotify = false})',
+        'bool get shouldRevealCurrentCue',
+      );
+      final int sameCueIndex = update.indexOf(
+        'if (chapterIdx == _currentCueIndex)',
+      );
+      final int forceNotifyIndex = update.indexOf(
+        'if (forceNotify)',
+        sameCueIndex,
+      );
+      final int returnIndex = update.indexOf('return;', sameCueIndex);
+      expect(sameCueIndex, isNonNegative);
+      expect(forceNotifyIndex, greaterThan(sameCueIndex));
+      expect(
+        forceNotifyIndex,
+        lessThan(returnIndex),
+        reason:
+            'same-cue restore replay must happen before the unchanged-cue '
+            'early return',
+      );
+      expect(
+        update.substring(forceNotifyIndex, returnIndex),
+        contains('notifyListeners()'),
+      );
+    },
+  );
 
   test('follow audio controls reveal only, not whether cue is highlighted', () {
     final String onCueChanged = _functionSource(
@@ -64,19 +78,29 @@ void main() {
     // _onCueChanged 里有多处 AudiobookBridge.highlight(（跨章清空高亮的裸调用在前），
     // 真正带 cue 的逐句高亮调用在最后——用 lastIndexOf 定位它。
     final int hlIndex = onCueChanged.lastIndexOf('AudiobookBridge.highlight(');
-    expect(hlIndex, isNonNegative,
-        reason: 'highlight must be called even when follow audio makes reveal '
-            'false');
+    expect(
+      hlIndex,
+      isNonNegative,
+      reason:
+          'highlight must be called even when follow audio makes reveal '
+          'false',
+    );
     final int hlEnd = (hlIndex + 200).clamp(0, onCueChanged.length);
     final String hlCall = onCueChanged.substring(hlIndex, hlEnd);
     expect(hlCall, contains('cue: cue'), reason: 'highlight 仍须传当前 cue');
-    expect(hlCall, contains('reveal: reveal'),
-        reason:
-            'reveal 由 forceReveal||shouldRevealCurrentCue 决定，仍透传给 highlight');
+    expect(
+      hlCall,
+      contains('reveal: reveal'),
+      reason: 'reveal 由 forceReveal||shouldRevealCurrentCue 决定，仍透传给 highlight',
+    );
     expect(
       onCueChanged,
-      isNot(contains('if (controller.shouldRevealCurrentCue) {\n'
-          '      AudiobookBridge.highlight')),
+      isNot(
+        contains(
+          'if (controller.shouldRevealCurrentCue) {\n'
+          '      AudiobookBridge.highlight',
+        ),
+      ),
       reason: 'follow audio must not gate the highlight call itself',
     );
   });
@@ -94,16 +118,28 @@ void main() {
     final int hlIndex = onCueChanged.lastIndexOf('AudiobookBridge.highlight(');
     final String tail = onCueChanged.substring(hlIndex);
     final int syncIndex = tail.indexOf('_syncPositionFromCurrentCue()');
-    expect(syncIndex, isNonNegative,
-        reason: '末尾仍须有位置同步（reveal 为真时用 cue 落库，不回归 724）');
+    expect(
+      syncIndex,
+      isNonNegative,
+      reason: '末尾仍须有位置同步（reveal 为真时用 cue 落库，不回归 724）',
+    );
     final int guardIndex = tail.indexOf('if (reveal)');
-    expect(guardIndex, isNonNegative,
-        reason: 'cue 位置覆盖必须门控在 reveal 内（被动高亮不得覆盖用户滚动位置）');
-    expect(guardIndex, lessThan(syncIndex),
-        reason: 'if (reveal) 必须在 _syncPositionFromCurrentCue() 之前包住它');
+    expect(
+      guardIndex,
+      isNonNegative,
+      reason: 'cue 位置覆盖必须门控在 reveal 内（被动高亮不得覆盖用户滚动位置）',
+    );
+    expect(
+      guardIndex,
+      lessThan(syncIndex),
+      reason: 'if (reveal) 必须在 _syncPositionFromCurrentCue() 之前包住它',
+    );
     // 末尾的位置同步不得是脱离 reveal 门的裸调用。
-    expect(tail, isNot(contains('    );\n    _syncPositionFromCurrentCue();')),
-        reason: '位置同步不得在 highlight 之后裸调用（必须在 if (reveal) 块内）');
+    expect(
+      tail,
+      isNot(contains('    );\n    _syncPositionFromCurrentCue();')),
+      reason: '位置同步不得在 highlight 之后裸调用（必须在 if (reveal) 块内）',
+    );
   });
 }
 

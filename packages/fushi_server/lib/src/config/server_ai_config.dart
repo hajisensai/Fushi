@@ -83,11 +83,20 @@ class ServerAiConfig {
       baseUrl: _text(raw['base_url']),
       model: _text(raw['model']),
       apiKey: _text(raw['api_key']),
-      reasoningEffort: AiReasoningEffort.fromStorageKey(_text(raw['reasoning_effort'])),
-      allowInsecureHttp: raw['allow_insecure_http'] == true || '${raw['allow_insecure_http']}' == 'true',
-      webKnowledge: raw['web_knowledge'] != false && '${raw['web_knowledge']}' != 'false',
-      libraryOrganize: raw['library_organize'] == true || '${raw['library_organize']}' == 'true',
-      agentForPeers: raw['agent_for_peers'] == true || '${raw['agent_for_peers']}' == 'true',
+      reasoningEffort: AiReasoningEffort.fromStorageKey(
+        _text(raw['reasoning_effort']),
+      ),
+      allowInsecureHttp:
+          raw['allow_insecure_http'] == true ||
+          '${raw['allow_insecure_http']}' == 'true',
+      webKnowledge:
+          raw['web_knowledge'] != false && '${raw['web_knowledge']}' != 'false',
+      libraryOrganize:
+          raw['library_organize'] == true ||
+          '${raw['library_organize']}' == 'true',
+      agentForPeers:
+          raw['agent_for_peers'] == true ||
+          '${raw['agent_for_peers']}' == 'true',
     );
   }
 
@@ -109,7 +118,8 @@ class ServerAiConfig {
   /// 生效的请求地址 / 模型 / 协议（显式配置 > 预设）。
   String get effectiveBaseUrl => baseUrl ?? _preset?.baseUrl ?? '';
   String get effectiveModel => model ?? _preset?.suggestedModel ?? '';
-  AiWireProtocol get effectiveProtocol => protocol ?? _preset?.protocol ?? AiWireProtocol.openAiCompatible;
+  AiWireProtocol get effectiveProtocol =>
+      protocol ?? _preset?.protocol ?? AiWireProtocol.openAiCompatible;
 
   /// 配置本身写错了（未知预设 / 地址非法 / 非 HTTPS 又没放行明文…）；写入口据此
   /// 拒绝整个请求。没错 → null。
@@ -130,22 +140,23 @@ class ServerAiConfig {
     final String? invalid = invalidReason();
     if (invalid != null) return invalid;
     if (effectiveModel.isEmpty) return '缺少 model';
-    if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty) return '缺少 api_key';
+    if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty)
+      return '缺少 api_key';
     return null;
   }
 
   AiProviderConfig _build() => AiProviderConfig(
-        id: kServerAiProviderId,
-        presetId: _preset == null ? kAiCustomPresetId : preset,
-        name: _preset?.displayName ?? 'fushi_server',
-        baseUrl: Uri.tryParse(effectiveBaseUrl) ?? Uri(),
-        apiKey: apiKey ?? '',
-        model: effectiveModel,
-        protocol: effectiveProtocol,
-        reasoningEffort: reasoningEffort,
-        // 本地推理服务（Ollama / LM Studio）的预设地址是 loopback HTTP。
-        allowInsecureHttp: allowInsecureHttp || (_preset?.isLocal ?? false),
-      );
+    id: kServerAiProviderId,
+    presetId: _preset == null ? kAiCustomPresetId : preset,
+    name: _preset?.displayName ?? 'fushi_server',
+    baseUrl: Uri.tryParse(effectiveBaseUrl) ?? Uri(),
+    apiKey: apiKey ?? '',
+    model: effectiveModel,
+    protocol: effectiveProtocol,
+    reasoningEffort: reasoningEffort,
+    // 本地推理服务（Ollama / LM Studio）的预设地址是 loopback HTTP。
+    allowInsecureHttp: allowInsecureHttp || (_preset?.isLocal ?? false),
+  );
 
   /// 能真的发请求的提供商；配错 / 没配全 → null。
   AiProviderConfig? provider() {
@@ -168,19 +179,18 @@ class ServerAiConfig {
     bool? webKnowledge,
     bool? libraryOrganize,
     bool? agentForPeers,
-  }) =>
-      ServerAiConfig(
-        preset: preset ?? this.preset,
-        protocol: clearProtocol ? null : protocol ?? this.protocol,
-        baseUrl: clearBaseUrl ? null : baseUrl ?? this.baseUrl,
-        model: clearModel ? null : model ?? this.model,
-        apiKey: apiKey ?? this.apiKey,
-        reasoningEffort: reasoningEffort ?? this.reasoningEffort,
-        allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-        webKnowledge: webKnowledge ?? this.webKnowledge,
-        libraryOrganize: libraryOrganize ?? this.libraryOrganize,
-        agentForPeers: agentForPeers ?? this.agentForPeers,
-      );
+  }) => ServerAiConfig(
+    preset: preset ?? this.preset,
+    protocol: clearProtocol ? null : protocol ?? this.protocol,
+    baseUrl: clearBaseUrl ? null : baseUrl ?? this.baseUrl,
+    model: clearModel ? null : model ?? this.model,
+    apiKey: apiKey ?? this.apiKey,
+    reasoningEffort: reasoningEffort ?? this.reasoningEffort,
+    allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+    webKnowledge: webKnowledge ?? this.webKnowledge,
+    libraryOrganize: libraryOrganize ?? this.libraryOrganize,
+    agentForPeers: agentForPeers ?? this.agentForPeers,
+  );
 
   /// 写进 `ai:` 段（[q] 是 ServerConfig 的 yaml 字符串转义）。
   void writeYaml(StringBuffer b, String Function(String) q) {
@@ -229,7 +239,9 @@ class ServerAiSettings implements AiSettingsSource {
   @override
   List<AiProviderConfig> get aiProviders {
     final AiProviderConfig? provider = _config()?.provider();
-    return provider == null ? const <AiProviderConfig>[] : <AiProviderConfig>[provider];
+    return provider == null
+        ? const <AiProviderConfig>[]
+        : <AiProviderConfig>[provider];
   }
 
   /// 那一家只指派给「AI 下载」「视频字幕 AI 校对」「AI 助手」（远端会话，工具集是
@@ -245,14 +257,17 @@ class ServerAiSettings implements AiSettingsSource {
         AiFeature.acquire: kServerAiProviderId,
         AiFeature.subtitleProofread: kServerAiProviderId,
         AiFeature.agent: kServerAiProviderId,
-        if (config!.libraryOrganize) AiFeature.libraryOrganize: kServerAiProviderId,
+        if (config!.libraryOrganize)
+          AiFeature.libraryOrganize: kServerAiProviderId,
       },
     );
   }
 
   @override
   List<WebKnowledgeSite> get aiWebKnowledgeSites =>
-      _config()?.webKnowledge ?? false ? kBuiltinWebKnowledgeSites : const <WebKnowledgeSite>[];
+      _config()?.webKnowledge ?? false
+      ? kBuiltinWebKnowledgeSites
+      : const <WebKnowledgeSite>[];
 }
 
 /// 扫描后自动 AI 整理库的服务（`ai.library_organize` 打开且提供商能用）；否则 null。

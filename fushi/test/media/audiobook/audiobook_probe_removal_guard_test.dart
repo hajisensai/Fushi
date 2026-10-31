@@ -13,25 +13,40 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String readSource(String relativePath) {
     final File file = File(relativePath);
-    expect(file.existsSync(), isTrue,
-        reason: 'expected source at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected source at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
-  test('audiobook bridge no longer emits [sentence-audio-hl] playback probes',
-      () {
-    final String source =
-        readSource('lib/src/media/audiobook/audiobook_bridge.dart');
-    expect(source, isNot(contains('[sentence-audio-hl]')),
-        reason: 'BUG-914: 播放期逐句高亮的 [sentence-audio-hl] 诊断打点必须移除，'
-            '避免发布版热路径噪声');
-  });
+  test(
+    'audiobook bridge no longer emits [sentence-audio-hl] playback probes',
+    () {
+      final String source = readSource(
+        'lib/src/media/audiobook/audiobook_bridge.dart',
+      );
+      expect(
+        source,
+        isNot(contains('[sentence-audio-hl]')),
+        reason:
+            'BUG-914: 播放期逐句高亮的 [sentence-audio-hl] 诊断打点必须移除，'
+            '避免发布版热路径噪声',
+      );
+    },
+  );
 
   test('audiobook controller no longer emits [hibiki-crossChapter] probes', () {
-    final String source =
-        readSource('lib/src/media/audiobook/audiobook_controller.dart');
-    expect(source, isNot(contains('[hibiki-crossChapter]')),
-        reason: 'BUG-914: _maybeEmitCrossChapter 按句同步热路径的 '
-            '[hibiki-crossChapter] print 必须移除');
+    final String source = readSource(
+      'lib/src/media/audiobook/audiobook_controller.dart',
+    );
+    expect(
+      source,
+      isNot(contains('[hibiki-crossChapter]')),
+      reason:
+          'BUG-914: _maybeEmitCrossChapter 按句同步热路径的 '
+          '[hibiki-crossChapter] print 必须移除',
+    );
   });
 }

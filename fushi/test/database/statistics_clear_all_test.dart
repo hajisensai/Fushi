@@ -17,41 +17,66 @@ Future<FushiDatabase> _openDb() async {
 
 /// 播下阅读域纯统计（4 张统计表 book 行）。
 Future<void> _seedReadingStats(FushiDatabase db) async {
-  await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+  await db.setReadingStatistic(
+    ReadingStatisticsCompanion.insert(
       title: 'A',
       dateKey: '2026-07-05',
       charactersRead: 100,
       readingTimeMs: 6000,
-      lastStatisticModified: 1));
-  await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+      lastStatisticModified: 1,
+    ),
+  );
+  await db.setReadingStatistic(
+    ReadingStatisticsCompanion.insert(
       title: 'B',
       dateKey: '2026-07-06',
       charactersRead: 50,
       readingTimeMs: 3000,
-      lastStatisticModified: 1));
+      lastStatisticModified: 1,
+    ),
+  );
   await db.setReadingHourlyLog(
-      dateKey: '2026-07-05',
-      hour: 10,
-      readingTimeMs: 6000,
-      format: BookFormat.epub.dbValue);
+    dateKey: '2026-07-05',
+    hour: 10,
+    readingTimeMs: 6000,
+    format: BookFormat.epub.dbValue,
+  );
   await db.addLookupCount(
-      bookKey: 'book/A', title: 'A', sourceType: 'book', dateKey: '2026-07-05');
+    bookKey: 'book/A',
+    title: 'A',
+    sourceType: 'book',
+    dateKey: '2026-07-05',
+  );
   await db.addMineCountPerBook(
-      bookKey: 'book/A', title: 'A', sourceType: 'book', dateKey: '2026-07-05');
+    bookKey: 'book/A',
+    title: 'A',
+    sourceType: 'book',
+    dateKey: '2026-07-05',
+  );
   await db.addMiningCount(sourceType: 'book', dateKey: '2026-07-05');
 }
 
 /// 播下视频域纯统计（4 张统计表 video 行）。
 Future<void> _seedVideoStats(FushiDatabase db) async {
-  await db.setVideoWatchStatistic(VideoWatchStatisticsCompanion.insert(
+  await db.setVideoWatchStatistic(
+    VideoWatchStatisticsCompanion.insert(
       title: 'V',
       dateKey: '2026-07-05',
       subtitleChars: 10,
       watchTimeMs: 5000,
-      lastModified: 1));
-  await db.setVideoHourlyLog(dateKey: '2026-07-05', hour: 11, watchTimeMs: 5000);
+      lastModified: 1,
+    ),
+  );
+  await db.setVideoHourlyLog(
+    dateKey: '2026-07-05',
+    hour: 11,
+    watchTimeMs: 5000,
+  );
   await db.addLookupCount(
-      title: 'V', sourceType: 'video', dateKey: '2026-07-05');
+    title: 'V',
+    sourceType: 'video',
+    dateKey: '2026-07-05',
+  );
   await db.addMiningCount(sourceType: 'video', dateKey: '2026-07-05');
 }
 
@@ -63,41 +88,43 @@ Future<void> _seedSegment(
   required String mediaKind,
   required String mediaKey,
   int startAt = 1000,
-}) =>
-    db.upsertStudySegment(StudySegmentsCompanion.insert(
-      uid: FushiDatabase.newStudySegmentUid(),
-      deviceId: 'dev-test',
-      mediaKind: mediaKind,
-      mediaKey: mediaKey,
-      title: mediaKey,
-      startAt: startAt,
-      endAt: startAt + 60000,
-      dateKey: '2026-07-05',
-      hour: 10,
-      updatedAt: startAt + 60000,
-    ));
+}) => db.upsertStudySegment(
+  StudySegmentsCompanion.insert(
+    uid: FushiDatabase.newStudySegmentUid(),
+    deviceId: 'dev-test',
+    mediaKind: mediaKind,
+    mediaKey: mediaKey,
+    title: mediaKey,
+    startAt: startAt,
+    endAt: startAt + 60000,
+    dateKey: '2026-07-05',
+    hour: 10,
+    updatedAt: startAt + 60000,
+  ),
+);
 
 void main() {
   group('clearAllReadingStatistics', () {
-    test(
-        'wipes every book-domain statistic but keeps user content and all '
+    test('wipes every book-domain statistic but keeps user content and all '
         'video-domain statistics', () async {
       final FushiDatabase db = await _openDb();
       await _seedReadingStats(db);
       await _seedVideoStats(db);
       // 用户内容（绝不该被清）。
       await db.addFavoriteWord(
-          expression: '猫',
-          reading: 'ねこ',
-          glossary: 'cat',
-          sourceType: 'book',
-          dateKey: '2026-07-05');
+        expression: '猫',
+        reading: 'ねこ',
+        glossary: 'cat',
+        sourceType: 'book',
+        dateKey: '2026-07-05',
+      );
       await db.addMinedSentence(
-          source: 'book',
-          dateKey: '2026-07-05',
-          expression: '猫',
-          documentTitle: 'A',
-          bookKey: 'book/A');
+        source: 'book',
+        dateKey: '2026-07-05',
+        expression: '猫',
+        documentTitle: 'A',
+        bookKey: 'book/A',
+      );
 
       await db.clearAllReadingStatistics();
 
@@ -114,10 +141,16 @@ void main() {
       expect((await db.getMiningStatisticsBySource('video')).length, 1);
 
       // 用户内容保留。
-      expect((await db.getAllFavoriteWords()).length, 1,
-          reason: 'favorites are user content, not a statistic');
-      expect((await db.getAllMinedSentences()).length, 1,
-          reason: 'mined card history is user content, not a statistic');
+      expect(
+        (await db.getAllFavoriteWords()).length,
+        1,
+        reason: 'favorites are user content, not a statistic',
+      );
+      expect(
+        (await db.getAllMinedSentences()).length,
+        1,
+        reason: 'mined card history is user content, not a statistic',
+      );
     });
 
     test('is a no-op on an empty database (idempotent, no throw)', () async {
@@ -128,67 +161,87 @@ void main() {
     });
 
     test(
-        'v92: also wipes book study_segments, keeps video segments, and writes '
-        'a per-media tombstone (BUG-2215：立碑挡回灌)', () async {
-      final FushiDatabase db = await _openDb();
-      await _seedSegment(db, mediaKind: kActivityMediaBook, mediaKey: 'book/A');
-      await _seedSegment(db, mediaKind: kActivityMediaVideo, mediaKey: 'vid-1');
+      'v92: also wipes book study_segments, keeps video segments, and writes '
+      'a per-media tombstone (BUG-2215：立碑挡回灌)',
+      () async {
+        final FushiDatabase db = await _openDb();
+        await _seedSegment(
+          db,
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'book/A',
+        );
+        await _seedSegment(
+          db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: 'vid-1',
+        );
 
-      await db.clearAllReadingStatistics();
+        await db.clearAllReadingStatistics();
 
-      expect(
+        expect(
           await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
-          isEmpty);
-      expect(
+            mediaKind: kActivityMediaBook,
+            mediaKey: 'book/A',
+          ),
+          isEmpty,
+        );
+        expect(
           await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaVideo, mediaKey: 'vid-1'),
+            mediaKind: kActivityMediaVideo,
+            mediaKey: 'vid-1',
+          ),
           hasLength(1),
-          reason: '清空阅读域不牵连视频域事实');
+          reason: '清空阅读域不牵连视频域事实',
+        );
 
-      // BUG-2215：**必须**逐身份立碑，否则互联 / 云同步下次聚合会把对端持有的
-      // 整批历史回灌，用户「清空全部」等于没清。
-      //
-      // 本条断言此前是 `isEmpty`，理由写的是「逐媒体立碑会永久毒化身份空间」。
-      // 那个担忧对应的是旧墓碑语义（压制该身份的一切段）。现在墓碑只压制
-      // `startAt < deletedAt` 的段（见 `_isStudySegmentTombstoned`），下面那条
-      // 断言就是它的证据——所以「毒化」不再成立，断言随语义一起翻转。
-      final List<StudySegmentTombstoneRow> tombs =
-          await db.getStudySegmentTombstones();
-      expect(tombs.map((StudySegmentTombstoneRow t) => t.mediaKey), <String>[
-        'book/A',
-      ], reason: '清掉的每个身份都要留碑，且不牵连没清的视频域身份');
+        // BUG-2215：**必须**逐身份立碑，否则互联 / 云同步下次聚合会把对端持有的
+        // 整批历史回灌，用户「清空全部」等于没清。
+        //
+        // 本条断言此前是 `isEmpty`，理由写的是「逐媒体立碑会永久毒化身份空间」。
+        // 那个担忧对应的是旧墓碑语义（压制该身份的一切段）。现在墓碑只压制
+        // `startAt < deletedAt` 的段（见 `_isStudySegmentTombstoned`），下面那条
+        // 断言就是它的证据——所以「毒化」不再成立，断言随语义一起翻转。
+        final List<StudySegmentTombstoneRow> tombs = await db
+            .getStudySegmentTombstones();
+        expect(tombs.map((StudySegmentTombstoneRow t) => t.mediaKey), <String>[
+          'book/A',
+        ], reason: '清掉的每个身份都要留碑，且不牵连没清的视频域身份');
 
-      // 立碑不毒化身份空间：碑之后再读同一本书，新段照常存活。
-      final int afterTomb = tombs.single.deletedAt + 1000;
-      await _seedSegment(
-        db,
-        mediaKind: kActivityMediaBook,
-        mediaKey: 'book/A',
-        startAt: afterTomb,
-      );
-      expect(
+        // 立碑不毒化身份空间：碑之后再读同一本书，新段照常存活。
+        final int afterTomb = tombs.single.deletedAt + 1000;
+        await _seedSegment(
+          db,
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'book/A',
+          startAt: afterTomb,
+        );
+        expect(
           await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
+            mediaKind: kActivityMediaBook,
+            mediaKey: 'book/A',
+          ),
           hasLength(1),
-          reason: '墓碑只压制 startAt < deletedAt 的段，之后新开的段必须能存活——'
-              '这正是「立碑不再毒化身份空间」的可执行证据');
-    });
+          reason:
+              '墓碑只压制 startAt < deletedAt 的段，之后新开的段必须能存活——'
+              '这正是「立碑不再毒化身份空间」的可执行证据',
+        );
+      },
+    );
   });
 
   group('clearAllVideoStatistics', () {
-    test(
-        'wipes every video-domain statistic but keeps user content and all '
+    test('wipes every video-domain statistic but keeps user content and all '
         'reading-domain statistics', () async {
       final FushiDatabase db = await _openDb();
       await _seedReadingStats(db);
       await _seedVideoStats(db);
       await db.addFavoriteWord(
-          expression: '犬',
-          reading: 'いぬ',
-          glossary: 'dog',
-          sourceType: 'video',
-          dateKey: '2026-07-05');
+        expression: '犬',
+        reading: 'いぬ',
+        glossary: 'dog',
+        sourceType: 'video',
+        dateKey: '2026-07-05',
+      );
 
       await db.clearAllVideoStatistics();
 
@@ -209,28 +262,46 @@ void main() {
     });
 
     test(
-        'v92: also wipes video study_segments, keeps book segments, and writes '
-        'a per-media tombstone (BUG-2215)', () async {
-      final FushiDatabase db = await _openDb();
-      await _seedSegment(db, mediaKind: kActivityMediaBook, mediaKey: 'book/A');
-      await _seedSegment(db, mediaKind: kActivityMediaVideo, mediaKey: 'vid-1');
+      'v92: also wipes video study_segments, keeps book segments, and writes '
+      'a per-media tombstone (BUG-2215)',
+      () async {
+        final FushiDatabase db = await _openDb();
+        await _seedSegment(
+          db,
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'book/A',
+        );
+        await _seedSegment(
+          db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: 'vid-1',
+        );
 
-      await db.clearAllVideoStatistics();
+        await db.clearAllVideoStatistics();
 
-      expect(
+        expect(
           await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaVideo, mediaKey: 'vid-1'),
-          isEmpty);
-      expect(
+            mediaKind: kActivityMediaVideo,
+            mediaKey: 'vid-1',
+          ),
+          isEmpty,
+        );
+        expect(
           await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
+            mediaKind: kActivityMediaBook,
+            mediaKey: 'book/A',
+          ),
           hasLength(1),
-          reason: '清空视频域不牵连阅读域事实');
-      // 与阅读域对称：清掉的身份留碑挡回灌，没清的阅读域身份不留碑。
-      expect(
-          (await db.getStudySegmentTombstones())
-              .map((StudySegmentTombstoneRow t) => t.mediaKey),
-          <String>['vid-1']);
-    });
+          reason: '清空视频域不牵连阅读域事实',
+        );
+        // 与阅读域对称：清掉的身份留碑挡回灌，没清的阅读域身份不留碑。
+        expect(
+          (await db.getStudySegmentTombstones()).map(
+            (StudySegmentTombstoneRow t) => t.mediaKey,
+          ),
+          <String>['vid-1'],
+        );
+      },
+    );
   });
 }

@@ -16,27 +16,36 @@ import 'package:flutter_test/flutter_test.dart';
 /// test.
 void main() {
   test('buildBookImportButton passes no explicit size (BUG-735)', () {
-    final String source =
-        File('lib/src/media/sources/reader_fushi_source.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/sources/reader_fushi_source.dart',
+    ).readAsStringSync();
 
     // Isolate the buildBookImportButton method body up to the closing of the
     // returned FushiIconButton so we only inspect this one builder.
     final int start = source.indexOf('Widget buildBookImportButton(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason:
-            'buildBookImportButton must exist in reader_fushi_source.dart.');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'buildBookImportButton must exist in reader_fushi_source.dart.',
+    );
     final int end = source.indexOf('\n  }', start);
-    expect(end, greaterThan(start),
-        reason: 'Could not find the end of buildBookImportButton.');
+    expect(
+      end,
+      greaterThan(start),
+      reason: 'Could not find the end of buildBookImportButton.',
+    );
     final String body = source.substring(start, end);
 
     // The returned FushiIconButton must NOT set an explicit icon size — a
     // `size:` argument here diverges from the default-24 sibling buttons and
     // re-opens BUG-735.
-    expect(body.contains('size:'), isFalse,
-        reason: 'buildBookImportButton must not pass an explicit `size:` to '
-            'FushiIconButton — the shelf/video header buttons use the default '
-            '24, and overriding it made the add button smaller (BUG-735).');
+    expect(
+      body.contains('size:'),
+      isFalse,
+      reason:
+          'buildBookImportButton must not pass an explicit `size:` to '
+          'FushiIconButton — the shelf/video header buttons use the default '
+          '24, and overriding it made the add button smaller (BUG-735).',
+    );
   });
 }

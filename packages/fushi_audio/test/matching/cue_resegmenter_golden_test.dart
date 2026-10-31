@@ -46,13 +46,12 @@ void main() {
         sections: c.sections,
         cues: c.cues,
       );
-      final CueResegmentResult r = CueSentenceResegmenter(
-        maxAlignCells: cells,
-      ).resegment(
-        sections: c.sections,
-        cues: withSyntheticTokens(c.cues),
-        result: matched,
-      );
+      final CueResegmentResult r = CueSentenceResegmenter(maxAlignCells: cells)
+          .resegment(
+            sections: c.sections,
+            cues: withSyntheticTokens(c.cues),
+            result: matched,
+          );
       expect(r.cues.length, w['cuesOut']);
       expect(r.stats.toString(), w['stats']);
       expect(ffcSha256Bytes(utf8.encode(describeResegment(r))), w['sha256']);

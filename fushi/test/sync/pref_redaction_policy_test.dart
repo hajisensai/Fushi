@@ -15,28 +15,38 @@ void main() {
   group('PrefRedactionPolicy.isDeviceLocalOrCredential', () {
     test('redacts every device-local key (the whitelist is the main line)', () {
       for (final String key in SyncRepository.deviceLocalPrefKeys) {
-        expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue,
-            reason: '$key 是设备本地 key，必须剔除');
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(key),
+          isTrue,
+          reason: '$key 是设备本地 key，必须剔除',
+        );
       }
     });
 
-    test('floating lyric window rect (local physical px) stays on this device',
-        () {
-      // 存的是本机物理像素坐标：随备份 / 同步 / Profile 到别的显示器布局只会把
-      // 窗口放到屏幕外。字面量钉死冻结的持久化名。
-      expect(kFloatingLyricWindowRectPrefKey, 'floating_lyric_window_rect');
-      expect(SyncRepository.deviceLocalPrefKeys,
-          contains(kFloatingLyricWindowRectPrefKey));
-      expect(
-          PrefRedactionPolicy.isDeviceLocalOrCredential(
-              kFloatingLyricWindowRectPrefKey),
-          isTrue);
-      expect(
-          ProfileKeys.isExcludedPref(kFloatingLyricWindowRectPrefKey), isTrue);
-    });
-
     test(
-        'redacts the non-sync_ credentials the old sync_-anchored fallback '
+      'floating lyric window rect (local physical px) stays on this device',
+      () {
+        // 存的是本机物理像素坐标：随备份 / 同步 / Profile 到别的显示器布局只会把
+        // 窗口放到屏幕外。字面量钉死冻结的持久化名。
+        expect(kFloatingLyricWindowRectPrefKey, 'floating_lyric_window_rect');
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(kFloatingLyricWindowRectPrefKey),
+        );
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(
+            kFloatingLyricWindowRectPrefKey,
+          ),
+          isTrue,
+        );
+        expect(
+          ProfileKeys.isExcludedPref(kFloatingLyricWindowRectPrefKey),
+          isTrue,
+        );
+      },
+    );
+
+    test('redacts the non-sync_ credentials the old sync_-anchored fallback '
         'let through', () {
       // 回归守卫：旧实现是 `if (!lower.startsWith('sync_')) return false;`，
       // 下面每一个都因此返回 false —— 也就是分享 Profile / 导出备份时原样出境。
@@ -60,8 +70,11 @@ void main() {
         'video_anidb_password',
       ];
       for (final String key in previouslyLeaking) {
-        expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue,
-            reason: '$key 含凭据，必须剔除（旧实现在此漏网）');
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(key),
+          isTrue,
+          reason: '$key 含凭据，必须剔除（旧实现在此漏网）',
+        );
       }
     });
 
@@ -69,56 +82,68 @@ void main() {
       // 这是与旧实现的本质差异：凭据形状与所属子系统无关。
       for (final String substring in PrefRedactionPolicy.credentialSubstrings) {
         expect(
-            PrefRedactionPolicy.isDeviceLocalOrCredential(
-                'some_future_subsystem_$substring'),
-            isTrue,
-            reason: '含 $substring 的新 key 必须被兜底拦下，无论前缀');
+          PrefRedactionPolicy.isDeviceLocalOrCredential(
+            'some_future_subsystem_$substring',
+          ),
+          isTrue,
+          reason: '含 $substring 的新 key 必须被兜底拦下，无论前缀',
+        );
       }
     });
 
     test('is case-insensitive on the shape fallback', () {
-      expect(PrefRedactionPolicy.isDeviceLocalOrCredential('Some_PASSWORD_Key'),
-          isTrue);
       expect(
-          PrefRedactionPolicy.isDeviceLocalOrCredential('MEDIA_SOURCE_'
+        PrefRedactionPolicy.isDeviceLocalOrCredential('Some_PASSWORD_Key'),
+        isTrue,
+      );
+      expect(
+        PrefRedactionPolicy.isDeviceLocalOrCredential(
+          'MEDIA_SOURCE_'
                   'SECRET_3'
-              .toLowerCase()),
-          isTrue);
+              .toLowerCase(),
+        ),
+        isTrue,
+      );
     });
 
-    test('does NOT redact ordinary settings/content keys (no false positives)',
-        () {
-      // 这些必须继续随备份跨设备旅行。任何一条变 true 都是真实功能回归：
-      // 用户的设置/内容注册表会在导出时被静默丢弃。
-      const List<String> mustTravel = <String>[
-        // sync_* 里的行为开关（是用户设置，不是凭据——见 sync_repository 注释）。
-        'sync_auto_enabled',
-        'sync_content_enabled',
-        'sync_manga_content_enabled',
-        'interconnect_sync_manga_content',
-        'sync_stats_enabled',
-        // 'sync_dictionary_enabled' 曾在此：那个开关已随「词典改成显式上传 / 下载」
-        // 删除，键没有读写方了，再列在这里只是一条钉住死数据的空断言。
-        // 内容注册表（backup_service 的 settingsPrefPredicate 明确保留的那批）。
-        'favorite_sentences',
-        'local_audio_dbs',
-        'audio_source_configs',
-        'font_catalog',
-        // 进度 / 普通显示设置。
-        'audiobook_pos_somebook',
-        'app_ui_scale',
-        'eink_mode',
-        'reader_font_size',
-        'current_home_tab_index',
-        // 视频刮削的普通行为偏好应继续随备份/Profile 迁移；只有凭据留在设备。
-        'video_metadata_primary_provider',
-        'video_metadata_locale',
-      ];
-      for (final String key in mustTravel) {
-        expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isFalse,
-            reason: '$key 是设置/内容，误剔除会让它无法跨设备恢复');
-      }
-    });
+    test(
+      'does NOT redact ordinary settings/content keys (no false positives)',
+      () {
+        // 这些必须继续随备份跨设备旅行。任何一条变 true 都是真实功能回归：
+        // 用户的设置/内容注册表会在导出时被静默丢弃。
+        const List<String> mustTravel = <String>[
+          // sync_* 里的行为开关（是用户设置，不是凭据——见 sync_repository 注释）。
+          'sync_auto_enabled',
+          'sync_content_enabled',
+          'sync_manga_content_enabled',
+          'interconnect_sync_manga_content',
+          'sync_stats_enabled',
+          // 'sync_dictionary_enabled' 曾在此：那个开关已随「词典改成显式上传 / 下载」
+          // 删除，键没有读写方了，再列在这里只是一条钉住死数据的空断言。
+          // 内容注册表（backup_service 的 settingsPrefPredicate 明确保留的那批）。
+          'favorite_sentences',
+          'local_audio_dbs',
+          'audio_source_configs',
+          'font_catalog',
+          // 进度 / 普通显示设置。
+          'audiobook_pos_somebook',
+          'app_ui_scale',
+          'eink_mode',
+          'reader_font_size',
+          'current_home_tab_index',
+          // 视频刮削的普通行为偏好应继续随备份/Profile 迁移；只有凭据留在设备。
+          'video_metadata_primary_provider',
+          'video_metadata_locale',
+        ];
+        for (final String key in mustTravel) {
+          expect(
+            PrefRedactionPolicy.isDeviceLocalOrCredential(key),
+            isFalse,
+            reason: '$key 是设置/内容，误剔除会让它无法跨设备恢复',
+          );
+        }
+      },
+    );
 
     test('every explicitly named sensitive key is actually matched', () {
       // sensitiveKeys 里若有条目其实已被子串兜底覆盖，是冗余而非错误；
@@ -127,8 +152,10 @@ void main() {
         expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue);
       }
       for (final String prefix in PrefRedactionPolicy.sensitiveKeyPrefixes) {
-        expect(PrefRedactionPolicy.isDeviceLocalOrCredential('${prefix}7'),
-            isTrue);
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential('${prefix}7'),
+          isTrue,
+        );
       }
     });
   });

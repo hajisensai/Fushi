@@ -43,8 +43,10 @@ void main() {
 
   test('BMP：各自的头', () {
     final img.Image image = img.Image(width: 24, height: 16);
-    expect(
-        probeOrientedImageSize(img.encodeBmp(image)), (width: 24, height: 16));
+    expect(probeOrientedImageSize(img.encodeBmp(image)), (
+      width: 24,
+      height: 16,
+    ));
   });
 
   test('GIF 返回 null：逻辑屏幕尺寸 != 帧尺寸，不能拿它冒充', () {
@@ -53,8 +55,11 @@ void main() {
     // 一回事，头探测会给出画布尺寸而不是实际图像尺寸——下游据此判 spread/webtoon
     // 会判反、OCR 框坐标整体错位，且全程不报错。既然对不上就交回整张解码。
     final Uint8List gif = img.encodeGif(img.Image(width: 24, height: 16));
-    expect(probeOrientedImageSize(gif), isNull,
-        reason: 'GIF 必须回退整张解码，不能用逻辑屏幕尺寸');
+    expect(
+      probeOrientedImageSize(gif),
+      isNull,
+      reason: 'GIF 必须回退整张解码，不能用逻辑屏幕尺寸',
+    );
     // 回退路径本身仍给出正确尺寸（调用方就是这么兜的）。
     expect(baked(gif), (width: 24, height: 16));
   });
@@ -118,8 +123,11 @@ void main() {
 
     for (final int orientation in <int>[1, 3, 6, 8]) {
       test('orientation=$orientation：>=5 换轴，其余不动', () {
-        final Uint8List bytes =
-            buildWebp(24, 16, exif: tiffOrientation(orientation));
+        final Uint8List bytes = buildWebp(
+          24,
+          16,
+          exif: tiffOrientation(orientation),
+        );
         expect(webpExifOrientation(bytes), orientation);
         expect(
           probeOrientedImageSize(bytes),
@@ -130,20 +138,28 @@ void main() {
     }
 
     test('EXIF chunk 带 Exif 前缀（六字节 Exif + 两个 NUL）的编码器也要认', () {
-      final Uint8List bytes = buildWebp(24, 16,
-          exif: tiffOrientation(6, withExifPrefix: true));
+      final Uint8List bytes = buildWebp(
+        24,
+        16,
+        exif: tiffOrientation(6, withExifPrefix: true),
+      );
       expect(webpExifOrientation(bytes), 6);
       expect(probeOrientedImageSize(bytes), (width: 16, height: 24));
     });
 
     test('没有 EXIF chunk / 不是 WebP：一律 1（未旋转）', () {
       // 用一个填充 chunk 把字节喂够（最小 VP8L 头本身不足以让 startDecode 走完）。
-      final Uint8List padded =
-          buildWebp(24, 16, exif: Uint8List.fromList(<int>[0, 0, 0, 0]));
+      final Uint8List padded = buildWebp(
+        24,
+        16,
+        exif: Uint8List.fromList(<int>[0, 0, 0, 0]),
+      );
       expect(webpExifOrientation(padded), 1);
       expect(probeOrientedImageSize(padded), (width: 24, height: 16));
-      expect(webpExifOrientation(img.encodeJpg(img.Image(width: 4, height: 4))),
-          1);
+      expect(
+        webpExifOrientation(img.encodeJpg(img.Image(width: 4, height: 4))),
+        1,
+      );
       expect(webpExifOrientation(Uint8List.fromList(<int>[1, 2, 3])), 1);
       expect(webpExifOrientation(Uint8List(0)), 1);
     });
@@ -161,10 +177,10 @@ void main() {
       expect(probeOrientedImageSize(cut), baked(full));
     }
     final Uint8List png = img.encodePng(img.Image(width: 300, height: 500));
-    expect(
-      probeOrientedImageSize(Uint8List.sublistView(png, 0, 40)),
-      (width: 300, height: 500),
-    );
+    expect(probeOrientedImageSize(Uint8List.sublistView(png, 0, 40)), (
+      width: 300,
+      height: 500,
+    ));
   });
 
   test('非图片 / 截断返回 null（调用方回退整张解码）', () {

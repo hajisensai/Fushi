@@ -17,10 +17,10 @@ class GalgameRateLimiter {
     this.maxRetryAfter = const Duration(minutes: 5),
     DateTime Function()? now,
     Future<void> Function(Duration delay)? sleep,
-  })  : assert(capacity > 0, 'capacity 必须为正'),
-        assert(refillInterval > Duration.zero, 'refillInterval 必须为正'),
-        _now = now ?? DateTime.now,
-        _sleep = sleep ?? _defaultSleep {
+  }) : assert(capacity > 0, 'capacity 必须为正'),
+       assert(refillInterval > Duration.zero, 'refillInterval 必须为正'),
+       _now = now ?? DateTime.now,
+       _sleep = sleep ?? _defaultSleep {
     _tokens = capacity;
     _lastRefill = _now();
   }
@@ -62,22 +62,24 @@ class GalgameRateLimiter {
       }
     }
 
-    _tail = _tail.then((_) async {
-      try {
-        await _acquire();
-        final T result = await job();
-        if (!completer.isCompleted) {
-          completer.complete(result);
-        }
-      } catch (error, stack) {
-        fail(error, stack);
-      }
-    }).catchError((Object error, StackTrace stack) {
-      // 显式的 (Object, StackTrace) -> void 闭包：直接传 `fail` 会被分析器判为
-      // `invalid_return_type_for_catch_error`（void 不满足 FutureOr<Null>），
-      // 且 CI 把 warning 当致命。
-      fail(error, stack);
-    });
+    _tail = _tail
+        .then((_) async {
+          try {
+            await _acquire();
+            final T result = await job();
+            if (!completer.isCompleted) {
+              completer.complete(result);
+            }
+          } catch (error, stack) {
+            fail(error, stack);
+          }
+        })
+        .catchError((Object error, StackTrace stack) {
+          // 显式的 (Object, StackTrace) -> void 闭包：直接传 `fail` 会被分析器判为
+          // `invalid_return_type_for_catch_error`（void 不满足 FutureOr<Null>），
+          // 且 CI 把 warning 当致命。
+          fail(error, stack);
+        });
     return completer.future;
   }
 

@@ -18,36 +18,35 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 
 Map<String, Object?> _episodeJson() => <String, Object?>{
-      'Id': 'ep1',
-      'Name': 'The Pilot',
-      'Type': 'Episode',
-      'MediaSources': <Object?>[
-        <String, Object?>{
-          'Id': 'src1',
-          'MediaStreams': <Object?>[
-            <String, Object?>{'Type': 'Video', 'Index': 0},
-          ],
-        },
+  'Id': 'ep1',
+  'Name': 'The Pilot',
+  'Type': 'Episode',
+  'MediaSources': <Object?>[
+    <String, Object?>{
+      'Id': 'src1',
+      'MediaStreams': <Object?>[
+        <String, Object?>{'Type': 'Video', 'Index': 0},
       ],
-    };
+    },
+  ],
+};
 
 Map<String, Object?> _playbackInfoJson({
   bool directPlay = true,
   String? transcodingUrl,
   String playSessionId = 'ps-1',
-}) =>
+}) => <String, Object?>{
+  'PlaySessionId': playSessionId,
+  'MediaSources': <Object?>[
     <String, Object?>{
-      'PlaySessionId': playSessionId,
-      'MediaSources': <Object?>[
-        <String, Object?>{
-          'Id': 'src1',
-          'SupportsDirectPlay': directPlay,
-          'SupportsDirectStream': directPlay,
-          'SupportsTranscoding': true,
-          if (transcodingUrl != null) 'TranscodingUrl': transcodingUrl,
-        },
-      ],
-    };
+      'Id': 'src1',
+      'SupportsDirectPlay': directPlay,
+      'SupportsDirectStream': directPlay,
+      'SupportsTranscoding': true,
+      if (transcodingUrl != null) 'TranscodingUrl': transcodingUrl,
+    },
+  ],
+};
 
 void main() {
   late List<http.Request> seen;
@@ -80,20 +79,23 @@ void main() {
         if (req.url.path == '/Items/ep1/PlaybackInfo') {
           expect(req.method, 'POST');
           expect(req.url.queryParameters['UserId'], 'u1');
-          final Map<String, Object?> body =
-              (jsonDecode(req.body) as Map).cast<String, Object?>();
+          final Map<String, Object?> body = (jsonDecode(req.body) as Map)
+              .cast<String, Object?>();
           expect(body['UserId'], 'u1');
           expect(body['MediaSourceId'], 'src1');
           expect(body['EnableDirectPlay'], isTrue);
           expect(body['EnableTranscoding'], isTrue);
           expect(body['DeviceProfile'], isA<Map<String, Object?>>());
-          final Map<String, Object?> profile =
-              (body['DeviceProfile'] as Map).cast<String, Object?>();
+          final Map<String, Object?> profile = (body['DeviceProfile'] as Map)
+              .cast<String, Object?>();
           expect(profile['Name'], 'Fushi');
           expect(profile['DirectPlayProfiles'], hasLength(2));
           expect(profile['TranscodingProfiles'], isNotEmpty);
-          expect(body.containsKey('MaxStreamingBitrate'), isFalse,
-              reason: '自动档不给上限');
+          expect(
+            body.containsKey('MaxStreamingBitrate'),
+            isFalse,
+            reason: '自动档不给上限',
+          );
           return json(_playbackInfoJson());
         }
         return http.Response('', 204);
@@ -112,12 +114,14 @@ void main() {
       final JellyfinVideoClient c = clientWith((http.Request req) async {
         if (req.url.path == '/Users/u1/Items/ep1') return json(_episodeJson());
         if (req.url.path == '/Items/ep1/PlaybackInfo') {
-          return json(_playbackInfoJson(
-            directPlay: false,
-            transcodingUrl:
-                '/videos/ep1/master.m3u8?DeviceId=dev-42&PlaySessionId=ps-1'
-                '&api_key=tok&VideoCodec=h264',
-          ));
+          return json(
+            _playbackInfoJson(
+              directPlay: false,
+              transcodingUrl:
+                  '/videos/ep1/master.m3u8?DeviceId=dev-42&PlaySessionId=ps-1'
+                  '&api_key=tok&VideoCodec=h264',
+            ),
+          );
         }
         return http.Response('', 204);
       });
@@ -134,11 +138,11 @@ void main() {
       final JellyfinVideoClient c = clientWith((http.Request req) async {
         if (req.url.path == '/Users/u1/Items/ep1') return json(_episodeJson());
         if (req.url.path == '/Items/ep1/PlaybackInfo') {
-          final Map<String, Object?> body =
-              (jsonDecode(req.body) as Map).cast<String, Object?>();
+          final Map<String, Object?> body = (jsonDecode(req.body) as Map)
+              .cast<String, Object?>();
           expect(body['MaxStreamingBitrate'], 3000000);
-          final Map<String, Object?> profile =
-              (body['DeviceProfile'] as Map).cast<String, Object?>();
+          final Map<String, Object?> profile = (body['DeviceProfile'] as Map)
+              .cast<String, Object?>();
           expect(profile['MaxStreamingBitrate'], 3000000);
           final List<Object?> codecProfiles =
               profile['CodecProfiles'] as List<Object?>;
@@ -153,8 +157,9 @@ void main() {
         }
         return http.Response('', 204);
       });
-      final int index = JellyfinVideoClient.kQualityPresets
-          .indexWhere((MediaServerQualityPreset p) => p.maxBitrate == 3000000);
+      final int index = JellyfinVideoClient.kQualityPresets.indexWhere(
+        (MediaServerQualityPreset p) => p.maxBitrate == 3000000,
+      );
       expect(index, greaterThanOrEqualTo(0));
       c.qualityPresetIndex = index;
       await c.remoteVideoStreamUrls('ep1');
@@ -194,62 +199,62 @@ void main() {
     // 全部 IsExternal=false、SupportsExternalStream=false；另模拟一条图形轨与一条
     // 外挂 srt 文件夹在中间，考验序号只数容器内的轨、图形轨也占号。
     Map<String, Object?> episodeWithSubs() => <String, Object?>{
-          'Id': 'ep1',
-          'Name': 'E01',
-          'Type': 'Episode',
-          'MediaSources': <Object?>[
+      'Id': 'ep1',
+      'Name': 'E01',
+      'Type': 'Episode',
+      'MediaSources': <Object?>[
+        <String, Object?>{
+          'Id': 'src1',
+          'MediaStreams': <Object?>[
+            <String, Object?>{'Type': 'Video', 'Index': 0},
+            <String, Object?>{'Type': 'Audio', 'Index': 1},
             <String, Object?>{
-              'Id': 'src1',
-              'MediaStreams': <Object?>[
-                <String, Object?>{'Type': 'Video', 'Index': 0},
-                <String, Object?>{'Type': 'Audio', 'Index': 1},
-                <String, Object?>{
-                  'Type': 'Subtitle',
-                  'Index': 2,
-                  'Codec': 'subrip',
-                  'Language': 'jpn',
-                  'IsTextSubtitleStream': true,
-                },
-                <String, Object?>{
-                  'Type': 'Subtitle',
-                  'Index': 3,
-                  'Codec': 'PGSSUB',
-                  'IsTextSubtitleStream': false,
-                },
-                <String, Object?>{
-                  'Type': 'Subtitle',
-                  'Index': 4,
-                  'Codec': 'subrip',
-                  'Language': 'chi',
-                  'IsTextSubtitleStream': true,
-                },
-                <String, Object?>{
-                  'Type': 'Subtitle',
-                  'Index': 5,
-                  'Codec': 'srt',
-                  'IsExternal': true,
-                  'IsTextSubtitleStream': true,
-                },
-              ],
+              'Type': 'Subtitle',
+              'Index': 2,
+              'Codec': 'subrip',
+              'Language': 'jpn',
+              'IsTextSubtitleStream': true,
+            },
+            <String, Object?>{
+              'Type': 'Subtitle',
+              'Index': 3,
+              'Codec': 'PGSSUB',
+              'IsTextSubtitleStream': false,
+            },
+            <String, Object?>{
+              'Type': 'Subtitle',
+              'Index': 4,
+              'Codec': 'subrip',
+              'Language': 'chi',
+              'IsTextSubtitleStream': true,
+            },
+            <String, Object?>{
+              'Type': 'Subtitle',
+              'Index': 5,
+              'Codec': 'srt',
+              'IsExternal': true,
+              'IsTextSubtitleStream': true,
             },
           ],
-        };
+        },
+      ],
+    };
 
     test('containerSubtitleOrdinals：全局流号 → 容器内字幕序号，图形轨占号、外挂不占', () {
       final Map<int, int> ordinals =
           JellyfinVideoClient.containerSubtitleOrdinals(
-        const <JellyfinSubtitleStream>[
-          // 故意乱序：序号按 Index 升序算，与 MediaStreams 给出的顺序无关。
-          JellyfinSubtitleStream(index: 4, codec: 'subrip'),
-          JellyfinSubtitleStream(index: 9, codec: 'srt', isExternal: true),
-          JellyfinSubtitleStream(
-            index: 3,
-            codec: 'PGSSUB',
-            isTextSubtitleStream: false,
-          ),
-          JellyfinSubtitleStream(index: 2, codec: 'subrip'),
-        ],
-      );
+            const <JellyfinSubtitleStream>[
+              // 故意乱序：序号按 Index 升序算，与 MediaStreams 给出的顺序无关。
+              JellyfinSubtitleStream(index: 4, codec: 'subrip'),
+              JellyfinSubtitleStream(index: 9, codec: 'srt', isExternal: true),
+              JellyfinSubtitleStream(
+                index: 3,
+                codec: 'PGSSUB',
+                isTextSubtitleStream: false,
+              ),
+              JellyfinSubtitleStream(index: 2, codec: 'subrip'),
+            ],
+          );
       expect(ordinals, <int, int>{2: 0, 3: 1, 4: 2});
       expect(ordinals.containsKey(9), isFalse, reason: '外挂文件不在容器里');
     });
@@ -281,10 +286,12 @@ void main() {
           return json(episodeWithSubs());
         }
         if (req.url.path == '/Items/ep1/PlaybackInfo') {
-          return json(_playbackInfoJson(
-            directPlay: false,
-            transcodingUrl: '/videos/ep1/master.m3u8?PlaySessionId=ps-1',
-          ));
+          return json(
+            _playbackInfoJson(
+              directPlay: false,
+              transcodingUrl: '/videos/ep1/master.m3u8?PlaySessionId=ps-1',
+            ),
+          );
         }
         return http.Response('', 204);
       });
@@ -311,64 +318,76 @@ void main() {
     test('mediaStreamRequiresDolbyVisionReshape：只认无兼容基础层的 DV', () {
       // Emby（含 uhdnow 兼容层实测：DoviProfile50）。
       expect(
-          mediaStreamRequiresDolbyVisionReshape(
-              <String, Object?>{'ExtendedVideoSubtype': 'DoviProfile50'}),
-          isTrue);
+        mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+          'ExtendedVideoSubtype': 'DoviProfile50',
+        }),
+        isTrue,
+      );
       for (final String p in <String>[
         'DoviProfile81',
         'DoviProfile84',
         'DoviProfile76',
       ]) {
         expect(
-            mediaStreamRequiresDolbyVisionReshape(
-                <String, Object?>{'ExtendedVideoSubtype': p}),
-            isFalse,
-            reason: p);
+          mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+            'ExtendedVideoSubtype': p,
+          }),
+          isFalse,
+          reason: p,
+        );
       }
       // Jellyfin。
       expect(
-          mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
-            'DvProfile': 5,
-            'DvBlSignalCompatibilityId': 0
-          }),
-          isTrue);
+        mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+          'DvProfile': 5,
+          'DvBlSignalCompatibilityId': 0,
+        }),
+        isTrue,
+      );
       expect(
-          mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
-            'DvProfile': 8,
-            'DvBlSignalCompatibilityId': 1
-          }),
-          isFalse);
+        mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+          'DvProfile': 8,
+          'DvBlSignalCompatibilityId': 1,
+        }),
+        isFalse,
+      );
       expect(
-          mediaStreamRequiresDolbyVisionReshape(
-              <String, Object?>{'VideoRangeType': 'DOVI'}),
-          isTrue);
+        mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+          'VideoRangeType': 'DOVI',
+        }),
+        isTrue,
+      );
       expect(
-          mediaStreamRequiresDolbyVisionReshape(
-              <String, Object?>{'VideoRangeType': 'DOVIWithHDR10'}),
-          isFalse);
-      expect(mediaStreamRequiresDolbyVisionReshape(const <String, Object?>{}),
-          isFalse);
+        mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+          'VideoRangeType': 'DOVIWithHDR10',
+        }),
+        isFalse,
+      );
+      expect(
+        mediaStreamRequiresDolbyVisionReshape(const <String, Object?>{}),
+        isFalse,
+      );
     });
 
     Map<String, Object?> dvEpisode() => <String, Object?>{
-          'Id': 'ep1',
-          'Name': 'E01',
-          'Type': 'Episode',
-          'MediaSources': <Object?>[
+      'Id': 'ep1',
+      'Name': 'E01',
+      'Type': 'Episode',
+      'MediaSources': <Object?>[
+        <String, Object?>{
+          'Id': 'src1',
+          'MediaStreams': <Object?>[
             <String, Object?>{
-              'Id': 'src1',
-              'MediaStreams': <Object?>[
-                <String, Object?>{
-                  'Type': 'Video',
-                  'Index': 0,
-                  'VideoRange': 'Dolby Vision',
-                  'ExtendedVideoType': 'DolbyVision',
-                  'ExtendedVideoSubtype': 'DoviProfile50',
-                },
-              ],
+              'Type': 'Video',
+              'Index': 0,
+              'VideoRange': 'Dolby Vision',
+              'ExtendedVideoType': 'DolbyVision',
+              'ExtendedVideoSubtype': 'DoviProfile50',
             },
           ],
-        };
+        },
+      ],
+    };
 
     test('直出：流带 DV P5 标记，交给播放页', () async {
       final JellyfinVideoClient c = clientWith((http.Request req) async {
@@ -386,10 +405,12 @@ void main() {
       final JellyfinVideoClient c = clientWith((http.Request req) async {
         if (req.url.path == '/Users/u1/Items/ep1') return json(dvEpisode());
         if (req.url.path == '/Items/ep1/PlaybackInfo') {
-          return json(_playbackInfoJson(
-            directPlay: false,
-            transcodingUrl: '/videos/ep1/master.m3u8?PlaySessionId=ps-1',
-          ));
+          return json(
+            _playbackInfoJson(
+              directPlay: false,
+              transcodingUrl: '/videos/ep1/master.m3u8?PlaySessionId=ps-1',
+            ),
+          );
         }
         return http.Response('', 204);
       });
@@ -411,16 +432,16 @@ void main() {
   });
 
   group('会话生命周期', () {
-    Future<JellyfinVideoClient> negotiated({
-      bool transcode = false,
-    }) async {
+    Future<JellyfinVideoClient> negotiated({bool transcode = false}) async {
       final JellyfinVideoClient c = clientWith((http.Request req) async {
         if (req.url.path == '/Users/u1/Items/ep1') return json(_episodeJson());
         if (req.url.path == '/Items/ep1/PlaybackInfo') {
-          return json(_playbackInfoJson(
-            directPlay: !transcode,
-            transcodingUrl: transcode ? '/videos/ep1/master.m3u8?x=1' : null,
-          ));
+          return json(
+            _playbackInfoJson(
+              directPlay: !transcode,
+              transcodingUrl: transcode ? '/videos/ep1/master.m3u8?x=1' : null,
+            ),
+          );
         }
         return http.Response('', 204);
       });
@@ -434,8 +455,9 @@ void main() {
     test('Start → Progress（timeupdate）→ 暂停 / 继续 → Stopped 全带会话身份', () async {
       final JellyfinVideoClient c = await negotiated();
       await c.startRemoteVideoPlayback('ep1', 5000);
-      final http.Request start =
-          seen.lastWhere((http.Request r) => r.url.path == '/Sessions/Playing');
+      final http.Request start = seen.lastWhere(
+        (http.Request r) => r.url.path == '/Sessions/Playing',
+      );
       expect(bodyOf(start)['PlaySessionId'], 'ps-1');
       expect(bodyOf(start)['MediaSourceId'], 'src1');
       expect(bodyOf(start)['PlayMethod'], 'DirectPlay');
@@ -444,7 +466,8 @@ void main() {
 
       await c.putRemoteVideoPosition('ep1', 15000, 1);
       final http.Request progress = seen.lastWhere(
-          (http.Request r) => r.url.path == '/Sessions/Playing/Progress');
+        (http.Request r) => r.url.path == '/Sessions/Playing/Progress',
+      );
       expect(bodyOf(progress)['PlaySessionId'], 'ps-1');
       expect(bodyOf(progress)['EventName'], 'timeupdate');
       expect(bodyOf(progress)['IsPaused'], isFalse);
@@ -460,7 +483,8 @@ void main() {
 
       await c.stopRemoteVideoPlayback('ep1', 20000);
       final http.Request stopped = seen.lastWhere(
-          (http.Request r) => r.url.path == '/Sessions/Playing/Stopped');
+        (http.Request r) => r.url.path == '/Sessions/Playing/Stopped',
+      );
       expect(bodyOf(stopped)['PlaySessionId'], 'ps-1');
       expect(bodyOf(stopped)['PositionTicks'], 20000 * kTicksPerMs);
       expect(
@@ -475,7 +499,8 @@ void main() {
       final JellyfinVideoClient c = await negotiated(transcode: true);
       await c.stopRemoteVideoPlayback('ep1', 20000);
       final http.Request cleanup = seen.lastWhere(
-          (http.Request r) => r.url.path == '/Videos/ActiveEncodings');
+        (http.Request r) => r.url.path == '/Videos/ActiveEncodings',
+      );
       expect(cleanup.method, 'DELETE');
       expect(cleanup.url.queryParameters['DeviceId'], 'dev-42');
       expect(cleanup.url.queryParameters['PlaySessionId'], 'ps-1');
@@ -495,10 +520,14 @@ void main() {
       await c.remoteVideoStreamUrls('ep1'); // 新页先协商
       await c.stopRemoteVideoPlayback('ep1', 1000); // 旧页的停止晚到
       final http.Request stopped = seen.lastWhere(
-          (http.Request r) => r.url.path == '/Sessions/Playing/Stopped');
+        (http.Request r) => r.url.path == '/Sessions/Playing/Stopped',
+      );
       expect(bodyOf(stopped)['PlaySessionId'], 'ps-1');
-      expect(c.debugActiveSession('ep1')?.playSessionId, 'ps-2',
-          reason: '新页的会话仍在');
+      expect(
+        c.debugActiveSession('ep1')?.playSessionId,
+        'ps-2',
+        reason: '新页的会话仍在',
+      );
     });
   });
 
@@ -527,8 +556,11 @@ void main() {
           'accessToken': 'tok',
         },
       );
-      expect(legacy!.deviceId, JellyfinApi.kLegacyDeviceId,
-          reason: '令牌与 DeviceId 绑定：旧配置不能换 id，否则用户被迫重登');
+      expect(
+        legacy!.deviceId,
+        JellyfinApi.kLegacyDeviceId,
+        reason: '令牌与 DeviceId 绑定：旧配置不能换 id，否则用户被迫重登',
+      );
       expect(legacy.toJson().containsKey('deviceId'), isFalse);
       expect(fresh.buildClient().api.deviceId, 'dev-42');
     });
@@ -536,8 +568,10 @@ void main() {
 
   group('连接诊断', () {
     test('normalizeServerUrl：scheme 不分大小写', () {
-      expect(JellyfinApi.normalizeServerUrl('HTTP://nas:8096/'),
-          'http://nas:8096');
+      expect(
+        JellyfinApi.normalizeServerUrl('HTTP://nas:8096/'),
+        'http://nas:8096',
+      );
       expect(JellyfinApi.normalizeServerUrl('Https://nas'), 'https://nas');
       expect(JellyfinApi.normalizeServerUrl('nas:8096'), 'http://nas:8096');
     });

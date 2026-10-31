@@ -25,8 +25,9 @@ void main() {
   late Directory directory;
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    directory =
-        await Directory.systemTemp.createTemp('offline-identity-coordinator-');
+    directory = await Directory.systemTemp.createTemp(
+      'offline-identity-coordinator-',
+    );
   });
   tearDown(() async {
     await db.close();
@@ -45,48 +46,59 @@ void main() {
     );
   }
 
-  test('Chinese folder name resolves offline and fetches MAL by id only',
-      () async {
-    final SourceLibraryRow source =
-        await _source(db, directory, title: '葬送的芙莉莲');
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-    final SourceScrapeReport report = await scrape(
-      VideoSourceScrapeCoordinator(
-        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-        offlineIdentityResolver: _offline(<String, int>{'葬送的芙莉莲': 17617}),
-      ),
-      source,
-    );
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(mal.searchCalls, 0, reason: '离线命中后不得再发标题搜索');
-    expect(mal.fetchedIds, contains('52991'));
-    expect(tmdb.searchCalls, 0, reason: 'TMDB 补充经 id 接力，不搜标题');
-    expect(tmdb.fetchedIds, contains('209867'));
-    final VideoMetadataWorkRow work =
-        (await db.getVideoMetadataWorkByBook('book-0'))!;
-    final List<VideoMetadataProviderIdentityRow> ids =
-        await db.getVideoMetadataProviderIdentities(workId: work.id);
-    expect(
-      ids
-          .singleWhere((VideoMetadataProviderIdentityRow id) => id.isPrimary)
-          .provider,
-      'mal',
-    );
-    expect(
-      ids.map((VideoMetadataProviderIdentityRow id) => id.provider).toSet(),
-      containsAll(<String>['mal', 'tmdb', 'anidb']),
-    );
-  });
+  test(
+    'Chinese folder name resolves offline and fetches MAL by id only',
+    () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        title: '葬送的芙莉莲',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          offlineIdentityResolver: _offline(<String, int>{'葬送的芙莉莲': 17617}),
+        ),
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(mal.searchCalls, 0, reason: '离线命中后不得再发标题搜索');
+      expect(mal.fetchedIds, contains('52991'));
+      expect(tmdb.searchCalls, 0, reason: 'TMDB 补充经 id 接力，不搜标题');
+      expect(tmdb.fetchedIds, contains('209867'));
+      final VideoMetadataWorkRow work = (await db.getVideoMetadataWorkByBook(
+        'book-0',
+      ))!;
+      final List<VideoMetadataProviderIdentityRow> ids = await db
+          .getVideoMetadataProviderIdentities(workId: work.id);
+      expect(
+        ids
+            .singleWhere((VideoMetadataProviderIdentityRow id) => id.isPrimary)
+            .provider,
+        'mal',
+      );
+      expect(
+        ids.map((VideoMetadataProviderIdentityRow id) => id.provider).toSet(),
+        containsAll(<String>['mal', 'tmdb', 'anidb']),
+      );
+    },
+  );
 
   test('offline identity falls over to the TMDB id when MAL is down', () async {
-    final SourceLibraryRow source =
-        await _source(db, directory, title: '葬送的芙莉莲');
+    final SourceLibraryRow source = await _source(
+      db,
+      directory,
+      title: '葬送的芙莉莲',
+    );
     final _Provider mal = _Provider(
       VideoMetadataProviderKind.mal,
       failure: const VideoMetadataNetworkException('504', statusCode: 504),
@@ -98,8 +110,10 @@ void main() {
         primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          mal,
+          tmdb,
+        ]),
         offlineIdentityResolver: _offline(<String, int>{'葬送的芙莉莲': 17617}),
       ),
       source,
@@ -108,10 +122,11 @@ void main() {
     expect(mal.fetchedIds, contains('52991'));
     expect(tmdb.fetchedIds, contains('209867'));
     expect(tmdb.searchCalls, 0);
-    final VideoMetadataWorkRow work =
-        (await db.getVideoMetadataWorkByBook('book-0'))!;
-    final List<VideoMetadataProviderIdentityRow> ids =
-        await db.getVideoMetadataProviderIdentities(workId: work.id);
+    final VideoMetadataWorkRow work = (await db.getVideoMetadataWorkByBook(
+      'book-0',
+    ))!;
+    final List<VideoMetadataProviderIdentityRow> ids = await db
+        .getVideoMetadataProviderIdentities(workId: work.id);
     expect(
       ids
           .singleWhere((VideoMetadataProviderIdentityRow id) => id.isPrimary)
@@ -120,144 +135,174 @@ void main() {
     );
   });
 
-  test('ambiguous offline hit is reported and falls back to title search',
-      () async {
-    final SourceLibraryRow source = await _source(db, directory);
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final SourceScrapeReport report = await scrape(
-      VideoSourceScrapeCoordinator(
-        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
-        offlineIdentityResolver: AnimeOfflineIdentityResolver.custom(
-          search: (String query) async => <AniDbTitleSearchResult>[
-            _hit(1, query),
-            _hit(2, query),
-          ],
-          entryForAnidb: (int anidbId) async => null,
+  test(
+    'ambiguous offline hit is reported and falls back to title search',
+    () async {
+      final SourceLibraryRow source = await _source(db, directory);
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+          offlineIdentityResolver: AnimeOfflineIdentityResolver.custom(
+            search: (String query) async => <AniDbTitleSearchResult>[
+              _hit(1, query),
+              _hit(2, query),
+            ],
+            entryForAnidb: (int anidbId) async => null,
+          ),
         ),
-      ),
-      source,
-    );
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(mal.searchCalls, greaterThan(0));
-    expect(
-      report.warnings
-          .any((SourceScrapeIssue issue) => issue.message.contains('多个同名候选')),
-      isTrue,
-    );
-  });
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(mal.searchCalls, greaterThan(0));
+      expect(
+        report.warnings.any(
+          (SourceScrapeIssue issue) => issue.message.contains('多个同名候选'),
+        ),
+        isTrue,
+      );
+    },
+  );
 
-  test('MAL identity found by search relays a TMDB id through the mapping',
-      () async {
-    final SourceLibraryRow source = await _source(db, directory);
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-    final SourceScrapeReport report = await scrape(
-      VideoSourceScrapeCoordinator(
-        // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-        identityMapping: _mapping(
-          '[{"anidb_id":5,"mal_id":42,"themoviedb_id":{"tv":777},"type":"TV"}]',
+  test(
+    'MAL identity found by search relays a TMDB id through the mapping',
+    () async {
+      final SourceLibraryRow source = await _source(db, directory);
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          identityMapping: _mapping(
+            '[{"anidb_id":5,"mal_id":42,"themoviedb_id":{"tv":777},"type":"TV"}]',
+          ),
         ),
-      ),
-      source,
-    );
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(mal.searchCalls, greaterThan(0));
-    expect(tmdb.searchCalls, 0, reason: '有映射就按 id 直拉，不再按标题搜');
-    expect(tmdb.fetchedIds, contains('777'));
-  });
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(mal.searchCalls, greaterThan(0));
+      expect(tmdb.searchCalls, 0, reason: '有映射就按 id 直拉，不再按标题搜');
+      expect(tmdb.fetchedIds, contains('777'));
+    },
+  );
 
   // 续作季的主身份没有年份（AniDB 只有标题目录摘要时就是这样），Fribb 行把它
   // 指到 TMDB 剧的第 2 季：作品年份取第 2 季的年份，不是剧本体的首播年。
-  test('sequel season takes its own TMDB season year, not the series year',
-      () async {
-    final SourceLibraryRow source = await _source(db, directory);
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final _Provider tmdb = _Provider(
-      VideoMetadataProviderKind.tmdb,
-      year: 2015,
-      seasons: <VideoMetadataSeason>[
-        VideoMetadataSeason(seasonNumber: 1, title: 'Season 1', year: 2015),
-        VideoMetadataSeason(seasonNumber: 2, title: 'Season 2', year: 2016),
-      ],
-    );
-    final SourceScrapeReport report = await scrape(
-      VideoSourceScrapeCoordinator(
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-        identityMapping: _mapping(
-          '[{"anidb_id":5,"mal_id":42,"themoviedb_id":{"tv":777},'
-          '"season":{"tmdb":2},"type":"TV"}]',
+  test(
+    'sequel season takes its own TMDB season year, not the series year',
+    () async {
+      final SourceLibraryRow source = await _source(db, directory);
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final _Provider tmdb = _Provider(
+        VideoMetadataProviderKind.tmdb,
+        year: 2015,
+        seasons: <VideoMetadataSeason>[
+          VideoMetadataSeason(seasonNumber: 1, title: 'Season 1', year: 2015),
+          VideoMetadataSeason(seasonNumber: 2, title: 'Season 2', year: 2016),
+        ],
+      );
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          identityMapping: _mapping(
+            '[{"anidb_id":5,"mal_id":42,"themoviedb_id":{"tv":777},'
+            '"season":{"tmdb":2},"type":"TV"}]',
+          ),
         ),
-      ),
-      source,
-    );
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(tmdb.fetchedIds, contains('777'));
-    final List<VideoMetadataWorkRow> works =
-        await db.select(db.videoMetadataWorks).get();
-    expect(works.map((VideoMetadataWorkRow w) => w.year), <int?>[2016]);
-  });
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(tmdb.fetchedIds, contains('777'));
+      final List<VideoMetadataWorkRow> works = await db
+          .select(db.videoMetadataWorks)
+          .get();
+      expect(works.map((VideoMetadataWorkRow w) => w.year), <int?>[2016]);
+    },
+  );
 
   // BUG-2828：TMDB 常把剧场版收成所属剧的第 0 季，Fribb 于是给出
   // `type: MOVIE` + `{tv: N}`。按形态把 tv id 当 /movie/N 拉，会命中同号的
   // 无关电影（真机：リズと青い鳥 → tv 62564 → 挪威片 Turn Me On, Dammit!）。
-  test('movie whose mapping row is a TMDB show id never fetches /movie/<tv id>',
-      () async {
-    // 本地标题与假 MAL 源返回的 'Show' 一致，才能经标题搜索唯一命中。
-    final SourceLibraryRow source =
-        await _source(db, directory, fileName: 'Show (2018).mkv');
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-    final SourceScrapeReport report = await scrape(
-      VideoSourceScrapeCoordinator(
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-        identityMapping: _mapping(
-          '[{"anidb_id":13491,"mal_id":42,"themoviedb_id":{"tv":62564},'
-          '"season":{"tmdb":0},"type":"MOVIE"}]',
+  test(
+    'movie whose mapping row is a TMDB show id never fetches /movie/<tv id>',
+    () async {
+      // 本地标题与假 MAL 源返回的 'Show' 一致，才能经标题搜索唯一命中。
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        fileName: 'Show (2018).mkv',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          identityMapping: _mapping(
+            '[{"anidb_id":13491,"mal_id":42,"themoviedb_id":{"tv":62564},'
+            '"season":{"tmdb":0},"type":"MOVIE"}]',
+          ),
         ),
-      ),
-      source,
-    );
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(tmdb.fetchedKinds, isNotEmpty, reason: 'TMDB 补充仍然要做');
-    expect(
-      tmdb.fetchedKinds,
-      everyElement(VideoMetadataMediaKind.movie),
-      reason: '电影只该按 /movie 补',
-    );
-    expect(tmdb.fetchedIds, isNot(contains('62564')),
-        reason: 'tv 空间的 id 不能当电影 id 拉');
-    expect(tmdb.searchCalls, greaterThan(0),
-        reason: '映射没有电影空间的 TMDB id，回退标题补充');
-    expect(tmdb.searchYears.first, 2018,
-        reason: '主源没给年份时用本地目录年份做年份门，不能只凭标题判精确命中');
-  });
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(tmdb.fetchedKinds, isNotEmpty, reason: 'TMDB 补充仍然要做');
+      expect(
+        tmdb.fetchedKinds,
+        everyElement(VideoMetadataMediaKind.movie),
+        reason: '电影只该按 /movie 补',
+      );
+      expect(
+        tmdb.fetchedIds,
+        isNot(contains('62564')),
+        reason: 'tv 空间的 id 不能当电影 id 拉',
+      );
+      expect(
+        tmdb.searchCalls,
+        greaterThan(0),
+        reason: '映射没有电影空间的 TMDB id，回退标题补充',
+      );
+      expect(
+        tmdb.searchYears.first,
+        2018,
+        reason: '主源没给年份时用本地目录年份做年份门，不能只凭标题判精确命中',
+      );
+    },
+  );
 
   // BUG-3071：BUG-2828 修复前绑错的存量（identity 表只存 TMDB id、读回来按作品
   // 形态还原成 movie lookup）重刮时排在映射前面复用，照样拉 /movie/62564——修复版
   // 里重刮也救不回。第一轮用「映射说 62564 是电影」造出这份存量，第二轮换成真实
   // 映射（`{tv: 62564}`）重刮。
-  test(
-      'rescrape drops a stored TMDB id that the mapping places in the other '
+  test('rescrape drops a stored TMDB id that the mapping places in the other '
       'namespace (BUG-3071)', () async {
-    final SourceLibraryRow source =
-        await _source(db, directory, fileName: 'Show (2018).mkv');
+    final SourceLibraryRow source = await _source(
+      db,
+      directory,
+      fileName: 'Show (2018).mkv',
+    );
     final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
     final _Provider staleTmdb = _Provider(VideoMetadataProviderKind.tmdb);
     await scrape(
@@ -265,8 +310,10 @@ void main() {
         primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
-        registry: VideoMetadataProviderRegistry(
-            <VideoMetadataProvider>[mal, staleTmdb]),
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          mal,
+          staleTmdb,
+        ]),
         identityMapping: _mapping(
           '[{"anidb_id":13491,"mal_id":42,"themoviedb_id":{"movie":[62564]},'
           '"type":"MOVIE"}]',
@@ -282,8 +329,10 @@ void main() {
         primaryProvider: VideoMetadataProviderKind.mal,
         database: db,
         config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          mal,
+          tmdb,
+        ]),
         identityMapping: _mapping(
           '[{"anidb_id":13491,"mal_id":42,"themoviedb_id":{"tv":62564},'
           '"season":{"tmdb":0},"type":"MOVIE"}]',
@@ -292,8 +341,11 @@ void main() {
       source,
     );
     expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(tmdb.fetchedIds, isNot(contains('62564')),
-        reason: '映射说 62564 在 tv 空间，存量里的 movie 62564 不能再拉');
+    expect(
+      tmdb.fetchedIds,
+      isNot(contains('62564')),
+      reason: '映射说 62564 在 tv 空间，存量里的 movie 62564 不能再拉',
+    );
     final List<String> storedTmdb = <String>[
       for (final VideoMetadataProviderIdentityRow row
           in await db.select(db.videoMetadataProviderIdentities).get())
@@ -309,60 +361,75 @@ void main() {
 
   // 本地年份是「这一季」的，TMDB 剧的年份是第一季首播：续作季拿本地年份当门
   // 会把正确的剧挡在 ±1 年外（审查发现，与 Shoko 的无年份查询变体同理）。
-  test('sequel season does not gate the TMDB show search on its local year',
-      () async {
-    final SourceLibraryRow source =
-        await _source(db, directory, fileName: 'Show S02E01 (2019).mkv');
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-    await scrape(
-      VideoSourceScrapeCoordinator(
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-        identityMapping: _mapping('[]'),
-      ),
-      source,
-    );
-    expect(tmdb.searchCalls, greaterThan(0), reason: '没有映射，标题补充');
-    expect(tmdb.searchYears, everyElement(isNull));
-  });
+  test(
+    'sequel season does not gate the TMDB show search on its local year',
+    () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        fileName: 'Show S02E01 (2019).mkv',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+      await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          identityMapping: _mapping('[]'),
+        ),
+        source,
+      );
+      expect(tmdb.searchCalls, greaterThan(0), reason: '没有映射，标题补充');
+      expect(tmdb.searchYears, everyElement(isNull));
+    },
+  );
 
-  test('offline identity of a movie filed under a TMDB show skips the tv id',
-      () async {
-    final SourceLibraryRow source = await _source(db, directory,
-        title: 'リズと青い鳥', fileName: 'リズと青い鳥 (2018).mkv');
-    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-    final SourceScrapeReport report = await scrape(
-      VideoSourceScrapeCoordinator(
-        primaryProvider: VideoMetadataProviderKind.mal,
-        database: db,
-        config: const VideoSourceScrapeGlobalConfig(),
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-        offlineIdentityResolver: AnimeOfflineIdentityResolver.custom(
-          search: (String query) async => <AniDbTitleSearchResult>[
-            if (query == 'リズと青い鳥') _hit(13491, query),
-          ],
-          entryForAnidb: (int anidbId) async => AnimeIdentityEntry(
-            anidbId: anidbId,
-            malIds: const <int>{35677},
-            tmdbId: 62564,
-            tmdbSeason: 0,
-            type: 'MOVIE',
+  test(
+    'offline identity of a movie filed under a TMDB show skips the tv id',
+    () async {
+      final SourceLibraryRow source = await _source(
+        db,
+        directory,
+        title: 'リズと青い鳥',
+        fileName: 'リズと青い鳥 (2018).mkv',
+      );
+      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+      final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+      final SourceScrapeReport report = await scrape(
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          offlineIdentityResolver: AnimeOfflineIdentityResolver.custom(
+            search: (String query) async => <AniDbTitleSearchResult>[
+              if (query == 'リズと青い鳥') _hit(13491, query),
+            ],
+            entryForAnidb: (int anidbId) async => AnimeIdentityEntry(
+              anidbId: anidbId,
+              malIds: const <int>{35677},
+              tmdbId: 62564,
+              tmdbSeason: 0,
+              type: 'MOVIE',
+            ),
           ),
         ),
-      ),
-      source,
-    );
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    expect(mal.fetchedIds, contains('35677'));
-    expect(tmdb.fetchedIds, isNot(contains('62564')));
-    expect(tmdb.fetchedKinds, everyElement(VideoMetadataMediaKind.movie));
-  });
+        source,
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(mal.fetchedIds, contains('35677'));
+      expect(tmdb.fetchedIds, isNot(contains('62564')));
+      expect(tmdb.fetchedKinds, everyElement(VideoMetadataMediaKind.movie));
+    },
+  );
 }
 
 AnimeOfflineIdentityResolver _offline(Map<String, int> exactByTitle) =>
@@ -382,8 +449,11 @@ AnimeOfflineIdentityResolver _offline(Map<String, int> exactByTitle) =>
     );
 
 AniDbTitleSearchResult _hit(int animeId, String title) {
-  final AniDbTitle matched =
-      AniDbTitle(value: title, type: 'official', language: 'zh-Hans');
+  final AniDbTitle matched = AniDbTitle(
+    value: title,
+    type: 'official',
+    language: 'zh-Hans',
+  );
   return AniDbTitleSearchResult(
     record: AniDbTitleRecord(animeId: animeId, titles: <AniDbTitle>[matched]),
     matchedTitle: matched,
@@ -393,10 +463,10 @@ AniDbTitleSearchResult _hit(int animeId, String title) {
 }
 
 AnimeIdentityMapping _mapping(String body) => AnimeIdentityMapping(
-      httpClient: VideoMetadataHttpClient(
-        client: MockClient((_) async => http.Response(body, 200)),
-      ),
-    );
+  httpClient: VideoMetadataHttpClient(
+    client: MockClient((_) async => http.Response(body, 200)),
+  ),
+);
 
 Future<SourceLibraryRow> _source(
   FushiDatabase db,
@@ -404,21 +474,25 @@ Future<SourceLibraryRow> _source(
   String title = 'Show',
   String? fileName,
 }) async {
-  final int sourceId = await db.insertMediaSource(MediaSourcesCompanion.insert(
-    label: 'Source',
-    mediaKind: 'video',
-    rootPath: root.path,
-    createdAt: 1,
-  ));
+  final int sourceId = await db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: 'Source',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ),
+  );
   // 带集号 → 剧集形态（离线阶段的类型闸门按 TV 过滤）。
   final File file = File(p.join(root.path, fileName ?? '$title - 01.mkv'));
   await file.writeAsBytes(<int>[0]);
-  await db.upsertVideoBook(VideoBooksCompanion(
-    bookUid: const Value<String>('book-0'),
-    title: Value<String>(title),
-    videoPath: Value<String>(file.path),
-    sourceId: Value<int?>(sourceId),
-  ));
+  await db.upsertVideoBook(
+    VideoBooksCompanion(
+      bookUid: const Value<String>('book-0'),
+      title: Value<String>(title),
+      videoPath: Value<String>(file.path),
+      sourceId: Value<int?>(sourceId),
+    ),
+  );
   await db.upsertVideoSourceScrapeSettings(
     VideoSourceScrapeSettingsCompanion.insert(
       sourceId: Value<int>(sourceId),
@@ -473,7 +547,8 @@ class _Provider implements VideoMetadataProvider {
 
   @override
   Future<List<VideoMetadataWork>> search(
-      VideoMetadataSearchRequest request) async {
+    VideoMetadataSearchRequest request,
+  ) async {
     searchCalls++;
     searchYears.add(request.year);
     if (failure != null) throw failure!;
@@ -490,13 +565,14 @@ class _Provider implements VideoMetadataProvider {
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
-          VideoMetadataLookup lookup) async =>
-      const <VideoMetadataSeason>[];
+    VideoMetadataLookup lookup,
+  ) async => const <VideoMetadataSeason>[];
 
   @override
-  Future<List<VideoMetadataEpisode>> fetchEpisodes(VideoMetadataLookup lookup,
-          {required int seasonNumber}) async =>
-      const <VideoMetadataEpisode>[];
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}

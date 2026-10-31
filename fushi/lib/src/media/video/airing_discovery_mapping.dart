@@ -18,8 +18,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 /// 出现的本来就以连载剧集为主。
 VideoMetadataMediaKind mediaKindFromAniListFormat(String? format) =>
     format?.trim().toUpperCase() == 'MOVIE'
-        ? VideoMetadataMediaKind.movie
-        : VideoMetadataMediaKind.tv;
+    ? VideoMetadataMediaKind.movie
+    : VideoMetadataMediaKind.tv;
 
 /// 合成发现条目。identity 与发现页 AniList 适配器同口径（providerId
 /// `anilist` + mediaId = AniList id），因此详情页的 loadDetails 补全、订阅 /
@@ -63,8 +63,9 @@ VideoDiscoveryItem discoveryItemFromAiringEpisode(
 /// metadata_provider 本身就是 anilist 的 external_id；Bangumi / TMDB 的 id
 /// 不是 AniList id，绝不能拿来当 mediaId_in 查。
 int? anilistIdOfVideoDownloadSubscription(VideoDownloadSubscriptionRow row) {
-  final int? fromIdentity =
-      decodeVideoMediaReference(row.identityJson)?.anilistId;
+  final int? fromIdentity = decodeVideoMediaReference(
+    row.identityJson,
+  )?.anilistId;
   if (fromIdentity != null) return fromIdentity;
   if (row.metadataProvider?.trim().toLowerCase() != 'anilist') return null;
   final String? externalId = row.externalId?.trim();

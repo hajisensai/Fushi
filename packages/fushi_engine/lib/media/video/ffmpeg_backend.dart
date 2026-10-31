@@ -484,12 +484,7 @@ Future<FfmpegRunResult> runFfmpegProcess(
   String executable,
   List<String> args,
   Duration timeout,
-) => _runToolProcess(
-  executable,
-  args,
-  timeout,
-  _ToolOutputStreams.stderrOnly,
-);
+) => _runToolProcess(executable, args, timeout, _ToolOutputStreams.stderrOnly);
 
 /// 共享：跑一次指定可执行文件的 ffmpeg **查询类**命令（[FfmpegBackend.runQuery]），
 /// 返回退出码 + stdout 与 stderr 的合并文本（stdout 在前）。
@@ -518,12 +513,7 @@ Future<FfmpegRunResult> runFfprobeProcess(
   String executable,
   List<String> args,
   Duration timeout,
-) => _runToolProcess(
-  executable,
-  args,
-  timeout,
-  _ToolOutputStreams.stdoutOnly,
-);
+) => _runToolProcess(executable, args, timeout, _ToolOutputStreams.stdoutOnly);
 
 bool _isWindowsInvalidImageFormatExitCode(
   int? returnCode, {
@@ -865,10 +855,14 @@ class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
         args,
         (List<String> resolved, AacsMediaSession session) async =>
             _redactResult(switch (delegate) {
-              final FfmpegWatchedRunner watched =>
-                await watched.runWatched(resolved, watch),
-              final FfmpegBackend other =>
-                await other.run(resolved, watch.stallTimeout),
+              final FfmpegWatchedRunner watched => await watched.runWatched(
+                resolved,
+                watch,
+              ),
+              final FfmpegBackend other => await other.run(
+                resolved,
+                watch.stallTimeout,
+              ),
             }, session),
       );
 
@@ -894,11 +888,16 @@ class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
       delegate.runQuery(args, timeout);
 
-  FfmpegRunResult _redactResult(FfmpegRunResult result, AacsMediaSession session) =>
-      FfmpegRunResult(returnCode: result.returnCode,
-          output: session.redact(result.output), executable: result.executable,
-          attemptedExecutables: result.attemptedExecutables,
-          fallbackReason: result.fallbackReason);
+  FfmpegRunResult _redactResult(
+    FfmpegRunResult result,
+    AacsMediaSession session,
+  ) => FfmpegRunResult(
+    returnCode: result.returnCode,
+    output: session.redact(result.output),
+    executable: result.executable,
+    attemptedExecutables: result.attemptedExecutables,
+    fallbackReason: result.fallbackReason,
+  );
 }
 
 /// 一条 ffmpeg 命令的蓝光输入改写生命周期：MPLS 输入改写成 concat 清单、加密段换成

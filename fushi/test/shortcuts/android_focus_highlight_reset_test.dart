@@ -37,40 +37,66 @@ void main() {
   });
 
   group('TODO-939 source contract — Android keeps highlight tracking', () {
-    final String src =
-        File('lib/src/shortcuts/gamepad_service.dart').readAsStringSync();
+    final String src = File(
+      'lib/src/shortcuts/gamepad_service.dart',
+    ).readAsStringSync();
 
     test('start() installs highlight tracking BEFORE the poller gate', () {
       final int startIdx = src.indexOf('void start() {');
       expect(startIdx, greaterThanOrEqualTo(0));
       final int trackIdx = src.indexOf('_installHighlightTracking()', startIdx);
-      final int gateIdx =
-          src.indexOf('if (!needsGamepadPoller) return', startIdx);
-      expect(trackIdx, greaterThanOrEqualTo(0),
-          reason: 'start() 必须调用 _installHighlightTracking()（平台无关）');
-      expect(gateIdx, greaterThan(trackIdx),
-          reason: 'highlight tracking 必须在 needsGamepadPoller 早退之前安装，'
-              '否则 Android 仍拿不到 pointer route + strategy seed');
+      final int gateIdx = src.indexOf(
+        'if (!needsGamepadPoller) return',
+        startIdx,
+      );
+      expect(
+        trackIdx,
+        greaterThanOrEqualTo(0),
+        reason: 'start() 必须调用 _installHighlightTracking()（平台无关）',
+      );
+      expect(
+        gateIdx,
+        greaterThan(trackIdx),
+        reason:
+            'highlight tracking 必须在 needsGamepadPoller 早退之前安装，'
+            '否则 Android 仍拿不到 pointer route + strategy seed',
+      );
     });
 
-    test('the poller — NOT the highlight tracking — is what Android gates out',
-        () {
-      expect(src, contains('static bool get needsGamepadPoller'),
-          reason: 'poller 平台判据应命名为 needsGamepadPoller（只 gate 轮询）');
-      // The pointer route + key handler must live in the platform-independent
-      // installer, not behind the poller gate.
-      final int installStart = src.indexOf('void _installHighlightTracking()');
-      final int installEnd = src.indexOf('void _startGamepadPoller()');
-      expect(installStart, greaterThanOrEqualTo(0));
-      expect(installEnd, greaterThan(installStart));
-      final String installBody = src.substring(installStart, installEnd);
-      expect(installBody, contains('addGlobalRoute(_onPointerGlobal)'),
-          reason: '全局 pointer route 必须在平台无关的 installer 里安装');
-      expect(installBody, contains('addHandler(_onKey)'),
-          reason: 'key handler 必须在平台无关的 installer 里安装');
-      expect(installBody, contains('FocusHighlightStrategy.alwaysTouch'),
-          reason: '启动时必须显式 seed alwaysTouch（接管 automatic）');
-    });
+    test(
+      'the poller — NOT the highlight tracking — is what Android gates out',
+      () {
+        expect(
+          src,
+          contains('static bool get needsGamepadPoller'),
+          reason: 'poller 平台判据应命名为 needsGamepadPoller（只 gate 轮询）',
+        );
+        // The pointer route + key handler must live in the platform-independent
+        // installer, not behind the poller gate.
+        final int installStart = src.indexOf(
+          'void _installHighlightTracking()',
+        );
+        final int installEnd = src.indexOf('void _startGamepadPoller()');
+        expect(installStart, greaterThanOrEqualTo(0));
+        expect(installEnd, greaterThan(installStart));
+        final String installBody = src.substring(installStart, installEnd);
+        expect(
+          installBody,
+          contains('addGlobalRoute(_onPointerGlobal)'),
+          reason: '全局 pointer route 必须在平台无关的 installer 里安装',
+        );
+        expect(
+          installBody,
+          contains('addHandler(_onKey)'),
+          reason: 'key handler 必须在平台无关的 installer 里安装',
+        );
+        expect(
+          installBody,
+          contains('FocusHighlightStrategy.alwaysTouch'),
+          reason: '启动时必须显式 seed alwaysTouch（接管 automatic）',
+        );
+      },
+    );
 
     test('PointerMove (swipe) is a touch-reset trigger', () {
       final int onPtrStart = src.indexOf('void _onPointerGlobal(');
@@ -82,67 +108,78 @@ void main() {
       final int onPtrEnd = src.indexOf('bool _onKey(', onPtrStart);
       expect(onPtrEnd, greaterThan(onPtrStart));
       final String onPtrBody = src.substring(onPtrStart, onPtrEnd);
-      expect(onPtrBody, contains('PointerMoveEvent'),
-          reason: 'PointerMove（滑动）必须把 strategy 复位 touch — '
-              '这是 Android「滑动消不掉」的直接解');
-      expect(onPtrBody, contains('FocusHighlightStrategy.alwaysTouch'),
-          reason: 'pointer 事件必须复位到 alwaysTouch');
+      expect(
+        onPtrBody,
+        contains('PointerMoveEvent'),
+        reason:
+            'PointerMove（滑动）必须把 strategy 复位 touch — '
+            '这是 Android「滑动消不掉」的直接解',
+      );
+      expect(
+        onPtrBody,
+        contains('FocusHighlightStrategy.alwaysTouch'),
+        reason: 'pointer 事件必须复位到 alwaysTouch',
+      );
     });
   });
 
   group('TODO-939 behaviour — installed pointer route resets the ring', () {
     testWidgets(
-        'a nav key arms the ring, then a swipe (PointerMove) drops it to touch',
-        (WidgetTester tester) async {
-      final GamepadService service =
-          GamepadService(navigatorKey: GlobalKey<NavigatorState>());
-      // start() installs the same platform-independent highlight tracking that
-      // now also runs on Android (the host here is desktop, but the route +
-      // handler are identical — this proves the swipe-reset path Android lacked).
-      service.start();
-      addTearDown(service.dispose);
+      'a nav key arms the ring, then a swipe (PointerMove) drops it to touch',
+      (WidgetTester tester) async {
+        final GamepadService service = GamepadService(
+          navigatorKey: GlobalKey<NavigatorState>(),
+        );
+        // start() installs the same platform-independent highlight tracking that
+        // now also runs on Android (the host here is desktop, but the route +
+        // handler are identical — this proves the swipe-reset path Android lacked).
+        service.start();
+        addTearDown(service.dispose);
 
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: ElevatedButton(
-                onPressed: _noop,
-                autofocus: true,
-                child: Text('btn'),
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: _noop,
+                  autofocus: true,
+                  child: Text('btn'),
+                ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      // Hardware navigation (arrow) lights the ring — like a D-pad on Android.
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-      expect(
-        FocusManager.instance.highlightStrategy,
-        FocusHighlightStrategy.alwaysTraditional,
-        reason: 'directional navigation must show the ring',
-      );
+        // Hardware navigation (arrow) lights the ring — like a D-pad on Android.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(
+          FocusManager.instance.highlightStrategy,
+          FocusHighlightStrategy.alwaysTraditional,
+          reason: 'directional navigation must show the ring',
+        );
 
-      // A touch SWIPE (PointerMove, not a tap) must drop the ring back to touch.
-      // This is the case Android's `automatic` strategy did NOT handle, so the
-      // ring stayed stuck until TODO-939 made this service own the strategy.
-      final TestGesture gesture =
-          await tester.startGesture(const Offset(100, 100));
-      await gesture.moveBy(const Offset(0, -60));
-      await tester.pump();
-      expect(
-        FocusManager.instance.highlightStrategy,
-        FocusHighlightStrategy.alwaysTouch,
-        reason: 'a touch swipe (PointerMove) must hide the focus ring — '
-            'the Android "滑动消不掉" symptom',
-      );
-      await gesture.up();
+        // A touch SWIPE (PointerMove, not a tap) must drop the ring back to touch.
+        // This is the case Android's `automatic` strategy did NOT handle, so the
+        // ring stayed stuck until TODO-939 made this service own the strategy.
+        final TestGesture gesture = await tester.startGesture(
+          const Offset(100, 100),
+        );
+        await gesture.moveBy(const Offset(0, -60));
+        await tester.pump();
+        expect(
+          FocusManager.instance.highlightStrategy,
+          FocusHighlightStrategy.alwaysTouch,
+          reason:
+              'a touch swipe (PointerMove) must hide the focus ring — '
+              'the Android "滑动消不掉" symptom',
+        );
+        await gesture.up();
 
-      service.dispose();
-    });
+        service.dispose();
+      },
+    );
   });
 }
 

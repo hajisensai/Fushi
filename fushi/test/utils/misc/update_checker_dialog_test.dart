@@ -77,8 +77,11 @@ void main() {
     );
 
     final Finder selectable = find.byType(legacy.SelectableText);
-    expect(selectable, findsWidgets,
-        reason: 'MarkdownBody(selectable: true) 应渲染出可选文本');
+    expect(
+      selectable,
+      findsWidgets,
+      reason: 'MarkdownBody(selectable: true) 应渲染出可选文本',
+    );
 
     // 长按文本触发选词，这会让 SelectableText 调 onSelectionChanged
     // （cause=longPress）→ 命中 builder.dart:957 的 onSelectionChanged!。
@@ -94,8 +97,11 @@ void main() {
     await gesture.up();
     await tester.pump();
 
-    expect(tester.takeException(), isNull,
-        reason: '选中文本不得因 onSelectionChanged! 解引用 null 崩溃');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '选中文本不得因 onSelectionChanged! 解引用 null 崩溃',
+    );
   });
 
   testWidgets('download diagnostics overlay fits a compact desktop window', (
@@ -106,10 +112,11 @@ void main() {
     addTearDown(tester.view.reset);
 
     final ValueNotifier<double> progress = ValueNotifier<double>(0.42);
-    final ValueNotifier<String> status =
-        ValueNotifier<String>(t.update_downloading);
-    final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
-        ValueNotifier<UpdateDownloadDiagnostics?>(
+    final ValueNotifier<String> status = ValueNotifier<String>(
+      t.update_downloading,
+    );
+    final ValueNotifier<UpdateDownloadDiagnostics?>
+    diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(
       const UpdateDownloadDiagnostics(
         sourceUrl:
             'https://ghproxy.net/https://github.com/hajisensai/hibiki/releases/download/v9.9.9/hibiki-9.9.9-windows-setup.exe',
@@ -151,15 +158,15 @@ void main() {
     );
   });
 
-  testWidgets('下载遮罩把「本次没用上所选来源」说出来，没事时不占位',
-      (WidgetTester tester) async {
+  testWidgets('下载遮罩把「本次没用上所选来源」说出来，没事时不占位', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(420, 520);
     addTearDown(tester.view.reset);
 
     final ValueNotifier<double> progress = ValueNotifier<double>(0);
-    final ValueNotifier<String> status =
-        ValueNotifier<String>(t.update_connecting);
+    final ValueNotifier<String> status = ValueNotifier<String>(
+      t.update_connecting,
+    );
     final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
         ValueNotifier<UpdateDownloadDiagnostics?>(null);
     final ValueNotifier<String?> notice = ValueNotifier<String?>(null);
@@ -187,8 +194,7 @@ void main() {
     final String message = t.update_download_source_unavailable(
       source: t.update_download_source_cloudflare,
     );
-    expect(find.text(message), findsNothing,
-        reason: '无事可报时不该占一行');
+    expect(find.text(message), findsNothing, reason: '无事可报时不该占一行');
 
     // 「所选来源对这个资产不适用」以前是纯静默降级：UI 零提示，用户以为自己锁定了
     // Cloudflare。现在它是一等信息，必须能在遮罩上看见。
@@ -197,61 +203,64 @@ void main() {
     expect(find.text(message), findsOneWidget);
   });
 
-  testWidgets('download diagnostics only shows the resume line when it resumed',
-      (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(420, 520);
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'download diagnostics only shows the resume line when it resumed',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(420, 520);
+      addTearDown(tester.view.reset);
 
-    final ValueNotifier<double> progress = ValueNotifier<double>(0.42);
-    final ValueNotifier<String> status =
-        ValueNotifier<String>(t.update_downloading);
-    final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
-        ValueNotifier<UpdateDownloadDiagnostics?>(
-      const UpdateDownloadDiagnostics(
+      final ValueNotifier<double> progress = ValueNotifier<double>(0.42);
+      final ValueNotifier<String> status = ValueNotifier<String>(
+        t.update_downloading,
+      );
+      final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
+          ValueNotifier<UpdateDownloadDiagnostics?>(
+            const UpdateDownloadDiagnostics(
+              sourceUrl: 'https://example.com/hibiki-9.9.9-windows-setup.exe',
+              sourceHost: 'example.com',
+              receivedBytes: 1234567,
+              totalBytes: 987654321,
+              bytesPerSecond: 123456,
+              resumeOutcome: DownloadResumeOutcome.resumed,
+            ),
+          );
+      addTearDown(progress.dispose);
+      addTearDown(status.dispose);
+      addTearDown(diagnostics.dispose);
+
+      await tester.pumpWidget(
+        buildApp(
+          Stack(
+            children: <Widget>[
+              buildUpdateDownloadOverlayForTest(
+                progress: progress,
+                status: status,
+                diagnostics: diagnostics,
+                onHide: () {},
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(find.textContaining(t.update_download_resumed), findsOneWidget);
+
+      diagnostics.value = const UpdateDownloadDiagnostics(
         sourceUrl: 'https://example.com/hibiki-9.9.9-windows-setup.exe',
         sourceHost: 'example.com',
         receivedBytes: 1234567,
         totalBytes: 987654321,
         bytesPerSecond: 123456,
-        resumeOutcome: DownloadResumeOutcome.resumed,
-      ),
-    );
-    addTearDown(progress.dispose);
-    addTearDown(status.dispose);
-    addTearDown(diagnostics.dispose);
-
-    await tester.pumpWidget(
-      buildApp(
-        Stack(
-          children: <Widget>[
-            buildUpdateDownloadOverlayForTest(
-              progress: progress,
-              status: status,
-              diagnostics: diagnostics,
-              onHide: () {},
-            ),
-          ],
-        ),
-      ),
-    );
-
-    expect(find.textContaining(t.update_download_resumed), findsOneWidget);
-
-    diagnostics.value = const UpdateDownloadDiagnostics(
-      sourceUrl: 'https://example.com/hibiki-9.9.9-windows-setup.exe',
-      sourceHost: 'example.com',
-      receivedBytes: 1234567,
-      totalBytes: 987654321,
-      bytesPerSecond: 123456,
-      resumeOutcome: DownloadResumeOutcome.restartedFromZero,
-    );
-    await tester.pump();
-    expect(
-      find.textContaining(t.update_download_restarted_from_zero),
-      findsOneWidget,
-    );
-  });
+        resumeOutcome: DownloadResumeOutcome.restartedFromZero,
+      );
+      await tester.pump();
+      expect(
+        find.textContaining(t.update_download_restarted_from_zero),
+        findsOneWidget,
+      );
+    },
+  );
 
   // TODO-738: the download overlay exposes a Cancel escape hatch that fires the
   // onCancel callback (lets the user abort the multi-minute connecting hang).
@@ -263,8 +272,9 @@ void main() {
     addTearDown(tester.view.reset);
 
     final ValueNotifier<double> progress = ValueNotifier<double>(0);
-    final ValueNotifier<String> status =
-        ValueNotifier<String>(t.update_connecting);
+    final ValueNotifier<String> status = ValueNotifier<String>(
+      t.update_connecting,
+    );
     final ValueNotifier<UpdateDownloadDiagnostics?> diagnostics =
         ValueNotifier<UpdateDownloadDiagnostics?>(null);
     addTearDown(progress.dispose);
@@ -415,8 +425,10 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.update_install_incomplete_title), findsOneWidget);
-    expect(find.textContaining(r'C:\tmp\hibiki-9.9.9.install.log'),
-        findsOneWidget);
+    expect(
+      find.textContaining(r'C:\tmp\hibiki-9.9.9.install.log'),
+      findsOneWidget,
+    );
     expect(
       find.text(
         t.update_install_launcher_pid(pid: 3131),
@@ -438,111 +450,114 @@ void main() {
       findsOneWidget,
     );
     expect(
-        find.text(t.update_install_installer_pid(pid: 4242)), findsOneWidget);
+      find.text(t.update_install_installer_pid(pid: 4242)),
+      findsOneWidget,
+    );
     expect(find.text(t.update_install_log_not_observed), findsOneWidget);
   });
 
   testWidgets(
-      'installer handoff failure dialog shows holder diagnostics and restart '
-      'only with lock evidence', (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(420, 360);
-    addTearDown(tester.view.reset);
+    'installer handoff failure dialog shows holder diagnostics and restart '
+    'only with lock evidence',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(420, 360);
+      addTearDown(tester.view.reset);
 
-    final WindowsUpdateHandoffRecord record =
-        WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
-      'targetVersion': '9.9.9',
-      'installerPath': r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
-      'innoLogPath': r'C:\tmp\hibiki-9.9.9.install.log',
-      'startedAt': '2026-06-17T10:30:00Z',
-      'installerLaunchSucceeded': true,
-      'installerPid': 4242,
-      'innoLogExists': true,
-      'currentExecutablePath': r'D:\Portable\Hibiki\hibiki.exe',
-      'currentInstallDir': r'D:\Portable\Hibiki',
-      'targetInstallDir': r'D:\Portable\Hibiki',
-      'detectedInstallLocations': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'source': 'registered',
-          'path': r'D:\Program\Hibiki',
-        },
-        <String, dynamic>{
-          'source': 'legacy',
-          'path': r'D:\APP\Hibiki',
-        },
-      ],
-      'pathMismatchWarning':
-          r'Registered install location D:\Program\Hibiki differs from current D:\Portable\Hibiki. Do not delete it automatically; clean old shortcuts manually if needed.',
-      'runningFushiProcesses': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'pid': 5678,
-          'path': r'D:\Portable\Hibiki\hibiki.exe',
-        },
-      ],
-      'libmpvModuleHolders': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'pid': 5678,
-          'path': r'D:\Portable\Hibiki\hibiki.exe',
-        },
-      ],
-      'innoLogDeleteFileFailures': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'path': r'D:\Portable\Hibiki\libmpv-2.dll',
-          'code': 5,
-        },
-      ],
-    });
+      final WindowsUpdateHandoffRecord
+      record = WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+        'targetVersion': '9.9.9',
+        'installerPath': r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+        'innoLogPath': r'C:\tmp\hibiki-9.9.9.install.log',
+        'startedAt': '2026-06-17T10:30:00Z',
+        'installerLaunchSucceeded': true,
+        'installerPid': 4242,
+        'innoLogExists': true,
+        'currentExecutablePath': r'D:\Portable\Hibiki\hibiki.exe',
+        'currentInstallDir': r'D:\Portable\Hibiki',
+        'targetInstallDir': r'D:\Portable\Hibiki',
+        'detectedInstallLocations': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'source': 'registered',
+            'path': r'D:\Program\Hibiki',
+          },
+          <String, dynamic>{'source': 'legacy', 'path': r'D:\APP\Hibiki'},
+        ],
+        'pathMismatchWarning':
+            r'Registered install location D:\Program\Hibiki differs from current D:\Portable\Hibiki. Do not delete it automatically; clean old shortcuts manually if needed.',
+        'runningFushiProcesses': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'pid': 5678,
+            'path': r'D:\Portable\Hibiki\hibiki.exe',
+          },
+        ],
+        'libmpvModuleHolders': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'pid': 5678,
+            'path': r'D:\Portable\Hibiki\hibiki.exe',
+          },
+        ],
+        'innoLogDeleteFileFailures': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'path': r'D:\Portable\Hibiki\libmpv-2.dll',
+            'code': 5,
+          },
+        ],
+      });
 
-    await tester.pumpWidget(
-      buildApp(
-        WindowsUpdateHandoffResultDialog(
-          result: WindowsUpdateHandoffResult(
-            status: WindowsUpdateHandoffStatus.incomplete,
-            record: record,
-          ),
-        ),
-      ),
-    );
-
-    expect(tester.takeException(), isNull);
-    expect(find.textContaining(r'D:\Portable\Hibiki'), findsWidgets);
-    expect(find.textContaining(r'D:\Program\Hibiki'), findsWidgets);
-    expect(find.textContaining(r'D:\APP\Hibiki'), findsWidgets);
-    expect(find.textContaining('5678'), findsWidgets);
-    expect(find.textContaining('libmpv-2.dll'), findsWidgets);
-    expect(find.textContaining('code 5'), findsWidgets);
-    expect(find.textContaining('Close Fushi'), findsOneWidget);
-    expect(find.textContaining('retry'), findsOneWidget);
-    expect(find.textContaining('restart Windows'), findsOneWidget);
-  });
-
-  testWidgets(
-      'installer handoff launch failure does not suggest reboot without lock '
-      'evidence', (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(420, 320);
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(
-      buildApp(
-        WindowsUpdateHandoffResultDialog(
-          result: WindowsUpdateHandoffResult(
-            status: WindowsUpdateHandoffStatus.launchFailed,
-            record: WindowsUpdateHandoffRecord(
-              targetVersion: '9.9.9',
-              installerPath: r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
-              innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
-              startedAt: DateTime.utc(2026, 6, 17, 10, 30),
-              installerLaunchSucceeded: false,
-              launchError: 'access denied',
+      await tester.pumpWidget(
+        buildApp(
+          WindowsUpdateHandoffResultDialog(
+            result: WindowsUpdateHandoffResult(
+              status: WindowsUpdateHandoffStatus.incomplete,
+              record: record,
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(tester.takeException(), isNull);
-    expect(find.textContaining('access denied'), findsOneWidget);
-    expect(find.textContaining('restart Windows'), findsNothing);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining(r'D:\Portable\Hibiki'), findsWidgets);
+      expect(find.textContaining(r'D:\Program\Hibiki'), findsWidgets);
+      expect(find.textContaining(r'D:\APP\Hibiki'), findsWidgets);
+      expect(find.textContaining('5678'), findsWidgets);
+      expect(find.textContaining('libmpv-2.dll'), findsWidgets);
+      expect(find.textContaining('code 5'), findsWidgets);
+      expect(find.textContaining('Close Fushi'), findsOneWidget);
+      expect(find.textContaining('retry'), findsOneWidget);
+      expect(find.textContaining('restart Windows'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'installer handoff launch failure does not suggest reboot without lock '
+    'evidence',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(420, 320);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        buildApp(
+          WindowsUpdateHandoffResultDialog(
+            result: WindowsUpdateHandoffResult(
+              status: WindowsUpdateHandoffStatus.launchFailed,
+              record: WindowsUpdateHandoffRecord(
+                targetVersion: '9.9.9',
+                installerPath: r'C:\tmp\hibiki-9.9.9-windows-setup.exe',
+                innoLogPath: r'C:\tmp\hibiki-9.9.9.install.log',
+                startedAt: DateTime.utc(2026, 6, 17, 10, 30),
+                installerLaunchSucceeded: false,
+                launchError: 'access denied',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('access denied'), findsOneWidget);
+      expect(find.textContaining('restart Windows'), findsNothing);
+    },
+  );
 }

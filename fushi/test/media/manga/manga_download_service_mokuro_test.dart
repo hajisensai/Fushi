@@ -55,18 +55,18 @@ void main() {
   /// 时钟单调递增：`created_at` 与入队顺序一致，worker 领取顺序才可断言
   /// （同毫秒入队会退化成按 job_id 哈希排序）。
   MangaDownloadService build() => MangaDownloadService(
-        database: db,
-        serviceFor: (_) => throw UnimplementedError('章节任务不在本测试范围'),
-        clock: () => DateTime.fromMillisecondsSinceEpoch(++tick),
-        mokuroDownloader: () {
-          final _FakeDownloader downloader = _FakeDownloader(calls);
-          downloaders.add(downloader);
-          return downloader;
-        },
-        wait: (Duration duration) async {
-          waits.add(duration);
-        },
-      );
+    database: db,
+    serviceFor: (_) => throw UnimplementedError('章节任务不在本测试范围'),
+    clock: () => DateTime.fromMillisecondsSinceEpoch(++tick),
+    mokuroDownloader: () {
+      final _FakeDownloader downloader = _FakeDownloader(calls);
+      downloaders.add(downloader);
+      return downloader;
+    },
+    wait: (Duration duration) async {
+      waits.add(duration);
+    },
+  );
 
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -84,10 +84,10 @@ void main() {
   });
 
   String jobIdOf(String volume) => mangaDownloadJobId(
-        kind: MangaDownloadJobKind.mokuroVolume,
-        bookKey: mokuroMoeBookKey(_series),
-        chapterKey: volume,
-      );
+    kind: MangaDownloadJobKind.mokuroVolume,
+    bookKey: mokuroMoeBookKey(_series),
+    chapterKey: volume,
+  );
 
   Future<MangaDownloadJobRow> row(String volume) async =>
       (await db.getMangaDownloadJob(jobIdOf(volume)))!;
@@ -107,18 +107,17 @@ void main() {
   }
 
   Future<_FakeDownloader> downloaderAt(int index) async {
-    await until(() async => downloaders.length > index,
-        reason: '第 ${index + 1} 个下载器没被建出来');
+    await until(
+      () async => downloaders.length > index,
+      reason: '第 ${index + 1} 个下载器没被建出来',
+    );
     return downloaders[index];
   }
 
   test('两卷顺序执行：第一卷流没关第二卷不起；done 落行并计数，skippedExisting 不计', () async {
     final MangaDownloadService downloads = build();
-    final ({MangaDownloadJobRow row, bool added}) first =
-        await downloads.enqueueMokuroVolume(
-      seriesName: _series,
-      volumeName: _vol1,
-    );
+    final ({MangaDownloadJobRow row, bool added}) first = await downloads
+        .enqueueMokuroVolume(seriesName: _series, volumeName: _vol1);
     expect(first.added, isTrue);
     expect(first.row.kind, MangaDownloadJobKind.mokuroVolume);
     expect(first.row.bookKey, 'mokuro:$_series');
@@ -130,23 +129,28 @@ void main() {
 
     final _FakeDownloader d1 = await downloaderAt(0);
     expect(calls, <(String, String)>[(_series, _vol1)]);
-    d1.ctrl.add(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.importing,
-      pagesDone: 1,
-      pagesTotal: 4,
-    ));
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.importing,
+        pagesDone: 1,
+        pagesTotal: 4,
+      ),
+    );
     await until(() async => (await row(_vol1)).pagesDone == 1);
     expect((await row(_vol1)).status, MangaDownloadJobStatus.running);
     expect((await row(_vol2)).status, MangaDownloadJobStatus.queued);
     expect(downloaders, hasLength(1), reason: '单 worker：第一卷没完第二卷不能起');
     expect(downloads.mokuroImportedCount.value, 0);
 
-    await d1.finish(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.done,
-      bookKey: 'book-1',
-    ));
+    await d1.finish(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.done,
+        bookKey: 'book-1',
+      ),
+    );
     await until(
-        () async => (await row(_vol1)).status == MangaDownloadJobStatus.done);
+      () async => (await row(_vol1)).status == MangaDownloadJobStatus.done,
+    );
     final MangaDownloadJobRow done1 = await row(_vol1);
     expect(done1.completedAt, isNotNull);
     expect(done1.lastError, isNull);
@@ -154,14 +158,19 @@ void main() {
 
     final _FakeDownloader d2 = await downloaderAt(1);
     expect(calls.last, (_series, _vol2));
-    await d2.finish(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.done,
-      skippedExisting: true,
-    ));
+    await d2.finish(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.done,
+        skippedExisting: true,
+      ),
+    );
     await downloads.whenIdle;
     expect((await row(_vol2)).status, MangaDownloadJobStatus.done);
-    expect(downloads.mokuroImportedCount.value, 1,
-        reason: '已在库被 skip 的卷没有新书行，不计');
+    expect(
+      downloads.mokuroImportedCount.value,
+      1,
+      reason: '已在库被 skip 的卷没有新书行，不计',
+    );
     expect(waits, isEmpty);
     downloads.dispose();
   });
@@ -172,35 +181,45 @@ void main() {
     await downloads.start();
     final _FakeDownloader d1 = await downloaderAt(0);
 
-    d1.ctrl.add(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.downloadingCbz,
-      receivedBytes: 512 * 1024,
-      totalBytes: 1024 * 1024,
-    ));
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.downloadingCbz,
+        receivedBytes: 512 * 1024,
+        totalBytes: 1024 * 1024,
+      ),
+    );
     await until(() async => (await row(_vol1)).pagesDone == 524288);
     expect((await row(_vol1)).pagesTotal, 1048576);
 
-    d1.ctrl.add(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.importing,
-      pagesDone: 3,
-      pagesTotal: 10,
-    ));
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.importing,
+        pagesDone: 3,
+        pagesTotal: 10,
+      ),
+    );
     await until(() async => (await row(_vol1)).pagesDone == 3);
     expect((await row(_vol1)).pagesTotal, 10);
 
     // 没有可比进度的阶段（extracting / 总量未知的 CBZ）不动列。
-    d1.ctrl.add(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.extracting,
-      receivedBytes: 99,
-    ));
-    d1.ctrl.add(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.downloadingCbz,
-      receivedBytes: 99,
-    ));
-    await d1.finish(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.done,
-      bookKey: 'book-1',
-    ));
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.extracting,
+        receivedBytes: 99,
+      ),
+    );
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.downloadingCbz,
+        receivedBytes: 99,
+      ),
+    );
+    await d1.finish(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.done,
+        bookKey: 'book-1',
+      ),
+    );
     await downloads.whenIdle;
     final MangaDownloadJobRow done = await row(_vol1);
     expect(done.status, MangaDownloadJobStatus.done);
@@ -214,9 +233,7 @@ void main() {
     final String jobId = (await downloads.enqueueMokuroVolume(
       seriesName: _series,
       volumeName: _vol1,
-    ))
-        .row
-        .jobId;
+    )).row.jobId;
     await downloads.start();
 
     for (int attempt = 0; attempt < kMangaDownloadMaxAttempts; attempt++) {
@@ -246,56 +263,54 @@ void main() {
     expect(rows.single.lastError, isNull);
 
     // queued 的卷再入队：幂等，不新建行。
-    final ({MangaDownloadJobRow row, bool added}) again =
-        await downloads.enqueueMokuroVolume(
-      seriesName: _series,
-      volumeName: _vol1,
-    );
+    final ({MangaDownloadJobRow row, bool added}) again = await downloads
+        .enqueueMokuroVolume(seriesName: _series, volumeName: _vol1);
     expect(again.added, isFalse);
     expect(again.row.jobId, jobId);
     expect(await db.listMangaDownloadJobs(), hasLength(1));
   });
 
   test(
-      '执行中 cancel → 下载器 cancel 被调、流以 Cancelled 收尾 → 行 cancelled；retry 回 queued',
-      () async {
-    final MangaDownloadService downloads = build();
-    final String jobId = (await downloads.enqueueMokuroVolume(
-      seriesName: _series,
-      volumeName: _vol1,
-    ))
-        .row
-        .jobId;
-    await downloads.start();
-    final _FakeDownloader d1 = await downloaderAt(0);
-    expect((await row(_vol1)).status, MangaDownloadJobStatus.running);
+    '执行中 cancel → 下载器 cancel 被调、流以 Cancelled 收尾 → 行 cancelled；retry 回 queued',
+    () async {
+      final MangaDownloadService downloads = build();
+      final String jobId = (await downloads.enqueueMokuroVolume(
+        seriesName: _series,
+        volumeName: _vol1,
+      )).row.jobId;
+      await downloads.start();
+      final _FakeDownloader d1 = await downloaderAt(0);
+      expect((await row(_vol1)).status, MangaDownloadJobStatus.running);
 
-    await downloads.cancel(jobId);
-    expect(d1.cancelCalls, 1, reason: '取消要真掐下载器，不是只改状态');
-    await d1.fail(const MokuroMoeDownloadCancelled());
-    await downloads.whenIdle;
-    expect((await row(_vol1)).status, MangaDownloadJobStatus.cancelled);
-    expect(waits, isEmpty, reason: '用户取消不走退避重试');
+      await downloads.cancel(jobId);
+      expect(d1.cancelCalls, 1, reason: '取消要真掐下载器，不是只改状态');
+      await d1.fail(const MokuroMoeDownloadCancelled());
+      await downloads.whenIdle;
+      expect((await row(_vol1)).status, MangaDownloadJobStatus.cancelled);
+      expect(waits, isEmpty, reason: '用户取消不走退避重试');
 
-    downloads.dispose();
-    await downloads.retry(jobId);
-    final MangaDownloadJobRow retried = await row(_vol1);
-    expect(retried.jobId, jobId);
-    expect(retried.status, MangaDownloadJobStatus.queued);
-    expect(retried.attemptCount, 0);
-    expect(await db.listMangaDownloadJobs(), hasLength(1));
-  });
+      downloads.dispose();
+      await downloads.retry(jobId);
+      final MangaDownloadJobRow retried = await row(_vol1);
+      expect(retried.jobId, jobId);
+      expect(retried.status, MangaDownloadJobStatus.queued);
+      expect(retried.attemptCount, 0);
+      expect(await db.listMangaDownloadJobs(), hasLength(1));
+    },
+  );
 
   test('流没发 done 就正常关闭 → 行 cancelled（旧队列语义）', () async {
     final MangaDownloadService downloads = build();
     await downloads.enqueueMokuroVolume(seriesName: _series, volumeName: _vol1);
     await downloads.start();
     final _FakeDownloader d1 = await downloaderAt(0);
-    d1.ctrl.add(const MokuroMoeVolumeDownloadEvent(
-      stage: MokuroMoeDownloadStage.importing,
-      pagesDone: 1,
-      pagesTotal: 2,
-    ));
+    d1.ctrl.add(
+      const MokuroMoeVolumeDownloadEvent(
+        stage: MokuroMoeDownloadStage.importing,
+        pagesDone: 1,
+        pagesTotal: 2,
+      ),
+    );
     await d1.ctrl.close();
     await downloads.whenIdle;
     expect((await row(_vol1)).status, MangaDownloadJobStatus.cancelled);
@@ -330,10 +345,10 @@ void main() {
     }
     await downloads.clearFinished();
     final List<MangaDownloadJobRow> left = await db.listMangaDownloadJobs();
-    expect(
-      left.map((MangaDownloadJobRow r) => r.chapterKey).toSet(),
-      <String>{'a', 'b'},
-    );
+    expect(left.map((MangaDownloadJobRow r) => r.chapterKey).toSet(), <String>{
+      'a',
+      'b',
+    });
     expect(
       (await downloads.mokuroJobsForSeries(_series)).keys.toSet(),
       <String>{'a', 'b'},

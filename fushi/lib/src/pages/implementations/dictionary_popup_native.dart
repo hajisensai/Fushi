@@ -112,14 +112,17 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         );
       }
 
-      final String contentText =
-          DictionaryEntry.meaningToPlainText(entry.meaning);
+      final String contentText = DictionaryEntry.meaningToPlainText(
+        entry.meaning,
+      );
 
-      grouped[key]!.glossaries.add(_GlossaryItem(
-            dictionary: entry.dictionaryName,
-            content: contentText,
-            definitionTags: extraData?['definitionTags']?.toString() ?? '',
-          ));
+      grouped[key]!.glossaries.add(
+        _GlossaryItem(
+          dictionary: entry.dictionaryName,
+          content: contentText,
+          definitionTags: extraData?['definitionTags']?.toString() ?? '',
+        ),
+      );
     }
 
     return grouped.values.toList();
@@ -143,10 +146,8 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         vertical: tokens.spacing.gap / 2,
       ),
       itemCount: _grouped.length,
-      separatorBuilder: (_, __) => FushiDividerControl(
-        height: 1,
-        color: tokens.surfaces.outline,
-      ),
+      separatorBuilder: (_, __) =>
+          FushiDividerControl(height: 1, color: tokens.surfaces.outline),
       itemBuilder: (context, idx) {
         final entry = _grouped[idx];
         return _buildEntry(entry, textColor, subColor, tagBg, tokens);
@@ -217,10 +218,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         readingStyle: readingStyle,
       );
     }
-    return Text(
-      entry.expression,
-      style: expressionStyle,
-    );
+    return Text(entry.expression, style: expressionStyle);
   }
 
   Widget _buildMineButton(
@@ -266,19 +264,25 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
       // WebView 弹窗（popup.css 的 .deinflection-tag:not(:first-child)::before）
       // 保持同一种读法。
       if (i > 0) {
-        children.add(Text(
-          '«',
-          style: theme.textTheme.labelSmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ));
+        children.add(
+          Text(
+            '«',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        );
       }
-      children.add(FushiTagChip(
-        label: tag.name,
-        color: tagBg,
-        // 没有语法说明的标签（文本变体归一的回落条目）不可点，免得点开一个空框。
-        onTap:
-            tag.description.isEmpty ? null : () => _showGrammarDescription(tag),
-      ));
+      children.add(
+        FushiTagChip(
+          label: tag.name,
+          color: tagBg,
+          // 没有语法说明的标签（文本变体归一的回落条目）不可点，免得点开一个空框。
+          onTap: tag.description.isEmpty
+              ? null
+              : () => _showGrammarDescription(tag),
+        ),
+      );
     }
     return Padding(
       padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
@@ -309,8 +313,8 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
             Text(
               t.dict_category_grammar,
               style: Theme.of(dialogContext).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+              ),
             ),
             SizedBox(height: tokens.spacing.gap),
             SelectableText(tag.description),
@@ -396,15 +400,13 @@ class _FuriganaText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double readingFontSize = readingStyle.fontSize ??
+    final double readingFontSize =
+        readingStyle.fontSize ??
         DefaultTextStyle.of(context).style.fontSize ??
         12;
     final double readingGap = readingFontSize + 2;
     final segments = _buildFuriganaSegments(expression, reading, readingGap);
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.end,
-      children: segments,
-    );
+    return Wrap(crossAxisAlignment: WrapCrossAlignment.end, children: segments);
   }
 
   List<Widget> _buildFuriganaSegments(
@@ -460,8 +462,9 @@ class _FuriganaText extends StatelessWidget {
         readEnd = read.length;
       }
 
-      final furigana =
-          readEnd <= read.length ? read.substring(readIdx, readEnd) : '';
+      final furigana = readEnd <= read.length
+          ? read.substring(readIdx, readEnd)
+          : '';
       readIdx = readEnd;
 
       segments.add(

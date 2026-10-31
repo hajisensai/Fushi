@@ -42,8 +42,7 @@ int _fakeApplySessionSettings(
   int activeDownloads,
   int activeSeeds,
   int maxUploadSlots,
-) =>
-    1;
+) => 1;
 
 Pointer<Char> _fakeListTorrents(Pointer<Void> session) =>
     _torrentsJson.toNativeUtf8().cast<Char>();
@@ -88,27 +87,40 @@ FushiTorrentBindings _fakeBindings() {
         ).cast<T>();
       case 'ht_apply_session_settings':
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int)>(
-          _fakeApplySessionSettings,
-          0,
-        ).cast<T>();
+              Int Function(
+                Pointer<Void>,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+              )
+            >(_fakeApplySessionSettings, 0)
+            .cast<T>();
       case 'ht_list_torrents':
         return Pointer.fromFunction<Pointer<Char> Function(Pointer<Void>)>(
           _fakeListTorrents,
         ).cast<T>();
       case 'ht_add_magnet':
         return Pointer.fromFunction<
-            Pointer<Char> Function(
-                Pointer<Void>, Pointer<Char>, Pointer<Char>, Int)>(
-          _fakeAddMagnet,
-        ).cast<T>();
+              Pointer<Char> Function(
+                Pointer<Void>,
+                Pointer<Char>,
+                Pointer<Char>,
+                Int,
+              )
+            >(_fakeAddMagnet)
+            .cast<T>();
       case 'ht_add_trackers':
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Pointer<Char>, Pointer<Char>)>(
-          _fakeAddTrackers,
-          -1,
-        ).cast<T>();
+              Int Function(Pointer<Void>, Pointer<Char>, Pointer<Char>)
+            >(_fakeAddTrackers, -1)
+            .cast<T>();
       case 'ht_add_dht_nodes':
         if (!_hasDhtSymbol) break;
         return Pointer.fromFunction<Int Function(Pointer<Void>, Pointer<Char>)>(
@@ -152,8 +164,9 @@ String _torrent(String id) {
 late Directory _tempDir;
 
 EmbeddedTorrentHost _host() {
-  final EmbeddedTorrentEngine engine =
-      EmbeddedTorrentEngine.fromBindings(_fakeBindings());
+  final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.fromBindings(
+    _fakeBindings(),
+  );
   final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine);
   expect(session, isNotNull);
   return EmbeddedTorrentHost.forTesting(
@@ -249,8 +262,10 @@ void main() {
       _calls.clear();
 
       expect(
-        await backend.addTorrent('magnet:?xt=urn:btih:newhash',
-            category: 'hibiki'),
+        await backend.addTorrent(
+          'magnet:?xt=urn:btih:newhash',
+          category: 'hibiki',
+        ),
         isTrue,
       );
       expect(_calls, <String>[
@@ -263,8 +278,10 @@ void main() {
       final EmbeddedTorrentHost host = _host();
       final EmbeddedTorrentBackend backend = host.backendView();
       expect(
-        await backend.addTorrent('magnet:?xt=urn:btih:newhash',
-            category: 'hibiki'),
+        await backend.addTorrent(
+          'magnet:?xt=urn:btih:newhash',
+          category: 'hibiki',
+        ),
         isTrue,
       );
       expect(_calls, <String>['add']);

@@ -40,8 +40,7 @@ void main() {
       // openSettingsSearchEntry，主页点搜索结果时必须经它走。
       expect(home, contains('openSettingsSearchEntry('));
       expect(
-        File('lib/src/settings/settings_search_sheet.dart')
-            .readAsStringSync(),
+        File('lib/src/settings/settings_search_sheet.dart').readAsStringSync(),
         contains('SettingsSearchReveal.pendingItemId = entry.hasRevealTarget'),
       );
     });

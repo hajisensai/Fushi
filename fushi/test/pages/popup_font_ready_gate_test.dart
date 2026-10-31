@@ -12,16 +12,15 @@ void main() {
 
     final File jsTest = File('test/pages/popup_font_ready_gate_test.js');
     expect(jsTest.existsSync(), isTrue);
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
-    );
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
 
     expect(
       result.exitCode,
       0,
-      reason: 'font-ready reveal behavior test failed.\n'
+      reason:
+          'font-ready reveal behavior test failed.\n'
           'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
     expect(result.stdout.toString(), contains('all assertions passed'));
@@ -36,16 +35,14 @@ void main() {
     final String injection = File(
       'lib/src/pages/implementations/popup_settings_injection.dart',
     ).readAsStringSync();
-    expect(
-      injection,
-      contains('window.__fushiDictionaryFontsConfigured ='),
-    );
+    expect(injection, contains('window.__fushiDictionaryFontsConfigured ='));
   });
 }
 
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

@@ -17,56 +17,88 @@ import 'package:flutter_test/flutter_test.dart';
 /// click 不成立 → 阅读器点击查词永久失效（用户报「右键复制以后点击查词只出蓝色高亮」）。
 void main() {
   final File view = File(
-      '../packages/flutter_inappwebview_windows/lib/src/in_app_webview/custom_platform_view.dart');
+    '../packages/flutter_inappwebview_windows/lib/src/in_app_webview/custom_platform_view.dart',
+  );
 
   late String src;
 
   setUpAll(() {
-    expect(view.existsSync(), isTrue,
-        reason: 'custom_platform_view.dart 不存在，fork 路径变了须更新守卫');
+    expect(
+      view.existsSync(),
+      isTrue,
+      reason: 'custom_platform_view.dart 不存在，fork 路径变了须更新守卫',
+    );
     src = view.readAsStringSync().replaceAll('\r\n', '\n');
   });
 
   test('按钮状态不得再按 pointer id 记单值 PointerButton', () {
-    expect(src.contains('_downButtons'), isFalse,
-        reason: 'BUG-1419 回退：_downButtons 单值记账无法表达多键并按，'
-            '复合掩码会被映射成 none 并覆盖已记按钮 → button-up 永久丢失');
+    expect(
+      src.contains('_downButtons'),
+      isFalse,
+      reason:
+          'BUG-1419 回退：_downButtons 单值记账无法表达多键并按，'
+          '复合掩码会被映射成 none 并覆盖已记按钮 → button-up 永久丢失',
+    );
   });
 
   test('掩码不得整体喂给单键映射函数', () {
     // `_getButton` 只接受单个位（kPrimaryMouseButton 等）；把 ev.buttons 整体传进去，
     // 左|右 = 3 会落进 default → PointerButton.none，正是 BUG-1419 的根因。
-    expect(src.contains('_getButton(ev.buttons)'), isFalse,
-        reason: 'BUG-1419 回退：ev.buttons 是位掩码，必须逐位差分而非整体映射成单键');
+    expect(
+      src.contains('_getButton(ev.buttons)'),
+      isFalse,
+      reason: 'BUG-1419 回退：ev.buttons 是位掩码，必须逐位差分而非整体映射成单键',
+    );
   });
 
   test('五个非触摸指针入口都全量同步 ev.buttons', () {
-    expect(src.contains('void _syncMouseInput(Offset? position, int buttons)'),
-        isTrue,
-        reason: '全量同步入口被改名/删除，守卫须同步更新；坐标必须可空——'
-            'cancel 没有可信坐标（见下一条）');
+    expect(
+      src.contains('void _syncMouseInput(Offset? position, int buttons)'),
+      isTrue,
+      reason:
+          '全量同步入口被改名/删除，守卫须同步更新；坐标必须可空——'
+          'cancel 没有可信坐标（见下一条）',
+    );
     // hover / down / up / move 各一处：hover 的掩码恒 0，是残留位唯一可靠的
     // 自愈点；缺任何一处都会让某类漏发的 up 无法补上。cancel 是第五个入口，
     // 但它传 null 坐标（下一条守）。
-    final int calls =
-        '_syncMouseInput(ev.localPosition, ev.buttons)'.allMatches(src).length;
-    expect(calls, greaterThanOrEqualTo(4),
-        reason: 'onPointerHover / Down / Up / Move 四个带坐标的入口都必须调用，'
-            '实际只有 $calls 处');
-    expect(src.contains('_syncMouseInput(null, ev.buttons)'), isTrue,
-        reason: 'onPointerCancel 是第五个入口，必须以 null 坐标走同一条差分路径');
+    final int calls = '_syncMouseInput(ev.localPosition, ev.buttons)'
+        .allMatches(src)
+        .length;
+    expect(
+      calls,
+      greaterThanOrEqualTo(4),
+      reason:
+          'onPointerHover / Down / Up / Move 四个带坐标的入口都必须调用，'
+          '实际只有 $calls 处',
+    );
+    expect(
+      src.contains('_syncMouseInput(null, ev.buttons)'),
+      isTrue,
+      reason: 'onPointerCancel 是第五个入口，必须以 null 坐标走同一条差分路径',
+    );
   });
 
   test('同步走纯函数差分，且差分只对变化位产出翻转', () {
-    expect(src.contains('planMouseInputDispatches('), isTrue,
-        reason: '_syncMouseInput 必须复用可单测的有序输入规划器');
-    expect(src.contains('diffMouseButtonMasks(previousButtons, nextButtons)'),
-        isTrue,
-        reason: '有序输入规划器必须继续复用 BUG-1419 的逐位差分真值');
-    expect(src.contains('List<MouseButtonTransition> diffMouseButtonMasks('),
-        isTrue,
-        reason: 'diffMouseButtonMasks 是 BUG-1419 的真值来源，不得内联回 State');
-    expect(src.contains('if (wasDown == isDown) continue;'), isTrue,
-        reason: '未变化的位必须跳过：按住不动时重发 down 会污染 Blink 的拖拽判定');
+    expect(
+      src.contains('planMouseInputDispatches('),
+      isTrue,
+      reason: '_syncMouseInput 必须复用可单测的有序输入规划器',
+    );
+    expect(
+      src.contains('diffMouseButtonMasks(previousButtons, nextButtons)'),
+      isTrue,
+      reason: '有序输入规划器必须继续复用 BUG-1419 的逐位差分真值',
+    );
+    expect(
+      src.contains('List<MouseButtonTransition> diffMouseButtonMasks('),
+      isTrue,
+      reason: 'diffMouseButtonMasks 是 BUG-1419 的真值来源，不得内联回 State',
+    );
+    expect(
+      src.contains('if (wasDown == isDown) continue;'),
+      isTrue,
+      reason: '未变化的位必须跳过：按住不动时重发 down 会污染 Blink 的拖拽判定',
+    );
   });
 }

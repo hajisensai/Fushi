@@ -76,8 +76,9 @@ Future<int?> _colInt(FushiDatabase db, String sql) async {
 
 void main() {
   FushiDatabase openUpgraded() {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory(setup: _seedV85));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      NativeDatabase.memory(setup: _seedV85),
+    );
     addTearDown(db.close);
     return db;
   }
@@ -85,19 +86,22 @@ void main() {
   test('v85 -> v86：加列无损，存量行与既有主轨调轴逐列不变', () async {
     final FushiDatabase db = openUpgraded();
 
-    final QueryRow version =
-        await db.customSelect('PRAGMA user_version').getSingle();
+    final QueryRow version = await db
+        .customSelect('PRAGMA user_version')
+        .getSingle();
     expect(version.read<int>('user_version'), 142);
     expect(db.schemaVersion, 142);
 
     final List<VideoBookRow> rows = await db.select(db.videoBooks).get();
     expect(rows, hasLength(2), reason: '迁移丢一行就是丢一部视频的记录');
-    final VideoBookRow ep0 =
-        rows.firstWhere((VideoBookRow r) => r.bookUid == 'video/ep0');
+    final VideoBookRow ep0 = rows.firstWhere(
+      (VideoBookRow r) => r.bookUid == 'video/ep0',
+    );
     expect(ep0.delayMs, 800, reason: '主轨调轴值不许被迁移动到');
 
-    final List<MediaCollectionRow> cols =
-        await db.select(db.mediaCollections).get();
+    final List<MediaCollectionRow> cols = await db
+        .select(db.mediaCollections)
+        .get();
     expect(cols, hasLength(1));
     expect(cols.single.subtitleDelayMs, -450, reason: '系列级主轨调轴值不许被迁移动到');
   });
@@ -105,19 +109,25 @@ void main() {
   test('跟随语义：升级后两层副轨列全 NULL = 副字幕继续跟随主字幕（行为不变）', () async {
     final FushiDatabase db = openUpgraded();
     expect(
-      await _colInt(db,
-          "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep0'"),
+      await _colInt(
+        db,
+        "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep0'",
+      ),
       isNull,
       reason: '主轨调过（+800）的行也不回填副轨——NULL=跟随，本就等价旧「主副共用」行为',
     );
     expect(
-      await _colInt(db,
-          "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep1'"),
+      await _colInt(
+        db,
+        "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep1'",
+      ),
       isNull,
     );
     expect(
       await _colInt(
-          db, 'SELECT secondary_subtitle_delay_ms FROM media_collections'),
+        db,
+        'SELECT secondary_subtitle_delay_ms FROM media_collections',
+      ),
       isNull,
     );
   });
@@ -126,25 +136,34 @@ void main() {
     final FushiDatabase db = openUpgraded();
     await db.updateVideoBookSecondaryDelayMs('video/ep0', -250);
     expect(
-      await _colInt(db,
-          "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep0'"),
+      await _colInt(
+        db,
+        "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep0'",
+      ),
       -250,
     );
     // 重置为跟随：写回 NULL（不是 0——0 是显式独立值）。
     await db.updateVideoBookSecondaryDelayMs('video/ep0', null);
     expect(
-      await _colInt(db,
-          "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep0'"),
+      await _colInt(
+        db,
+        "SELECT secondary_delay_ms FROM video_books WHERE book_uid = 'video/ep0'",
+      ),
       isNull,
     );
 
-    final List<MediaCollectionRow> cols =
-        await db.select(db.mediaCollections).get();
+    final List<MediaCollectionRow> cols = await db
+        .select(db.mediaCollections)
+        .get();
     await db.updateMediaCollectionSecondarySubtitleDelayMs(
-        cols.single.id, 1200);
+      cols.single.id,
+      1200,
+    );
     expect(
       await _colInt(
-          db, 'SELECT secondary_subtitle_delay_ms FROM media_collections'),
+        db,
+        'SELECT secondary_subtitle_delay_ms FROM media_collections',
+      ),
       1200,
     );
   });

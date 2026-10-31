@@ -43,15 +43,19 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
-  testWidgets('reportProgress writes through to the progress notifiers',
-      (WidgetTester tester) async {
+  testWidgets('reportProgress writes through to the progress notifiers', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(buildApp(const _ProbeHost()));
-    final _ProbeHostState state =
-        tester.state<_ProbeHostState>(find.byType(_ProbeHost));
+    final _ProbeHostState state = tester.state<_ProbeHostState>(
+      find.byType(_ProbeHost),
+    );
 
     expect(state.progress.value, 0);
     expect(state.progressMsg.value, '');
@@ -62,38 +66,41 @@ void main() {
   });
 
   testWidgets(
-      'buildProgressSection renders FushiLinearProgressIndicator + message '
-      'only while importing', (WidgetTester tester) async {
-    await tester.pumpWidget(buildApp(const _ProbeHost()));
-    final _ProbeHostState state =
-        tester.state<_ProbeHostState>(find.byType(_ProbeHost));
+    'buildProgressSection renders FushiLinearProgressIndicator + message '
+    'only while importing',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(buildApp(const _ProbeHost()));
+      final _ProbeHostState state = tester.state<_ProbeHostState>(
+        find.byType(_ProbeHost),
+      );
 
-    // importing=false（默认）：进度块不渲染。
-    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+      // importing=false（默认）：进度块不渲染。
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
-    // 进入 importing 并写进度文案 → 进度条 + 文案出现。
-    state.reportProgress(0.5, 'half way');
-    state.setImporting(true);
-    await tester.pump();
+      // 进入 importing 并写进度文案 → 进度条 + 文案出现。
+      state.reportProgress(0.5, 'half way');
+      state.setImporting(true);
+      await tester.pump();
 
-    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
-    expect(
-      tester
-          .widget<FushiLinearProgressIndicator>(
-            find.byType(FushiLinearProgressIndicator),
-          )
-          .value,
-      0.5,
-    );
-    expect(find.text('half way'), findsOneWidget);
-  });
+      expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+      expect(
+        tester
+            .widget<FushiLinearProgressIndicator>(
+              find.byType(FushiLinearProgressIndicator),
+            )
+            .value,
+        0.5,
+      );
+      expect(find.text('half way'), findsOneWidget);
+    },
+  );
 
-  testWidgets(
-      'buildProgressSection returns a spreadable list (no extra '
+  testWidgets('buildProgressSection returns a spreadable list (no extra '
       'Column layer)', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp(const _ProbeHost()));
-    final _ProbeHostState state =
-        tester.state<_ProbeHostState>(find.byType(_ProbeHost));
+    final _ProbeHostState state = tester.state<_ProbeHostState>(
+      find.byType(_ProbeHost),
+    );
 
     final List<Widget> section = state.buildProgressSection(
       state.context,
@@ -107,11 +114,13 @@ void main() {
   });
 
   group('runImport template (BUG-1117 pattern, structured)', () {
-    testWidgets('success path: importing flips on then off, no log entry',
-        (WidgetTester tester) async {
+    testWidgets('success path: importing flips on then off, no log entry', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(buildApp(const _ProbeHost()));
-      final _ProbeHostState state =
-          tester.state<_ProbeHostState>(find.byType(_ProbeHost));
+      final _ProbeHostState state = tester.state<_ProbeHostState>(
+        find.byType(_ProbeHost),
+      );
       final int entriesBefore = ErrorLogService.instance.entries.length;
 
       bool sawImportingDuringAction = false;
@@ -123,8 +132,11 @@ void main() {
       );
       await tester.pump();
 
-      expect(sawImportingDuringAction, isTrue,
-          reason: 'action 执行期间 importing 必须已置位（禁用按钮/亮 spinner）');
+      expect(
+        sawImportingDuringAction,
+        isTrue,
+        reason: 'action 执行期间 importing 必须已置位（禁用按钮/亮 spinner）',
+      );
       expect(state.importing, isFalse, reason: 'finally 必须复位 importing');
       expect(
         ErrorLogService.instance.entries.length,
@@ -133,13 +145,14 @@ void main() {
       );
     });
 
-    testWidgets(
-        'failure path: exception is caught (never escapes the zone), '
-        'logged with the tag, and importing is reset',
-        (WidgetTester tester) async {
+    testWidgets('failure path: exception is caught (never escapes the zone), '
+        'logged with the tag, and importing is reset', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(buildApp(const _ProbeHost()));
-      final _ProbeHostState state =
-          tester.state<_ProbeHostState>(find.byType(_ProbeHost));
+      final _ProbeHostState state = tester.state<_ProbeHostState>(
+        find.byType(_ProbeHost),
+      );
       final int entriesBefore = ErrorLogService.instance.entries.length;
 
       await state.runImport(
@@ -152,20 +165,23 @@ void main() {
       expect(tester.takeException(), isNull);
       // 失败必有日志（用户可在错误日志页看到，而非完全静默）。
       expect(
-        ErrorLogService.instance.entries.skip(entriesBefore).any(
-            (ErrorLogEntry e) => e.source == 'ImportFlowMixinTest.failure'),
+        ErrorLogService.instance.entries
+            .skip(entriesBefore)
+            .any(
+              (ErrorLogEntry e) => e.source == 'ImportFlowMixinTest.failure',
+            ),
         isTrue,
       );
       // finally 复位 importing：按钮恢复可用、spinner 消失（不再卡住）。
       expect(state.importing, isFalse);
     });
 
-    testWidgets(
-        'cancellation path: isCancelled routes to onCancelled without '
+    testWidgets('cancellation path: isCancelled routes to onCancelled without '
         'logging an error', (WidgetTester tester) async {
       await tester.pumpWidget(buildApp(const _ProbeHost()));
-      final _ProbeHostState state =
-          tester.state<_ProbeHostState>(find.byType(_ProbeHost));
+      final _ProbeHostState state = tester.state<_ProbeHostState>(
+        find.byType(_ProbeHost),
+      );
       final int entriesBefore = ErrorLogService.instance.entries.length;
 
       bool cancelled = false;
@@ -191,8 +207,9 @@ void main() {
       // FushiToast 桌面实现挂在真实 app 的 navigator overlay 上，widget 测试
       // 环境不可达——「失败必有提示」这半边契约用源码扫描锁住（「失败必有日志」
       // 半边在上面的 widget 测试已验真行为）。测试 cwd 是 fushi/，相对路径稳定。
-      final String source = File('lib/src/media/import/import_flow_mixin.dart')
-          .readAsStringSync();
+      final String source = File(
+        'lib/src/media/import/import_flow_mixin.dart',
+      ).readAsStringSync();
       expect(
         RegExp(r'ErrorLogService\.instance\.log\(logTag').hasMatch(source),
         isTrue,

@@ -33,19 +33,29 @@ void main() {
       '\n}',
     );
     final String topBar = topButtonBarRegion(body);
-    expect(topBar.contains('Icons.more_vert'), isFalse,
-        reason: 'mobile top bar should not depend on an overflow menu');
-    expect(topBar.contains('_showMobileMoreMenu('), isFalse,
-        reason: 'mobile more menu entry should stay removed');
-    expect(topBar.contains('MediaQuery.of(context).size.width >= 600'), isFalse,
-        reason:
-            'top bar should not branch into narrow more menu / wide inline');
     expect(
-        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
-            .hasMatch(topBar),
-        isTrue,
-        reason:
-            'top-right actions should be rendered by the real top-bar slot group');
+      topBar.contains('Icons.more_vert'),
+      isFalse,
+      reason: 'mobile top bar should not depend on an overflow menu',
+    );
+    expect(
+      topBar.contains('_showMobileMoreMenu('),
+      isFalse,
+      reason: 'mobile more menu entry should stay removed',
+    );
+    expect(
+      topBar.contains('MediaQuery.of(context).size.width >= 600'),
+      isFalse,
+      reason: 'top bar should not branch into narrow more menu / wide inline',
+    );
+    expect(
+      RegExp(
+        r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight',
+      ).hasMatch(topBar),
+      isTrue,
+      reason:
+          'top-right actions should be rendered by the real top-bar slot group',
+    );
     final String group = region(
       'Widget _topBarSlotGroup(',
       'String get _clipExportTooltip',
@@ -53,71 +63,106 @@ void main() {
     // BUG-2832：按钮放得下时照旧直接摆在顶栏上（不依赖菜单）；只有放不下的才按优先级
     // 收进组尾「⋯」——取代旧的横滚 ListView（右组从左边被裁，只剩半个图标）。组按实际
     // 显示的内容宽收缩（fill: false），顶栏才能把按钮用剩的宽度交给标题。
-    expect(group.contains('return VideoControlBar('), isTrue,
-        reason: 'top-bar groups must lay out through VideoControlBar');
-    expect(group.contains('fill: false'), isTrue,
-        reason:
-            'top-bar groups must shrink-wrap to their visible content so the top '
-            'bar can hand the leftover width to the title');
-    expect(group.contains('ListView('), isFalse,
-        reason: 'top-bar groups must not scroll/clip buttons when squeezed');
-    expect(group.contains('SingleChildScrollView('), isFalse,
-        reason: 'top-bar groups must not scroll/clip buttons when squeezed');
-    final List<VideoControlItem> topRightItems =
-        VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
+    expect(
+      group.contains('return VideoControlBar('),
+      isTrue,
+      reason: 'top-bar groups must lay out through VideoControlBar',
+    );
+    expect(
+      group.contains('fill: false'),
+      isTrue,
+      reason:
+          'top-bar groups must shrink-wrap to their visible content so the top '
+          'bar can hand the leftover width to the title',
+    );
+    expect(
+      group.contains('ListView('),
+      isFalse,
+      reason: 'top-bar groups must not scroll/clip buttons when squeezed',
+    );
+    expect(
+      group.contains('SingleChildScrollView('),
+      isFalse,
+      reason: 'top-bar groups must not scroll/clip buttons when squeezed',
+    );
+    final List<VideoControlItem> topRightItems = VideoControlLayout
+        .currentChrome
+        .itemsIn(VideoControlSlot.topRight);
     // 2026-10-05 M3E 重排：字幕轨默认挪到底栏右（高频），仍在真实控制条里。
     expect(
-        VideoControlLayout.currentChrome
-            .itemsIn(VideoControlSlot.bottomRight)
-            .contains(VideoControlItem.subtitleTrack),
-        isTrue,
-        reason: 'subtitle source must default into the real bottom-right slot');
+      VideoControlLayout.currentChrome
+          .itemsIn(VideoControlSlot.bottomRight)
+          .contains(VideoControlItem.subtitleTrack),
+      isTrue,
+      reason: 'subtitle source must default into the real bottom-right slot',
+    );
     // 2026-10-06 遮挡最小化：音轨默认移出播放器，常驻右上「⋯」。
-    expect(topRightItems.contains(VideoControlItem.audioTrack), isFalse,
-        reason: 'audio track folds into the top-right ⋯ by default');
-    expect(VideoControlLayout.currentChrome.removedItems,
-        contains(VideoControlItem.audioTrack));
-    expect(topRightItems.contains(VideoControlItem.screenshot), isTrue,
-        reason: 'screenshot action must default into the real top-right slot');
+    expect(
+      topRightItems.contains(VideoControlItem.audioTrack),
+      isFalse,
+      reason: 'audio track folds into the top-right ⋯ by default',
+    );
+    expect(
+      VideoControlLayout.currentChrome.removedItems,
+      contains(VideoControlItem.audioTrack),
+    );
+    expect(
+      topRightItems.contains(VideoControlItem.screenshot),
+      isTrue,
+      reason: 'screenshot action must default into the real top-right slot',
+    );
     expect(src.contains('_showSubtitleSourceMenu(controller)'), isTrue);
     expect(src.contains('_showAudioTrackMenu(controller)'), isTrue);
     expect(src.contains('_saveScreenshot()'), isTrue);
     // BUG-248B：设置（tune）已从顶栏移出，改由可配置右侧 rail 承载（与桌面一致），
     // 故顶栏不再硬编码 tune 按钮；设置仍经数据化按钮模型可达。
-    expect(topBar.contains('Icons.tune'), isFalse,
-        reason:
-            'settings moved off the top bar to the configurable right rail');
-    expect(src.contains('case VideoControlButton.settings:'), isTrue,
-        reason:
-            'settings reachable via configurable VideoControlButton.settings');
-    expect(topBar.contains('Icons.speed'), isFalse,
-        reason:
-            'speed remains reachable from settings without crowding top bar');
-  });
-
-  test('mobile fullscreen is excluded at the render gate, not drawn zero-width',
-      () {
-    // BUG-221：移动端不提供全屏。BUG-2832 审查：只在按钮里画成 SizedBox.shrink 不够——
-    // 零宽条目照样进 VideoControlBar、被收进「⋯」，菜单里冒出一行点了无效的「全屏」。
-    final String gate = region(
-      'bool _shouldRenderControlItem(',
-      'Widget _topBarSlotGroup(',
+    expect(
+      topBar.contains('Icons.tune'),
+      isFalse,
+      reason: 'settings moved off the top bar to the configurable right rail',
     );
     expect(
-      RegExp(r'case VideoControlItem\.fullscreen:\s*return !isMobilePlatform;')
-          .hasMatch(gate),
+      src.contains('case VideoControlButton.settings:'),
       isTrue,
-      reason: 'fullscreen must be filtered out on mobile before it becomes a bar entry',
+      reason: 'settings reachable via configurable VideoControlButton.settings',
+    );
+    expect(
+      topBar.contains('Icons.speed'),
+      isFalse,
+      reason: 'speed remains reachable from settings without crowding top bar',
     );
   });
+
+  test(
+    'mobile fullscreen is excluded at the render gate, not drawn zero-width',
+    () {
+      // BUG-221：移动端不提供全屏。BUG-2832 审查：只在按钮里画成 SizedBox.shrink 不够——
+      // 零宽条目照样进 VideoControlBar、被收进「⋯」，菜单里冒出一行点了无效的「全屏」。
+      final String gate = region(
+        'bool _shouldRenderControlItem(',
+        'Widget _topBarSlotGroup(',
+      );
+      expect(
+        RegExp(
+          r'case VideoControlItem\.fullscreen:\s*return !isMobilePlatform;',
+        ).hasMatch(gate),
+        isTrue,
+        reason:
+            'fullscreen must be filtered out on mobile before it becomes a bar entry',
+      );
+    },
+  );
 
   test('video bottom bar is one shared width-gated helper (BUG-257)', () {
     // BUG-257：桌面 + 移动底栏合并为单一 [_centeredBottomControlBar]（按 desktop: 参数
     // 择 Material*/MaterialDesktop* 组件），故各按钮只出现一次，不再 per-theme 重复。
     // BUG-2832：±10s 带不带文字不再按任何宽度阈值判（旧 `barWidth >= 600`），而是由
     // VideoControlBar 按这条栏实际放不放得下决定（compactChild = 纯图标形态）。
-    expect(src.contains('_hasRoomyVideoBottomBar'), isFalse,
-        reason: 'seek labels must follow actual fit, not a width threshold');
+    expect(
+      src.contains('_hasRoomyVideoBottomBar'),
+      isFalse,
+      reason: 'seek labels must follow actual fit, not a width threshold',
+    );
     // 两套 controls 主题 bottomButtonBar 都委托同一个共享 helper。
     expect(
       'child: _centeredBottomControlBar('.allMatches(src).length,
@@ -137,24 +182,48 @@ void main() {
     );
     expect(bar.contains('PositionIndicator'), isTrue);
     expect(src.contains('PlayOrPauseButton'), isTrue);
-    expect(src.contains('_buildVolumeButton(controller'), isTrue,
-        reason: 'bottom bar should expose a volume adjustment entry');
-    expect(src.contains('_buildFullscreenButton('), isTrue,
-        reason: 'bottom bar should use Fushi neutralized fullscreen');
+    expect(
+      src.contains('_buildVolumeButton(controller'),
+      isTrue,
+      reason: 'bottom bar should expose a volume adjustment entry',
+    );
+    expect(
+      src.contains('_buildFullscreenButton('),
+      isTrue,
+      reason: 'bottom bar should use Fushi neutralized fullscreen',
+    );
     // TODO-067: ±10s 按钮用左右对称的 fast_rewind/forward（取代显歪的 replay_10/forward_10），
     // 守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。BUG-257 合并后各只出现一次。
-    expect(src.contains('Icons.fast_rewind_rounded'), isTrue,
-        reason: 'shared bottom bar keeps -10s when width allows');
-    expect(src.contains('Icons.fast_forward_rounded'), isTrue,
-        reason: 'shared bottom bar keeps +10s when width allows');
-    expect(src.contains('Icons.replay_10'), isFalse,
-        reason: 'lopsided replay_10 must stay replaced (TODO-067)');
-    expect(src.contains('Icons.forward_10'), isFalse,
-        reason: 'lopsided forward_10 must stay replaced (TODO-067)');
-    expect(src.contains('Icons.skip_previous'), isTrue,
-        reason: 'shared bottom bar keeps previous subtitle cue');
-    expect(src.contains('Icons.skip_next'), isTrue,
-        reason: 'shared bottom bar keeps next subtitle cue');
+    expect(
+      src.contains('Icons.fast_rewind_rounded'),
+      isTrue,
+      reason: 'shared bottom bar keeps -10s when width allows',
+    );
+    expect(
+      src.contains('Icons.fast_forward_rounded'),
+      isTrue,
+      reason: 'shared bottom bar keeps +10s when width allows',
+    );
+    expect(
+      src.contains('Icons.replay_10'),
+      isFalse,
+      reason: 'lopsided replay_10 must stay replaced (TODO-067)',
+    );
+    expect(
+      src.contains('Icons.forward_10'),
+      isFalse,
+      reason: 'lopsided forward_10 must stay replaced (TODO-067)',
+    );
+    expect(
+      src.contains('Icons.skip_previous'),
+      isTrue,
+      reason: 'shared bottom bar keeps previous subtitle cue',
+    );
+    expect(
+      src.contains('Icons.skip_next'),
+      isTrue,
+      reason: 'shared bottom bar keeps next subtitle cue',
+    );
   });
 
   /// 源码守卫（源自 video_mobile_controls_static_test.dart，守卫审计并入）：确保
@@ -182,8 +251,11 @@ void main() {
     late String themePairSrc;
     setUpAll(() {
       expect(page.existsSync(), isTrue, reason: '视频页源文件应存在');
-      expect(themePair.existsSync(), isTrue,
-          reason: '视频 controls 主题配对 helper 应存在');
+      expect(
+        themePair.existsSync(),
+        isTrue,
+        reason: '视频 controls 主题配对 helper 应存在',
+      );
       // TODO-590 batch11：_mobileControlsTheme 已搬到 controls_theme.part.dart，读「合并语料」
       // （主壳 + 全部 part）；其余断言命中的 VideoControlItem/VideoControlButton 分支与接线仍在主壳。
       src = readVideoFushiSource();
@@ -217,8 +289,11 @@ void main() {
             'helper 必须保留 MaterialDesktopVideoControlsTheme（桌面端 controls 读取）',
       );
       // 移动主题的 normal/fullscreen 都用 _mobileControlsTheme（全屏丢 AppBar 也可达）。
-      expect(src, contains('_currentVideoControlsTheme('),
-          reason: '页面应通过同一个 helper 产出移动/桌面 controls 主题');
+      expect(
+        src,
+        contains('_currentVideoControlsTheme('),
+        reason: '页面应通过同一个 helper 产出移动/桌面 controls 主题',
+      );
       expect(
         src,
         contains('mobile: controlsTheme.mobile'),
@@ -244,39 +319,68 @@ void main() {
       final int start = src.indexOf(
         'MaterialVideoControlsThemeData _mobileControlsTheme(',
       );
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '应能定位 _mobileControlsTheme 方法');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: '应能定位 _mobileControlsTheme 方法',
+      );
       final int end = src.indexOf('\n}', start);
-      expect(end, greaterThan(start),
-          reason: '应能界定 _mobileControlsTheme 方法体范围');
+      expect(
+        end,
+        greaterThan(start),
+        reason: '应能界定 _mobileControlsTheme 方法体范围',
+      );
       final String body = src.substring(start, end);
 
       expect(
-        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft[\s\S]*?desktop:\s*false')
-            .hasMatch(body),
+        RegExp(
+          r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft[\s\S]*?desktop:\s*false',
+        ).hasMatch(body),
         isTrue,
         reason: '移动 controls 应使用真实 topLeft slot 渲染顶栏按钮',
       );
       expect(
-        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight[\s\S]*?desktop:\s*false')
-            .hasMatch(body),
+        RegExp(
+          r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight[\s\S]*?desktop:\s*false',
+        ).hasMatch(body),
         isTrue,
         reason: '移动 controls 应使用真实 topRight slot 渲染字幕/音轨/截图等入口',
       );
-      expect(body, contains('desktop: false'),
-          reason: '移动主题调用 slot renderer 时必须走 mobile 按钮分支');
-      expect(src.contains('case VideoControlItem.subtitleTrack:'), isTrue,
-          reason: '字幕轨入口应由数据化 VideoControlItem 承载');
-      expect(src.contains('_showSubtitleSourceMenu(controller)'), isTrue,
-          reason: '字幕轨入口激活后仍应打开字幕菜单');
-      expect(src.contains('case VideoControlItem.audioTrack:'), isTrue,
-          reason: '音轨入口应由数据化 VideoControlItem 承载');
-      expect(src.contains('_showAudioTrackMenu(controller)'), isTrue,
-          reason: '音轨入口激活后仍应打开音轨菜单');
-      expect(src.contains('case VideoControlItem.episodeList:'), isTrue,
-          reason: '剧集入口应由数据化 VideoControlItem 承载');
-      expect(src.contains('_showEpisodeList();'), isTrue,
-          reason: '剧集入口激活后仍应打开剧集列表');
+      expect(
+        body,
+        contains('desktop: false'),
+        reason: '移动主题调用 slot renderer 时必须走 mobile 按钮分支',
+      );
+      expect(
+        src.contains('case VideoControlItem.subtitleTrack:'),
+        isTrue,
+        reason: '字幕轨入口应由数据化 VideoControlItem 承载',
+      );
+      expect(
+        src.contains('_showSubtitleSourceMenu(controller)'),
+        isTrue,
+        reason: '字幕轨入口激活后仍应打开字幕菜单',
+      );
+      expect(
+        src.contains('case VideoControlItem.audioTrack:'),
+        isTrue,
+        reason: '音轨入口应由数据化 VideoControlItem 承载',
+      );
+      expect(
+        src.contains('_showAudioTrackMenu(controller)'),
+        isTrue,
+        reason: '音轨入口激活后仍应打开音轨菜单',
+      );
+      expect(
+        src.contains('case VideoControlItem.episodeList:'),
+        isTrue,
+        reason: '剧集入口应由数据化 VideoControlItem 承载',
+      );
+      expect(
+        src.contains('_showEpisodeList();'),
+        isTrue,
+        reason: '剧集入口激活后仍应打开剧集列表',
+      );
       // BUG-248B / TODO-274：设置（tune）已从 topButtonBar 移出（与桌面一致），改由可配置
       // 的右侧 rail settings 按钮（VideoControlButton.settings → _activateVideoControlButton
       // → _showPlayerSettings）承载，全屏复用同一 builder 故仍可达。故此处不再断言
@@ -291,10 +395,16 @@ void main() {
         contains('_showPlayerSettings(sourceSlot: sourceSlot)'),
         reason: '可配置 settings 按钮激活时仍打开 _showPlayerSettings',
       );
-      expect(src.contains('MaterialCustomButton('), isTrue,
-          reason: '移动端 slot 自定义按钮应用 MaterialCustomButton');
-      expect(body, contains('bottomButtonBar: <Widget>['),
-          reason: '移动 controls 应继续提供共享底栏');
+      expect(
+        src.contains('MaterialCustomButton('),
+        isTrue,
+        reason: '移动端 slot 自定义按钮应用 MaterialCustomButton',
+      );
+      expect(
+        body,
+        contains('bottomButtonBar: <Widget>['),
+        reason: '移动 controls 应继续提供共享底栏',
+      );
     });
   });
 }

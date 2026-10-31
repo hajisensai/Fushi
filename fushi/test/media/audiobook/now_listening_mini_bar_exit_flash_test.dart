@@ -80,13 +80,13 @@ void main() {
   }
 
   SessionPersistCallbacks persist() => SessionPersistCallbacks(
-        onPositionWrite: (_, __) async {},
-        onDelayPersist: (_) async {},
-        onSpeedPersist: (_) async {},
-        onVolumePersist: (_) async {},
-        onImagePausePersist: (_) async {},
-        onFollowAudioPersist: (_) async {},
-      );
+    onPositionWrite: (_, __) async {},
+    onDelayPersist: (_) async {},
+    onSpeedPersist: (_) async {},
+    onVolumePersist: (_) async {},
+    onImagePausePersist: (_) async {},
+    onFollowAudioPersist: (_) async {},
+  );
 
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -98,138 +98,139 @@ void main() {
   });
 
   testWidgets(
-      'mini bar collapses to SizedBox.shrink the same frame the session stops '
-      '(no flash of the play bar on exit) — TODO-831', (tester) async {
-    installPlatform();
-    final _MiniBarAppModel appModel = _MiniBarAppModel();
-    // ProviderScope 拥有该 appModel 的生命周期，scope 拆除时会 dispose 它；这里
-    // 不再额外 addTearDown(dispose)，否则二次 dispose 触发 ChangeNotifier 断言。
+    'mini bar collapses to SizedBox.shrink the same frame the session stops '
+    '(no flash of the play bar on exit) — TODO-831',
+    (tester) async {
+      installPlatform();
+      final _MiniBarAppModel appModel = _MiniBarAppModel();
+      // ProviderScope 拥有该 appModel 的生命周期，scope 拆除时会 dispose 它；这里
+      // 不再额外 addTearDown(dispose)，否则二次 dispose 触发 ChangeNotifier 断言。
 
-    final AudiobookSession session = appModel.audiobookSession;
-    await session.start(
-      info: SessionBookInfo(
-        bookKey: 'a',
-        audiobook: ab('a'),
-        title: 'Test Book',
-        mediaIdentifier: 'fushi://book/a',
-      ),
-      audioFiles: <File>[makeFile('fushi-minibar-flash.mp3')],
-      prefs: const SessionPrefs(
-        followAudio: true,
-        delayMs: 0,
-        speed: 1.0,
-        positionMs: 0,
-        imagePauseSec: 0,
-        volume: 1.0,
-      ),
-      persist: persist(),
-    );
+      final AudiobookSession session = appModel.audiobookSession;
+      await session.start(
+        info: SessionBookInfo(
+          bookKey: 'a',
+          audiobook: ab('a'),
+          title: 'Test Book',
+          mediaIdentifier: 'fushi://book/a',
+        ),
+        audioFiles: <File>[makeFile('fushi-minibar-flash.mp3')],
+        prefs: const SessionPrefs(
+          followAudio: true,
+          delayMs: 0,
+          speed: 1.0,
+          positionMs: 0,
+          imagePauseSec: 0,
+          volume: 1.0,
+        ),
+        persist: persist(),
+      );
 
-    expect(session.book, isNotNull);
-    expect(session.controller, isNotNull);
+      expect(session.book, isNotNull);
+      expect(session.controller, isNotNull);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(
-            home: Scaffold(body: NowListeningMiniBar()),
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+          child: TranslationProvider(
+            child: const MaterialApp(
+              home: Scaffold(body: NowListeningMiniBar()),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    // 初始：活动会话 → 迷你条可见（书名 + 播放条交互层渲染出来）。
-    expect(find.text('Test Book'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(NowListeningMiniBar),
-        matching: find.byType(InkWell),
-      ),
-      findsWidgets,
-      reason: '活动会话时迷你条渲染可点击的播放条',
-    );
+      // 初始：活动会话 → 迷你条可见（书名 + 播放条交互层渲染出来）。
+      expect(find.text('Test Book'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(NowListeningMiniBar),
+          matching: find.byType(InkWell),
+        ),
+        findsWidgets,
+        reason: '活动会话时迷你条渲染可点击的播放条',
+      );
 
-    // 退出即停：stop 同步段一跑完就清空会话 + notifyListeners（修复前清空被拖到
-    // 末尾 await 之后）。
-    // TODO-1212 起 stop() 会 await just_audio 播放器的真实异步释放
-    // （disposeAndRelease → _player.dispose/stop，依赖真实定时器/流事件才 settle）；
-    // 在 testWidgets 的 FakeAsync 时钟下直接 await 会死锁（假时钟不推进这些定时器）。
-    // 用 tester.runAsync 让停止 teardown 在真实异步区跑（与生产同路径），停止的同步段
-    // （清空会话 + notifyListeners）仍在其中同步跑，本测试钉的结果不变量不受影响。
-    await tester.runAsync(() => session.stop());
-    await tester.pump();
+      // 退出即停：stop 同步段一跑完就清空会话 + notifyListeners（修复前清空被拖到
+      // 末尾 await 之后）。
+      // TODO-1212 起 stop() 会 await just_audio 播放器的真实异步释放
+      // （disposeAndRelease → _player.dispose/stop，依赖真实定时器/流事件才 settle）；
+      // 在 testWidgets 的 FakeAsync 时钟下直接 await 会死锁（假时钟不推进这些定时器）。
+      // 用 tester.runAsync 让停止 teardown 在真实异步区跑（与生产同路径），停止的同步段
+      // （清空会话 + notifyListeners）仍在其中同步跑，本测试钉的结果不变量不受影响。
+      await tester.runAsync(() => session.stop());
+      await tester.pump();
 
-    // 结果不变量：会话已空 → 迷你条收成 SizedBox.shrink，播放条整个消失。
-    expect(session.book, isNull);
-    expect(session.controller, isNull);
-    expect(find.text('Test Book'), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byType(NowListeningMiniBar),
-        matching: find.byType(InkWell),
-      ),
-      findsNothing,
-      reason: '会话停后迷你条收成 SizedBox.shrink，不再渲染播放条',
-    );
-  });
+      // 结果不变量：会话已空 → 迷你条收成 SizedBox.shrink，播放条整个消失。
+      expect(session.book, isNull);
+      expect(session.controller, isNull);
+      expect(find.text('Test Book'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(NowListeningMiniBar),
+          matching: find.byType(InkWell),
+        ),
+        findsNothing,
+        reason: '会话停后迷你条收成 SizedBox.shrink，不再渲染播放条',
+      );
+    },
+  );
 
-  testWidgets('mini bar defers session notifications during tree finalization',
-      (tester) async {
-    installPlatform();
-    final _MiniBarAppModel appModel = _MiniBarAppModel();
-    final AudiobookSession session = appModel.audiobookSession;
-    await session.start(
-      info: SessionBookInfo(
-        bookKey: 'a',
-        audiobook: ab('a'),
-        title: 'Test Book',
-        mediaIdentifier: 'fushi://book/a',
-      ),
-      audioFiles: <File>[makeFile('fushi-minibar-locked-tree.mp3')],
-      prefs: const SessionPrefs(
-        followAudio: true,
-        delayMs: 0,
-        speed: 1.0,
-        positionMs: 0,
-        imagePauseSec: 0,
-        volume: 1.0,
-      ),
-      persist: persist(),
-    );
+  testWidgets(
+    'mini bar defers session notifications during tree finalization',
+    (tester) async {
+      installPlatform();
+      final _MiniBarAppModel appModel = _MiniBarAppModel();
+      final AudiobookSession session = appModel.audiobookSession;
+      await session.start(
+        info: SessionBookInfo(
+          bookKey: 'a',
+          audiobook: ab('a'),
+          title: 'Test Book',
+          mediaIdentifier: 'fushi://book/a',
+        ),
+        audioFiles: <File>[makeFile('fushi-minibar-locked-tree.mp3')],
+        prefs: const SessionPrefs(
+          followAudio: true,
+          delayMs: 0,
+          speed: 1.0,
+          positionMs: 0,
+          imagePauseSec: 0,
+          volume: 1.0,
+        ),
+        persist: persist(),
+      );
 
-    Widget harness({required bool includeStopper}) => ProviderScope(
-          overrides: <Override>[
-            appProvider.overrideWith((ref) => appModel),
-          ],
-          child: TranslationProvider(
-            child: MaterialApp(
-              home: Scaffold(
-                body: Column(
-                  children: <Widget>[
-                    const NowListeningMiniBar(),
-                    if (includeStopper) _StopSessionOnDispose(session),
-                  ],
-                ),
+      Widget harness({required bool includeStopper}) => ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: <Widget>[
+                  const NowListeningMiniBar(),
+                  if (includeStopper) _StopSessionOnDispose(session),
+                ],
               ),
             ),
           ),
-        );
+        ),
+      );
 
-    await tester.pumpWidget(harness(includeStopper: true));
-    expect(find.text('Test Book'), findsOneWidget);
+      await tester.pumpWidget(harness(includeStopper: true));
+      expect(find.text('Test Book'), findsOneWidget);
 
-    await tester.pumpWidget(harness(includeStopper: false));
-    expect(tester.takeException(), isNull);
+      await tester.pumpWidget(harness(includeStopper: false));
+      expect(tester.takeException(), isNull);
 
-    await tester.pump();
-    expect(find.text('Test Book'), findsNothing);
-  });
+      await tester.pump();
+      expect(find.text('Test Book'), findsNothing);
+    },
+  );
 
-  testWidgets('post-frame session notifications request a follow-up frame',
-      (tester) async {
+  testWidgets('post-frame session notifications request a follow-up frame', (
+    tester,
+  ) async {
     installPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
     final AudiobookSession session = appModel.audiobookSession;
@@ -254,13 +255,9 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
         child: TranslationProvider(
-          child: const MaterialApp(
-            home: Scaffold(body: NowListeningMiniBar()),
-          ),
+          child: const MaterialApp(home: Scaffold(body: NowListeningMiniBar())),
         ),
       ),
     );
@@ -292,8 +289,7 @@ void main() {
     expect(find.text('Test Book'), findsNothing);
   });
 
-  test(
-      'AudiobookSession.stop clears book/controller and notifies before the '
+  test('AudiobookSession.stop clears book/controller and notifies before the '
       'slow teardown (TODO-831 方案3)', () async {
     installPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
@@ -350,10 +346,16 @@ void main() {
       await Future<void>.value();
     }
 
-    expect(notifyBefore, greaterThanOrEqualTo(1),
-        reason: 'stop 清空会话后必须立即 notifyListeners（方案3），不得拖到 teardown 之后');
-    expect(stopSettled, isFalse,
-        reason: '这次 notify 必须早于慢速 teardown 完成，否则迷你条会在退出期间残留');
+    expect(
+      notifyBefore,
+      greaterThanOrEqualTo(1),
+      reason: 'stop 清空会话后必须立即 notifyListeners（方案3），不得拖到 teardown 之后',
+    );
+    expect(
+      stopSettled,
+      isFalse,
+      reason: '这次 notify 必须早于慢速 teardown 完成，否则迷你条会在退出期间残留',
+    );
     expect(bookAtNotify, isNull, reason: '首个通知里监听者就该见到空 book');
     expect(controllerAtNotify, isNull, reason: '首个通知里监听者就该见到空 controller');
     expect(session.book, isNull, reason: '慢速 teardown 前会话字段已清空');
@@ -394,14 +396,16 @@ class _FakePlatform extends JustAudioPlatform {
 
   @override
   Future<DisposePlayerResponse> disposePlayer(
-      DisposePlayerRequest request) async {
+    DisposePlayerRequest request,
+  ) async {
     await player?.dispose(DisposeRequest());
     return DisposePlayerResponse();
   }
 
   @override
   Future<DisposeAllPlayersResponse> disposeAllPlayers(
-      DisposeAllPlayersRequest request) async {
+    DisposeAllPlayersRequest request,
+  ) async {
     await player?.dispose(DisposeRequest());
     return DisposeAllPlayersResponse();
   }
@@ -413,16 +417,18 @@ class _FakePlayer extends AudioPlayerPlatform {
       StreamController<PlaybackEventMessage>.broadcast();
 
   void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: state,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 100),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -430,9 +436,11 @@ class _FakePlayer extends AudioPlayerPlatform {
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
-    emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.initialPosition?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return LoadResponse(duration: const Duration(seconds: 100));
   }
 
@@ -442,26 +450,28 @@ class _FakePlayer extends AudioPlayerPlatform {
   Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
-    emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.position?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return SeekResponse();
   }
 
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-          SetAndroidAudioAttributesRequest request) async =>
-      SetAndroidAudioAttributesResponse();
+    SetAndroidAudioAttributesRequest request,
+  ) async => SetAndroidAudioAttributesResponse();
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-              SetAutomaticallyWaitsToMinimizeStallingRequest request) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  setAutomaticallyWaitsToMinimizeStalling(
+    SetAutomaticallyWaitsToMinimizeStallingRequest request,
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-              SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest
-                  request) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
       SetLoopModeResponse();
@@ -470,20 +480,20 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetPitchResponse();
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-          SetPreferredPeakBitRateRequest request) async =>
-      SetPreferredPeakBitRateResponse();
+    SetPreferredPeakBitRateRequest request,
+  ) async => SetPreferredPeakBitRateResponse();
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
-          SetShuffleModeRequest request) async =>
-      SetShuffleModeResponse();
+    SetShuffleModeRequest request,
+  ) async => SetShuffleModeResponse();
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
-          SetShuffleOrderRequest request) async =>
-      SetShuffleOrderResponse();
+    SetShuffleOrderRequest request,
+  ) async => SetShuffleOrderResponse();
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
-          SetSkipSilenceRequest request) async =>
-      SetSkipSilenceResponse();
+    SetSkipSilenceRequest request,
+  ) async => SetSkipSilenceResponse();
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
       SetSpeedResponse();
@@ -492,8 +502,8 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetVolumeResponse();
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-          SetWebCrossOriginRequest request) async =>
-      SetWebCrossOriginResponse();
+    SetWebCrossOriginRequest request,
+  ) async => SetWebCrossOriginResponse();
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {
     if (!_events.isClosed) await _events.close();

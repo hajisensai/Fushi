@@ -86,16 +86,16 @@ class _Probe {
   });
 
   factory _Probe.fromJson(Map<String, dynamic> m) => _Probe(
-        marginTopPx: (m['marginTopPx'] as num).toDouble(),
-        paddingTop: (m['padT'] as num).toDouble(),
-        configMarginTop: (m['cfgMarginTop'] as num?)?.toDouble() ?? -1,
-        configSwipeDist: (m['cfgSwipeDist'] as num?)?.toInt() ?? -1,
-        configWheelQuiet: (m['cfgWheelQuiet'] as num?)?.toInt() ?? -1,
-        scanNonJapanese: m['scanNonJapanese'],
-        viewportH: (m['viewportH'] as num).toDouble(),
-        navGeneration: (m['nav'] as num?)?.toInt() ?? -1,
-        reanchorPending: m['pending'] == true,
-      );
+    marginTopPx: (m['marginTopPx'] as num).toDouble(),
+    paddingTop: (m['padT'] as num).toDouble(),
+    configMarginTop: (m['cfgMarginTop'] as num?)?.toDouble() ?? -1,
+    configSwipeDist: (m['cfgSwipeDist'] as num?)?.toInt() ?? -1,
+    configWheelQuiet: (m['cfgWheelQuiet'] as num?)?.toInt() ?? -1,
+    scanNonJapanese: m['scanNonJapanese'],
+    viewportH: (m['viewportH'] as num).toDouble(),
+    navGeneration: (m['nav'] as num?)?.toInt() ?? -1,
+    reanchorPending: m['pending'] == true,
+  );
 
   final double marginTopPx;
   final double paddingTop;

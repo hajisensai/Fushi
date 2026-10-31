@@ -21,8 +21,10 @@ Future<int> measureDirectoryBytes(Directory dir) async {
   }
   int total = 0;
   try {
-    await for (final FileSystemEntity entity
-        in dir.list(recursive: true, followLinks: false)) {
+    await for (final FileSystemEntity entity in dir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (entity is! File) {
         continue;
       }

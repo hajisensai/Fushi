@@ -51,7 +51,8 @@ void main() {
     expect(
       '_setAttachedProviderClaim('.allMatches(claimBody).length,
       lessThan(6),
-      reason: '本函数里只该有个位数的认领调用；数量爆掉说明切面横跨了别的函数'
+      reason:
+          '本函数里只该有个位数的认领调用；数量爆掉说明切面横跨了别的函数'
           '（整个控制器里有十几处），此时下面的断言都是假覆盖',
     );
     expect(
@@ -81,7 +82,8 @@ void main() {
     expect(
       supersededBranch.contains('_setAttachedProviderClaim(false)'),
       isFalse,
-      reason: '被抢占的旧轮次撤回认领会撤掉新轮次刚发出的那份，'
+      reason:
+          '被抢占的旧轮次撤回认领会撤掉新轮次刚发出的那份，'
           '让注入侧 registry 永远授不出 attached provider（活锁）',
     );
   });

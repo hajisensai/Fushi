@@ -60,7 +60,8 @@ VideoMetadataWork supplementVideoMetadata(
   return primary.copyWith(
     title: title,
     // 换成译名后原文不能丢：主源自带原名优先，否则被换下来的主源标题就是原名。
-    originalTitle: primary.originalTitle ??
+    originalTitle:
+        primary.originalTitle ??
         supplement.originalTitle ??
         (titleReplaced ? primary.title : null),
     tagline: _pickText(
@@ -70,20 +71,22 @@ VideoMetadataWork supplementVideoMetadata(
     ),
     // 被换下来的主源标题进别名池：exact gate 与去重比的是 title / original /
     // aliases 三处，标题换语言不能让匹配面缩水。
-    aliases: _unionStrings(
-      <String>[...primary.aliases, if (titleReplaced) primary.title],
-      supplement.aliases,
-    ).where((String alias) => alias != title).toList(),
+    aliases: _unionStrings(<String>[
+      ...primary.aliases,
+      if (titleReplaced) primary.title,
+    ], supplement.aliases).where((String alias) => alias != title).toList(),
     romajiTitle: primary.romajiTitle ?? supplement.romajiTitle,
     englishTitle: primary.englishTitle ?? supplement.englishTitle,
-    year: primary.year ??
+    year:
+        primary.year ??
         (supplementPart == null ? supplement.year : supplementPart.year),
-    premiered: primary.premiered ??
+    premiered:
+        primary.premiered ??
         (supplementPart == null
             ? supplement.premiered
             : supplementPart.premiered),
-    endDate: primary.endDate ??
-        (supplementPart == null ? supplement.endDate : null),
+    endDate:
+        primary.endDate ?? (supplementPart == null ? supplement.endDate : null),
     plot: _pickText(
       primary.plot,
       supplement.plot,
@@ -99,17 +102,23 @@ VideoMetadataWork supplementVideoMetadata(
     homepage: primary.homepage ?? supplement.homepage,
     episodeGroupId: primary.episodeGroupId ?? supplement.episodeGroupId,
     ids: _mergeIds(primary.ids, supplement.ids),
-    seasonCount: primary.seasonCount ??
+    seasonCount:
+        primary.seasonCount ??
         (supplementPart == null ? supplement.seasonCount : null),
-    episodeCount: primary.episodeCount ??
+    episodeCount:
+        primary.episodeCount ??
         (supplementPart == null ? supplement.episodeCount : null),
     genres: _mergeLanguageTaggedStrings(
       primary.genres,
       supplement.genres,
-      primaryLanguage:
-          _providerTextLanguage(primary.provider, preferredLanguage),
-      supplementLanguage:
-          _providerTextLanguage(supplement.provider, preferredLanguage),
+      primaryLanguage: _providerTextLanguage(
+        primary.provider,
+        preferredLanguage,
+      ),
+      supplementLanguage: _providerTextLanguage(
+        supplement.provider,
+        preferredLanguage,
+      ),
       preferredLanguage: preferredLanguage,
     ),
     studios: _unionStrings(primary.studios, supplement.studios),
@@ -161,8 +170,10 @@ bool _preferSupplementTitle(
   VideoMetadataProviderKind supplement,
   String? preferredLanguage,
 ) {
-  final String? primaryLanguage =
-      _providerTitleLanguage(primary, preferredLanguage);
+  final String? primaryLanguage = _providerTitleLanguage(
+    primary,
+    preferredLanguage,
+  );
   if (primaryLanguage == null) return false;
   return !_matchesPreferredLanguage(primaryLanguage, preferredLanguage) &&
       _matchesPreferredLanguage(
@@ -176,8 +187,7 @@ bool _preferSupplementTitle(
 VideoMetadataWork supplementVideoMetadataWithTmdb(
   VideoMetadataWork primary,
   VideoMetadataWork? tmdb,
-) =>
-    supplementVideoMetadata(primary, tmdb);
+) => supplementVideoMetadata(primary, tmdb);
 
 /// 各 provider 返回文本（简介 / 标语）的语言约定：Jikan synopsis 恒英文；AniDB
 /// description 也恒英文（Shoko 同样把它当 English，`DescriptionSourceOrder =
@@ -187,15 +197,14 @@ VideoMetadataWork supplementVideoMetadataWithTmdb(
 String? _providerTextLanguage(
   VideoMetadataProviderKind provider,
   String? preferredLanguage,
-) =>
-    switch (provider) {
-      VideoMetadataProviderKind.mal => 'en',
-      VideoMetadataProviderKind.anidb => 'en',
-      // AniList 的 description / genres 只有英文（GraphQL 没有语言参数）。
-      VideoMetadataProviderKind.anilist => 'en',
-      VideoMetadataProviderKind.tmdb => preferredLanguage,
-      _ => null,
-    };
+) => switch (provider) {
+  VideoMetadataProviderKind.mal => 'en',
+  VideoMetadataProviderKind.anidb => 'en',
+  // AniList 的 description / genres 只有英文（GraphQL 没有语言参数）。
+  VideoMetadataProviderKind.anilist => 'en',
+  VideoMetadataProviderKind.tmdb => preferredLanguage,
+  _ => null,
+};
 
 /// [provider] 返回的简介是否是资料语言 [preferredLanguage] 的文本（同
 /// [_providerTextLanguage] 的约定）。发现列表合并多来源卡片时用它选简介：
@@ -204,11 +213,10 @@ String? _providerTextLanguage(
 bool videoMetadataTextMatchesLanguage(
   VideoMetadataProviderKind provider,
   String? preferredLanguage,
-) =>
-    _matchesPreferredLanguage(
-      _providerTextLanguage(provider, preferredLanguage),
-      preferredLanguage,
-    );
+) => _matchesPreferredLanguage(
+  _providerTextLanguage(provider, preferredLanguage),
+  preferredLanguage,
+);
 
 /// Jellyfin `ResultLanguage` 规则：primary 文本已是首选语言、或 supplement
 /// 文本不是首选语言 → 沿用先到者优先；只有 primary 非首选且 supplement 首选
@@ -294,7 +302,7 @@ List<String> _mergeLanguageTaggedStrings(
   }
   final bool preferSupplement =
       !_matchesPreferredLanguage(primaryLanguage, preferredLanguage) &&
-          _matchesPreferredLanguage(supplementLanguage, preferredLanguage);
+      _matchesPreferredLanguage(supplementLanguage, preferredLanguage);
   final List<String> first = preferSupplement ? supplement : primary;
   final List<String> second = preferSupplement ? primary : supplement;
   return List<String>.of(first.isNotEmpty ? first : second);
@@ -338,8 +346,8 @@ VideoMetadataWork remapStandaloneVideoMetadataSeason(
   final VideoMetadataSeason season = work.seasons.single;
   VideoMetadataImage remapImage(VideoMetadataImage image) =>
       image.seasonNumber == 1
-          ? image.copyWith(seasonNumber: localSeasonNumber)
-          : image;
+      ? image.copyWith(seasonNumber: localSeasonNumber)
+      : image;
   return work.copyWith(
     images: <VideoMetadataImage>[
       for (final VideoMetadataImage image in work.images) remapImage(image),
@@ -531,34 +539,45 @@ TmdbEpisodeMatchOutcome enrichSeasonsByTmdbEpisodeMatch(
     ];
     final Map<int, TmdbEpisodeMatch> matches = sources.isEmpty
         ? const <int, TmdbEpisodeMatch>{}
-        : matchEpisodesToTmdb(sources, pool,
-            candidateAliases: candidateAliases);
+        : matchEpisodesToTmdb(
+            sources,
+            pool,
+            candidateAliases: candidateAliases,
+          );
     if (matches.isEmpty) {
       seasons.add(season);
       continue;
     }
     final Set<String> taken = <String>{};
-    seasons.add(season.copyWith(
-      episodes: <VideoMetadataEpisode>[
-        for (final VideoMetadataEpisode episode in season.episodes)
-          if (matches[episode.episodeNumber] case final TmdbEpisodeMatch match)
-            () {
-              ratings[(season.seasonNumber, episode.episodeNumber)] =
-                  match.rating;
-              taken.addAll(_tmdbEpisodeKeys(match.episode));
-              return _mergeEpisode(
-                episode,
-                _renumberEpisode(
-                    match.episode, season.seasonNumber, episode.episodeNumber),
-                preferSupplementTitle: preferSupplementTitle,
-              );
-            }()
-          else
-            episode,
-      ],
-    ));
-    pool.removeWhere((VideoMetadataEpisode episode) =>
-        _tmdbEpisodeKeys(episode).any(taken.contains));
+    seasons.add(
+      season.copyWith(
+        episodes: <VideoMetadataEpisode>[
+          for (final VideoMetadataEpisode episode in season.episodes)
+            if (matches[episode.episodeNumber]
+                case final TmdbEpisodeMatch match)
+              () {
+                ratings[(season.seasonNumber, episode.episodeNumber)] =
+                    match.rating;
+                taken.addAll(_tmdbEpisodeKeys(match.episode));
+                return _mergeEpisode(
+                  episode,
+                  _renumberEpisode(
+                    match.episode,
+                    season.seasonNumber,
+                    episode.episodeNumber,
+                  ),
+                  preferSupplementTitle: preferSupplementTitle,
+                );
+              }()
+            else
+              episode,
+        ],
+      ),
+    );
+    pool.removeWhere(
+      (VideoMetadataEpisode episode) =>
+          _tmdbEpisodeKeys(episode).any(taken.contains),
+    );
   }
   return (
     work: ratings.isEmpty ? primary : primary.copyWith(seasons: seasons),
@@ -599,32 +618,48 @@ TmdbEpisodeMatchOutcome fillEmptySeasonsFromEpisodeTitles(
       seasons.add(season);
       continue;
     }
-    final Map<int, TmdbEpisodeMatch> matches = Map<int, TmdbEpisodeMatch>.of(
-        matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases))
-      // 这条路径的输入是 AniDB 文件身份的集标题、输出是「按 AniDB 集号落进 TMDB
-      // 集」——只有标题真核对过的才能落。`firstAvailable` 是季锁定后的顺序兜底，
-      // 标题没对上；Shoko 把它交用户核对界面，本仓没有那个界面，落库就是把错的
-      // 剧照/简介静默写进分集行（「AniDB 集号不能未经验证套到 TMDB 集号」）。
-      ..removeWhere((int _, TmdbEpisodeMatch match) =>
-          match.rating == TmdbEpisodeMatchRating.firstAvailable);
+    final Map<int, TmdbEpisodeMatch> matches =
+        Map<int, TmdbEpisodeMatch>.of(
+            matchEpisodesToTmdb(
+              sources,
+              pool,
+              candidateAliases: candidateAliases,
+            ),
+          )
+          // 这条路径的输入是 AniDB 文件身份的集标题、输出是「按 AniDB 集号落进 TMDB
+          // 集」——只有标题真核对过的才能落。`firstAvailable` 是季锁定后的顺序兜底，
+          // 标题没对上；Shoko 把它交用户核对界面，本仓没有那个界面，落库就是把错的
+          // 剧照/简介静默写进分集行（「AniDB 集号不能未经验证套到 TMDB 集号」）。
+          ..removeWhere(
+            (int _, TmdbEpisodeMatch match) =>
+                match.rating == TmdbEpisodeMatchRating.firstAvailable,
+          );
     if (matches.isEmpty) {
       seasons.add(season);
       continue;
     }
     final Set<String> taken = <String>{};
-    final List<VideoMetadataEpisode> episodes = <VideoMetadataEpisode>[
-      for (final MapEntry<int, TmdbEpisodeMatch> entry in matches.entries)
-        () {
-          ratings[(season.seasonNumber, entry.key)] = entry.value.rating;
-          taken.addAll(_tmdbEpisodeKeys(entry.value.episode));
-          return _renumberEpisode(
-              entry.value.episode, season.seasonNumber, entry.key);
-        }(),
-    ]..sort((VideoMetadataEpisode a, VideoMetadataEpisode b) =>
-        a.episodeNumber.compareTo(b.episodeNumber));
+    final List<VideoMetadataEpisode> episodes =
+        <VideoMetadataEpisode>[
+          for (final MapEntry<int, TmdbEpisodeMatch> entry in matches.entries)
+            () {
+              ratings[(season.seasonNumber, entry.key)] = entry.value.rating;
+              taken.addAll(_tmdbEpisodeKeys(entry.value.episode));
+              return _renumberEpisode(
+                entry.value.episode,
+                season.seasonNumber,
+                entry.key,
+              );
+            }(),
+        ]..sort(
+          (VideoMetadataEpisode a, VideoMetadataEpisode b) =>
+              a.episodeNumber.compareTo(b.episodeNumber),
+        );
     seasons.add(season.copyWith(episodes: episodes));
-    pool.removeWhere((VideoMetadataEpisode episode) =>
-        _tmdbEpisodeKeys(episode).any(taken.contains));
+    pool.removeWhere(
+      (VideoMetadataEpisode episode) =>
+          _tmdbEpisodeKeys(episode).any(taken.contains),
+    );
   }
   return (
     work: ratings.isEmpty ? primary : primary.copyWith(seasons: seasons),
@@ -734,8 +769,11 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
       : matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases);
   final Map<int, TmdbEpisodeMatch> specialMatches = specialSources.isEmpty
       ? const <int, TmdbEpisodeMatch>{}
-      : matchSpecialsToTmdb(specialSources, pool,
-          candidateAliases: candidateAliases);
+      : matchSpecialsToTmdb(
+          specialSources,
+          pool,
+          candidateAliases: candidateAliases,
+        );
   if (matches.isEmpty && specialMatches.isEmpty) return none();
 
   final bool preferSupplementTitle = _preferSupplementTitle(
@@ -757,12 +795,16 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
         if (cardKey != null) break;
       }
       if (cardKey == null) {
-        final (int, int)? sliced =
-            _cardKeyFromSlices(primary, tmdbEpisode, slices);
+        final (int, int)? sliced = _cardKeyFromSlices(
+          primary,
+          tmdbEpisode,
+          slices,
+        );
         if (sliced != null) {
           cardKey = sliced;
-          (inserts[sliced.$1] ??= <VideoMetadataEpisode>[])
-              .add(_renumberEpisode(tmdbEpisode, sliced.$1, sliced.$2));
+          (inserts[sliced.$1] ??= <VideoMetadataEpisode>[]).add(
+            _renumberEpisode(tmdbEpisode, sliced.$1, sliced.$2),
+          );
         }
       }
     }
@@ -775,8 +817,9 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
   }
   // 特典：TMDB 第 0 季就是卡片第 0 季（补充源整季并进来的 / TMDB 主源自带），
   // 卡片键 = (0, TMDB 集号)；卡片里没有第 0 季就先建一季只放对上的这几集。
-  final bool hasSeasonZero =
-      primary.seasons.any((VideoMetadataSeason s) => s.seasonNumber == 0);
+  final bool hasSeasonZero = primary.seasons.any(
+    (VideoMetadataSeason s) => s.seasonNumber == 0,
+  );
   for (final MapEntry<int, TmdbEpisodeMatch> entry in specialMatches.entries) {
     final VideoMetadataEpisode tmdbEpisode = entry.value.episode;
     final (int, int) cardKey = (0, tmdbEpisode.episodeNumber);
@@ -786,7 +829,8 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
       rating: entry.value.rating,
       cardKey: cardKey,
     );
-    final bool present = tmdbPrimary ||
+    final bool present =
+        tmdbPrimary ||
         _tmdbEpisodeKeys(tmdbEpisode).any(cardKeyByTmdbId.containsKey);
     if (!present) {
       (inserts[0] ??= <VideoMetadataEpisode>[]).add(tmdbEpisode);
@@ -795,35 +839,40 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
   if (inserts.isEmpty) {
     return (work: primary, links: links, specialLinks: specialLinks);
   }
-  final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[
-    for (final VideoMetadataSeason season in primary.seasons)
-      if (inserts[season.seasonNumber] case final List<VideoMetadataEpisode> add)
-        season.copyWith(
-          episodes: _mergeEpisodes(
-            season.episodes,
-            add,
-            preferSupplementTitle: preferSupplementTitle,
-          ),
-        )
-      else
-        season,
-    if (!hasSeasonZero)
-      if (inserts[0] case final List<VideoMetadataEpisode> add)
-        VideoMetadataSeason(
-        seasonNumber: 0,
-        title: show.seasons
-                .where((VideoMetadataSeason s) => s.seasonNumber == 0)
-                .firstOrNull
-                ?.title ??
-            'Specials',
-        episodes: _mergeEpisodes(
-          const <VideoMetadataEpisode>[],
-          add,
-          preferSupplementTitle: preferSupplementTitle,
-        ),
-      ),
-  ]..sort((VideoMetadataSeason a, VideoMetadataSeason b) =>
-      a.seasonNumber.compareTo(b.seasonNumber));
+  final List<VideoMetadataSeason> seasons =
+      <VideoMetadataSeason>[
+        for (final VideoMetadataSeason season in primary.seasons)
+          if (inserts[season.seasonNumber]
+              case final List<VideoMetadataEpisode> add)
+            season.copyWith(
+              episodes: _mergeEpisodes(
+                season.episodes,
+                add,
+                preferSupplementTitle: preferSupplementTitle,
+              ),
+            )
+          else
+            season,
+        if (!hasSeasonZero)
+          if (inserts[0] case final List<VideoMetadataEpisode> add)
+            VideoMetadataSeason(
+              seasonNumber: 0,
+              title:
+                  show.seasons
+                      .where((VideoMetadataSeason s) => s.seasonNumber == 0)
+                      .firstOrNull
+                      ?.title ??
+                  'Specials',
+              episodes: _mergeEpisodes(
+                const <VideoMetadataEpisode>[],
+                add,
+                preferSupplementTitle: preferSupplementTitle,
+              ),
+            ),
+      ]..sort(
+        (VideoMetadataSeason a, VideoMetadataSeason b) =>
+            a.seasonNumber.compareTo(b.seasonNumber),
+      );
   return (
     work: primary.copyWith(seasons: seasons),
     links: links,
@@ -880,27 +929,23 @@ List<VideoMetadataEpisode> _unusedTmdbEpisodes(
 }
 
 Iterable<String> _tmdbEpisodeKeys(VideoMetadataEpisode episode) => <String>[
-      for (final VideoMetadataId id in episode.ids)
-        if (id.type.toLowerCase() == 'tmdb') 'tmdb:${id.value.trim()}',
-    ];
+  for (final VideoMetadataId id in episode.ids)
+    if (id.type.toLowerCase() == 'tmdb') 'tmdb:${id.value.trim()}',
+];
 
 /// 把一条 TMDB 集改成目标 (季, 集) 编号（含剧照的季/集号）。
 VideoMetadataEpisode _renumberEpisode(
   VideoMetadataEpisode episode,
   int seasonNumber,
   int episodeNumber,
-) =>
-    episode.copyWith(
-      seasonNumber: seasonNumber,
-      episodeNumber: episodeNumber,
-      images: <VideoMetadataImage>[
-        for (final VideoMetadataImage image in episode.images)
-          image.copyWith(
-            seasonNumber: seasonNumber,
-            episodeNumber: episodeNumber,
-          ),
-      ],
-    );
+) => episode.copyWith(
+  seasonNumber: seasonNumber,
+  episodeNumber: episodeNumber,
+  images: <VideoMetadataImage>[
+    for (final VideoMetadataImage image in episode.images)
+      image.copyWith(seasonNumber: seasonNumber, episodeNumber: episodeNumber),
+  ],
+);
 
 List<VideoMetadataSeason> _mergeSeasons(
   Iterable<VideoMetadataSeason> primary,
@@ -911,29 +956,33 @@ List<VideoMetadataSeason> _mergeSeasons(
 }) {
   final Map<int, VideoMetadataSeason> supplementByNumber =
       <int, VideoMetadataSeason>{
-    for (final VideoMetadataSeason season in supplement)
-      season.seasonNumber: season,
-  };
+        for (final VideoMetadataSeason season in supplement)
+          season.seasonNumber: season,
+      };
   final List<VideoMetadataSeason> result = <VideoMetadataSeason>[];
   final Set<int> consumed = <int>{};
   for (final VideoMetadataSeason season in primary) {
     final VideoMetadataSeason? matching =
         supplementByNumber[season.seasonNumber];
     consumed.add(season.seasonNumber);
-    result.add(matching == null
-        ? season
-        : _mergeSeason(
-            season,
-            matching,
-            preferSupplementTitle: preferSupplementTitle,
-            creditNames: creditNames,
-          ));
+    result.add(
+      matching == null
+          ? season
+          : _mergeSeason(
+              season,
+              matching,
+              preferSupplementTitle: preferSupplementTitle,
+              creditNames: creditNames,
+            ),
+    );
   }
   for (final VideoMetadataSeason season in supplement) {
     if (!consumed.contains(season.seasonNumber)) result.add(season);
   }
-  result.sort((VideoMetadataSeason a, VideoMetadataSeason b) =>
-      a.seasonNumber.compareTo(b.seasonNumber));
+  result.sort(
+    (VideoMetadataSeason a, VideoMetadataSeason b) =>
+        a.seasonNumber.compareTo(b.seasonNumber),
+  );
   return result;
 }
 
@@ -943,22 +992,21 @@ VideoMetadataSeason _mergeSeason(
   required bool preferSupplementTitle,
   VideoMetadataCreditNameBridge creditNames =
       VideoMetadataCreditNameBridge.none,
-}) =>
-    primary.copyWith(
-      plot: primary.plot ?? supplement.plot,
-      airDate: primary.airDate ?? supplement.airDate,
-      year: primary.year ?? supplement.year,
-      episodeCount: primary.episodeCount ?? supplement.episodeCount,
-      rating: primary.rating ?? supplement.rating,
-      ids: _mergeIds(primary.ids, supplement.ids),
-      images: _mergeImagesFillingMissing(primary.images, supplement.images),
-      episodes: _mergeEpisodes(
-        primary.episodes,
-        supplement.episodes,
-        preferSupplementTitle: preferSupplementTitle,
-        creditNames: creditNames,
-      ),
-    );
+}) => primary.copyWith(
+  plot: primary.plot ?? supplement.plot,
+  airDate: primary.airDate ?? supplement.airDate,
+  year: primary.year ?? supplement.year,
+  episodeCount: primary.episodeCount ?? supplement.episodeCount,
+  rating: primary.rating ?? supplement.rating,
+  ids: _mergeIds(primary.ids, supplement.ids),
+  images: _mergeImagesFillingMissing(primary.images, supplement.images),
+  episodes: _mergeEpisodes(
+    primary.episodes,
+    supplement.episodes,
+    preferSupplementTitle: preferSupplementTitle,
+    creditNames: creditNames,
+  ),
+);
 
 List<VideoMetadataEpisode> _mergeEpisodes(
   Iterable<VideoMetadataEpisode> primary,
@@ -969,29 +1017,33 @@ List<VideoMetadataEpisode> _mergeEpisodes(
 }) {
   final Map<int, VideoMetadataEpisode> supplementByNumber =
       <int, VideoMetadataEpisode>{
-    for (final VideoMetadataEpisode episode in supplement)
-      episode.episodeNumber: episode,
-  };
+        for (final VideoMetadataEpisode episode in supplement)
+          episode.episodeNumber: episode,
+      };
   final List<VideoMetadataEpisode> result = <VideoMetadataEpisode>[];
   final Set<int> consumed = <int>{};
   for (final VideoMetadataEpisode episode in primary) {
     final VideoMetadataEpisode? matching =
         supplementByNumber[episode.episodeNumber];
     consumed.add(episode.episodeNumber);
-    result.add(matching == null
-        ? episode
-        : _mergeEpisode(
-            episode,
-            matching,
-            preferSupplementTitle: preferSupplementTitle,
-            creditNames: creditNames,
-          ));
+    result.add(
+      matching == null
+          ? episode
+          : _mergeEpisode(
+              episode,
+              matching,
+              preferSupplementTitle: preferSupplementTitle,
+              creditNames: creditNames,
+            ),
+    );
   }
   for (final VideoMetadataEpisode episode in supplement) {
     if (!consumed.contains(episode.episodeNumber)) result.add(episode);
   }
-  result.sort((VideoMetadataEpisode a, VideoMetadataEpisode b) =>
-      a.episodeNumber.compareTo(b.episodeNumber));
+  result.sort(
+    (VideoMetadataEpisode a, VideoMetadataEpisode b) =>
+        a.episodeNumber.compareTo(b.episodeNumber),
+  );
   return result;
 }
 
@@ -1001,28 +1053,27 @@ VideoMetadataEpisode _mergeEpisode(
   required bool preferSupplementTitle,
   VideoMetadataCreditNameBridge creditNames =
       VideoMetadataCreditNameBridge.none,
-}) =>
-    primary.copyWith(
-      // 分集名与作品名同一条语言规则：作品标题换了译名，分集名不能还留原文——
-      // 分集名会写穿进 video_books.title，显示层撤不回来。
-      title: preferSupplementTitle && !_isBlank(supplement.title)
-          ? supplement.title
-          : primary.title,
-      plot: primary.plot ?? supplement.plot,
-      airDate: primary.airDate ?? supplement.airDate,
-      year: primary.year ?? supplement.year,
-      absoluteNumber: primary.absoluteNumber ?? supplement.absoluteNumber,
-      rating: primary.rating ?? supplement.rating,
-      ratingVotes: primary.ratingVotes ?? supplement.ratingVotes,
-      runtimeMinutes: primary.runtimeMinutes ?? supplement.runtimeMinutes,
-      ids: _mergeIds(primary.ids, supplement.ids),
-      credits: mergeVideoMetadataCredits(
-        primary.credits,
-        supplement.credits,
-        names: creditNames,
-      ),
-      images: _mergeImagesFillingMissing(primary.images, supplement.images),
-    );
+}) => primary.copyWith(
+  // 分集名与作品名同一条语言规则：作品标题换了译名，分集名不能还留原文——
+  // 分集名会写穿进 video_books.title，显示层撤不回来。
+  title: preferSupplementTitle && !_isBlank(supplement.title)
+      ? supplement.title
+      : primary.title,
+  plot: primary.plot ?? supplement.plot,
+  airDate: primary.airDate ?? supplement.airDate,
+  year: primary.year ?? supplement.year,
+  absoluteNumber: primary.absoluteNumber ?? supplement.absoluteNumber,
+  rating: primary.rating ?? supplement.rating,
+  ratingVotes: primary.ratingVotes ?? supplement.ratingVotes,
+  runtimeMinutes: primary.runtimeMinutes ?? supplement.runtimeMinutes,
+  ids: _mergeIds(primary.ids, supplement.ids),
+  credits: mergeVideoMetadataCredits(
+    primary.credits,
+    supplement.credits,
+    names: creditNames,
+  ),
+  images: _mergeImagesFillingMissing(primary.images, supplement.images),
+);
 
 List<VideoMetadataId> _mergeIds(
   Iterable<VideoMetadataId> primary,
@@ -1104,69 +1155,64 @@ List<VideoMetadataCredit> mergeVideoMetadataCredits(
 VideoMetadataCredit _mergeCredit(
   VideoMetadataCredit primary,
   VideoMetadataCredit supplement,
-) =>
-    primary.copyWith(
-      person: _mergePerson(primary.person, supplement.person),
-      character: switch ((primary.character, supplement.character)) {
-        (
-          final VideoMetadataCharacter value,
-          final VideoMetadataCharacter other
-        ) =>
-          _mergeCharacter(value, other),
-        (final VideoMetadataCharacter value, null) => value,
-        (null, final VideoMetadataCharacter value) => value,
-        (null, null) => null,
-      },
-      language: primary.language ?? supplement.language,
-      roleName: primary.roleName ?? supplement.roleName,
-      department: primary.department ?? supplement.department,
-      job: primary.job ?? supplement.job,
-      providerCreditId: primary.providerCreditId ?? supplement.providerCreditId,
-    );
+) => primary.copyWith(
+  person: _mergePerson(primary.person, supplement.person),
+  character: switch ((primary.character, supplement.character)) {
+    (final VideoMetadataCharacter value, final VideoMetadataCharacter other) =>
+      _mergeCharacter(value, other),
+    (final VideoMetadataCharacter value, null) => value,
+    (null, final VideoMetadataCharacter value) => value,
+    (null, null) => null,
+  },
+  language: primary.language ?? supplement.language,
+  roleName: primary.roleName ?? supplement.roleName,
+  department: primary.department ?? supplement.department,
+  job: primary.job ?? supplement.job,
+  providerCreditId: primary.providerCreditId ?? supplement.providerCreditId,
+);
 
 VideoMetadataPerson _mergePerson(
   VideoMetadataPerson primary,
   VideoMetadataPerson supplement,
-) =>
-    primary.copyWith(
-      id: primary.id ?? supplement.id,
-      originalName: primary.originalName ?? supplement.originalName,
-      biography: primary.biography ?? supplement.biography,
-      birthday: primary.birthday ?? supplement.birthday,
-      deathday: primary.deathday ?? supplement.deathday,
-      gender: primary.gender ?? supplement.gender,
-      placeOfBirth: primary.placeOfBirth ?? supplement.placeOfBirth,
-      profileUrl: primary.profileUrl ?? supplement.profileUrl,
-      ids: _mergeIds(primary.ids, supplement.ids),
-    );
+) => primary.copyWith(
+  id: primary.id ?? supplement.id,
+  originalName: primary.originalName ?? supplement.originalName,
+  biography: primary.biography ?? supplement.biography,
+  birthday: primary.birthday ?? supplement.birthday,
+  deathday: primary.deathday ?? supplement.deathday,
+  gender: primary.gender ?? supplement.gender,
+  placeOfBirth: primary.placeOfBirth ?? supplement.placeOfBirth,
+  profileUrl: primary.profileUrl ?? supplement.profileUrl,
+  ids: _mergeIds(primary.ids, supplement.ids),
+);
 
 VideoMetadataCharacter _mergeCharacter(
   VideoMetadataCharacter primary,
   VideoMetadataCharacter supplement,
-) =>
-    primary.copyWith(
-      id: primary.id ?? supplement.id,
-      originalName: primary.originalName ?? supplement.originalName,
-      description: primary.description ?? supplement.description,
-      imageUrl: primary.imageUrl ?? supplement.imageUrl,
-      ids: _mergeIds(primary.ids, supplement.ids),
-    );
+) => primary.copyWith(
+  id: primary.id ?? supplement.id,
+  originalName: primary.originalName ?? supplement.originalName,
+  description: primary.description ?? supplement.description,
+  imageUrl: primary.imageUrl ?? supplement.imageUrl,
+  ids: _mergeIds(primary.ids, supplement.ids),
+);
 
 /// 名字的书写系统：只用来判断两个写法「能不能比」，不做转写。
 enum _NameScript { latin, han, hangul }
 
 final RegExp _latinLetter = RegExp(r'[A-Za-z\u00C0-\u024F]');
 final RegExp _hanOrKana = RegExp(
-    r'[\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]');
+  r'[\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]',
+);
 final RegExp _hangul = RegExp(r'[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]');
 final RegExp _cjkNameSeparators = RegExp(r'[\s,，、・·･=＝]+');
 final RegExp _latinNameSeparators = RegExp(r'[,\s]+');
 
 Set<_NameScript> _scriptsOf(String value) => <_NameScript>{
-      if (_latinLetter.hasMatch(value)) _NameScript.latin,
-      if (_hanOrKana.hasMatch(value)) _NameScript.han,
-      if (_hangul.hasMatch(value)) _NameScript.hangul,
-    };
+  if (_latinLetter.hasMatch(value)) _NameScript.latin,
+  if (_hanOrKana.hasMatch(value)) _NameScript.han,
+  if (_hangul.hasMatch(value)) _NameScript.hangul,
+};
 
 /// 单个写法的比较键：汉字 / 假名 / 谚文名去掉空白与间隔号（「鈴木 愛奈」=
 /// 「鈴木愛奈」，并按 [TitleNormalizer] 折叠繁简 / 全半角）；拉丁名按词集合比较
@@ -1175,27 +1221,29 @@ String _nameKey(String value) {
   final String trimmed = stripVoiceRoleSuffix(value);
   if (trimmed.isEmpty) return '';
   if (_hanOrKana.hasMatch(trimmed) || _hangul.hasMatch(trimmed)) {
-    return TitleNormalizer.normalize(trimmed)
-        .replaceAll(_cjkNameSeparators, '');
+    return TitleNormalizer.normalize(
+      trimmed,
+    ).replaceAll(_cjkNameSeparators, '');
   }
-  final List<String> words = trimmed
-      .toLowerCase()
-      .split(_latinNameSeparators)
-      .where((String word) => word.isNotEmpty)
-      .toList()
-    ..sort();
+  final List<String> words =
+      trimmed
+          .toLowerCase()
+          .split(_latinNameSeparators)
+          .where((String word) => word.isNotEmpty)
+          .toList()
+        ..sort();
   return words.join(' ');
 }
 
 Set<String> _nameKeys(Iterable<String?> values) => <String>{
-      for (final String? value in values)
-        if (value != null) _nameKey(value),
-    }..remove('');
+  for (final String? value in values)
+    if (value != null) _nameKey(value),
+}..remove('');
 
 Set<_NameScript> _nameScriptsOf(Iterable<String?> values) => <_NameScript>{
-      for (final String? value in values)
-        if (value != null) ..._scriptsOf(value),
-    };
+  for (final String? value in values)
+    if (value != null) ..._scriptsOf(value),
+};
 
 /// 一条人物关系的跨源身份：类别组 + 人名全部写法 + 角色名全部写法。
 class _CreditIdentity {
@@ -1224,8 +1272,7 @@ class _CreditIdentity {
     return _CreditIdentity._(
       group: switch (credit.kind) {
         VideoMetadataCreditKind.actor ||
-        VideoMetadataCreditKind.voiceActor =>
-          'cast',
+        VideoMetadataCreditKind.voiceActor => 'cast',
         _ => credit.kind.name,
       },
       names: bridgedNames,
@@ -1272,15 +1319,15 @@ class _CreditIdentity {
 }
 
 List<String?> _personNames(VideoMetadataCredit credit) => <String?>[
-      credit.person.name,
-      credit.person.originalName,
-    ];
+  credit.person.name,
+  credit.person.originalName,
+];
 
 List<String?> _characterNames(VideoMetadataCredit credit) => <String?>[
-      credit.roleName,
-      credit.character?.name,
-      credit.character?.originalName,
-    ];
+  credit.roleName,
+  credit.character?.name,
+  credit.character?.originalName,
+];
 
 /// 「同一人 / 同一角色的全部已知写法」等价类，合并**之前**从所有来源一次收齐。
 ///
@@ -1301,22 +1348,21 @@ class VideoMetadataCreditNameBridge {
   /// 没有任何跨源写法证据：合并只按两边各自的写法比对。
   static const VideoMetadataCreditNameBridge none =
       VideoMetadataCreditNameBridge._(
-    <String, Set<String>>{},
-    <String, Set<String>>{},
-  );
+        <String, Set<String>>{},
+        <String, Set<String>>{},
+      );
 
   /// 从全部来源的作品级与分集级人物关系收集写法等价类。
   factory VideoMetadataCreditNameBridge.fromWorks(
     Iterable<VideoMetadataWork> works,
-  ) =>
-      VideoMetadataCreditNameBridge.fromCredits(<VideoMetadataCredit>[
-        for (final VideoMetadataWork work in works) ...<VideoMetadataCredit>[
-          ...work.credits,
-          for (final VideoMetadataSeason season in work.seasons)
-            for (final VideoMetadataEpisode episode in season.episodes)
-              ...episode.credits,
-        ],
-      ]);
+  ) => VideoMetadataCreditNameBridge.fromCredits(<VideoMetadataCredit>[
+    for (final VideoMetadataWork work in works) ...<VideoMetadataCredit>[
+      ...work.credits,
+      for (final VideoMetadataSeason season in work.seasons)
+        for (final VideoMetadataEpisode episode in season.episodes)
+          ...episode.credits,
+    ],
+  ]);
 
   factory VideoMetadataCreditNameBridge.fromCredits(
     Iterable<VideoMetadataCredit> credits,
@@ -1344,8 +1390,7 @@ class VideoMetadataCreditNameBridge {
   static Set<String> _expand(
     Map<String, Set<String>> classes,
     Set<String> keys,
-  ) =>
-      <String>{...keys, for (final String key in keys) ...?classes[key]};
+  ) => <String>{...keys, for (final String key in keys) ...?classes[key]};
 }
 
 /// 字符串并查集。
@@ -1407,8 +1452,10 @@ bool _isNativeKey(String key) =>
 String stripVoiceRoleSuffix(String role) =>
     role.replaceFirst(_voiceRoleSuffix, '').trim();
 
-final RegExp _voiceRoleSuffix =
-    RegExp(r'\s*\(voice\)\s*$', caseSensitive: false);
+final RegExp _voiceRoleSuffix = RegExp(
+  r'\s*\(voice\)\s*$',
+  caseSensitive: false,
+);
 
 List<VideoMetadataImage> _mergeImagesFillingMissing(
   Iterable<VideoMetadataImage> primary,
@@ -1431,10 +1478,10 @@ List<VideoMetadataImage> _mergeImagesFillingMissing(
 }
 
 String _imageSlotKey(VideoMetadataImage image) => <Object?>[
-      image.seasonNumber,
-      image.episodeNumber,
-      image.kind.name,
-    ].join(':');
+  image.seasonNumber,
+  image.episodeNumber,
+  image.kind.name,
+].join(':');
 
 /// 每个层级/图种只选一张（背景图可多张）。
 ///
@@ -1462,8 +1509,10 @@ List<VideoMetadataImage> selectVideoMetadataImages({
       const <VideoMetadataImageKind, int>{VideoMetadataImageKind.backdrop: 3},
   String? mainLanguage,
 }) {
-  final List<String> order = imageLanguageOrderWithMain(languageOrder,
-      mainLanguage: mainLanguage);
+  final List<String> order = imageLanguageOrderWithMain(
+    languageOrder,
+    mainLanguage: mainLanguage,
+  );
   final Map<String, List<VideoMetadataImage>> primaryGroups = _groupImages(
     primary,
   );
@@ -1471,11 +1520,14 @@ List<VideoMetadataImage> selectVideoMetadataImages({
   for (final List<VideoMetadataImage> group in primaryGroups.values) {
     if (group.isEmpty) continue;
     final Set<String> seenUrls = <String>{};
-    final List<VideoMetadataImage> preferred = <VideoMetadataImage>[
-      for (final VideoMetadataImage image in group)
-        if (seenUrls.add(image.url)) image,
-    ]..sort((VideoMetadataImage a, VideoMetadataImage b) =>
-        _compareImages(a, b, order));
+    final List<VideoMetadataImage> preferred =
+        <VideoMetadataImage>[
+          for (final VideoMetadataImage image in group)
+            if (seenUrls.add(image.url)) image,
+        ]..sort(
+          (VideoMetadataImage a, VideoMetadataImage b) =>
+              _compareImages(a, b, order),
+        );
     final VideoMetadataImageKind kind = preferred.first.kind;
     final int limit = kind == VideoMetadataImageKind.thumb
         ? 1
@@ -1485,8 +1537,9 @@ List<VideoMetadataImage> selectVideoMetadataImages({
   selected.sort((VideoMetadataImage a, VideoMetadataImage b) {
     final int bySeason = (a.seasonNumber ?? -1).compareTo(b.seasonNumber ?? -1);
     if (bySeason != 0) return bySeason;
-    final int byEpisode =
-        (a.episodeNumber ?? -1).compareTo(b.episodeNumber ?? -1);
+    final int byEpisode = (a.episodeNumber ?? -1).compareTo(
+      b.episodeNumber ?? -1,
+    );
     if (byEpisode != 0) return byEpisode;
     return a.kind.index.compareTo(b.kind.index);
   });
@@ -1531,12 +1584,12 @@ Map<String, List<VideoMetadataImage>> _groupImages(
 /// 按语言优先会让一张 0 票的 `en` 剧照压住 8 分的无标签剧照。
 const Set<VideoMetadataImageKind> kLanguageFirstImageKinds =
     <VideoMetadataImageKind>{
-  VideoMetadataImageKind.cover,
-  VideoMetadataImageKind.logo,
-  VideoMetadataImageKind.banner,
-  VideoMetadataImageKind.disc,
-  VideoMetadataImageKind.clearart,
-};
+      VideoMetadataImageKind.cover,
+      VideoMetadataImageKind.logo,
+      VideoMetadataImageKind.banner,
+      VideoMetadataImageKind.disc,
+      VideoMetadataImageKind.clearart,
+    };
 
 int _compareImages(
   VideoMetadataImage a,
@@ -1551,8 +1604,9 @@ int _compareImages(
     return languageOrder.length;
   }
 
-  final int language =
-      languageRank(a.language).compareTo(languageRank(b.language));
+  final int language = languageRank(
+    a.language,
+  ).compareTo(languageRank(b.language));
   // 海报 / logo 上印的是片名，用户选了资料语言就是要那种文字的图：语言先于
   // 评分，否则一张高分外语海报永远压住本语言海报（用户设 ja 仍拿到中文海报，
   // 就是这条路径）。画面类图种评分继续做主。

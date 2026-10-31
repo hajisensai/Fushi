@@ -48,39 +48,58 @@ void main() {
   }, skip: engine == null ? 'fushi_torrent_ffi native lib not built' : null);
 
   test('applyProxy：off / 全代理 / 混合档 native 全部接受，非法值拒绝', () {
-    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine!);
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+    );
     expect(session, isNotNull);
     addTearDown(session!.close);
     expect(session.supportsProxy, isTrue);
-    expect(session.supportsProxyMode, isTrue,
-        reason: '本仓构建的库必须带 ht_apply_proxy_mode（P2P 混合档依赖它；'
-            '缺符号说明 DLL 是旧构建）');
+    expect(
+      session.supportsProxyMode,
+      isTrue,
+      reason:
+          '本仓构建的库必须带 ht_apply_proxy_mode（P2P 混合档依赖它；'
+          '缺符号说明 DLL 是旧构建）',
+    );
     expect(session.applyProxy(hostPort: '127.0.0.1:18080'), isTrue);
-    expect(session.applyProxy(hostPort: '127.0.0.1:18080', mixed: true), isTrue,
-        reason: '混合档：tracker 经代理、peer/DHT 直连');
+    expect(
+      session.applyProxy(hostPort: '127.0.0.1:18080', mixed: true),
+      isTrue,
+      reason: '混合档：tracker 经代理、peer/DHT 直连',
+    );
     expect(session.applyProxy(hostPort: null), isTrue, reason: '复位直连');
-    expect(session.applyProxy(hostPort: 'garbage-no-port'), isFalse,
-        reason: 'host:port 拆不开必须显式失败，不假装成功');
+    expect(
+      session.applyProxy(hostPort: 'garbage-no-port'),
+      isFalse,
+      reason: 'host:port 拆不开必须显式失败，不假装成功',
+    );
   }, skip: engine == null ? 'fushi_torrent_ffi native lib not built' : null);
 
   test('addDhtNodes（BUG-2950）：合法行计数，非法行跳过，空列表 -1', () {
-    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine!);
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+    );
     expect(session, isNotNull);
     addTearDown(session!.close);
-    expect(session.supportsAddDhtNodes, isTrue,
-        reason: '本仓构建的库必须带 ht_add_dht_nodes（fake-ip 下 DHT 冷启动'
-            '依赖它；缺符号说明 DLL 是旧构建）');
     expect(
-        session.addDhtNodes(<String>[
-          '67.215.246.10:6881',
-          'router.bittorrent.com:6881',
-          '[2001:db8::1]:6881',
-          'no-port',
-          '1.2.3.4:0',
-          '1.2.3.4:70000',
-          '1.2.3.4:abc',
-        ]),
-        3);
+      session.supportsAddDhtNodes,
+      isTrue,
+      reason:
+          '本仓构建的库必须带 ht_add_dht_nodes（fake-ip 下 DHT 冷启动'
+          '依赖它；缺符号说明 DLL 是旧构建）',
+    );
+    expect(
+      session.addDhtNodes(<String>[
+        '67.215.246.10:6881',
+        'router.bittorrent.com:6881',
+        '[2001:db8::1]:6881',
+        'no-port',
+        '1.2.3.4:0',
+        '1.2.3.4:70000',
+        '1.2.3.4:abc',
+      ]),
+      3,
+    );
     expect(session.addDhtNodes(<String>[]), -1);
     expect(session.addDhtNodes(<String>['  ']), -1);
   }, skip: engine == null ? 'fushi_torrent_ffi native lib not built' : null);

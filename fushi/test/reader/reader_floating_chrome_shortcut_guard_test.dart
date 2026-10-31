@@ -19,40 +19,45 @@ String _slice(String source, String startMarker, String endMarker) {
   final int start = source.indexOf(startMarker);
   expect(start, greaterThanOrEqualTo(0), reason: 'missing $startMarker');
   final int end = source.indexOf(endMarker, start + startMarker.length);
-  expect(end, greaterThan(start),
-      reason: 'missing $endMarker after $startMarker');
+  expect(
+    end,
+    greaterThan(start),
+    reason: 'missing $endMarker after $startMarker',
+  );
   return source.substring(start, end);
 }
 
 void main() {
   final String source = maskComments(readReaderPageSource());
 
-  test('reader chrome shortcut enters the floating visibility state machine',
-      () {
-    final String action = _slice(
-      source,
-      'case ShortcutAction.readerToggleChrome:',
-      'case ShortcutAction.readerOpenMenu:',
-    );
-    expect(action, contains('_toggleChromeFromShortcut();'));
-    // 负向：绝不能退回直调挤压模式入口（`_toggleChromeFromShortcut();` 不含
-    // `_toggleChrome();` 这个字面量，所以这条断言是真的负向断言）。
-    expect(action, isNot(contains('_toggleChrome();')));
+  test(
+    'reader chrome shortcut enters the floating visibility state machine',
+    () {
+      final String action = _slice(
+        source,
+        'case ShortcutAction.readerToggleChrome:',
+        'case ShortcutAction.readerOpenMenu:',
+      );
+      expect(action, contains('_toggleChromeFromShortcut();'));
+      // 负向：绝不能退回直调挤压模式入口（`_toggleChromeFromShortcut();` 不含
+      // `_toggleChrome();` 这个字面量，所以这条断言是真的负向断言）。
+      expect(action, isNot(contains('_toggleChrome();')));
 
-    final String helper = _slice(
-      source,
-      'void _toggleChromeFromShortcut()',
-      'void _toggleChrome()',
-    );
-    expect(helper, contains('if (_bottomBarFloating)'));
-    expect(helper, contains('_handleFloatingChromeReveal()'));
-    expect(
-      helper,
-      contains('_focusOwnership.reclaim(FocusReclaimCause.chromeToggled)'),
-    );
-    // 挤压模式仍走旧入口。
-    expect(helper, contains('_toggleChrome();'));
-  });
+      final String helper = _slice(
+        source,
+        'void _toggleChromeFromShortcut()',
+        'void _toggleChrome()',
+      );
+      expect(helper, contains('if (_bottomBarFloating)'));
+      expect(helper, contains('_handleFloatingChromeReveal()'));
+      expect(
+        helper,
+        contains('_focusOwnership.reclaim(FocusReclaimCause.chromeToggled)'),
+      );
+      // 挤压模式仍走旧入口。
+      expect(helper, contains('_toggleChrome();'));
+    },
+  );
 
   test('floating show/hide is one click switch, no timer of its own', () {
     final String reveal = _slice(
@@ -62,7 +67,10 @@ void main() {
     );
     // 用户 2026-09-14：这条路是纯开关——同一下点击既能开也能关，方向由当前态
     // 决定，而不是「开一次再等计时关」。
-    expect(reveal, contains('_chromeTransientVisible = !_chromeTransientVisible'));
+    expect(
+      reveal,
+      contains('_chromeTransientVisible = !_chromeTransientVisible'),
+    );
     expect(
       reveal,
       isNot(contains('_armChromeAutoHide();')),

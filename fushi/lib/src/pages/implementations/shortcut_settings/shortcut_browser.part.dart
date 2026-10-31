@@ -16,91 +16,88 @@ enum ShortcutInputDevice { keyboard, gamepad, mouse }
 extension ShortcutInputDeviceChannels on ShortcutInputDevice {
   /// 这台设备覆盖的绑定通道。
   Set<ShortcutChannel> get channels => switch (this) {
-        ShortcutInputDevice.keyboard => const <ShortcutChannel>{
-            ShortcutChannel.keyboard,
-          },
-        ShortcutInputDevice.gamepad => const <ShortcutChannel>{
-            ShortcutChannel.gamepad,
-          },
-        ShortcutInputDevice.mouse => const <ShortcutChannel>{
-            ShortcutChannel.mouse,
-            ShortcutChannel.wheel,
-          },
-      };
+    ShortcutInputDevice.keyboard => const <ShortcutChannel>{
+      ShortcutChannel.keyboard,
+    },
+    ShortcutInputDevice.gamepad => const <ShortcutChannel>{
+      ShortcutChannel.gamepad,
+    },
+    ShortcutInputDevice.mouse => const <ShortcutChannel>{
+      ShortcutChannel.mouse,
+      ShortcutChannel.wheel,
+    },
+  };
 
   IconData get icon => switch (this) {
-        ShortcutInputDevice.keyboard => FushiIcons.keyboard,
-        ShortcutInputDevice.gamepad => FushiIcons.games,
-        ShortcutInputDevice.mouse => FushiIcons.mouse,
-      };
+    ShortcutInputDevice.keyboard => FushiIcons.keyboard,
+    ShortcutInputDevice.gamepad => FushiIcons.games,
+    ShortcutInputDevice.mouse => FushiIcons.mouse,
+  };
 
   String get label => switch (this) {
-        ShortcutInputDevice.keyboard => t.shortcut_keyboard,
-        ShortcutInputDevice.gamepad => t.shortcut_gamepad,
-        ShortcutInputDevice.mouse => t.shortcut_device_mouse,
-      };
+    ShortcutInputDevice.keyboard => t.shortcut_keyboard,
+    ShortcutInputDevice.gamepad => t.shortcut_gamepad,
+    ShortcutInputDevice.mouse => t.shortcut_device_mouse,
+  };
 }
 
 /// 一条绑定（[InputBinding] / [GamepadBinding] / [MouseBinding] / [WheelBinding]）
 /// 落在哪条通道。
 ShortcutChannel shortcutBindingChannel(Object binding) => switch (binding) {
-      InputBinding() => ShortcutChannel.keyboard,
-      GamepadBinding() => ShortcutChannel.gamepad,
-      MouseBinding() => ShortcutChannel.mouse,
-      WheelBinding() => ShortcutChannel.wheel,
-      _ => throw ArgumentError.value(binding, 'binding', 'unknown binding'),
-    };
+  InputBinding() => ShortcutChannel.keyboard,
+  GamepadBinding() => ShortcutChannel.gamepad,
+  MouseBinding() => ShortcutChannel.mouse,
+  WheelBinding() => ShortcutChannel.wheel,
+  _ => throw ArgumentError.value(binding, 'binding', 'unknown binding'),
+};
 
 /// [set] 在 [channel] 上的绑定（类型擦成 Object，便于通道无关的增删）。
 List<Object> shortcutBindingsInChannel(
   ShortcutBindingSet set,
   ShortcutChannel channel,
-) =>
-    switch (channel) {
-      ShortcutChannel.keyboard => List<Object>.of(set.keyboardBindings),
-      ShortcutChannel.gamepad => List<Object>.of(set.gamepadBindings),
-      ShortcutChannel.mouse => List<Object>.of(set.mouseBindings),
-      ShortcutChannel.wheel => List<Object>.of(set.wheelBindings),
-    };
+) => switch (channel) {
+  ShortcutChannel.keyboard => List<Object>.of(set.keyboardBindings),
+  ShortcutChannel.gamepad => List<Object>.of(set.gamepadBindings),
+  ShortcutChannel.mouse => List<Object>.of(set.mouseBindings),
+  ShortcutChannel.wheel => List<Object>.of(set.wheelBindings),
+};
 
 /// [set] 在 [device] 覆盖的全部通道上的绑定。
 List<Object> shortcutBindingsForDevice(
   ShortcutBindingSet set,
   ShortcutInputDevice device,
-) =>
-    <Object>[
-      for (final ShortcutChannel channel in device.channels)
-        ...shortcutBindingsInChannel(set, channel),
-    ];
+) => <Object>[
+  for (final ShortcutChannel channel in device.channels)
+    ...shortcutBindingsInChannel(set, channel),
+];
 
 /// 把 [set] 的 [channel] 通道整体换成 [bindings]，其余通道原样保留。
 ShortcutBindingSet shortcutBindingSetWithChannel(
   ShortcutBindingSet set,
   ShortcutChannel channel,
   List<Object> bindings,
-) =>
-    switch (channel) {
-      ShortcutChannel.keyboard => set.copyWith(
-          keyboardBindings: List<InputBinding>.unmodifiable(
-            bindings.whereType<InputBinding>(),
-          ),
-        ),
-      ShortcutChannel.gamepad => set.copyWith(
-          gamepadBindings: List<GamepadBinding>.unmodifiable(
-            bindings.whereType<GamepadBinding>(),
-          ),
-        ),
-      ShortcutChannel.mouse => set.copyWith(
-          mouseBindings: List<MouseBinding>.unmodifiable(
-            bindings.whereType<MouseBinding>(),
-          ),
-        ),
-      ShortcutChannel.wheel => set.copyWith(
-          wheelBindings: List<WheelBinding>.unmodifiable(
-            bindings.whereType<WheelBinding>(),
-          ),
-        ),
-    };
+) => switch (channel) {
+  ShortcutChannel.keyboard => set.copyWith(
+    keyboardBindings: List<InputBinding>.unmodifiable(
+      bindings.whereType<InputBinding>(),
+    ),
+  ),
+  ShortcutChannel.gamepad => set.copyWith(
+    gamepadBindings: List<GamepadBinding>.unmodifiable(
+      bindings.whereType<GamepadBinding>(),
+    ),
+  ),
+  ShortcutChannel.mouse => set.copyWith(
+    mouseBindings: List<MouseBinding>.unmodifiable(
+      bindings.whereType<MouseBinding>(),
+    ),
+  ),
+  ShortcutChannel.wheel => set.copyWith(
+    wheelBindings: List<WheelBinding>.unmodifiable(
+      bindings.whereType<WheelBinding>(),
+    ),
+  ),
+};
 
 /// 两组绑定是否等价（各通道按集合比，顺序无关）——「已自定义」标记的判据。
 bool shortcutBindingSetsEquivalent(ShortcutBindingSet a, ShortcutBindingSet b) {
@@ -241,7 +238,7 @@ class ShortcutBindingsBrowser extends StatefulWidget {
 
   /// 非 null 时用它替换该分组的行列表（键位图模式）。
   final Widget? Function(ShortcutScope scope, ShortcutInputDevice device)?
-      scopeBodyOverride;
+  scopeBodyOverride;
 
   /// 设备分段右侧的额外动作（键位图切换等）。
   final List<Widget> toolbarTrailing;
@@ -347,9 +344,9 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
       ).where(_rowVisible).toList(growable: false);
 
   bool _isModified(ShortcutAction action) => !shortcutBindingSetsEquivalent(
-        _registry.bindingsFor(action),
-        _defaults[action] ?? const ShortcutBindingSet(),
-      );
+    _registry.bindingsFor(action),
+    _defaults[action] ?? const ShortcutBindingSet(),
+  );
 
   bool get _filtering => _keyFilter != null || _query.trim().isNotEmpty;
 
@@ -607,25 +604,25 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
   ShortcutAction? _conflictFor(ShortcutAction action, Object binding) {
     return switch (binding) {
       final InputBinding b => _registry.hasKeyboardConflict(
-          action.scope,
-          b,
-          exclude: action,
-        ),
+        action.scope,
+        b,
+        exclude: action,
+      ),
       final GamepadBinding b => _registry.hasGamepadConflict(
-          action.scope,
-          b,
-          exclude: action,
-        ),
+        action.scope,
+        b,
+        exclude: action,
+      ),
       final MouseBinding b => _registry.hasMouseConflict(
-          action.scope,
-          b,
-          exclude: action,
-        ),
+        action.scope,
+        b,
+        exclude: action,
+      ),
       final WheelBinding b => _registry.hasWheelConflict(
-          action.scope,
-          b,
-          exclude: action,
-        ),
+        action.scope,
+        b,
+        exclude: action,
+      ),
       _ => null,
     };
   }
@@ -643,8 +640,9 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
       // 已经是它了：替换模式下等于没改，追加模式下给出说明而不是静默。
       setState(() {
         _recording = null;
-        _recordWarning =
-            _recordReplace ? null : t.shortcut_conflict(s: action.label);
+        _recordWarning = _recordReplace
+            ? null
+            : t.shortcut_conflict(s: action.label);
         _warningAction = _recordWarning == null ? null : action;
       });
       _refocusRow(action);
@@ -769,9 +767,9 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
         final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final Map<ShortcutScope, List<ShortcutAction>> rows =
             <ShortcutScope, List<ShortcutAction>>{
-          for (final ShortcutScope scope in widget.scopes)
-            scope: _visibleActions(scope),
-        };
+              for (final ShortcutScope scope in widget.scopes)
+                scope: _visibleActions(scope),
+            };
         final Widget header = _buildHeader(context, wide: wide, rows: rows);
         final Widget results = _buildResults(context, rows: rows);
         if (!wide) {
@@ -919,12 +917,12 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
       switchOutCurve: FushiMotion.exit,
       transitionBuilder: (Widget child, Animation<double> animation) =>
           FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.98, end: 1).animate(animation),
-          child: child,
-        ),
-      ),
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.98, end: 1).animate(animation),
+              child: child,
+            ),
+          ),
       child: child,
     );
   }
@@ -1025,7 +1023,8 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
     return ListView(
       key: const ValueKey<String>('shortcut-domain-nav'),
       padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom +
+        bottom:
+            MediaQuery.paddingOf(context).bottom +
             FushiDesignTokens.of(context).spacing.page,
       ),
       children: <Widget>[
@@ -1053,14 +1052,16 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
     required Map<ShortcutScope, List<ShortcutAction>> rows,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<ShortcutScope> scopes =
-        _domain == null ? widget.scopes : <ShortcutScope>[_domain!];
+    final List<ShortcutScope> scopes = _domain == null
+        ? widget.scopes
+        : <ShortcutScope>[_domain!];
     final List<Widget> slivers = <Widget>[];
     int rowIndex = 0;
     for (final ShortcutScope scope in scopes) {
       final List<ShortcutAction> actions = rows[scope]!;
-      final Widget? override =
-          _filtering ? null : widget.scopeBodyOverride?.call(scope, _device);
+      final Widget? override = _filtering
+          ? null
+          : widget.scopeBodyOverride?.call(scope, _device);
       if (actions.isEmpty && override == null) continue;
       final List<Widget> extras = _filtering
           ? const <Widget>[]
@@ -1146,8 +1147,9 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
     required bool readOnly,
   }) {
     final ShortcutBindingSet bindings = _registry.bindingsFor(action);
-    final _PendingConflict? pending =
-        _pending?.action == action ? _pending : null;
+    final _PendingConflict? pending = _pending?.action == action
+        ? _pending
+        : null;
     return _ActionTile(
       key: ValueKey<String>('shortcut-row-${action.name}'),
       action: action,
@@ -1204,20 +1206,20 @@ FushiFocusId _rowFocusId(ShortcutAction action) =>
     FushiFocusId('shortcut-row-${action.name}');
 
 IconData _scopeIcon(ShortcutScope scope) => switch (scope) {
-      ShortcutScope.global => FushiIcons.globe,
-      ShortcutScope.universal => FushiIcons.undo,
-      ShortcutScope.globalExternal => FushiIcons.openInNew,
-      ShortcutScope.home => FushiIcons.home,
-      ShortcutScope.reader => FushiIcons.books,
-      ShortcutScope.audiobook => FushiIcons.audiobook,
-      ShortcutScope.manga => FushiIcons.readingMode,
-      ShortcutScope.video => FushiIcons.video,
-      // globe 已给了 global，这里用「浏览器窗口」字形区分。
-      ShortcutScope.webBrowser => FushiIcons.webAsset,
-      ShortcutScope.music => FushiIcons.music,
-      ShortcutScope.gamepad => FushiIcons.games,
-      ShortcutScope.dictionaryPopup => FushiIcons.language,
-    };
+  ShortcutScope.global => FushiIcons.globe,
+  ShortcutScope.universal => FushiIcons.undo,
+  ShortcutScope.globalExternal => FushiIcons.openInNew,
+  ShortcutScope.home => FushiIcons.home,
+  ShortcutScope.reader => FushiIcons.books,
+  ShortcutScope.audiobook => FushiIcons.audiobook,
+  ShortcutScope.manga => FushiIcons.readingMode,
+  ShortcutScope.video => FushiIcons.video,
+  // globe 已给了 global，这里用「浏览器窗口」字形区分。
+  ShortcutScope.webBrowser => FushiIcons.webAsset,
+  ShortcutScope.music => FushiIcons.music,
+  ShortcutScope.gamepad => FushiIcons.games,
+  ShortcutScope.dictionaryPopup => FushiIcons.language,
+};
 
 // ---------------------------------------------------------------------------
 // Header pieces
@@ -1251,8 +1253,9 @@ class _GroupHeader extends StatelessWidget {
     final Color background = scaffold.a >= 1
         ? scaffold
         : (glass ? apple.groupedBackground : theme.colorScheme.surface);
-    final Color muted =
-        glass ? apple.secondaryLabel : tokens.surfaces.onVariant;
+    final Color muted = glass
+        ? apple.secondaryLabel
+        : tokens.surfaces.onVariant;
     return ColoredBox(
       color: background,
       child: Padding(
@@ -1346,8 +1349,9 @@ class _DomainNavItem extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool glass = isGlassDesign(context);
     final FushiAppleColors apple = appleColorsOf(context);
-    final Color muted =
-        glass ? apple.secondaryLabel : tokens.surfaces.onVariant;
+    final Color muted = glass
+        ? apple.secondaryLabel
+        : tokens.surfaces.onVariant;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap / 4),
       child: FushiListItem(
@@ -1460,8 +1464,9 @@ class _KeyFilterBar extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 48),
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
       decoration: BoxDecoration(
-        color:
-            glass ? apple.tertiaryFill : theme.colorScheme.secondaryContainer,
+        color: glass
+            ? apple.tertiaryFill
+            : theme.colorScheme.secondaryContainer,
         borderRadius: const BorderRadius.all(Radius.circular(28)),
       ),
       child: Row(
@@ -1556,8 +1561,9 @@ class _CaptureSurface extends StatelessWidget {
                   Text(
                     warning!,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color:
-                          glass ? apple.destructive : theme.colorScheme.error,
+                      color: glass
+                          ? apple.destructive
+                          : theme.colorScheme.error,
                     ),
                   ),
               ],
@@ -1878,8 +1884,9 @@ class _BindingKeycap extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool glass = isGlassDesign(context);
     final FushiAppleColors apple = appleColorsOf(context);
-    final Color conflictColor =
-        glass ? apple.destructive : theme.colorScheme.error;
+    final Color conflictColor = glass
+        ? apple.destructive
+        : theme.colorScheme.error;
     final Widget face = switch (binding) {
       final InputBinding b => _keyboardFaces(context, b),
       final GamepadBinding b => _gamepadFace(b),
@@ -1940,8 +1947,7 @@ class _BindingKeycap extends StatelessWidget {
       GamepadButton.lt ||
       GamepadButton.rt ||
       GamepadButton.start ||
-      GamepadButton.select =>
-        true,
+      GamepadButton.select => true,
       _ => false,
     };
     return GamepadButtonWidget(

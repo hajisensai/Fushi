@@ -30,10 +30,10 @@ class ShinnkuDiscoverySource extends MediaDiscoverySource {
     this.priority = 30,
     String baseUrl = 'https://www.shinnku.com',
     http.Client? client,
-  })  : _baseUrl = baseUrl.endsWith('/')
-            ? baseUrl.substring(0, baseUrl.length - 1)
-            : baseUrl,
-        _client = client ?? createAppHttpIoClient();
+  }) : _baseUrl = baseUrl.endsWith('/')
+           ? baseUrl.substring(0, baseUrl.length - 1)
+           : baseUrl,
+       _client = client ?? createAppHttpIoClient();
 
   @override
   final String id;
@@ -49,8 +49,8 @@ class ShinnkuDiscoverySource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-      );
+    kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
@@ -68,9 +68,9 @@ class ShinnkuDiscoverySource extends MediaDiscoverySource {
         ],
       );
     }
-    final Uri uri = Uri.parse('$_baseUrl/search').replace(
-      queryParameters: <String, String>{'q': request.query!.trim()},
-    );
+    final Uri uri = Uri.parse(
+      '$_baseUrl/search',
+    ).replace(queryParameters: <String, String>{'q': request.query!.trim()});
     final http.Response response = await _client.get(
       uri,
       headers: const <String, String>{'RSC': '1'},
@@ -118,11 +118,9 @@ class ShinnkuDiscoverySource extends MediaDiscoverySource {
           sizeBytes: (info?['file_size'] as num?)?.toInt(),
           dateText: timestamp == null
               ? null
-              : DateTime.fromMillisecondsSinceEpoch(timestamp)
-                  .toLocal()
-                  .toString()
-                  .split(' ')
-                  .first,
+              : DateTime.fromMillisecondsSinceEpoch(
+                  timestamp,
+                ).toLocal().toString().split(' ').first,
           detailUrl:
               '$_baseUrl/files/${segments.map(Uri.encodeComponent).join('/')}',
           // BUG-1910：note 留空，分类走带类型的 gameLocalization —— UI 据它出 i18n

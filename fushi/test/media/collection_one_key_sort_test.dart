@@ -18,35 +18,31 @@ void main() {
   List<CollectionSortMeta> sorted(
     List<CollectionSortMeta> input, {
     required bool byTitle,
-  }) =>
-      List<CollectionSortMeta>.of(input)
-        ..sort((CollectionSortMeta a, CollectionSortMeta b) =>
-            compareCollectionMembers(a, b, byTitle: byTitle));
+  }) => List<CollectionSortMeta>.of(input)
+    ..sort(
+      (CollectionSortMeta a, CollectionSortMeta b) =>
+          compareCollectionMembers(a, b, byTitle: byTitle),
+    );
 
-  List<String> keysOf(List<CollectionSortMeta> rows) =>
-      <String>[for (final CollectionSortMeta r in rows) r.key];
+  List<String> keysOf(List<CollectionSortMeta> rows) => <String>[
+    for (final CollectionSortMeta r in rows) r.key,
+  ];
 
   group('compareCollectionMembers — 按名称', () {
     test('natural 序：卷1 < 卷2 < 卷10（不是字典序）', () {
-      final List<CollectionSortMeta> rows = sorted(
-        <CollectionSortMeta>[
-          meta('卷10', 0, 'c'),
-          meta('卷2', 0, 'b'),
-          meta('卷1', 0, 'a'),
-        ],
-        byTitle: true,
-      );
+      final List<CollectionSortMeta> rows = sorted(<CollectionSortMeta>[
+        meta('卷10', 0, 'c'),
+        meta('卷2', 0, 'b'),
+        meta('卷1', 0, 'a'),
+      ], byTitle: true);
       expect(keysOf(rows), <String>['a', 'b', 'c']);
     });
 
     test('同名时按导入时刻旧→新', () {
-      final List<CollectionSortMeta> rows = sorted(
-        <CollectionSortMeta>[
-          meta('OP', 300, 'late'),
-          meta('OP', 100, 'early'),
-        ],
-        byTitle: true,
-      );
+      final List<CollectionSortMeta> rows = sorted(<CollectionSortMeta>[
+        meta('OP', 300, 'late'),
+        meta('OP', 100, 'early'),
+      ], byTitle: true);
       expect(keysOf(rows), <String>['early', 'late']);
     });
 
@@ -61,10 +57,11 @@ void main() {
         meta('NCOP', 100, 'uid-c'),
         meta('NCOP', 100, 'uid-a'),
       ];
-      expect(
-        keysOf(sorted(a, byTitle: true)),
-        <String>['uid-a', 'uid-b', 'uid-c'],
-      );
+      expect(keysOf(sorted(a, byTitle: true)), <String>[
+        'uid-a',
+        'uid-b',
+        'uid-c',
+      ]);
       expect(
         keysOf(sorted(b, byTitle: true)),
         keysOf(sorted(a, byTitle: true)),
@@ -75,14 +72,11 @@ void main() {
 
   group('compareCollectionMembers — 按导入时间', () {
     test('旧→新', () {
-      final List<CollectionSortMeta> rows = sorted(
-        <CollectionSortMeta>[
-          meta('b', 300, 'third'),
-          meta('a', 100, 'first'),
-          meta('c', 200, 'second'),
-        ],
-        byTitle: false,
-      );
+      final List<CollectionSortMeta> rows = sorted(<CollectionSortMeta>[
+        meta('b', 300, 'third'),
+        meta('a', 100, 'first'),
+        meta('c', 200, 'second'),
+      ], byTitle: false);
       expect(keysOf(rows), <String>['first', 'second', 'third']);
     });
 
@@ -97,23 +91,19 @@ void main() {
         meta('卷2', 100, 'v2'),
         meta('卷1', 100, 'v1-b'),
       ];
+      expect(keysOf(sorted(a, byTitle: false)), <String>['v1-a', 'v1-b', 'v2']);
       expect(
+        keysOf(sorted(b, byTitle: false)),
         keysOf(sorted(a, byTitle: false)),
-        <String>['v1-a', 'v1-b', 'v2'],
       );
-      expect(
-          keysOf(sorted(b, byTitle: false)), keysOf(sorted(a, byTitle: false)));
     });
   });
 
   test('导入时刻缺失按 0（最旧）参与排序，不 throw', () {
-    final List<CollectionSortMeta> rows = sorted(
-      <CollectionSortMeta>[
-        meta('有时间', 100, 'known'),
-        meta('无时间', 0, 'unknown'),
-      ],
-      byTitle: false,
-    );
+    final List<CollectionSortMeta> rows = sorted(<CollectionSortMeta>[
+      meta('有时间', 100, 'known'),
+      meta('无时间', 0, 'unknown'),
+    ], byTitle: false);
     expect(keysOf(rows), <String>['unknown', 'known']);
   });
 }

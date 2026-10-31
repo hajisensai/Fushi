@@ -318,8 +318,9 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
     final dynamic json = jsonDecode(raw);
     if (json is! Map) return null;
     final dynamic category = json['category'];
-    final String baseUrl =
-        json['baseUrl'] is String ? json['baseUrl'] as String : '';
+    final String baseUrl = json['baseUrl'] is String
+        ? json['baseUrl'] as String
+        : '';
     return QbConnectionConfig(
       backend: _decodeBackend(json['backend'], baseUrl),
       baseUrl: baseUrl,
@@ -354,13 +355,15 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
       banRelativeProgressCheat: json['banRelativeProgressCheat'] == true,
       maxIpPortCount: _nonNegInt(json['maxIpPortCount']),
       banTimeMinutes: _nonNegInt(json['banTimeMinutes']),
-      autoAddTrackerSubscription:
-          _boolOr(json['autoAddTrackerSubscription'], true),
+      autoAddTrackerSubscription: _boolOr(
+        json['autoAddTrackerSubscription'],
+        true,
+      ),
       trackerSubscriptionUrl:
           json['trackerSubscriptionUrl'] is String &&
-                  (json['trackerSubscriptionUrl'] as String).trim().isNotEmpty
-              ? (json['trackerSubscriptionUrl'] as String).trim()
-              : kDefaultTrackerSubscriptionUrl,
+              (json['trackerSubscriptionUrl'] as String).trim().isNotEmpty
+          ? (json['trackerSubscriptionUrl'] as String).trim()
+          : kDefaultTrackerSubscriptionUrl,
     );
   } catch (_) {
     return null;

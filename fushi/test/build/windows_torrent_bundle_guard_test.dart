@@ -8,9 +8,7 @@ void main() {
 
     expect(
       source,
-      contains(
-        r'CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\"',
-      ),
+      contains(r'CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\"'),
     );
     expect(source, contains('fushi_torrent_ffi.dll'));
     expect(source, contains('torrent-rasterbar.dll'));

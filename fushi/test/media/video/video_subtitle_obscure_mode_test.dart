@@ -60,9 +60,9 @@ void main() {
           in VideoSubtitleObscureMode.values) {
         final VideoSubtitleObscureMode restored =
             VideoSubtitleObscureMode.fromFlags(
-          blurFlag: mode.blurFlag,
-          hideFlag: mode.hideFlag,
-        );
+              blurFlag: mode.blurFlag,
+              hideFlag: mode.hideFlag,
+            );
         expect(restored, mode, reason: '$mode 投影/还原不自洽');
       }
     });

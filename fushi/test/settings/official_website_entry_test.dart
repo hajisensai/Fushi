@@ -22,29 +22,29 @@ void main() {
     launchedUrls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      (MethodCall call) async {
-        if (call.method == 'launch') {
-          final Map<Object?, Object?> args =
-              Map<Object?, Object?>.from(call.arguments as Map);
-          launchedUrls.add(args['url'] as String);
-        }
-        return true;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          (MethodCall call) async {
+            if (call.method == 'launch') {
+              final Map<Object?, Object?> args = Map<Object?, Object?>.from(
+                call.arguments as Map,
+              );
+              launchedUrls.add(args['url'] as String);
+            }
+            return true;
+          },
+        );
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          null,
+        );
   });
 
   SettingsActionItem actionItem(String id) {
-    return buildSystemDestination()
-        .sections
+    return buildSystemDestination().sections
         .expand((SettingsSection s) => s.items)
         .whereType<SettingsActionItem>()
         .firstWhere((SettingsActionItem i) => i.id == id);

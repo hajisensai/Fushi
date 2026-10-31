@@ -14,19 +14,21 @@ import '../../pages/reader_fushi_page_source_corpus.dart';
 void main() {
   final String src = readReaderPageSource();
 
-  test('background sync-flush also flushes the audiobook playback position',
-      () {
-    final RegExpMatch? body = RegExp(
-      r'Future<void> _syncAndFlushPosition\(\) async \{(.*?)\n  \}',
-      dotAll: true,
-    ).firstMatch(src);
-    expect(body, isNotNull, reason: '找不到 _syncAndFlushPosition 方法体');
-    expect(
-      body!.group(1),
-      contains('_audiobookController?.flushPosition()'),
-      reason: '后台 flush 必须把音频位置一并写穿（BUG-032）',
-    );
-  });
+  test(
+    'background sync-flush also flushes the audiobook playback position',
+    () {
+      final RegExpMatch? body = RegExp(
+        r'Future<void> _syncAndFlushPosition\(\) async \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(src);
+      expect(body, isNotNull, reason: '找不到 _syncAndFlushPosition 方法体');
+      expect(
+        body!.group(1),
+        contains('_audiobookController?.flushPosition()'),
+        reason: '后台 flush 必须把音频位置一并写穿（BUG-032）',
+      );
+    },
+  );
 
   test('session launcher forwards onPositionWrite to the repo future', () {
     // TODO-291 阶段2：控制器 persist 接线下沉到 [AudiobookSessionLauncher]。
@@ -36,9 +38,10 @@ void main() {
       'lib/src/media/audiobook/audiobook_session_launcher.dart',
     ).readAsStringSync();
     expect(
-      RegExp(r'onPositionWrite:\s*\([^)]*\)\s*=>\s*\w+\.updatePositionMs\(',
-              dotAll: true)
-          .hasMatch(launcher),
+      RegExp(
+        r'onPositionWrite:\s*\([^)]*\)\s*=>\s*\w+\.updatePositionMs\(',
+        dotAll: true,
+      ).hasMatch(launcher),
       isTrue,
       reason: 'launcher 要用箭头把 updatePositionMs 的 Future 交回给控制器',
     );

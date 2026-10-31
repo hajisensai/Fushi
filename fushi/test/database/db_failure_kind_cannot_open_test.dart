@@ -64,13 +64,17 @@ void main() {
     }
     final String text = captured.toString();
     expect(text, contains('does not exist on disk'));
-    expect(text, isNot(contains('likely corrupt')),
-        reason: '把「目录没建」说成「likely corrupt」会把用户引去清空数据');
+    expect(
+      text,
+      isNot(contains('likely corrupt')),
+      reason: '把「目录没建」说成「likely corrupt」会把用户引去清空数据',
+    );
   });
 
   test('文件存在但不是合法 SQLite → kind=corrupt（既有行为不回归）', () async {
     File(p.join(tempDir.path, 'fushi.db')).writeAsBytesSync(
-        List<int>.generate(4096, (int i) => (i * 31 + 7) & 0xFF));
+      List<int>.generate(4096, (int i) => (i * 31 + 7) & 0xFF),
+    );
 
     final FushiDatabase db = FushiDatabase(tempDir.path);
     addTearDown(() async {

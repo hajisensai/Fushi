@@ -93,13 +93,13 @@ class _DownloadKeepAliveLease implements DownloadKeepAlive {
     required String title,
     required String text,
     int? percent,
-  }) =>
-      _hub._update(_key, _LeaseState(title, text, percent));
+  }) => _hub._update(_key, _LeaseState(title, text, percent));
 
   @override
   Future<void> stop() => _hub._stop(_key);
 }
 
 /// app 进程唯一的 hub（Android 驱动前台服务、iOS 驱动后台任务，桌面 no-op）。
-final DownloadKeepAliveHub downloadKeepAliveHub =
-    DownloadKeepAliveHub(createDownloadKeepAlive());
+final DownloadKeepAliveHub downloadKeepAliveHub = DownloadKeepAliveHub(
+  createDownloadKeepAlive(),
+);

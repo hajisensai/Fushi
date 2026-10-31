@@ -34,22 +34,40 @@ void main() {
 
         test('捕获分辨率对齐 app 内视频制卡 1920x1080（不再 1280x720）', () {
           final String src = mirror.readAsStringSync();
-          expect(src, contains('maxWidth: 1920, maxHeight: 1080'),
-              reason: '${mirror.path} 捕获分辨率未对齐 app 内视频制卡 1920x1080');
-          expect(src.contains('maxWidth: 1280, maxHeight: 720'), isFalse,
-              reason: '${mirror.path} 仍残留旧的 1280x720 支配性限制器');
-          expect(src.contains('maxWidth: 640, maxHeight: 360'), isFalse,
-              reason: '${mirror.path} 仍残留更旧的 640x360 支配性限制器');
+          expect(
+            src,
+            contains('maxWidth: 1920, maxHeight: 1080'),
+            reason: '${mirror.path} 捕获分辨率未对齐 app 内视频制卡 1920x1080',
+          );
+          expect(
+            src.contains('maxWidth: 1280, maxHeight: 720'),
+            isFalse,
+            reason: '${mirror.path} 仍残留旧的 1280x720 支配性限制器',
+          );
+          expect(
+            src.contains('maxWidth: 640, maxHeight: 360'),
+            isFalse,
+            reason: '${mirror.path} 仍残留更旧的 640x360 支配性限制器',
+          );
         });
 
         test('videoBitsPerSecond 按面积比例提到 5.625Mbps 匹配 1080p（不再 2.5M）', () {
           final String src = mirror.readAsStringSync();
-          expect(src, contains('videoBitsPerSecond: 5625000'),
-              reason: '${mirror.path} bitrate 未随分辨率按面积比例提升');
-          expect(src.contains('videoBitsPerSecond: 2500000'), isFalse,
-              reason: '${mirror.path} 仍残留旧的 2.5Mbps bitrate');
-          expect(src.contains('videoBitsPerSecond: 800000'), isFalse,
-              reason: '${mirror.path} 仍残留更旧的 800k bitrate');
+          expect(
+            src,
+            contains('videoBitsPerSecond: 5625000'),
+            reason: '${mirror.path} bitrate 未随分辨率按面积比例提升',
+          );
+          expect(
+            src.contains('videoBitsPerSecond: 2500000'),
+            isFalse,
+            reason: '${mirror.path} 仍残留旧的 2.5Mbps bitrate',
+          );
+          expect(
+            src.contains('videoBitsPerSecond: 800000'),
+            isFalse,
+            reason: '${mirror.path} 仍残留更旧的 800k bitrate',
+          );
         });
       });
     }
@@ -71,8 +89,10 @@ void main() {
     test('静帧路径对齐：高保真截图长边 2000 >= 1080p 捕获长边 1920（原样透传）', () {
       // 捕获 1920×1080 的单帧经 downsampleCardScreenshot 高保真档（长边 2000）
       // 不会被二次降采样——这正是「网飞上限 = app 内视频制卡分辨率」的静帧一半。
-      expect(MiningMediaCompression.highFidelity.screenshotMaxLongEdge,
-          greaterThanOrEqualTo(1920));
+      expect(
+        MiningMediaCompression.highFidelity.screenshotMaxLongEdge,
+        greaterThanOrEqualTo(1920),
+      );
     });
   });
 }

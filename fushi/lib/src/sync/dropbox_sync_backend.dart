@@ -87,14 +87,16 @@ class DropboxSyncBackend extends SyncBackend
 
   @override
   Uri buildAuthUrl(String challenge, String redirectUri) =>
-      Uri.parse(_authorizeEndpoint).replace(queryParameters: {
-        'client_id': _clientId,
-        'response_type': 'code',
-        'redirect_uri': redirectUri,
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-        'token_access_type': 'offline',
-      });
+      Uri.parse(_authorizeEndpoint).replace(
+        queryParameters: {
+          'client_id': _clientId,
+          'response_type': 'code',
+          'redirect_uri': redirectUri,
+          'code_challenge': challenge,
+          'code_challenge_method': 'S256',
+          'token_access_type': 'offline',
+        },
+      );
 
   @override
   Future<String?> readStoredToken(SyncRepository repo) =>
@@ -113,7 +115,9 @@ class DropboxSyncBackend extends SyncBackend
           Uri.parse('$_apiBase/auth/token/revoke'),
           headers: {'Authorization': 'Bearer $accessToken'},
         );
-      } catch (_) {/* best-effort: failure is non-critical here */}
+      } catch (_) {
+        /* best-effort: failure is non-critical here */
+      }
     }
     await super.signOut(repo: repo);
   }
@@ -132,7 +136,9 @@ class DropboxSyncBackend extends SyncBackend
   // ── HTTP helpers ──────────────────────────────────────────────────
 
   Future<http.Response> _apiPost(
-      String endpoint, Map<String, dynamic>? body) async {
+    String endpoint,
+    Map<String, dynamic>? body,
+  ) async {
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_apiBase$endpoint'),
       headers: bearerJsonHeaders,
@@ -155,11 +161,13 @@ class DropboxSyncBackend extends SyncBackend
         throw SyncBackendError('Not found: $context', isRetryable: true);
       }
       throw SyncBackendError(
-          '$context failed: HTTP ${resp.statusCode} ${resp.body}');
+        '$context failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
     }
     if (resp.statusCode >= 400) {
       throw SyncBackendError(
-          '$context failed: HTTP ${resp.statusCode} ${resp.body}');
+        '$context failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
     }
   }
 
@@ -192,8 +200,11 @@ class DropboxSyncBackend extends SyncBackend
         });
         return _rootFolderPath;
       },
-      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance
-          .log('DropboxSyncBackend.migrateLegacyRoot', e, st),
+      onRenameError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+        'DropboxSyncBackend.migrateLegacyRoot',
+        e,
+        st,
+      ),
     );
     if (existing != null) {
       rootFolderIdCache = existing;
@@ -220,10 +231,12 @@ class DropboxSyncBackend extends SyncBackend
     final entries = await _listFolder(rootFolderId);
     return entries
         .where((e) => e['.tag'] == 'folder')
-        .map((e) => SyncFileRef(
-              id: e['path_lower'] as String? ?? e['path_display'] as String,
-              name: e['name'] as String,
-            ))
+        .map(
+          (e) => SyncFileRef(
+            id: e['path_lower'] as String? ?? e['path_display'] as String,
+            name: e['name'] as String,
+          ),
+        )
         .toList();
   }
 
@@ -260,13 +273,11 @@ class DropboxSyncBackend extends SyncBackend
         final coverName = 'cover_1_6.${format.extension}';
         final existing = await findContentFile(folderPath, coverName);
         if (existing == null) {
-          await _uploadBytes(
-            '$folderPath/$coverName',
-            coverData,
-            mode: 'add',
-          );
+          await _uploadBytes('$folderPath/$coverName', coverData, mode: 'add');
         }
-      } catch (_) {/* best-effort: failure is non-critical here */}
+      } catch (_) {
+        /* best-effort: failure is non-critical here */
+      }
     }
 
     return folderPath;
@@ -279,10 +290,12 @@ class DropboxSyncBackend extends SyncBackend
     final entries = await _listFolder(folderId);
     final files = entries
         .where((e) => e['.tag'] == 'file')
-        .map((e) => SyncFileRef(
-              id: e['path_lower'] as String? ?? e['path_display'] as String,
-              name: e['name'] as String,
-            ))
+        .map(
+          (e) => SyncFileRef(
+            id: e['path_lower'] as String? ?? e['path_display'] as String,
+            name: e['name'] as String,
+          ),
+        )
         .toList();
 
     return SyncFileTrio(
@@ -303,8 +316,10 @@ class DropboxSyncBackend extends SyncBackend
     required String? fileId,
     required TtuProgress progress,
   }) async {
-    final fileName =
-        progressFileName(progress.lastBookmarkModified, progress.progress);
+    final fileName = progressFileName(
+      progress.lastBookmarkModified,
+      progress.progress,
+    );
     await _uploadJsonFile(folderId, fileName, progress.toJson());
     // Upload-then-delete: keep the old file until the new one is uploaded so a
     // failed upload never destroys the only copy (HBK-AUDIT-048).
@@ -319,7 +334,10 @@ class DropboxSyncBackend extends SyncBackend
   }) async {
     final fileName = statisticsFileName(stats);
     await _uploadJsonFile(
-        folderId, fileName, stats.map((s) => s.toJson()).toList());
+      folderId,
+      fileName,
+      stats.map((s) => s.toJson()).toList(),
+    );
     // Upload-then-delete (HBK-AUDIT-048).
     if (fileId != null) await _deleteFile(fileId);
   }
@@ -331,7 +349,9 @@ class DropboxSyncBackend extends SyncBackend
     required TtuAudioBook audioBook,
   }) async {
     final fileName = audioBookFileName(
-        audioBook.lastAudioBookModified, audioBook.playbackPositionSec);
+      audioBook.lastAudioBookModified,
+      audioBook.playbackPositionSec,
+    );
     await _uploadJsonFile(folderId, fileName, audioBook.toJson());
     // Upload-then-delete (HBK-AUDIT-048).
     if (fileId != null) await _deleteFile(fileId);
@@ -365,7 +385,8 @@ class DropboxSyncBackend extends SyncBackend
     final response = await streamUpload(request, file, fileLength, onProgress);
     if (response.statusCode != 200) {
       throw SyncBackendError(
-          'Dropbox upload failed: ${response.statusCode} ${response.body}');
+        'Dropbox upload failed: ${response.statusCode} ${response.body}',
+      );
     }
   }
 
@@ -386,7 +407,8 @@ class DropboxSyncBackend extends SyncBackend
     final streamedResp = await (await obtainSyncHttpClient()).send(request);
     if (streamedResp.statusCode >= 400) {
       throw SyncBackendError(
-          'Download failed: HTTP ${streamedResp.statusCode}');
+        'Download failed: HTTP ${streamedResp.statusCode}',
+      );
     }
 
     await writeSyncStreamToFile(
@@ -417,8 +439,9 @@ class DropboxSyncBackend extends SyncBackend
 
   /// `files/get_temporary_link` 的直链有效期 4 小时、免鉴权、支持 Range。本地只信
   /// 3 小时，过期或被拒即现取；绝不落库。
-  final PresignedLinkCache _temporaryLinks =
-      PresignedLinkCache(ttl: const Duration(hours: 3));
+  final PresignedLinkCache _temporaryLinks = PresignedLinkCache(
+    ttl: const Duration(hours: 3),
+  );
 
   /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号——
   /// 资产 id 就是路径，换了账号同一路径是另一个文件——与文件夹缓存一起作废。
@@ -433,29 +456,28 @@ class DropboxSyncBackend extends SyncBackend
     String assetId, {
     required int start,
     int? end,
-  }) async =>
-      openPresignedAssetRange(
-        client: await obtainSyncHttpClient(),
-        cache: _temporaryLinks,
-        assetId: assetId,
-        fetchLink: () => _fetchTemporaryLink(assetId),
-        start: start,
-        end: end,
-      );
+  }) async => openPresignedAssetRange(
+    client: await obtainSyncHttpClient(),
+    cache: _temporaryLinks,
+    assetId: assetId,
+    fetchLink: () => _fetchTemporaryLink(assetId),
+    start: start,
+    end: end,
+  );
 
   /// [path] 是 [AssetEntry.id]（Dropbox 上即小写路径）。
-  Future<Uri> _fetchTemporaryLink(String path) =>
-      retryAfterAuthRefresh(refreshAuth, () async {
-        final resp = await _apiPost('/files/get_temporary_link', {
-          'path': path,
-        });
-        final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final link = json['link'] as String?;
-        if (link == null || link.isEmpty) {
-          throw SyncBackendError('No temporary link for $path');
-        }
-        return Uri.parse(link);
-      });
+  Future<Uri> _fetchTemporaryLink(String path) => retryAfterAuthRefresh(
+    refreshAuth,
+    () async {
+      final resp = await _apiPost('/files/get_temporary_link', {'path': path});
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      final link = json['link'] as String?;
+      if (link == null || link.isEmpty) {
+        throw SyncBackendError('No temporary link for $path');
+      }
+      return Uri.parse(link);
+    },
+  );
 
   // ── Cache ─────────────────────────────────────────────────────────
   //
@@ -507,7 +529,10 @@ class DropboxSyncBackend extends SyncBackend
 
   @override
   Future<void> putJsonAsset(
-      String namespaceId, String name, Object? json) async {
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async {
     await _uploadJsonFile(namespaceId, name, json);
   }
 
@@ -528,10 +553,13 @@ class DropboxSyncBackend extends SyncBackend
   @override
   Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) async {
     try {
-      final List<Map<String, dynamic>> entries =
-          await _listFolder(rootFolderId, recursive: true);
-      final String prefix =
-          rootFolderId.endsWith('/') ? rootFolderId : '$rootFolderId/';
+      final List<Map<String, dynamic>> entries = await _listFolder(
+        rootFolderId,
+        recursive: true,
+      );
+      final String prefix = rootFolderId.endsWith('/')
+          ? rootFolderId
+          : '$rootFolderId/';
       final String prefixLower = prefix.toLowerCase();
 
       final RemoteListingBuilder builder = RemoteListingBuilder();
@@ -605,19 +633,19 @@ class DropboxSyncBackend extends SyncBackend
     );
     if (resp.statusCode >= 400) {
       throw SyncBackendError(
-          'Download failed: HTTP ${resp.statusCode} ${resp.body}');
+        'Download failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
     }
     return jsonDecode(resp.body);
   }
 
   Future<void> _uploadJsonFile(
-      String folderId, String fileName, dynamic data) async {
+    String folderId,
+    String fileName,
+    dynamic data,
+  ) async {
     final bytes = utf8.encode(jsonEncode(data));
-    await _uploadBytes(
-      '$folderId/$fileName',
-      bytes,
-      mode: 'overwrite',
-    );
+    await _uploadBytes('$folderId/$fileName', bytes, mode: 'overwrite');
   }
 
   Future<void> _uploadBytes(
@@ -644,7 +672,8 @@ class DropboxSyncBackend extends SyncBackend
 
     if (resp.statusCode >= 400) {
       throw SyncBackendError(
-          'Upload failed: HTTP ${resp.statusCode} ${resp.body}');
+        'Upload failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
     }
   }
 

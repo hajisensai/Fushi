@@ -12,11 +12,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// progress dialog. They also pin the per-import result-summary logging that
 /// makes a "0 entries imported" (the native silent-empty symptom) diagnosable.
 void main() {
-  final dialog =
-      File('lib/src/pages/implementations/dictionary_dialog_page.dart')
-          .readAsStringSync();
-  final manager =
-      File('lib/src/models/dictionary_import_manager.dart').readAsStringSync();
+  final dialog = File(
+    'lib/src/pages/implementations/dictionary_dialog_page.dart',
+  ).readAsStringSync();
+  final manager = File(
+    'lib/src/models/dictionary_import_manager.dart',
+  ).readAsStringSync();
 
   // Isolate the download method body so the guards target the right loop and
   // are not satisfied by an unrelated catch elsewhere in the file. Pure string
@@ -33,71 +34,115 @@ void main() {
     final String body = downloadMethod();
 
     test('the download method body was located', () {
-      expect(body, isNotEmpty,
-          reason: '_downloadSelectedDictionaries(...) up to _safChannel '
-              'must be sliceable');
+      expect(
+        body,
+        isNotEmpty,
+        reason:
+            '_downloadSelectedDictionaries(...) up to _safChannel '
+            'must be sliceable',
+      );
     });
 
-    test('per-dictionary catch captures the stack (catch (e, st)), not bare e',
-        () {
-      expect(body.contains('catch (e, st)'), isTrue,
+    test(
+      'per-dictionary catch captures the stack (catch (e, st)), not bare e',
+      () {
+        expect(
+          body.contains('catch (e, st)'),
+          isTrue,
           reason:
               'the download catch must capture the stack so the failure can be '
-              'fully logged, not stored as a bare string');
-    });
+              'fully logged, not stored as a bare string',
+        );
+      },
+    );
 
     test('failures are logged to ErrorLogService with full diagnostic', () {
-      expect(body.contains('ErrorLogService.instance.log('), isTrue,
-          reason: 'a failed download/import must write a diagnostic log entry');
-      expect(body.contains("'DictionaryDialog.download'"), isTrue,
-          reason: 'logged under a stable, greppable source label');
-      expect(body.contains('e.runtimeType'), isTrue,
-          reason: 'the exception type + url must be in the diagnostic');
+      expect(
+        body.contains('ErrorLogService.instance.log('),
+        isTrue,
+        reason: 'a failed download/import must write a diagnostic log entry',
+      );
+      expect(
+        body.contains("'DictionaryDialog.download'"),
+        isTrue,
+        reason: 'logged under a stable, greppable source label',
+      );
+      expect(
+        body.contains('e.runtimeType'),
+        isTrue,
+        reason: 'the exception type + url must be in the diagnostic',
+      );
     });
 
-    test('failures are collected and surfaced via a persistent summary toast',
-        () {
-      // BUG-2188：判据从「有没有收集」升级成「收集的时候有没有把异常一起带上」。
-      // 旧实现收的是 `List<String>`——原因在收集那一刻就永久丢了，后面无论怎么改
-      // 渲染都救不回来，而按变量名 `failedNames` 断言恰好对这个缺陷完全不敏感。
-      expect(body.contains('DictionaryTaskFailure('), isTrue,
-          reason: 'per-dictionary failures must be collected with their error, '
-              'not reduced to a bare name');
-      expect(body.contains('error: e,'), isTrue,
-          reason: 'the caught exception itself must reach the failure record');
-      expect(body.contains('DictionaryTaskStage.download'), isTrue,
-          reason: 'a download-stage failure must not be reported as an import '
-              'failure (the two used to share one wording)');
-      expect(
+    test(
+      'failures are collected and surfaced via a persistent summary toast',
+      () {
+        // BUG-2188：判据从「有没有收集」升级成「收集的时候有没有把异常一起带上」。
+        // 旧实现收的是 `List<String>`——原因在收集那一刻就永久丢了，后面无论怎么改
+        // 渲染都救不回来，而按变量名 `failedNames` 断言恰好对这个缺陷完全不敏感。
+        expect(
+          body.contains('DictionaryTaskFailure('),
+          isTrue,
+          reason:
+              'per-dictionary failures must be collected with their error, '
+              'not reduced to a bare name',
+        );
+        expect(
+          body.contains('error: e,'),
+          isTrue,
+          reason: 'the caught exception itself must reach the failure record',
+        );
+        expect(
+          body.contains('DictionaryTaskStage.download'),
+          isTrue,
+          reason:
+              'a download-stage failure must not be reported as an import '
+              'failure (the two used to share one wording)',
+        );
+        expect(
           body.contains('DictionaryImportManager.formatImportFailureSummary'),
           isTrue,
           reason:
               'failures must be shown via the shared summary formatter (same as '
-              'the file-import path)');
-      expect(body.contains('Toast.LENGTH_LONG'), isTrue,
+              'the file-import path)',
+        );
+        expect(
+          body.contains('Toast.LENGTH_LONG'),
+          isTrue,
           reason:
               'the failure summary must be persistent (LENGTH_LONG), not a 2s '
-              'progress-dialog flash that vanishes on pop');
-    });
+              'progress-dialog flash that vanishes on pop',
+        );
+      },
+    );
   });
 
   group('dictionary_import_manager.dart result-summary logging (BUG-447)', () {
     test('every native import logs a result summary (title + counts)', () {
-      expect(manager.contains('_logImportResultSummary'), isTrue,
-          reason: 'each import must log a result summary to ErrorLogService');
+      expect(
+        manager.contains('_logImportResultSummary'),
+        isTrue,
+        reason: 'each import must log a result summary to ErrorLogService',
+      );
       // Both call sites (file + directory import) must record it.
       final int count = '_logImportResultSummary('.allMatches(manager).length;
-      expect(count, greaterThanOrEqualTo(3),
-          reason:
-              'helper definition + two call sites (file & directory import) '
-              'must all reference it');
+      expect(
+        count,
+        greaterThanOrEqualTo(3),
+        reason:
+            'helper definition + two call sites (file & directory import) '
+            'must all reference it',
+      );
     });
 
     test('a 0-entry successful import is flagged as a warning', () {
-      expect(manager.contains('0 entries imported'), isTrue,
-          reason:
-              'success with all counts == 0 (the native silent-empty symptom) '
-              'must be explicitly flagged so it is grep-able in the log');
+      expect(
+        manager.contains('0 entries imported'),
+        isTrue,
+        reason:
+            'success with all counts == 0 (the native silent-empty symptom) '
+            'must be explicitly flagged so it is grep-able in the log',
+      );
     });
   });
 }

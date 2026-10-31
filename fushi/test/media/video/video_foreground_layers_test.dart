@@ -10,8 +10,9 @@ void main() {
   /// 一次「按下返回上一级」：读当前状态、拿到该关的层。
   VideoForegroundLayer? top(Set<VideoForegroundLayer> open) =>
       topVideoForegroundLayer(
-        hasVisibleDictionaryPopup:
-            open.contains(VideoForegroundLayer.dictionaryPopup),
+        hasVisibleDictionaryPopup: open.contains(
+          VideoForegroundLayer.dictionaryPopup,
+        ),
         controlEditActive: open.contains(VideoForegroundLayer.controlEdit),
         controlPopoverOpen: open.contains(VideoForegroundLayer.controlPopover),
         subtitleListVisible: open.contains(VideoForegroundLayer.subtitleList),

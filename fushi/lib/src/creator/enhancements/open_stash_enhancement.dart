@@ -11,12 +11,12 @@ import 'package:fushi/models.dart';
 class OpenStashEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   OpenStashEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Open Stash',
-          description: 'View and manage previously stashed text.',
-          icon: Icons.collections_bookmark_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Open Stash',
+        description: 'View and manage previously stashed text.',
+        icon: Icons.collections_bookmark_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

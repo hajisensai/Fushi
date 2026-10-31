@@ -40,10 +40,7 @@ Future<List<Map<String, Object?>>> _pump(
 
 bool _switchValue(WidgetTester tester) => tester
     .widget<Switch>(
-      find.descendant(
-        of: find.byKey(_shiftKey),
-        matching: find.byType(Switch),
-      ),
+      find.descendant(of: find.byKey(_shiftKey), matching: find.byType(Switch)),
     )
     .value;
 

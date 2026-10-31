@@ -230,11 +230,9 @@ void main() {
     final List<RegExpMatch> signedUploads = RegExp(
       r'\n(\s+)name: ([^\n]+)\n\s+path: fushi/build/ios/ipa/\*\.ipa\n',
     ).allMatches(content).toList();
-    expect(
-      signedUploads.map((RegExpMatch m) => m.group(2)).toList(),
-      <String>['ios-testflight-signed-ipa'],
-      reason: '签名 IPA 只能上传成 ios-testflight-signed-ipa 这一个 artifact',
-    );
+    expect(signedUploads.map((RegExpMatch m) => m.group(2)).toList(), <String>[
+      'ios-testflight-signed-ipa',
+    ], reason: '签名 IPA 只能上传成 ios-testflight-signed-ipa 这一个 artifact');
     expect(
       'ios-testflight-signed-ipa'.startsWith('desktop-artifacts-'),
       isFalse,

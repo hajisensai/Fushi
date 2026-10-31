@@ -27,7 +27,9 @@ const int kExitUnavailable = 69;
 
 /// 一次命令的输出通道。生产走 stdout / stderr，测试注入 [StringBuffer]。
 class CliIo {
-  CliIo({StringSink? out, StringSink? err, this.json = false}) : out = out ?? stdout, err = err ?? stderr;
+  CliIo({StringSink? out, StringSink? err, this.json = false})
+    : out = out ?? stdout,
+      err = err ?? stderr;
 
   /// 结果（人读文本或 `--json` 的 JSON）。
   final StringSink out;
@@ -42,24 +44,36 @@ class CliIo {
   CliIo withJson(bool value) => CliIo(out: out, err: err, json: value);
 
   /// 打印一份 JSON 结果（缩进两格，便于人读也便于 `jq`）。
-  void writeJson(Object? value) => out.writeln(const JsonEncoder.withIndent('  ').convert(value));
+  void writeJson(Object? value) =>
+      out.writeln(const JsonEncoder.withIndent('  ').convert(value));
 
   /// 统一的错误出口：`--json` 时同时在 stdout 给一个 `{"ok":false,...}`，脚本不用
   /// 解析 stderr 也能拿到原因；返回 [code] 便于 `return io.fail(...)`。
-  int fail(int code, String message, {Map<String, Object?> extra = const <String, Object?>{}}) {
+  int fail(
+    int code,
+    String message, {
+    Map<String, Object?> extra = const <String, Object?>{},
+  }) {
     err.writeln(message);
     if (json) {
-      writeJson(<String, Object?>{'ok': false, 'exitCode': code, 'error': message, ...extra});
+      writeJson(<String, Object?>{
+        'ok': false,
+        'exitCode': code,
+        'error': message,
+        ...extra,
+      });
     }
     return code;
   }
 }
 
 /// 给子命令参数表加上公共的 `--json`。
-ArgParser addJsonFlag(ArgParser parser) => parser..addFlag('json', negatable: false, help: '机器可读的 JSON 输出');
+ArgParser addJsonFlag(ArgParser parser) =>
+    parser..addFlag('json', negatable: false, help: '机器可读的 JSON 输出');
 
 /// 读子命令上的 `--json`（未登记时按 false）。
-bool jsonFlag(ArgResults results) => results.options.contains('json') && results['json'] as bool;
+bool jsonFlag(ArgResults results) =>
+    results.options.contains('json') && results['json'] as bool;
 
 /// 解析时间参数：`90` / `90.5`（秒）、`1:30`、`01:02:03.250`、`1500ms`。返回毫秒；
 /// 解不出返回 null。
@@ -76,8 +90,11 @@ int? parseClockArgToMs(String raw) {
   for (int i = 0; i < parts.length; i++) {
     final String part = parts[i];
     // 只有最后一段允许小数；中间段必须是非负整数且 < 60（首段不限）。
-    final double? number = i == parts.length - 1 ? double.tryParse(part) : int.tryParse(part)?.toDouble();
-    if (number == null || number < 0 || number.isNaN || number.isInfinite) return null;
+    final double? number = i == parts.length - 1
+        ? double.tryParse(part)
+        : int.tryParse(part)?.toDouble();
+    if (number == null || number < 0 || number.isNaN || number.isInfinite)
+      return null;
     if (i > 0 && number >= 60) return null;
     total = total * 60 + number;
   }
@@ -90,6 +107,9 @@ String formatClockMs(int ms) {
   final String hh = d.inHours.toString().padLeft(2, '0');
   final String mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
   final String ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  final String mmm = d.inMilliseconds.remainder(1000).toString().padLeft(3, '0');
+  final String mmm = d.inMilliseconds
+      .remainder(1000)
+      .toString()
+      .padLeft(3, '0');
   return '$hh:$mm:$ss.$mmm';
 }

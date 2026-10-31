@@ -25,29 +25,36 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File jsTest =
-          File('test/anki/exported_glossary_anchor_deeplink_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
-
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
+      final File jsTest = File(
+        'test/anki/exported_glossary_anchor_deeplink_test.js',
       );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
+
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'BUG-1666 exported anchor deep-link behavior test failed.\n'
+        reason:
+            'BUG-1666 exported anchor deep-link behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
     },
   );
 
@@ -56,11 +63,14 @@ void main() {
       expect(lookupWordFromDeepLink('fushi://lookup?word=belong'), 'belong');
       expect(
         lookupWordFromDeepLink(
-            'fushi://lookup?word=%E9%A3%9F%E3%81%B9%E3%82%8B'),
+          'fushi://lookup?word=%E9%A3%9F%E3%81%B9%E3%82%8B',
+        ),
         '食べる',
       );
-      expect(lookupWordFromDeepLink(' fushi://lookup?word=%20belong%20 '),
-          'belong');
+      expect(
+        lookupWordFromDeepLink(' fushi://lookup?word=%20belong%20 '),
+        'belong',
+      );
     });
 
     test('accepts the legacy hibiki scheme', () {
@@ -73,14 +83,15 @@ void main() {
       expect(lookupWordFromDeepLink('fushi://lookup?word='), isNull);
       expect(lookupWordFromDeepLink('fushi://lookup?word=%20'), isNull);
       expect(
-          lookupWordFromDeepLink('https://example.com/?word=belong'), isNull);
+        lookupWordFromDeepLink('https://example.com/?word=belong'),
+        isNull,
+      );
       expect(lookupWordFromDeepLink(r'D:\video\ep01.mkv'), isNull);
       expect(lookupWordFromDeepLink(''), isNull);
     });
   });
 
-  test(
-      'Android :popup activity accepts the fushi scheme for lookup deep links '
+  test('Android :popup activity accepts the fushi scheme for lookup deep links '
       '(source guard)', () {
     const List<String> activities = <String>[
       'android/app/src/main/java/app/fushi/reader/PopupDictFlutterActivity.kt',
@@ -91,8 +102,11 @@ void main() {
       final String source = file.readAsStringSync();
       // 断言字面量写进注释，变异测试时能定位：manifest 注册的 scheme 是
       // "fushi"，Kotlin 侧曾只认 "hibiki"（改名残留）导致深链开出空弹窗。
-      expect(source, contains('uri.scheme == "fushi"'),
-          reason: '$path must accept the fushi scheme (manifest registers it)');
+      expect(
+        source,
+        contains('uri.scheme == "fushi"'),
+        reason: '$path must accept the fushi scheme (manifest registers it)',
+      );
     }
   });
 }

@@ -58,24 +58,49 @@ ArgParser buildCtlParser() {
 ArgParser _buildBaseCtlParser() => ArgParser()
   ..addOption('url', help: 'admin API 地址（缺省按配置推本机地址）')
   ..addOption('token', help: 'admin_token（缺省读配置）')
-  ..addOption('fingerprint', help: 'TLS 证书 SHA-256 指纹（缺省读本机服务端证书；互联模式下用它钉扎 host 证书）')
-  ..addOption('interconnect', help: '直连互联 host（运行中的 Fushi app）地址，如 https://127.0.0.1:38765（或 FUSHI_HOST_URL）')
+  ..addOption(
+    'fingerprint',
+    help: 'TLS 证书 SHA-256 指纹（缺省读本机服务端证书；互联模式下用它钉扎 host 证书）',
+  )
+  ..addOption(
+    'interconnect',
+    help:
+        '直连互联 host（运行中的 Fushi app）地址，如 https://127.0.0.1:38765（或 FUSHI_HOST_URL）',
+  )
   ..addOption('password', help: '互联 host 的密码 / token（或 FUSHI_HOST_PASSWORD）')
   ..addOption('grep', help: 'videos / books ls：只列标题 / id / 文件名包含该串的条目（不区分大小写）')
   ..addFlag('json', negatable: false, help: '原样输出服务端 JSON')
-  ..addOption('kind', help: 'libraries add：库类型 video | book', defaultsTo: 'video')
+  ..addOption(
+    'kind',
+    help: 'libraries add：库类型 video | book',
+    defaultsTo: 'video',
+  )
   ..addOption('id', help: 'libraries add：库 id（缺省自动生成）')
   ..addFlag('purge', negatable: false, help: 'libraries rm：移除前回收文件已消失的条目')
   ..addFlag('prune', negatable: true, help: 'scan：回收文件已消失的条目（缺省读配置）')
   ..addOption('title', help: 'downloads add：任务标题')
-  ..addOption('media-kind', help: 'downloads add：movie | tv', allowed: <String>['movie', 'tv'], defaultsTo: 'movie')
+  ..addOption(
+    'media-kind',
+    help: 'downloads add：movie | tv',
+    allowed: <String>['movie', 'tv'],
+    defaultsTo: 'movie',
+  )
   ..addOption('user', help: 'anki login：用户名')
   ..addOption('endpoint', help: 'anki login：自建同步服务器地址（缺省 AnkiWeb）')
-  ..addFlag('accept-ankiweb', negatable: false, help: 'anki login：确认使用 AnkiWeb 的条款风险')
+  ..addFlag(
+    'accept-ankiweb',
+    negatable: false,
+    help: 'anki login：确认使用 AnkiWeb 的条款风险',
+  )
   ..addFlag('discard-unsynced', negatable: false, help: 'anki logout：丢弃未同步的卡片')
   ..addOption('lib', help: 'upload：目标库根 id')
   ..addOption('path', help: 'upload：库根下的相对目录（缺省放库根）')
-  ..addFlag('follow', abbr: 'f', negatable: false, help: 'logs：持续输出新日志（Ctrl-C 退出）');
+  ..addFlag(
+    'follow',
+    abbr: 'f',
+    negatable: false,
+    help: 'logs：持续输出新日志（Ctrl-C 退出）',
+  );
 
 /// 短别名 → 规范动作名。
 const Map<String, String> _aliases = <String, String>{
@@ -136,13 +161,21 @@ Future<int> runCtl(
   final String? url = command['url'] as String?;
   final Map<String, String> env = environment ?? Platform.environment;
   // 显式 --url 是 admin 模式，压过环境变量里的 FUSHI_HOST_URL。
-  final String? interconnect = _flagOrEnv(command['interconnect'] as String?, url == null ? env['FUSHI_HOST_URL'] : null);
+  final String? interconnect = _flagOrEnv(
+    command['interconnect'] as String?,
+    url == null ? env['FUSHI_HOST_URL'] : null,
+  );
   if (interconnect != null) {
     final AdminClient client;
     try {
       client = AdminClient.forInterconnect(
         url: interconnect,
-        password: _flagOrEnv(command['password'] as String?, env['FUSHI_HOST_PASSWORD']) ?? '',
+        password:
+            _flagOrEnv(
+              command['password'] as String?,
+              env['FUSHI_HOST_PASSWORD'],
+            ) ??
+            '',
         fingerprint: command['fingerprint'] as String?,
       );
     } on AdminApiException catch (ex) {
@@ -227,17 +260,44 @@ Future<int> runCtlAction(
   }
   // 多请求的动作单独走，不进「一个动作 = 一个请求」的表。
   if (rest.first == 'upload') {
-    return _upload(client, command, out: out, err: err, chunkBytes: uploadChunkBytes);
+    return _upload(
+      client,
+      command,
+      out: out,
+      err: err,
+      chunkBytes: uploadChunkBytes,
+    );
   }
   if (rest.first == 'jobs') {
-    final Future<int>? jobs = runCtlJobsAction(client, command, out: out, err: err, exitCodeFor: _exitCodeFor);
+    final Future<int>? jobs = runCtlJobsAction(
+      client,
+      command,
+      out: out,
+      err: err,
+      exitCodeFor: _exitCodeFor,
+    );
     if (jobs != null) return jobs;
   }
-  if ((_aliases[rest.first] ?? rest.first) == 'downloads' && rest.length > 1 && rest[1] == 'add') {
-    return runCtlDownloadAdd(client, command, out: out, err: err, exitCodeFor: _exitCodeFor, fetch: fetchTorrent);
+  if ((_aliases[rest.first] ?? rest.first) == 'downloads' &&
+      rest.length > 1 &&
+      rest[1] == 'add') {
+    return runCtlDownloadAdd(
+      client,
+      command,
+      out: out,
+      err: err,
+      exitCodeFor: _exitCodeFor,
+      fetch: fetchTorrent,
+    );
   }
   if (rest.first == 'logs' && command['follow'] as bool) {
-    return _followLogs(client, out: out, err: err, interval: followInterval, keepGoing: keepFollowing ?? () => true);
+    return _followLogs(
+      client,
+      out: out,
+      err: err,
+      interval: followInterval,
+      keepGoing: keepFollowing ?? () => true,
+    );
   }
   final _CtlRequest? request = kCtlHostActions.contains(rest.first)
       ? _fromHost(parseCtlHostAction(rest, command, err))
@@ -245,14 +305,22 @@ Future<int> runCtlAction(
   if (request == null) return 64;
   final Object? response;
   try {
-    response = await client.send(request.method, request.path, body: request.body, query: request.query);
+    response = await client.send(
+      request.method,
+      request.path,
+      body: request.body,
+      query: request.query,
+    );
   } on AdminApiException catch (ex) {
     err.writeln('${request.method} ${request.path} 失败: $ex');
-    if (command['json'] as bool && ex.body != null) out.writeln(_pretty(ex.body));
+    if (command['json'] as bool && ex.body != null)
+      out.writeln(_pretty(ex.body));
     return _exitCodeFor(ex);
   }
   final String? grep = command['grep'] as String?;
-  final Object? shown = grep == null || grep.trim().isEmpty ? response : grepRows(response, grep);
+  final Object? shown = grep == null || grep.trim().isEmpty
+      ? response
+      : grepRows(response, grep);
   if (command['json'] as bool) {
     out.writeln(_pretty(shown));
   } else {
@@ -269,7 +337,15 @@ Object? grepRows(Object? response, String needle) {
   final String n = needle.trim().toLowerCase();
   bool hit(Object? row) {
     if (row is! Map) return '$row'.toLowerCase().contains(n);
-    for (final String key in const <String>['title', 'id', 'bookUid', 'fileName', 'path', 'name', 'collection']) {
+    for (final String key in const <String>[
+      'title',
+      'id',
+      'bookUid',
+      'fileName',
+      'path',
+      'name',
+      'collection',
+    ]) {
       final Object? v = row[key];
       if (v != null && '$v'.toLowerCase().contains(n)) return true;
     }
@@ -290,8 +366,9 @@ _CtlRequest? _fromHost(CtlHostRequest? r) {
     render: key == null
         ? null
         : key.isEmpty
-        ? (Object? response, StringSink out) =>
-              response is List ? _renderRows(response, out) : _renderGeneric(response, out)
+        ? (Object? response, StringSink out) => response is List
+              ? _renderRows(response, out)
+              : _renderGeneric(response, out)
         : _listRenderer(key),
   );
 }
@@ -318,10 +395,15 @@ Future<int> _upload(
   final List<String> files = command.rest.sublist(1);
   final String? library = command['lib'] as String?;
   if (files.isEmpty || library == null || library.trim().isEmpty) {
-    err.writeln('用法: fushi_server ctl upload <文件…> --lib <库根 id> [--path <目录>]');
+    err.writeln(
+      '用法: fushi_server ctl upload <文件…> --lib <库根 id> [--path <目录>]',
+    );
     return 64;
   }
-  final String dir = ((command['path'] as String?) ?? '').replaceAll(RegExp(r'^/+|/+$'), '');
+  final String dir = ((command['path'] as String?) ?? '').replaceAll(
+    RegExp(r'^/+|/+$'),
+    '',
+  );
   for (final String local in files) {
     if (!File(local).existsSync()) {
       err.writeln('找不到文件: $local');
@@ -333,11 +415,16 @@ Future<int> _upload(
     final File file = File(local);
     final String name = file.uri.pathSegments.last;
     final String rel = dir.isEmpty ? name : '$dir/$name';
-    final Map<String, String> query = <String, String>{'library': library.trim(), 'path': rel};
+    final Map<String, String> query = <String, String>{
+      'library': library.trim(),
+      'path': rel,
+    };
     try {
       final int size = await file.length();
       final Object? status = await client.get('$_api/upload', query: query);
-      int offset = status is Map && status['received'] is int ? status['received'] as int : 0;
+      int offset = status is Map && status['received'] is int
+          ? status['received'] as int
+          : 0;
       if (size == 0) {
         await client.sendBytes(
           'PUT',
@@ -352,7 +439,9 @@ Future<int> _upload(
         final RandomAccessFile raf = await file.open();
         try {
           while (offset < size) {
-            final int end = offset + chunkBytes < size ? offset + chunkBytes : size;
+            final int end = offset + chunkBytes < size
+                ? offset + chunkBytes
+                : size;
             await raf.setPosition(offset);
             final List<int> chunk = await raf.read(end - offset);
             final Object? r = await client.sendBytes(
@@ -360,14 +449,18 @@ Future<int> _upload(
               '$_api/upload',
               query: query,
               bytes: chunk,
-              headers: <String, String>{'Content-Range': 'bytes $offset-${end - 1}/$size'},
+              headers: <String, String>{
+                'Content-Range': 'bytes $offset-${end - 1}/$size',
+              },
             );
             final Object? received = r is Map ? r['received'] : null;
             if (received is! int || received <= offset) {
               throw AdminApiException(1, '服务端没有推进已收字节数（$received），停止以免死循环');
             }
             offset = received;
-            err.write('\r$rel  ${(offset * 100 / size).toStringAsFixed(1)}%   ');
+            err.write(
+              '\r$rel  ${(offset * 100 / size).toStringAsFixed(1)}%   ',
+            );
             if (r is Map && r['complete'] == true) break;
           }
           err.writeln();
@@ -382,7 +475,8 @@ Future<int> _upload(
       return _exitCodeFor(ex);
     }
   }
-  if (command['json'] as bool) out.writeln(_pretty(<String, Object?>{'uploaded': results}));
+  if (command['json'] as bool)
+    out.writeln(_pretty(<String, Object?>{'uploaded': results}));
   return 0;
 }
 
@@ -404,7 +498,9 @@ Future<int> _followLogs(
       return _exitCodeFor(ex);
     }
     final Object? raw = response is Map ? response['lines'] : null;
-    final List<String> current = raw is List ? raw.map((Object? l) => '$l').toList() : const <String>[];
+    final List<String> current = raw is List
+        ? raw.map((Object? l) => '$l').toList()
+        : const <String>[];
     for (final String line in newLogLines(previous, current)) {
       out.writeln(line);
     }
@@ -417,7 +513,9 @@ Future<int> _followLogs(
 /// 服务端日志是滑动窗口（最近 N 行）：找 [previous] 的最长后缀与 [current] 的前缀重合，
 /// 重合之后的就是新行。没有重合（两次轮询之间滚过了整个窗口）就全部算新。
 List<String> newLogLines(List<String> previous, List<String> current) {
-  final int maxOverlap = previous.length < current.length ? previous.length : current.length;
+  final int maxOverlap = previous.length < current.length
+      ? previous.length
+      : current.length;
   for (int k = maxOverlap; k > 0; k--) {
     bool same = true;
     for (int i = 0; i < k; i++) {
@@ -434,8 +532,13 @@ List<String> newLogLines(List<String> previous, List<String> current) {
 typedef _Render = void Function(Object? response, StringSink out);
 
 class _CtlRequest {
-  const _CtlRequest(this.method, this.path, {this.body, this.query, _Render? render})
-    : render = render ?? _renderGeneric;
+  const _CtlRequest(
+    this.method,
+    this.path, {
+    this.body,
+    this.query,
+    _Render? render,
+  }) : render = render ?? _renderGeneric;
 
   final String method;
   final String path;
@@ -455,7 +558,9 @@ _CtlRequest? _parseAction(
 ) {
   final String action = _aliases[rest.first] ?? rest.first;
   final String sub = rest.length > 1 ? rest[1] : '';
-  final List<String> args = rest.length > 2 ? rest.sublist(2) : const <String>[];
+  final List<String> args = rest.length > 2
+      ? rest.sublist(2)
+      : const <String>[];
 
   _CtlRequest? usage(String text) {
     err.writeln('用法: fushi_server ctl $text');
@@ -475,9 +580,16 @@ _CtlRequest? _parseAction(
     case 'pairing':
       switch (sub) {
         case '' || 'ls':
-          return const _CtlRequest('GET', '$_api/pairing', render: _renderPairing);
+          return const _CtlRequest(
+            'GET',
+            '$_api/pairing',
+            render: _renderPairing,
+          );
         case 'revoke' when arg(0) != null:
-          return _CtlRequest('DELETE', '$_api/pairing/peers/${adminPathSegment(arg(0)!)}');
+          return _CtlRequest(
+            'DELETE',
+            '$_api/pairing/peers/${adminPathSegment(arg(0)!)}',
+          );
       }
       return usage('pairing [ls] | pairing revoke <peerId>');
 
@@ -500,17 +612,23 @@ _CtlRequest? _parseAction(
           return _CtlRequest(
             'DELETE',
             '$_api/libraries/${adminPathSegment(arg(0)!)}',
-            query: command['purge'] as bool ? const <String, String>{'purge': 'true'} : null,
+            query: command['purge'] as bool
+                ? const <String, String>{'purge': 'true'}
+                : null,
             render: _listRenderer('libraries'),
           );
       }
-      return usage('libraries [ls] | libraries add <path> [--kind video|book] [--id x] | libraries rm <id> [--purge]');
+      return usage(
+        'libraries [ls] | libraries add <path> [--kind video|book] [--id x] | libraries rm <id> [--purge]',
+      );
 
     case 'scan':
       return _CtlRequest(
         'POST',
         '$_api/scan',
-        body: <String, Object?>{if (command.wasParsed('prune')) 'prune': command['prune'] as bool},
+        body: <String, Object?>{
+          if (command.wasParsed('prune')) 'prune': command['prune'] as bool,
+        },
       );
 
     case 'jobs':
@@ -518,7 +636,10 @@ _CtlRequest? _parseAction(
         case '' || 'ls':
           return _list('GET', '$_api/jobs', 'jobs');
         case 'rm' when arg(0) != null:
-          return _CtlRequest('DELETE', '$_api/jobs/${adminPathSegment(arg(0)!)}');
+          return _CtlRequest(
+            'DELETE',
+            '$_api/jobs/${adminPathSegment(arg(0)!)}',
+          );
       }
       return usage('jobs [ls] | jobs rm <id>');
 
@@ -533,11 +654,19 @@ _CtlRequest? _parseAction(
             render: _renderJobSubtitles,
           );
         case 'cancel' || 'retry' when arg(0) != null:
-          return _CtlRequest('POST', '$_api/downloads/${adminPathSegment(arg(0)!)}/$sub');
+          return _CtlRequest(
+            'POST',
+            '$_api/downloads/${adminPathSegment(arg(0)!)}/$sub',
+          );
         case 'rm' when arg(0) != null:
-          return _CtlRequest('DELETE', '$_api/downloads/${adminPathSegment(arg(0)!)}');
+          return _CtlRequest(
+            'DELETE',
+            '$_api/downloads/${adminPathSegment(arg(0)!)}',
+          );
       }
-      return usage('downloads [ls] | downloads add … | downloads cancel|retry|rm|subtitles <id>');
+      return usage(
+        'downloads [ls] | downloads add … | downloads cancel|retry|rm|subtitles <id>',
+      );
 
     case 'subscriptions':
       switch (sub) {
@@ -545,11 +674,15 @@ _CtlRequest? _parseAction(
           return _list('GET', '$_api/subscriptions', 'subscriptions');
         case 'add' when arg(0) != null:
           final Object? body = _jsonArg(arg(0)!, err);
-          return body == null ? null : _CtlRequest('POST', '$_api/subscriptions', body: body);
+          return body == null
+              ? null
+              : _CtlRequest('POST', '$_api/subscriptions', body: body);
         case 'check':
           return _CtlRequest(
             'POST',
-            arg(0) == null ? '$_api/subscriptions/check' : '$_api/subscriptions/${adminPathSegment(arg(0)!)}/check',
+            arg(0) == null
+                ? '$_api/subscriptions/check'
+                : '$_api/subscriptions/${adminPathSegment(arg(0)!)}/check',
           );
         case 'enable' || 'disable' when arg(0) != null:
           return _CtlRequest(
@@ -558,7 +691,10 @@ _CtlRequest? _parseAction(
             body: <String, Object?>{'enabled': sub == 'enable'},
           );
         case 'rm' when arg(0) != null:
-          return _CtlRequest('DELETE', '$_api/subscriptions/${adminPathSegment(arg(0)!)}');
+          return _CtlRequest(
+            'DELETE',
+            '$_api/subscriptions/${adminPathSegment(arg(0)!)}',
+          );
       }
       return usage(
         "subscriptions [ls] | subscriptions add '<json>' | subscriptions check [id] | "
@@ -568,9 +704,17 @@ _CtlRequest? _parseAction(
     case 'models':
       switch (sub) {
         case '' || 'ls':
-          return const _CtlRequest('GET', '$_api/models', render: _renderModels);
+          return const _CtlRequest(
+            'GET',
+            '$_api/models',
+            render: _renderModels,
+          );
         case 'pull' when arg(0) != null:
-          return _CtlRequest('POST', '$_api/models/pull', body: <String, Object?>{'model': arg(0)});
+          return _CtlRequest(
+            'POST',
+            '$_api/models/pull',
+            body: <String, Object?>{'model': arg(0)},
+          );
       }
       return usage('models [ls] | models pull <语言 tag|ocr|ocr:key>');
 
@@ -580,7 +724,9 @@ _CtlRequest? _parseAction(
           return _CtlRequest('GET', '$_api/$action');
         case 'set' when arg(0) != null:
           final Object? body = _jsonArg(arg(0)!, err);
-          return body == null ? null : _CtlRequest('PUT', '$_api/$action', body: body);
+          return body == null
+              ? null
+              : _CtlRequest('PUT', '$_api/$action', body: body);
       }
       return usage("$action [get] | $action set '<json>'");
 
@@ -591,20 +737,30 @@ _CtlRequest? _parseAction(
         case 'sync' || 'refresh' || 'run' || 'retry':
           return _CtlRequest('POST', '$_api/anki/$sub');
         case 'landing' when arg(0) == 'on' || arg(0) == 'off':
-          return _CtlRequest('POST', '$_api/anki/landing', body: <String, Object?>{'enabled': arg(0) == 'on'});
+          return _CtlRequest(
+            'POST',
+            '$_api/anki/landing',
+            body: <String, Object?>{'enabled': arg(0) == 'on'},
+          );
         case 'config' when arg(0) != null:
           final Object? body = _jsonArg(arg(0)!, err);
-          return body == null ? null : _CtlRequest('PUT', '$_api/anki/settings', body: body);
+          return body == null
+              ? null
+              : _CtlRequest('PUT', '$_api/anki/settings', body: body);
         case 'logout':
           return _CtlRequest(
             'POST',
             '$_api/anki/logout',
-            body: <String, Object?>{'discardUnsynced': command['discard-unsynced'] as bool},
+            body: <String, Object?>{
+              'discardUnsynced': command['discard-unsynced'] as bool,
+            },
           );
         case 'login':
           final String? user = command['user'] as String?;
           if (user == null || user.trim().isEmpty) {
-            return usage('anki login --user <用户名> [--endpoint <url>] [--accept-ankiweb]');
+            return usage(
+              'anki login --user <用户名> [--endpoint <url>] [--accept-ankiweb]',
+            );
           }
           final String? password = readSecret('FUSHI_ANKI_PASSWORD');
           if (password == null || password.isEmpty) {
@@ -617,7 +773,8 @@ _CtlRequest? _parseAction(
             body: <String, Object?>{
               'username': user.trim(),
               'password': password,
-              if (command['endpoint'] != null) 'endpoint': command['endpoint'] as String,
+              if (command['endpoint'] != null)
+                'endpoint': command['endpoint'] as String,
               if (command['accept-ankiweb'] as bool) 'acceptAnkiWeb': true,
             },
           );
@@ -688,7 +845,8 @@ String? _readSecretDefault(String envName) {
   return stdin.readLineSync();
 }
 
-_CtlRequest _list(String method, String path, String key) => _CtlRequest(method, path, render: _listRenderer(key));
+_CtlRequest _list(String method, String path, String key) =>
+    _CtlRequest(method, path, render: _listRenderer(key));
 
 Object? _jsonArg(String text, StringSink err) {
   try {
@@ -703,7 +861,8 @@ Object? _jsonArg(String text, StringSink err) {
 
 // ── 输出 ───────────────────────────────────────────────────────────────
 
-String _pretty(Object? value) => const JsonEncoder.withIndent('  ').convert(value);
+String _pretty(Object? value) =>
+    const JsonEncoder.withIndent('  ').convert(value);
 
 String _scalar(Object? value) => switch (value) {
   null => '-',
@@ -723,7 +882,9 @@ void _renderGeneric(Object? response, StringSink out) {
 
 void _renderKeyValues(Map<dynamic, dynamic> map, StringSink out) {
   if (map.isEmpty) return;
-  final int width = map.keys.map((Object? k) => '$k'.length).reduce((int a, int b) => a > b ? a : b);
+  final int width = map.keys
+      .map((Object? k) => '$k'.length)
+      .reduce((int a, int b) => a > b ? a : b);
   map.forEach((Object? key, Object? value) {
     out.writeln('${'$key:'.padRight(width + 2)}${_scalar(value)}');
   });
@@ -787,7 +948,8 @@ void _renderModels(Object? response, StringSink out) {
 
 /// 渲染 `{<key>: [...]}` 形状的列表响应；其余字段（capability 之类）不展开，`--json` 可看全量。
 _Render _listRenderer(String key) => (Object? response, StringSink out) {
-  if (response is Map && response['error'] != null) out.writeln('! ${response['error']}');
+  if (response is Map && response['error'] != null)
+    out.writeln('! ${response['error']}');
   final Object? rows = response is Map ? response[key] : null;
   if (rows is! List) return _renderGeneric(response, out);
   _renderRows(rows, out);
@@ -796,11 +958,36 @@ _Render _listRenderer(String key) => (Object? response, StringSink out) {
   }
 };
 
-const List<String> _idKeys = <String>['id', 'jobId', 'subscriptionId', 'peerId', 'profileId', 'tag', 'key'];
-const List<String> _labelKeys = <String>['title', 'name', 'deviceName', 'path', 'query'];
-const List<String> _stateKeys = <String>['state', 'status', 'phase', 'kind', 'ready', 'enabled'];
+const List<String> _idKeys = <String>[
+  'id',
+  'jobId',
+  'subscriptionId',
+  'peerId',
+  'profileId',
+  'tag',
+  'key',
+];
+const List<String> _labelKeys = <String>[
+  'title',
+  'name',
+  'deviceName',
+  'path',
+  'query',
+];
+const List<String> _stateKeys = <String>[
+  'state',
+  'status',
+  'phase',
+  'kind',
+  'ready',
+  'enabled',
+];
 
-void _renderRows(Object? rows, StringSink out, {List<String> idKeys = _idKeys}) {
+void _renderRows(
+  Object? rows,
+  StringSink out, {
+  List<String> idKeys = _idKeys,
+}) {
   if (rows is! List || rows.isEmpty) {
     out.writeln('  （空）');
     return;
@@ -814,7 +1001,8 @@ void _renderRows(Object? rows, StringSink out, {List<String> idKeys = _idKeys}) 
       for (final String k in keys) {
         final Object? v = row[k];
         // 布尔状态写成词，`[false]` 看不出是哪个字段。
-        if (v is bool) return k == 'ready' ? (v ? 'ready' : 'missing') : (v ? k : 'no-$k');
+        if (v is bool)
+          return k == 'ready' ? (v ? 'ready' : 'missing') : (v ? k : 'no-$k');
         if (v != null) return '$v';
       }
       return null;

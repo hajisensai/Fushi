@@ -14,13 +14,11 @@ void main() {
       autoAddTrackerSubscription: false,
       trackerSubscriptionUrl: 'https://example.test/trackers.txt',
     );
-    final QbConnectionConfig decoded =
-        decodeQbConnectionConfig(encodeQbConnectionConfig(custom))!;
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+      encodeQbConnectionConfig(custom),
+    )!;
     expect(decoded.autoAddTrackerSubscription, isFalse);
-    expect(
-      decoded.trackerSubscriptionUrl,
-      'https://example.test/trackers.txt',
-    );
+    expect(decoded.trackerSubscriptionUrl, 'https://example.test/trackers.txt');
 
     final QbConnectionConfig legacy = decodeQbConnectionConfig('{}')!;
     expect(legacy.autoAddTrackerSubscription, isTrue);
@@ -31,10 +29,14 @@ void main() {
     const QbConnectionConfig config = QbConnectionConfig();
     expect(config.backend, QbConnectionConfig.backendAuto);
     // 有内置引擎（桌面/Android）→ 内置引擎（开箱即用）；无（iOS）→ 外接 qb。
-    expect(config.resolveBackend(embeddedSupported: true),
-        QbConnectionConfig.backendEmbedded);
-    expect(config.resolveBackend(embeddedSupported: false),
-        QbConnectionConfig.backendQbittorrent);
+    expect(
+      config.resolveBackend(embeddedSupported: true),
+      QbConnectionConfig.backendEmbedded,
+    );
+    expect(
+      config.resolveBackend(embeddedSupported: false),
+      QbConnectionConfig.backendQbittorrent,
+    );
   });
 
   test('显式 backend 按平台能力规约：无内置引擎的平台连 embedded 也降级 qb (BUG-1207)', () {
@@ -44,31 +46,43 @@ void main() {
     // 引擎」、并暴露一个没有任何人读取的下载目录，运行时再静默回退外接 qb。
     // 存储层不受影响——backend 字段仍原样存 embedded（见下面的 round-trip 用例），
     // 规约只发生在 resolveBackend 这一处，平台重新可用时旧配置自动复原。
-    const QbConnectionConfig emb =
-        QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
-    expect(emb.resolveBackend(embeddedSupported: false),
-        QbConnectionConfig.backendQbittorrent);
-    expect(emb.resolveBackend(embeddedSupported: true),
-        QbConnectionConfig.backendEmbedded);
-    const QbConnectionConfig qb =
-        QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
-    expect(qb.resolveBackend(embeddedSupported: true),
-        QbConnectionConfig.backendQbittorrent);
-    expect(qb.resolveBackend(embeddedSupported: false),
-        QbConnectionConfig.backendQbittorrent);
+    const QbConnectionConfig emb = QbConnectionConfig(
+      backend: QbConnectionConfig.backendEmbedded,
+    );
+    expect(
+      emb.resolveBackend(embeddedSupported: false),
+      QbConnectionConfig.backendQbittorrent,
+    );
+    expect(
+      emb.resolveBackend(embeddedSupported: true),
+      QbConnectionConfig.backendEmbedded,
+    );
+    const QbConnectionConfig qb = QbConnectionConfig(
+      backend: QbConnectionConfig.backendQbittorrent,
+    );
+    expect(
+      qb.resolveBackend(embeddedSupported: true),
+      QbConnectionConfig.backendQbittorrent,
+    );
+    expect(
+      qb.resolveBackend(embeddedSupported: false),
+      QbConnectionConfig.backendQbittorrent,
+    );
   });
 
   test('auto round-trips through encode/decode', () {
     const QbConnectionConfig original = QbConnectionConfig();
-    final QbConnectionConfig decoded =
-        decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+      encodeQbConnectionConfig(original),
+    )!;
     expect(decoded.backend, QbConnectionConfig.backendAuto);
   });
 
   test('legacy JSON without backend field decodes as qbittorrent', () {
     // 阶段1 之前写下的配置没有 backend 字段：向后兼容回退 qb。
     final QbConnectionConfig? config = decodeQbConnectionConfig(
-        '{"baseUrl":"http://127.0.0.1:8080","username":"u","password":"p"}');
+      '{"baseUrl":"http://127.0.0.1:8080","username":"u","password":"p"}',
+    );
     expect(config, isNotNull);
     expect(config!.backend, QbConnectionConfig.backendQbittorrent);
     expect(config.baseUrl, 'http://127.0.0.1:8080');
@@ -79,16 +93,18 @@ void main() {
       backend: QbConnectionConfig.backendEmbedded,
       category: 'hibiki-anime',
     );
-    final QbConnectionConfig? decoded =
-        decodeQbConnectionConfig(encodeQbConnectionConfig(original));
+    final QbConnectionConfig? decoded = decodeQbConnectionConfig(
+      encodeQbConnectionConfig(original),
+    );
     expect(decoded, isNotNull);
     expect(decoded!.backend, QbConnectionConfig.backendEmbedded);
     expect(decoded.category, 'hibiki-anime');
   });
 
   test('unknown backend value falls back to qbittorrent', () {
-    final QbConnectionConfig? config =
-        decodeQbConnectionConfig('{"backend":"bogus","baseUrl":"x"}');
+    final QbConnectionConfig? config = decodeQbConnectionConfig(
+      '{"backend":"bogus","baseUrl":"x"}',
+    );
     expect(config!.backend, QbConnectionConfig.backendQbittorrent);
   });
 
@@ -100,18 +116,21 @@ void main() {
 
   test('isConfigured: embedded/auto need no url, explicit qb needs a url', () {
     // 内置引擎/自动无连接参数：恒已配置（开箱即用）。
-    const QbConnectionConfig embedded =
-        QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
+    const QbConnectionConfig embedded = QbConnectionConfig(
+      backend: QbConnectionConfig.backendEmbedded,
+    );
     expect(embedded.isConfigured, isTrue);
     const QbConnectionConfig auto = QbConnectionConfig();
     expect(auto.isConfigured, isTrue);
     // 显式外接 qb：URL 空 = 未配置。
-    const QbConnectionConfig qbEmpty =
-        QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
+    const QbConnectionConfig qbEmpty = QbConnectionConfig(
+      backend: QbConnectionConfig.backendQbittorrent,
+    );
     expect(qbEmpty.isConfigured, isFalse);
     const QbConnectionConfig qbSet = QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:8080');
+      backend: QbConnectionConfig.backendQbittorrent,
+      baseUrl: 'http://127.0.0.1:8080',
+    );
     expect(qbSet.isConfigured, isTrue);
   });
 
@@ -127,16 +146,18 @@ void main() {
       uploadLimitKbps: 512,
       maxConnections: 100,
     );
-    final QbConnectionConfig decoded =
-        decodeQbConnectionConfig(encodeQbConnectionConfig(limited))!;
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+      encodeQbConnectionConfig(limited),
+    )!;
     expect(decoded.downloadLimitKbps, 2048);
     expect(decoded.uploadLimitKbps, 512);
     expect(decoded.maxConnections, 100);
   });
 
   test('legacy JSON without limit fields decodes to 0', () {
-    final QbConnectionConfig decoded =
-        decodeQbConnectionConfig('{"backend":"embedded"}')!;
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+      '{"backend":"embedded"}',
+    )!;
     expect(decoded.downloadLimitKbps, 0);
     expect(decoded.uploadLimitKbps, 0);
     expect(decoded.maxConnections, 0);
@@ -144,7 +165,8 @@ void main() {
 
   test('negative/garbage limit values clamp to 0', () {
     final QbConnectionConfig decoded = decodeQbConnectionConfig(
-        '{"downloadLimitKbps":-5,"uploadLimitKbps":"x","maxConnections":-1}')!;
+      '{"downloadLimitKbps":-5,"uploadLimitKbps":"x","maxConnections":-1}',
+    )!;
     expect(decoded.downloadLimitKbps, 0);
     expect(decoded.uploadLimitKbps, 0);
     expect(decoded.maxConnections, 0);
@@ -162,12 +184,14 @@ void main() {
   });
 
   test('copyWith preserves backend when not overridden', () {
-    const QbConnectionConfig base =
-        QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
+    const QbConnectionConfig base = QbConnectionConfig(
+      backend: QbConnectionConfig.backendEmbedded,
+    );
     final QbConnectionConfig next = base.copyWith(category: 'x');
     expect(next.backend, QbConnectionConfig.backendEmbedded);
-    final QbConnectionConfig switched =
-        base.copyWith(backend: QbConnectionConfig.backendQbittorrent);
+    final QbConnectionConfig switched = base.copyWith(
+      backend: QbConnectionConfig.backendQbittorrent,
+    );
     expect(switched.backend, QbConnectionConfig.backendQbittorrent);
   });
 
@@ -186,8 +210,9 @@ void main() {
       seedRatioLimit: 2.5,
       memoryLimitMb: 512,
     );
-    final QbConnectionConfig decoded =
-        decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+      encodeQbConnectionConfig(original),
+    )!;
     expect(decoded.uploadEnabled, isTrue);
     expect(decoded.seedTimeLimitMinutes, 120);
     expect(decoded.seedRatioLimit, 2.5);
@@ -231,8 +256,9 @@ void main() {
       maxIpPortCount: 4,
       banTimeMinutes: 120,
     );
-    final QbConnectionConfig r =
-        decodeQbConnectionConfig(encodeQbConnectionConfig(o))!;
+    final QbConnectionConfig r = decodeQbConnectionConfig(
+      encodeQbConnectionConfig(o),
+    )!;
     expect(r.listenPort, 51413);
     expect(r.enableDht, isFalse);
     expect(r.encryptionMode, QbConnectionConfig.encryptionForced);
@@ -248,8 +274,9 @@ void main() {
   });
 
   test('老 JSON 缺 session 字段：发现开关回落 true、反吸血回落 on、加密首选', () {
-    final QbConnectionConfig c =
-        decodeQbConnectionConfig('{"backend":"embedded"}')!;
+    final QbConnectionConfig c = decodeQbConnectionConfig(
+      '{"backend":"embedded"}',
+    )!;
     expect(c.enableDht, isTrue);
     expect(c.enableLsd, isTrue);
     expect(c.enableUpnp, isTrue);
@@ -258,22 +285,27 @@ void main() {
     expect(c.encryptionMode, QbConnectionConfig.encryptionPrefer);
     expect(c.anonymousMode, isFalse);
     // 越界加密值 → 首选。
-    expect(decodeQbConnectionConfig('{"encryptionMode":9}')!.encryptionMode,
-        QbConnectionConfig.encryptionPrefer);
+    expect(
+      decodeQbConnectionConfig('{"encryptionMode":9}')!.encryptionMode,
+      QbConnectionConfig.encryptionPrefer,
+    );
   });
 
   test('memoryLimitMb defaults to 0 (auto); legacy JSON → 0', () {
     expect(const QbConnectionConfig().memoryLimitMb, 0);
     expect(
-        decodeQbConnectionConfig('{"backend":"embedded"}')!.memoryLimitMb, 0);
+      decodeQbConnectionConfig('{"backend":"embedded"}')!.memoryLimitMb,
+      0,
+    );
     // 负数/垃圾 clamp 0。
     expect(decodeQbConnectionConfig('{"memoryLimitMb":-9}')!.memoryLimitMb, 0);
   });
 
   test('legacy JSON without upload fields: upload off, seed limits 0', () {
     // 老配置没有上传字段：开箱即关（尊重带宽/隐私），首用弹窗再征询。
-    final QbConnectionConfig decoded =
-        decodeQbConnectionConfig('{"backend":"embedded"}')!;
+    final QbConnectionConfig decoded = decodeQbConnectionConfig(
+      '{"backend":"embedded"}',
+    )!;
     expect(decoded.uploadEnabled, isFalse);
     expect(decoded.seedTimeLimitMinutes, 0);
     expect(decoded.seedRatioLimit, 0);
@@ -281,11 +313,13 @@ void main() {
 
   test('negative/garbage seed values clamp to 0', () {
     final QbConnectionConfig decoded = decodeQbConnectionConfig(
-        '{"seedTimeLimitMinutes":-30,"seedRatioLimit":"x"}')!;
+      '{"seedTimeLimitMinutes":-30,"seedRatioLimit":"x"}',
+    )!;
     expect(decoded.seedTimeLimitMinutes, 0);
     expect(decoded.seedRatioLimit, 0);
-    final QbConnectionConfig neg =
-        decodeQbConnectionConfig('{"seedRatioLimit":-1.5}')!;
+    final QbConnectionConfig neg = decodeQbConnectionConfig(
+      '{"seedRatioLimit":-1.5}',
+    )!;
     expect(neg.seedRatioLimit, 0);
   });
 
@@ -312,7 +346,8 @@ void main() {
 
     test('老配置缺字段 → false（绝不因升级改变既有用户的限速行为）', () {
       final QbConnectionConfig? config = decodeQbConnectionConfig(
-          '{"backend":"embedded","downloadLimitKbps":512}');
+        '{"backend":"embedded","downloadLimitKbps":512}',
+      );
       expect(config, isNotNull);
       expect(config!.limitLocalPeers, isFalse);
       expect(config.downloadLimitKbps, 512);
@@ -324,8 +359,9 @@ void main() {
         downloadLimitKbps: 512,
         limitLocalPeers: true,
       );
-      final QbConnectionConfig decoded =
-          decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
+      final QbConnectionConfig decoded = decodeQbConnectionConfig(
+        encodeQbConnectionConfig(original),
+      )!;
       expect(decoded.limitLocalPeers, isTrue);
       expect(decoded.downloadLimitKbps, 512);
     });
@@ -334,16 +370,18 @@ void main() {
       const QbConnectionConfig off = QbConnectionConfig();
       expect(off.copyWith(limitLocalPeers: true).limitLocalPeers, isTrue);
       expect(
-          off
-              .copyWith(limitLocalPeers: true)
-              .copyWith(limitLocalPeers: false)
-              .limitLocalPeers,
-          isFalse);
+        off
+            .copyWith(limitLocalPeers: true)
+            .copyWith(limitLocalPeers: false)
+            .limitLocalPeers,
+        isFalse,
+      );
     });
 
     test('非布尔垃圾值 → false（与 uploadEnabled 同样的容错）', () {
-      final QbConnectionConfig? config =
-          decodeQbConnectionConfig('{"limitLocalPeers":"yes"}');
+      final QbConnectionConfig? config = decodeQbConnectionConfig(
+        '{"limitLocalPeers":"yes"}',
+      );
       expect(config?.limitLocalPeers, isFalse);
     });
   });

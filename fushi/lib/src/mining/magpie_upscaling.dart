@@ -200,7 +200,7 @@ enum MagpieProfileSkipReason {
 @immutable
 class MagpieProfileWriteResult {
   const MagpieProfileWriteResult.applied(Map<String, dynamic> this.config)
-      : skipReason = null;
+    : skipReason = null;
 
   const MagpieProfileWriteResult.skipped(
     MagpieProfileSkipReason this.skipReason,
@@ -336,7 +336,8 @@ MagpieProfileWriteResult magpieConfigWithAutoScaleProfile({
   // 缩放模式索引沿用默认 profile 的选择（用户在 Magpie 里挑过什么就用什么）；默认 profile
   // 自己越界或为 -1 时回落到 0（`scalingModes` 上面已确认非空）。
   final Object? defaultScalingMode = defaultProfile['scalingMode'];
-  final int scalingMode = (defaultScalingMode is int &&
+  final int scalingMode =
+      (defaultScalingMode is int &&
           defaultScalingMode >= 0 &&
           defaultScalingMode < scalingModes.length)
       ? defaultScalingMode
@@ -448,7 +449,8 @@ MagpieProfileWriteResult magpieConfigWithLegacyProfilePrefixRenamed({
     }
     profiles[i] = <String, dynamic>{
       ..._asStringKeyed(entry.cast<Object?, Object?>()),
-      'name': kMagpieFushiProfilePrefix +
+      'name':
+          kMagpieFushiProfilePrefix +
           name.substring(kMagpieLegacyProfilePrefix.length),
     };
     changed = true;

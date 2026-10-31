@@ -79,7 +79,6 @@ List<Dictionary> kanjiSectionDictionariesOf(Iterable<Dictionary> dictionaries) {
   return members;
 }
 
-
 /// 改名投影：**真名 -> 显示名**，只含真正改过名的词典。
 ///
 /// 全库唯一的推导处。消费方有五个（弹窗注入、悬浮窗、扩展下发、存储占用、
@@ -184,15 +183,13 @@ class Dictionary {
 
   /// 词头区（`.expression` / 振假名）实际该用的语言：用户指定优先，其次 index.json
   /// 的 sourceLanguage，都没有则 null（调用方不猜，见 `content_font_chain.dart`）。
-  String? get effectiveSourceLanguage => _firstNonEmpty(
-        <String?>[languageOverride, sourceLanguage],
-      );
+  String? get effectiveSourceLanguage =>
+      _firstNonEmpty(<String?>[languageOverride, sourceLanguage]);
 
   /// 释义区实际该用的语言：用户指定优先（用户指定的是「这本词典是什么语言的」，
   /// 对单语词典而言词头和释义同语言），其次 index.json 的 targetLanguage。
-  String? get effectiveTargetLanguage => _firstNonEmpty(
-        <String?>[languageOverride, targetLanguage],
-      );
+  String? get effectiveTargetLanguage =>
+      _firstNonEmpty(<String?>[languageOverride, targetLanguage]);
 
   /// 该显示给用户看的名字：改过名用改的，否则用真名。**所有面向用户的词典名
   /// 渲染点都必须走这里**，而不是直接读 [name]。
@@ -252,8 +249,7 @@ class Dictionary {
   bool get hasEmbeddedKanji => hasEmbeddedKanjiIn(type, metadata);
 
   /// 出现在「汉字」分区：纯 kanji 词典，或混合词典的汉字部分。
-  bool get isInKanjiSection =>
-      type == DictionaryType.kanji || hasEmbeddedKanji;
+  bool get isInKanjiSection => type == DictionaryType.kanji || hasEmbeddedKanji;
 
   /// 混合词典的汉字部分是否被关掉（见 [kDictKanjiHiddenKey]）。纯 kanji 词典的
   /// 开关仍是 [isHidden]。

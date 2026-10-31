@@ -71,7 +71,10 @@ void main() {
       expect(body, contains("return 'same'"));
       expect(body, contains("return 'hit'"));
       // 只有真选中新字才 fire onTextSelected 的那条路径（selectFromPosition）。
-      expect(body, contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'));
+      expect(
+        body,
+        contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'),
+      );
     });
 
     test('原有 _selectOcrChar 仍是布尔封装（点击/悬停/回放路径不变）', () {
@@ -82,14 +85,19 @@ void main() {
         lexicon: SourceLexicon.js,
       );
       expect(
-          body, contains("_selectOcrCharDetail(x, y, fromHover) !== 'miss'"));
+        body,
+        contains("_selectOcrCharDetail(x, y, fromHover) !== 'miss'"),
+      );
       final String tap = methodBody(
         doc,
         'function _onTap(x, y)',
         lexicon: SourceLexicon.js,
       );
-      expect(tap, contains('_selectOcrChar(x, y, false)'),
-          reason: 'WebView 内的原生点击路径仍走布尔封装，不受三态改动影响');
+      expect(
+        tap,
+        contains('_selectOcrChar(x, y, false)'),
+        reason: 'WebView 内的原生点击路径仍走布尔封装，不受三态改动影响',
+      );
     });
   });
 
@@ -137,8 +145,11 @@ void main() {
         'void onDismissBarrierTap(Offset globalPos)',
       );
       expect(body, contains('_webViewLocalFromGlobal(globalPos)'));
-      expect(body, contains('clearDictionaryResult();'),
-          reason: 'WebView 不可用时必须退回默认关栈，不能让弹窗卡死');
+      expect(
+        body,
+        contains('clearDictionaryResult();'),
+        reason: 'WebView 不可用时必须退回默认关栈，不能让弹窗卡死',
+      );
       expect(body, contains('_forwardBarrierTap(controller, local)'));
 
       final String forward = methodBody(

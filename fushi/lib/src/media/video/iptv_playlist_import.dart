@@ -107,8 +107,10 @@ enum M3uPlaylistKind {
 /// 一致（远端列表传 URL 目录）：远端列表里被解析层拒收的本地条目不算频道。
 M3uPlaylistKind classifyM3uPlaylist(String content, {String baseDir = ''}) {
   if (isHlsStreamPlaylist(content)) return M3uPlaylistKind.hlsStream;
-  final List<M3uChannel> channels =
-      parseM3uChannels(content: content, baseDir: baseDir);
+  final List<M3uChannel> channels = parseM3uChannels(
+    content: content,
+    baseDir: baseDir,
+  );
   return channels.isEmpty ? M3uPlaylistKind.empty : M3uPlaylistKind.channelList;
 }
 
@@ -170,14 +172,15 @@ String iptvPlaylistNameFromLocation(String location) {
   final String trimmed = location.trim();
   final Uri? uri = Uri.tryParse(trimmed);
   if (uri != null && uri.hasScheme && uri.host.isNotEmpty) {
-    final List<String> segs =
-        uri.pathSegments.where((String s) => s.isNotEmpty).toList();
+    final List<String> segs = uri.pathSegments
+        .where((String s) => s.isNotEmpty)
+        .toList();
     if (segs.isNotEmpty) {
       final String last = decodedSourceBasename(segs.last);
       final String name = p.basenameWithoutExtension(last);
       final bool generic =
           _kScriptExtensions.contains(p.extension(last).toLowerCase()) ||
-              _kGenericListNames.contains(name.toLowerCase());
+          _kGenericListNames.contains(name.toLowerCase());
       if (name.isNotEmpty && !generic) return name;
     }
     return uri.host;
@@ -227,15 +230,17 @@ Future<IptvPlaylistSource> fetchRemoteIptvPlaylist(
   final Uri uri = Uri.parse(url.trim());
   final http.Client client = httpClient ?? createAppHttpIoClient();
   try {
-    final http.StreamedResponse res =
-        await client.send(http.Request('GET', uri)).timeout(timeout);
+    final http.StreamedResponse res = await client
+        .send(http.Request('GET', uri))
+        .timeout(timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       unawaited(res.stream.listen(null).cancel());
       throw HttpException('HTTP ${res.statusCode}', uri: uri);
     }
-    final List<int> bytes =
-        await readBoundedBytes(res.stream, kIptvPlaylistMaxBytes)
-            .timeout(timeout);
+    final List<int> bytes = await readBoundedBytes(
+      res.stream,
+      kIptvPlaylistMaxBytes,
+    ).timeout(timeout);
     return IptvPlaylistSource(
       content: utf8.decode(bytes, allowMalformed: true),
       baseDir: iptvPlaylistBaseUrl(url),
@@ -249,8 +254,10 @@ Future<IptvPlaylistSource> fetchRemoteIptvPlaylist(
 
 /// 按 `group-title` 切出的一组频道（= 一个 playlist 合集）。
 class IptvChannelGroup {
-  const IptvChannelGroup(
-      {required this.collectionName, required this.channels});
+  const IptvChannelGroup({
+    required this.collectionName,
+    required this.channels,
+  });
 
   final String collectionName;
   final List<M3uChannel> channels;
@@ -293,12 +300,10 @@ List<IptvChannelGroup> groupIptvChannels(
 List<M3uChannel> acceptedIptvChannels(
   List<M3uChannel> channels, {
   required bool remote,
-}) =>
-    <M3uChannel>[
-      for (final M3uChannel c in channels)
-        if (c.url.trim().isNotEmpty && (!remote || isNetworkStreamUrl(c.url)))
-          c,
-    ];
+}) => <M3uChannel>[
+  for (final M3uChannel c in channels)
+    if (c.url.trim().isNotEmpty && (!remote || isNetworkStreamUrl(c.url))) c,
+];
 
 /// [importIptvChannels] 的结果。
 class IptvPlaylistImportResult {
@@ -326,7 +331,7 @@ class IptvPlaylistImportResult {
 /// 在 [taken] 里给 [name] 找一个没被占用的合集名（`name` / `name (2)` / …）。
 String _uniqueCollectionName(String name, Set<String> taken) {
   if (!taken.contains(name)) return name;
-  for (int i = 2;; i++) {
+  for (int i = 2; ; i++) {
     final String candidate = '$name ($i)';
     if (!taken.contains(candidate)) return candidate;
   }
@@ -339,13 +344,17 @@ Future<IptvPlaylistImportResult> importIptvChannels({
   required IptvPlaylistSource source,
   required List<M3uChannel> channels,
 }) async {
-  final List<M3uChannel> accepted =
-      acceptedIptvChannels(channels, remote: source.isRemote);
+  final List<M3uChannel> accepted = acceptedIptvChannels(
+    channels,
+    remote: source.isRemote,
+  );
   final String sourceKey = source.sourceKey;
   final String prefix = iptvSourceBookUidPrefix(sourceKey);
   final String videoType = MediaKind.video.dbValue;
-  final List<IptvChannelGroup> groups =
-      groupIptvChannels(accepted, source.listName);
+  final List<IptvChannelGroup> groups = groupIptvChannels(
+    accepted,
+    source.listName,
+  );
 
   final List<int> ids = <int>[];
   String? firstUid;
@@ -353,14 +362,15 @@ Future<IptvPlaylistImportResult> importIptvChannels({
   Set<String> staleUids = <String>{};
 
   await db.transaction(() async {
-    final List<MediaCollectionRow> collections =
-        await db.getAllMediaCollections();
+    final List<MediaCollectionRow> collections = await db
+        .getAllMediaCollections();
     final Map<int, List<MediaCollectionItemRow>> itemsByCollection =
         <int, List<MediaCollectionItemRow>>{};
     for (final MediaCollectionItemRow item
         in await db.getAllCollectionItems()) {
-      (itemsByCollection[item.collectionId] ??= <MediaCollectionItemRow>[])
-          .add(item);
+      (itemsByCollection[item.collectionId] ??= <MediaCollectionItemRow>[]).add(
+        item,
+      );
     }
     bool ownsMember(MediaCollectionItemRow i) =>
         i.mediaType == videoType && i.entryKey.startsWith(prefix);
@@ -369,8 +379,9 @@ Future<IptvPlaylistImportResult> importIptvChannels({
     final List<MediaCollectionRow> owned = <MediaCollectionRow>[
       for (final MediaCollectionRow c in collections)
         if (c.collectionType == 'playlist' &&
-            (itemsByCollection[c.id] ?? const <MediaCollectionItemRow>[])
-                .any(ownsMember))
+            (itemsByCollection[c.id] ?? const <MediaCollectionItemRow>[]).any(
+              ownsMember,
+            ))
           c,
     ];
     final Set<String> playlistNames = <String>{
@@ -380,13 +391,17 @@ Future<IptvPlaylistImportResult> importIptvChannels({
 
     // 分组 → 既有合集：先按名字配；剩下恰好各一个时（用户改过合集名、列表仍是
     // 单分组）直接配对。其余分组新建。
-    final List<MediaCollectionRow?> targets =
-        List<MediaCollectionRow?>.filled(groups.length, null);
-    final List<MediaCollectionRow> unmatched =
-        List<MediaCollectionRow>.of(owned);
+    final List<MediaCollectionRow?> targets = List<MediaCollectionRow?>.filled(
+      groups.length,
+      null,
+    );
+    final List<MediaCollectionRow> unmatched = List<MediaCollectionRow>.of(
+      owned,
+    );
     for (int i = 0; i < groups.length; i++) {
       final int hit = unmatched.indexWhere(
-          (MediaCollectionRow c) => c.name == groups[i].collectionName);
+        (MediaCollectionRow c) => c.name == groups[i].collectionName,
+      );
       if (hit >= 0) targets[i] = unmatched.removeAt(hit);
     }
     final List<int> unpaired = <int>[
@@ -414,13 +429,15 @@ Future<IptvPlaylistImportResult> importIptvChannels({
         if (!desiredSet.add(uid)) continue;
         desired.add(uid);
         if (existingOwnUids.add(uid)) {
-          await repo.saveVideoBook(VideoBooksCompanion(
-            bookUid: Value(uid),
-            title: Value(c.title),
-            videoPath: Value(c.url),
-            embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(nowMs),
-          ));
+          await repo.saveVideoBook(
+            VideoBooksCompanion(
+              bookUid: Value(uid),
+              title: Value(c.title),
+              videoPath: Value(c.url),
+              embeddedSubtitleTrack: const Value<int?>(0),
+              importedAt: Value(nowMs),
+            ),
+          );
         }
       }
       desiredAll.addAll(desired);
@@ -429,11 +446,15 @@ Future<IptvPlaylistImportResult> importIptvChannels({
       final bool created = target == null;
       final int collectionId;
       if (target == null) {
-        final String name =
-            _uniqueCollectionName(group.collectionName, playlistNames);
+        final String name = _uniqueCollectionName(
+          group.collectionName,
+          playlistNames,
+        );
         playlistNames.add(name);
-        collectionId =
-            await db.createMediaCollection(name, collectionType: 'playlist');
+        collectionId = await db.createMediaCollection(
+          name,
+          collectionType: 'playlist',
+        );
       } else {
         collectionId = target.id;
       }
@@ -449,13 +470,22 @@ Future<IptvPlaylistImportResult> importIptvChannels({
       int added = 0;
       for (final String uid in desired) {
         if (currentKeys.contains(uid)) continue;
-        await db.addToCollection(collectionId, MediaKind.video, uid, userIntent: false);
+        await db.addToCollection(
+          collectionId,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
         added++;
       }
       for (final MediaCollectionItemRow item in current) {
         if (!ownsMember(item) || desiredSet.contains(item.entryKey)) continue;
         await db.removeFromCollection(
-            collectionId, MediaKind.video, item.entryKey, userIntent: false);
+          collectionId,
+          MediaKind.video,
+          item.entryKey,
+          userIntent: false,
+        );
         removed++;
       }
       // 有新频道加入时按列表顺序排本来源的成员（其余成员的相对位置不动）。
@@ -476,7 +506,12 @@ Future<IptvPlaylistImportResult> importIptvChannels({
       for (final MediaCollectionItemRow item
           in itemsByCollection[c.id] ?? const <MediaCollectionItemRow>[]) {
         if (!ownsMember(item)) continue;
-        await db.removeFromCollection(c.id, MediaKind.video, item.entryKey, userIntent: false);
+        await db.removeFromCollection(
+          c.id,
+          MediaKind.video,
+          item.entryKey,
+          userIntent: false,
+        );
         removed++;
       }
     }
@@ -623,8 +658,10 @@ Future<int> applyIptvChannelLogos({
           final bool ok = await VideoCoverMutationGate.runExclusive<bool>(
             () async {
               if (!await store.allowsAutoFrameWrite(row.bookUid)) return false;
-              final String out =
-                  p.join(coverDir.path, videoCoverFileName(row.bookUid));
+              final String out = p.join(
+                coverDir.path,
+                videoCoverFileName(row.bookUid),
+              );
               await writeCoverBytesAtomically(bytes: bytes, destPath: out);
               await repo.updateCover(row.bookUid, out);
               await store.markAutoFrameAfterWrite(row.bookUid);
@@ -651,14 +688,17 @@ Future<List<int>?> _downloadLogo(
   Duration timeout,
 ) async {
   try {
-    final http.StreamedResponse res =
-        await client.send(http.Request('GET', Uri.parse(url))).timeout(timeout);
+    final http.StreamedResponse res = await client
+        .send(http.Request('GET', Uri.parse(url)))
+        .timeout(timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       unawaited(res.stream.listen(null).cancel());
       return null;
     }
-    final List<int> bytes =
-        await readBoundedBytes(res.stream, kIptvLogoMaxBytes).timeout(timeout);
+    final List<int> bytes = await readBoundedBytes(
+      res.stream,
+      kIptvLogoMaxBytes,
+    ).timeout(timeout);
     if (bytes.isEmpty) return null;
     if (!looksLikeImageBytes(bytes, res.headers['content-type'])) {
       return null;

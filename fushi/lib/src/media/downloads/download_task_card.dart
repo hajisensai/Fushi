@@ -397,9 +397,7 @@ class _MetricChip extends StatelessWidget {
     final Widget chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: glass
-            ? appleColorsOf(context).fill
-            : cs.surfaceContainerHighest,
+        color: glass ? appleColorsOf(context).fill : cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(FushiM3eShape.small),
       ),
       child: Row(

@@ -28,8 +28,9 @@ void main() {
       externalIds: const <String, String>{'mal': '54857', 'anidb': '11162'},
     );
 
-    final VideoMediaReference? decoded =
-        decodeVideoMediaReference(encodeVideoMediaReference(original));
+    final VideoMediaReference? decoded = decodeVideoMediaReference(
+      encodeVideoMediaReference(original),
+    );
 
     expect(decoded, isNotNull);
     expect(decoded!.providerId, original.providerId);
@@ -60,8 +61,9 @@ void main() {
       title: 'A Movie',
     );
 
-    final VideoMediaReference? decoded =
-        decodeVideoMediaReference(encodeVideoMediaReference(minimal));
+    final VideoMediaReference? decoded = decodeVideoMediaReference(
+      encodeVideoMediaReference(minimal),
+    );
 
     expect(decoded, isNotNull);
     expect(decoded!.originalTitle, isNull);
@@ -75,8 +77,11 @@ void main() {
     expect(decodeVideoMediaReference(''), isNull);
     expect(decodeVideoMediaReference('not-json'), isNull);
     expect(decodeVideoMediaReference('[]'), isNull);
-    expect(decodeVideoMediaReference('{"providerId":"x"}'), isNull,
-        reason: '缺必填字段 = 无效快照');
+    expect(
+      decodeVideoMediaReference('{"providerId":"x"}'),
+      isNull,
+      reason: '缺必填字段 = 无效快照',
+    );
     expect(
       decodeVideoMediaReference(
         '{"providerId":"x","mediaId":"1","title":"t",'

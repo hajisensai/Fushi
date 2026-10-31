@@ -54,20 +54,31 @@ void main() {
     ).readAsStringSync();
 
     test('HighlightBridge JS 不得再持有亮度公式（Rec.709 系数 / _luminance）', () {
-      expect(bridgeSrc.contains('0.2126'), isFalse,
-          reason: 'JS 侧第二套亮度公式（Rec.709）必须删除，防再度分叉');
-      expect(bridgeSrc.contains('_luminance'), isFalse,
-          reason: 'JS 亮度函数必须删除，深浅只从 Dart 注入');
+      expect(
+        bridgeSrc.contains('0.2126'),
+        isFalse,
+        reason: 'JS 侧第二套亮度公式（Rec.709）必须删除，防再度分叉',
+      );
+      expect(
+        bridgeSrc.contains('_luminance'),
+        isFalse,
+        reason: 'JS 亮度函数必须删除，深浅只从 Dart 注入',
+      );
     });
 
     test('深浅 bool 经既有 bridge 注入且来自单一真相', () {
-      expect(bridgeSrc.contains('__fushiHighlightBgDark'), isTrue,
-          reason: 'JS 读 Dart 注入的 __fushiHighlightBgDark');
       expect(
-          RegExp(r'ReaderContentStyles\.isDarkBackground\(\s*backgroundHex\s*,?\s*\)')
-              .hasMatch(bridgeSrc),
-          isTrue,
-          reason: 'applyHighlights 必须用滚动条同款单一真相计算深浅');
+        bridgeSrc.contains('__fushiHighlightBgDark'),
+        isTrue,
+        reason: 'JS 读 Dart 注入的 __fushiHighlightBgDark',
+      );
+      expect(
+        RegExp(
+          r'ReaderContentStyles\.isDarkBackground\(\s*backgroundHex\s*,?\s*\)',
+        ).hasMatch(bridgeSrc),
+        isTrue,
+        reason: 'applyHighlights 必须用滚动条同款单一真相计算深浅',
+      );
     });
   });
 }

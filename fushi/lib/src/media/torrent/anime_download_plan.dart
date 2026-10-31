@@ -346,31 +346,38 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
       id: id,
       createdAtMs: raw['createdAtMs'] is int ? raw['createdAtMs'] as int : 0,
       anilistId: raw['anilistId'] is int ? raw['anilistId'] as int : null,
-      seriesTitle:
-          raw['seriesTitle'] is String ? raw['seriesTitle'] as String : '',
+      seriesTitle: raw['seriesTitle'] is String
+          ? raw['seriesTitle'] as String
+          : '',
       coverUrl: raw['coverUrl'] is String ? raw['coverUrl'] as String : null,
-      torrentTitle:
-          raw['torrentTitle'] is String ? raw['torrentTitle'] as String : '',
+      torrentTitle: raw['torrentTitle'] is String
+          ? raw['torrentTitle'] as String
+          : '',
       magnet: raw['magnet'] is String ? raw['magnet'] as String : '',
-      qbCategory:
-          raw['qbCategory'] is String ? raw['qbCategory'] as String : '',
+      qbCategory: raw['qbCategory'] is String
+          ? raw['qbCategory'] as String
+          : '',
       subtitles: subtitles,
       status: raw['status'] is String && (raw['status'] as String).isNotEmpty
           ? raw['status'] as String
           : AnimeDownloadPlan.statusDownloading,
-      failReason:
-          raw['failReason'] is String ? raw['failReason'] as String : null,
-      collectionId:
-          raw['collectionId'] is int ? raw['collectionId'] as int : null,
+      failReason: raw['failReason'] is String
+          ? raw['failReason'] as String
+          : null,
+      collectionId: raw['collectionId'] is int
+          ? raw['collectionId'] as int
+          : null,
       importedEarly: raw['importedEarly'] == true,
       importInProgress: raw['importInProgress'] == true,
       // 缺字段（老计划）→ 视频（既有番剧计划行为不变）。
-      contentKind: raw['contentKind'] is String &&
+      contentKind:
+          raw['contentKind'] is String &&
               (raw['contentKind'] as String).isNotEmpty
           ? raw['contentKind'] as String
           : AnimeDownloadPlan.kindVideo,
-      jimakuEntryId:
-          raw['jimakuEntryId'] is int ? raw['jimakuEntryId'] as int : null,
+      jimakuEntryId: raw['jimakuEntryId'] is int
+          ? raw['jimakuEntryId'] as int
+          : null,
       jimakuEntryName: raw['jimakuEntryName'] is String
           ? raw['jimakuEntryName'] as String
           : null,
@@ -380,19 +387,22 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
       // 缺字段（老计划）→ 字幕在选种时就下好了：有暂存条目即 resolved，否则 none。
       // 绝不能落成 pending，否则老计划会在完成时被当成「还没取字幕」再取一遍，
       // 把用户已有的暂存/sidecar 搅乱。
-      subtitleStatus: raw['subtitleStatus'] is String &&
+      subtitleStatus:
+          raw['subtitleStatus'] is String &&
               (raw['subtitleStatus'] as String).isNotEmpty
           ? raw['subtitleStatus'] as String
           : (subtitles.isEmpty
-              ? AnimeDownloadPlan.subtitleNone
-              : AnimeDownloadPlan.subtitleResolved),
-      subtitleNote:
-          raw['subtitleNote'] is String ? raw['subtitleNote'] as String : null,
+                ? AnimeDownloadPlan.subtitleNone
+                : AnimeDownloadPlan.subtitleResolved),
+      subtitleNote: raw['subtitleNote'] is String
+          ? raw['subtitleNote'] as String
+          : null,
       // 缺字段（BUG-1696 之前的计划）→ 0 次尝试。对已经是 unavailable 的老计划，
       // 这意味着它们会在下一轮 tick 立刻获得**一次**重试机会，之后照 backoff 走。
       // 这正是想要的：那批计划就是被旧的「取不到就算了」卡住的。
-      subtitleAttempts:
-          raw['subtitleAttempts'] is int ? raw['subtitleAttempts'] as int : 0,
+      subtitleAttempts: raw['subtitleAttempts'] is int
+          ? raw['subtitleAttempts'] as int
+          : 0,
       subtitleLastAttemptAtMs: raw['subtitleLastAttemptAtMs'] is int
           ? raw['subtitleLastAttemptAtMs'] as int
           : null,

@@ -18,9 +18,8 @@ import 'package:http/testing.dart';
 /// GET 版与 `InterconnectSyncBackend` 走 WebDavOps 的第四份。抄漏一处钉扎/回收就是真
 /// 事故（TODO-961 gap①），故收敛成一份并在此直接锁语义——制卡侧原本只有 1 个测试，
 /// 收敛后它的传输层由本文件与 lookup 的用例共同覆盖。
-FushiDatabase _testDb() => FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory()),
-    );
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 Future<SyncRepository> _repo({
   required FushiDatabase db,
@@ -33,9 +32,7 @@ Future<SyncRepository> _repo({
   return repo;
 }
 
-Future<InterconnectPostOutcome> _post(
-  InterconnectPostTransport transport,
-) =>
+Future<InterconnectPostOutcome> _post(InterconnectPostTransport transport) =>
     transport.post(
       path: '/api/probe',
       body: const <String, dynamic>{'k': 'v'},
@@ -163,10 +160,14 @@ void main() {
 
     final InterconnectPostOutcome outcome = await _post(transport);
     expect(outcome.json?['ok'], isTrue);
-    expect(authByHost['a'],
-        'Basic ${base64Encode(utf8.encode('hibiki:token-a'))}');
-    expect(authByHost['b'],
-        'Basic ${base64Encode(utf8.encode('hibiki:token-b'))}');
+    expect(
+      authByHost['a'],
+      'Basic ${base64Encode(utf8.encode('hibiki:token-a'))}',
+    );
+    expect(
+      authByHost['b'],
+      'Basic ${base64Encode(utf8.encode('hibiki:token-b'))}',
+    );
   });
 
   // 老配置（行上无 token）回落全局键，升级路径零破坏。
@@ -252,8 +253,11 @@ void main() {
 
     final InterconnectPostOutcome outcome = await _post(transport);
     expect(outcome.json, isNull);
-    expect(outcome.allUnreachable, isFalse,
-        reason: '拿到了 HTTP 响应就算可达，哪怕响应体不是 JSON');
+    expect(
+      outcome.allUnreachable,
+      isFalse,
+      reason: '拿到了 HTTP 响应就算可达，哪怕响应体不是 JSON',
+    );
   });
 
   test('未配对 / 无 token 不算不可达', () async {
@@ -319,8 +323,9 @@ void main() {
 
     final InterconnectPostOutcome outcome = await _post(transport);
     expect(outcome.json?['ok'], isTrue);
-    expect(pinnedFor, <String>['aa:bb:cc'],
-        reason: 'https 带指纹必须用该指纹建钉扎 client');
+    expect(pinnedFor, <String>[
+      'aa:bb:cc',
+    ], reason: 'https 带指纹必须用该指纹建钉扎 client');
     expect(sharedUsed, isFalse, reason: '注入的 keep-alive client 绝不能旁路证书钉扎');
     expect(pinnedClosed, isTrue, reason: '每候选的钉扎 client 用完即关，不泄漏 socket');
   });
@@ -394,8 +399,10 @@ void main() {
 
   group('interconnectEndpointUri', () {
     test('拼端点并清空查询串', () {
-      final Uri? uri =
-          interconnectEndpointUri('http://h:8765/?x=1', '/api/probe');
+      final Uri? uri = interconnectEndpointUri(
+        'http://h:8765/?x=1',
+        '/api/probe',
+      );
       expect(uri?.host, 'h');
       expect(uri?.path, '/api/probe');
       expect(uri?.query, isEmpty);
@@ -480,5 +487,4 @@ class _ClosableMockClient extends MockClient {
     onClose();
     super.close();
   }
-
 }

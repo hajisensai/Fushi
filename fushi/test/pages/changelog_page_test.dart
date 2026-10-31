@@ -12,30 +12,30 @@ void main() {
   });
 
   Widget wrap(Widget home) {
-    return TranslationProvider(
-      child: MaterialApp(home: home),
-    );
+    return TranslationProvider(child: MaterialApp(home: home));
   }
 
   testWidgets('列表态渲染版本号、日期、预发布徽标与正文', (WidgetTester tester) async {
-    await tester.pumpWidget(wrap(
-      ChangelogPage(
-        initialReleases: const <Map<String, dynamic>>[
-          <String, dynamic>{
-            'tag_name': 'v1.2.0',
-            'published_at': '2026-07-10T08:00:00Z',
-            'prerelease': false,
-            'body': 'Stable release notes body',
-          },
-          <String, dynamic>{
-            'tag_name': 'v1.3.0-beta.1',
-            'published_at': '2026-07-15T09:30:00Z',
-            'prerelease': true,
-            'body': 'Beta notes',
-          },
-        ],
+    await tester.pumpWidget(
+      wrap(
+        ChangelogPage(
+          initialReleases: const <Map<String, dynamic>>[
+            <String, dynamic>{
+              'tag_name': 'v1.2.0',
+              'published_at': '2026-07-10T08:00:00Z',
+              'prerelease': false,
+              'body': 'Stable release notes body',
+            },
+            <String, dynamic>{
+              'tag_name': 'v1.3.0-beta.1',
+              'published_at': '2026-07-15T09:30:00Z',
+              'prerelease': true,
+              'body': 'Beta notes',
+            },
+          ],
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // 版本号
@@ -54,9 +54,9 @@ void main() {
   });
 
   testWidgets('空列表渲染空态与两个逃生口', (WidgetTester tester) async {
-    await tester.pumpWidget(wrap(
-      const ChangelogPage(initialReleases: <Map<String, dynamic>>[]),
-    ));
+    await tester.pumpWidget(
+      wrap(const ChangelogPage(initialReleases: <Map<String, dynamic>>[])),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.changelog_empty), findsOneWidget);

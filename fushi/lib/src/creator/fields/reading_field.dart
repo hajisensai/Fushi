@@ -8,12 +8,12 @@ import 'package:fushi/models.dart';
 class ReadingField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ReadingField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Reading',
-          description: 'Pronunciation or speech pattern.',
-          icon: Icons.surround_sound_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Reading',
+        description: 'Pronunciation or speech pattern.',
+        icon: Icons.surround_sound_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ReadingField get instance => _instance;

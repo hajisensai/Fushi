@@ -41,15 +41,17 @@ void main() {
       expect(t.end(), isFalse);
     });
 
-    test('leftward (negative) over-threshold drag also passes (bidirectional)',
-        () {
-      final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
-      t.begin(sensitivity: 0.6);
-      for (int i = 0; i < 12; i++) {
-        t.update(const Offset(-10, 0));
-      }
-      expect(t.end(), isTrue);
-    });
+    test(
+      'leftward (negative) over-threshold drag also passes (bidirectional)',
+      () {
+        final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
+        t.begin(sensitivity: 0.6);
+        for (int i = 0; i < 12; i++) {
+          t.update(const Offset(-10, 0));
+        }
+        expect(t.end(), isTrue);
+      },
+    );
 
     test('end resets the accumulator (next gesture starts clean)', () {
       final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
@@ -88,51 +90,60 @@ void main() {
       final double threshold = swipeDismissThreshold(0.6);
       t.begin(sensitivity: 0.6);
       t.update(Offset(threshold, 0));
-      expect(t.end(), isFalse,
-          reason: 'end uses strict > threshold, matching mobile _dragX.abs()');
+      expect(
+        t.end(),
+        isFalse,
+        reason: 'end uses strict > threshold, matching mobile _dragX.abs()',
+      );
     });
 
     // ── BUG-1757: axis decision ───────────────────────────────────────────
 
-    test('purely vertical drag never passes and is never marked horizontal',
-        () {
-      final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
-      t.begin(sensitivity: 0.6);
-      for (int i = 0; i < 20; i++) {
-        t.update(const Offset(0, 20)); // 400px of scrolling
-      }
-      expect(t.debugIsHorizontal, isFalse);
-      expect(t.end(), isFalse);
-    });
+    test(
+      'purely vertical drag never passes and is never marked horizontal',
+      () {
+        final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
+        t.begin(sensitivity: 0.6);
+        for (int i = 0; i < 20; i++) {
+          t.update(const Offset(0, 20)); // 400px of scrolling
+        }
+        expect(t.debugIsHorizontal, isFalse);
+        expect(t.end(), isFalse);
+      },
+    );
 
-    test('vertically-dominant diagonal drag is treated as scrolling, not swipe',
-        () {
-      final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
-      t.begin(sensitivity: 0.6);
-      // Real thumb scrolls drift sideways; 1:4 is nowhere near the 2.5x
-      // horizontal dominance required, and the accumulated |dx| (150px) would
-      // otherwise sail past the ~94px threshold and close a layer by accident.
-      for (int i = 0; i < 30; i++) {
-        t.update(const Offset(5, 20));
-      }
-      expect(t.debugIsHorizontal, isFalse);
-      expect(t.end(), isFalse);
-    });
+    test(
+      'vertically-dominant diagonal drag is treated as scrolling, not swipe',
+      () {
+        final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
+        t.begin(sensitivity: 0.6);
+        // Real thumb scrolls drift sideways; 1:4 is nowhere near the 2.5x
+        // horizontal dominance required, and the accumulated |dx| (150px) would
+        // otherwise sail past the ~94px threshold and close a layer by accident.
+        for (int i = 0; i < 30; i++) {
+          t.update(const Offset(5, 20));
+        }
+        expect(t.debugIsHorizontal, isFalse);
+        expect(t.end(), isFalse);
+      },
+    );
 
-    test('once decided vertical, a later horizontal swing cannot re-claim it',
-        () {
-      final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
-      t.begin(sensitivity: 0.6);
-      t.update(const Offset(0, 40)); // decides: vertical
-      expect(t.debugIsHorizontal, isFalse);
-      // The finger now yanks sideways well past the threshold. The layer must
-      // NOT close: this gesture already belongs to the content underneath.
-      for (int i = 0; i < 20; i++) {
-        t.update(const Offset(20, 0));
-      }
-      expect(t.debugIsHorizontal, isFalse);
-      expect(t.end(), isFalse);
-    });
+    test(
+      'once decided vertical, a later horizontal swing cannot re-claim it',
+      () {
+        final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();
+        t.begin(sensitivity: 0.6);
+        t.update(const Offset(0, 40)); // decides: vertical
+        expect(t.debugIsHorizontal, isFalse);
+        // The finger now yanks sideways well past the threshold. The layer must
+        // NOT close: this gesture already belongs to the content underneath.
+        for (int i = 0; i < 20; i++) {
+          t.update(const Offset(20, 0));
+        }
+        expect(t.debugIsHorizontal, isFalse);
+        expect(t.end(), isFalse);
+      },
+    );
 
     test('horizontally-dominant diagonal drag still passes', () {
       final BarrierSwipeDismissTracker t = BarrierSwipeDismissTracker();

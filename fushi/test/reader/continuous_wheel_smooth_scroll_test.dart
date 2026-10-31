@@ -28,9 +28,7 @@ void main() {
     try {
       final File payload = File('${temp.path}/helper.json')
         ..writeAsStringSync(
-          jsonEncode(<String, String>{
-            'helper': kContinuousWheelScrollJs,
-          }),
+          jsonEncode(<String, String>{'helper': kContinuousWheelScrollJs}),
         );
       final ProcessResult result = await Process.run(nodeExe, <String>[
         'test/reader/continuous_wheel_smooth_scroll_harness.mjs',

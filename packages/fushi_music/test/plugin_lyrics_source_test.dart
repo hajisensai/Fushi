@@ -86,7 +86,10 @@ void main() {
     expect(c.first.ref, <String, Object?>{'id': 7, 'k': 'x'});
     expect(c[1].title, 'neg');
     expect(c[1].durationMs, isNull, reason: '负时长当缺失');
-    expect(c.map((MusicPluginLyricsCandidate x) => x.title), isNot(contains('huge')));
+    expect(
+      c.map((MusicPluginLyricsCandidate x) => x.title),
+      isNot(contains('huge')),
+    );
     expect(c[2].title, 'q:夜曲 周杰伦', reason: 'query 原样传给插件');
 
     final MusicPluginLyrics? l = await src.lyricsFetch(c.first.ref);

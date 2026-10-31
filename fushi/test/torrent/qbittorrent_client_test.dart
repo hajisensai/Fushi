@@ -39,11 +39,17 @@ void main() {
   group('normalizeQbBaseUrl', () {
     test('strips trailing slashes', () {
       expect(
-          normalizeQbBaseUrl('http://qb.local:8080/'), 'http://qb.local:8080');
-      expect(normalizeQbBaseUrl('http://qb.local:8080///'),
-          'http://qb.local:8080');
-      expect(normalizeQbBaseUrl('  http://qb.local:8080 '),
-          'http://qb.local:8080');
+        normalizeQbBaseUrl('http://qb.local:8080/'),
+        'http://qb.local:8080',
+      );
+      expect(
+        normalizeQbBaseUrl('http://qb.local:8080///'),
+        'http://qb.local:8080',
+      );
+      expect(
+        normalizeQbBaseUrl('  http://qb.local:8080 '),
+        'http://qb.local:8080',
+      );
     });
 
     test('leaves clean url untouched', () {
@@ -53,7 +59,10 @@ void main() {
 
   group('extractSessionCookie', () {
     test('extracts SID from a single cookie', () {
-      expect(extractSessionCookie('SID=abc123; HttpOnly; path=/'), 'SID=abc123');
+      expect(
+        extractSessionCookie('SID=abc123; HttpOnly; path=/'),
+        'SID=abc123',
+      );
     });
 
     test('extracts SID from a joined multi-cookie header', () {
@@ -94,9 +103,13 @@ void main() {
       password: 'p',
       client: MockClient((http.Request request) async {
         if (request.url.path == '/api/v2/auth/login') {
-          return http.Response('Ok.', 200, headers: <String, String>{
-            'set-cookie': 'QBT_SID_8080=tok52; HttpOnly; path=/',
-          });
+          return http.Response(
+            'Ok.',
+            200,
+            headers: <String, String>{
+              'set-cookie': 'QBT_SID_8080=tok52; HttpOnly; path=/',
+            },
+          );
         }
         sentCookies.add(request.headers['cookie']);
         return http.Response('v5.2.0', 200);
@@ -126,30 +139,36 @@ void main() {
       client.close();
     });
 
-    test('succeeds on 200 Ok. with SID cookie and sends Referer + form',
-        () async {
-      late http.Request seen;
-      final QBittorrentClient client = QBittorrentClient(
-        baseUrl: 'http://qb.local:8080/',
-        username: 'admin',
-        password: 'secret',
-        client: MockClient((http.Request request) async {
-          seen = request;
-          expect(
-              request.url.toString(), 'http://qb.local:8080/api/v2/auth/login');
-          return http.Response(
-            'Ok.',
-            200,
-            headers: <String, String>{'set-cookie': 'SID=tok1; path=/'},
-          );
-        }),
-      );
-      expect(await client.login(), isTrue);
-      expect(_header(seen, 'Referer'), 'http://qb.local:8080');
-      expect(seen.bodyFields,
-          <String, String>{'username': 'admin', 'password': 'secret'});
-      client.close();
-    });
+    test(
+      'succeeds on 200 Ok. with SID cookie and sends Referer + form',
+      () async {
+        late http.Request seen;
+        final QBittorrentClient client = QBittorrentClient(
+          baseUrl: 'http://qb.local:8080/',
+          username: 'admin',
+          password: 'secret',
+          client: MockClient((http.Request request) async {
+            seen = request;
+            expect(
+              request.url.toString(),
+              'http://qb.local:8080/api/v2/auth/login',
+            );
+            return http.Response(
+              'Ok.',
+              200,
+              headers: <String, String>{'set-cookie': 'SID=tok1; path=/'},
+            );
+          }),
+        );
+        expect(await client.login(), isTrue);
+        expect(_header(seen, 'Referer'), 'http://qb.local:8080');
+        expect(seen.bodyFields, <String, String>{
+          'username': 'admin',
+          'password': 'secret',
+        });
+        client.close();
+      },
+    );
 
     test('fails on 200 Fails. body (wrong credentials)', () async {
       final QBittorrentClient client = QBittorrentClient(
@@ -157,10 +176,12 @@ void main() {
         username: 'admin',
         password: 'wrong',
         // 真实 qb：登录失败回 200 Fails.；未认证访问业务接口回 403。
-        client: MockClient((http.Request request) async =>
-            request.url.path == '/api/v2/auth/login'
-                ? http.Response('Fails.', 200)
-                : http.Response('Forbidden', 403)),
+        client: MockClient(
+          (http.Request request) async =>
+              request.url.path == '/api/v2/auth/login'
+              ? http.Response('Fails.', 200)
+              : http.Response('Forbidden', 403),
+        ),
       );
       expect(await client.login(), isFalse);
       // BUG-1295：失败原因可读，不再折叠成裸 null。
@@ -193,10 +214,13 @@ void main() {
         baseUrl: 'http://qb.local:8080',
         username: 'admin',
         password: 'secret',
-        client: MockClient((http.Request request) async => http.Response(
+        client: MockClient(
+          (http.Request request) async => http.Response(
             'Your IP address has been banned after too many failed '
             'authentication attempts.',
-            403)),
+            403,
+          ),
+        ),
       );
       expect(await client.fetchVersion(), isNull);
       expect(client.lastFailure, contains('banned'));
@@ -238,10 +262,12 @@ void main() {
         baseUrl: 'http://qb.local:8080',
         username: 'admin',
         password: 'wrong',
-        client: MockClient((http.Request request) async =>
-            request.url.path == '/api/v2/auth/login'
-                ? http.Response('Fails.', 200)
-                : http.Response('Forbidden', 403)),
+        client: MockClient(
+          (http.Request request) async =>
+              request.url.path == '/api/v2/auth/login'
+              ? http.Response('Fails.', 200)
+              : http.Response('Forbidden', 403),
+        ),
       );
       expect(await client.fetchVersion(), isNull);
       expect(client.lastFailure, contains('rejected'));
@@ -289,24 +315,26 @@ void main() {
       client.close();
     });
 
-    test('persistent 403 fails after a single retry, no infinite loop',
-        () async {
-      final List<int> logins = <int>[];
-      int versionCalls = 0;
-      final QBittorrentClient client = QBittorrentClient(
-        baseUrl: 'http://qb.local:8080',
-        username: 'admin',
-        password: 'secret',
-        client: _mockWithLogin(logins, (http.Request request) async {
-          versionCalls++;
-          return http.Response('Forbidden', 403);
-        }),
-      );
-      expect(await client.fetchVersion(), isNull);
-      expect(logins.length, 2);
-      expect(versionCalls, 2);
-      client.close();
-    });
+    test(
+      'persistent 403 fails after a single retry, no infinite loop',
+      () async {
+        final List<int> logins = <int>[];
+        int versionCalls = 0;
+        final QBittorrentClient client = QBittorrentClient(
+          baseUrl: 'http://qb.local:8080',
+          username: 'admin',
+          password: 'secret',
+          client: _mockWithLogin(logins, (http.Request request) async {
+            versionCalls++;
+            return http.Response('Forbidden', 403);
+          }),
+        );
+        expect(await client.fetchVersion(), isNull);
+        expect(logins.length, 2);
+        expect(versionCalls, 2);
+        client.close();
+      },
+    );
   });
 
   group('addTorrents', () {
@@ -340,36 +368,38 @@ void main() {
       client.close();
     });
 
-    test('sequentialDownload / firstLastPiecePrio flags land in form',
-        () async {
-      final List<int> logins = <int>[];
-      late http.Request seen;
-      final QBittorrentClient client = QBittorrentClient(
-        baseUrl: 'http://qb.local:8080',
-        username: 'admin',
-        password: 'secret',
-        client: _mockWithLogin(logins, (http.Request request) async {
-          seen = request;
-          return http.Response('Ok.', 200);
-        }),
-      );
-      expect(
-        await client.addTorrents(
-          <String>['magnet:?xt=x'],
-          category: 'hibiki',
-          sequentialDownload: true,
-          firstLastPiecePrio: true,
-        ),
-        isTrue,
-      );
-      expect(seen.bodyFields, <String, String>{
-        'urls': 'magnet:?xt=x',
-        'category': 'hibiki',
-        'sequentialDownload': 'true',
-        'firstLastPiecePrio': 'true',
-      });
-      client.close();
-    });
+    test(
+      'sequentialDownload / firstLastPiecePrio flags land in form',
+      () async {
+        final List<int> logins = <int>[];
+        late http.Request seen;
+        final QBittorrentClient client = QBittorrentClient(
+          baseUrl: 'http://qb.local:8080',
+          username: 'admin',
+          password: 'secret',
+          client: _mockWithLogin(logins, (http.Request request) async {
+            seen = request;
+            return http.Response('Ok.', 200);
+          }),
+        );
+        expect(
+          await client.addTorrents(
+            <String>['magnet:?xt=x'],
+            category: 'hibiki',
+            sequentialDownload: true,
+            firstLastPiecePrio: true,
+          ),
+          isTrue,
+        );
+        expect(seen.bodyFields, <String, String>{
+          'urls': 'magnet:?xt=x',
+          'category': 'hibiki',
+          'sequentialDownload': 'true',
+          'firstLastPiecePrio': 'true',
+        });
+        client.close();
+      },
+    );
 
     test('omits optional fields and fails on non-Ok body', () async {
       final List<int> logins = <int>[];
@@ -423,22 +453,23 @@ void main() {
         password: 'secret',
         client: _mockWithLogin(logins, (http.Request request) async {
           paths.add(request.url.path);
-          final bool renamed = request.url.path.endsWith('/stop') ||
+          final bool renamed =
+              request.url.path.endsWith('/stop') ||
               request.url.path.endsWith('/start');
           return http.Response('', renamed ? 200 : 404);
         }),
       );
       expect(await client.pauseTorrent('abc123'), isTrue);
-      expect(
-        paths,
-        <String>['/api/v2/torrents/pause', '/api/v2/torrents/stop'],
-      );
+      expect(paths, <String>[
+        '/api/v2/torrents/pause',
+        '/api/v2/torrents/stop',
+      ]);
       paths.clear();
       expect(await client.resumeTorrent('abc123'), isTrue);
-      expect(
-        paths,
-        <String>['/api/v2/torrents/resume', '/api/v2/torrents/start'],
-      );
+      expect(paths, <String>[
+        '/api/v2/torrents/resume',
+        '/api/v2/torrents/start',
+      ]);
       client.close();
     });
 
@@ -472,8 +503,9 @@ void main() {
         }),
       );
       expect(await client.pauseTorrent('abc123'), isFalse);
-      expect(paths, <String>['/api/v2/torrents/pause'],
-          reason: '500 不是「端点已改名」的证据，盲目重试只会放大故障');
+      expect(paths, <String>[
+        '/api/v2/torrents/pause',
+      ], reason: '500 不是「端点已改名」的证据，盲目重试只会放大故障');
       client.close();
     });
   });
@@ -527,8 +559,9 @@ void main() {
           return http.Response(body, 200);
         }),
       );
-      final List<TorrentSnapshot> infos =
-          await client.fetchTorrents(category: 'hibiki-anime');
+      final List<TorrentSnapshot> infos = await client.fetchTorrents(
+        category: 'hibiki-anime',
+      );
       expect(infos, hasLength(1));
       expect(infos.first.hash, 'aaa111');
       expect(infos.first.name, 'Show S01');
@@ -569,8 +602,9 @@ void main() {
       expect(info.uploadedBytes, 1024);
       expect(info.numPeers, 5);
       // 字段缺省 → 安全 0，不影响老响应。
-      final TorrentSnapshot bare =
-          parseQbTorrentInfos('[{"hash":"h2"}]').single;
+      final TorrentSnapshot bare = parseQbTorrentInfos(
+        '[{"hash":"h2"}]',
+      ).single;
       expect(bare.downRateBps, 0);
       expect(bare.upRateBps, 0);
       expect(bare.downloadedBytes, 0);
@@ -583,8 +617,9 @@ void main() {
       expect(parseQbTorrentInfos('{"a":1}'), isEmpty);
       expect(parseQbTorrentInfos('[1, "x", null]'), isEmpty);
       // 缺 hash 的条目跳过；其余字段缺省用安全默认值。
-      final List<TorrentSnapshot> infos =
-          parseQbTorrentInfos('[{"name":"no hash"},{"hash":"h2"}]');
+      final List<TorrentSnapshot> infos = parseQbTorrentInfos(
+        '[{"name":"no hash"},{"hash":"h2"}]',
+      );
       expect(infos, hasLength(1));
       expect(infos.single.hash, 'h2');
       expect(infos.single.name, '');
@@ -624,8 +659,11 @@ void main() {
         'queuedUP',
         'forcedUP',
       ]) {
-        expect(make(state: state, progress: 0.99).isComplete, isTrue,
-            reason: state);
+        expect(
+          make(state: state, progress: 0.99).isComplete,
+          isTrue,
+          reason: state,
+        );
       }
     });
 
@@ -636,11 +674,14 @@ void main() {
 
     test('incomplete and error states are not complete', () {
       expect(make(progress: 0.5, amountLeft: 100).isComplete, isFalse);
-      expect(make(state: 'error', progress: 1.0, amountLeft: 0).isComplete,
-          isFalse);
       expect(
-          make(state: 'missingFiles', progress: 1.0, amountLeft: 0).isComplete,
-          isFalse);
+        make(state: 'error', progress: 1.0, amountLeft: 0).isComplete,
+        isFalse,
+      );
+      expect(
+        make(state: 'missingFiles', progress: 1.0, amountLeft: 0).isComplete,
+        isFalse,
+      );
     });
   });
 
@@ -671,8 +712,9 @@ void main() {
           return http.Response(body, 200);
         }),
       );
-      final List<TorrentFileEntry> files =
-          await client.fetchTorrentFiles('aaa111');
+      final List<TorrentFileEntry> files = await client.fetchTorrentFiles(
+        'aaa111',
+      );
       expect(files, hasLength(2));
       expect(files.first.name, 'Season 01/EP01.mkv');
       expect(files.first.size, 734003200);
@@ -686,8 +728,9 @@ void main() {
     test('tolerates bad JSON and missing fields', () {
       expect(parseQbTorrentFiles('not json'), isEmpty);
       expect(parseQbTorrentFiles('{"a":1}'), isEmpty);
-      final List<TorrentFileEntry> files =
-          parseQbTorrentFiles('[{"size":1},{"name":"only-name.mkv"}]');
+      final List<TorrentFileEntry> files = parseQbTorrentFiles(
+        '[{"size":1},{"name":"only-name.mkv"}]',
+      );
       expect(files, hasLength(1));
       expect(files.single.name, 'only-name.mkv');
       expect(files.single.size, 0);
@@ -715,13 +758,10 @@ void main() {
     );
 
     expect(
-      await client.addTrackers(
-        'aaa111',
-        const <String>[
-          'udp://one.example:80/announce',
-          'https://two.example/announce',
-        ],
-      ),
+      await client.addTrackers('aaa111', const <String>[
+        'udp://one.example:80/announce',
+        'https://two.example/announce',
+      ]),
       isTrue,
     );
     expect(logins, hasLength(1));

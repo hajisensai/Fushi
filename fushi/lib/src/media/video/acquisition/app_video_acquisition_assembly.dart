@@ -82,14 +82,14 @@ VideoAcquisitionService createAppVideoAcquisitionService({
     pipeline: pipeline,
     sources: sources,
     backendTarget: appModel.currentVideoDownloadBackendTarget,
-    persistPreference:
-        (VideoAcquisitionPreference preference, String value) =>
-            switch (preference) {
-              VideoAcquisitionPreference.quality =>
-                prefs.setAiVideoDownloadQuality(value),
-              VideoAcquisitionPreference.subtitleLanguage =>
-                prefs.setAiVideoDownloadSubtitleLanguage(value),
-            },
+    persistPreference: (VideoAcquisitionPreference preference, String value) =>
+        switch (preference) {
+          VideoAcquisitionPreference.quality => prefs.setAiVideoDownloadQuality(
+            value,
+          ),
+          VideoAcquisitionPreference.subtitleLanguage =>
+            prefs.setAiVideoDownloadSubtitleLanguage(value),
+        },
     setSeriesSubtitleLanguage: appModel.setJimakuPreferredLanguage,
     checkSubscriptionsNow: () async =>
         appModel.videoDownloadSubscriptionService?.checkNow(),
@@ -98,7 +98,9 @@ VideoAcquisitionService createAppVideoAcquisitionService({
 
 /// 互联 host 的 AI 助手：能力判断与首页入口同一组门（iOS 合规 / 浏览模块 / AI 指派 /
 /// 下载就绪 / 受管来源），缺什么回稳定短码；每场会话自建一份发现服务，会话结束即关。
-VideoAcquisitionAssistantHost createVideoAcquisitionAssistantHost(AppModel appModel) => VideoAcquisitionAssistantHost(
+VideoAcquisitionAssistantHost createVideoAcquisitionAssistantHost(
+  AppModel appModel,
+) => VideoAcquisitionAssistantHost(
   videoAcquireBlocker: () async {
     if (!StoreRestrictedCapability.downloads.isAvailable ||
         !StoreRestrictedCapability.externalDiscovery.isAvailable ||

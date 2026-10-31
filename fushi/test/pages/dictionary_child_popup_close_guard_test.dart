@@ -9,8 +9,9 @@ void main() {
   String read(String path) => File(path).readAsStringSync();
 
   test('shared popup layer sizes action affordances consistently', () {
-    final String layer =
-        read('lib/src/pages/implementations/dictionary_popup_layer.dart');
+    final String layer = read(
+      'lib/src/pages/implementations/dictionary_popup_layer.dart',
+    );
 
     expect(layer, contains('final VoidCallback? onBack;'));
     expect(layer, contains('Icons.close'));
@@ -32,53 +33,76 @@ void main() {
   });
 
   test('mixin hosts route nested layers through right-side close', () {
-    final String mixin =
-        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    final String mixin = read(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    );
 
     expect(mixin, contains('onClose: () => onPop(index)'));
     expect(mixin, contains('onBack: null'));
   });
 
-  test('standalone popup keeps search close for base and X-pops child layers',
-      () {
-    final String popup =
-        read('lib/src/pages/implementations/popup_dictionary_page.dart');
+  test(
+    'standalone popup keeps search close for base and X-pops child layers',
+    () {
+      final String popup = read(
+        'lib/src/pages/implementations/popup_dictionary_page.dart',
+      );
 
-    expect(popup, contains('onClose: isBase ? null : () => _popAt(index)'));
-    expect(popup, contains('onBack: null'));
-    expect(popup, contains('swipeDismissible: !isBase'));
-  });
+      expect(popup, contains('onClose: isBase ? null : () => _popAt(index)'));
+      expect(popup, contains('onBack: null'));
+      expect(popup, contains('swipeDismissible: !isBase'));
+    },
+  );
 
   // TODO-951 症状A：app 外查词父弹窗点卡片本体只关一层（后代），不再 base 整窗 _close。
-  test('standalone popup onTapOutside closes descendants of the tapped layer',
-      () {
-    final String popup =
-        read('lib/src/pages/implementations/popup_dictionary_page.dart');
+  test(
+    'standalone popup onTapOutside closes descendants of the tapped layer',
+    () {
+      final String popup = read(
+        'lib/src/pages/implementations/popup_dictionary_page.dart',
+      );
 
-    // 点本层卡片本体空白只关其后代（带本层 index 走 truncateTo(index+1)）。
-    expect(popup, contains('onTapOutside: () => _dismissDescendantsOf(index)'),
-        reason: '点某层本体空白只关其后代，不再 base 层 _close 整窗 / nested 连本层一起关');
-    // 旧的「base 整窗关 / nested 连本层关」一律不得残留。
-    expect(popup, isNot(contains('onTapOutside: isBase ? _close')),
-        reason: 'base 层 onTapOutside 不再整窗关');
-    // 关后代原语：truncateTo(index+1)，点顶层（无后代）no-op。
-    expect(popup, contains('void _dismissDescendantsOf(int index)'),
-        reason: '关后代 helper 存在');
-    expect(popup, contains('_popup.truncateTo(index + 1)'),
-        reason: '关后代用 truncateTo(index+1) 精确裁后代');
-    expect(
+      // 点本层卡片本体空白只关其后代（带本层 index 走 truncateTo(index+1)）。
+      expect(
+        popup,
+        contains('onTapOutside: () => _dismissDescendantsOf(index)'),
+        reason: '点某层本体空白只关其后代，不再 base 层 _close 整窗 / nested 连本层一起关',
+      );
+      // 旧的「base 整窗关 / nested 连本层关」一律不得残留。
+      expect(
+        popup,
+        isNot(contains('onTapOutside: isBase ? _close')),
+        reason: 'base 层 onTapOutside 不再整窗关',
+      );
+      // 关后代原语：truncateTo(index+1)，点顶层（无后代）no-op。
+      expect(
+        popup,
+        contains('void _dismissDescendantsOf(int index)'),
+        reason: '关后代 helper 存在',
+      );
+      expect(
+        popup,
+        contains('_popup.truncateTo(index + 1)'),
+        reason: '关后代用 truncateTo(index+1) 精确裁后代',
+      );
+      expect(
         popup,
         contains(
-            'if (index < 0 || index >= _popup.entries.length - 1) return;'),
-        reason: '点顶层（无后代）no-op 栈不变');
-  });
+          'if (index < 0 || index >= _popup.entries.length - 1) return;',
+        ),
+        reason: '点顶层（无后代）no-op 栈不变',
+      );
+    },
+  );
 
   test('swipe dismiss keeps host layer routing separate from onBack', () {
     final String base = read('lib/src/pages/base_source_page.dart');
-    final String mixin =
-        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
-    final String popup =
-        read('lib/src/pages/implementations/popup_dictionary_page.dart');
+    final String mixin = read(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    );
+    final String popup = read(
+      'lib/src/pages/implementations/popup_dictionary_page.dart',
+    );
 
     expect(base, contains('onDismiss: () => _dismissPopupAt(index)'));
     expect(base, contains('onClose: () => _dismissPopupAt(index)'));
@@ -98,8 +122,7 @@ void main() {
   //      保留本层 + 祖先（点顶层无后代 = no-op）。
   // barrier 默认走清整栈路径；onTapOutside 必须带本层 index 走 truncateTo 关后代，
   // 不能再写死 dismissTopPopup / lastVisibleIndex / index 0。
-  test(
-      'base barrier default clears the whole stack via onDismissBarrierTap; '
+  test('base barrier default clears the whole stack via onDismissBarrierTap; '
       'onTapOutside closes descendants', () {
     final String base = read('lib/src/pages/base_source_page.dart');
 
@@ -109,142 +132,215 @@ void main() {
     // 只负责把可覆写钩子接上去。判据因此拆成两半：宿主用原语 + 原语确实按坐标转发。
     // （盯宿主里的 `onTapUp: (details) =>` 字面量会被这次正当收口撞成假红，而它守的
     // 「必须带全局坐标、不能退回无参 onTap」并没有变。）
-    expect(base, contains('LookupDismissBarrier('),
-        reason: 'barrier 必须走收口原语，不在页面各写一份手势接线');
-    expect(base, contains('onTapDismiss: onDismissBarrierTap'),
-        reason: 'barrier 转发给可覆写钩子（阅读器据此命中词换新查词）');
-    final String barrier =
-        read('lib/src/utils/misc/lookup_dismiss_barrier.dart');
-    expect(barrier, contains('onTapUp:'),
-        reason: '原语必须用 onTapUp（带坐标），退回无参 onTap 就分流不了落点');
-    expect(barrier, contains('widget.onTapDismiss(d.globalPosition)'),
-        reason: '原语必须把**全局坐标**交给宿主钩子');
     expect(
-        base,
-        contains(
-            'void onDismissBarrierTap(Offset globalPos) => clearDictionaryResult();'),
-        reason: 'barrier 钩子默认实现清整栈（video/home/有声书 不变）');
+      base,
+      contains('LookupDismissBarrier('),
+      reason: 'barrier 必须走收口原语，不在页面各写一份手势接线',
+    );
+    expect(
+      base,
+      contains('onTapDismiss: onDismissBarrierTap'),
+      reason: 'barrier 转发给可覆写钩子（阅读器据此命中词换新查词）',
+    );
+    final String barrier = read(
+      'lib/src/utils/misc/lookup_dismiss_barrier.dart',
+    );
+    expect(
+      barrier,
+      contains('onTapUp:'),
+      reason: '原语必须用 onTapUp（带坐标），退回无参 onTap 就分流不了落点',
+    );
+    expect(
+      barrier,
+      contains('widget.onTapDismiss(d.globalPosition)'),
+      reason: '原语必须把**全局坐标**交给宿主钩子',
+    );
+    expect(
+      base,
+      contains(
+        'void onDismissBarrierTap(Offset globalPos) => clearDictionaryResult();',
+      ),
+      reason: 'barrier 钩子默认实现清整栈（video/home/有声书 不变）',
+    );
     // 旧的硬编码 onTap: clearDictionaryResult 不得残留（已改走钩子）。
-    expect(base, isNot(contains('onTap: clearDictionaryResult')),
-        reason: 'barrier 不再硬编码 onTap: clearDictionaryResult（改可覆写钩子）');
-    // (B) 弹窗本体 onTapOutside = 关本层后代（带本层 index）。
-    expect(base, contains('onTapOutside: () => dismissDescendantsOf(index)'),
-        reason: '点某层本体空白只关其后代');
-    // 不再用逐层关一层的 dismissTopPopup 接「点外」。
-    expect(base, isNot(contains('onTap: dismissTopPopup')),
-        reason: 'barrier 不再逐层关一层（改清整栈）');
-    expect(base, isNot(contains('onTapOutside: dismissTopPopup')),
-        reason: 'onTapOutside 不再逐层关一层（改关后代）');
-    // 关后代原语本体：truncateTo(index+1)，无后代时 no-op。
-    expect(base, contains('void dismissDescendantsOf(int index)'),
-        reason: '关后代 helper 存在');
-    expect(base, contains('_popup.truncateTo(index + 1);'),
-        reason: '关后代用 truncateTo(index+1) 精确裁后代');
     expect(
-        base,
-        contains(
-            'if (index < 0 || index >= _popup.entries.length - 1) return;'),
-        reason: '点顶层（无后代）no-op 栈不变');
-    expect(base, contains('onDictionaryStackChanged();'),
-        reason: '关后代后调一次让光标跟随新顶层');
+      base,
+      isNot(contains('onTap: clearDictionaryResult')),
+      reason: 'barrier 不再硬编码 onTap: clearDictionaryResult（改可覆写钩子）',
+    );
+    // (B) 弹窗本体 onTapOutside = 关本层后代（带本层 index）。
+    expect(
+      base,
+      contains('onTapOutside: () => dismissDescendantsOf(index)'),
+      reason: '点某层本体空白只关其后代',
+    );
+    // 不再用逐层关一层的 dismissTopPopup 接「点外」。
+    expect(
+      base,
+      isNot(contains('onTap: dismissTopPopup')),
+      reason: 'barrier 不再逐层关一层（改清整栈）',
+    );
+    expect(
+      base,
+      isNot(contains('onTapOutside: dismissTopPopup')),
+      reason: 'onTapOutside 不再逐层关一层（改关后代）',
+    );
+    // 关后代原语本体：truncateTo(index+1)，无后代时 no-op。
+    expect(
+      base,
+      contains('void dismissDescendantsOf(int index)'),
+      reason: '关后代 helper 存在',
+    );
+    expect(
+      base,
+      contains('_popup.truncateTo(index + 1);'),
+      reason: '关后代用 truncateTo(index+1) 精确裁后代',
+    );
+    expect(
+      base,
+      contains('if (index < 0 || index >= _popup.entries.length - 1) return;'),
+      reason: '点顶层（无后代）no-op 栈不变',
+    );
+    expect(
+      base,
+      contains('onDictionaryStackChanged();'),
+      reason: '关后代后调一次让光标跟随新顶层',
+    );
   });
 
   test('video barrier clears the whole stack (descendants + parents)', () {
-    final String video =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String video = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     // 点所有弹窗外清整栈（保留热槽 + 会话收尾恢复播放/清草稿/收回焦点）。
     // 取 _onDismissBarrierTap 方法体（到下一个方法 _handleSubtitleLookupTap 之前），
     // 精确断言 barrier 分支清整栈，且不串到 back/Esc 逐层退回的 _handleBackOrExit。
     final int barrierStart = video.indexOf('void _onDismissBarrierTap(');
     expect(barrierStart, greaterThanOrEqualTo(0), reason: 'barrier 方法存在');
-    final int barrierEnd =
-        video.indexOf('void _handleSubtitleLookupTap(', barrierStart);
+    final int barrierEnd = video.indexOf(
+      'void _handleSubtitleLookupTap(',
+      barrierStart,
+    );
     expect(barrierEnd, greaterThan(barrierStart));
     final String barrierBody = video.substring(barrierStart, barrierEnd);
 
-    expect(barrierBody, contains('_popNestedPopupAt(0);'),
-        reason: 'barrier 点所有弹窗外清整栈到 index 0');
-    expect(barrierBody,
-        isNot(contains('_popNestedPopupAt(_topVisiblePopupIndex)')),
-        reason: 'barrier 不再逐层关一层（改清整栈）');
+    expect(
+      barrierBody,
+      contains('_popNestedPopupAt(0);'),
+      reason: 'barrier 点所有弹窗外清整栈到 index 0',
+    );
+    expect(
+      barrierBody,
+      isNot(contains('_popNestedPopupAt(_topVisiblePopupIndex)')),
+      reason: 'barrier 不再逐层关一层（改清整栈）',
+    );
     // TODO-758 / BUG-410 字幕反查门控仍在（点字幕换词只在非嵌套态）。
     expect(
-        barrierBody, contains('VideoFushiPage.shouldSwitchWordOnBarrierTap('),
-        reason: '字幕反查门控保持不变');
+      barrierBody,
+      contains('VideoFushiPage.shouldSwitchWordOnBarrierTap('),
+      reason: '字幕反查门控保持不变',
+    );
     // 红线：back/Esc 逐层退回保持不变，仍逐层关一层。BUG-1862 把逐级退出的层级表
     // 从 _handleBackOrExit 体内搬进共用单点 _dismissTopForegroundLayer（词典浮层是
     // 其中最前台的一层），退回语义不变——仍是 _popNestedPopupAt(_topVisiblePopupIndex)
     // 的「关一层」，不是 barrier 的清整栈。
-    expect(video, contains('Future<void> _handleBackOrExit()'),
-        reason: 'back/Esc 退出汇聚点仍在');
+    expect(
+      video,
+      contains('Future<void> _handleBackOrExit()'),
+      reason: 'back/Esc 退出汇聚点仍在',
+    );
     final int backStart = video.indexOf('Future<void> _handleBackOrExit()');
     final String backBody = video.substring(backStart, backStart + 220);
-    expect(backBody, contains('_dismissTopForegroundLayer()'),
-        reason: 'back/Esc 必须先走共用层级表逐级关层');
+    expect(
+      backBody,
+      contains('_dismissTopForegroundLayer()'),
+      reason: 'back/Esc 必须先走共用层级表逐级关层',
+    );
     final int tableStart = video.indexOf('bool _dismissTopForegroundLayer() {');
     expect(tableStart, greaterThanOrEqualTo(0), reason: '缺共用层级表');
     final String tableBody = video.substring(tableStart, tableStart + 900);
-    expect(tableBody, contains('_popNestedPopupAt(_topVisiblePopupIndex);'),
-        reason: 'back/Esc 仍逐层退回（不受 TODO-834 barrier 改动影响）');
-    expect(tableBody, isNot(contains('_popNestedPopupAt(0);')),
-        reason: 'back/Esc 绝不清整栈（那是 barrier 的语义）');
+    expect(
+      tableBody,
+      contains('_popNestedPopupAt(_topVisiblePopupIndex);'),
+      reason: 'back/Esc 仍逐层退回（不受 TODO-834 barrier 改动影响）',
+    );
+    expect(
+      tableBody,
+      isNot(contains('_popNestedPopupAt(0);')),
+      reason: 'back/Esc 绝不清整栈（那是 barrier 的语义）',
+    );
   });
 
   test('mixin onTapOutside closes descendants of the tapped layer', () {
-    final String mixin =
-        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    final String mixin = read(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    );
 
     expect(
-        mixin,
-        contains(
-            'onTapOutside: () => _dismissDescendantsOfLayer(index, controller)'),
-        reason: '点本层本体空白只关其后代');
-    expect(mixin, isNot(contains('onTapOutside: () => onPop(0)')),
-        reason: '不再写死 index 0 清整栈');
+      mixin,
+      contains(
+        'onTapOutside: () => _dismissDescendantsOfLayer(index, controller)',
+      ),
+      reason: '点本层本体空白只关其后代',
+    );
     expect(
-        mixin,
-        isNot(
-            contains('onTapOutside: () => onPop(controller.lastVisibleIndex)')),
-        reason: '不再逐层关一层（改关后代）');
+      mixin,
+      isNot(contains('onTapOutside: () => onPop(0)')),
+      reason: '不再写死 index 0 清整栈',
+    );
+    expect(
+      mixin,
+      isNot(contains('onTapOutside: () => onPop(controller.lastVisibleIndex)')),
+      reason: '不再逐层关一层（改关后代）',
+    );
     // 关后代原语本体：truncateTo(index+1)，无后代时 no-op。
     expect(
-        mixin,
-        contains(
-            'void _dismissDescendantsOfLayer(\n    int index,\n    DictionaryPopupController controller,\n  )'),
-        reason: '关后代 helper 存在');
-    expect(mixin, contains('controller.truncateTo(index + 1)'),
-        reason: '关后代用 truncateTo(index+1) 精确裁后代');
+      mixin,
+      contains(
+        'void _dismissDescendantsOfLayer(\n    int index,\n    DictionaryPopupController controller,\n  )',
+      ),
+      reason: '关后代 helper 存在',
+    );
     expect(
-        mixin,
-        contains(
-            'if (index < 0 || index >= controller.entries.length - 1) return;'),
-        reason: '点顶层（无后代）no-op 栈不变');
+      mixin,
+      contains('controller.truncateTo(index + 1)'),
+      reason: '关后代用 truncateTo(index+1) 精确裁后代',
+    );
+    expect(
+      mixin,
+      contains(
+        'if (index < 0 || index >= controller.entries.length - 1) return;',
+      ),
+      reason: '点顶层（无后代）no-op 栈不变',
+    );
   });
 
   // TODO-758 / BUG-410: 视频嵌套查词时点弹窗外面常落在底部仍渲染的字幕文字上，barrier
   // 无条件反查字幕命中 → _lookupAt(replaceStack) 把整栈替换（顶层窗没关而是被换成新词）。
   // 「点字幕换词」只在非嵌套（topVisibleIndex<=0）才合理；嵌套态一律逐层关一层。
   group('barrier subtitle-tap is gated to non-nested (BUG-410)', () {
-    test('nested stack never switches word even when a subtitle char is hit',
-        () {
-      // index 0 父词 + index 1 子词，点外落在字幕上：必须逐层关，不换词。
-      expect(
-        VideoFushiPage.shouldSwitchWordOnBarrierTap(
-          topVisibleIndex: 1,
-          hitSubtitle: true,
-        ),
-        isFalse,
-        reason: '嵌套态点字幕也不换词（否则整栈被 replaceStack）',
-      );
-      expect(
-        VideoFushiPage.shouldSwitchWordOnBarrierTap(
-          topVisibleIndex: 2,
-          hitSubtitle: true,
-        ),
-        isFalse,
-      );
-    });
+    test(
+      'nested stack never switches word even when a subtitle char is hit',
+      () {
+        // index 0 父词 + index 1 子词，点外落在字幕上：必须逐层关，不换词。
+        expect(
+          VideoFushiPage.shouldSwitchWordOnBarrierTap(
+            topVisibleIndex: 1,
+            hitSubtitle: true,
+          ),
+          isFalse,
+          reason: '嵌套态点字幕也不换词（否则整栈被 replaceStack）',
+        );
+        expect(
+          VideoFushiPage.shouldSwitchWordOnBarrierTap(
+            topVisibleIndex: 2,
+            hitSubtitle: true,
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('single visible layer keeps tap-subtitle-to-switch-word', () {
       // 单层查词点同句另一个字符切换查词是合理交互，保留。
@@ -271,24 +367,27 @@ void main() {
       }
     });
 
-    test('warm-slot-only stack (top == -1) keeps the normal first-lookup path',
-        () {
-      // 仅剩隐藏热槽（lastVisibleIndex == -1）= 无可见弹窗：点字幕字符是「首次查词」
-      // 入口，与旧行为一致换词（无害）。不是嵌套，故 `<=0` 门控正确放行。
-      expect(
-        VideoFushiPage.shouldSwitchWordOnBarrierTap(
-          topVisibleIndex: -1,
-          hitSubtitle: true,
-        ),
-        isTrue,
-        reason: '仅热槽（top=-1）= 无可见弹窗，点字幕首次查词走旧路（无害）',
-      );
-    });
+    test(
+      'warm-slot-only stack (top == -1) keeps the normal first-lookup path',
+      () {
+        // 仅剩隐藏热槽（lastVisibleIndex == -1）= 无可见弹窗：点字幕字符是「首次查词」
+        // 入口，与旧行为一致换词（无害）。不是嵌套，故 `<=0` 门控正确放行。
+        expect(
+          VideoFushiPage.shouldSwitchWordOnBarrierTap(
+            topVisibleIndex: -1,
+            hitSubtitle: true,
+          ),
+          isTrue,
+          reason: '仅热槽（top=-1）= 无可见弹窗，点字幕首次查词走旧路（无害）',
+        );
+      },
+    );
   });
 
   test('video barrier tap-subtitle branch is gated by non-nested check', () {
-    final String video =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String video = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     // 反查字幕命中分支必须经纯函数门控，不再无条件 `if (hit != null)` 直接换词。
     expect(
@@ -310,8 +409,9 @@ void main() {
   });
 
   test('shouldSwitchWordOnBarrierTap is the documented non-nested gate', () {
-    final String video =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String video = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     expect(
       video,
@@ -331,29 +431,37 @@ void main() {
         r'if \(window\.__hasChildPopup\)[\s\S]{0,120}?'
         r"callHandler\('tapOutside'\)",
       );
-      expect(gated.hasMatch(js), isTrue,
-          reason:
-              'card-body tapOutside must be gated by if (window.__hasChildPopup)');
+      expect(
+        gated.hasMatch(js),
+        isTrue,
+        reason:
+            'card-body tapOutside must be gated by if (window.__hasChildPopup)',
+      );
       // 门控落在 .entry/.kanji-card-section 卡片分支内（裸 return 之上）。
       expect(
-          js,
-          contains(
-              "if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {"),
-          reason: 'card-root predicate retained (TODO-859)');
+        js,
+        contains(
+          "if (target?.closest('.entry') || target?.closest('.kanji-card-section')) {",
+        ),
+        reason: 'card-root predicate retained (TODO-859)',
+      );
     });
 
     // TODO-869 收尾：词典释义正文（.glossary-content，用户说的「词典部分」）也要受
     // __hasChildPopup 门控——有子弹窗时点正文发 tapOutside 关后代，而非选词。否则点
     // 父窗正文（占卡片绝大面积）子窗永远关不掉（原始用户症状）。
-    test('popup.js gates the glossary-content branch on __hasChildPopup too',
-        () {
+    test('popup.js gates the glossary-content branch on __hasChildPopup too', () {
       final String js = read('assets/popup/popup.js');
       // 取 .glossary-content 分支体（到下一个分支 .entry 卡片判定之前）。
       // BUG-2460 起该分支也覆盖汉字卡片正文（.kanji-card-value / -meanings）。
       final int start = js.indexOf(
-          "if (target?.closest('.glossary-content, .kanji-card-value, .kanji-card-meanings')) {");
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'glossary-content branch present');
+        "if (target?.closest('.glossary-content, .kanji-card-value, .kanji-card-meanings')) {",
+      );
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'glossary-content branch present',
+      );
       final int end = js.indexOf("if (target?.closest('.entry')", start);
       expect(end, greaterThan(start));
       final String branch = js.substring(start, end);
@@ -363,63 +471,103 @@ void main() {
         r'if \(window\.__hasChildPopup\)[\s\S]{0,160}?'
         r"callHandler\('tapOutside'\)",
       );
-      expect(gated.hasMatch(branch), isTrue,
-          reason:
-              'glossary-content tap must fire tapOutside when __hasChildPopup '
-              '(parent text closes the child popup)');
+      expect(
+        gated.hasMatch(branch),
+        isTrue,
+        reason:
+            'glossary-content tap must fire tapOutside when __hasChildPopup '
+            '(parent text closes the child popup)',
+      );
       // 叶子层仍选词：selectText 仍在分支内（在门控之后作为 falsy 路径）。
-      expect(branch, contains('window.fushiSelection?.selectText('),
-          reason: 'leaf layer still selects a word (TODO-859 not regressed)');
+      expect(
+        branch,
+        contains('window.fushiSelection?.selectText('),
+        reason: 'leaf layer still selects a word (TODO-859 not regressed)',
+      );
     });
 
-    test('webview compares hasChildPopup and result as two independent ifs',
-        () {
-      final String web =
-          read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-      // result 与 hasChildPopup 必须各自独立的 if，hasChildPopup 不搭 result 便车。
-      final RegExp twoIfs = RegExp(
-        r'if \(oldWidget\.result != widget\.result\) \{[\s\S]*?\}'
-        r'[\s\S]*?'
-        r'if \(oldWidget\.hasChildPopup != widget\.hasChildPopup\) \{',
-      );
-      expect(twoIfs.hasMatch(web), isTrue,
-          reason: 'didUpdateWidget must compare hasChildPopup in its OWN if, '
-              'not piggyback on the result compare');
-      expect(web, contains('final bool hasChildPopup;'),
-          reason: 'hasChildPopup field declared');
-      expect(web, contains('void _setHasChildPopupJs(bool hasChild)'),
-          reason: 'typed injector method present');
-      expect(web, contains('window.__hasChildPopup = '),
-          reason: 'injects window.__hasChildPopup');
-    });
+    test(
+      'webview compares hasChildPopup and result as two independent ifs',
+      () {
+        final String web = read(
+          'lib/src/pages/implementations/dictionary_popup_webview.dart',
+        );
+        // result 与 hasChildPopup 必须各自独立的 if，hasChildPopup 不搭 result 便车。
+        final RegExp twoIfs = RegExp(
+          r'if \(oldWidget\.result != widget\.result\) \{[\s\S]*?\}'
+          r'[\s\S]*?'
+          r'if \(oldWidget\.hasChildPopup != widget\.hasChildPopup\) \{',
+        );
+        expect(
+          twoIfs.hasMatch(web),
+          isTrue,
+          reason:
+              'didUpdateWidget must compare hasChildPopup in its OWN if, '
+              'not piggyback on the result compare',
+        );
+        expect(
+          web,
+          contains('final bool hasChildPopup;'),
+          reason: 'hasChildPopup field declared',
+        );
+        expect(
+          web,
+          contains('void _setHasChildPopupJs(bool hasChild)'),
+          reason: 'typed injector method present',
+        );
+        expect(
+          web,
+          contains('window.__hasChildPopup = '),
+          reason: 'injects window.__hasChildPopup',
+        );
+      },
+    );
 
     test('layer forwards hasChildPopup to the webview', () {
-      final String layer =
-          read('lib/src/pages/implementations/dictionary_popup_layer.dart');
-      expect(layer, contains('final bool hasChildPopup;'),
-          reason: 'layer field declared');
-      expect(layer, contains('hasChildPopup: hasChildPopup,'),
-          reason: 'layer forwards hasChildPopup to DictionaryPopupWebView');
+      final String layer = read(
+        'lib/src/pages/implementations/dictionary_popup_layer.dart',
+      );
+      expect(
+        layer,
+        contains('final bool hasChildPopup;'),
+        reason: 'layer field declared',
+      );
+      expect(
+        layer,
+        contains('hasChildPopup: hasChildPopup,'),
+        reason: 'layer forwards hasChildPopup to DictionaryPopupWebView',
+      );
     });
 
     test('all three in-app hosts derive hasChildPopup from index < len-1', () {
       final String base = read('lib/src/pages/base_source_page.dart');
-      final String mixin =
-          read('lib/src/pages/implementations/dictionary_page_mixin.dart');
-      final String popup =
-          read('lib/src/pages/implementations/popup_dictionary_page.dart');
+      final String mixin = read(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      );
+      final String popup = read(
+        'lib/src/pages/implementations/popup_dictionary_page.dart',
+      );
 
       // 派生表达式：index < <something>.length - 1（恰好对应「本层之上还有后代」）。
-      final RegExp derived =
-          RegExp(r'hasChildPopup: index < [\w_.]+\.length - 1');
-      expect(derived.hasMatch(base), isTrue,
-          reason:
-              'base_source_page passes hasChildPopup: index < ...length - 1');
-      expect(derived.hasMatch(mixin), isTrue,
-          reason: 'mixin passes hasChildPopup: index < ...length - 1');
-      expect(derived.hasMatch(popup), isTrue,
-          reason:
-              'popup_dictionary_page passes hasChildPopup: index < ...length - 1');
+      final RegExp derived = RegExp(
+        r'hasChildPopup: index < [\w_.]+\.length - 1',
+      );
+      expect(
+        derived.hasMatch(base),
+        isTrue,
+        reason: 'base_source_page passes hasChildPopup: index < ...length - 1',
+      );
+      expect(
+        derived.hasMatch(mixin),
+        isTrue,
+        reason: 'mixin passes hasChildPopup: index < ...length - 1',
+      );
+      expect(
+        derived.hasMatch(popup),
+        isTrue,
+        reason:
+            'popup_dictionary_page passes hasChildPopup: index < ...length - 1',
+      );
     });
   });
 }

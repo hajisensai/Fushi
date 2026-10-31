@@ -18,7 +18,7 @@ import '../helpers/popup_mining_target_overrides.dart';
 /// VideoFushiPage needs media_kit, which is unavailable in the test harness).
 class MixinTestAppModel extends AppModel {
   MixinTestAppModel({this.results = const <DictionaryEntry>[]})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final List<DictionaryEntry> results;
 
@@ -74,8 +74,9 @@ class MixinHostPage extends ConsumerStatefulWidget {
 
 class MixinHostPageState extends ConsumerState<MixinHostPage>
     with DictionaryPageMixin {
-  final DictionaryPopupController controller =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController controller = DictionaryPopupController(
+    lowMemory: false,
+  );
 
   @override
   AppModel get mixinAppModel => ref.read(appProvider);
@@ -89,20 +90,20 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
   }
 
   Future<void> lookup(String term) => pushNestedPopup(
-        query: term,
-        selectionRect: const Rect.fromLTWH(20, 20, 4, 4),
-        controller: controller,
-        replaceStack: true,
-        reuseWarmSlot: true,
-        autoRead: false,
-      );
+    query: term,
+    selectionRect: const Rect.fromLTWH(20, 20, 4, 4),
+    controller: controller,
+    replaceStack: true,
+    reuseWarmSlot: true,
+    autoRead: false,
+  );
 
   void pushChild(String term) => pushNestedPopup(
-        query: term,
-        selectionRect: const Rect.fromLTWH(30, 30, 4, 4),
-        controller: controller,
-        autoRead: false,
-      );
+    query: term,
+    selectionRect: const Rect.fromLTWH(30, 30, 4, 4),
+    controller: controller,
+    autoRead: false,
+  );
 
   void reveal(DictionaryPopupEntry entry) {
     setState(() {
@@ -158,8 +159,9 @@ void main() {
 
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  testWidgets('reuseWarmSlot reuses the seeded warm slot (same webViewKey)',
-      (WidgetTester tester) async {
+  testWidgets('reuseWarmSlot reuses the seeded warm slot (same webViewKey)', (
+    WidgetTester tester,
+  ) async {
     final key = GlobalKey<MixinHostPageState>();
     await tester.pumpWidget(wrap(MixinTestAppModel(), key));
     key.currentState!.seedWarmSlot();
@@ -187,113 +189,130 @@ void main() {
   });
 
   testWidgets(
-      'reuseWarmSlot with entries waits for popupRendered before reveal',
-      (WidgetTester tester) async {
-    final key = GlobalKey<MixinHostPageState>();
-    await tester.pumpWidget(
-      wrap(
-        MixinTestAppModel(
-          results: <DictionaryEntry>[
-            DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
-          ],
+    'reuseWarmSlot with entries waits for popupRendered before reveal',
+    (WidgetTester tester) async {
+      final key = GlobalKey<MixinHostPageState>();
+      await tester.pumpWidget(
+        wrap(
+          MixinTestAppModel(
+            results: <DictionaryEntry>[
+              DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
+            ],
+          ),
+          key,
         ),
-        key,
-      ),
-    );
-    key.currentState!.seedWarmSlot();
-    await tester.pump();
+      );
+      key.currentState!.seedWarmSlot();
+      await tester.pump();
 
-    final state = key.currentState!;
-    final warmKey = state.controller.entries.single.webViewKey;
+      final state = key.currentState!;
+      final warmKey = state.controller.entries.single.webViewKey;
 
-    await state.lookup('語');
-    await tester.pump();
+      await state.lookup('語');
+      await tester.pump();
 
-    final entry = state.controller.entries.single;
-    expect(entry.webViewKey, same(warmKey));
-    expect(entry.isWarmSlot, isTrue);
-    expect(entry.visible, isFalse,
-        reason: 'Renderable warm-slot results must wait for popupRendered '
-            'instead of exposing a possibly stale hidden WebView.');
-    expect(entry.revealOnRender, isTrue);
-    expect(state.controller.isSearchingUi, isTrue,
-        reason: 'The lightweight placeholder stays up while the WebView '
-            'renders off-screen.');
+      final entry = state.controller.entries.single;
+      expect(entry.webViewKey, same(warmKey));
+      expect(entry.isWarmSlot, isTrue);
+      expect(
+        entry.visible,
+        isFalse,
+        reason:
+            'Renderable warm-slot results must wait for popupRendered '
+            'instead of exposing a possibly stale hidden WebView.',
+      );
+      expect(entry.revealOnRender, isTrue);
+      expect(
+        state.controller.isSearchingUi,
+        isTrue,
+        reason:
+            'The lightweight placeholder stays up while the WebView '
+            'renders off-screen.',
+      );
 
-    expect(state.controller.revealRendered(entry), isTrue);
-    state.controller.endSearchUi();
-    await tester.pump();
+      expect(state.controller.revealRendered(entry), isTrue);
+      state.controller.endSearchUi();
+      await tester.pump();
 
-    expect(entry.visible, isTrue);
-    expect(entry.revealOnRender, isFalse);
-    expect(state.controller.isSearchingUi, isFalse);
-  });
+      expect(entry.visible, isTrue);
+      expect(entry.revealOnRender, isFalse);
+      expect(state.controller.isSearchingUi, isFalse);
+    },
+  );
 
   testWidgets(
-      'cold popup keeps its keyed layer element when loading placeholder is removed',
-      (WidgetTester tester) async {
-    final key = GlobalKey<MixinHostPageState>();
-    await tester.pumpWidget(
-      wrap(
-        MixinTestAppModel(
-          results: <DictionaryEntry>[
-            DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
-          ],
+    'cold popup keeps its keyed layer element when loading placeholder is removed',
+    (WidgetTester tester) async {
+      final key = GlobalKey<MixinHostPageState>();
+      await tester.pumpWidget(
+        wrap(
+          MixinTestAppModel(
+            results: <DictionaryEntry>[
+              DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
+            ],
+          ),
+          key,
         ),
-        key,
-      ),
-    );
+      );
 
-    final MixinHostPageState state = key.currentState!;
-    await state.lookup('語');
-    await tester.pump();
+      final MixinHostPageState state = key.currentState!;
+      await state.lookup('語');
+      await tester.pump();
 
-    final DictionaryPopupEntry entry = state.controller.entries.single;
-    final Finder popupLayer = find.byKey(ObjectKey(entry));
-    expect(state.controller.isSearchingUi, isTrue);
-    expect(popupLayer, findsOneWidget,
-        reason: 'The parked platform-view layer needs an entry-identity key so '
+      final DictionaryPopupEntry entry = state.controller.entries.single;
+      final Finder popupLayer = find.byKey(ObjectKey(entry));
+      expect(state.controller.isSearchingUi, isTrue);
+      expect(
+        popupLayer,
+        findsOneWidget,
+        reason:
+            'The parked platform-view layer needs an entry-identity key so '
             'removing the preceding loading placeholder moves, rather than '
-            'recreates, the Windows WebView subtree.');
-    final Element beforeReveal = tester.element(popupLayer);
-    final Object? webViewBeforeReveal = entry.webViewKey.currentState;
-    expect(webViewBeforeReveal, isNotNull);
+            'recreates, the Windows WebView subtree.',
+      );
+      final Element beforeReveal = tester.element(popupLayer);
+      final Object? webViewBeforeReveal = entry.webViewKey.currentState;
+      expect(webViewBeforeReveal, isNotNull);
 
-    state.reveal(entry);
-    await tester.pump();
+      state.reveal(entry);
+      await tester.pump();
 
-    expect(state.controller.isSearchingUi, isFalse);
-    expect(popupLayer, findsOneWidget);
-    expect(tester.element(popupLayer), same(beforeReveal));
-    expect(entry.webViewKey.currentState, same(webViewBeforeReveal));
-  });
+      expect(state.controller.isSearchingUi, isFalse);
+      expect(popupLayer, findsOneWidget);
+      expect(tester.element(popupLayer), same(beforeReveal));
+      expect(entry.webViewKey.currentState, same(webViewBeforeReveal));
+    },
+  );
 
-  testWidgets('reuseWarmSlot drops nested children but keeps the warm WebView',
-      (WidgetTester tester) async {
-    final key = GlobalKey<MixinHostPageState>();
-    await tester.pumpWidget(wrap(MixinTestAppModel(), key));
-    key.currentState!.seedWarmSlot();
-    await tester.pump();
+  testWidgets(
+    'reuseWarmSlot drops nested children but keeps the warm WebView',
+    (WidgetTester tester) async {
+      final key = GlobalKey<MixinHostPageState>();
+      await tester.pumpWidget(wrap(MixinTestAppModel(), key));
+      key.currentState!.seedWarmSlot();
+      await tester.pump();
 
-    final state = key.currentState!;
-    await state.lookup('親');
-    await tester.pump();
-    final warmKey = state.controller.entries.first.webViewKey;
+      final state = key.currentState!;
+      await state.lookup('親');
+      await tester.pump();
+      final warmKey = state.controller.entries.first.webViewKey;
 
-    state.pushChild('子');
-    await tester.pump();
-    expect(state.controller.entries.length, greaterThan(1));
+      state.pushChild('子');
+      await tester.pump();
+      expect(state.controller.entries.length, greaterThan(1));
 
-    await state.lookup('新');
-    await tester.pump();
-    // Children dropped, warm slot (same key) survives.
-    expect(state.controller.entries, hasLength(1));
-    expect(state.controller.entries.single.webViewKey, same(warmKey));
-    expect(state.controller.entries.single.visible, isTrue);
-  });
+      await state.lookup('新');
+      await tester.pump();
+      // Children dropped, warm slot (same key) survives.
+      expect(state.controller.entries, hasLength(1));
+      expect(state.controller.entries.single.webViewKey, same(warmKey));
+      expect(state.controller.entries.single.visible, isTrue);
+    },
+  );
 
-  testWidgets('without a warm slot, reuseWarmSlot falls back to a fresh entry',
-      (WidgetTester tester) async {
+  testWidgets('without a warm slot, reuseWarmSlot falls back to a fresh entry', (
+    WidgetTester tester,
+  ) async {
     // Mirrors low-memory mode (no seed): a fresh entry is created each lookup.
     final key = GlobalKey<MixinHostPageState>();
     await tester.pumpWidget(wrap(MixinTestAppModel(), key));
@@ -308,63 +327,68 @@ void main() {
   });
 
   testWidgets(
-      'BUG-715: nested lookup keeps searching-UI off while a parent popup is '
-      'visible (no placeholder behind the parent -> no z-order flip)',
-      (WidgetTester tester) async {
-    final key = GlobalKey<MixinHostPageState>();
-    await tester.pumpWidget(
-      wrap(
-        MixinTestAppModel(
-          results: <DictionaryEntry>[
-            DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
-          ],
+    'BUG-715: nested lookup keeps searching-UI off while a parent popup is '
+    'visible (no placeholder behind the parent -> no z-order flip)',
+    (WidgetTester tester) async {
+      final key = GlobalKey<MixinHostPageState>();
+      await tester.pumpWidget(
+        wrap(
+          MixinTestAppModel(
+            results: <DictionaryEntry>[
+              DictionaryEntry(word: '語', reading: 'ご', meaning: 'word'),
+            ],
+          ),
+          key,
         ),
-        key,
-      ),
-    );
-    key.currentState!.seedWarmSlot();
-    await tester.pump();
-    final state = key.currentState!;
+      );
+      key.currentState!.seedWarmSlot();
+      await tester.pump();
+      final state = key.currentState!;
 
-    // Open + reveal the top-level (parent) popup.
-    await state.lookup('親');
-    await tester.pump();
-    final DictionaryPopupEntry parent = state.controller.entries.single;
-    state.controller.revealRendered(parent);
-    state.controller.endSearchUi();
-    await tester.pump();
-    expect(parent.visible, isTrue);
-    expect(state.controller.hasVisiblePopup, isTrue);
-    expect(state.controller.isSearchingUi, isFalse);
+      // Open + reveal the top-level (parent) popup.
+      await state.lookup('親');
+      await tester.pump();
+      final DictionaryPopupEntry parent = state.controller.entries.single;
+      state.controller.revealRendered(parent);
+      state.controller.endSearchUi();
+      await tester.pump();
+      expect(parent.visible, isTrue);
+      expect(state.controller.hasVisiblePopup, isTrue);
+      expect(state.controller.isSearchingUi, isFalse);
 
-    // Nested lookup while the parent is visible. The searching placeholder must
-    // NOT engage: in the three mixin hosts (video / 首页 / 悬浮歌词) it is
-    // stacked BELOW the popup entries, so drawing it during a nested search
-    // paints the searching child *behind* the visible parent; when the child
-    // WebView renders it reveals on top -> the BUG-715 底层->上层 z-order flip.
-    // With the fix, isSearchingUi stays false and the hidden child simply
-    // reveals on top once rendered (reveal timing still guarded by BUG-170).
-    //
-    // Regression signature: beginSearchUi runs synchronously (before the first
-    // await) in pushNestedPopup, so the buggy path flips isSearchingUi true the
-    // moment a nested search starts. pushChild returns void (Future discarded),
-    // but the append + the gate both happen in that synchronous prefix, so a
-    // single pump captures the decision without racing the async lookup.
-    state.pushChild('子');
-    await tester.pump();
-    expect(state.controller.isSearchingUi, isFalse,
-        reason: 'nested search must not paint a loading placeholder behind the '
-            'already-visible parent popup');
-    expect(state.controller.entries.length, greaterThan(1));
-    expect(parent.visible, isTrue);
-    final DictionaryPopupEntry child = state.controller.entries.last;
-    expect(child.visible, isFalse);
-    expect(child.revealOnRender, isTrue);
+      // Nested lookup while the parent is visible. The searching placeholder must
+      // NOT engage: in the three mixin hosts (video / 首页 / 悬浮歌词) it is
+      // stacked BELOW the popup entries, so drawing it during a nested search
+      // paints the searching child *behind* the visible parent; when the child
+      // WebView renders it reveals on top -> the BUG-715 底层->上层 z-order flip.
+      // With the fix, isSearchingUi stays false and the hidden child simply
+      // reveals on top once rendered (reveal timing still guarded by BUG-170).
+      //
+      // Regression signature: beginSearchUi runs synchronously (before the first
+      // await) in pushNestedPopup, so the buggy path flips isSearchingUi true the
+      // moment a nested search starts. pushChild returns void (Future discarded),
+      // but the append + the gate both happen in that synchronous prefix, so a
+      // single pump captures the decision without racing the async lookup.
+      state.pushChild('子');
+      await tester.pump();
+      expect(
+        state.controller.isSearchingUi,
+        isFalse,
+        reason:
+            'nested search must not paint a loading placeholder behind the '
+            'already-visible parent popup',
+      );
+      expect(state.controller.entries.length, greaterThan(1));
+      expect(parent.visible, isTrue);
+      final DictionaryPopupEntry child = state.controller.entries.last;
+      expect(child.visible, isFalse);
+      expect(child.revealOnRender, isTrue);
 
-    // The renderable child armed a reveal-failsafe Timer (markPendingReveal,
-    // BUG-170). Cancel it so the harness's "no pending timers after dispose"
-    // invariant holds — mirrors the warm-slot reveal test above.
-    state.controller.revealRendered(child);
-    await tester.pump();
-  });
+      // The renderable child armed a reveal-failsafe Timer (markPendingReveal,
+      // BUG-170). Cancel it so the harness's "no pending timers after dispose"
+      // invariant holds — mirrors the warm-slot reveal test above.
+      state.controller.revealRendered(child);
+      await tester.pump();
+    },
+  );
 }

@@ -30,9 +30,20 @@ void main() {
     final ArgParser parser = ArgParser();
     parser.addCommand('audiobook').addCommand('align').addFlag('json');
     parser.addCommand('dict').addFlag('json');
-    expect(commandChainWantsJson(parser.parse(<String>['audiobook', 'align', '--json'])), isTrue);
-    expect(commandChainWantsJson(parser.parse(<String>['audiobook', 'align'])), isFalse);
-    expect(commandChainWantsJson(parser.parse(<String>['dict', '--json', 'ls'])), isTrue);
+    expect(
+      commandChainWantsJson(
+        parser.parse(<String>['audiobook', 'align', '--json']),
+      ),
+      isTrue,
+    );
+    expect(
+      commandChainWantsJson(parser.parse(<String>['audiobook', 'align'])),
+      isFalse,
+    );
+    expect(
+      commandChainWantsJson(parser.parse(<String>['dict', '--json', 'ls'])),
+      isTrue,
+    );
   });
 
   test(
@@ -42,7 +53,9 @@ void main() {
         p.join('test', 'support', 'json_noise_cli.dart'),
       ]);
       expect(r.exitCode, 0, reason: '${r.stderr}');
-      expect(_decodeWholeStdout(r), <String, Object?>{'ok': true}, reason: 'stdout=${r.stdout}');
+      expect(_decodeWholeStdout(r), <String, Object?>{
+        'ok': true,
+      }, reason: 'stdout=${r.stdout}');
       expect(r.stderr as String, contains('noise from background isolate'));
       expect(r.stderr as String, contains('noise from root isolate print'));
     },
@@ -57,7 +70,11 @@ void main() {
       addTearDown(h.dispose);
       final String epub = p.join(h.tmp.path, 'book.epub');
       writeTestEpub(epub, 'Neko', body: '吾輩は猫である。名前はまだ無い。');
-      expect(await h.run(ImportCommands(io: h.io), <String>['import', 'epub', epub]), 0, reason: '${h.err}');
+      expect(
+        await h.run(ImportCommands(io: h.io), <String>['import', 'epub', epub]),
+        0,
+        reason: '${h.err}',
+      );
       final FushiDatabase db = h.openDb();
       final String bookKey;
       try {
@@ -65,7 +82,8 @@ void main() {
       } finally {
         await db.close();
       }
-      final Directory audio = Directory(p.join(h.tmp.path, 'audio'))..createSync(recursive: true);
+      final Directory audio = Directory(p.join(h.tmp.path, 'audio'))
+        ..createSync(recursive: true);
       File(p.join(audio.path, '01.mp3')).writeAsStringSync('fake audio');
       File(p.join(audio.path, 'book.srt')).writeAsStringSync(
         '1\n00:00:00,000 --> 00:00:02,000\n吾輩は猫である。\n\n'

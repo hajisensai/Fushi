@@ -7,10 +7,10 @@ UpdateDirEntry _f(String name, DateTime modified) =>
     UpdateDirEntry(name: name, isDirectory: false, modified: modified);
 
 UpdateDirEntry _d(String name, [DateTime? modified]) => UpdateDirEntry(
-      name: name,
-      isDirectory: true,
-      modified: modified ?? DateTime.fromMillisecondsSinceEpoch(0),
-    );
+  name: name,
+  isDirectory: true,
+  modified: modified ?? DateTime.fromMillisecondsSinceEpoch(0),
+);
 
 void main() {
   group('selectStaleUpdateArtifacts (TODO-1010 纯函数：回收旧完整安装包)', () {
@@ -39,9 +39,7 @@ void main() {
 
     test('新近完整包（cutoff 之后）保留——可能是上一轮刚下、待安装', () {
       final List<String> stale = selectStaleUpdateArtifacts(
-        entries: <UpdateDirEntry>[
-          _f('Hibiki-1.0.0-windows-setup.exe', fresh),
-        ],
+        entries: <UpdateDirEntry>[_f('Hibiki-1.0.0-windows-setup.exe', fresh)],
         cutoff: cutoff,
       );
       expect(stale, isEmpty);
@@ -49,9 +47,7 @@ void main() {
 
     test('cutoff 当刻不删（isBefore 严格小于）', () {
       final List<String> stale = selectStaleUpdateArtifacts(
-        entries: <UpdateDirEntry>[
-          _f('Hibiki-1.0.0-windows-setup.exe', cutoff),
-        ],
+        entries: <UpdateDirEntry>[_f('Hibiki-1.0.0-windows-setup.exe', cutoff)],
         cutoff: cutoff,
       );
       expect(stale, isEmpty);
@@ -286,10 +282,7 @@ void main() {
           '.Hibiki-1.0.0-windows-setup.exe.staging',
         ]),
       );
-      expect(
-        stale,
-        isNot(contains('.Hibiki-1.0.2-windows-setup.exe.staging')),
-      );
+      expect(stale, isNot(contains('.Hibiki-1.0.2-windows-setup.exe.staging')));
       expect(stale, hasLength(2));
     });
 
@@ -310,8 +303,7 @@ void main() {
     });
   });
 
-  group(
-      'installerToDeleteAfterSuccessfulHandoff '
+  group('installerToDeleteAfterSuccessfulHandoff '
       '(TODO-1089：安装成功即刻回收安装包)', () {
     const String root = r'C:\Users\wrds\AppData\Roaming\Hibiki\Hibiki\updates';
     const String installer = root + r'\Hibiki-1.0.1-windows-setup.exe';
@@ -417,8 +409,7 @@ void main() {
     });
   });
 
-  group(
-      'stagingDirToDeleteAfterSuccessfulHandoff '
+  group('stagingDirToDeleteAfterSuccessfulHandoff '
       '(TODO-1149：安装成功即刻回收 .staging 暂存根)', () {
     const String root = r'C:\Users\wrds\AppData\Roaming\Hibiki\Hibiki\updates';
     const String installer = root + r'\Hibiki-1.0.1-windows-setup.exe';
@@ -543,66 +534,83 @@ void main() {
     });
 
     test('reconcilePendingWindowsInstallerHandoff 内调用 _cleanupOldApks', () {
-      final int reconcileIdx =
-          source.indexOf('reconcilePendingWindowsInstallerHandoff(');
-      expect(reconcileIdx, greaterThanOrEqualTo(0),
-          reason: 'handoff reconcile 入口必须存在');
-      final int nextMethodIdx =
-          source.indexOf('static bool canShowDialogFromContext', reconcileIdx);
+      final int reconcileIdx = source.indexOf(
+        'reconcilePendingWindowsInstallerHandoff(',
+      );
+      expect(
+        reconcileIdx,
+        greaterThanOrEqualTo(0),
+        reason: 'handoff reconcile 入口必须存在',
+      );
+      final int nextMethodIdx = source.indexOf(
+        'static bool canShowDialogFromContext',
+        reconcileIdx,
+      );
       expect(nextMethodIdx, greaterThan(reconcileIdx));
       final String body = source.substring(reconcileIdx, nextMethodIdx);
       expect(
         body.contains('await _cleanupOldApks('),
         isTrue,
-        reason: 'BUG-533：兜底完整包 GC 必须在每次 Windows 启动的 reconcile 路径无条件触发，'
+        reason:
+            'BUG-533：兜底完整包 GC 必须在每次 Windows 启动的 reconcile 路径无条件触发，'
             '否则关闭自动检查后安装包永不清理',
       );
     });
 
-    test(
-        'TODO-1149：reconcile 内握手成功调 stagingDirToDeleteAfterSuccessfulHandoff '
+    test('TODO-1149：reconcile 内握手成功调 stagingDirToDeleteAfterSuccessfulHandoff '
         '即刻清 .staging 暂存根', () {
-      final int reconcileIdx =
-          source.indexOf('reconcilePendingWindowsInstallerHandoff(');
+      final int reconcileIdx = source.indexOf(
+        'reconcilePendingWindowsInstallerHandoff(',
+      );
       expect(reconcileIdx, greaterThanOrEqualTo(0));
-      final int nextMethodIdx =
-          source.indexOf('static bool canShowDialogFromContext', reconcileIdx);
+      final int nextMethodIdx = source.indexOf(
+        'static bool canShowDialogFromContext',
+        reconcileIdx,
+      );
       expect(nextMethodIdx, greaterThan(reconcileIdx));
       final String body = source.substring(reconcileIdx, nextMethodIdx);
       expect(
         body.contains('stagingDirToDeleteAfterSuccessfulHandoff('),
         isTrue,
-        reason: 'TODO-1149：安装成功必须连对应 `.staging` 暂存根一起立刻回收，'
+        reason:
+            'TODO-1149：安装成功必须连对应 `.staging` 暂存根一起立刻回收，'
             '否则每装一版残留一个空根堆积',
       );
       expect(
         body.contains('deleteStaging'),
         isTrue,
-        reason: 'TODO-1149：staging 删除失败必须记 best-effort 日志（deleteStaging），'
+        reason:
+            'TODO-1149：staging 删除失败必须记 best-effort 日志（deleteStaging），'
             '由下次 GC 按 mtime 兜底',
       );
     });
 
-    test(
-        'TODO-1149：下载完成后立刻 prune（_cleanupOldApks 带 activeAssetFileName）'
+    test('TODO-1149：下载完成后立刻 prune（_cleanupOldApks 带 activeAssetFileName）'
         '——不等 GC / 启动 reconcile', () {
       // 根因：GC 只在检查更新 / Windows 启动 reconcile 才跑，高频下载之间旧包一直堆到
       // 下次 GC。下载完成是回收同通道旧包的最早确定时机——`_runDownloadAndInstall` 拿到
       // outFile 后必须立刻调 `_cleanupOldApks(..., activeAssetFileName: ...)`（保护刚下好
       // 的包）。源码扫描守卫锚定这条接线，防未来重构悄悄摘掉复发。
-      final int idx =
-          source.indexOf('static Future<void> _runDownloadAndInstall(');
-      expect(idx, greaterThanOrEqualTo(0),
-          reason: '_runDownloadAndInstall 必须存在');
-      final int end =
-          source.indexOf('reconcilePendingWindowsInstallerHandoff(', idx);
+      final int idx = source.indexOf(
+        'static Future<void> _runDownloadAndInstall(',
+      );
+      expect(
+        idx,
+        greaterThanOrEqualTo(0),
+        reason: '_runDownloadAndInstall 必须存在',
+      );
+      final int end = source.indexOf(
+        'reconcilePendingWindowsInstallerHandoff(',
+        idx,
+      );
       expect(end, greaterThan(idx));
       final String body = source.substring(idx, end);
       expect(
         body.contains('_cleanupOldApks(') &&
             body.contains('activeAssetFileName:'),
         isTrue,
-        reason: 'TODO-1149：下载完成后必须以刚下好的包为 active 立刻 prune 同通道旧包，'
+        reason:
+            'TODO-1149：下载完成后必须以刚下好的包为 active 立刻 prune 同通道旧包，'
             '否则高频下载之间旧安装包持续堆积到下次 GC',
       );
     });

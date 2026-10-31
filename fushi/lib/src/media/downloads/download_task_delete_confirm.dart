@@ -23,21 +23,21 @@ Future<bool?> showDownloadTaskDeleteConfirm(
 }) async {
   final FushiDestructiveConfirmResult? result =
       await showAppDialog<FushiDestructiveConfirmResult>(
-    context: context,
-    builder: (BuildContext dialogContext) => FushiDestructiveConfirmDialog(
-      title: t.download_task_delete,
-      message: message ?? t.download_task_delete_confirm(title: title),
-      leadingIcon: FushiIcons.delete,
-      confirmLabel: t.dialog_delete,
-      checkboxLabel: offerDeleteFiles ? t.download_task_delete_files : null,
-      checkboxKey: ValueKey<String>(
-        'video-download-job-delete-files-$keySuffix',
-      ),
-      confirmKey: ValueKey<String>(
-        'video-download-job-delete-confirm-$keySuffix',
-      ),
-    ),
-  );
+        context: context,
+        builder: (BuildContext dialogContext) => FushiDestructiveConfirmDialog(
+          title: t.download_task_delete,
+          message: message ?? t.download_task_delete_confirm(title: title),
+          leadingIcon: FushiIcons.delete,
+          confirmLabel: t.dialog_delete,
+          checkboxLabel: offerDeleteFiles ? t.download_task_delete_files : null,
+          checkboxKey: ValueKey<String>(
+            'video-download-job-delete-files-$keySuffix',
+          ),
+          confirmKey: ValueKey<String>(
+            'video-download-job-delete-confirm-$keySuffix',
+          ),
+        ),
+      );
   if (result == null) return null;
   return offerDeleteFiles && result.checked;
 }

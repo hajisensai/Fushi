@@ -46,19 +46,22 @@ class FakeAssetStore implements SyncAssetStore {
     for (final String f in _folders) {
       if (f.isEmpty || f == namespaceId) continue;
       if (f.startsWith(prefix) && !f.substring(prefix.length).contains('/')) {
-        out.add(AssetEntry(
-            id: f, name: f.substring(prefix.length), isFolder: true));
+        out.add(
+          AssetEntry(id: f, name: f.substring(prefix.length), isFolder: true),
+        );
       }
     }
     for (final MapEntry<String, List<int>> e in _files.entries) {
       if (e.key.startsWith(prefix) &&
           !e.key.substring(prefix.length).contains('/')) {
-        out.add(AssetEntry(
-          id: e.key,
-          name: e.key.substring(prefix.length),
-          sizeBytes: reportNullSizes ? null : e.value.length,
-          revision: _revisionOf(e.value),
-        ));
+        out.add(
+          AssetEntry(
+            id: e.key,
+            name: e.key.substring(prefix.length),
+            sizeBytes: reportNullSizes ? null : e.value.length,
+            revision: _revisionOf(e.value),
+          ),
+        );
       }
     }
     return out;
@@ -69,21 +72,29 @@ class FakeAssetStore implements SyncAssetStore {
     final String path = _join(namespaceId, name);
     if (!_files.containsKey(path)) return null;
     return AssetEntry(
-        id: path,
-        name: name,
-        sizeBytes: reportNullSizes ? null : _files[path]!.length);
+      id: path,
+      name: name,
+      sizeBytes: reportNullSizes ? null : _files[path]!.length,
+    );
   }
 
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-      {void Function(double progress)? onProgress}) async {
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
     _files[_join(namespaceId, name)] = await file.readAsBytes();
     onProgress?.call(1.0);
   }
 
   @override
-  Future<void> getAsset(String assetId, File destination,
-      {void Function(double progress)? onProgress}) async {
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
     final List<int>? bytes = _files[assetId];
     if (bytes == null) throw StateError('asset not found: $assetId');
     await destination.writeAsBytes(bytes, flush: true);
@@ -99,7 +110,10 @@ class FakeAssetStore implements SyncAssetStore {
 
   @override
   Future<void> putJsonAsset(
-      String namespaceId, String name, Object? json) async {
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async {
     _files[_join(namespaceId, name)] = utf8.encode(jsonEncode(json));
   }
 

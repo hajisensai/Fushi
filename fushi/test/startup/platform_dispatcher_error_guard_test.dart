@@ -36,9 +36,10 @@ void main() {
     );
     // 必须返回 true，标记「已处理」，避免引擎再当未处理崩溃重复上报。
     expect(
-      RegExp(r'PlatformDispatcher\.instance\.onError\s*=\s*\([^)]*\)\s*\{[^}]*return true;',
-              dotAll: true)
-          .hasMatch(src),
+      RegExp(
+        r'PlatformDispatcher\.instance\.onError\s*=\s*\([^)]*\)\s*\{[^}]*return true;',
+        dotAll: true,
+      ).hasMatch(src),
       isTrue,
       reason: 'onError 必须返回 true',
     );
@@ -48,15 +49,19 @@ void main() {
     // 判据是「处理体里调的是 logFatal」，不是来源字符串长什么样：来源已由
     // flutterErrorLogSource(details) 按 details 推导（这样日志里能看到
     // FlutterError/RenderFlex 这类可读上下文），点名旧字面量只会挡住改进。
-    final int flutterErrorAt = src.indexOf('FlutterError.onError = (details) {');
+    final int flutterErrorAt = src.indexOf(
+      'FlutterError.onError = (details) {',
+    );
     expect(flutterErrorAt, isNonNegative, reason: '必须装 FlutterError.onError');
     final int flutterErrorEnd = src.indexOf(
       'PlatformDispatcher.instance.onError',
       flutterErrorAt,
     );
     expect(flutterErrorEnd, greaterThan(flutterErrorAt));
-    final String flutterErrorBody =
-        src.substring(flutterErrorAt, flutterErrorEnd);
+    final String flutterErrorBody = src.substring(
+      flutterErrorAt,
+      flutterErrorEnd,
+    );
     expect(
       flutterErrorBody.contains('ErrorLogService.instance.logFatal('),
       isTrue,
@@ -65,7 +70,8 @@ void main() {
     expect(
       RegExp(r'ErrorLogService\.instance\.log\(').hasMatch(flutterErrorBody),
       isFalse,
-      reason: '这条守卫真正要挡的退化：换回普通 log（异步 append）——'
+      reason:
+          '这条守卫真正要挡的退化：换回普通 log（异步 append）——'
           '错误若紧接着把进程带崩就来不及写盘',
     );
     expect(
@@ -81,15 +87,18 @@ void main() {
   });
 
   test('logFatal 用 writeAsStringSync(flush:true) 同步落盘（崩溃前存活）', () {
-    final String svc =
-        File('lib/src/utils/misc/error_log_service.dart').readAsStringSync();
+    final String svc = File(
+      'lib/src/utils/misc/error_log_service.dart',
+    ).readAsStringSync();
     final int idx = svc.indexOf('void logFatal(');
     expect(idx, isNonNegative, reason: '必须有 logFatal 方法');
     // logFatal 方法体内用同步 flush 写文件。
     final String body = svc.substring(idx, idx + 800);
     expect(
-      RegExp(r'writeAsStringSync\([^;]*flush:\s*true', dotAll: true)
-          .hasMatch(body),
+      RegExp(
+        r'writeAsStringSync\([^;]*flush:\s*true',
+        dotAll: true,
+      ).hasMatch(body),
       isTrue,
       reason: 'logFatal 必须同步 flush 落盘，否则崩溃前来不及写盘',
     );

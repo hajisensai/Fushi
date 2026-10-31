@@ -25,7 +25,10 @@ void main() {
     final int walAt = b.indexOf('journal_mode=WAL');
     expect(busyAt, greaterThanOrEqualTo(0), reason: '必须设 busy_timeout');
     expect(walAt, greaterThanOrEqualTo(0), reason: '必须设 journal_mode=WAL');
-    expect(busyAt, lessThan(walAt),
-        reason: 'busy_timeout 须先于 WAL 切换，否则脏 sidecar 上 WAL 切换不受 busy 超时约束');
+    expect(
+      busyAt,
+      lessThan(walAt),
+      reason: 'busy_timeout 须先于 WAL 切换，否则脏 sidecar 上 WAL 切换不受 busy 超时约束',
+    );
   });
 }

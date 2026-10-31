@@ -117,38 +117,40 @@ void main() {
     },
   );
 
-  test('Android source lookup validates the UUID and fails closed (BUG-2527)',
-      () {
-    final String handler = File(
-      'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
-    ).readAsStringSync();
-    expect(handler, contains('case "findNotesBySourceId":'));
-    expect(handler, contains('sourceId.matches(SOURCE_ID_PATTERN)'));
-    expect(
-      handler,
-      contains(
-        r'"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"',
-      ),
-    );
-    // The redundant marker tag is gone: no tag query, no tag emission.
-    expect(handler, isNot(contains('fushi_source_')));
-    expect(handler, isNot(contains('findNotesBySourceMarker')));
-    final int start = handler.indexOf(
-      'private List<Long> findNotesBySourceId(',
-    );
-    expect(start, greaterThan(-1));
-    final String body = handler.substring(
-      start,
-      handler.indexOf('private boolean openNote(', start),
-    );
-    expect(
-      body,
-      contains('target.rebase(FlashCardsContract.Note.CONTENT_URI)'),
-    );
-    // Same query literal as CardSourceLink.searchQueryForSourceId.
-    expect(body, contains('"sourceId=" + sourceId'));
-    expect(body, contains('getColumnIndexOrThrow'));
-    expect(body, contains('if (cursor == null)'));
-    expect(body, contains('throw new IllegalStateException'));
-  });
+  test(
+    'Android source lookup validates the UUID and fails closed (BUG-2527)',
+    () {
+      final String handler = File(
+        'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
+      ).readAsStringSync();
+      expect(handler, contains('case "findNotesBySourceId":'));
+      expect(handler, contains('sourceId.matches(SOURCE_ID_PATTERN)'));
+      expect(
+        handler,
+        contains(
+          r'"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"',
+        ),
+      );
+      // The redundant marker tag is gone: no tag query, no tag emission.
+      expect(handler, isNot(contains('fushi_source_')));
+      expect(handler, isNot(contains('findNotesBySourceMarker')));
+      final int start = handler.indexOf(
+        'private List<Long> findNotesBySourceId(',
+      );
+      expect(start, greaterThan(-1));
+      final String body = handler.substring(
+        start,
+        handler.indexOf('private boolean openNote(', start),
+      );
+      expect(
+        body,
+        contains('target.rebase(FlashCardsContract.Note.CONTENT_URI)'),
+      );
+      // Same query literal as CardSourceLink.searchQueryForSourceId.
+      expect(body, contains('"sourceId=" + sourceId'));
+      expect(body, contains('getColumnIndexOrThrow'));
+      expect(body, contains('if (cursor == null)'));
+      expect(body, contains('throw new IllegalStateException'));
+    },
+  );
 }

@@ -114,8 +114,7 @@ class _FakeTorrentBackend implements TorrentBackend {
     bool sequential = false,
     bool firstLastPiecePrio = false,
     String? savePath,
-  }) async =>
-      true;
+  }) async => true;
 
   @override
   Future<bool> prepareCategory(String category) async => true;
@@ -136,15 +135,13 @@ class _FakeTorrentBackend implements TorrentBackend {
     String torrentId,
     int fileIndex,
     String newPath,
-  ) async =>
-      const TorrentStorageResult(ok: true);
+  ) async => const TorrentStorageResult(ok: true);
 
   @override
   Future<TorrentStorageResult> moveStorage(
     String torrentId,
     String newSavePath,
-  ) async =>
-      const TorrentStorageResult(ok: true);
+  ) async => const TorrentStorageResult(ok: true);
 
   @override
   void close() {}
@@ -177,9 +174,9 @@ class _FakeAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+    backend: QbConnectionConfig.backendQbittorrent,
+    baseUrl: 'http://127.0.0.1:1',
+  );
 
   @override
   bool get torrentUploadIntroShown => true;
@@ -279,9 +276,7 @@ void main() {
     });
   });
 
-  testWidgets('没有 BT 站：不发请求，结果区引导去添加 BT 站', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('没有 BT 站：不发请求，结果区引导去添加 BT 站', (WidgetTester tester) async {
     int requests = 0;
     final _FakeAppModel appModel = _NoBtSiteAppModel((http.Request req) async {
       requests++;
@@ -449,14 +444,26 @@ void main() {
           w is TextField && w.decoration?.labelText == t.video_jimaku_query,
     );
     expect(queryField, findsOneWidget);
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'Test Anime');
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(queryField))
+          .controller!
+          .text,
+      'Test Anime',
+    );
 
     // 标题候选下拉：切到日文原名。
     await tester.tap(find.byIcon(FushiIcons.dropDown).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('テスト・アニメ').last);
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'テスト・アニメ');
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(queryField))
+          .controller!
+          .text,
+      'テスト・アニメ',
+    );
 
     // BUG-1184：集号框宽度必须放得下 label，且**由 label 的实测宽度决定**。
     //
@@ -487,7 +494,8 @@ void main() {
     expect(
       fieldWidth,
       greaterThan(96.0),
-      reason: '不得退回写死的 96（更早是 72）——label 随语言/字号/界面缩放变长，'
+      reason:
+          '不得退回写死的 96（更早是 72）——label 随语言/字号/界面缩放变长，'
           '写死多少都会被裁（BUG-1184）',
     );
     expect(
@@ -594,10 +602,12 @@ void main() {
     // 要守的契约还是那一条「谁被选中」，换成读用户真正看到的那张卡的 `selected`
     // （与 `JimakuEntryPicker.selectedEntryId` 同源，且比读 model 更贴近渲染）。
     bool selected(String name) {
-      final JimakuEntryPicker picker =
-          tester.widget<JimakuEntryPicker>(find.byType(JimakuEntryPicker));
-      final JimakuEntry entry =
-          picker.entries.singleWhere((JimakuEntry e) => e.name == name);
+      final JimakuEntryPicker picker = tester.widget<JimakuEntryPicker>(
+        find.byType(JimakuEntryPicker),
+      );
+      final JimakuEntry entry = picker.entries.singleWhere(
+        (JimakuEntry e) => e.name == name,
+      );
       return tester
           .widget<FushiCard>(
             find.byKey(ValueKey<String>('jimaku_entry_${entry.id}')),
@@ -926,9 +936,7 @@ void main() {
   //
   // 判据钉两件事，缺一不可：**不许有溢出异常**，且**每一条字幕都真的构建出来**。
   // 只断言最后一条即可覆盖「列表高度不足 → 后面的条目不进 viewport 也就不构建」。
-  testWidgets('BUG-1309 确认阶段：窄窗口下不溢出，且字幕条目全部可见', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-1309 确认阶段：窄窗口下不溢出，且字幕条目全部可见', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);

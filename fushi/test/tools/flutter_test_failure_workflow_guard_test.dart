@@ -3,77 +3,88 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('CI full Flutter tests use the failure-only wrapper and skip goldens',
-      () {
-    final String mainWorkflow =
-        File('../.github/workflows/main.yml').readAsStringSync();
-    final String releaseWorkflow =
-        File('../.github/workflows/release.yml').readAsStringSync();
-
-    // Both full-suite runs are file-sharded matrices (the shard count lives in
-    // the matrix and the --file-shard denominator; see main.yml unit-tests).
-    expect(
-      mainWorkflow,
-      contains('dart run tool/flutter_test_failures.dart '
-          r'--file-shard=${{ matrix.shard }}/4 --exclude-tags golden'),
-    );
-    expect(
-      releaseWorkflow,
-      contains('dart run tool/flutter_test_failures.dart '
-          r'--file-shard=${{ matrix.part }}/4 --exclude-tags golden'),
-    );
-    // Both shard runs use --experimental-faster-testing (one dill per batch
-    // instead of a serial compile per test file). PR #2422's random SIGSEGV
-    // was the Dart JIT mis-materializing sunk Pointer.asTypedList views on
-    // deopt; all views now go through package:fushi_ffi_view
-    // (test/build/ffi_typed_list_view_guard_test.dart). --concurrency=1
-    // because the lightweight engines share flutter_tester's single UI
-    // thread (more concurrency only starves suites into 30 s timeouts), and
-    // --max-suites-per-run splits a shard into separate processes.
-    for (final String workflow in <String>[mainWorkflow, releaseWorkflow]) {
-      final List<String> shardRuns = workflow
-          .split('\n')
-          .where((String line) =>
-              line.contains('tool/flutter_test_failures.dart --file-shard='))
-          .toList();
-      expect(shardRuns, isNotEmpty);
-      for (final String line in shardRuns) {
-        expect(line, contains('--experimental-faster-testing'));
-        expect(line, contains('--concurrency=1'));
-        expect(line, contains('--max-suites-per-run=400'));
-      }
-    }
-    expect(mainWorkflow, contains('shard: [0, 1, 2, 3]'));
-    expect(releaseWorkflow, contains("part: ['0', '1', '2', '3', checks]"));
-    // Coverage was never uploaded or read by anything and roughly doubled the
-    // PR suite (130-175 min vs 73 min without it). Re-adding it needs a
-    // consumer first.
-    expect(mainWorkflow, isNot(contains('--coverage')));
-    expect(releaseWorkflow, isNot(contains('--coverage')));
-    expect(
-      mainWorkflow,
-      isNot(contains('run: flutter test --coverage --exclude-tags golden')),
-    );
-    expect(releaseWorkflow, isNot(contains('run: flutter test')));
-    expect(
-      releaseWorkflow,
-      isNot(contains('run: dart run tool/flutter_test_failures.dart\n')),
-    );
-    expect(
-      mainWorkflow,
-      contains('dart ../../fushi/tool/flutter_test_failures.dart'),
-    );
-    expect(
-      releaseWorkflow,
-      contains('dart ../../fushi/tool/flutter_test_failures.dart'),
-    );
-  });
-
   test(
-      'the wrapper cannot report a run that executed no tests as green '
+    'CI full Flutter tests use the failure-only wrapper and skip goldens',
+    () {
+      final String mainWorkflow = File(
+        '../.github/workflows/main.yml',
+      ).readAsStringSync();
+      final String releaseWorkflow = File(
+        '../.github/workflows/release.yml',
+      ).readAsStringSync();
+
+      // Both full-suite runs are file-sharded matrices (the shard count lives in
+      // the matrix and the --file-shard denominator; see main.yml unit-tests).
+      expect(
+        mainWorkflow,
+        contains(
+          'dart run tool/flutter_test_failures.dart '
+          r'--file-shard=${{ matrix.shard }}/4 --exclude-tags golden',
+        ),
+      );
+      expect(
+        releaseWorkflow,
+        contains(
+          'dart run tool/flutter_test_failures.dart '
+          r'--file-shard=${{ matrix.part }}/4 --exclude-tags golden',
+        ),
+      );
+      // Both shard runs use --experimental-faster-testing (one dill per batch
+      // instead of a serial compile per test file). PR #2422's random SIGSEGV
+      // was the Dart JIT mis-materializing sunk Pointer.asTypedList views on
+      // deopt; all views now go through package:fushi_ffi_view
+      // (test/build/ffi_typed_list_view_guard_test.dart). --concurrency=1
+      // because the lightweight engines share flutter_tester's single UI
+      // thread (more concurrency only starves suites into 30 s timeouts), and
+      // --max-suites-per-run splits a shard into separate processes.
+      for (final String workflow in <String>[mainWorkflow, releaseWorkflow]) {
+        final List<String> shardRuns = workflow
+            .split('\n')
+            .where(
+              (String line) => line.contains(
+                'tool/flutter_test_failures.dart --file-shard=',
+              ),
+            )
+            .toList();
+        expect(shardRuns, isNotEmpty);
+        for (final String line in shardRuns) {
+          expect(line, contains('--experimental-faster-testing'));
+          expect(line, contains('--concurrency=1'));
+          expect(line, contains('--max-suites-per-run=400'));
+        }
+      }
+      expect(mainWorkflow, contains('shard: [0, 1, 2, 3]'));
+      expect(releaseWorkflow, contains("part: ['0', '1', '2', '3', checks]"));
+      // Coverage was never uploaded or read by anything and roughly doubled the
+      // PR suite (130-175 min vs 73 min without it). Re-adding it needs a
+      // consumer first.
+      expect(mainWorkflow, isNot(contains('--coverage')));
+      expect(releaseWorkflow, isNot(contains('--coverage')));
+      expect(
+        mainWorkflow,
+        isNot(contains('run: flutter test --coverage --exclude-tags golden')),
+      );
+      expect(releaseWorkflow, isNot(contains('run: flutter test')));
+      expect(
+        releaseWorkflow,
+        isNot(contains('run: dart run tool/flutter_test_failures.dart\n')),
+      );
+      expect(
+        mainWorkflow,
+        contains('dart ../../fushi/tool/flutter_test_failures.dart'),
+      );
+      expect(
+        releaseWorkflow,
+        contains('dart ../../fushi/tool/flutter_test_failures.dart'),
+      );
+    },
+  );
+
+  test('the wrapper cannot report a run that executed no tests as green '
       '(BUG-1157)', () {
-    final String wrapper =
-        File('tool/flutter_test_failures.dart').readAsStringSync();
+    final String wrapper = File(
+      'tool/flutter_test_failures.dart',
+    ).readAsStringSync();
 
     // The pass/fail decision must go through the single shared helper, which
     // treats "no done event" and "zero tests" as failures.

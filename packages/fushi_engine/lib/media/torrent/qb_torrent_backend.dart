@@ -19,9 +19,9 @@ class QbTorrentBackend
     TrackerSubscriptionService? trackerSubscriptionService,
     bool autoAddTrackerSubscription = false,
     String trackerSubscriptionUrl = '',
-  })  : _trackerSubscriptionService = trackerSubscriptionService,
-        _autoAddTrackerSubscription = autoAddTrackerSubscription,
-        _trackerSubscriptionUrl = trackerSubscriptionUrl;
+  }) : _trackerSubscriptionService = trackerSubscriptionService,
+       _autoAddTrackerSubscription = autoAddTrackerSubscription,
+       _trackerSubscriptionUrl = trackerSubscriptionUrl;
 
   final QBittorrentClient _client;
   final TrackerSubscriptionService? _trackerSubscriptionService;
@@ -136,10 +136,7 @@ class QbTorrentBackend
   }
 
   @override
-  Future<bool> addTrackers(
-    String torrentId,
-    Iterable<String> trackerUrls,
-  ) =>
+  Future<bool> addTrackers(String torrentId, Iterable<String> trackerUrls) =>
       _client.addTrackers(torrentId, trackerUrls);
 
   @override
@@ -240,12 +237,11 @@ class QbTorrentBackend
     String torrentId,
     int fileIndex,
     TorrentFilePriority priority,
-  ) =>
-      _client.setFilePriority(
-        hash: torrentId,
-        fileIndexes: <int>[fileIndex],
-        priority: _qbPriorityValue(priority),
-      );
+  ) => _client.setFilePriority(
+    hash: torrentId,
+    fileIndexes: <int>[fileIndex],
+    priority: _qbPriorityValue(priority),
+  );
 
   @override
   Future<bool> setFilePriorities(

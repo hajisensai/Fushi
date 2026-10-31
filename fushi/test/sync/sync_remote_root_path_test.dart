@@ -8,8 +8,11 @@ import 'package:fushi/src/sync/sync_utils.dart';
 /// (non-chrooted) server with permission-denied at '/'.
 void main() {
   test('SFTP sync root is relative to the login home, not absolute', () {
-    expect(SftpSyncBackend.rootFolderName.startsWith('/'), isFalse,
-        reason: 'a leading slash would target the server filesystem root');
+    expect(
+      SftpSyncBackend.rootFolderName.startsWith('/'),
+      isFalse,
+      reason: 'a leading slash would target the server filesystem root',
+    );
     expect(SftpSyncBackend.rootFolderName, kSyncRootFolderName);
   });
 
@@ -19,10 +22,14 @@ void main() {
     });
 
     test('non-chrooted home nests the folder under it', () {
-      expect(FtpSyncBackend.ftpRootPath('/home/user'),
-          '/home/user/$kSyncRootFolderName');
-      expect(FtpSyncBackend.ftpRootPath('/home/user/'),
-          '/home/user/$kSyncRootFolderName');
+      expect(
+        FtpSyncBackend.ftpRootPath('/home/user'),
+        '/home/user/$kSyncRootFolderName',
+      );
+      expect(
+        FtpSyncBackend.ftpRootPath('/home/user/'),
+        '/home/user/$kSyncRootFolderName',
+      );
     });
 
     test('empty/unknown home falls back to root-relative', () {

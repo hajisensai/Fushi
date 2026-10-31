@@ -62,9 +62,9 @@ void main() {
 
     final WindowsUpdateHandoffResult? result =
         await WindowsUpdateHandoff.reconcile(
-      markerFile: marker,
-      currentVersion: '2.2.1',
-    );
+          markerFile: marker,
+          currentVersion: '2.2.1',
+        );
 
     expect(result, isNotNull);
     expect(
@@ -86,9 +86,9 @@ void main() {
 
     final WindowsUpdateHandoffResult? result =
         await WindowsUpdateHandoff.reconcile(
-      markerFile: marker,
-      currentVersion: '2.2.1',
-    );
+          markerFile: marker,
+          currentVersion: '2.2.1',
+        );
 
     expect(result, isNotNull);
     expect(result!.status, WindowsUpdateHandoffStatus.installed);
@@ -104,9 +104,9 @@ void main() {
 
     final WindowsUpdateHandoffResult? result =
         await WindowsUpdateHandoff.reconcile(
-      markerFile: marker,
-      currentVersion: '2.2.1',
-    );
+          markerFile: marker,
+          currentVersion: '2.2.1',
+        );
 
     expect(result, isNotNull);
     expect(

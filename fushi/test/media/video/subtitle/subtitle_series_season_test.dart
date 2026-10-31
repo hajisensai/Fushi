@@ -121,25 +121,17 @@ void main() {
     test('Part / 第N部 / cour 分段记号不是季号', () {
       // 《JoJo》Part 5 在 TMDB 上不是第 5 季；「The Final Season Part 2」是 S4 后半。
       expect(
-        subtitleSeasonHint(
-          titles: <String>['JoJo no Kimyou na Bouken Part 5'],
-        ),
+        subtitleSeasonHint(titles: <String>['JoJo no Kimyou na Bouken Part 5']),
         isNull,
       );
-      expect(
-        subtitleSeasonHint(titles: <String>['ジョジョの奇妙な冒険 第5部']),
-        isNull,
-      );
+      expect(subtitleSeasonHint(titles: <String>['ジョジョの奇妙な冒険 第5部']), isNull);
       expect(
         subtitleSeasonHint(
           titles: <String>['Shingeki no Kyojin: The Final Season Part 2'],
         ),
         isNull,
       );
-      expect(
-        subtitleSeasonHint(titles: <String>['Foo 2nd Season Part 2']),
-        2,
-      );
+      expect(subtitleSeasonHint(titles: <String>['Foo 2nd Season Part 2']), 2);
     });
   });
 

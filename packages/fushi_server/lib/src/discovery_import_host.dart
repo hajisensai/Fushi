@@ -10,8 +10,10 @@ library;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/discovery/discovery_download_queue.dart' show DiscoveryImportOutcome;
-import 'package:fushi_engine/media/discovery/discovery_models.dart' show DiscoveryMediaKind;
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:fushi_engine/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
@@ -21,20 +23,27 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 
 /// 服务端能按域入库的发现域（`DiscoveryMediaKind.name`）。`game` 不在内：服务端
 /// 没有游戏库（exe 登记只在 app 里有意义，也没有对端能消费的游戏端点）。
-const Set<String> kServerDownloadDiscoveryKinds = <String>{'novel', 'manga', 'audiobook'};
+const Set<String> kServerDownloadDiscoveryKinds = <String>{
+  'novel',
+  'manga',
+  'audiobook',
+};
 
 /// 服务端的域原语装配（PDF / 游戏如实挡下）。
-DiscoveryDomainImporters buildServerDiscoveryImporters(FushiDatabase db) => DiscoveryDomainImporters(
+DiscoveryDomainImporters buildServerDiscoveryImporters(FushiDatabase db) =>
+    DiscoveryDomainImporters(
       importEpub: (String path) => importDiscoveryEpub(db, path),
       importText: (String path) => importDiscoveryText(db, path),
-      importPdf: (String path) async => unsupportedDiscoveryImporter('pdf', path),
+      importPdf: (String path) async =>
+          unsupportedDiscoveryImporter('pdf', path),
       importAudiobook: (AlignAudiobookPlan plan) => importDiscoveryAudiobook(
-            db: db,
-            srtBookRepo: SrtBookRepository(db),
-            audiobookRepo: AudiobookRepository(db),
-            plan: plan,
-          ),
-      importSubtitleAudiobook: (SubtitleAudiobookPlan plan) => importDiscoverySubtitleAudiobook(
+        db: db,
+        srtBookRepo: SrtBookRepository(db),
+        audiobookRepo: AudiobookRepository(db),
+        plan: plan,
+      ),
+      importSubtitleAudiobook: (SubtitleAudiobookPlan plan) =>
+          importDiscoverySubtitleAudiobook(
             db: db,
             srtBookRepo: SrtBookRepository(db),
             plan: plan,
@@ -42,10 +51,16 @@ DiscoveryDomainImporters buildServerDiscoveryImporters(FushiDatabase db) => Disc
       // 服务端不自动转录（模型要显式 `fushi_server models pull`，转录排队也还没
       // 接）：只有音频的包与改前同一个原因码挡下。
       transcribeAudiobook: (TranscribeAudiobookPlan plan) async =>
-          throw const DiscoveryImportBlockedException(DiscoveryImportBlocker.audiobookMissingSubtitle),
-      importMangaArchive: (String path) => importDiscoveryMangaArchive(db, path),
+          throw const DiscoveryImportBlockedException(
+            DiscoveryImportBlocker.audiobookMissingSubtitle,
+          ),
+      importMangaArchive: (String path) =>
+          importDiscoveryMangaArchive(db, path),
       registerGameExes: (List<String> exePaths) async =>
-          unsupportedDiscoveryImporter('game', exePaths.isEmpty ? '' : exePaths.first),
+          unsupportedDiscoveryImporter(
+            'game',
+            exePaths.isEmpty ? '' : exePaths.first,
+          ),
     );
 
 /// 管线的 `discoveryImporter` 端口。能力位之外的域（防御：旧行 / 手改 DB）在这里
@@ -63,9 +78,15 @@ VideoDownloadDiscoveryImporter serverDiscoveryImporter(
   );
   return (DiscoveryMediaKind kind, List<String> paths) async {
     if (!kServerDownloadDiscoveryKinds.contains(kind.name)) {
-      throw DiscoveryImportBlockedException(DiscoveryImportBlocker.unsupportedOnThisHost, kind.name);
+      throw DiscoveryImportBlockedException(
+        DiscoveryImportBlocker.unsupportedOnThisHost,
+        kind.name,
+      );
     }
-    final DiscoveryImportOutcome outcome = await executor.importPaths(kind, paths);
+    final DiscoveryImportOutcome outcome = await executor.importPaths(
+      kind,
+      paths,
+    );
     return outcome;
   };
 }

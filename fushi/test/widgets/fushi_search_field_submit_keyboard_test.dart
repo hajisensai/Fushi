@@ -16,18 +16,20 @@ Future<List<String>> _pumpAndSubmit(WidgetTester tester) async {
   addTearDown(controller.dispose);
   addTearDown(focusNode.dispose);
   final List<String> submitted = <String>[];
-  await tester.pumpWidget(buildTestApp(
-    SizedBox(
-      width: 600,
-      child: FushiSearchField(
-        controller: controller,
-        focusNode: focusNode,
-        hintText: 'Search',
-        onChanged: (_) {},
-        onSubmitted: submitted.add,
+  await tester.pumpWidget(
+    buildTestApp(
+      SizedBox(
+        width: 600,
+        child: FushiSearchField(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search',
+          onChanged: (_) {},
+          onSubmitted: submitted.add,
+        ),
       ),
     ),
-  ));
+  );
   await tester.showKeyboard(find.byType(TextField));
   await tester.enterText(find.byType(TextField), '猫');
   expect(tester.testTextInput.isVisible, isTrue, reason: '前提：键盘已弹起。');
@@ -62,24 +64,16 @@ void main() {
     }),
   );
 
-  testWidgets(
-    '收起后再点一下搜索框：键盘重新弹起',
-    (WidgetTester tester) async {
-      await _pumpAndSubmit(tester);
-      expect(tester.testTextInput.isVisible, isFalse);
-      await tester.tap(find.byType(TextField));
-      await tester.pump();
-      expect(tester.testTextInput.isVisible, isTrue);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.android),
-  );
+  testWidgets('收起后再点一下搜索框：键盘重新弹起', (WidgetTester tester) async {
+    await _pumpAndSubmit(tester);
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isTrue);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
-  testWidgets(
-    '桌面端提交不去动软键盘',
-    (WidgetTester tester) async {
-      await _pumpAndSubmit(tester);
-      expect(tester.testTextInput.isVisible, isTrue);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
-  );
+  testWidgets('桌面端提交不去动软键盘', (WidgetTester tester) async {
+    await _pumpAndSubmit(tester);
+    expect(tester.testTextInput.isVisible, isTrue);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 }

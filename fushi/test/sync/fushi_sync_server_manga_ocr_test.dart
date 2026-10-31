@@ -43,11 +43,11 @@ class _FakeOcrService implements MangaOcrService {
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
-        detectorReady: ready,
-        recognizerReady: ready,
-        diskBytes: ready ? 1 : 0,
-        totalBytes: 1,
-      );
+    detectorReady: ready,
+    recognizerReady: ready,
+    diskBytes: ready ? 1 : 0,
+    totalBytes: 1,
+  );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -80,25 +80,29 @@ class _FakeOcrService implements MangaOcrService {
         final Completer<void>? g = gate;
         if (g != null) await g.future;
         if (controller.isClosed) return;
-        final Directory outDir =
-            Directory(p.join(imageDirPath, kMangaOcrOutDirName))
-              ..createSync(recursive: true);
+        final Directory outDir = Directory(
+          p.join(imageDirPath, kMangaOcrOutDirName),
+        )..createSync(recursive: true);
         final File out = File(p.join(outDir.path, kMangaOcrOutputFileName));
-        out.writeAsStringSync(jsonEncode(<String, Object?>{
-          'pages': <Object?>[
-            for (final String url in pages)
-              <String, Object?>{
-                'url': url,
-                'width': 100,
-                'height': 200,
-                'blocks': <Object?>[],
-              },
-          ],
-        }));
-        controller.add(MangaOcrVolumeEvent.finished(
-          pagesTotal: pages.length,
-          mangaJsonPath: out.path,
-        ));
+        out.writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'pages': <Object?>[
+              for (final String url in pages)
+                <String, Object?>{
+                  'url': url,
+                  'width': 100,
+                  'height': 200,
+                  'blocks': <Object?>[],
+                },
+            ],
+          }),
+        );
+        controller.add(
+          MangaOcrVolumeEvent.finished(
+            pagesTotal: pages.length,
+            mangaJsonPath: out.path,
+          ),
+        );
         await controller.close();
       }());
     };
@@ -115,11 +119,15 @@ Future<HttpClientResponse> _request(
   List<int>? bodyBytes,
 }) async {
   final HttpClient c = HttpClient();
-  final HttpClientRequest r =
-      await c.openUrl(method, Uri.parse('http://127.0.0.1:$port$path'));
+  final HttpClientRequest r = await c.openUrl(
+    method,
+    Uri.parse('http://127.0.0.1:$port$path'),
+  );
   if (token != null) {
     r.headers.set(
-        'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      'authorization',
+      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    );
   }
   if (jsonBody != null) {
     r.headers.contentType = ContentType.json;
@@ -145,13 +153,16 @@ void main() {
     if (tmpRoot.existsSync()) tmpRoot.deleteSync(recursive: true);
   });
 
-  FushiSyncServer buildServer(_FakeOcrService service,
-      {MangaOcrHostJobManager? manager}) {
+  FushiSyncServer buildServer(
+    _FakeOcrService service, {
+    MangaOcrHostJobManager? manager,
+  }) {
     return FushiSyncServer(
       syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
       port: 0,
       token: 'tok',
-      mangaOcrJobs: manager ??
+      mangaOcrJobs:
+          manager ??
           MangaOcrHostJobManager(
             service: service,
             jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
@@ -167,9 +178,12 @@ void main() {
 
     // 创建任务。
     final HttpClientResponse createResp = await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok',
-        jsonBody: <String, Object?>{'volumeTitle': '卷一', 'pageCount': 2});
+      server.port,
+      'POST',
+      '/api/ocr/job',
+      token: 'tok',
+      jsonBody: <String, Object?>{'volumeTitle': '卷一', 'pageCount': 2},
+    );
     expect(createResp.statusCode, 200);
     final Map<String, dynamic> created = await _json(createResp);
     final String jobId = created['jobId'] as String;
@@ -178,44 +192,52 @@ void main() {
 
     // 逐页上传（含一层子目录）。
     final HttpClientResponse up1 = await _request(
-        server.port,
-        'PUT',
-        '/api/ocr/job/$jobId/page/0'
-            '?name=${Uri.encodeQueryComponent('p001.jpg')}',
-        token: 'tok',
-        bodyBytes: <int>[1, 2, 3]);
+      server.port,
+      'PUT',
+      '/api/ocr/job/$jobId/page/0'
+          '?name=${Uri.encodeQueryComponent('p001.jpg')}',
+      token: 'tok',
+      bodyBytes: <int>[1, 2, 3],
+    );
     expect(up1.statusCode, 200);
     final HttpClientResponse up2 = await _request(
-        server.port,
-        'PUT',
-        '/api/ocr/job/$jobId/page/1'
-            '?name=${Uri.encodeQueryComponent('sub/p002.jpg')}',
-        token: 'tok',
-        bodyBytes: <int>[4, 5, 6]);
+      server.port,
+      'PUT',
+      '/api/ocr/job/$jobId/page/1'
+          '?name=${Uri.encodeQueryComponent('sub/p002.jpg')}',
+      token: 'tok',
+      bodyBytes: <int>[4, 5, 6],
+    );
     expect(up2.statusCode, 200);
 
     // 上传阶段状态。
-    Map<String, dynamic> status = await _json(await _request(
-        server.port, 'GET', '/api/ocr/job/$jobId',
-        token: 'tok'));
+    Map<String, dynamic> status = await _json(
+      await _request(server.port, 'GET', '/api/ocr/job/$jobId', token: 'tok'),
+    );
     expect(status['state'], 'uploading');
     expect(status['pagesUploaded'], 2);
 
     // result 在完成前是 409 not_done。
     final HttpClientResponse early = await _request(
-        server.port, 'GET', '/api/ocr/job/$jobId/result',
-        token: 'tok');
+      server.port,
+      'GET',
+      '/api/ocr/job/$jobId/result',
+      token: 'tok',
+    );
     expect(early.statusCode, 409);
 
     // start → 轮询到 done。
     final HttpClientResponse startResp = await _request(
-        server.port, 'POST', '/api/ocr/job/$jobId/start',
-        token: 'tok');
+      server.port,
+      'POST',
+      '/api/ocr/job/$jobId/start',
+      token: 'tok',
+    );
     expect(startResp.statusCode, 200);
     for (int i = 0; i < 100; i++) {
-      status = await _json(await _request(
-          server.port, 'GET', '/api/ocr/job/$jobId',
-          token: 'tok'));
+      status = await _json(
+        await _request(server.port, 'GET', '/api/ocr/job/$jobId', token: 'tok'),
+      );
       if (status['state'] == 'done') break;
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
@@ -225,8 +247,11 @@ void main() {
 
     // result：manga.json 内容（页 url 保留相对子目录、自然序）。
     final HttpClientResponse resultResp = await _request(
-        server.port, 'GET', '/api/ocr/job/$jobId/result',
-        token: 'tok');
+      server.port,
+      'GET',
+      '/api/ocr/job/$jobId/result',
+      token: 'tok',
+    );
     expect(resultResp.statusCode, 200);
     final Map<String, dynamic> manga = await _json(resultResp);
     final List<dynamic> pages = manga['pages'] as List<dynamic>;
@@ -240,28 +265,38 @@ void main() {
     await server.start();
     addTearDown(server.stop);
     final HttpClientResponse resp = await _request(
-        server.port, 'POST', '/api/ocr/job',
-        jsonBody: const <String, Object?>{});
+      server.port,
+      'POST',
+      '/api/ocr/job',
+      jsonBody: const <String, Object?>{},
+    );
     expect(resp.statusCode, 401);
   });
 
-  test('endpoints are 404 and capabilities has no mangaOcr when not wired',
-      () async {
-    final FushiSyncServer server = FushiSyncServer(
-      syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
-      port: 0,
-      token: 'tok',
-    );
-    await server.start();
-    addTearDown(server.stop);
-    final HttpClientResponse resp = await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok', jsonBody: const <String, Object?>{});
-    expect(resp.statusCode, 404);
-    final Map<String, dynamic> caps = await _json(
-        await _request(server.port, 'GET', '/api/capabilities', token: 'tok'));
-    expect(caps.containsKey('mangaOcr'), isFalse);
-  });
+  test(
+    'endpoints are 404 and capabilities has no mangaOcr when not wired',
+    () async {
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: Directory(p.join(tmpRoot.path, 'sync')).path,
+        port: 0,
+        token: 'tok',
+      );
+      await server.start();
+      addTearDown(server.stop);
+      final HttpClientResponse resp = await _request(
+        server.port,
+        'POST',
+        '/api/ocr/job',
+        token: 'tok',
+        jsonBody: const <String, Object?>{},
+      );
+      expect(resp.statusCode, 404);
+      final Map<String, dynamic> caps = await _json(
+        await _request(server.port, 'GET', '/api/capabilities', token: 'tok'),
+      );
+      expect(caps.containsKey('mangaOcr'), isFalse);
+    },
+  );
 
   test('capabilities reports mangaOcr supported/modelsReady', () async {
     final _FakeOcrService service = _FakeOcrService(ready: false);
@@ -269,14 +304,16 @@ void main() {
     await server.start();
     addTearDown(server.stop);
     Map<String, dynamic> caps = await _json(
-        await _request(server.port, 'GET', '/api/capabilities', token: 'tok'));
+      await _request(server.port, 'GET', '/api/capabilities', token: 'tok'),
+    );
     expect(caps['mangaOcr'], <String, Object?>{
       'supported': true,
       'modelsReady': false,
     });
     service.ready = true;
     caps = await _json(
-        await _request(server.port, 'GET', '/api/capabilities', token: 'tok'));
+      await _request(server.port, 'GET', '/api/capabilities', token: 'tok'),
+    );
     expect(caps['mangaOcr'], <String, Object?>{
       'supported': true,
       'modelsReady': true,
@@ -288,15 +325,29 @@ void main() {
     final FushiSyncServer server = buildServer(service);
     await server.start();
     addTearDown(server.stop);
-    final Map<String, dynamic> created = await _json(await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok', jsonBody: const <String, Object?>{}));
+    final Map<String, dynamic> created = await _json(
+      await _request(
+        server.port,
+        'POST',
+        '/api/ocr/job',
+        token: 'tok',
+        jsonBody: const <String, Object?>{},
+      ),
+    );
     final String jobId = created['jobId'] as String;
-    await _request(server.port, 'PUT', '/api/ocr/job/$jobId/page/0?name=a.jpg',
-        token: 'tok', bodyBytes: <int>[1]);
+    await _request(
+      server.port,
+      'PUT',
+      '/api/ocr/job/$jobId/page/0?name=a.jpg',
+      token: 'tok',
+      bodyBytes: <int>[1],
+    );
     final HttpClientResponse resp = await _request(
-        server.port, 'POST', '/api/ocr/job/$jobId/start',
-        token: 'tok');
+      server.port,
+      'POST',
+      '/api/ocr/job/$jobId/start',
+      token: 'tok',
+    );
     expect(resp.statusCode, 503);
     expect((await _json(resp))['error'], 'models_not_ready');
     expect(service.started, 0);
@@ -307,15 +358,29 @@ void main() {
     final FushiSyncServer server = buildServer(service);
     await server.start();
     addTearDown(server.stop);
-    final Map<String, dynamic> created = await _json(await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok', jsonBody: const <String, Object?>{}));
+    final Map<String, dynamic> created = await _json(
+      await _request(
+        server.port,
+        'POST',
+        '/api/ocr/job',
+        token: 'tok',
+        jsonBody: const <String, Object?>{},
+      ),
+    );
     final String jobId = created['jobId'] as String;
-    await _request(server.port, 'PUT', '/api/ocr/job/$jobId/page/0?name=a.jpg',
-        token: 'tok', bodyBytes: <int>[1]);
+    await _request(
+      server.port,
+      'PUT',
+      '/api/ocr/job/$jobId/page/0?name=a.jpg',
+      token: 'tok',
+      bodyBytes: <int>[1],
+    );
     final HttpClientResponse resp = await _request(
-        server.port, 'POST', '/api/ocr/job/$jobId/start',
-        token: 'tok');
+      server.port,
+      'POST',
+      '/api/ocr/job/$jobId/start',
+      token: 'tok',
+    );
     expect(resp.statusCode, 503);
     expect((await _json(resp))['error'], 'not_supported');
   });
@@ -324,9 +389,15 @@ void main() {
     final FushiSyncServer server = buildServer(_FakeOcrService());
     await server.start();
     addTearDown(server.stop);
-    final Map<String, dynamic> created = await _json(await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok', jsonBody: const <String, Object?>{}));
+    final Map<String, dynamic> created = await _json(
+      await _request(
+        server.port,
+        'POST',
+        '/api/ocr/job',
+        token: 'tok',
+        jsonBody: const <String, Object?>{},
+      ),
+    );
     final String jobId = created['jobId'] as String;
     for (final String bad in <String>[
       '../evil.jpg',
@@ -335,9 +406,13 @@ void main() {
       'manga_ocr_out/poison.json',
       '',
     ]) {
-      final HttpClientResponse resp = await _request(server.port, 'PUT',
-          '/api/ocr/job/$jobId/page/0?name=${Uri.encodeQueryComponent(bad)}',
-          token: 'tok', bodyBytes: <int>[1]);
+      final HttpClientResponse resp = await _request(
+        server.port,
+        'PUT',
+        '/api/ocr/job/$jobId/page/0?name=${Uri.encodeQueryComponent(bad)}',
+        token: 'tok',
+        bodyBytes: <int>[1],
+      );
       expect(resp.statusCode, 400, reason: 'name=$bad must be rejected');
     }
   });
@@ -346,8 +421,12 @@ void main() {
     final FushiSyncServer server = buildServer(_FakeOcrService());
     await server.start();
     addTearDown(server.stop);
-    final HttpClientResponse resp =
-        await _request(server.port, 'GET', '/api/ocr/job/nope', token: 'tok');
+    final HttpClientResponse resp = await _request(
+      server.port,
+      'GET',
+      '/api/ocr/job/nope',
+      token: 'tok',
+    );
     expect(resp.statusCode, 404);
     expect((await _json(resp))['error'], 'unknown_job');
   });
@@ -382,77 +461,125 @@ void main() {
     expect(service.started, 2);
   });
 
-  test('DELETE cancels at page boundary, keeps checkpoint cache for resume',
-      () async {
-    final _FakeOcrService service = _FakeOcrService()..gate = Completer<void>();
-    final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
-    final MangaOcrHostJobManager manager =
-        MangaOcrHostJobManager(service: service, jobRoot: jobRoot);
-    final FushiSyncServer server = buildServer(service, manager: manager);
-    await server.start();
-    addTearDown(server.stop);
+  test(
+    'DELETE cancels at page boundary, keeps checkpoint cache for resume',
+    () async {
+      final _FakeOcrService service = _FakeOcrService()
+        ..gate = Completer<void>();
+      final Directory jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+      );
+      final FushiSyncServer server = buildServer(service, manager: manager);
+      await server.start();
+      addTearDown(server.stop);
 
-    final Map<String, dynamic> created = await _json(await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok', jsonBody: <String, Object?>{'volumeTitle': '同卷'}));
-    final String jobId = created['jobId'] as String;
-    await _request(
-        server.port, 'PUT', '/api/ocr/job/$jobId/page/0?name=p001.jpg',
-        token: 'tok', bodyBytes: <int>[1, 2, 3]);
-    await _request(server.port, 'POST', '/api/ocr/job/$jobId/start',
-        token: 'tok');
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+      final Map<String, dynamic> created = await _json(
+        await _request(
+          server.port,
+          'POST',
+          '/api/ocr/job',
+          token: 'tok',
+          jsonBody: <String, Object?>{'volumeTitle': '同卷'},
+        ),
+      );
+      final String jobId = created['jobId'] as String;
+      await _request(
+        server.port,
+        'PUT',
+        '/api/ocr/job/$jobId/page/0?name=p001.jpg',
+        token: 'tok',
+        bodyBytes: <int>[1, 2, 3],
+      );
+      await _request(
+        server.port,
+        'POST',
+        '/api/ocr/job/$jobId/start',
+        token: 'tok',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    // 任务目录：页图已落盘；模拟逐页断点缓存已写。
-    final Directory jobDir = jobRoot.listSync().whereType<Directory>().single;
-    expect(File(p.join(jobDir.path, 'p001.jpg')).existsSync(), isTrue);
-    final File cacheFile = File(
-        p.join(jobDir.path, kMangaOcrOutDirName, '_pages', 'p001.jpg.json'))
-      ..createSync(recursive: true);
+      // 任务目录：页图已落盘；模拟逐页断点缓存已写。
+      final Directory jobDir = jobRoot.listSync().whereType<Directory>().single;
+      expect(File(p.join(jobDir.path, 'p001.jpg')).existsSync(), isTrue);
+      final File cacheFile = File(
+        p.join(jobDir.path, kMangaOcrOutDirName, '_pages', 'p001.jpg.json'),
+      )..createSync(recursive: true);
 
-    final HttpClientResponse delResp = await _request(
-        server.port, 'DELETE', '/api/ocr/job/$jobId',
-        token: 'tok');
-    expect(delResp.statusCode, 200);
-    expect(service.lastCancelled, isTrue, reason: '订阅取消 = 页边界中止');
-    // 页图删除、断点缓存保留。
-    expect(File(p.join(jobDir.path, 'p001.jpg')).existsSync(), isFalse);
-    expect(cacheFile.existsSync(), isTrue);
-    expect(manager.jobCount, 0);
-    // 任务已出表：再查 404。
-    final HttpClientResponse gone =
-        await _request(server.port, 'GET', '/api/ocr/job/$jobId', token: 'tok');
-    expect(gone.statusCode, 404);
-    // 放行 fake 的挂起循环，避免泄漏 pending timer。
-    service.gate?.complete();
-    service.gate = null;
+      final HttpClientResponse delResp = await _request(
+        server.port,
+        'DELETE',
+        '/api/ocr/job/$jobId',
+        token: 'tok',
+      );
+      expect(delResp.statusCode, 200);
+      expect(service.lastCancelled, isTrue, reason: '订阅取消 = 页边界中止');
+      // 页图删除、断点缓存保留。
+      expect(File(p.join(jobDir.path, 'p001.jpg')).existsSync(), isFalse);
+      expect(cacheFile.existsSync(), isTrue);
+      expect(manager.jobCount, 0);
+      // 任务已出表：再查 404。
+      final HttpClientResponse gone = await _request(
+        server.port,
+        'GET',
+        '/api/ocr/job/$jobId',
+        token: 'tok',
+      );
+      expect(gone.statusCode, 404);
+      // 放行 fake 的挂起循环，避免泄漏 pending timer。
+      service.gate?.complete();
+      service.gate = null;
 
-    // 同卷新任务落回同一目录 → 断点缓存可续传。
-    final Map<String, dynamic> again = await _json(await _request(
-        server.port, 'POST', '/api/ocr/job',
-        token: 'tok', jsonBody: <String, Object?>{'volumeTitle': '同卷'}));
-    expect(again['jobId'], isNot(jobId));
-    final Directory jobDir2 = jobRoot.listSync().whereType<Directory>().single;
-    expect(p.canonicalize(jobDir2.path), p.canonicalize(jobDir.path));
+      // 同卷新任务落回同一目录 → 断点缓存可续传。
+      final Map<String, dynamic> again = await _json(
+        await _request(
+          server.port,
+          'POST',
+          '/api/ocr/job',
+          token: 'tok',
+          jsonBody: <String, Object?>{'volumeTitle': '同卷'},
+        ),
+      );
+      expect(again['jobId'], isNot(jobId));
+      final Directory jobDir2 = jobRoot
+          .listSync()
+          .whereType<Directory>()
+          .single;
+      expect(p.canonicalize(jobDir2.path), p.canonicalize(jobDir.path));
 
-    // 取消不得卡死串行队列（cancelAndCleanup 补完成信号的回归守卫）：
-    // 重传后 start 新任务必须能跑完。
-    final String jobId2 = again['jobId'] as String;
-    await _request(
-        server.port, 'PUT', '/api/ocr/job/$jobId2/page/0?name=p001.jpg',
-        token: 'tok', bodyBytes: <int>[1, 2, 3]);
-    await _request(server.port, 'POST', '/api/ocr/job/$jobId2/start',
-        token: 'tok');
-    Map<String, dynamic> status = const <String, dynamic>{};
-    for (int i = 0; i < 100; i++) {
-      status = await _json(await _request(
-          server.port, 'GET', '/api/ocr/job/$jobId2',
-          token: 'tok'));
-      if (status['state'] == 'done') break;
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-    expect(status['state'], 'done', reason: '取消后队列必须继续放行新任务');
-  });
+      // 取消不得卡死串行队列（cancelAndCleanup 补完成信号的回归守卫）：
+      // 重传后 start 新任务必须能跑完。
+      final String jobId2 = again['jobId'] as String;
+      await _request(
+        server.port,
+        'PUT',
+        '/api/ocr/job/$jobId2/page/0?name=p001.jpg',
+        token: 'tok',
+        bodyBytes: <int>[1, 2, 3],
+      );
+      await _request(
+        server.port,
+        'POST',
+        '/api/ocr/job/$jobId2/start',
+        token: 'tok',
+      );
+      Map<String, dynamic> status = const <String, dynamic>{};
+      for (int i = 0; i < 100; i++) {
+        status = await _json(
+          await _request(
+            server.port,
+            'GET',
+            '/api/ocr/job/$jobId2',
+            token: 'tok',
+          ),
+        );
+        if (status['state'] == 'done') break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(status['state'], 'done', reason: '取消后队列必须继续放行新任务');
+    },
+  );
 
   test('expired jobs are pruned with their directories (TTL)', () async {
     DateTime now = DateTime(2026, 7, 24, 12);

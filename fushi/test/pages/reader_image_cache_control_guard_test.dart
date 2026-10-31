@@ -25,10 +25,13 @@ void main() {
       // _readerResourcePayload（返回 _ReaderResourceResponse DTO，供拦截 +
       // Apple 自定义 scheme 两条路径复用）。图片 max-age / HTML-CSS no-cache
       // 的缓存分支现在住在 payload 函数里，守卫据此扫 payload 函数体。
-      final int interceptIdx =
-          src.indexOf('_readerResourcePayload(WebUri url) async {');
+      final int interceptIdx = src.indexOf(
+        '_readerResourcePayload(WebUri url) async {',
+      );
       final int end = src.indexOf(
-          'Future<WebResourceResponse?> _interceptRequest(', interceptIdx);
+        'Future<WebResourceResponse?> _interceptRequest(',
+        interceptIdx,
+      );
       expect(interceptIdx, greaterThan(0));
       expect(end, greaterThan(interceptIdx));
       interceptBody = src.substring(interceptIdx, end);
@@ -43,7 +46,8 @@ void main() {
       expect(
         interceptBody.contains("'max-age=3600'"),
         isTrue,
-        reason: '图片响应必须带 max-age，让 WebView 复用解码位图，'
+        reason:
+            '图片响应必须带 max-age，让 WebView 复用解码位图，'
             '消除来回切章重复读盘重解码',
       );
     });

@@ -7,22 +7,20 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 void main() {
   group('buildFfprobeFormatTagsArgs', () {
     test('emits -show_format json probe args for the input path', () {
-      expect(
-        buildFfprobeFormatTagsArgs(inputPath: '/a/book.m4b'),
-        <String>[
-          '-v',
-          'quiet',
-          '-print_format',
-          'json',
-          '-show_format',
-          '/a/book.m4b',
-        ],
-      );
+      expect(buildFfprobeFormatTagsArgs(inputPath: '/a/book.m4b'), <String>[
+        '-v',
+        'quiet',
+        '-print_format',
+        'json',
+        '-show_format',
+        '/a/book.m4b',
+      ]);
     });
 
     test('carries an arbitrary path verbatim as the last arg', () {
-      final List<String> args =
-          buildFfprobeFormatTagsArgs(inputPath: r'C:\Books\日本語.m4b');
+      final List<String> args = buildFfprobeFormatTagsArgs(
+        inputPath: r'C:\Books\日本語.m4b',
+      );
       expect(args.last, r'C:\Books\日本語.m4b');
       expect(args.first, '-v');
     });
@@ -74,16 +72,18 @@ void main() {
       expect(meta.isEmpty, isTrue);
     });
 
-    test('empty / malformed JSON degrades to empty metadata (never throws)',
-        () {
-      expect(parseAudioMetadataFromFfprobeJson('').isEmpty, isTrue);
-      expect(parseAudioMetadataFromFfprobeJson('not json {').isEmpty, isTrue);
-      expect(parseAudioMetadataFromFfprobeJson('[1,2,3]').isEmpty, isTrue);
-      expect(
-        parseAudioMetadataFromFfprobeJson('{"format":"scalar"}').isEmpty,
-        isTrue,
-      );
-    });
+    test(
+      'empty / malformed JSON degrades to empty metadata (never throws)',
+      () {
+        expect(parseAudioMetadataFromFfprobeJson('').isEmpty, isTrue);
+        expect(parseAudioMetadataFromFfprobeJson('not json {').isEmpty, isTrue);
+        expect(parseAudioMetadataFromFfprobeJson('[1,2,3]').isEmpty, isTrue);
+        expect(
+          parseAudioMetadataFromFfprobeJson('{"format":"scalar"}').isEmpty,
+          isTrue,
+        );
+      },
+    );
 
     test('partial tags: title only, author only', () {
       expect(

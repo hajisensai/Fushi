@@ -21,16 +21,29 @@ import 'package:fushi_server/src/ctl/admin_client.dart';
 void addCtlDownloadOptions(ArgParser parser) {
   parser
     ..addOption('magnet', help: 'downloads add：磁链（也可作位置参数）')
-    ..addOption('torrent', help: 'downloads add：.torrent 本地路径或 http(s) 地址（下载走 HTTPS_PROXY）')
+    ..addOption(
+      'torrent',
+      help: 'downloads add：.torrent 本地路径或 http(s) 地址（下载走 HTTPS_PROXY）',
+    )
     ..addMultiOption(
       'select',
       splitCommas: false,
       help: 'downloads add：只下文件路径匹配该正则的文件（不区分大小写，可重复）',
     )
-    ..addMultiOption('index', help: 'downloads add：只下这个文件下标（可重复，见 --list-files）')
-    ..addFlag('list-files', negatable: false, help: 'downloads add：只列出 .torrent 的文件清单（下标 / 大小 / 路径）')
+    ..addMultiOption(
+      'index',
+      help: 'downloads add：只下这个文件下标（可重复，见 --list-files）',
+    )
+    ..addFlag(
+      'list-files',
+      negatable: false,
+      help: 'downloads add：只列出 .torrent 的文件清单（下标 / 大小 / 路径）',
+    )
     ..addOption('year', help: 'downloads add：作品年份')
-    ..addOption('subtitle-policy', help: 'downloads add：none | bestEffort | required');
+    ..addOption(
+      'subtitle-policy',
+      help: 'downloads add：none | bestEffort | required',
+    );
 }
 
 /// .torrent 的来源：本地路径或 http(s) 地址。
@@ -52,8 +65,12 @@ Future<int> runCtlDownloadAdd(
       '        [--media-kind movie|tv] [--subtitle-policy none|bestEffort|required]\n'
       '      fushi_server ctl downloads add --torrent <路径|URL> --list-files';
   final List<String> rest = command.rest;
-  final List<String> args = rest.length > 2 ? rest.sublist(2) : const <String>[];
-  final String? magnet = _nonEmpty(command['magnet'] as String?) ?? (args.isEmpty ? null : args.first);
+  final List<String> args = rest.length > 2
+      ? rest.sublist(2)
+      : const <String>[];
+  final String? magnet =
+      _nonEmpty(command['magnet'] as String?) ??
+      (args.isEmpty ? null : args.first);
   final String? torrent = _nonEmpty(command['torrent'] as String?);
   final List<String> patterns = command['select'] as List<String>;
   final List<String> indexTexts = command['index'] as List<String>;
@@ -62,7 +79,8 @@ Future<int> runCtlDownloadAdd(
     err.writeln(usage);
     return 64;
   }
-  if (torrent == null && (listFiles || patterns.isNotEmpty || indexTexts.isNotEmpty)) {
+  if (torrent == null &&
+      (listFiles || patterns.isNotEmpty || indexTexts.isNotEmpty)) {
     err.writeln('磁链没有文件清单：--list-files / --select / --index 需要 --torrent');
     return 64;
   }
@@ -105,7 +123,11 @@ Future<int> runCtlDownloadAdd(
   Set<int>? selection;
   if (patterns.isNotEmpty || indexTexts.isNotEmpty) {
     try {
-      selection = selectTorrentFiles(meta!.files, patterns: patterns, indexes: indexTexts);
+      selection = selectTorrentFiles(
+        meta!.files,
+        patterns: patterns,
+        indexes: indexTexts,
+      );
     } on FormatException catch (e) {
       err.writeln(e.message);
       return 64;
@@ -133,14 +155,17 @@ Future<int> runCtlDownloadAdd(
     if (year != null) 'year': year,
     if (provider != null) 'metadataProvider': provider,
     if (externalId != null) 'externalId': externalId,
-    if (_nonEmpty(command['subtitle-policy'] as String?) case final String policy) 'subtitlePolicy': policy,
+    if (_nonEmpty(command['subtitle-policy'] as String?)
+        case final String policy)
+      'subtitlePolicy': policy,
   };
   final Object? response;
   try {
     response = await client.post('/api/admin/downloads', body: body);
   } on AdminApiException catch (ex) {
     err.writeln('POST downloads 失败: $ex');
-    if (command['json'] as bool && ex.body != null) out.writeln(_pretty(ex.body));
+    if (command['json'] as bool && ex.body != null)
+      out.writeln(_pretty(ex.body));
     return exitCodeFor(ex);
   }
   if (command['json'] as bool) {
@@ -151,44 +176,65 @@ Future<int> runCtlDownloadAdd(
   out.writeln('jobId: ${jobId ?? '-'}');
   if (meta != null && selection != null) {
     for (final InspectedTorrentFile file in meta.files) {
-      if (selection.contains(file.index)) out.writeln('  [${file.index}] ${file.path}');
+      if (selection.contains(file.index))
+        out.writeln('  [${file.index}] ${file.path}');
     }
   }
   return 0;
 }
 
 /// 读 .torrent：http(s) 地址经 [fetch]（缺省 [fetchCtlTorrent]），否则当本地路径。
-Future<Uint8List> loadCtlTorrent(String source, {CtlTorrentFetcher? fetch}) async {
+Future<Uint8List> loadCtlTorrent(
+  String source, {
+  CtlTorrentFetcher? fetch,
+}) async {
   final Uri? uri = Uri.tryParse(source);
-  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty) {
+  if (uri != null &&
+      (uri.scheme == 'http' || uri.scheme == 'https') &&
+      uri.host.isNotEmpty) {
     return (fetch ?? fetchCtlTorrent)(uri);
   }
   final File file = File(source);
   final int length = await file.length();
   if (length > kMaximumTorrentMetainfoBytes) {
-    throw FileSystemException('file is larger than ${kMaximumTorrentMetainfoBytes ~/ 1024 ~/ 1024} MiB', source);
+    throw FileSystemException(
+      'file is larger than ${kMaximumTorrentMetainfoBytes ~/ 1024 ~/ 1024} MiB',
+      source,
+    );
   }
   return file.readAsBytes();
 }
 
 /// 下载一个 .torrent。走应用统一出口 [createAppHttpClient]（含 `HTTPS_PROXY` / `HTTP_PROXY`），
 /// 体积上限与解析器同一个 [kMaximumTorrentMetainfoBytes]。非 200 抛 [HttpException]。
-Future<Uint8List> fetchCtlTorrent(Uri url, {Duration timeout = const Duration(seconds: 60)}) async {
+Future<Uint8List> fetchCtlTorrent(
+  Uri url, {
+  Duration timeout = const Duration(seconds: 60),
+}) async {
   // 应用统一出口：环境变量 / 手填代理都由 resolveAppProxyDirective 决定（回环与局域网恒直连）。
   final HttpClient http = createAppHttpClient(connectionTimeout: timeout);
   try {
     final HttpClientRequest request = await http.getUrl(url).timeout(timeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/x-bittorrent, */*');
+    request.headers.set(
+      HttpHeaders.acceptHeader,
+      'application/x-bittorrent, */*',
+    );
     final HttpClientResponse response = await request.close().timeout(timeout);
     if (response.statusCode != HttpStatus.ok) {
       await response.drain<void>();
-      throw HttpException('HTTP ${response.statusCode} ${response.reasonPhrase}', uri: url);
+      throw HttpException(
+        'HTTP ${response.statusCode} ${response.reasonPhrase}',
+        uri: url,
+      );
     }
     final BytesBuilder builder = BytesBuilder(copy: false);
     await for (final List<int> chunk in response.timeout(timeout)) {
       builder.add(chunk);
       if (builder.length > kMaximumTorrentMetainfoBytes) {
-        throw HttpException('response is larger than a .torrent can be', uri: url);
+        throw HttpException(
+          'response is larger than a .torrent can be',
+          uri: url,
+        );
       }
     }
     return builder.takeBytes();
@@ -224,15 +270,22 @@ Set<int> selectTorrentFiles(
     } on FormatException catch (e) {
       throw FormatException('--select 正则无效: $pattern（${e.message}）');
     }
-    final Iterable<InspectedTorrentFile> hits = files.where((InspectedTorrentFile f) => re.hasMatch(f.path));
-    if (hits.isEmpty) throw FormatException('--select $pattern 没有匹配任何文件（--list-files 看清单）');
+    final Iterable<InspectedTorrentFile> hits = files.where(
+      (InspectedTorrentFile f) => re.hasMatch(f.path),
+    );
+    if (hits.isEmpty)
+      throw FormatException('--select $pattern 没有匹配任何文件（--list-files 看清单）');
     selected.addAll(hits.map((InspectedTorrentFile f) => f.index));
   }
   if (selected.isEmpty) throw const FormatException('没有选中任何文件');
   return selected;
 }
 
-void _renderFileList(InspectedTorrentMetainfo meta, StringSink out, {required bool json}) {
+void _renderFileList(
+  InspectedTorrentMetainfo meta,
+  StringSink out, {
+  required bool json,
+}) {
   if (json) {
     out.writeln(
       _pretty(<String, Object?>{
@@ -240,7 +293,11 @@ void _renderFileList(InspectedTorrentMetainfo meta, StringSink out, {required bo
         'infoHash': meta.torrentId,
         'files': <Object?>[
           for (final InspectedTorrentFile f in meta.files)
-            <String, Object?>{'index': f.index, 'size': f.length, 'path': f.path},
+            <String, Object?>{
+              'index': f.index,
+              'size': f.length,
+              'path': f.path,
+            },
         ],
       }),
     );
@@ -253,7 +310,9 @@ void _renderFileList(InspectedTorrentMetainfo meta, StringSink out, {required bo
   }
   final int width = '${meta.files.length - 1}'.length;
   for (final InspectedTorrentFile f in meta.files) {
-    out.writeln('  ${'${f.index}'.padLeft(width)}  ${formatCtlBytes(f.length).padLeft(9)}  ${f.path}');
+    out.writeln(
+      '  ${'${f.index}'.padLeft(width)}  ${formatCtlBytes(f.length).padLeft(9)}  ${f.path}',
+    );
   }
 }
 
@@ -269,7 +328,8 @@ String formatCtlBytes(int bytes) {
   return unit == 0 ? '$bytes B' : '${value.toStringAsFixed(1)} ${units[unit]}';
 }
 
-String _pretty(Object? value) => const JsonEncoder.withIndent('  ').convert(value);
+String _pretty(Object? value) =>
+    const JsonEncoder.withIndent('  ').convert(value);
 
 String? _nonEmpty(String? value) {
   final String? v = value?.trim();

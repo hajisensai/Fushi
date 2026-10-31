@@ -24,47 +24,54 @@ void main() {
 
   /// popup_settings_injection.dart 里所有 `setProperty('--x', …)` 的变量名。
   Set<String> inAppInjectedVars() {
-    final String src =
-        read('lib/src/pages/implementations/popup_settings_injection.dart');
-    return RegExp(r"setProperty\('(--[a-z0-9-]+)'")
-        .allMatches(src)
-        .map((Match m) => m.group(1)!)
-        .toSet();
+    final String src = read(
+      'lib/src/pages/implementations/popup_settings_injection.dart',
+    );
+    return RegExp(
+      r"setProperty\('(--[a-z0-9-]+)'",
+    ).allMatches(src).map((Match m) => m.group(1)!).toSet();
   }
 
   /// `browserExtensionThemeColors()` 返回 map 里的所有 `'--x':` key。
   Set<String> serverThemeVars() {
     final String src = read('lib/src/models/app_model.dart');
-    final int start =
-        src.indexOf('browserExtensionThemeColors(String? colorScheme)');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'browserExtensionThemeColors(colorScheme) not found in '
-            'app_model.dart');
+    final int start = src.indexOf(
+      'browserExtensionThemeColors(String? colorScheme)',
+    );
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason:
+          'browserExtensionThemeColors(colorScheme) not found in '
+          'app_model.dart',
+    );
     // 方法体到第一个 `};`（map 字面量的结束）。
     final int mapEnd = src.indexOf('};', start);
     expect(mapEnd, greaterThan(start));
     final String body = src.substring(start, mapEnd);
-    return RegExp(r"'(--[a-z0-9-]+)':")
-        .allMatches(body)
-        .map((Match m) => m.group(1)!)
-        .toSet();
+    return RegExp(
+      r"'(--[a-z0-9-]+)':",
+    ).allMatches(body).map((Match m) => m.group(1)!).toSet();
   }
 
-  test('server theme map ships every var the in-app popup injects (BUG-736)',
-      () {
-    final Set<String> inApp = inAppInjectedVars();
-    final Set<String> server = serverThemeVars();
-    expect(inApp, isNotEmpty, reason: 'sanity: in-app injector parse failed');
-    final List<String> missing =
-        inApp.where((String v) => !server.contains(v)).toList()..sort();
-    expect(
-      missing,
-      isEmpty,
-      reason: 'browserExtensionThemeColors() 漏发了 in-app 弹窗注入的主题变量 '
-          '$missing —— 扩展弹窗会在这些变量上退化成 CSS 兜底值，和 app 不一致（BUG-736）。'
-          '在 app_model.dart 的 map 里补上同源的值。',
-    );
-  });
+  test(
+    'server theme map ships every var the in-app popup injects (BUG-736)',
+    () {
+      final Set<String> inApp = inAppInjectedVars();
+      final Set<String> server = serverThemeVars();
+      expect(inApp, isNotEmpty, reason: 'sanity: in-app injector parse failed');
+      final List<String> missing =
+          inApp.where((String v) => !server.contains(v)).toList()..sort();
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'browserExtensionThemeColors() 漏发了 in-app 弹窗注入的主题变量 '
+            '$missing —— 扩展弹窗会在这些变量上退化成 CSS 兜底值，和 app 不一致（BUG-736）。'
+            '在 app_model.dart 的 map 里补上同源的值。',
+      );
+    },
+  );
 
   test('the four BUG-736 vars are explicitly present (regression pin)', () {
     final Set<String> server = serverThemeVars();
@@ -74,8 +81,11 @@ void main() {
       '--fushi-radius-card',
       '--fushi-card-bg-rgb',
     ]) {
-      expect(server.contains(v), isTrue,
-          reason: 'BUG-736 修复不得回退：server theme map 必须含 $v');
+      expect(
+        server.contains(v),
+        isTrue,
+        reason: 'BUG-736 修复不得回退：server theme map 必须含 $v',
+      );
     }
   });
 }

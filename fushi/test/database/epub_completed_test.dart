@@ -9,16 +9,16 @@ Future<FushiDatabase> _openDb() async {
 }
 
 Future<String> _insertBook(FushiDatabase db, String key) => db.insertEpubBook(
-      EpubBooksCompanion.insert(
-        bookKey: key,
-        title: key,
-        epubPath: '/tmp/$key.epub',
-        extractDir: '/tmp/$key',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
+  EpubBooksCompanion.insert(
+    bookKey: key,
+    title: key,
+    epubPath: '/tmp/$key.epub',
+    extractDir: '/tmp/$key',
+    chapterCount: 1,
+    chaptersJson: '[]',
+    importedAt: DateTime.now().millisecondsSinceEpoch,
+  ),
+);
 
 void main() {
   group('EpubBooks 完成状态（书 / 有声书共用同一列，按 bookKey）', () {
@@ -63,7 +63,9 @@ void main() {
 
       expect(
         await db.markEpubBookCompletedIfUnset(
-            'A', DateTime.fromMillisecondsSinceEpoch(5000)),
+          'A',
+          DateTime.fromMillisecondsSinceEpoch(5000),
+        ),
         1,
         reason: 'completed_at 已被清为 NULL，自动完成应重新写入',
       );

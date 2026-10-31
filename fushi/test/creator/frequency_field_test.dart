@@ -4,10 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-DictionaryEntry _entry({
-  String extra = '',
-  double popularity = 0,
-}) {
+DictionaryEntry _entry({String extra = '', double popularity = 0}) {
   return DictionaryEntry(
     word: '山',
     reading: 'やま',
@@ -24,13 +21,13 @@ void main() {
           {
             'dictName': 'Freq A',
             'values': [
-              {'value': 1000, 'display': '1000'}
+              {'value': 1000, 'display': '1000'},
             ],
           },
           {
             'dictName': 'Freq B',
             'values': [
-              {'value': 3000, 'display': '3000 (rank)'}
+              {'value': 3000, 'display': '3000 (rank)'},
             ],
           },
         ],
@@ -63,7 +60,7 @@ void main() {
           {
             'dictName': 'Solo',
             'values': [
-              {'value': 500, 'display': '500'}
+              {'value': 500, 'display': '500'},
             ],
           },
         ],
@@ -80,7 +77,7 @@ void main() {
           {
             'dictName': 'X',
             'values': [
-              {'value': 999, 'display': '999'}
+              {'value': 999, 'display': '999'},
             ],
           },
         ],
@@ -106,7 +103,7 @@ void main() {
           {
             'dictName': 'Zero',
             'values': [
-              {'value': 0, 'display': ''}
+              {'value': 0, 'display': ''},
             ],
           },
         ],
@@ -122,13 +119,13 @@ void main() {
           {
             'dictName': 'Same',
             'values': [
-              {'value': 100, 'display': '100'}
+              {'value': 100, 'display': '100'},
             ],
           },
           {
             'dictName': 'Same',
             'values': [
-              {'value': 900, 'display': '900'}
+              {'value': 900, 'display': '900'},
             ],
           },
         ],
@@ -145,19 +142,19 @@ void main() {
           {
             'dictName': 'A',
             'values': [
-              {'value': 1000, 'display': '1000'}
+              {'value': 1000, 'display': '1000'},
             ],
           },
           {
             'dictName': 'B',
             'values': [
-              {'value': 2000, 'display': '2000'}
+              {'value': 2000, 'display': '2000'},
             ],
           },
           {
             'dictName': 'C',
             'values': [
-              {'value': 3000, 'display': '3000'}
+              {'value': 3000, 'display': '3000'},
             ],
           },
         ],
@@ -175,7 +172,7 @@ void main() {
           {
             'dictName': 'Freq',
             'values': [
-              {'value': 9999, 'display': '500 (top)'}
+              {'value': 9999, 'display': '500 (top)'},
             ],
           },
         ],
@@ -192,7 +189,7 @@ void main() {
           {
             'dictName': 'Freq',
             'values': [
-              {'value': 1200, 'display': 'rank: 1200'}
+              {'value': 1200, 'display': 'rank: 1200'},
             ],
           },
         ],
@@ -209,7 +206,7 @@ void main() {
           {
             'dictName': 'BCCWJ',
             'values': [
-              {'value': 500, 'display': '500 (top 1%)'}
+              {'value': 500, 'display': '500 (top 1%)'},
             ],
           },
         ],
@@ -228,7 +225,7 @@ void main() {
           {
             'dictName': 'JPDB',
             'values': [
-              {'value': 300, 'display': ''}
+              {'value': 300, 'display': ''},
             ],
           },
         ],
@@ -247,7 +244,7 @@ void main() {
           {
             'dictName': 'Test',
             'values': [
-              {'value': 100, 'display': '100'}
+              {'value': 100, 'display': '100'},
             ],
           },
         ],
@@ -266,7 +263,7 @@ void main() {
           {
             'dictName': 'HasValues',
             'values': [
-              {'value': 200, 'display': '200'}
+              {'value': 200, 'display': '200'},
             ],
           },
         ],

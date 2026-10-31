@@ -116,7 +116,8 @@ class FloatingLyricLookupHost extends ConsumerStatefulWidget {
 }
 
 class _FloatingLyricLookupHostState
-    extends ConsumerState<FloatingLyricLookupHost> with DictionaryPageMixin {
+    extends ConsumerState<FloatingLyricLookupHost>
+    with DictionaryPageMixin {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -189,7 +190,8 @@ class _FloatingLyricLookupHostState
     // 无 WebView 选区可定位，用屏幕中心 1×1 选区兜底（与 reader 的
     // _lookupFromFloatingLyric / 歌词模式同款）；底部固定模式时 mixin 自走 dock。
     final Size screen = MediaQuery.sizeOf(context);
-    final Rect selectionRect = req.selectionRect ??
+    final Rect selectionRect =
+        req.selectionRect ??
         Rect.fromCenter(
           center: Offset(screen.width / 2, screen.height / 2),
           width: 1,
@@ -232,14 +234,13 @@ class _FloatingLyricLookupHostState
               index: i,
               screen: screen,
               controller: _popup,
-              onPush:
-                  (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
-                      pushNestedPopup(
-                        query: text,
-                        selectionRect: rect,
-                        controller: _popup,
-                        rubySpans: rubySpans,
-                      ),
+              onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
+                  pushNestedPopup(
+                    query: text,
+                    selectionRect: rect,
+                    controller: _popup,
+                    rubySpans: rubySpans,
+                  ),
               onPop: (int index) => popNestedPopupAt(index, _popup),
             ),
           ...buildParkedRealmLayers(screen: screen, controller: _popup),

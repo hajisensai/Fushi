@@ -40,8 +40,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_collection_gate_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_collection_gate_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -91,11 +92,13 @@ void main() {
   /// home_video_collection_cover_card_test 同一手法）；ep2 **只在合集清单里**、
   /// 本地没有视频行——详情页解析成员时必然要问远端清单。
   Future<int> seedCollectionWithRemoteOnlyMember() async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/ep1'),
-      title: Value('第1集'),
-      videoPath: Value('/abs/ep1.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/ep1'),
+        title: Value('第1集'),
+        videoPath: Value('/abs/ep1.mp4'),
+      ),
+    );
     final int cid = await db.createMediaCollection(
       '某番剧',
       collectionType: 'playlist',
@@ -126,23 +129,23 @@ void main() {
   }
 
   Widget buildApp(JellyfinVideoClient client) => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.series,
-                remoteVideoClientLoader: () async => client,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.series,
+            remoteVideoClientLoader: () async => client,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> openCollectionDetail(WidgetTester tester, int cid) async {
     // 顶部 hero / 横滚行之下的墙在 800 高视口里会被懒构建跳过；抬高视口。
@@ -155,12 +158,16 @@ void main() {
       find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(MediaCollectionDetailPage), findsOneWidget,
-        reason: '前提：整卡点击必须真的进了合集详情页');
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsOneWidget,
+      reason: '前提：整卡点击必须真的进了合集详情页',
+    );
   }
 
-  testWidgets('Jellyfin 关掉自动列出 → 进含远端成员的合集详情不发一次清单请求',
-      (WidgetTester tester) async {
+  testWidgets('Jellyfin 关掉自动列出 → 进含远端成员的合集详情不发一次清单请求', (
+    WidgetTester tester,
+  ) async {
     await prefs.setJellyfinAutoListVideos(false);
     final int cid = await seedCollectionWithRemoteOnlyMember();
     final _CountingJellyfinClient client = _CountingJellyfinClient();
@@ -168,8 +175,11 @@ void main() {
     await tester.pumpWidget(buildApp(client));
     await openCollectionDetail(tester, cid);
 
-    expect(client.listCalls, 0,
-        reason: '闸门关时合集详情必须与库页同一判据：只读缓存、绝不取数（BUG-1891）');
+    expect(
+      client.listCalls,
+      0,
+      reason: '闸门关时合集详情必须与库页同一判据：只读缓存、绝不取数（BUG-1891）',
+    );
   });
 
   testWidgets('对照：自动列出开着 → 同一路径确实会问远端清单', (WidgetTester tester) async {
@@ -180,8 +190,11 @@ void main() {
     await tester.pumpWidget(buildApp(client));
     await openCollectionDetail(tester, cid);
 
-    expect(client.listCalls, greaterThanOrEqualTo(1),
-        reason: '闸门开时这条路径要真的取数，否则上面的 0 只是「根本没走到」');
+    expect(
+      client.listCalls,
+      greaterThanOrEqualTo(1),
+      reason: '闸门开时这条路径要真的取数，否则上面的 0 只是「根本没走到」',
+    );
   });
 }
 

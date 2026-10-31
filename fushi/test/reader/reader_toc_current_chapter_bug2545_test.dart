@@ -71,8 +71,11 @@ void main() {
     test('稀疏目录：落在章内任意 spine 位置都解析到该章', () {
       // spine 3/4/5 都属于「一章」（index 2）——旧的精确相等在这三个位置全落空。
       for (final int chapter in <int>[2, 3, 4, 5]) {
-        expect(chapterOf(_sparseToc, chapter), 2,
-            reason: 'spine $chapter 属于一章');
+        expect(
+          chapterOf(_sparseToc, chapter),
+          2,
+          reason: 'spine $chapter 属于一章',
+        );
       }
       expect(chapterOf(_sparseToc, 9), 6);
       expect(chapterOf(_sparseToc, 13), 10);
@@ -87,11 +90,9 @@ void main() {
 
     test('当前位置在首条目录项之前 / 无位置：不标任何行', () {
       expect(
-          chapterOf(
-            const <TtuTocEntry>[TtuTocEntry(index: 3, label: '第一章')],
-            1,
-          ),
-          isNull);
+        chapterOf(const <TtuTocEntry>[TtuTocEntry(index: 3, label: '第一章')], 1),
+        isNull,
+      );
       expect(chapterOf(_sparseToc, null), isNull);
       expect(chapterOf(const <TtuTocEntry>[], 3), isNull);
     });
@@ -147,20 +148,20 @@ void main() {
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>
                   ReaderQuickSettingsSheet(
-                controller: null,
-                toc: _sparseToc,
-                readerProgress: const (4, 15),
-                onJumpSection: (_, __) async {},
-                onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
-                appModel: model,
-                ref: ref,
-                isFushiReader: true,
-                presentation:
-                    ReaderQuickSettingsPresentation.sideSheetNavigation,
-                onStyleChanged: () async {},
-                onThemeChanged: () async {},
-              ),
+                    controller: null,
+                    toc: _sparseToc,
+                    readerProgress: const (4, 15),
+                    onJumpSection: (_, __) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    presentation:
+                        ReaderQuickSettingsPresentation.sideSheetNavigation,
+                    onStyleChanged: () async {},
+                    onThemeChanged: () async {},
+                  ),
             ),
           ),
         ),

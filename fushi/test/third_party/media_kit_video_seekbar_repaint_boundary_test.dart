@@ -67,7 +67,8 @@ void main() {
       expect(
         build.contains('RepaintBoundary('),
         isTrue,
-        reason: '$label seek bar build() must wrap its body in a '
+        reason:
+            '$label seek bar build() must wrap its body in a '
             'RepaintBoundary (TODO-1243 follow-up), else maximized / '
             'fullscreen re-rasters the whole controls picture at ~5fps and the '
             'integrated-GPU 100% load / flicker returns.',
@@ -80,13 +81,19 @@ void main() {
           ? build.indexOf('_buildSeekBarBody(')
           : build.indexOf('Container(');
       expect(helperOrContainer, isNonNegative);
-      expect(boundary, lessThan(helperOrContainer),
-          reason: '$label RepaintBoundary must enclose the seek bar body');
+      expect(
+        boundary,
+        lessThan(helperOrContainer),
+        reason: '$label RepaintBoundary must enclose the seek bar body',
+      );
     }
 
     test('desktop seek bar', () {
       expectSeekBarBoundary(
-          desktopPath, 'MaterialDesktopSeekBarState', 'desktop');
+        desktopPath,
+        'MaterialDesktopSeekBarState',
+        'desktop',
+      );
     });
 
     test('mobile seek bar', () {
@@ -101,7 +108,8 @@ void main() {
       expect(
         build.contains('RepaintBoundary('),
         isTrue,
-        reason: '$label mm:ss clock build() must wrap its Text in a '
+        reason:
+            '$label mm:ss clock build() must wrap its Text in a '
             'RepaintBoundary (TODO-1243 follow-up), so the second-boundary '
             'repaint does not re-raster the shared full-screen controls '
             'picture.',
@@ -109,18 +117,27 @@ void main() {
       final int boundary = build.indexOf('RepaintBoundary(');
       final int text = build.indexOf('Text(');
       expect(text, isNonNegative);
-      expect(boundary, lessThan(text),
-          reason: '$label RepaintBoundary must enclose the clock Text');
+      expect(
+        boundary,
+        lessThan(text),
+        reason: '$label RepaintBoundary must enclose the clock Text',
+      );
     }
 
     test('desktop position indicator', () {
       expectClockBoundary(
-          desktopPath, 'MaterialDesktopPositionIndicatorState', 'desktop');
+        desktopPath,
+        'MaterialDesktopPositionIndicatorState',
+        'desktop',
+      );
     });
 
     test('mobile position indicator', () {
       expectClockBoundary(
-          mobilePath, 'MaterialPositionIndicatorState', 'mobile');
+        mobilePath,
+        'MaterialPositionIndicatorState',
+        'mobile',
+      );
     });
   });
 
@@ -131,12 +148,18 @@ void main() {
     // re-vendor keeps one but drops the other.
     for (final String path in <String>[desktopPath, mobilePath]) {
       final String source = File(path).readAsStringSync();
-      expect(source.contains('floorTo(kPositionUiThrottleStep)'), isTrue,
-          reason: 'position quantize (TODO-1243) must remain in $path');
       expect(
-          source.contains('RepaintBoundary(child: _buildSeekBarBody('), isTrue,
-          reason: 'seek bar RepaintBoundary (TODO-1243 follow-up) must remain '
-              'in $path');
+        source.contains('floorTo(kPositionUiThrottleStep)'),
+        isTrue,
+        reason: 'position quantize (TODO-1243) must remain in $path',
+      );
+      expect(
+        source.contains('RepaintBoundary(child: _buildSeekBarBody('),
+        isTrue,
+        reason:
+            'seek bar RepaintBoundary (TODO-1243 follow-up) must remain '
+            'in $path',
+      );
     }
   });
 }

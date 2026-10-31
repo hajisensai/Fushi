@@ -45,13 +45,15 @@ void main() {
     expect(TextToEpub.isSupported('a.mp3'), isFalse);
   });
 
-  test('mimetype is the first entry, stored, with the EPUB media type',
-      () async {
-    final reader = await _convertText(tmpDir, 'こんにちは。\n\n二段落目。');
-    expect(reader.firstEntry, 'mimetype');
-    expect(reader.firstEntryMethod, 0); // STORE per EPUB spec
-    expect(reader['mimetype'], 'application/epub+zip');
-  });
+  test(
+    'mimetype is the first entry, stored, with the EPUB media type',
+    () async {
+      final reader = await _convertText(tmpDir, 'こんにちは。\n\n二段落目。');
+      expect(reader.firstEntry, 'mimetype');
+      expect(reader.firstEntryMethod, 0); // STORE per EPUB spec
+      expect(reader['mimetype'], 'application/epub+zip');
+    },
+  );
 
   test('container structure and OPF metadata are generated', () async {
     final reader = await _convertText(
@@ -83,16 +85,15 @@ void main() {
     expect(opf, contains('<itemref idref="chapter-1"/>'));
   });
 
-  test('plain text paragraphs become <p>, single newlines become <br/>',
-      () async {
-    final reader = await _convertText(
-      tmpDir,
-      '一行目\n二行目\n\n次の段落',
-    );
-    final String chapter = reader['OEBPS/chapter-1.xhtml']!;
-    expect(chapter, contains('<p>一行目<br/>二行目</p>'));
-    expect(chapter, contains('<p>次の段落</p>'));
-  });
+  test(
+    'plain text paragraphs become <p>, single newlines become <br/>',
+    () async {
+      final reader = await _convertText(tmpDir, '一行目\n二行目\n\n次の段落');
+      final String chapter = reader['OEBPS/chapter-1.xhtml']!;
+      expect(chapter, contains('<p>一行目<br/>二行目</p>'));
+      expect(chapter, contains('<p>次の段落</p>'));
+    },
+  );
 
   test('markdown headings map to <hN>', () async {
     final reader = await _convertText(
@@ -117,29 +118,34 @@ void main() {
     expect(chapter, isNot(contains('<title>t</title>')));
   });
 
-  test('long input splits into multiple chapters at paragraph boundaries',
-      () async {
-    // Build > kMaxCharsPerChapter of HTML from many paragraphs.
-    final String para = '${'あ' * 200}。';
-    final String content =
-        List<String>.filled(200, para).join('\n\n'); // ~40k chars of <p>
-    final reader = await _convertText(tmpDir, content);
+  test(
+    'long input splits into multiple chapters at paragraph boundaries',
+    () async {
+      // Build > kMaxCharsPerChapter of HTML from many paragraphs.
+      final String para = '${'あ' * 200}。';
+      final String content = List<String>.filled(
+        200,
+        para,
+      ).join('\n\n'); // ~40k chars of <p>
+      final reader = await _convertText(tmpDir, content);
 
-    expect(reader.names, contains('OEBPS/chapter-1.xhtml'));
-    expect(reader.names, contains('OEBPS/chapter-2.xhtml'));
+      expect(reader.names, contains('OEBPS/chapter-1.xhtml'));
+      expect(reader.names, contains('OEBPS/chapter-2.xhtml'));
 
-    final String opf = reader['OEBPS/content.opf']!;
-    expect(opf, contains('<itemref idref="chapter-2"/>'));
-    // NCX and nav must list every chapter.
-    final int chapterCount =
-        reader.names.where((n) => n.startsWith('OEBPS/chapter-')).length;
-    expect(
-      RegExp('<navPoint ').allMatches(reader['OEBPS/toc.ncx']!).length,
-      chapterCount,
-    );
-    expect(
-      RegExp('<li>').allMatches(reader['OEBPS/nav.xhtml']!).length,
-      chapterCount,
-    );
-  });
+      final String opf = reader['OEBPS/content.opf']!;
+      expect(opf, contains('<itemref idref="chapter-2"/>'));
+      // NCX and nav must list every chapter.
+      final int chapterCount = reader.names
+          .where((n) => n.startsWith('OEBPS/chapter-'))
+          .length;
+      expect(
+        RegExp('<navPoint ').allMatches(reader['OEBPS/toc.ncx']!).length,
+        chapterCount,
+      );
+      expect(
+        RegExp('<li>').allMatches(reader['OEBPS/nav.xhtml']!).length,
+        chapterCount,
+      );
+    },
+  );
 }

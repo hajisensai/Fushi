@@ -28,7 +28,10 @@ void main() {
   /// 复刻 main.dart 的层级：[FushiAppUiScale] 在根 Navigator/Overlay 之外
   /// （`FittedBox` 之内才是根 Overlay）。这里用 MaterialApp 提供根 Overlay，外层套缩放。
   Widget harness({required double scale, required Widget home}) =>
-      FushiAppUiScale(scale: scale, child: MaterialApp(home: home));
+      FushiAppUiScale(
+        scale: scale,
+        child: MaterialApp(home: home),
+      );
 
   /// 在 [pageContext] 的根 Overlay 插入一层定位浮层（[neutralize] 决定是否中和），浮层
   /// 定位到 [selectionRect]（生产里即字符的 `localToGlobal` 屏幕 rect）。返回 (浮层 box 的
@@ -65,132 +68,158 @@ void main() {
     if (neutralize) {
       overlayChild = FushiAppUiScaleNeutralizer(child: overlayChild);
     }
-    final OverlayEntry entry = OverlayEntry(builder: (BuildContext _) {
-      return overlayChild;
-    });
+    final OverlayEntry entry = OverlayEntry(
+      builder: (BuildContext _) {
+        return overlayChild;
+      },
+    );
     Overlay.of(pageContext, rootOverlay: true).insert(entry);
     await tester.pumpAndSettle();
     final Rect rect = globalRectOfBox(
-        popupKey.currentContext!.findRenderObject()! as RenderBox);
+      popupKey.currentContext!.findRenderObject()! as RenderBox,
+    );
     return (rect, entry);
   }
 
   testWidgets(
-      'neutralized overlay + raw screen rect: popup hugs the tapped char ON '
-      'SCREEN across scales', (WidgetTester tester) async {
-    tester.view.physicalSize = physical;
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+    'neutralized overlay + raw screen rect: popup hugs the tapped char ON '
+    'SCREEN across scales',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = physical;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
 
-    for (final double scale in <double>[1.0, 1.5, 0.8]) {
+      for (final double scale in <double>[1.0, 1.5, 0.8]) {
+        final GlobalKey charKey = GlobalKey();
+        final GlobalKey pageKey = GlobalKey();
+        await tester.pumpWidget(
+          harness(
+            scale: scale,
+            home: Stack(
+              key: pageKey,
+              children: <Widget>[
+                // 一个「字符」box，画布坐标 (300,200) 大小 40x50。
+                Positioned(
+                  left: 300,
+                  top: 200,
+                  width: 40,
+                  height: 50,
+                  child: SizedBox(key: charKey),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        final BuildContext pageContext = pageKey.currentContext!;
+        // 字符 box 的屏幕 rect（localToGlobal，已被 FittedBox ×s），即 _lookupAt 拿到的 rect。
+        final Rect charScreen = globalRectOfBox(
+          charKey.currentContext!.findRenderObject()! as RenderBox,
+        );
+
+        final (Rect popupScreen, OverlayEntry entry) = await insertPopup(
+          tester,
+          pageContext,
+          selectionRect: charScreen, // 生产直传屏幕 rect，不换算
+          neutralize: true,
+        );
+
+        // 浮层在屏幕上紧贴字符下方（calcPopupPosition 下方 +4），任意缩放都对齐。
+        expect(
+          popupScreen.left,
+          closeTo(charScreen.left, 2.0),
+          reason: 'popup x must align with the char on screen at scale $scale',
+        );
+        expect(
+          popupScreen.top,
+          closeTo(charScreen.bottom + 4, 2.0),
+          reason: 'popup must sit just below the char on screen at $scale',
+        );
+
+        entry.remove();
+        entry.dispose();
+        await tester.pump();
+      }
+    },
+  );
+
+  testWidgets(
+    'WITHOUT the neutralizer the same raw screen rect lands the popup off by '
+    'the scale factor (proves the neutralizer is required)',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = physical;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const double scale = 1.5;
       final GlobalKey charKey = GlobalKey();
       final GlobalKey pageKey = GlobalKey();
-      await tester.pumpWidget(harness(
-        scale: scale,
-        home: Stack(
-          key: pageKey,
-          children: <Widget>[
-            // 一个「字符」box，画布坐标 (300,200) 大小 40x50。
-            Positioned(
-              left: 300,
-              top: 200,
-              width: 40,
-              height: 50,
-              child: SizedBox(key: charKey),
-            ),
-          ],
+      await tester.pumpWidget(
+        harness(
+          scale: scale,
+          home: Stack(
+            key: pageKey,
+            children: <Widget>[
+              Positioned(
+                left: 300,
+                top: 200,
+                width: 40,
+                height: 50,
+                child: SizedBox(key: charKey),
+              ),
+            ],
+          ),
         ),
-      ));
-
+      );
       final BuildContext pageContext = pageKey.currentContext!;
-      // 字符 box 的屏幕 rect（localToGlobal，已被 FittedBox ×s），即 _lookupAt 拿到的 rect。
       final Rect charScreen = globalRectOfBox(
-          charKey.currentContext!.findRenderObject()! as RenderBox);
+        charKey.currentContext!.findRenderObject()! as RenderBox,
+      );
 
       final (Rect popupScreen, OverlayEntry entry) = await insertPopup(
         tester,
         pageContext,
-        selectionRect: charScreen, // 生产直传屏幕 rect，不换算
-        neutralize: true,
+        selectionRect: charScreen,
+        neutralize: false, // 旧 bug：浮层在缩放画布空间，屏幕 rect 当画布坐标 → 偏 s
       );
 
-      // 浮层在屏幕上紧贴字符下方（calcPopupPosition 下方 +4），任意缩放都对齐。
-      expect(popupScreen.left, closeTo(charScreen.left, 2.0),
-          reason: 'popup x must align with the char on screen at scale $scale');
-      expect(popupScreen.top, closeTo(charScreen.bottom + 4, 2.0),
-          reason: 'popup must sit just below the char on screen at $scale');
+      // 非中和：浮层不再紧贴字符下方，纵向明显偏离（off by factor s）。
+      expect(
+        (popupScreen.top - (charScreen.bottom + 4)).abs(),
+        greaterThan(50),
+        reason: 'without neutralizer the popup is misplaced by the scale',
+      );
 
       entry.remove();
       entry.dispose();
       await tester.pump();
-    }
-  });
+    },
+  );
 
-  testWidgets(
-      'WITHOUT the neutralizer the same raw screen rect lands the popup off by '
-      'the scale factor (proves the neutralizer is required)',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = physical;
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-
-    const double scale = 1.5;
-    final GlobalKey charKey = GlobalKey();
-    final GlobalKey pageKey = GlobalKey();
-    await tester.pumpWidget(harness(
-      scale: scale,
-      home: Stack(
-        key: pageKey,
-        children: <Widget>[
-          Positioned(
-            left: 300,
-            top: 200,
-            width: 40,
-            height: 50,
-            child: SizedBox(key: charKey),
-          ),
-        ],
-      ),
-    ));
-    final BuildContext pageContext = pageKey.currentContext!;
-    final Rect charScreen = globalRectOfBox(
-        charKey.currentContext!.findRenderObject()! as RenderBox);
-
-    final (Rect popupScreen, OverlayEntry entry) = await insertPopup(
-      tester,
-      pageContext,
-      selectionRect: charScreen,
-      neutralize: false, // 旧 bug：浮层在缩放画布空间，屏幕 rect 当画布坐标 → 偏 s
-    );
-
-    // 非中和：浮层不再紧贴字符下方，纵向明显偏离（off by factor s）。
-    expect((popupScreen.top - (charScreen.bottom + 4)).abs(), greaterThan(50),
-        reason: 'without neutralizer the popup is misplaced by the scale');
-
-    entry.remove();
-    entry.dispose();
-    await tester.pump();
-  });
-
-  test(
-      '_buildPopupOverlay wraps the popup in FushiAppUiScaleNeutralizer and '
+  test('_buildPopupOverlay wraps the popup in FushiAppUiScaleNeutralizer and '
       'the manual scaledRectToCanvas conversion is gone', () {
     final String page = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
-    expect(page.contains('FushiAppUiScaleNeutralizer('), isTrue,
-        reason: 'video popup overlay must be neutralized for native density');
-    expect(page.contains('scaledRectToCanvas'), isFalse,
-        reason: 'neutralized overlay uses the raw screen rect directly');
+    expect(
+      page.contains('FushiAppUiScaleNeutralizer('),
+      isTrue,
+      reason: 'video popup overlay must be neutralized for native density',
+    );
+    expect(
+      page.contains('scaledRectToCanvas'),
+      isFalse,
+      reason: 'neutralized overlay uses the raw screen rect directly',
+    );
 
     // 中和器接管坐标后，手动换算 helper 已删除（消除特例，不留死代码）。
-    final String util =
-        File('lib/src/utils/app_ui_scale.dart').readAsStringSync();
+    final String util = File(
+      'lib/src/utils/app_ui_scale.dart',
+    ).readAsStringSync();
     expect(util.contains('scaledRectToCanvas'), isFalse);
   });
 
-  test(
-      'appModel is cached in initState, not ref.read on every access '
+  test('appModel is cached in initState, not ref.read on every access '
       '(deactivated-widget crash guard)', () {
     // 根因：buildNestedPopupLayer 在 LayoutBuilder 回调里访问 mixinAppModel；
     // 若 appModel 每次 `ref.read(appProvider)`，widget 失活（关页/查词关栈）后
@@ -200,17 +229,25 @@ void main() {
     final String page = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
-    expect(page.contains('late final AppModel _appModel'), isTrue,
-        reason: 'appModel 必须在 initState 缓存，失活后访问才安全');
-    expect(page.contains('AppModel get appModel => _appModel;'), isTrue,
-        reason: 'appModel getter 返回缓存实例，不得每次 ref.read');
+    expect(
+      page.contains('late final AppModel _appModel'),
+      isTrue,
+      reason: 'appModel 必须在 initState 缓存，失活后访问才安全',
+    );
+    expect(
+      page.contains('AppModel get appModel => _appModel;'),
+      isTrue,
+      reason: 'appModel getter 返回缓存实例，不得每次 ref.read',
+    );
     // 不得残留「每次 ref.read(appProvider)」作为 appModel/mixinAppModel 后端。
-    expect(page.contains('get appModel => ref.read(appProvider)'), isFalse,
-        reason: '每次 ref.read 在 widget 失活时崩溃');
+    expect(
+      page.contains('get appModel => ref.read(appProvider)'),
+      isFalse,
+      reason: '每次 ref.read 在 widget 失活时崩溃',
+    );
   });
 
-  testWidgets(
-      'BUG-2092: 根 Overlay 被自绘标题栏压低时，裸屏幕 rect 让弹窗整栈下移一个标题栏高；'
+  testWidgets('BUG-2092: 根 Overlay 被自绘标题栏压低时，裸屏幕 rect 让弹窗整栈下移一个标题栏高；'
       '减去 rootOverlayScreenOrigin 后才重新贴词（各缩放）', (WidgetTester tester) async {
     tester.view.physicalSize = physical;
     tester.view.devicePixelRatio = 1.0;
@@ -222,35 +259,38 @@ void main() {
     for (final double scale in <double>[1.0, 1.4]) {
       final GlobalKey charKey = GlobalKey();
       final GlobalKey pageKey = GlobalKey();
-      await tester.pumpWidget(Directionality(
-        textDirection: TextDirection.ltr,
-        child: Column(
-          children: <Widget>[
-            const SizedBox(height: titleBar),
-            Expanded(
-              child: harness(
-                scale: scale,
-                home: Stack(
-                  key: pageKey,
-                  children: <Widget>[
-                    Positioned(
-                      left: 300,
-                      top: 200,
-                      width: 40,
-                      height: 50,
-                      child: SizedBox(key: charKey),
-                    ),
-                  ],
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Column(
+            children: <Widget>[
+              const SizedBox(height: titleBar),
+              Expanded(
+                child: harness(
+                  scale: scale,
+                  home: Stack(
+                    key: pageKey,
+                    children: <Widget>[
+                      Positioned(
+                        left: 300,
+                        top: 200,
+                        width: 40,
+                        height: 50,
+                        child: SizedBox(key: charKey),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ));
+      );
 
       final BuildContext pageContext = pageKey.currentContext!;
       final Rect charScreen = globalRectOfBox(
-          charKey.currentContext!.findRenderObject()! as RenderBox);
+        charKey.currentContext!.findRenderObject()! as RenderBox,
+      );
 
       // 病灶：屏幕 rect 直传（旧 mixin 行为）→ 弹窗低了一个标题栏。
       final (Rect rawPopup, OverlayEntry rawEntry) = await insertPopup(
@@ -259,8 +299,11 @@ void main() {
         selectionRect: charScreen,
         neutralize: true,
       );
-      expect(rawPopup.top, closeTo(charScreen.bottom + 4 + titleBar, 2.0),
-          reason: '未换算的屏幕 rect 在 scale $scale 下应恰偏一个标题栏高');
+      expect(
+        rawPopup.top,
+        closeTo(charScreen.bottom + 4 + titleBar, 2.0),
+        reason: '未换算的屏幕 rect 在 scale $scale 下应恰偏一个标题栏高',
+      );
       rawEntry.remove();
       rawEntry.dispose();
       await tester.pump();
@@ -275,10 +318,16 @@ void main() {
         selectionRect: charScreen.shift(-origin),
         neutralize: true,
       );
-      expect(fixedPopup.left, closeTo(charScreen.left, 2.0),
-          reason: 'popup x must align with the char on screen at $scale');
-      expect(fixedPopup.top, closeTo(charScreen.bottom + 4, 2.0),
-          reason: 'popup must hug the char on screen at $scale');
+      expect(
+        fixedPopup.left,
+        closeTo(charScreen.left, 2.0),
+        reason: 'popup x must align with the char on screen at $scale',
+      );
+      expect(
+        fixedPopup.top,
+        closeTo(charScreen.bottom + 4, 2.0),
+        reason: 'popup must hug the char on screen at $scale',
+      );
       fixedEntry.remove();
       fixedEntry.dispose();
       await tester.pump();
@@ -290,10 +339,10 @@ void main() {
   // 但根 Overlay 被标题栏压低后整栈下移，这条「绝不重叠」的保证被平移打破：弹窗底边反而
   // 探进词里。上面那条用例只覆盖了下方分支（下移只是留出空隙、看不出压词），故此处单独钉
   // 死上方分支的**重叠判据**——这才是用户可见的症状。
-  testWidgets(
-      'BUG-2092: 词靠底走「上方」分支时，裸屏幕 rect 让弹窗底边压进词里；'
-      '减去 rootOverlayScreenOrigin 后底边重新贴在词上方（各缩放）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2092: 词靠底走「上方」分支时，裸屏幕 rect 让弹窗底边压进词里；'
+      '减去 rootOverlayScreenOrigin 后底边重新贴在词上方（各缩放）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = physical;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -302,36 +351,39 @@ void main() {
     for (final double scale in <double>[1.0, 1.4]) {
       final GlobalKey charKey = GlobalKey();
       final GlobalKey pageKey = GlobalKey();
-      await tester.pumpWidget(Directionality(
-        textDirection: TextDirection.ltr,
-        child: Column(
-          children: <Widget>[
-            const SizedBox(height: titleBar),
-            Expanded(
-              child: harness(
-                scale: scale,
-                home: Stack(
-                  key: pageKey,
-                  children: <Widget>[
-                    // 贴画布底部的「字符」box：下方装不下 360 高的弹窗 → 走上方分支。
-                    Positioned(
-                      left: 300,
-                      bottom: 20,
-                      width: 40,
-                      height: 50,
-                      child: SizedBox(key: charKey),
-                    ),
-                  ],
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Column(
+            children: <Widget>[
+              const SizedBox(height: titleBar),
+              Expanded(
+                child: harness(
+                  scale: scale,
+                  home: Stack(
+                    key: pageKey,
+                    children: <Widget>[
+                      // 贴画布底部的「字符」box：下方装不下 360 高的弹窗 → 走上方分支。
+                      Positioned(
+                        left: 300,
+                        bottom: 20,
+                        width: 40,
+                        height: 50,
+                        child: SizedBox(key: charKey),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ));
+      );
 
       final BuildContext pageContext = pageKey.currentContext!;
       final Rect charScreen = globalRectOfBox(
-          charKey.currentContext!.findRenderObject()! as RenderBox);
+        charKey.currentContext!.findRenderObject()! as RenderBox,
+      );
 
       // 病灶：屏幕 rect 直传 → 整栈下移一个标题栏 → 上方分支的底边探进词里。
       final (Rect rawPopup, OverlayEntry rawEntry) = await insertPopup(
@@ -340,10 +392,16 @@ void main() {
         selectionRect: charScreen,
         neutralize: true,
       );
-      expect(rawPopup.bottom, greaterThan(charScreen.top),
-          reason: 'scale $scale：未换算时弹窗底边必须（回归性地）压住被查词');
-      expect(rawPopup.bottom, closeTo(charScreen.top + titleBar - 4, 2.0),
-          reason: '压入深度恰为「标题栏高 - gap」');
+      expect(
+        rawPopup.bottom,
+        greaterThan(charScreen.top),
+        reason: 'scale $scale：未换算时弹窗底边必须（回归性地）压住被查词',
+      );
+      expect(
+        rawPopup.bottom,
+        closeTo(charScreen.top + titleBar - 4, 2.0),
+        reason: '压入深度恰为「标题栏高 - gap」',
+      );
       rawEntry.remove();
       rawEntry.dispose();
       await tester.pump();
@@ -355,18 +413,23 @@ void main() {
         selectionRect: charScreen.shift(-rootOverlayScreenOrigin(pageContext)),
         neutralize: true,
       );
-      expect(fixedPopup.bottom, lessThanOrEqualTo(charScreen.top),
-          reason: 'scale $scale：弹窗绝不能盖住被查词');
-      expect(fixedPopup.bottom, closeTo(charScreen.top - 4, 2.0),
-          reason: '底边应紧贴词上方 gap=4');
+      expect(
+        fixedPopup.bottom,
+        lessThanOrEqualTo(charScreen.top),
+        reason: 'scale $scale：弹窗绝不能盖住被查词',
+      );
+      expect(
+        fixedPopup.bottom,
+        closeTo(charScreen.top - 4, 2.0),
+        reason: '底边应紧贴词上方 gap=4',
+      );
       fixedEntry.remove();
       fixedEntry.dispose();
       await tester.pump();
     }
   });
 
-  test(
-      'BUG-2092: mixin 的定位收口 _calcMixinPopupPosition 必须先减去根 Overlay 屏幕原点 '
+  test('BUG-2092: mixin 的定位收口 _calcMixinPopupPosition 必须先减去根 Overlay 屏幕原点 '
       '（四个根 Overlay 宿主唯一换算点）', () {
     final String mixin = File(
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
@@ -377,27 +440,31 @@ void main() {
     final int end = mixin.indexOf('\n  }\n', body);
     final String src = mixin.substring(body, end);
     expect(
-        src.contains('selectionRect.shift(-rootOverlayScreenOrigin(context))'),
-        isTrue,
-        reason: '屏幕 rect 必须减去根 Overlay 原点再交给 resolvePopupRect，'
-            '否则 Windows 自绘标题栏下整栈弹窗下移 32px 压住被查词');
+      src.contains('selectionRect.shift(-rootOverlayScreenOrigin(context))'),
+      isTrue,
+      reason:
+          '屏幕 rect 必须减去根 Overlay 原点再交给 resolvePopupRect，'
+          '否则 Windows 自绘标题栏下整栈弹窗下移 32px 压住被查词',
+    );
     expect(
-        RegExp(r'resolvePopupRect\(\s*selectionRect:\s*layerSelection')
-            .hasMatch(src),
-        isTrue,
-        reason: 'resolvePopupRect 吃的必须是换算后的 layerSelection，不是原始 selectionRect');
+      RegExp(
+        r'resolvePopupRect\(\s*selectionRect:\s*layerSelection',
+      ).hasMatch(src),
+      isTrue,
+      reason: 'resolvePopupRect 吃的必须是换算后的 layerSelection，不是原始 selectionRect',
+    );
   });
 
-  testWidgets('BUG-2092: 无标题栏时 rootOverlayScreenOrigin 为零（历史行为不变）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2092: 无标题栏时 rootOverlayScreenOrigin 为零（历史行为不变）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = physical;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final GlobalKey pageKey = GlobalKey();
-    await tester.pumpWidget(harness(
-      scale: 1.4,
-      home: SizedBox.expand(key: pageKey),
-    ));
+    await tester.pumpWidget(
+      harness(scale: 1.4, home: SizedBox.expand(key: pageKey)),
+    );
     expect(rootOverlayScreenOrigin(pageKey.currentContext!), Offset.zero);
   });
 }

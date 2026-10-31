@@ -35,14 +35,14 @@ void main() {
     Duration settleWindow = const Duration(milliseconds: 6000),
     Duration settleQuietStop = const Duration(milliseconds: 2000),
     GalLoopbackSourceFactory? loopbackSourceFactory,
-  }) =>
-      GalHookSessionController(
-        textService: service,
-        isWindows: true,
-        loopbackSourceFactory: loopbackSourceFactory,
-        targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
+  }) => GalHookSessionController(
+    textService: service,
+    isWindows: true,
+    loopbackSourceFactory: loopbackSourceFactory,
+    targetWow64Probe: (_) async => false,
+    injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+    engineSourceFactory:
+        ({
           required int targetPid,
           required String? launchExe,
           required String injectorPath,
@@ -53,16 +53,15 @@ void main() {
           GalJapaneseLocaleMode japaneseLocaleMode =
               kGalDefaultJapaneseLocaleMode,
           String? contentLanguage,
-        }) =>
-            engine,
-        textPollInterval: const Duration(milliseconds: 5),
-        utteranceSettleInterval: settleInterval,
-        utteranceSettleMax: settleMax,
-        utteranceSettleWindow: settleWindow,
-        utteranceSettleQuietStop: settleQuietStop,
-        endpointListenable: endpoints,
-        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
-      );
+        }) => engine,
+    textPollInterval: const Duration(milliseconds: 5),
+    utteranceSettleInterval: settleInterval,
+    utteranceSettleMax: settleMax,
+    utteranceSettleWindow: settleWindow,
+    utteranceSettleQuietStop: settleQuietStop,
+    endpointListenable: endpoints,
+    endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+  );
 
   test('BUG-1109 引擎 PCM 按增长收敛取整句，不再停在首取的半句', () async {
     final TexthookerService service = TexthookerService.test();
@@ -99,21 +98,30 @@ void main() {
     }
     final String lineId = service.entries.single.id;
     // 首取就是被截断的那半句——这正是修复前卡里落下的内容。
-    expect(service.entries.single.audioDurationMs, 50,
-        reason: '台词到达时窗口的前向部分还是空的，首取只能拿到开头');
+    expect(
+      service.entries.single.audioDurationMs,
+      50,
+      reason: '台词到达时窗口的前向部分还是空的，首取只能拿到开头',
+    );
 
-    for (int i = 0;
-        i < 200 && service.entries.single.audioDurationMs != 500;
-        i++) {
+    for (
+      int i = 0;
+      i < 200 && service.entries.single.audioDurationMs != 500;
+      i++
+    ) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
-    expect(service.entries.single.audioDurationMs, 500,
-        reason: '收敛必须把后续到达的段补齐成整句');
+    expect(
+      service.entries.single.audioDurationMs,
+      500,
+      reason: '收敛必须把后续到达的段补齐成整句',
+    );
     expect(service.entries.single.audioBackend, 'engine_pcm');
 
     // 制卡/试听读的都是同一份缓存：缓存里必须已经是整句，而不是首取的半句。
-    final GalTrackPreview? preview =
-        await controller.exportLineAudioPreview(lineId);
+    final GalTrackPreview? preview = await controller.exportLineAudioPreview(
+      lineId,
+    );
     expect(preview, isNotNull);
     expect(preview!.durationMs, 500);
 
@@ -170,12 +178,18 @@ void main() {
     // 必须带上下一句的时间戳作前向上界。BUG-1109 要防的是「下一句的段被拼进上一句」，
     // 由上界保住；而「从最后一次成功 grab 到下一句到达之间已进环的那 ≤250ms」本来
     // 时间戳就严格早于下一句，把它一起丢掉是误伤（用户报的「切句打断已捕获的音频」）。
-    expect(engine.callsFor(111111), lessThanOrEqualTo(2),
-        reason: '旧句最多再抓一次封口 grab，不得继续无界重取');
+    expect(
+      engine.callsFor(111111),
+      lessThanOrEqualTo(2),
+      reason: '旧句最多再抓一次封口 grab，不得继续无界重取',
+    );
     final List<int?> bounds = engine.endBoundsFor(111111);
     if (bounds.length > 1) {
-      expect(bounds.last, 222222,
-          reason: '封口 grab 必须以下一句的 ts 为前向上界，否则就是 BUG-1109 复发');
+      expect(
+        bounds.last,
+        222222,
+        reason: '封口 grab 必须以下一句的 ts 为前向上界，否则就是 BUG-1109 复发',
+      );
     }
     expect(engine.callsFor(222222), greaterThan(1), reason: '最新一句仍然正常收敛');
 
@@ -225,16 +239,21 @@ void main() {
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'SGRE'),
     );
     await controller.selectTextThread(5);
-    for (int i = 0;
-        i < 100 &&
-            (service.entries.isEmpty ||
-                service.entries.first.audioDurationMs != 500);
-        i++) {
+    for (
+      int i = 0;
+      i < 100 &&
+          (service.entries.isEmpty ||
+              service.entries.first.audioDurationMs != 500);
+      i++
+    ) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
 
-    expect(service.entries.first.audioDurationMs, 500,
-        reason: '晚于下一句文本发布的 DestroyVoice 必须由有界封口重试回填');
+    expect(
+      service.entries.first.audioDurationMs,
+      500,
+      reason: '晚于下一句文本发布的 DestroyVoice 必须由有界封口重试回填',
+    );
     expect(service.entries.first.audioBackend, 'engine_pcm');
     expect(engine.callsFor(111111), 5, reason: '首取 + 四次带同一下一句上界的封口 grab');
     expect(engine.endBoundsFor(111111).skip(1), everyElement(222222));
@@ -302,26 +321,34 @@ void main() {
 
     // BUG-1475：同上，收手时允许一次**带界**的封口 grab。真正要守的不变量是
     // 「不得无界重取」——无界那一次的 `[ts-200, ts+6000]` 里已经有下一句的段。
-    expect(engine.callsFor(111111), lessThanOrEqualTo(2),
-        reason: 'delay 期间下一句已到，旧句最多再抓一次带界的封口 grab');
+    expect(
+      engine.callsFor(111111),
+      lessThanOrEqualTo(2),
+      reason: 'delay 期间下一句已到，旧句最多再抓一次带界的封口 grab',
+    );
     final List<int?> bounds = engine.endBoundsFor(111111);
     for (int i = 1; i < bounds.length; i++) {
       expect(bounds[i], isNotNull, reason: '收手之后的每一次 grab 都必须带前向上界');
-      expect(bounds[i], lessThanOrEqualTo(222222),
-          reason: '上界不得越过下一句的时间戳，否则就是 BUG-1109 复发');
+      expect(
+        bounds[i],
+        lessThanOrEqualTo(222222),
+        reason: '上界不得越过下一句的时间戳，否则就是 BUG-1109 复发',
+      );
     }
     // 正面断言封口 grab **确实发生了**并把尾巴补了回来（用户报的「切句打断已捕获的
     // 音频」丢的就是这段），同时**没有**长到 1000ms —— 那个数才是混进下一句的证据。
     expect(engine.callsFor(111111), 2, reason: '收手时必须补一次封口 grab');
-    expect(service.entries.first.audioDurationMs, 500,
-        reason: '带界的封口 grab 补回本句尾巴；长到 1000 即为串味，停在 50 即为误伤');
+    expect(
+      service.entries.first.audioDurationMs,
+      500,
+      reason: '带界的封口 grab 补回本句尾巴；长到 1000 即为串味，停在 50 即为误伤',
+    );
 
     await controller.close();
     endpoints.dispose();
   });
 
-  test('BUG-1109 行被升格成 game_resource 后收敛立刻收手，不把 backend 改回 engine_pcm',
-      () async {
+  test('BUG-1109 行被升格成 game_resource 后收敛立刻收手，不把 backend 改回 engine_pcm', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     // 语音持续变长：只要收敛还在跑，下一轮就一定会写回 engine_pcm。
@@ -370,11 +397,17 @@ void main() {
     final int callsAfterPromote = engine.callsFor(654321);
     await Future<void>.delayed(const Duration(milliseconds: 200));
 
-    expect(service.entries.single.audioBackend, 'game_resource',
-        reason: '升格后仍在跑的收敛绝不能把 backend 改回 engine_pcm');
+    expect(
+      service.entries.single.audioBackend,
+      'game_resource',
+      reason: '升格后仍在跑的收敛绝不能把 backend 改回 engine_pcm',
+    );
     expect(service.entries.single.audioResourceId, 'voice_0001');
-    expect(engine.callsFor(654321), callsAfterPromote,
-        reason: '收敛必须已经退出，不再继续抓 PCM');
+    expect(
+      engine.callsFor(654321),
+      callsAfterPromote,
+      reason: '收敛必须已经退出，不再继续抓 PCM',
+    );
 
     await controller.close();
     endpoints.dispose();
@@ -425,12 +458,17 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 200));
 
     expect(
-        service.entries.single.audioStatus, TexthookerLineAudioStatus.pending,
-        reason: '补录窗口期内这行的状态归用户裁决，收敛不得把它刷成 matched');
+      service.entries.single.audioStatus,
+      TexthookerLineAudioStatus.pending,
+      reason: '补录窗口期内这行的状态归用户裁决，收敛不得把它刷成 matched',
+    );
     expect(service.entries.single.audioBackend, 'system_loopback');
     expect(service.entries.single.fallbackReason, 'manual_recapture_recording');
-    expect(engine.callsFor(654321), callsAfterRecaptureStart,
-        reason: '收敛必须已经退出，不再继续抓 PCM');
+    expect(
+      engine.callsFor(654321),
+      callsAfterRecaptureStart,
+      reason: '收敛必须已经退出，不再继续抓 PCM',
+    );
 
     await controller.close();
     endpoints.dispose();
@@ -443,9 +481,7 @@ void main() {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     const int kStep = 882; // 10ms @ 44.1kHz 单声道 16bit
-    final List<int> steps = <int>[
-      for (int i = 1; i <= 60; i++) i * kStep,
-    ];
+    final List<int> steps = <int>[for (int i = 1; i <= 60; i++) i * kStep];
     final _GrowingEngine engine = _GrowingEngine(
       stepsByTs: <int, List<int>>{777000: steps},
       lines: const <GalHookedLine>[
@@ -479,10 +515,16 @@ void main() {
     final Stopwatch settled = Stopwatch()..start();
     await controller.awaitLineAudioSettledForTest(lineId);
     settled.stop();
-    expect(service.entries.single.audioDurationMs, 600,
-        reason: '越过无条件窗后只要还在变长就必须继续收到整句');
-    expect(settled.elapsed, lessThan(const Duration(seconds: 4)),
-        reason: '整句收完、静默满 quietStop 就收手，不能对每句都轮询到上限');
+    expect(
+      service.entries.single.audioDurationMs,
+      600,
+      reason: '越过无条件窗后只要还在变长就必须继续收到整句',
+    );
+    expect(
+      settled.elapsed,
+      lessThan(const Duration(seconds: 4)),
+      reason: '整句收完、静默满 quietStop 就收手，不能对每句都轮询到上限',
+    );
 
     await controller.close();
     endpoints.dispose();
@@ -526,38 +568,49 @@ void main() {
     }
     final TexthookerLineEntry line = service.entries.single;
     await controller.awaitLineAudioSettledForTest(line.id);
-    expect(service.entries.single.audioDurationMs, 200,
-        reason: '前提：收敛停在 200ms');
+    expect(
+      service.entries.single.audioDurationMs,
+      200,
+      reason: '前提：收敛停在 200ms',
+    );
 
     await controller.captureAudioBytes(
       lineId: line.id,
       sentence: line.text,
       outputExtension: 'wav',
     );
-    expect(engine.endBoundsFor(888000).last, isNull,
-        reason: '没有下一句时封口 grab 不带上界，取到 native 前向上限');
-    final GalTrackPreview? preview =
-        await controller.exportLineAudioPreview(line.id);
-    expect(preview?.durationMs, 500,
-        reason: '制卡时刻环里已有的后半句必须进卡与缓存');
+    expect(
+      engine.endBoundsFor(888000).last,
+      isNull,
+      reason: '没有下一句时封口 grab 不带上界，取到 native 前向上限',
+    );
+    final GalTrackPreview? preview = await controller.exportLineAudioPreview(
+      line.id,
+    );
+    expect(preview?.durationMs, 500, reason: '制卡时刻环里已有的后半句必须进卡与缓存');
 
     await controller.close();
     endpoints.dispose();
   });
 
   test('BUG-1109 awaitStableVoiceDumpFile 等到 dump 文件停止增长才放行', () async {
-    final Directory dir =
-        await Directory.systemTemp.createTemp('fushi-gal-dump-');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi-gal-dump-',
+    );
     addTearDown(() => dir.delete(recursive: true));
     final File file = File('${dir.path}${Platform.pathSeparator}voice.ogg');
     await file.writeAsBytes(Uint8List(100), flush: true);
 
     // hook 还在分块写：20ms / 40ms 各补一块，之后停笔。
     final List<Timer> writers = <Timer>[
-      Timer(const Duration(milliseconds: 20),
-          () => file.writeAsBytesSync(Uint8List(200), mode: FileMode.append)),
-      Timer(const Duration(milliseconds: 40),
-          () => file.writeAsBytesSync(Uint8List(300), mode: FileMode.append)),
+      Timer(
+        const Duration(milliseconds: 20),
+        () => file.writeAsBytesSync(Uint8List(200), mode: FileMode.append),
+      ),
+      Timer(
+        const Duration(milliseconds: 40),
+        () => file.writeAsBytesSync(Uint8List(300), mode: FileMode.append),
+      ),
     ];
     addTearDown(() {
       for (final Timer t in writers) {
@@ -577,8 +630,9 @@ void main() {
   });
 
   test('BUG-1109 awaitStableVoiceDumpFile 到上限仍在写则 fail-open，不挂死', () async {
-    final Directory dir =
-        await Directory.systemTemp.createTemp('fushi-gal-dump-');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi-gal-dump-',
+    );
     addTearDown(() => dir.delete(recursive: true));
     final File file = File('${dir.path}${Platform.pathSeparator}voice.ogg');
     await file.writeAsBytes(Uint8List(100), flush: true);
@@ -602,8 +656,9 @@ void main() {
   });
 
   test('BUG-1109 dump 文件不存在时立即返回，交调用方按缺文件处理', () async {
-    final Directory dir =
-        await Directory.systemTemp.createTemp('fushi-gal-dump-');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi-gal-dump-',
+    );
     addTearDown(() => dir.delete(recursive: true));
     final Stopwatch elapsed = Stopwatch()..start();
     await awaitStableVoiceDumpFile(
@@ -704,9 +759,10 @@ class _GrowingEngine extends EngineHookGalAudioSource {
       if (boundedSteps != null && boundedSteps.isNotEmpty) {
         final int boundedIndex = _boundedCalls[tsMs] ?? 0;
         _boundedCalls[tsMs] = boundedIndex + 1;
-        final int bounded = boundedSteps[boundedIndex < boundedSteps.length
-            ? boundedIndex
-            : boundedSteps.length - 1];
+        final int bounded =
+            boundedSteps[boundedIndex < boundedSteps.length
+                ? boundedIndex
+                : boundedSteps.length - 1];
         return bounded <= 0
             ? null
             : GalAudioSlice(pcm: Uint8List(bounded), format: _format);
@@ -731,8 +787,7 @@ class _GrowingEngine extends EngineHookGalAudioSource {
     int tolMs = 8000,
     int? sourcePtr,
     List<int>? exclude,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<GalTextPoll?> pollText(int sinceSeq) async {
@@ -768,11 +823,11 @@ class _GrowingEngine extends EngineHookGalAudioSource {
 class _SettleLoopback extends LoopbackGalAudioSource {
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 2,
-        bitsPerSample: 16,
-        isFloat: false,
-      );
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 16,
+    isFloat: false,
+  );
 
   @override
   Future<void> stop() async {}

@@ -22,34 +22,60 @@ void main() {
   });
 
   test(
-      'actions layer has a background-color COLOR PICKER row wired to backgroundColor',
-      () {
-    // Yonghu bao "hai you beijing": beijing SE yi cong gudinng yushe xialila
-    // huancheng flutter_colorpicker de ColorPicker (dian hang kai duihuakuang qu
-    // renyi SE). Ben shouwei suoding xin shixian -- tuihui yushe xialila ji hong.
-    expect(actionsSrc.contains('video_setting_subtitle_bg_color'), isTrue,
-        reason: 'must use the background-color i18n title key');
-    expect(actionsSrc.contains('ColorPicker('), isTrue,
-        reason: 'must render an actual color picker (not fixed presets)');
-    expect(actionsSrc.contains('_buildSubtitleColorRow('), isTrue,
-        reason: 'text/background colors share the color-picker row builder');
-    expect(actionsSrc.contains('backgroundColor: c'), isTrue,
-        reason: 'row must commit picked color to backgroundColor');
-    // The old fixed-preset implementation must be fully gone.
-    expect(actionsSrc.contains('_bgColorPresets'), isFalse,
-        reason:
-            'fixed background presets should be removed, replaced by picker');
-    expect(actionsSrc.contains('_bgColorOptionIndex'), isFalse,
-        reason:
-            'preset reverse-lookup index should be removed with the presets');
-  });
-
-  test('style default background is fixed translucent black, not theme surface',
-      () {
-    expect(styleSrc.contains('const Color kDefaultSubtitleBackgroundColor ='),
+    'actions layer has a background-color COLOR PICKER row wired to backgroundColor',
+    () {
+      // Yonghu bao "hai you beijing": beijing SE yi cong gudinng yushe xialila
+      // huancheng flutter_colorpicker de ColorPicker (dian hang kai duihuakuang qu
+      // renyi SE). Ben shouwei suoding xin shixian -- tuihui yushe xialila ji hong.
+      expect(
+        actionsSrc.contains('video_setting_subtitle_bg_color'),
         isTrue,
-        reason: 'must define kDefaultSubtitleBackgroundColor constant');
-    expect(styleSrc.contains('bool resetBackgroundColor = false'), isTrue,
-        reason: 'copyWith must support clearing backgroundColor to null');
-  });
+        reason: 'must use the background-color i18n title key',
+      );
+      expect(
+        actionsSrc.contains('ColorPicker('),
+        isTrue,
+        reason: 'must render an actual color picker (not fixed presets)',
+      );
+      expect(
+        actionsSrc.contains('_buildSubtitleColorRow('),
+        isTrue,
+        reason: 'text/background colors share the color-picker row builder',
+      );
+      expect(
+        actionsSrc.contains('backgroundColor: c'),
+        isTrue,
+        reason: 'row must commit picked color to backgroundColor',
+      );
+      // The old fixed-preset implementation must be fully gone.
+      expect(
+        actionsSrc.contains('_bgColorPresets'),
+        isFalse,
+        reason:
+            'fixed background presets should be removed, replaced by picker',
+      );
+      expect(
+        actionsSrc.contains('_bgColorOptionIndex'),
+        isFalse,
+        reason:
+            'preset reverse-lookup index should be removed with the presets',
+      );
+    },
+  );
+
+  test(
+    'style default background is fixed translucent black, not theme surface',
+    () {
+      expect(
+        styleSrc.contains('const Color kDefaultSubtitleBackgroundColor ='),
+        isTrue,
+        reason: 'must define kDefaultSubtitleBackgroundColor constant',
+      );
+      expect(
+        styleSrc.contains('bool resetBackgroundColor = false'),
+        isTrue,
+        reason: 'copyWith must support clearing backgroundColor to null',
+      );
+    },
+  );
 }

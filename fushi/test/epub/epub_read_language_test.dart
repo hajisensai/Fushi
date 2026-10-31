@@ -32,7 +32,8 @@ void main() {
     return file.path;
   }
 
-  String opf(String? language) => '''
+  String opf(String? language) =>
+      '''
 <?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">

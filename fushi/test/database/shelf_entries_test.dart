@@ -23,16 +23,16 @@ void main() {
   tearDown(() => db.close());
 
   Future<String> insertEpub(String key) => db.insertEpubBook(
-        EpubBooksCompanion.insert(
-          bookKey: key,
-          title: key,
-          epubPath: '/$key.epub',
-          extractDir: '/$key',
-          chapterCount: 1,
-          chaptersJson: '[]',
-          importedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+    EpubBooksCompanion.insert(
+      bookKey: key,
+      title: key,
+      epubPath: '/$key.epub',
+      extractDir: '/$key',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
 
   group('ShelfEntries DAO 守卫', () {
     test('upsertShelfOrder 按需建行，重复只改 sortOrder 不清 seriesId', () async {
@@ -98,16 +98,21 @@ void main() {
       expect(await db.getShelfEntry(MediaKind.epub, uid), isNotNull);
 
       await db.deleteEpubBook(key);
-      expect(await db.getShelfEntry(MediaKind.epub, uid), isNull,
-          reason: 'deleteEpubBook 必须同事务清 epub shelf_entry（uid 键）');
+      expect(
+        await db.getShelfEntry(MediaKind.epub, uid),
+        isNull,
+        reason: 'deleteEpubBook 必须同事务清 epub shelf_entry（uid 键）',
+      );
     });
 
     test('deleteVideoBook 删 video shelf_entry', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'vid1',
-        title: 'Vid',
-        videoPath: '/v.mp4',
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'vid1',
+          title: 'Vid',
+          videoPath: '/v.mp4',
+        ),
+      );
       await db.upsertShelfOrder(MediaKind.video, 'vid1', 1);
 
       await db.deleteVideoBook('vid1');
@@ -125,19 +130,24 @@ void main() {
       expect(await db.getShelfEntry(MediaKind.srt, 'su1'), isNull);
     });
 
-    test('deleteAudiobookByBookKey 删纯有声书 srt shelf_entry（entryKey=bookKey）',
-        () async {
-      await db.customStatement(
-        'INSERT INTO audiobooks (book_key, alignment_format, alignment_path) '
-        "VALUES ('ab1', 'srt', '/a.srt')",
-      );
-      // 纯有声书登记键 = bookKey（mediaType='srt'）。
-      await db.upsertShelfOrder(MediaKind.srt, 'ab1', 1);
+    test(
+      'deleteAudiobookByBookKey 删纯有声书 srt shelf_entry（entryKey=bookKey）',
+      () async {
+        await db.customStatement(
+          'INSERT INTO audiobooks (book_key, alignment_format, alignment_path) '
+          "VALUES ('ab1', 'srt', '/a.srt')",
+        );
+        // 纯有声书登记键 = bookKey（mediaType='srt'）。
+        await db.upsertShelfOrder(MediaKind.srt, 'ab1', 1);
 
-      await db.deleteAudiobookByBookKey('ab1');
-      expect(await db.getShelfEntry(MediaKind.srt, 'ab1'), isNull,
-          reason: '独立有声书删除唯一汇聚点必须清其 shelf_entry');
-    });
+        await db.deleteAudiobookByBookKey('ab1');
+        expect(
+          await db.getShelfEntry(MediaKind.srt, 'ab1'),
+          isNull,
+          reason: '独立有声书删除唯一汇聚点必须清其 shelf_entry',
+        );
+      },
+    );
 
     test('deleteShelfEntry 幂等：删不存在的行不报错', () async {
       final int removed = await db.deleteShelfEntry(MediaKind.epub, 'nope');

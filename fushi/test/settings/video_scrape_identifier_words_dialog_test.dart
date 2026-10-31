@@ -25,14 +25,17 @@ void main() {
     db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('fushi_idwords_');
+    final Directory tempDir = Directory.systemTemp.createTempSync(
+      'fushi_idwords_',
+    );
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
     appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tempDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tempDir,
+      )
       ..wireDatabaseForTesting(db);
   });
   tearDown(() async {
@@ -40,54 +43,65 @@ void main() {
   });
 
   Future<void> pump(WidgetTester tester) async {
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-      child: MaterialApp(
-        home: Consumer(builder: (BuildContext context, WidgetRef ref, _) {
-          return Scaffold(
-            body: Builder(builder: (BuildContext inner) {
-              return TextButton(
-                onPressed: () => showVideoScrapeIdentifierWordsDialog(
-                  SettingsContext(
-                    context: inner,
-                    appModel: appModel,
-                    ref: ref,
-                    readerSource: ReaderFushiSource.instance,
-                    refresh: () {},
-                  ),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (BuildContext context, WidgetRef ref, _) {
+              return Scaffold(
+                body: Builder(
+                  builder: (BuildContext inner) {
+                    return TextButton(
+                      onPressed: () => showVideoScrapeIdentifierWordsDialog(
+                        SettingsContext(
+                          context: inner,
+                          appModel: appModel,
+                          ref: ref,
+                          readerSource: ReaderFushiSource.instance,
+                          refresh: () {},
+                        ),
+                      ),
+                      child: const Text('open'),
+                    );
+                  },
                 ),
-                child: const Text('open'),
               );
-            }),
-          );
-        }),
+            },
+          ),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
-  String storedWords() => appModel.prefsRepo.getPref(
-        kVideoMetadataIdentifierWordsPref,
-        defaultValue: '',
-      ) as String;
+  String storedWords() =>
+      appModel.prefsRepo.getPref(
+            kVideoMetadataIdentifierWordsPref,
+            defaultValue: '',
+          )
+          as String;
 
-  testWidgets('saving writes the word list through to preferences',
-      (WidgetTester tester) async {
+  testWidgets('saving writes the word list through to preferences', (
+    WidgetTester tester,
+  ) async {
     await pump(tester);
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
     const String words = 'Nekomoe\nKusuriya => Frieren';
     await tester.enterText(
-      find.byKey(const ValueKey<String>(
-        'video.library.metadata_identifier_words.field',
-      )),
+      find.byKey(
+        const ValueKey<String>('video.library.metadata_identifier_words.field'),
+      ),
       words,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey<String>(
-      'video.library.metadata_identifier_words.save',
-    )));
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video.library.metadata_identifier_words.save'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(storedWords(), words);
@@ -98,39 +112,47 @@ void main() {
     );
   });
 
-  testWidgets('cancelling leaves the stored word list untouched',
-      (WidgetTester tester) async {
-    await appModel.prefsRepo
-        .setPref(kVideoMetadataIdentifierWordsPref, 'Nekomoe');
+  testWidgets('cancelling leaves the stored word list untouched', (
+    WidgetTester tester,
+  ) async {
+    await appModel.prefsRepo.setPref(
+      kVideoMetadataIdentifierWordsPref,
+      'Nekomoe',
+    );
     await pump(tester);
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.byKey(const ValueKey<String>(
-        'video.library.metadata_identifier_words.field',
-      )),
+      find.byKey(
+        const ValueKey<String>('video.library.metadata_identifier_words.field'),
+      ),
       'Kusuriya => Frieren',
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey<String>(
-      'video.library.metadata_identifier_words.cancel',
-    )));
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'video.library.metadata_identifier_words.cancel',
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(storedWords(), 'Nekomoe');
   });
 
-  testWidgets('an invalid rule is reported instead of silently dropped',
-      (WidgetTester tester) async {
+  testWidgets('an invalid rule is reported instead of silently dropped', (
+    WidgetTester tester,
+  ) async {
     await pump(tester);
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.byKey(const ValueKey<String>(
-        'video.library.metadata_identifier_words.field',
-      )),
+      find.byKey(
+        const ValueKey<String>('video.library.metadata_identifier_words.field'),
+      ),
       '[unclosed',
     );
     await tester.pumpAndSettle();

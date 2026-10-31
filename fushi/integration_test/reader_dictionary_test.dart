@@ -25,8 +25,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('reader opens, content loads, dictionary search works',
-      (WidgetTester tester) async {
+  testWidgets('reader opens, content loads, dictionary search works', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -53,9 +54,13 @@ void main() {
       // /sdcard/Download/test_dict.zip, so the test is hermetic on a fresh
       // install (no manual import step required).
       final bool dictSeeded = await seedDictionary(tester);
-      expect(dictSeeded, isTrue,
-          reason: 'Dictionary fixture must import. Push a Yomitan zip to '
-              '/sdcard/Download/test_dict.zip (the runner does this).');
+      expect(
+        dictSeeded,
+        isTrue,
+        reason:
+            'Dictionary fixture must import. Push a Yomitan zip to '
+            '/sdcard/Download/test_dict.zip (the runner does this).',
+      );
 
       // ── Phase 1: Open a book from the shelf ──
 
@@ -65,15 +70,22 @@ void main() {
         await seedReaderBook(tester);
         bookEntries = findBookEntries();
       }
-      expect(bookEntries, findsWidgets,
-          reason: 'A book must be on the shelf after seeding the fixture');
+      expect(
+        bookEntries,
+        findsWidgets,
+        reason: 'A book must be on the shelf after seeding the fixture',
+      );
 
       debugPrint(
-          '[reader] Found ${bookEntries.evaluate().length} book(s) on shelf');
+        '[reader] Found ${bookEntries.evaluate().length} book(s) on shelf',
+      );
 
       final bool focusedBook = await driver.focusWidget(bookEntries.first);
-      expect(focusedBook, isTrue,
-          reason: 'Book card must be reachable by focus');
+      expect(
+        focusedBook,
+        isTrue,
+        reason: 'Book card must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
@@ -90,8 +102,11 @@ void main() {
           break;
         }
       }
-      expect(webViewFound, isTrue,
-          reason: 'Hoshi WebView must appear after opening a book');
+      expect(
+        webViewFound,
+        isTrue,
+        reason: 'Hoshi WebView must appear after opening a book',
+      );
 
       // ── Phase 3: Wait for content ready ──
 
@@ -104,8 +119,11 @@ void main() {
           break;
         }
       }
-      expect(contentReady, isTrue,
-          reason: 'Reader content must become ready within 60s');
+      expect(
+        contentReady,
+        isTrue,
+        reason: 'Reader content must become ready within 60s',
+      );
 
       screenshotCount += await takeScreenshot(binding, 'reader_content_ready');
 
@@ -113,19 +131,24 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
 
       // Verify progress indicator.
-      final Finder progressText =
-          find.byKey(const ValueKey<String>('fushi_progress'));
+      final Finder progressText = find.byKey(
+        const ValueKey<String>('fushi_progress'),
+      );
       if (progressText.evaluate().isNotEmpty) {
         final Text textWidget = tester.widget(progressText) as Text;
         debugPrint('[reader] Progress text: ${textWidget.data}');
-        expect(textWidget.data, isNotNull,
-            reason: 'Progress text must have content');
+        expect(
+          textWidget.data,
+          isNotNull,
+          reason: 'Progress text must have content',
+        );
       }
 
       // ── Phase 4: Check play bar bounds (HBK-REG-001) ──
 
-      final Finder playBar =
-          find.byKey(const ValueKey<String>('fushi_play_bar'));
+      final Finder playBar = find.byKey(
+        const ValueKey<String>('fushi_play_bar'),
+      );
       if (playBar.evaluate().isNotEmpty) {
         final RenderBox playBarBox = tester.renderObject(playBar) as RenderBox;
         final Offset playBarTopLeft = playBarBox.localToGlobal(Offset.zero);
@@ -140,9 +163,13 @@ void main() {
           'PlayBar top: ${playBarTopLeft.dy}',
         );
 
-        expect(webViewBottom, lessThanOrEqualTo(playBarTopLeft.dy + 1),
-            reason: 'HBK-REG-001: WebView content must not extend '
-                'under the play bar');
+        expect(
+          webViewBottom,
+          lessThanOrEqualTo(playBarTopLeft.dy + 1),
+          reason:
+              'HBK-REG-001: WebView content must not extend '
+              'under the play bar',
+        );
 
         screenshotCount += await takeScreenshot(binding, 'reader_with_playbar');
       }
@@ -158,20 +185,30 @@ void main() {
 
       // Navigate to dictionary tab.
       final List<Finder> navTargets = findPrimaryNavigationTargets();
-      expect(navTargets.length, greaterThanOrEqualTo(2),
-          reason: 'Dictionary tab navigation target must be present');
+      expect(
+        navTargets.length,
+        greaterThanOrEqualTo(2),
+        reason: 'Dictionary tab navigation target must be present',
+      );
       final bool focusedTab = await driver.focusWidget(navTargets[1]);
-      expect(focusedTab, isTrue,
-          reason: 'Dictionary tab must be reachable by focus');
+      expect(
+        focusedTab,
+        isTrue,
+        reason: 'Dictionary tab must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
       // Verify search field exists.
-      final bool hasSearch = find.byType(TextField).evaluate().isNotEmpty ||
+      final bool hasSearch =
+          find.byType(TextField).evaluate().isNotEmpty ||
           find.byType(TextFormField).evaluate().isNotEmpty ||
           find.byType(SearchBar).evaluate().isNotEmpty;
-      expect(hasSearch, isTrue,
-          reason: 'Dictionary tab must have a search field');
+      expect(
+        hasSearch,
+        isTrue,
+        reason: 'Dictionary tab must have a search field',
+      );
 
       screenshotCount += await takeScreenshot(binding, 'dict_search_field');
 
@@ -184,9 +221,11 @@ void main() {
       debugPrint('[reader] Dict result evidence: $resultCount widgets');
 
       if (resultCount == 0) {
-        fail('Dictionary search for 猫 returned zero results. '
-            'This test requires at least one dictionary imported. '
-            'See CLAUDE.md § 集成测试流程.');
+        fail(
+          'Dictionary search for 猫 returned zero results. '
+          'This test requires at least one dictionary imported. '
+          'See CLAUDE.md § 集成测试流程.',
+        );
       }
 
       screenshotCount += await takeScreenshot(binding, 'dict_search_result');

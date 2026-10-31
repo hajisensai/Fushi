@@ -47,121 +47,127 @@ void main() {
       expect(hash, '08d6c05a21512a79a1dfeb9d2a8f262f');
     });
 
-    test('exact match posts hash metadata then fetches related comments',
-        () async {
-      final File file = File(p.join(tempDir.path, 'Episode 01.mkv'));
-      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
-      final List<http.Request> requests = <http.Request>[];
-      final DandanplayClient client = DandanplayClient(
-        httpClient: MockClient((http.Request request) async {
-          requests.add(request);
-          if (request.url.path == '/api/v2/match') {
-            final Map<String, dynamic> body =
-                jsonDecode(request.body) as Map<String, dynamic>;
-            expect(body['fileName'], 'Episode 01');
-            expect(body['fileHash'], '08d6c05a21512a79a1dfeb9d2a8f262f');
-            expect(body['fileSize'], 4);
+    test(
+      'exact match posts hash metadata then fetches related comments',
+      () async {
+        final File file = File(p.join(tempDir.path, 'Episode 01.mkv'));
+        file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+        final List<http.Request> requests = <http.Request>[];
+        final DandanplayClient client = DandanplayClient(
+          httpClient: MockClient((http.Request request) async {
+            requests.add(request);
+            if (request.url.path == '/api/v2/match') {
+              final Map<String, dynamic> body =
+                  jsonDecode(request.body) as Map<String, dynamic>;
+              expect(body['fileName'], 'Episode 01');
+              expect(body['fileHash'], '08d6c05a21512a79a1dfeb9d2a8f262f');
+              expect(body['fileSize'], 4);
+              return http.Response(
+                jsonEncode(<String, dynamic>{
+                  'success': true,
+                  'isMatched': true,
+                  'matches': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'episodeId': 42,
+                      'animeTitle': 'Demo',
+                      'episodeTitle': '01',
+                      'shift': 1.5,
+                    },
+                  ],
+                }),
+                200,
+              );
+            }
+            expect(request.url.path, '/api/v2/comment/42');
+            expect(request.url.queryParameters['withRelated'], 'true');
             return http.Response(
               jsonEncode(<String, dynamic>{
-                'success': true,
-                'isMatched': true,
-                'matches': <Map<String, dynamic>>[
-                  <String, dynamic>{
-                    'episodeId': 42,
-                    'animeTitle': 'Demo',
-                    'episodeTitle': '01',
-                    'shift': 1.5,
-                  },
+                'count': 1,
+                'comments': <Map<String, dynamic>>[
+                  <String, dynamic>{'p': '2.00,1,16777215,100', 'm': 'online'},
                 ],
               }),
               200,
             );
-          }
-          expect(request.url.path, '/api/v2/comment/42');
-          expect(request.url.queryParameters['withRelated'], 'true');
-          return http.Response(
-            jsonEncode(<String, dynamic>{
-              'count': 1,
-              'comments': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'p': '2.00,1,16777215,100',
-                  'm': 'online',
-                },
-              ],
-            }),
-            200,
-          );
-        }),
-      );
+          }),
+        );
 
-      final DandanplayFetchResult result =
-          await client.fetchBestDanmakuForFile(file);
+        final DandanplayFetchResult result = await client
+            .fetchBestDanmakuForFile(file);
 
-      expect(result.status, DandanplayFetchStatus.hit);
-      expect(result.match?.episodeId, 42);
-      expect(result.items, hasLength(1));
-      expect(result.items.single.text, 'online');
-      expect(result.items.single.startMs, 3500,
-          reason: 'match.shift delays fetched comments by seconds');
-      expect(requests, hasLength(2));
-    });
+        expect(result.status, DandanplayFetchStatus.hit);
+        expect(result.match?.episodeId, 42);
+        expect(result.items, hasLength(1));
+        expect(result.items.single.text, 'online');
+        expect(
+          result.items.single.startMs,
+          3500,
+          reason: 'match.shift delays fetched comments by seconds',
+        );
+        expect(requests, hasLength(2));
+      },
+    );
 
-    test('multiple fuzzy matches degrade to needsSelection without fetching',
-        () async {
-      final File file = File(p.join(tempDir.path, 'Episode 02.mkv'));
-      file.writeAsBytesSync(<int>[1]);
-      int commentFetches = 0;
-      final DandanplayClient client = DandanplayClient(
-        httpClient: MockClient((http.Request request) async {
-          if (request.url.path.startsWith('/api/v2/comment')) {
-            commentFetches++;
-          }
-          return http.Response(
-            jsonEncode(<String, dynamic>{
-              'success': true,
-              'isMatched': false,
-              'matches': <Map<String, dynamic>>[
-                <String, dynamic>{'episodeId': 1, 'animeTitle': 'A'},
-                <String, dynamic>{'episodeId': 2, 'animeTitle': 'B'},
-              ],
-            }),
-            200,
-          );
-        }),
-      );
+    test(
+      'multiple fuzzy matches degrade to needsSelection without fetching',
+      () async {
+        final File file = File(p.join(tempDir.path, 'Episode 02.mkv'));
+        file.writeAsBytesSync(<int>[1]);
+        int commentFetches = 0;
+        final DandanplayClient client = DandanplayClient(
+          httpClient: MockClient((http.Request request) async {
+            if (request.url.path.startsWith('/api/v2/comment')) {
+              commentFetches++;
+            }
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'success': true,
+                'isMatched': false,
+                'matches': <Map<String, dynamic>>[
+                  <String, dynamic>{'episodeId': 1, 'animeTitle': 'A'},
+                  <String, dynamic>{'episodeId': 2, 'animeTitle': 'B'},
+                ],
+              }),
+              200,
+            );
+          }),
+        );
 
-      final DandanplayFetchResult result =
-          await client.fetchBestDanmakuForFile(file);
+        final DandanplayFetchResult result = await client
+            .fetchBestDanmakuForFile(file);
 
-      expect(result.status, DandanplayFetchStatus.needsSelection);
-      expect(result.matches, hasLength(2));
-      expect(result.items, isEmpty);
-      expect(commentFetches, 0);
-    });
+        expect(result.status, DandanplayFetchStatus.needsSelection);
+        expect(result.matches, hasLength(2));
+        expect(result.items, isEmpty);
+        expect(commentFetches, 0);
+      },
+    );
 
     test('no match and network failure degrade gracefully', () async {
       final File file = File(p.join(tempDir.path, 'Episode 03.mkv'));
       file.writeAsBytesSync(<int>[1]);
       final DandanplayClient noMatchClient = DandanplayClient(
-        httpClient: MockClient((_) async => http.Response(
-              jsonEncode(<String, dynamic>{
-                'success': true,
-                'isMatched': false,
-                'matches': <Map<String, dynamic>>[],
-              }),
-              200,
-            )),
+        httpClient: MockClient(
+          (_) async => http.Response(
+            jsonEncode(<String, dynamic>{
+              'success': true,
+              'isMatched': false,
+              'matches': <Map<String, dynamic>>[],
+            }),
+            200,
+          ),
+        ),
       );
-      final DandanplayFetchResult noMatch =
-          await noMatchClient.fetchBestDanmakuForFile(file);
+      final DandanplayFetchResult noMatch = await noMatchClient
+          .fetchBestDanmakuForFile(file);
       expect(noMatch.status, DandanplayFetchStatus.noMatch);
       expect(noMatch.items, isEmpty);
 
       final DandanplayClient failureClient = DandanplayClient(
         httpClient: MockClient((_) async => throw const SocketException('x')),
       );
-      final DandanplayFetchResult failure =
-          await failureClient.fetchBestDanmakuForFile(file);
+      final DandanplayFetchResult failure = await failureClient
+          .fetchBestDanmakuForFile(file);
       expect(failure.status, DandanplayFetchStatus.networkError);
       expect(failure.items, isEmpty);
     });
@@ -192,8 +198,9 @@ void main() {
         }),
       );
 
-      final DandanplayFetchResult result =
-          await client.fetchBestDanmakuForFile(file);
+      final DandanplayFetchResult result = await client.fetchBestDanmakuForFile(
+        file,
+      );
 
       expect(result.status, DandanplayFetchStatus.networkError);
       expect(result.items, isEmpty);
@@ -201,93 +208,117 @@ void main() {
 
     // ---- BUG-1057 回归：拉弹幕的失败必须能被调用方区分，且不与轻量请求共用超时 ----
 
-    test(
-        'BUG-1057: comment fetch reports non-2xx as serverError instead of an '
+    test('BUG-1057: comment fetch reports non-2xx as serverError instead of an '
         'empty comment list', () async {
       for (final int code in <int>[403, 404, 500]) {
         final DandanplayClient client = DandanplayClient(
           httpClient: MockClient(
-              (http.Request request) async => http.Response('', code)),
+            (http.Request request) async => http.Response('', code),
+          ),
         );
 
-        final DandanplayFetchResult result = await client
-            .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+        final DandanplayFetchResult result = await client.fetchCommentsForMatch(
+          const DandanplayMatch(episodeId: 42),
+        );
 
-        expect(result.status, DandanplayFetchStatus.serverError,
-            reason: 'HTTP $code 是失败，不是「这一集 0 条弹幕」——'
-                '此前一律被压成 const []，手动绑定于是「成功」关面板、零提示');
+        expect(
+          result.status,
+          DandanplayFetchStatus.serverError,
+          reason:
+              'HTTP $code 是失败，不是「这一集 0 条弹幕」——'
+              '此前一律被压成 const []，手动绑定于是「成功」关面板、零提示',
+        );
         expect(result.error, code, reason: '状态码要留在结果里供日志/文案分级');
         expect(result.items, isEmpty);
       }
     });
 
-    test('BUG-1057: comment fetch reports network failure as networkError',
-        () async {
-      final DandanplayClient client = DandanplayClient(
-        httpClient: MockClient((_) async => throw const SocketException('x')),
-      );
+    test(
+      'BUG-1057: comment fetch reports network failure as networkError',
+      () async {
+        final DandanplayClient client = DandanplayClient(
+          httpClient: MockClient((_) async => throw const SocketException('x')),
+        );
 
-      final DandanplayFetchResult result = await client
-          .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+        final DandanplayFetchResult result = await client.fetchCommentsForMatch(
+          const DandanplayMatch(episodeId: 42),
+        );
 
-      expect(result.status, DandanplayFetchStatus.networkError);
-      expect(result.items, isEmpty);
-    });
+        expect(result.status, DandanplayFetchStatus.networkError);
+        expect(result.items, isEmpty);
+      },
+    );
 
     test('BUG-1057: a valid episode with zero comments stays a hit', () async {
       final DandanplayClient client = DandanplayClient(
-        httpClient: MockClient((_) async => http.Response(
-              jsonEncode(<String, dynamic>{'comments': <dynamic>[]}),
-              200,
-            )),
+        httpClient: MockClient(
+          (_) async => http.Response(
+            jsonEncode(<String, dynamic>{'comments': <dynamic>[]}),
+            200,
+          ),
+        ),
       );
 
-      final DandanplayFetchResult result = await client
-          .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+      final DandanplayFetchResult result = await client.fetchCommentsForMatch(
+        const DandanplayMatch(episodeId: 42),
+      );
 
-      expect(result.status, DandanplayFetchStatus.hit,
-          reason: '「该集有效但暂无弹幕」与「拉取失败」是两回事，必须能分开');
+      expect(
+        result.status,
+        DandanplayFetchStatus.hit,
+        reason: '「该集有效但暂无弹幕」与「拉取失败」是两回事，必须能分开',
+      );
       expect(result.items, isEmpty);
     });
 
     test(
-        'BUG-1057: comment fetch uses its own long timeout, not the light-request '
-        'one', () async {
-      // 直接触发点：搜索/匹配（几 KB）与拉弹幕（withRelated=true，服务端聚合第三方源、
-      // 响应体可达数 MB）此前共用同一个 8s；http.get().timeout() 计的是整个响应体下载完
-      // 的时间，正片弹幕于是稳定超时 → 用户只看到「弹幕加载失败，请稍后重试」。
-      // 只把轻量超时压到 1ms，commentTimeout 用默认值：谁再让拉弹幕复用 _timeout，
-      // 本用例立刻红。
-      final DandanplayClient client = DandanplayClient(
-        timeout: const Duration(milliseconds: 1),
-        httpClient: MockClient((http.Request request) async {
-          await Future<void>.delayed(const Duration(milliseconds: 40));
-          return http.Response(
-            jsonEncode(<String, dynamic>{
-              'comments': <Map<String, dynamic>>[
-                <String, dynamic>{'p': '2.00,1,16777215,100', 'm': 'slow'},
-              ],
-            }),
-            200,
-          );
-        }),
-      );
+      'BUG-1057: comment fetch uses its own long timeout, not the light-request '
+      'one',
+      () async {
+        // 直接触发点：搜索/匹配（几 KB）与拉弹幕（withRelated=true，服务端聚合第三方源、
+        // 响应体可达数 MB）此前共用同一个 8s；http.get().timeout() 计的是整个响应体下载完
+        // 的时间，正片弹幕于是稳定超时 → 用户只看到「弹幕加载失败，请稍后重试」。
+        // 只把轻量超时压到 1ms，commentTimeout 用默认值：谁再让拉弹幕复用 _timeout，
+        // 本用例立刻红。
+        final DandanplayClient client = DandanplayClient(
+          timeout: const Duration(milliseconds: 1),
+          httpClient: MockClient((http.Request request) async {
+            await Future<void>.delayed(const Duration(milliseconds: 40));
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'comments': <Map<String, dynamic>>[
+                  <String, dynamic>{'p': '2.00,1,16777215,100', 'm': 'slow'},
+                ],
+              }),
+              200,
+            );
+          }),
+        );
 
-      final DandanplayFetchResult result = await client
-          .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+        final DandanplayFetchResult result = await client.fetchCommentsForMatch(
+          const DandanplayMatch(episodeId: 42),
+        );
 
-      expect(result.status, DandanplayFetchStatus.hit,
-          reason: '拉弹幕比 1ms 的轻量超时慢得多也必须成功——它走默认的 commentTimeout');
-      expect(result.items.single.text, 'slow');
+        expect(
+          result.status,
+          DandanplayFetchStatus.hit,
+          reason: '拉弹幕比 1ms 的轻量超时慢得多也必须成功——它走默认的 commentTimeout',
+        );
+        expect(result.items.single.text, 'slow');
 
-      // 对照：同一个 client 下，轻量请求仍受 1ms 约束。
-      final DandanplaySearchResult search = await client.searchEpisodes('demo');
-      expect(search.status, DandanplayFetchStatus.networkError,
-          reason: '搜索仍走 timeout，两档超时确实是分开的');
-    });
+        // 对照：同一个 client 下，轻量请求仍受 1ms 约束。
+        final DandanplaySearchResult search = await client.searchEpisodes(
+          'demo',
+        );
+        expect(
+          search.status,
+          DandanplayFetchStatus.networkError,
+          reason: '搜索仍走 timeout，两档超时确实是分开的',
+        );
+      },
+    );
 
-    test(
-        'BUG-1057: fetchBestDanmakuForFile propagates the comment failure '
+    test('BUG-1057: fetchBestDanmakuForFile propagates the comment failure '
         'instead of claiming a hit with zero comments', () async {
       final File file = File(p.join(tempDir.path, 'Episode 10.mkv'));
       file.writeAsBytesSync(<int>[1, 2, 3, 4]);
@@ -309,26 +340,32 @@ void main() {
         }),
       );
 
-      final DandanplayFetchResult result =
-          await client.fetchBestDanmakuForFile(file);
+      final DandanplayFetchResult result = await client.fetchBestDanmakuForFile(
+        file,
+      );
 
-      expect(result.status, DandanplayFetchStatus.serverError,
-          reason: '匹配成功但拉弹幕被拒 → 整体是失败，不能报 hit');
+      expect(
+        result.status,
+        DandanplayFetchStatus.serverError,
+        reason: '匹配成功但拉弹幕被拒 → 整体是失败，不能报 hit',
+      );
       expect(result.match?.episodeId, 42, reason: '已匹配到的集仍要保留供 UI 展示');
       expect(result.items, isEmpty);
     });
 
-    test('comment parser is real Dandanplay JSON parser, not a mocked core',
-        () {
-      final List<VideoDanmakuItem> items = parseDandanplayDanmakuJson(
-        '{"comments":[{"p":"1.00,5,255,100","m":"top"}]}',
-        shiftMs: -500,
-      );
+    test(
+      'comment parser is real Dandanplay JSON parser, not a mocked core',
+      () {
+        final List<VideoDanmakuItem> items = parseDandanplayDanmakuJson(
+          '{"comments":[{"p":"1.00,5,255,100","m":"top"}]}',
+          shiftMs: -500,
+        );
 
-      expect(items.single.startMs, 500);
-      expect(items.single.mode, VideoDanmakuMode.top);
-      expect(items.single.colorArgb, 0xFF0000FF);
-    });
+        expect(items.single.startMs, 500);
+        expect(items.single.mode, VideoDanmakuMode.top);
+        expect(items.single.colorArgb, 0xFF0000FF);
+      },
+    );
 
     // 在线弹幕解析与本地 sidecar 共用一份原生实现；旧实现（jsonDecode + 形状校验 +
     // dandanplayCommentsToDanmaku）的状态分类必须原样保留。
@@ -453,43 +490,47 @@ void main() {
       expect(hits.single.path, '/api/v2/match');
     });
 
-    test('signed config attaches X-AppId / X-Timestamp / X-Signature headers',
-        () async {
-      final File file = File(p.join(tempDir.path, 'Episode 06.mkv'));
-      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
-      final List<http.Request> requests = <http.Request>[];
-      final DandanplayClient client = DandanplayClient(
-        config: const DandanplayConfig(
-          appId: 'my-app',
-          appSecret: 'my-secret',
-        ),
-        httpClient: MockClient((http.Request request) async {
-          requests.add(request);
-          return http.Response(
-            jsonEncode(<String, dynamic>{
-              'success': true,
-              'isMatched': true,
-              'matches': <Map<String, dynamic>>[
-                <String, dynamic>{'episodeId': 9},
-              ],
-            }),
-            200,
-          );
-        }),
-      );
+    test(
+      'signed config attaches X-AppId / X-Timestamp / X-Signature headers',
+      () async {
+        final File file = File(p.join(tempDir.path, 'Episode 06.mkv'));
+        file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+        final List<http.Request> requests = <http.Request>[];
+        final DandanplayClient client = DandanplayClient(
+          config: const DandanplayConfig(
+            appId: 'my-app',
+            appSecret: 'my-secret',
+          ),
+          httpClient: MockClient((http.Request request) async {
+            requests.add(request);
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'success': true,
+                'isMatched': true,
+                'matches': <Map<String, dynamic>>[
+                  <String, dynamic>{'episodeId': 9},
+                ],
+              }),
+              200,
+            );
+          }),
+        );
 
-      await client.matchFile(file);
+        await client.matchFile(file);
 
-      final http.Request signed = requests.single;
-      expect(signed.headers['X-AppId'], 'my-app');
-      final String? ts = signed.headers['X-Timestamp'];
-      expect(ts, isNotNull);
-      // Recompute the documented signature: Base64(SHA256(AppId+TS+Path+Secret)).
-      final List<int> payload =
-          utf8.encode('my-app$ts/api/v2/match' 'my-secret');
-      final String expected = base64.encode(sha256.convert(payload).bytes);
-      expect(signed.headers['X-Signature'], expected);
-    });
+        final http.Request signed = requests.single;
+        expect(signed.headers['X-AppId'], 'my-app');
+        final String? ts = signed.headers['X-Timestamp'];
+        expect(ts, isNotNull);
+        // Recompute the documented signature: Base64(SHA256(AppId+TS+Path+Secret)).
+        final List<int> payload = utf8.encode(
+          'my-app$ts/api/v2/match'
+          'my-secret',
+        );
+        final String expected = base64.encode(sha256.convert(payload).bytes);
+        expect(signed.headers['X-Signature'], expected);
+      },
+    );
 
     test('unsigned (default) config sends no signature headers', () async {
       final File file = File(p.join(tempDir.path, 'Episode 07.mkv'));
@@ -520,44 +561,53 @@ void main() {
       expect(request.url.host, 'api.dandanplay.net');
     });
 
-    test('embedded app credentials sign requests when user config is unsigned',
-        () async {
-      // 内置官方凭据（编译期从 dandanplay_secret.dart 注入）让默认配置也签名，
-      // 用户无需手动输入 API —— 本 feature 的核心行为。
-      DandanplayConfig.embeddedAppId = 'builtin-app';
-      DandanplayConfig.embeddedAppSecret = 'builtin-secret';
-      final File file = File(p.join(tempDir.path, 'Episode 08.mkv'));
-      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
-      final List<http.Request> requests = <http.Request>[];
-      final DandanplayClient client = DandanplayClient(
-        config: DandanplayConfig.defaults,
-        httpClient: MockClient((http.Request request) async {
-          requests.add(request);
-          return http.Response(
-            jsonEncode(<String, dynamic>{
-              'success': true,
-              'isMatched': true,
-              'matches': <Map<String, dynamic>>[
-                <String, dynamic>{'episodeId': 13},
-              ],
-            }),
-            200,
-          );
-        }),
-      );
+    test(
+      'embedded app credentials sign requests when user config is unsigned',
+      () async {
+        // 内置官方凭据（编译期从 dandanplay_secret.dart 注入）让默认配置也签名，
+        // 用户无需手动输入 API —— 本 feature 的核心行为。
+        DandanplayConfig.embeddedAppId = 'builtin-app';
+        DandanplayConfig.embeddedAppSecret = 'builtin-secret';
+        final File file = File(p.join(tempDir.path, 'Episode 08.mkv'));
+        file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+        final List<http.Request> requests = <http.Request>[];
+        final DandanplayClient client = DandanplayClient(
+          config: DandanplayConfig.defaults,
+          httpClient: MockClient((http.Request request) async {
+            requests.add(request);
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'success': true,
+                'isMatched': true,
+                'matches': <Map<String, dynamic>>[
+                  <String, dynamic>{'episodeId': 13},
+                ],
+              }),
+              200,
+            );
+          }),
+        );
 
-      await client.matchFile(file);
+        await client.matchFile(file);
 
-      final http.Request request = requests.single;
-      expect(request.headers['X-AppId'], 'builtin-app',
-          reason: '内置凭据让默认（空）配置也签名，用户无需手动输入 API');
-      final String? ts = request.headers['X-Timestamp'];
-      expect(ts, isNotNull);
-      final List<int> payload =
-          utf8.encode('builtin-app$ts/api/v2/match' 'builtin-secret');
-      expect(request.headers['X-Signature'],
-          base64.encode(sha256.convert(payload).bytes));
-    });
+        final http.Request request = requests.single;
+        expect(
+          request.headers['X-AppId'],
+          'builtin-app',
+          reason: '内置凭据让默认（空）配置也签名，用户无需手动输入 API',
+        );
+        final String? ts = request.headers['X-Timestamp'];
+        expect(ts, isNotNull);
+        final List<int> payload = utf8.encode(
+          'builtin-app$ts/api/v2/match'
+          'builtin-secret',
+        );
+        expect(
+          request.headers['X-Signature'],
+          base64.encode(sha256.convert(payload).bytes),
+        );
+      },
+    );
 
     test('user AppId/AppSecret override the embedded credentials', () async {
       DandanplayConfig.embeddedAppId = 'builtin-app';
@@ -584,8 +634,11 @@ void main() {
 
       await client.matchFile(file);
 
-      expect(requests.single.headers['X-AppId'], 'mine',
-          reason: '用户显式配置的 AppId 优先于内置凭据');
+      expect(
+        requests.single.headers['X-AppId'],
+        'mine',
+        reason: '用户显式配置的 AppId 优先于内置凭据',
+      );
     });
   });
 
@@ -602,15 +655,21 @@ void main() {
     });
 
     test('resolvedBaseUri falls back to official for empty / invalid URLs', () {
-      expect(const DandanplayConfig().resolvedBaseUri,
-          Uri.parse(DandanplayConfig.officialBaseUrl));
-      expect(const DandanplayConfig(baseUrl: 'not a url').resolvedBaseUri,
-          Uri.parse(DandanplayConfig.officialBaseUrl));
-      expect(const DandanplayConfig(baseUrl: 'ftp://x').resolvedBaseUri,
-          Uri.parse(DandanplayConfig.officialBaseUrl));
-      final Uri custom =
-          const DandanplayConfig(baseUrl: 'https://m.example.com/api/v2/x')
-              .resolvedBaseUri;
+      expect(
+        const DandanplayConfig().resolvedBaseUri,
+        Uri.parse(DandanplayConfig.officialBaseUrl),
+      );
+      expect(
+        const DandanplayConfig(baseUrl: 'not a url').resolvedBaseUri,
+        Uri.parse(DandanplayConfig.officialBaseUrl),
+      );
+      expect(
+        const DandanplayConfig(baseUrl: 'ftp://x').resolvedBaseUri,
+        Uri.parse(DandanplayConfig.officialBaseUrl),
+      );
+      final Uri custom = const DandanplayConfig(
+        baseUrl: 'https://m.example.com/api/v2/x',
+      ).resolvedBaseUri;
       // Strips any user-supplied path; only scheme + host (+ port) survive.
       expect(custom.scheme, 'https');
       expect(custom.host, 'm.example.com');
@@ -623,42 +682,57 @@ void main() {
       expect(const DandanplayConfig(appId: 'a').isSigned, isFalse);
       expect(const DandanplayConfig(appSecret: 'b').isSigned, isFalse);
       expect(
-          const DandanplayConfig(appId: 'a', appSecret: 'b').isSigned, isTrue);
+        const DandanplayConfig(appId: 'a', appSecret: 'b').isSigned,
+        isTrue,
+      );
     });
 
-    test('effective credentials fall back to embedded, user config overrides',
-        () {
-      DandanplayConfig.embeddedAppId = 'e-app';
-      DandanplayConfig.embeddedAppSecret = 'e-secret';
-      const DandanplayConfig empty = DandanplayConfig();
-      expect(empty.effectiveAppId, 'e-app');
-      expect(empty.effectiveAppSecret, 'e-secret');
-      expect(empty.isSigned, isTrue, reason: '内置凭据非空时，空用户配置也算已签名（开箱即用）');
+    test(
+      'effective credentials fall back to embedded, user config overrides',
+      () {
+        DandanplayConfig.embeddedAppId = 'e-app';
+        DandanplayConfig.embeddedAppSecret = 'e-secret';
+        const DandanplayConfig empty = DandanplayConfig();
+        expect(empty.effectiveAppId, 'e-app');
+        expect(empty.effectiveAppSecret, 'e-secret');
+        expect(empty.isSigned, isTrue, reason: '内置凭据非空时，空用户配置也算已签名（开箱即用）');
 
-      const DandanplayConfig user =
-          DandanplayConfig(appId: 'u-app', appSecret: 'u-secret');
-      expect(user.effectiveAppId, 'u-app');
-      expect(user.effectiveAppSecret, 'u-secret');
+        const DandanplayConfig user = DandanplayConfig(
+          appId: 'u-app',
+          appSecret: 'u-secret',
+        );
+        expect(user.effectiveAppId, 'u-app');
+        expect(user.effectiveAppSecret, 'u-secret');
 
-      // 只填一半：用户 AppId + 内置 AppSecret 也能凑齐生效凭据。
-      const DandanplayConfig halfUser = DandanplayConfig(appId: 'u-app');
-      expect(halfUser.effectiveAppId, 'u-app');
-      expect(halfUser.effectiveAppSecret, 'e-secret');
-      expect(halfUser.isSigned, isTrue);
-    });
+        // 只填一半：用户 AppId + 内置 AppSecret 也能凑齐生效凭据。
+        const DandanplayConfig halfUser = DandanplayConfig(appId: 'u-app');
+        expect(halfUser.effectiveAppId, 'u-app');
+        expect(halfUser.effectiveAppSecret, 'e-secret');
+        expect(halfUser.isSigned, isTrue);
+      },
+    );
 
     test('signatureHeaders match the documented SHA256 scheme', () {
-      const DandanplayConfig config =
-          DandanplayConfig(appId: 'app', appSecret: 'sec');
+      const DandanplayConfig config = DandanplayConfig(
+        appId: 'app',
+        appSecret: 'sec',
+      );
       final DateTime now = DateTime.utc(2026, 1, 1, 0, 0, 0);
-      final Map<String, String> headers =
-          config.signatureHeaders('/api/v2/comment/42', now: now);
+      final Map<String, String> headers = config.signatureHeaders(
+        '/api/v2/comment/42',
+        now: now,
+      );
       final int ts = now.millisecondsSinceEpoch ~/ 1000;
       expect(headers['X-AppId'], 'app');
       expect(headers['X-Timestamp'], '$ts');
-      final List<int> payload = utf8.encode('app$ts/api/v2/comment/42' 'sec');
+      final List<int> payload = utf8.encode(
+        'app$ts/api/v2/comment/42'
+        'sec',
+      );
       expect(
-          headers['X-Signature'], base64.encode(sha256.convert(payload).bytes));
+        headers['X-Signature'],
+        base64.encode(sha256.convert(payload).bytes),
+      );
       // Unsigned config yields no headers at all.
       expect(const DandanplayConfig().signatureHeaders('/x'), isEmpty);
     });
@@ -721,14 +795,17 @@ void main() {
       final DandanplayClient client = DandanplayClient(
         httpClient: MockClient((http.Request request) async {
           return http.Response(
-            jsonEncode(
-                <String, dynamic>{'success': true, 'animes': <dynamic>[]}),
+            jsonEncode(<String, dynamic>{
+              'success': true,
+              'animes': <dynamic>[],
+            }),
             200,
           );
         }),
       );
-      final DandanplaySearchResult result =
-          await client.searchEpisodes('nothing');
+      final DandanplaySearchResult result = await client.searchEpisodes(
+        'nothing',
+      );
       expect(result.status, DandanplayFetchStatus.noMatch);
       expect(result.animes, isEmpty);
     });

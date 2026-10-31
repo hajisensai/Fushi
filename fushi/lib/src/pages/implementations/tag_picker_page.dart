@@ -10,14 +10,11 @@ class TagPickerPage extends StatelessWidget {
   /// 两种目标二选一，共用同一标签池：媒体条目传 [media]（统一媒体身份
   /// [MediaRef]：epub=bookKey / srt=SrtBooks.uid / video=bookUid /
   /// game=galgames.id）；合集传 [collectionId]（media_collections 主键）。
-  const TagPickerPage({
-    this.media,
-    this.collectionId,
-    super.key,
-  }) : assert(
-          (media != null) ^ (collectionId != null),
-          'exactly one of: media / collectionId',
-        );
+  const TagPickerPage({this.media, this.collectionId, super.key})
+    : assert(
+        (media != null) ^ (collectionId != null),
+        'exactly one of: media / collectionId',
+      );
   final MediaRef? media;
   final int? collectionId;
 

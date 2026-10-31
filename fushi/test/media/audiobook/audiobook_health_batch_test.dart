@@ -19,12 +19,14 @@ void main() {
   tearDown(() => db.close());
 
   Future<void> insertAudiobook(String bookKey, {int? matchRatePct}) =>
-      db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: bookKey,
-        alignmentFormat: 'lrc',
-        alignmentPath: '/tmp/$bookKey.lrc',
-        matchRatePct: Value<int?>(matchRatePct),
-      ));
+      db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: bookKey,
+          alignmentFormat: 'lrc',
+          alignmentPath: '/tmp/$bookKey.lrc',
+          matchRatePct: Value<int?>(matchRatePct),
+        ),
+      );
 
   test('resolveAllHealth equals per-book resolveHealth', () async {
     await insertAudiobook('with-overlay', matchRatePct: 10);
@@ -37,8 +39,9 @@ void main() {
     await db.setPref('audiobook_health_overlay_broken-overlay', '{not json');
 
     final Map<String, Audiobook> byKey = await repo.buildBookKeyMap();
-    final Map<String, AudiobookHealth> batch =
-        await repo.resolveAllHealth(byKey);
+    final Map<String, AudiobookHealth> batch = await repo.resolveAllHealth(
+      byKey,
+    );
 
     expect(batch.keys.toSet(), byKey.keys.toSet());
     for (final MapEntry<String, Audiobook> e in byKey.entries) {
@@ -47,8 +50,11 @@ void main() {
       expect(batch[e.key]!.ratePct, single.ratePct, reason: e.key);
       expect(batch[e.key]!.reason, single.reason, reason: e.key);
     }
-    expect(batch['with-overlay']!.kind, HealthKind.ok,
-        reason: '覆盖（99%）压过行自身的 10%');
+    expect(
+      batch['with-overlay']!.kind,
+      HealthKind.ok,
+      reason: '覆盖（99%）压过行自身的 10%',
+    );
     expect(batch['with-overlay']!.reason, 'rerun');
   });
 
@@ -60,8 +66,8 @@ void main() {
     await db.setPref('audiobook_health_overlay_junk', '');
     await db.setPref('unrelated_pref', '{"kind":"ok"}');
 
-    final Map<String, AudiobookHealth> overlays =
-        await repo.readAllHealthOverlays();
+    final Map<String, AudiobookHealth> overlays = await repo
+        .readAllHealthOverlays();
 
     expect(overlays.keys.toSet(), <String>{'k1'});
     expect(overlays['k1']!.ratePct, 80);

@@ -34,11 +34,11 @@ class JimakuEpisodeIndex extends SubtitleEpisodeIndex<JimakuFile> {
   }) {
     final SubtitleEpisodeIndex<JimakuFile> core =
         SubtitleEpisodeIndex<JimakuFile>.build(
-      files.where((JimakuFile file) => file.isTextSubtitle),
-      episodeOf: (JimakuFile file) => file.episode,
-      compare: (JimakuFile a, JimakuFile b) =>
-          compareJimakuByLanguagePreference(a, b, preferredLanguage),
-    );
+          files.where((JimakuFile file) => file.isTextSubtitle),
+          episodeOf: (JimakuFile file) => file.episode,
+          compare: (JimakuFile a, JimakuFile b) =>
+              compareJimakuByLanguagePreference(a, b, preferredLanguage),
+        );
     return JimakuEpisodeIndex._(
       byEpisode: core.byEpisode,
       unnumbered: core.unnumbered,
@@ -52,10 +52,14 @@ int compareJimakuByLanguagePreference(
   JimakuFile b,
   String? preferredLanguage,
 ) {
-  final int rankA = jimakuLanguageRank(detectSubtitleLanguage(a.name),
-      preferred: preferredLanguage);
-  final int rankB = jimakuLanguageRank(detectSubtitleLanguage(b.name),
-      preferred: preferredLanguage);
+  final int rankA = jimakuLanguageRank(
+    detectSubtitleLanguage(a.name),
+    preferred: preferredLanguage,
+  );
+  final int rankB = jimakuLanguageRank(
+    detectSubtitleLanguage(b.name),
+    preferred: preferredLanguage,
+  );
   if (rankA != rankB) return rankA.compareTo(rankB);
   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }
@@ -73,9 +77,8 @@ JimakuEpisodeMatch chooseJimakuFileForEpisode(
   JimakuEpisodeIndex index, {
   required int episode,
   required bool soleTarget,
-}) =>
-    chooseSubtitleForEpisode<JimakuFile>(
-      index,
-      episode: episode,
-      soleTarget: soleTarget,
-    );
+}) => chooseSubtitleForEpisode<JimakuFile>(
+  index,
+  episode: episode,
+  soleTarget: soleTarget,
+);

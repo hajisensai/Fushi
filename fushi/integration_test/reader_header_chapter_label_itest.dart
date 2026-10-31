@@ -42,100 +42,111 @@ void main() {
   const Key titleKey = ValueKey<String>('fushi_desktop_header_title');
   const Key chapterKey = ValueKey<String>('fushi_desktop_header_chapter');
 
-  testWidgets('顶栏标题槽画出「书名 · 当前章名」，翻章后章名跟着换',
-      timeout: const Timeout(Duration(minutes: 8)),
-      (WidgetTester tester) async {
-    await launchFushiTestApp();
-    expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
-    await tester.pump(const Duration(seconds: 2));
+  testWidgets(
+    '顶栏标题槽画出「书名 · 当前章名」，翻章后章名跟着换',
+    timeout: const Timeout(Duration(minutes: 8)),
+    (WidgetTester tester) async {
+      await launchFushiTestApp();
+      expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
+      await tester.pump(const Duration(seconds: 2));
 
-    await enableFocusNavigation(tester);
-    final FocusDriver driver = FocusDriver(tester);
-    await _openBooksTab(tester, driver);
-    final String bookKey = await _seedTestBook(tester);
-    await _activateBook(tester, bookKey);
+      await enableFocusNavigation(tester);
+      final FocusDriver driver = FocusDriver(tester);
+      await _openBooksTab(tester, driver);
+      final String bookKey = await _seedTestBook(tester);
+      await _activateBook(tester, bookKey);
 
-    for (int i = 0;
+      for (
+        int i = 0;
         i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
-        i++) {
-      await tester.pump(const Duration(milliseconds: 250));
-    }
-    expect(find.byType(ReaderFushiPage), findsOneWidget,
-        reason: 'ReaderFushiPage must mount after openMedia');
-
-    const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
-    bool contentReady = false;
-    for (int i = 0; i < 180; i++) {
-      await tester.pump(const Duration(milliseconds: 500));
-      if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
-        contentReady = true;
-        break;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 250));
       }
-    }
-    expect(contentReady, isTrue, reason: 'Reader content ready within 90s');
+      expect(
+        find.byType(ReaderFushiPage),
+        findsOneWidget,
+        reason: 'ReaderFushiPage must mount after openMedia',
+      );
 
-    final eval = ReaderFushiPage.debugEvaluateJavascript;
-    expect(eval, isNotNull, reason: 'Reader debug JS hook must be set');
-
-    // 悬浮顶栏 3s 自动收起：每次读数前走真 JS 桥的 onTapEmpty 重新唤出（与用户
-    // 点空白同一入口），否则读到的是「没画」而不是「画错」。
-    Future<bool> revealHeader() async {
-      for (int attempt = 0; attempt < 4; attempt++) {
-        await eval!(
-          'setTimeout(function(){window.flutter_inappwebview.callHandler('
-          "'onTapEmpty');},0)",
-        );
-        for (int i = 0; i < 12; i++) {
-          await tester.pump(const Duration(milliseconds: 100));
-          if (find.byKey(headerKey).evaluate().isNotEmpty) return true;
+      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
+      bool contentReady = false;
+      for (int i = 0; i < 180; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
+        if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
+          contentReady = true;
+          break;
         }
       }
-      return false;
-    }
+      expect(contentReady, isTrue, reason: 'Reader content ready within 90s');
 
-    String? textOf(Key key) {
-      final Iterable<Element> found = find.byKey(key).evaluate();
-      if (found.isEmpty) return null;
-      return (found.first.widget as Text).data;
-    }
+      final eval = ReaderFushiPage.debugEvaluateJavascript;
+      expect(eval, isNotNull, reason: 'Reader debug JS hook must be set');
 
-    expect(await revealHeader(), isTrue, reason: 'onTapEmpty 必须唤出顶栏');
-    final String? bookTitle = textOf(titleKey);
-    final String? firstChapter = textOf(chapterKey);
-    debugPrint('[HDRCHP] 开书首屏 title=$bookTitle chapter=$firstChapter');
-    expect(bookTitle, isNotNull, reason: '书名槽必须在场');
-    expect(firstChapter, isNotNull, reason: '章名槽必须在场——没在场说明 chapter 根本没接上顶栏');
-    expect(firstChapter!.trim(), isNotEmpty);
-    expect(firstChapter, isNot(bookTitle));
-    final ObserveShot before =
-        await captureFlutterFrame(tester, 'header-chapter-01-first');
-    expect(before.saved, isTrue);
-
-    // 真用户路径翻页（PageDown = readerPageForward 默认绑定），翻到章尾自然跨章。
-    String? nextChapter;
-    for (int turn = 0; turn < 60; turn++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
-      await tester.pump(const Duration(milliseconds: 400));
-      final String? now = textOf(chapterKey);
-      if (now != null && now != firstChapter) {
-        nextChapter = now;
-        debugPrint('[HDRCHP] 第 $turn 次翻页后换章 chapter=$now');
-        break;
+      // 悬浮顶栏 3s 自动收起：每次读数前走真 JS 桥的 onTapEmpty 重新唤出（与用户
+      // 点空白同一入口），否则读到的是「没画」而不是「画错」。
+      Future<bool> revealHeader() async {
+        for (int attempt = 0; attempt < 4; attempt++) {
+          await eval!(
+            'setTimeout(function(){window.flutter_inappwebview.callHandler('
+            "'onTapEmpty');},0)",
+          );
+          for (int i = 0; i < 12; i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+            if (find.byKey(headerKey).evaluate().isNotEmpty) return true;
+          }
+        }
+        return false;
       }
-    }
-    if (nextChapter == null) {
-      // 顶栏可能在翻页途中收起了：重新唤出再读一次，别把「没画」当成「没换章」。
-      expect(await revealHeader(), isTrue, reason: '翻页后顶栏必须还能唤出');
-      final String? now = textOf(chapterKey);
-      if (now != null && now != firstChapter) nextChapter = now;
-    }
-    debugPrint('[HDRCHP] 翻章后 title=${textOf(titleKey)} chapter=$nextChapter');
-    expect(nextChapter, isNotNull, reason: '跨章后标题槽的章名必须跟着换（60 次翻页内应已跨章）');
-    expect(textOf(titleKey), bookTitle, reason: '书名不随章变');
-    final ObserveShot after =
-        await captureFlutterFrame(tester, 'header-chapter-02-next');
-    expect(after.saved, isTrue);
-  });
+
+      String? textOf(Key key) {
+        final Iterable<Element> found = find.byKey(key).evaluate();
+        if (found.isEmpty) return null;
+        return (found.first.widget as Text).data;
+      }
+
+      expect(await revealHeader(), isTrue, reason: 'onTapEmpty 必须唤出顶栏');
+      final String? bookTitle = textOf(titleKey);
+      final String? firstChapter = textOf(chapterKey);
+      debugPrint('[HDRCHP] 开书首屏 title=$bookTitle chapter=$firstChapter');
+      expect(bookTitle, isNotNull, reason: '书名槽必须在场');
+      expect(firstChapter, isNotNull, reason: '章名槽必须在场——没在场说明 chapter 根本没接上顶栏');
+      expect(firstChapter!.trim(), isNotEmpty);
+      expect(firstChapter, isNot(bookTitle));
+      final ObserveShot before = await captureFlutterFrame(
+        tester,
+        'header-chapter-01-first',
+      );
+      expect(before.saved, isTrue);
+
+      // 真用户路径翻页（PageDown = readerPageForward 默认绑定），翻到章尾自然跨章。
+      String? nextChapter;
+      for (int turn = 0; turn < 60; turn++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
+        await tester.pump(const Duration(milliseconds: 400));
+        final String? now = textOf(chapterKey);
+        if (now != null && now != firstChapter) {
+          nextChapter = now;
+          debugPrint('[HDRCHP] 第 $turn 次翻页后换章 chapter=$now');
+          break;
+        }
+      }
+      if (nextChapter == null) {
+        // 顶栏可能在翻页途中收起了：重新唤出再读一次，别把「没画」当成「没换章」。
+        expect(await revealHeader(), isTrue, reason: '翻页后顶栏必须还能唤出');
+        final String? now = textOf(chapterKey);
+        if (now != null && now != firstChapter) nextChapter = now;
+      }
+      debugPrint('[HDRCHP] 翻章后 title=${textOf(titleKey)} chapter=$nextChapter');
+      expect(nextChapter, isNotNull, reason: '跨章后标题槽的章名必须跟着换（60 次翻页内应已跨章）');
+      expect(textOf(titleKey), bookTitle, reason: '书名不随章变');
+      final ObserveShot after = await captureFlutterFrame(
+        tester,
+        'header-chapter-02-next',
+      );
+      expect(after.saved, isTrue);
+    },
+  );
 }
 
 Future<void> _openBooksTab(WidgetTester tester, FocusDriver driver) async {
@@ -155,8 +166,11 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before importing a book');
+  expect(
+    appModel.isInitialised,
+    isTrue,
+    reason: 'AppModel must be initialised before importing a book',
+  );
 
   final Uint8List bytes = EpubGenerator().generate();
   final String bookKey = await EpubImporter.import(
@@ -170,24 +184,32 @@ Future<String> _seedTestBook(WidgetTester tester) async {
 }
 
 Future<void> _activateBook(WidgetTester tester, String bookKey) async {
-  final BuildContext appContext =
-      tester.element(find.byType(MaterialApp).first);
+  final BuildContext appContext = tester.element(
+    find.byType(MaterialApp).first,
+  );
   final ProviderContainer container = ProviderScope.containerOf(appContext);
   final AppModel appModel = container.read(appProvider);
-  final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.FushiReaderApp)) as ConsumerStatefulElement;
+  final ConsumerStatefulElement appElement =
+      tester.element(find.byType(app.FushiReaderApp))
+          as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
 
-  final MediaItem? item =
-      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
-  expect(item, isNotNull,
-      reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
+  final MediaItem? item = await ReaderFushiSource.instance.mediaItemForBookKey(
+    bookKey,
+  );
+  expect(
+    item,
+    isNotNull,
+    reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)',
+  );
 
-  unawaited(appModel.openMedia(
-    ref: ref,
-    mediaSource: ReaderFushiSource.instance,
-    item: item!,
-  ));
+  unawaited(
+    appModel.openMedia(
+      ref: ref,
+      mediaSource: ReaderFushiSource.instance,
+      item: item!,
+    ),
+  );
   for (int i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 250));
   }

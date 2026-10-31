@@ -20,18 +20,17 @@ void main() {
     required String source,
     String? tagsJson,
     String? infoboxJson,
-  }) =>
-      db.upsertCollectionScrapeMeta(
-        CollectionScrapeMetaCompanion.insert(
-          collectionId: Value<int>(collectionId),
-          source: source,
-          subjectId: '42',
-          title: '历史标题',
-          tagsJson: Value<String?>(tagsJson),
-          infoboxJson: Value<String?>(infoboxJson),
-          scrapedAt: DateTime(2026, 1, 1),
-        ),
-      );
+  }) => db.upsertCollectionScrapeMeta(
+    CollectionScrapeMetaCompanion.insert(
+      collectionId: Value<int>(collectionId),
+      source: source,
+      subjectId: '42',
+      title: '历史标题',
+      tagsJson: Value<String?>(tagsJson),
+      infoboxJson: Value<String?>(infoboxJson),
+      scrapedAt: DateTime(2026, 1, 1),
+    ),
+  );
 
   test('历史来源、标签和 infobox 继续可读', () async {
     await seed(

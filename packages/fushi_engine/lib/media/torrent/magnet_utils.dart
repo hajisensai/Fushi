@@ -41,8 +41,8 @@ String? magnetUriFromInfoHash(String infoHash, {String? displayName}) {
   final String? hex = raw.length == 40 && _isHex(raw)
       ? raw.toLowerCase()
       : raw.length == 32
-          ? _base32ToHex(raw)
-          : null;
+      ? _base32ToHex(raw)
+      : null;
   if (hex == null) return null;
   final StringBuffer buffer = StringBuffer('magnet:?xt=urn:btih:$hex');
   final String name = displayName?.trim() ?? '';
@@ -64,7 +64,8 @@ String? parseMagnetDisplayName(String magnet) {
 
 bool _isHex(String s) {
   for (final int c in s.codeUnits) {
-    final bool ok = (c >= 0x30 && c <= 0x39) || // 0-9
+    final bool ok =
+        (c >= 0x30 && c <= 0x39) || // 0-9
         (c >= 0x41 && c <= 0x46) || // A-F
         (c >= 0x61 && c <= 0x66); // a-f
     if (!ok) return false;

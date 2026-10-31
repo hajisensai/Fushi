@@ -440,9 +440,8 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<void> setClickLookupEnabled(bool enabled) async {
     if (!_instance.isSupported) return;
-    await _instance.channel.invokeMethod<void>(
-      'setClickLookupEnabled',
-      {'enabled': enabled},
-    );
+    await _instance.channel.invokeMethod<void>('setClickLookupEnabled', {
+      'enabled': enabled,
+    });
   }
 }

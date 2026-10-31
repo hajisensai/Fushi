@@ -27,17 +27,28 @@ void main() {
       final String src = readVideoFushiSource();
       // 必须剥注释再断言：本方法的文档里就写着「不得置失败态」这类词，
       // 直接对原文 contains 会命中注释、把守卫变成对文字而非对代码的断言。
-      final String body =
-          maskComments(methodBody(src, 'void _handlePlaybackError('));
+      final String body = maskComments(
+        methodBody(src, 'void _handlePlaybackError('),
+      );
 
-      expect(body.contains('_failed'), isFalse,
-          reason: '_handlePlaybackError 不得置失败态：mpv 的 error 流在正常播放中也会响，'
-              '拿它当判据会把正在起播的视频打成「打不开」。判决交给 '
-              'shouldDiagnoseMediaNeverOpened。实际方法体：\n$body');
-      expect(body.contains('_failReason'), isFalse,
-          reason: '同上：失败文案属于失败判定的产物，不该由一条日志事件写。');
-      expect(body.contains('setState'), isFalse,
-          reason: '本方法只落日志 + 记一条诊断文本，不该驱动任何 UI 重建。');
+      expect(
+        body.contains('_failed'),
+        isFalse,
+        reason:
+            '_handlePlaybackError 不得置失败态：mpv 的 error 流在正常播放中也会响，'
+            '拿它当判据会把正在起播的视频打成「打不开」。判决交给 '
+            'shouldDiagnoseMediaNeverOpened。实际方法体：\n$body',
+      );
+      expect(
+        body.contains('_failReason'),
+        isFalse,
+        reason: '同上：失败文案属于失败判定的产物，不该由一条日志事件写。',
+      );
+      expect(
+        body.contains('setState'),
+        isFalse,
+        reason: '本方法只落日志 + 记一条诊断文本，不该驱动任何 UI 重建。',
+      );
     });
 
     test('_handlePlaybackError 仍然留证（不是被整个删掉）', () {
@@ -46,13 +57,20 @@ void main() {
       final String src = readVideoFushiSource();
       // 必须剥注释再断言：本方法的文档里就写着「不得置失败态」这类词，
       // 直接对原文 contains 会命中注释、把守卫变成对文字而非对代码的断言。
-      final String body =
-          maskComments(methodBody(src, 'void _handlePlaybackError('));
+      final String body = maskComments(
+        methodBody(src, 'void _handlePlaybackError('),
+      );
 
-      expect(body.contains('ErrorLogService'), isTrue,
-          reason: 'mpv 层错误必须落日志，否则失败时依旧无从定位。');
-      expect(body.contains('_lastPlaybackErrorMessage'), isTrue,
-          reason: '最后一条错误文本要留给真判失败时附进诊断日志。');
+      expect(
+        body.contains('ErrorLogService'),
+        isTrue,
+        reason: 'mpv 层错误必须落日志，否则失败时依旧无从定位。',
+      );
+      expect(
+        body.contains('_lastPlaybackErrorMessage'),
+        isTrue,
+        reason: '最后一条错误文本要留给真判失败时附进诊断日志。',
+      );
     });
 
     test('失败判定不读 mpv 错误文本', () {
@@ -61,13 +79,20 @@ void main() {
       // 故障、文件名含 `Private` 命中 'private' 报成「受限」，把本地文件问题指向
       // 完全错误的排查方向。判失败时文案固定用 not_opened。
       final String src = readVideoFushiSource();
-      final String body =
-          maskComments(methodBody(src, 'void _promoteVideoReadyOrDiagnose('));
+      final String body = maskComments(
+        methodBody(src, 'void _promoteVideoReadyOrDiagnose('),
+      );
 
-      expect(body.contains('_describeLoadFailure'), isFalse,
-          reason: '判「打不开」时不得把 mpv 文本过 _describeLoadFailure 的子串匹配。');
-      expect(body.contains('video_load_failed_not_opened'), isTrue,
-          reason: '判失败要给出「打不开」这句专用文案。');
+      expect(
+        body.contains('_describeLoadFailure'),
+        isFalse,
+        reason: '判「打不开」时不得把 mpv 文本过 _describeLoadFailure 的子串匹配。',
+      );
+      expect(
+        body.contains('video_load_failed_not_opened'),
+        isTrue,
+        reason: '判失败要给出「打不开」这句专用文案。',
+      );
     });
   });
 }

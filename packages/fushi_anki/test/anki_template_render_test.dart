@@ -49,10 +49,7 @@ void main() {
     });
 
     test('FrontSide 不展开（背面预览不嵌正面）', () {
-      expect(
-        renderAnkiTemplate('x{{FrontSide}}y', <String, String>{}),
-        'xy',
-      );
+      expect(renderAnkiTemplate('x{{FrontSide}}y', <String, String>{}), 'xy');
     });
 
     test('标签不配对不抛错，尽量把卡画出来', () {
@@ -80,9 +77,7 @@ void main() {
 
   group('用真实 Lapis 模板渲染预览', () {
     test('背面渲染出真卡的关键结构，且不残留 mustache', () {
-      final String html = renderLapisPreviewSide(
-        template: LapisNoteType.back,
-      );
+      final String html = renderLapisPreviewSide(template: LapisNoteType.back);
       for (final String anchor in <String>[
         'class="def-header"',
         'class="vocab"',
@@ -100,15 +95,14 @@ void main() {
     });
 
     test('正面渲染同样不残留 mustache', () {
-      final String html = renderLapisPreviewSide(
-        template: LapisNoteType.front,
-      );
+      final String html = renderLapisPreviewSide(template: LapisNoteType.front);
       expect(html, isNot(contains('{{')));
       expect(html, contains('食べる'));
     });
 
     test('用户自己的模板照他的结构渲染，不套用内置那份', () {
-      const String userBack = '<div id="lapis"><main>'
+      const String userBack =
+          '<div id="lapis"><main>'
           '<div class="mine">{{Expression}} / {{Sentence}}</div>'
           '</main></div>';
       final String html = renderLapisPreviewSide(template: userBack);

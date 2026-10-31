@@ -16,9 +16,13 @@ void main() {
     final File f = File(
       'lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart',
     );
-    expect(f.existsSync(), isTrue,
-        reason: '找不到 video_discovery_acquisition_dialogs.dart'
-            '（路径变了要同步本守卫）');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason:
+          '找不到 video_discovery_acquisition_dialogs.dart'
+          '（路径变了要同步本守卫）',
+    );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
 
     final int keyIndex = code.indexOf("'video-resource-source'");
@@ -29,7 +33,8 @@ void main() {
     expect(
       rowHead,
       contains('crossAxisAlignment: CrossAxisAlignment.start'),
-      reason: '左侧下拉带 helperText、右侧没有：Row 不顶对齐时两个输入框底边'
+      reason:
+          '左侧下拉带 helperText、右侧没有：Row 不顶对齐时两个输入框底边'
           '错位（BUG-1765）。删这行前先想清 helper 高度差怎么消。',
     );
   });

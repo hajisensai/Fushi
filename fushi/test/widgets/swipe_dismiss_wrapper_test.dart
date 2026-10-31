@@ -5,10 +5,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 
 void main() {
-  Widget buildApp({
-    required VoidCallback onDismiss,
-    double sensitivity = 0.3,
-  }) {
+  Widget buildApp({required VoidCallback onDismiss, double sensitivity = 0.3}) {
     return MaterialApp(
       home: Scaffold(
         body: SwipeDismissWrapper(
@@ -36,8 +33,9 @@ void main() {
       );
     });
 
-    testWidgets('horizontal swipe past threshold calls onDismiss',
-        (tester) async {
+    testWidgets('horizontal swipe past threshold calls onDismiss', (
+      tester,
+    ) async {
       bool dismissed = false;
       await tester.pumpWidget(buildApp(onDismiss: () => dismissed = true));
 
@@ -82,8 +80,9 @@ void main() {
     // 绝不能回弹到原位且满不透明（那一帧的回弹＝用户看到的「闪回一下再关闭」）。
     // TODO-890：退场帧 opacity 随位移淡出（对齐 _BodySwipeDismissDetector），松手当帧
     // 卡片仍在屏内（_dragX≈200 < 卡片宽300+边距24）故 opacity 介于 0 与 1，而非瞬灭到 0。
-    testWidgets('dismiss frame does NOT snap back: faded, offset held',
-        (tester) async {
+    testWidgets('dismiss frame does NOT snap back: faded, offset held', (
+      tester,
+    ) async {
       // onDismiss 不移除子树（模拟 reader 的 Visibility 保留 / 上层尚未移除的一帧），
       // 这样才能观察退场帧 wrapper 自身的视觉，而非被移除。
       await tester.pumpWidget(buildApp(onDismiss: () {}));
@@ -103,10 +102,16 @@ void main() {
           matching: find.byType(Opacity),
         ),
       );
-      expect(opacity.opacity, lessThan(1.0),
-          reason: '退场帧必须开始淡出（视觉正滑出），不得回弹到满不透明＝闪回');
-      expect(opacity.opacity, greaterThan(0.0),
-          reason: '退场帧卡片仍在屏内，opacity 不应瞬灭到 0（那等于不可见滑出）');
+      expect(
+        opacity.opacity,
+        lessThan(1.0),
+        reason: '退场帧必须开始淡出（视觉正滑出），不得回弹到满不透明＝闪回',
+      );
+      expect(
+        opacity.opacity,
+        greaterThan(0.0),
+        reason: '退场帧卡片仍在屏内，opacity 不应瞬灭到 0（那等于不可见滑出）',
+      );
 
       final Transform transform = tester.widget<Transform>(
         find.ancestor(
@@ -120,8 +125,9 @@ void main() {
 
     // 复用守卫：reader 复用同一浮层位置（onDismiss 后换新 child 再次显示）时，
     // 退场态必须被清掉，否则复用后的浮层会被永久压到 opacity 0＝不可见。
-    testWidgets('reused popup resets dismiss state (not stuck invisible)',
-        (tester) async {
+    testWidgets('reused popup resets dismiss state (not stuck invisible)', (
+      tester,
+    ) async {
       Widget buildWith(Widget child) {
         return MaterialApp(
           home: Scaffold(
@@ -165,8 +171,7 @@ void main() {
 
   // TODO-890：过阈值松手后 onDismiss 不在松手当帧触发，而是等滑出补间动画跑完
   // （AnimationStatus.completed）才触发——避免 dismiss 与动画竞争。
-  testWidgets(
-      'TODO-890 dismiss fires only after the slide-out animation '
+  testWidgets('TODO-890 dismiss fires only after the slide-out animation '
       'completes, not on release', (tester) async {
     int dismissed = 0;
     await tester.pumpWidget(buildApp(onDismiss: () => dismissed++));
@@ -184,8 +189,9 @@ void main() {
 
   // TODO-890：滑出补间把退场卡片朝拖动方向平移到「卡片宽 + 边距」之外（远超松手时
   // 的 _dragX），证明卡片是「滑走」而非停在松手位置定格。
-  testWidgets('TODO-890 slide-out translates the card past its own width',
-      (tester) async {
+  testWidgets('TODO-890 slide-out translates the card past its own width', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildApp(onDismiss: () {}));
 
     final center = tester.getCenter(find.byType(SizedBox).first);
@@ -199,10 +205,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 180));
 
     final Transform transform = tester.widget<Transform>(
-      find.ancestor(
-        of: find.byType(Opacity),
-        matching: find.byType(Transform),
-      ),
+      find.ancestor(of: find.byType(Opacity), matching: find.byType(Transform)),
     );
     final double dx = transform.transform.getTranslation().x;
     expect(dx, greaterThan(200), reason: '滑出补间把卡片平移到松手位置之外（朝屏外滑走），而非定格');
@@ -213,37 +216,45 @@ void main() {
   // 旧 B 路径退场期 opacity 硬 =0.0，整段补间用一张完全透明的卡片平移→滑出动画不可见
   // ＝等于没做。本断言锁住：补间中段 opacity ∈ (0,1)，对齐 A 路径随位移淡出。
   testWidgets(
-      'TODO-890 slide-out card stays visible mid-tween (opacity in 0..1)',
-      (tester) async {
-    await tester.pumpWidget(buildApp(onDismiss: () {}));
+    'TODO-890 slide-out card stays visible mid-tween (opacity in 0..1)',
+    (tester) async {
+      await tester.pumpWidget(buildApp(onDismiss: () {}));
 
-    final center = tester.getCenter(find.byType(SizedBox).first);
-    final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(200, 0));
-    await tester.pump();
-    await gesture.up();
-    // 推进到补间中段（200ms 时长的约一半）。
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+      final center = tester.getCenter(find.byType(SizedBox).first);
+      final gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(200, 0));
+      await tester.pump();
+      await gesture.up();
+      // 推进到补间中段（200ms 时长的约一半）。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    final Opacity opacity = tester.widget<Opacity>(
-      find.ancestor(
-        of: find.byType(ColoredBox),
-        matching: find.byType(Opacity),
-      ),
-    );
-    expect(opacity.opacity, greaterThan(0.0),
-        reason: '滑出补间中段卡片必须可见，opacity 不得为 0（否则动画用透明卡片＝不可见）');
-    expect(opacity.opacity, lessThan(1.0),
-        reason: '滑出补间中段已部分淡出，opacity 应随位移降到满不透明以下');
-    await tester.pumpAndSettle();
-  });
+      final Opacity opacity = tester.widget<Opacity>(
+        find.ancestor(
+          of: find.byType(ColoredBox),
+          matching: find.byType(Opacity),
+        ),
+      );
+      expect(
+        opacity.opacity,
+        greaterThan(0.0),
+        reason: '滑出补间中段卡片必须可见，opacity 不得为 0（否则动画用透明卡片＝不可见）',
+      );
+      expect(
+        opacity.opacity,
+        lessThan(1.0),
+        reason: '滑出补间中段已部分淡出，opacity 应随位移降到满不透明以下',
+      );
+      await tester.pumpAndSettle();
+    },
+  );
 
   // TODO-890 顺修守卫：未过阈值的 spring-back 补间完成后，残留的决策/方向状态必须
   // 复位——否则下一次拖动会带着上一手的 _decided / _isHorizontal。通过「先一次未过
   // 阈值横滑（弹回），再一次小幅纵滑不触发关闭」间接验证状态已复位、无横滑残留。
-  testWidgets('TODO-890 spring-back resets decision state after settle',
-      (tester) async {
+  testWidgets('TODO-890 spring-back resets decision state after settle', (
+    tester,
+  ) async {
     int dismissed = 0;
     // 灵敏度 0.3 → 阈值 142；先拖 80px（< 142）不过阈值，松手 spring-back。
     await tester.pumpWidget(buildApp(onDismiss: () => dismissed++));
@@ -290,12 +301,15 @@ void main() {
               child: inner,
             )
           : inner;
-      return MaterialApp(home: Scaffold(body: Center(child: body)));
+      return MaterialApp(
+        home: Scaffold(body: Center(child: body)),
+      );
     }
 
     Future<void> dragInner(WidgetTester tester) async {
-      final center =
-          tester.getCenter(find.byKey(const ValueKey<String>('inner-child')));
+      final center = tester.getCenter(
+        find.byKey(const ValueKey<String>('inner-child')),
+      );
       final gesture = await tester.startGesture(center);
       await gesture.moveBy(const Offset(120, 0));
       await gesture.up();
@@ -303,38 +317,46 @@ void main() {
     }
 
     testWidgets(
-        'with an ancestor wrapper present, a swipe on the nested layer fires '
-        'BOTH dismiss callbacks (the bug mechanism)', (tester) async {
-      bool outer = false;
-      bool inner = false;
-      await tester.pumpWidget(buildNested(
-        onOuterDismiss: () => outer = true,
-        onInnerDismiss: () => inner = true,
-        includeOuter: true,
-      ));
+      'with an ancestor wrapper present, a swipe on the nested layer fires '
+      'BOTH dismiss callbacks (the bug mechanism)',
+      (tester) async {
+        bool outer = false;
+        bool inner = false;
+        await tester.pumpWidget(
+          buildNested(
+            onOuterDismiss: () => outer = true,
+            onInnerDismiss: () => inner = true,
+            includeOuter: true,
+          ),
+        );
 
-      await dragInner(tester);
+        await dragInner(tester);
 
-      expect(inner, isTrue, reason: '嵌套层自身应被横滑');
-      expect(outer, isTrue, reason: 'Listener 冒泡使外层也被驱动——这正是「滑动子弹窗连带整卡」的根因');
-    });
+        expect(inner, isTrue, reason: '嵌套层自身应被横滑');
+        expect(outer, isTrue, reason: 'Listener 冒泡使外层也被驱动——这正是「滑动子弹窗连带整卡」的根因');
+      },
+    );
 
     testWidgets(
-        'gating out the ancestor wrapper makes the same swipe fire ONLY the '
-        'nested dismiss (the fix pattern)', (tester) async {
-      bool outer = false;
-      bool inner = false;
-      await tester.pumpWidget(buildNested(
-        onOuterDismiss: () => outer = true,
-        onInnerDismiss: () => inner = true,
-        includeOuter: false, // 镜像 _buildCard: 栈深>1 时不渲染外层 wrapper
-      ));
+      'gating out the ancestor wrapper makes the same swipe fire ONLY the '
+      'nested dismiss (the fix pattern)',
+      (tester) async {
+        bool outer = false;
+        bool inner = false;
+        await tester.pumpWidget(
+          buildNested(
+            onOuterDismiss: () => outer = true,
+            onInnerDismiss: () => inner = true,
+            includeOuter: false, // 镜像 _buildCard: 栈深>1 时不渲染外层 wrapper
+          ),
+        );
 
-      await dragInner(tester);
+        await dragInner(tester);
 
-      expect(inner, isTrue);
-      expect(outer, isFalse, reason: '外层 wrapper 被移除后，横滑嵌套层不再连带平移/关闭整卡');
-    });
+        expect(inner, isTrue);
+        expect(outer, isFalse, reason: '外层 wrapper 被移除后，横滑嵌套层不再连带平移/关闭整卡');
+      },
+    );
   });
 
   group('SwipeDismissWrapper sensitivity changes dismiss threshold', () {
@@ -384,20 +406,24 @@ void main() {
       return dismissed;
     }
 
-    testWidgets('high sensitivity (0.9) dismisses on a 100px horizontal drag',
-        (tester) async {
+    testWidgets('high sensitivity (0.9) dismisses on a 100px horizontal drag', (
+      tester,
+    ) async {
       final dismissed = await dragAndReportDismiss(tester, sensitivity: 0.9);
       expect(dismissed, isTrue);
     });
 
-    testWidgets('low sensitivity (0.1) does NOT dismiss on the same 100px drag',
-        (tester) async {
-      final dismissed = await dragAndReportDismiss(tester, sensitivity: 0.1);
-      expect(dismissed, isFalse);
-    });
+    testWidgets(
+      'low sensitivity (0.1) does NOT dismiss on the same 100px drag',
+      (tester) async {
+        final dismissed = await dragAndReportDismiss(tester, sensitivity: 0.1);
+        expect(dismissed, isFalse);
+      },
+    );
 
-    testWidgets('same drag distance: high sensitivity fires, low does not',
-        (tester) async {
+    testWidgets('same drag distance: high sensitivity fires, low does not', (
+      tester,
+    ) async {
       final highFired = await dragAndReportDismiss(tester, sensitivity: 0.9);
       final lowFired = await dragAndReportDismiss(tester, sensitivity: 0.1);
       expect(highFired, isTrue);
@@ -538,9 +564,7 @@ void main() {
       expect(await dragAndPumpOneFrame(tester, animation: false), isTrue);
     });
 
-    testWidgets('同一条拖动：开着仍在补间、关掉当帧就关（开关真的改变行为）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('同一条拖动：开着仍在补间、关掉当帧就关（开关真的改变行为）', (WidgetTester tester) async {
       final bool onStillTweening = await dragAndPumpOneFrame(
         tester,
         animation: true,

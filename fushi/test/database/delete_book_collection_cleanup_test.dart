@@ -26,15 +26,17 @@ void main() {
   tearDown(() => db.close());
 
   Future<String> insertEpub(String key) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: key,
-      title: key,
-      epubPath: '/$key.epub',
-      extractDir: '/$key',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1000,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: key,
+        title: key,
+        epubPath: '/$key.epub',
+        extractDir: '/$key',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+      ),
+    );
     return (await db.resolveEpubBookUid(key))!;
   }
 
@@ -50,8 +52,9 @@ void main() {
     await db.deleteEpubBook('B1');
 
     for (final int cid in <int>[c1, c2]) {
-      final List<MediaCollectionItemRow> rest =
-          await db.getCollectionItems(cid);
+      final List<MediaCollectionItemRow> rest = await db.getCollectionItems(
+        cid,
+      );
       expect(
         rest.map((MediaCollectionItemRow m) => m.entryKey).toList(),
         isNot(contains(uid)),
@@ -68,8 +71,11 @@ void main() {
 
     await db.deleteEpubBook('B2');
 
-    expect(await db.getMediaCollectionById(cid), isNull,
-        reason: '唯一成员被删书清掉后，合集应随移空自删（不留 0 成员孤儿卡）');
+    expect(
+      await db.getMediaCollectionById(cid),
+      isNull,
+      reason: '唯一成员被删书清掉后，合集应随移空自删（不留 0 成员孤儿卡）',
+    );
   });
 
   test('deleteSrtBookByUid 清合集成员行（uid 键）+ 移空自删', () async {
@@ -82,7 +88,10 @@ void main() {
 
     await db.deleteSrtBookByUid('su1');
 
-    expect(await db.getMediaCollectionById(cid), isNull,
-        reason: 'srt 删除同样必须清成员行并触发移空自删（与 epub 同修）');
+    expect(
+      await db.getMediaCollectionById(cid),
+      isNull,
+      reason: 'srt 删除同样必须清成员行并触发移空自删（与 epub 同修）',
+    );
   });
 }

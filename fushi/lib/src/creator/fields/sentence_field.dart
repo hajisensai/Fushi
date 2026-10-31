@@ -8,13 +8,13 @@ import 'package:fushi/models.dart';
 class SentenceField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   SentenceField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Sentence',
-          description:
-              'Subtitles, book excerpts and other contextual information.',
-          icon: Icons.format_align_center_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Sentence',
+        description:
+            'Subtitles, book excerpts and other contextual information.',
+        icon: Icons.format_align_center_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static SentenceField get instance => _instance;

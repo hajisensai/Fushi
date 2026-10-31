@@ -18,8 +18,11 @@ void main() {
     );
     expect(start, greaterThanOrEqualTo(0));
     final String body = src.substring(start, src.indexOf('\n  }\n', start));
-    expect(src, contains('einkMode: einkMode,'),
-        reason: 'App 当前设置那一路的墨水屏输入必须是 einkMode');
+    expect(
+      src,
+      contains('einkMode: einkMode,'),
+      reason: 'App 当前设置那一路的墨水屏输入必须是 einkMode',
+    );
     expect(
       RegExp(
         r"'--fushi-glass':\s*inputs\.einkMode\s*\?\s*'0'\s*:\s*'1'",

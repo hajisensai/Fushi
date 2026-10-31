@@ -43,10 +43,7 @@ void main() {
 
   group('uniqueVideoBookUid（同名去重，照搬 EpubImporter 无回调静默加后缀）', () {
     test('无冲突 → 原样返回', () {
-      expect(
-        uniqueVideoBookUid('video/E01', <String>{}),
-        'video/E01',
-      );
+      expect(uniqueVideoBookUid('video/E01', <String>{}), 'video/E01');
     });
 
     test('已存在同名 → 加 (2) 后缀得唯一 book_uid', () {
@@ -65,10 +62,9 @@ void main() {
 
     test('playlist book_uid 同样去重', () {
       expect(
-        uniqueVideoBookUid(
+        uniqueVideoBookUid('video/playlist/list', <String>{
           'video/playlist/list',
-          <String>{'video/playlist/list'},
-        ),
+        }),
         'video/playlist/list (2)',
       );
     });

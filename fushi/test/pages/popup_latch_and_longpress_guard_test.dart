@@ -28,15 +28,19 @@ void main() {
     expect(
       src.contains('_inlineAssetsLoadFailed'),
       isFalse,
-      reason: '$popupWebviewPath 不应再有 _inlineAssetsLoadFailed 永久闩'
+      reason:
+          '$popupWebviewPath 不应再有 _inlineAssetsLoadFailed 永久闩'
           '（一次瞬时读盘异常会把内联资产永久降级到 file://，无复位路径）',
     );
     // 门控只判 _inlineCss 非空即可防重复读盘；断言不含永久失败闩条件。
     final Match? gate = RegExp(
       r'if\s*\(\s*_inlineCss\s*!=\s*null([^)]*)\)\s*return;',
     ).firstMatch(src);
-    expect(gate, isNotNull,
-        reason: '应保留 `if (_inlineCss != null) return;` 防重复读盘守卫');
+    expect(
+      gate,
+      isNotNull,
+      reason: '应保留 `if (_inlineCss != null) return;` 防重复读盘守卫',
+    );
     expect(
       gate!.group(1)!.contains('Failed') || gate.group(1)!.contains('||'),
       isFalse,
@@ -61,18 +65,27 @@ void main() {
   test('BUG-912 #3：_RepeatIconButton 长按手势挂 onLongPressCancel', () {
     final String src = read(quickSettingsPath);
     final int classIdx = src.indexOf('class _RepeatIconButtonState');
-    expect(classIdx, greaterThanOrEqualTo(0),
-        reason: '$quickSettingsPath 应存在 _RepeatIconButtonState');
+    expect(
+      classIdx,
+      greaterThanOrEqualTo(0),
+      reason: '$quickSettingsPath 应存在 _RepeatIconButtonState',
+    );
     final int buildIdx = src.indexOf('GestureDetector', classIdx);
-    expect(buildIdx, greaterThanOrEqualTo(0),
-        reason: '_RepeatIconButtonState.build 应有 GestureDetector');
+    expect(
+      buildIdx,
+      greaterThanOrEqualTo(0),
+      reason: '_RepeatIconButtonState.build 应有 GestureDetector',
+    );
     // 截取该 GestureDetector 到其 child 之间的构造参数块。
     final String body = src.substring(
-        buildIdx, classIdx + 1600 < src.length ? classIdx + 1600 : src.length);
+      buildIdx,
+      classIdx + 1600 < src.length ? classIdx + 1600 : src.length,
+    );
     expect(
       body.contains('onLongPressCancel'),
       isTrue,
-      reason: '_RepeatIconButton 的 GestureDetector 必须挂 onLongPressCancel，'
+      reason:
+          '_RepeatIconButton 的 GestureDetector 必须挂 onLongPressCancel，'
           '否则手势被取消时 _timer 持续连触（BUG-912 #3）',
     );
   });

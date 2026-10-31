@@ -71,18 +71,22 @@ void main() {
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
 
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/ep1'),
-      title: const Value('第1集'),
-      videoPath: const Value('/abs/ep1.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/ep2'),
-      title: const Value('第2集'),
-      videoPath: const Value('/abs/ep2.mp4'),
-      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/ep1'),
+        title: const Value('第1集'),
+        videoPath: const Value('/abs/ep1.mp4'),
+        importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/ep2'),
+        title: const Value('第2集'),
+        videoPath: const Value('/abs/ep2.mp4'),
+        importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
+      ),
+    );
     collectionId = await createSeriesCollection(
       db,
       '某番剧',
@@ -100,23 +104,23 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            // #792 分区化后合集封面卡混排墙只在 series 分区渲染，钉住该分区。
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.series,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        // #792 分区化后合集封面卡混排墙只在 series 分区渲染，钉住该分区。
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.series,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('合集渲染成封面卡：无折叠开关、成员卡不在库页', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
@@ -135,7 +139,8 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(
-            ValueKey<String>('home_video_collection_card_$collectionId')),
+          ValueKey<String>('home_video_collection_card_$collectionId'),
+        ),
         matching: find.text('某番剧'),
       ),
       findsOneWidget,
@@ -143,8 +148,11 @@ void main() {
     );
     expect(find.text('第1集'), findsNothing, reason: '成员卡收进详情页，不在库页');
     expect(find.text('第2集'), findsNothing);
-    expect(find.byTooltip(t.collection_collapse), findsNothing,
-        reason: '封面卡无成员行可折叠——不得再渲染折叠开关');
+    expect(
+      find.byTooltip(t.collection_collapse),
+      findsNothing,
+      reason: '封面卡无成员行可折叠——不得再渲染折叠开关',
+    );
     expect(find.byTooltip(t.collection_expand), findsNothing);
   });
 
@@ -165,13 +173,17 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(
-            ValueKey<String>('home_video_collection_card_$collectionId')),
+          ValueKey<String>('home_video_collection_card_$collectionId'),
+        ),
         matching: find.text('某番剧'),
       ),
       findsOneWidget,
     );
     // 偏好保持原样（书架还在用；视频页不再读写它）。
-    expect(prefs.collapsedCollectionIds, contains(collectionId),
-        reason: '视频页不得改写 collapsed_collection_ids（书架仍在用）');
+    expect(
+      prefs.collapsedCollectionIds,
+      contains(collectionId),
+      reason: '视频页不得改写 collapsed_collection_ids（书架仍在用）',
+    );
   });
 }

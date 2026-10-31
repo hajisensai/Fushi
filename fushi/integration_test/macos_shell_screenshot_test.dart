@@ -28,8 +28,9 @@ import 'helpers/focus_driver.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('macOS default auto renders the MD3 home and settings shell',
-      (WidgetTester tester) async {
+  testWidgets('macOS default auto renders the MD3 home and settings shell', (
+    WidgetTester tester,
+  ) async {
     await launchFushiTestApp();
 
     // Boot can take a while (DB open, dictionary preload). Pump until the
@@ -42,13 +43,23 @@ void main() {
         break;
       }
     }
-    expect(homeReady, isTrue,
-        reason: 'MD3 navigation should render within 90s on macOS.');
-    expect(find.byType(MacosWindow), findsNothing,
-        reason: 'Default auto must not create the hidden native macOS shell.');
-    expect(find.byType(VerticalDivider), findsNothing,
-        reason: 'The MD3 navigation rail must flow into the content surface '
-            'without the Apple-style sidebar separator.');
+    expect(
+      homeReady,
+      isTrue,
+      reason: 'MD3 navigation should render within 90s on macOS.',
+    );
+    expect(
+      find.byType(MacosWindow),
+      findsNothing,
+      reason: 'Default auto must not create the hidden native macOS shell.',
+    );
+    expect(
+      find.byType(VerticalDivider),
+      findsNothing,
+      reason:
+          'The MD3 navigation rail must flow into the content surface '
+          'without the Apple-style sidebar separator.',
+    );
 
     // Let the first frame settle, then capture the home (bookshelf) shell.
     await tester.pump(const Duration(seconds: 1));
@@ -70,14 +81,20 @@ void main() {
       of: materialNav,
       matching: find.byIcon(Icons.tune_outlined),
     );
-    expect(settingsItem, findsOneWidget,
-        reason: 'MD3 settings destination should be present.');
+    expect(
+      settingsItem,
+      findsOneWidget,
+      reason: 'MD3 settings destination should be present.',
+    );
     // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
     // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
     await enableFocusNavigation(tester);
     final FocusDriver driver = FocusDriver(tester);
-    expect(await driver.focusWidget(settingsItem), isTrue,
-        reason: 'Settings destination should be keyboard reachable.');
+    expect(
+      await driver.focusWidget(settingsItem),
+      isTrue,
+      reason: 'Settings destination should be keyboard reachable.',
+    );
     await driver.activate();
     for (int i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 300));

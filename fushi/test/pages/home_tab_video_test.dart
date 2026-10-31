@@ -96,10 +96,7 @@ void main() {
         _visibility(video: true, games: true),
       );
       // 去掉视频后两者应完全一致（视频是仅有的差异；下载恒在）。
-      expect(
-        on.where((HomeTab t) => t != HomeTab.video).toList(),
-        equals(off),
-      );
+      expect(on.where((HomeTab t) => t != HomeTab.video).toList(), equals(off));
     });
   });
 }

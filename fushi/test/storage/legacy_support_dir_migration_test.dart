@@ -20,9 +20,9 @@ void _seedLegacyInstall(Directory legacy, {String? prefsJson}) {
   Directory(p.join(legacy.path, 'updates')).createSync();
   File(p.join(legacy.path, 'updates', 'note.txt')).writeAsStringSync('u');
   if (prefsJson != null) {
-    File(p.join(legacy.path, kDesktopPrefsFileName)).writeAsStringSync(
-      prefsJson,
-    );
+    File(
+      p.join(legacy.path, kDesktopPrefsFileName),
+    ).writeAsStringSync(prefsJson);
   }
 }
 
@@ -45,15 +45,21 @@ void main() {
     test('只有旧根存在 → 整棵搬到新根（旧根消失）', () {
       _seedLegacyInstall(legacy);
 
-      final LegacySupportMigrationOutcome outcome =
-          migrateSupportDirTree(legacy: legacy, current: current);
+      final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
+        legacy: legacy,
+        current: current,
+      );
 
       expect(outcome, LegacySupportMigrationOutcome.moved);
       expect(outcome.movedData, isTrue);
-      expect(File(p.join(current.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
-      expect(File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
-          isTrue);
+      expect(
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
+      expect(
+        File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
+        isTrue,
+      );
       expect(legacy.existsSync(), isFalse);
     });
 
@@ -62,32 +68,44 @@ void main() {
       current.createSync(recursive: true);
       File(p.join(current.path, 'fushi.db')).writeAsStringSync('NEW-DB');
 
-      final LegacySupportMigrationOutcome outcome =
-          migrateSupportDirTree(legacy: legacy, current: current);
+      final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
+        legacy: legacy,
+        current: current,
+      );
 
       expect(outcome, LegacySupportMigrationOutcome.alreadyPopulated);
       expect(outcome.movedData, isFalse);
       expect(
-          File(p.join(current.path, 'fushi.db')).readAsStringSync(), 'NEW-DB');
-      expect(File(p.join(legacy.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'NEW-DB',
+      );
+      expect(
+        File(p.join(legacy.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
     });
 
     test('新根是 path_provider 刚建出来的空壳 → 照样搬（空壳不算已有数据）', () {
       _seedLegacyInstall(legacy);
       current.createSync(recursive: true); // path_provider 建的空目录
 
-      final LegacySupportMigrationOutcome outcome =
-          migrateSupportDirTree(legacy: legacy, current: current);
+      final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
+        legacy: legacy,
+        current: current,
+      );
 
       expect(outcome, LegacySupportMigrationOutcome.moved);
-      expect(File(p.join(current.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
+      expect(
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
     });
 
     test('两者都不存在 → noLegacy，不创建任何东西', () {
-      final LegacySupportMigrationOutcome outcome =
-          migrateSupportDirTree(legacy: legacy, current: current);
+      final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
+        legacy: legacy,
+        current: current,
+      );
 
       expect(outcome, LegacySupportMigrationOutcome.noLegacy);
       expect(current.existsSync(), isFalse);
@@ -97,58 +115,80 @@ void main() {
       current.createSync(recursive: true);
       File(p.join(current.path, 'fushi.db')).writeAsStringSync('NEW-DB');
 
-      expect(migrateSupportDirTree(legacy: legacy, current: current),
-          LegacySupportMigrationOutcome.noLegacy);
       expect(
-          File(p.join(current.path, 'fushi.db')).readAsStringSync(), 'NEW-DB');
+        migrateSupportDirTree(legacy: legacy, current: current),
+        LegacySupportMigrationOutcome.noLegacy,
+      );
+      expect(
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'NEW-DB',
+      );
     });
   });
 
   group('幂等与中断重入', () {
     test('连搬两次：第二次是 noLegacy，新根内容不变', () {
       _seedLegacyInstall(legacy);
-      expect(migrateSupportDirTree(legacy: legacy, current: current),
-          LegacySupportMigrationOutcome.moved);
-      expect(migrateSupportDirTree(legacy: legacy, current: current),
-          LegacySupportMigrationOutcome.noLegacy);
-      expect(File(p.join(current.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
+      expect(
+        migrateSupportDirTree(legacy: legacy, current: current),
+        LegacySupportMigrationOutcome.moved,
+      );
+      expect(
+        migrateSupportDirTree(legacy: legacy, current: current),
+        LegacySupportMigrationOutcome.noLegacy,
+      );
+      expect(
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
     });
 
     test('上一轮跨卷复制中断（暂存目录残缺）→ 本轮清掉残缺副本重来，不被误认为已搬完', () {
       _seedLegacyInstall(legacy);
       // 模拟「复制到一半断电」：暂存目录里只有半个库，没有 updates/。
-      final Directory staging =
-          Directory(current.path + kSupportMigrationStagingSuffix);
+      final Directory staging = Directory(
+        current.path + kSupportMigrationStagingSuffix,
+      );
       staging.createSync(recursive: true);
       File(p.join(staging.path, 'fushi.db')).writeAsStringSync('HALF');
 
-      final LegacySupportMigrationOutcome outcome =
-          migrateSupportDirTree(legacy: legacy, current: current);
+      final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
+        legacy: legacy,
+        current: current,
+      );
 
       // 同卷 rename 直接成功；关键是残缺暂存目录不会被留下、也不会污染新根。
       expect(outcome, LegacySupportMigrationOutcome.moved);
       expect(staging.existsSync(), isFalse);
-      expect(File(p.join(current.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
-      expect(File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
-          isTrue);
+      expect(
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
+      expect(
+        File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
+        isTrue,
+      );
     });
 
     test('残缺暂存目录 + 新根已有数据 → alreadyPopulated 同时把暂存目录清掉', () {
       _seedLegacyInstall(legacy);
       current.createSync(recursive: true);
       File(p.join(current.path, 'fushi.db')).writeAsStringSync('NEW-DB');
-      final Directory staging =
-          Directory(current.path + kSupportMigrationStagingSuffix);
+      final Directory staging = Directory(
+        current.path + kSupportMigrationStagingSuffix,
+      );
       staging.createSync(recursive: true);
       File(p.join(staging.path, 'fushi.db')).writeAsStringSync('HALF');
 
-      expect(migrateSupportDirTree(legacy: legacy, current: current),
-          LegacySupportMigrationOutcome.alreadyPopulated);
+      expect(
+        migrateSupportDirTree(legacy: legacy, current: current),
+        LegacySupportMigrationOutcome.alreadyPopulated,
+      );
       expect(staging.existsSync(), isFalse);
       expect(
-          File(p.join(current.path, 'fushi.db')).readAsStringSync(), 'NEW-DB');
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'NEW-DB',
+      );
     });
 
     test('跨卷回退：经暂存目录整树复制就位，旧根刻意保留（不做不可回滚的删除）', () {
@@ -162,22 +202,30 @@ void main() {
 
       expect(outcome, LegacySupportMigrationOutcome.copied);
       expect(outcome.movedData, isTrue);
-      expect(File(p.join(current.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
-      expect(File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
-          isTrue);
-      // 复制成功不删旧根：宁可留一份副本，也不做失败即丢数据的删除。
-      expect(File(p.join(legacy.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
       expect(
-          Directory(current.path + kSupportMigrationStagingSuffix).existsSync(),
-          isFalse);
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
+      expect(
+        File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
+        isTrue,
+      );
+      // 复制成功不删旧根：宁可留一份副本，也不做失败即丢数据的删除。
+      expect(
+        File(p.join(legacy.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
+      expect(
+        Directory(current.path + kSupportMigrationStagingSuffix).existsSync(),
+        isFalse,
+      );
     });
 
     test('跨卷回退全程不往新根里增量写：复制完成那一刻新根还不存在', () {
       _seedLegacyInstall(legacy);
-      final Directory staging =
-          Directory(current.path + kSupportMigrationStagingSuffix);
+      final Directory staging = Directory(
+        current.path + kSupportMigrationStagingSuffix,
+      );
       bool observed = false;
 
       final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
@@ -186,10 +234,14 @@ void main() {
         debugForceCopyFallback: true,
         debugAfterStagingCopy: () {
           observed = true;
-          expect(File(p.join(staging.path, 'fushi.db')).readAsStringSync(),
-              'DB-CONTENT');
-          expect(File(p.join(staging.path, 'updates', 'note.txt')).existsSync(),
-              isTrue);
+          expect(
+            File(p.join(staging.path, 'fushi.db')).readAsStringSync(),
+            'DB-CONTENT',
+          );
+          expect(
+            File(p.join(staging.path, 'updates', 'note.txt')).existsSync(),
+            isTrue,
+          );
           // 这一刻断电 = 下次启动看到「新根不存在」→ 重来；新根若在这里已经
           // 非空，残缺状态就会被 alreadyPopulated 永久固化。
           expect(current.existsSync(), isFalse);
@@ -202,8 +254,9 @@ void main() {
 
     test('跨卷复制中断后重入：残缺暂存副本被丢弃，重来一次拿到完整结果', () {
       _seedLegacyInstall(legacy);
-      final Directory staging =
-          Directory(current.path + kSupportMigrationStagingSuffix);
+      final Directory staging = Directory(
+        current.path + kSupportMigrationStagingSuffix,
+      );
       staging.createSync(recursive: true);
       File(p.join(staging.path, 'fushi.db')).writeAsStringSync('HALF');
 
@@ -215,20 +268,28 @@ void main() {
 
       expect(outcome, LegacySupportMigrationOutcome.copied);
       // 残缺的 'HALF' 绝不能就位。
-      expect(File(p.join(current.path, 'fushi.db')).readAsStringSync(),
-          'DB-CONTENT');
-      expect(File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
-          isTrue);
+      expect(
+        File(p.join(current.path, 'fushi.db')).readAsStringSync(),
+        'DB-CONTENT',
+      );
+      expect(
+        File(p.join(current.path, 'updates', 'note.txt')).existsSync(),
+        isTrue,
+      );
       expect(staging.existsSync(), isFalse);
     });
 
     test('暂存目录名与新根不同名：不会被 alreadyPopulated 的非空判据看见', () {
       // 暂存目录是新根的**兄弟**（同父目录），不是新根的子项——否则「非空」判据
       // 会把半成品当成已搬完的数据。
-      expect(p.dirname(current.path + kSupportMigrationStagingSuffix),
-          p.dirname(current.path));
-      expect(current.path + kSupportMigrationStagingSuffix,
-          isNot(equals(current.path)));
+      expect(
+        p.dirname(current.path + kSupportMigrationStagingSuffix),
+        p.dirname(current.path),
+      );
+      expect(
+        current.path + kSupportMigrationStagingSuffix,
+        isNot(equals(current.path)),
+      );
     });
   });
 
@@ -272,8 +333,10 @@ void main() {
         context: posix,
       );
       expect(legacyDir, isNotNull);
-      expect(legacyDir!.path,
-          '/Users/u/Library/Application Support/com.example.hibiki');
+      expect(
+        legacyDir!.path,
+        '/Users/u/Library/Application Support/com.example.hibiki',
+      );
     });
 
     test('macOS：沙盒容器等非预期 bundle id 落点 → null', () {
@@ -309,8 +372,10 @@ void main() {
       expect(after, isNotNull);
       final Map<String, dynamic> decoded =
           jsonDecode(after!) as Map<String, dynamic>;
-      expect(decoded['flutter.app_icon_custom_path'],
-          '$newRoot/window_icon_custom.png');
+      expect(
+        decoded['flutter.app_icon_custom_path'],
+        '$newRoot/window_icon_custom.png',
+      );
       expect(decoded['flutter.data_root'], r'D:\APP\FUSHI_date');
       expect(decoded['flutter.debug_log_enabled'], true);
     });
@@ -326,8 +391,10 @@ void main() {
         caseInsensitive: true,
       );
       expect(after, isNotNull);
-      expect((jsonDecode(after!) as Map<String, dynamic>)['flutter.x'],
-          r'C:\Users\u\AppData\Roaming\Fushi\Fushi\a.png');
+      expect(
+        (jsonDecode(after!) as Map<String, dynamic>)['flutter.x'],
+        r'C:\Users\u\AppData\Roaming\Fushi\Fushi\a.png',
+      );
     });
 
     test('无命中 / 非法 JSON → null（不写盘）', () {
@@ -361,8 +428,10 @@ void main() {
       );
       File(p.join(legacy.path, iconName)).writeAsStringSync('PNG');
 
-      expect(migrateSupportDirTree(legacy: legacy, current: current),
-          LegacySupportMigrationOutcome.moved);
+      expect(
+        migrateSupportDirTree(legacy: legacy, current: current),
+        LegacySupportMigrationOutcome.moved,
+      );
       expect(
         rebaseSupportPathsInPrefsFile(
           prefsFile: File(p.join(current.path, kDesktopPrefsFileName)),
@@ -373,9 +442,13 @@ void main() {
         isTrue,
       );
 
-      final Map<String, dynamic> decoded = jsonDecode(
-        File(p.join(current.path, kDesktopPrefsFileName)).readAsStringSync(),
-      ) as Map<String, dynamic>;
+      final Map<String, dynamic> decoded =
+          jsonDecode(
+                File(
+                  p.join(current.path, kDesktopPrefsFileName),
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
       final String rebased = decoded['flutter.app_icon_custom_path'] as String;
       expect(rebased, '${current.path}/$iconName');
       expect(File(rebased).existsSync(), isTrue);
@@ -414,8 +487,10 @@ void main() {
 
       expect(count, 1);
       expect(written, <String, String>{'data_root': '/Volumes/Ext/fushi'});
-      expect(readKeys,
-          <String>['flutter.data_root', 'flutter.documents_container']);
+      expect(readKeys, <String>[
+        'flutter.data_root',
+        'flutter.documents_container',
+      ]);
     });
 
     test('非 macOS / 旧域为空 → 一个字都不写', () async {
@@ -448,10 +523,8 @@ void main() {
           isMacOSOverride: true,
           existingKeys: () async => <String>{},
           writeKey: (String key, String value) async => written[key] = value,
-          legacyReader: (String key) async => throw const ProcessException(
-            'defaults',
-            <String>['read'],
-          ),
+          legacyReader: (String key) async =>
+              throw const ProcessException('defaults', <String>['read']),
         ),
         0,
       );

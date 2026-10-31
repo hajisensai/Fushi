@@ -9,12 +9,12 @@ import 'package:collection/collection.dart';
 class MeaningField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   MeaningField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Meaning',
-          description: 'All dictionary definitions of a term.',
-          icon: Icons.translate,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Meaning',
+        description: 'All dictionary definitions of a term.',
+        icon: Icons.translate,
+      );
 
   /// Get the singleton instance of this field.
   static MeaningField get instance => _instance;
@@ -37,9 +37,9 @@ class MeaningField extends Field {
 
     Map<String, List<DictionaryEntry>> entriesByDictionaryName =
         groupBy<DictionaryEntry, String>(
-      entries,
-      (entry) => entry.dictionaryName,
-    );
+          entries,
+          (entry) => entry.dictionaryName,
+        );
 
     entriesByDictionaryName.forEach((dictionaryName, singleDictionaryEntries) {
       if (prependDictionaryNames) {

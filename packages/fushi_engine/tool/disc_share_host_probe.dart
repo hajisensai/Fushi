@@ -41,9 +41,11 @@ Future<void> main(List<String> args) async {
         i++;
     }
   }
-  if (disc == null || FileSystemEntity.typeSync(disc) ==
-      FileSystemEntityType.notFound) {
-    stderr.writeln('usage: --disc <disc root or .iso> [--port N] [--minutes N]');
+  if (disc == null ||
+      FileSystemEntity.typeSync(disc) == FileSystemEntityType.notFound) {
+    stderr.writeln(
+      'usage: --disc <disc root or .iso> [--port N] [--minutes N]',
+    );
     exit(2);
   }
   final Directory dataDir = Directory.systemTemp.createTempSync(

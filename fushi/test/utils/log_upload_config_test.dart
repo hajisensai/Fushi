@@ -12,7 +12,9 @@ void main() {
     });
     test('https 端点 → 已配置', () {
       expect(
-          isLogUploadConfigured('https://logs.example.com/api/logs'), isTrue);
+        isLogUploadConfigured('https://logs.example.com/api/logs'),
+        isTrue,
+      );
     });
   });
 }

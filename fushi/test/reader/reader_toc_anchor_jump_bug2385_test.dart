@@ -30,47 +30,56 @@ void main() {
     });
   });
 
-  test('flatten keeps a distinct anchor for each entry of the same chapter',
-      () {
-    // 同一 spine 章的三条目录项：index 全相同，只有 fragment 能区分。
-    final List<EpubTocItem> toc = <EpubTocItem>[
-      EpubTocItem(label: '巻頭', href: 'vol1.xhtml'),
-      EpubTocItem(label: '第一節', href: 'vol1.xhtml#sec1'),
-      EpubTocItem(label: '第二節', href: 'vol1.xhtml#sec2'),
-    ];
-    final List<TtuTocEntry> flat = flattenTtuTocEntries(toc, (String? _) => 0);
-    expect(flat.map((TtuTocEntry e) => e.index), <int>[0, 0, 0]);
-    expect(
-      flat.map((TtuTocEntry e) => e.fragment),
-      <String?>[null, 'sec1', 'sec2'],
-      reason: '丢掉 fragment 就等于三条目录项全跳章首',
-    );
-  });
+  test(
+    'flatten keeps a distinct anchor for each entry of the same chapter',
+    () {
+      // 同一 spine 章的三条目录项：index 全相同，只有 fragment 能区分。
+      final List<EpubTocItem> toc = <EpubTocItem>[
+        EpubTocItem(label: '巻頭', href: 'vol1.xhtml'),
+        EpubTocItem(label: '第一節', href: 'vol1.xhtml#sec1'),
+        EpubTocItem(label: '第二節', href: 'vol1.xhtml#sec2'),
+      ];
+      final List<TtuTocEntry> flat = flattenTtuTocEntries(
+        toc,
+        (String? _) => 0,
+      );
+      expect(flat.map((TtuTocEntry e) => e.index), <int>[0, 0, 0]);
+      expect(flat.map((TtuTocEntry e) => e.fragment), <String?>[
+        null,
+        'sec1',
+        'sec2',
+      ], reason: '丢掉 fragment 就等于三条目录项全跳章首');
+    },
+  );
 
-  test('toc taps and internal links land through the same anchor entry point',
-      () {
-    final String nav =
-        File('lib/src/pages/implementations/reader_fushi/navigation.part.dart')
-            .readAsStringSync();
-    final String chrome =
-        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
-            .readAsStringSync();
-    final String sheet =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+  test(
+    'toc taps and internal links land through the same anchor entry point',
+    () {
+      final String nav = File(
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+      ).readAsStringSync();
+      final String chrome = File(
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+      ).readAsStringSync();
+      final String sheet = File(
+        'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+      ).readAsStringSync();
 
-    expect(nav, contains('Future<void> _jumpToChapterAnchor('));
-    // 内链处理器复用同一个落地口——两条路径不得再各写一份同章/跨章判断。
-    expect(
+      expect(nav, contains('Future<void> _jumpToChapterAnchor('));
+      // 内链处理器复用同一个落地口——两条路径不得再各写一份同章/跨章判断。
+      expect(
         nav,
         contains(
-            'await _jumpToChapterAnchor(link.chapterIndex, link.fragment);'));
-    expect(chrome, contains('await _jumpToChapterAnchor(index, fragment);'));
-    // 钉去空白后的整个调用：实参折不折行只是格式，锚点必须作为第二实参交给跳转。
-    expect(
-      compactCode(sheet),
-      contains('awaitwidget.onJumpSection(toc[i].index,toc[i].fragment'),
-      reason: '目录行必须把自己的锚点交给跳转，否则修复只是半条',
-    );
-  });
+          'await _jumpToChapterAnchor(link.chapterIndex, link.fragment);',
+        ),
+      );
+      expect(chrome, contains('await _jumpToChapterAnchor(index, fragment);'));
+      // 钉去空白后的整个调用：实参折不折行只是格式，锚点必须作为第二实参交给跳转。
+      expect(
+        compactCode(sheet),
+        contains('awaitwidget.onJumpSection(toc[i].index,toc[i].fragment'),
+        reason: '目录行必须把自己的锚点交给跳转，否则修复只是半条',
+      );
+    },
+  );
 }

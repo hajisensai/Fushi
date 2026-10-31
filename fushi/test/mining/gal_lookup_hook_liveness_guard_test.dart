@@ -63,11 +63,7 @@ void main() {
     // armed（g_target 非空）却没有钩子时补装：这一条同时兜住 SetWindowsHookEx 失败
     // 与 kThreadArm 消息根本没送达（PostThreadMessage 会失败且旧实现不检查返回值）。
     final int livenessBranch = source.indexOf('msg.wParam == liveness_timer');
-    expect(
-      livenessBranch,
-      greaterThanOrEqualTo(0),
-      reason: '必须有独立的存活性核对分支',
-    );
+    expect(livenessBranch, greaterThanOrEqualTo(0), reason: '必须有独立的存活性核对分支');
     final String livenessBody = source.substring(livenessBranch);
     expect(
       livenessBody.contains('g_target.load'),
@@ -77,8 +73,9 @@ void main() {
 
     // 核对分支里必须既能补装、又能先卸后重装（被系统摘掉时 HHOOK 仍非空）。
     final int nextBranch = livenessBody.indexOf('} else if (msg.message ==');
-    final String scoped =
-        nextBranch > 0 ? livenessBody.substring(0, nextBranch) : livenessBody;
+    final String scoped = nextBranch > 0
+        ? livenessBody.substring(0, nextBranch)
+        : livenessBody;
     expect(
       RegExp('SetWindowsHookEx').allMatches(scoped).length,
       greaterThanOrEqualTo(2),
@@ -96,8 +93,9 @@ void main() {
     expect(livenessBranch, greaterThanOrEqualTo(0));
     final String livenessBody = source.substring(livenessBranch);
     final int nextBranch = livenessBody.indexOf('} else if (msg.message ==');
-    final String scoped =
-        nextBranch > 0 ? livenessBody.substring(0, nextBranch) : livenessBody;
+    final String scoped = nextBranch > 0
+        ? livenessBody.substring(0, nextBranch)
+        : livenessBody;
 
     // 「光标动了但回调一次没跑」才是零误报判据。只看「N 秒没事件」会把「用户没动
     // 鼠标」误判成吊销，于是空闲时反复重装全局钩子——那本身就是一次次全系统输入抖动。

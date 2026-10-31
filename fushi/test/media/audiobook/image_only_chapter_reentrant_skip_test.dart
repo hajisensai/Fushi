@@ -22,91 +22,121 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('image-only chapter cross-chapter reentrancy guard (TODO-1037/BUG-487)',
-      () {
+  group('image-only chapter cross-chapter reentrancy guard (TODO-1037/BUG-487)', () {
     test(
-        'active sequence: synchronous notify on intermediate image chapter does not reenter cross-chapter',
-        () async {
-      final AudiobookPlayerController controller =
-          await _loadPlayingController();
-      final List<int> crossCalls = <int>[];
-      controller.onCrossChapter = (int sec) => crossCalls.add(sec);
-      controller.getCurrentReaderSection = () => 2;
+      'active sequence: synchronous notify on intermediate image chapter does not reenter cross-chapter',
+      () async {
+        final AudiobookPlayerController controller =
+            await _loadPlayingController();
+        final List<int> crossCalls = <int>[];
+        controller.onCrossChapter = (int sec) => crossCalls.add(sec);
+        controller.getCurrentReaderSection = () => 2;
 
-      controller.holdChapterTransition();
-      controller.setImageChapterPauseActive(true);
-      expect(controller.chapterTransitionHeldForTesting, isTrue);
+        controller.holdChapterTransition();
+        controller.setImageChapterPauseActive(true);
+        expect(controller.chapterTransitionHeldForTesting, isTrue);
 
-      controller.notifySectionRestoreCompleted(
-        currentReaderSection: 2,
-        success: true,
-      );
+        controller.notifySectionRestoreCompleted(
+          currentReaderSection: 2,
+          success: true,
+        );
 
-      expect(crossCalls, isEmpty,
-          reason: 'in-flight intermediate load must not reenter cross-chapter');
-      expect(controller.chapterTransitionHeldForTesting, isTrue,
-          reason: 'guard stays held during the pause sequence');
+        expect(
+          crossCalls,
+          isEmpty,
+          reason: 'in-flight intermediate load must not reenter cross-chapter',
+        );
+        expect(
+          controller.chapterTransitionHeldForTesting,
+          isTrue,
+          reason: 'guard stays held during the pause sequence',
+        );
 
-      controller.dispose();
-    });
+        controller.dispose();
+      },
+    );
 
     test(
-        'contrast: when sequence finished (active=false) final navigate still cross-chapters',
-        () async {
-      final AudiobookPlayerController controller =
-          await _loadPlayingController();
-      final List<int> crossCalls = <int>[];
-      controller.onCrossChapter = (int sec) => crossCalls.add(sec);
-      controller.getCurrentReaderSection = () => 2;
+      'contrast: when sequence finished (active=false) final navigate still cross-chapters',
+      () async {
+        final AudiobookPlayerController controller =
+            await _loadPlayingController();
+        final List<int> crossCalls = <int>[];
+        controller.onCrossChapter = (int sec) => crossCalls.add(sec);
+        controller.getCurrentReaderSection = () => 2;
 
-      controller.holdChapterTransition();
-      controller.setImageChapterPauseActive(true);
-      controller.setImageChapterPauseActive(false);
+        controller.holdChapterTransition();
+        controller.setImageChapterPauseActive(true);
+        controller.setImageChapterPauseActive(false);
 
-      controller.notifySectionRestoreCompleted(
-        currentReaderSection: 2,
-        success: true,
-      );
+        controller.notifySectionRestoreCompleted(
+          currentReaderSection: 2,
+          success: true,
+        );
 
-      expect(crossCalls, <int>[5],
+        expect(
+          crossCalls,
+          <int>[5],
           reason:
-              'reentrant path proven reachable; guard, not dead branch, blocks first case');
+              'reentrant path proven reachable; guard, not dead branch, blocks first case',
+        );
 
-      controller.dispose();
-    });
+        controller.dispose();
+      },
+    );
   });
 
   group('reentrancy guard wiring (TODO-1037/BUG-487)', () {
-    test('notifySectionRestoreCompleted early-returns while sequence active',
-        () {
-      final String src = File(
-        'lib/src/media/audiobook/audiobook_controller.dart',
-      ).readAsStringSync();
-      final int notifyIdx = src.indexOf('void notifySectionRestoreCompleted({');
-      expect(notifyIdx, greaterThanOrEqualTo(0));
-      final int clearIdx =
-          src.indexOf('_chapterTransition = false;', notifyIdx);
-      final String head = src.substring(notifyIdx, clearIdx);
-      expect(head.contains('if (_imageChapterPauseActive) return;'), isTrue,
-          reason: 'guard must early-return before clearing _chapterTransition');
-    });
+    test(
+      'notifySectionRestoreCompleted early-returns while sequence active',
+      () {
+        final String src = File(
+          'lib/src/media/audiobook/audiobook_controller.dart',
+        ).readAsStringSync();
+        final int notifyIdx = src.indexOf(
+          'void notifySectionRestoreCompleted({',
+        );
+        expect(notifyIdx, greaterThanOrEqualTo(0));
+        final int clearIdx = src.indexOf(
+          '_chapterTransition = false;',
+          notifyIdx,
+        );
+        final String head = src.substring(notifyIdx, clearIdx);
+        expect(
+          head.contains('if (_imageChapterPauseActive) return;'),
+          isTrue,
+          reason: 'guard must early-return before clearing _chapterTransition',
+        );
+      },
+    );
 
-    test('reader toggles setImageChapterPauseActive at sequence entry/exit',
-        () {
-      final String src = File(
-        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
-      ).readAsStringSync();
-      expect(
-          src.contains('controller.setImageChapterPauseActive(true);'), isTrue);
-      expect(src.contains('controller.setImageChapterPauseActive(false);'),
-          isTrue);
-      final int onIdx =
-          src.indexOf('controller.setImageChapterPauseActive(true);');
-      final int offIdx =
-          src.indexOf('controller.setImageChapterPauseActive(false);');
-      expect(onIdx >= 0 && offIdx > onIdx, isTrue,
-          reason: 'set true at entry, false in finally');
-    });
+    test(
+      'reader toggles setImageChapterPauseActive at sequence entry/exit',
+      () {
+        final String src = File(
+          'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+        ).readAsStringSync();
+        expect(
+          src.contains('controller.setImageChapterPauseActive(true);'),
+          isTrue,
+        );
+        expect(
+          src.contains('controller.setImageChapterPauseActive(false);'),
+          isTrue,
+        );
+        final int onIdx = src.indexOf(
+          'controller.setImageChapterPauseActive(true);',
+        );
+        final int offIdx = src.indexOf(
+          'controller.setImageChapterPauseActive(false);',
+        );
+        expect(
+          onIdx >= 0 && offIdx > onIdx,
+          isTrue,
+          reason: 'set true at entry, false in finally',
+        );
+      },
+    );
   });
 }
 
@@ -122,10 +152,7 @@ Future<AudiobookPlayerController> _loadPlayingController() async {
   addTearDown(() {
     if (audioFile.existsSync()) audioFile.deleteSync();
   });
-  await controller.load(
-    audiobook: _audiobook(),
-    audioFiles: <File>[audioFile],
-  );
+  await controller.load(audiobook: _audiobook(), audioFiles: <File>[audioFile]);
   final List<AudioCue> cues = <AudioCue>[_sentenceAudioCue(0, section: 5)];
   controller.setAllBookCues(cues);
   controller.setChapterCues(cues);
@@ -161,8 +188,9 @@ Audiobook _audiobook() {
 }
 
 _HangingJustAudioPlatform _installHangingAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
+  const MethodChannel audioSessionChannel = MethodChannel(
+    'com.ryanheise.audio_session',
+  );
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
   addTearDown(() {
@@ -231,22 +259,19 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
     SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
+  ) async => SetAndroidAudioAttributesResponse();
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
 
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
@@ -259,26 +284,22 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
     SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
+  ) async => SetPreferredPeakBitRateResponse();
 
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
     SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
+  ) async => SetShuffleModeResponse();
 
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
     SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
+  ) async => SetShuffleOrderResponse();
 
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
     SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
+  ) async => SetSkipSilenceResponse();
 
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
@@ -291,8 +312,7 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
     SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
+  ) async => SetWebCrossOriginResponse();
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {

@@ -16,8 +16,9 @@ void main() {
 
   setUp(() async {
     database = FushiDatabase.forTesting(NativeDatabase.memory());
-    temporaryDirectory =
-        await Directory.systemTemp.createTemp('sidecar_artifact_checker_');
+    temporaryDirectory = await Directory.systemTemp.createTemp(
+      'sidecar_artifact_checker_',
+    );
   });
 
   tearDown(() async {
@@ -68,8 +69,9 @@ void main() {
   });
 
   test('重叠来源不能把另一来源的 artifact 当成自身可覆盖生成物', () async {
-    final Directory nestedSource =
-        Directory(p.join(temporaryDirectory.path, 'nested'));
+    final Directory nestedSource = Directory(
+      p.join(temporaryDirectory.path, 'nested'),
+    );
     await nestedSource.create();
     final int sourceA = await _insertSource(
       database,
@@ -131,8 +133,11 @@ void main() {
     );
 
     expect(result.status, SidecarWriteStatus.protectedExisting);
-    expect(await cover.readAsBytes(), sourceABytes,
-        reason: 'B 未经危险确认不得覆盖 A 生成的文件');
+    expect(
+      await cover.readAsBytes(),
+      sourceABytes,
+      reason: 'B 未经危险确认不得覆盖 A 生成的文件',
+    );
   });
 }
 
@@ -140,21 +145,16 @@ Future<int> _insertSource(
   FushiDatabase database,
   String label,
   String rootPath,
-) =>
-    database.insertMediaSource(
-      MediaSourcesCompanion.insert(
-        label: label,
-        mediaKind: 'video',
-        rootPath: rootPath,
-        createdAt: 1,
-      ),
-    );
+) => database.insertMediaSource(
+  MediaSourcesCompanion.insert(
+    label: label,
+    mediaKind: 'video',
+    rootPath: rootPath,
+    createdAt: 1,
+  ),
+);
 
-Future<int> _insertRun(
-  FushiDatabase database,
-  int sourceId,
-  int now,
-) =>
+Future<int> _insertRun(FushiDatabase database, int sourceId, int now) =>
     database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
         sourceId: Value<int?>(sourceId),

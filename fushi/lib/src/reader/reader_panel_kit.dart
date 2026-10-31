@@ -757,7 +757,10 @@ class ReaderPanelEmpty extends StatelessWidget {
                 child: Text(actionLabel!),
               )
             else
-              FilledButton.tonal(onPressed: onAction, child: Text(actionLabel!)),
+              FilledButton.tonal(
+                onPressed: onAction,
+                child: Text(actionLabel!),
+              ),
           ],
         ],
       ),

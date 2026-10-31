@@ -103,7 +103,8 @@ String? _decodeNameString(int platformId, ByteData data, int off, int len) {
       final StringBuffer sb = StringBuffer();
       for (int i = 0; i + 1 < len; i += 2) {
         sb.writeCharCode(
-            (data.getUint8(off + i) << 8) | data.getUint8(off + i + 1));
+          (data.getUint8(off + i) << 8) | data.getUint8(off + i + 1),
+        );
       }
       return sb.toString();
     }
@@ -164,7 +165,8 @@ SfntFaceCellMetrics? _parseFaceFromBytes(ByteData data, int base) {
       final int len = data.getUint32(rec + 12);
       if (off < 0 || len <= 0 || off + len > length) return null;
       return ByteData.sublistView(
-          data.buffer.asUint8List(data.offsetInBytes + off, len));
+        data.buffer.asUint8List(data.offsetInBytes + off, len),
+      );
     }
     return null;
   }
@@ -228,8 +230,10 @@ Future<Map<String, double>> scanSystemFontCellMetrics(List<String> dirs) async {
     try {
       final Directory d = Directory(dir);
       if (!d.existsSync()) continue;
-      await for (final FileSystemEntity e
-          in d.list(recursive: true, followLinks: false)) {
+      await for (final FileSystemEntity e in d.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (e is! File) continue;
         final String lower = e.path.toLowerCase();
         if (!lower.endsWith('.ttf') &&
@@ -303,8 +307,9 @@ Future<void> _indexFontFile(File file, Map<String, double> out) async {
         os2: await tableAt(_kTagOs2, maxLen: 4096),
       );
       if (cellPerEm == null) continue;
-      final Set<String> families =
-          familyNamesFromNameTable(await tableAt(_kTagName));
+      final Set<String> families = familyNamesFromNameTable(
+        await tableAt(_kTagName),
+      );
       for (final String family in families) {
         out.putIfAbsent(family.toLowerCase(), () => cellPerEm);
       }
@@ -356,21 +361,25 @@ class AssFontCellIndex {
     _scanStarted = true;
     final List<String> dirs = systemFontDirectories();
     if (dirs.isEmpty) return;
-    compute(_scanSystemFontsEntry, dirs).then((Map<String, double> result) {
-      if (result.isEmpty) return;
-      _system = result;
-      revision.value++;
-    }).catchError((Object _) {
-      // isolate 失败：保持空索引。
-    });
+    compute(_scanSystemFontsEntry, dirs)
+        .then((Map<String, double> result) {
+          if (result.isEmpty) return;
+          _system = result;
+          revision.value++;
+        })
+        .catchError((Object _) {
+          // isolate 失败：保持空索引。
+        });
   }
 
   /// 解析并登记一份内存字体（MKV 内嵌字体 / 用户自定义字体注册路径同步调用）。
   /// [aliases]：调用方额外用来注册进 [FontLoader] 的家族别名（用户自定义字体常用
   /// 自选名而非字体内部名），一并映射到首个 face 的系数。有新 family 时 bump
   /// [revision]。解析失败静默。
-  void registerFontBytes(Uint8List bytes,
-      {Iterable<String> aliases = const <String>[]}) {
+  void registerFontBytes(
+    Uint8List bytes, {
+    Iterable<String> aliases = const <String>[],
+  }) {
     bool added = false;
     double? firstCellPerEm;
     for (final SfntFaceCellMetrics face in parseSfntCellMetrics(bytes)) {

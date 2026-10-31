@@ -113,21 +113,26 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  final DictionarySearchResult realEmpty =
-      DictionarySearchResult(searchTerm: '況に 一致しなくもないですね');
+  final DictionarySearchResult realEmpty = DictionarySearchResult(
+    searchTerm: '況に 一致しなくもないですね',
+  );
 
-  testWidgets('热槽 + 真实空结果：WebView 仍挂载，「未找到」盖板可见', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('热槽 + 真实空结果：WebView 仍挂载，「未找到」盖板可见', (WidgetTester tester) async {
     await tester.pumpWidget(
       _host(_layer(keepWebViewWarm: true, result: realEmpty)),
     );
     await tester.pump();
 
-    expect(find.byType(DictionaryPopupWebView), findsOneWidget,
-        reason: '热槽 WebView 不得因空结果被 unmount（那会同步拆 WebView2）');
-    expect(find.byType(FushiPlaceholderMessage), findsOneWidget,
-        reason: '空结果仍要告诉用户「未找到」，但以盖板而非拆树实现');
+    expect(
+      find.byType(DictionaryPopupWebView),
+      findsOneWidget,
+      reason: '热槽 WebView 不得因空结果被 unmount（那会同步拆 WebView2）',
+    );
+    expect(
+      find.byType(FushiPlaceholderMessage),
+      findsOneWidget,
+      reason: '空结果仍要告诉用户「未找到」，但以盖板而非拆树实现',
+    );
   });
 
   testWidgets('热槽：有结果 → 空结果 → 有结果，同一把 GlobalKey 的 WebView 全程不换 element', (
@@ -155,13 +160,19 @@ void main() {
 
     await tester.pumpWidget(_host(layer(realEmpty)));
     await tester.pump();
-    expect(identical(key.currentState, seeded), isTrue,
-        reason: '换到空结果时热槽 State 必须原样保留（不拆不建）');
+    expect(
+      identical(key.currentState, seeded),
+      isTrue,
+      reason: '换到空结果时热槽 State 必须原样保留（不拆不建）',
+    );
 
     await tester.pumpWidget(_host(layer(kPopupSearchingPlaceholderResult)));
     await tester.pump();
-    expect(identical(key.currentState, seeded), isTrue,
-        reason: '关栈回 seed 后仍是同一个 State（热槽全程存活）');
+    expect(
+      identical(key.currentState, seeded),
+      isTrue,
+      reason: '关栈回 seed 后仍是同一个 State（热槽全程存活）',
+    );
   });
 
   testWidgets('非热槽 + 真实空结果：不挂 WebView，只渲染「未找到」占位（行为不变）', (
@@ -183,43 +194,48 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      _host(_layer(
-        keepWebViewWarm: true,
-        result: DictionarySearchResult(searchTerm: ''),
-      )),
+      _host(
+        _layer(
+          keepWebViewWarm: true,
+          result: DictionarySearchResult(searchTerm: ''),
+        ),
+      ),
     );
     await tester.pump();
 
     expect(find.byType(DictionaryPopupWebView), findsOneWidget);
-    expect(find.byType(FushiPlaceholderMessage), findsOneWidget,
-        reason: '查过了、没东西可查也是「未找到」，不能露出空 WebView');
+    expect(
+      find.byType(FushiPlaceholderMessage),
+      findsOneWidget,
+      reason: '查过了、没东西可查也是「未找到」，不能露出空 WebView',
+    );
   });
 
-  testWidgets('BUG-2784 热槽空闲占位单例：不出现「未找到」盖板', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-2784 热槽空闲占位单例：不出现「未找到」盖板', (WidgetTester tester) async {
     await tester.pumpWidget(
-      _host(_layer(
-        keepWebViewWarm: true,
-        result: kPopupSearchingPlaceholderResult,
-      )),
+      _host(
+        _layer(keepWebViewWarm: true, result: kPopupSearchingPlaceholderResult),
+      ),
     );
     await tester.pump();
 
     expect(find.byType(DictionaryPopupWebView), findsOneWidget);
-    expect(find.byType(FushiPlaceholderMessage), findsNothing,
-        reason: '停驻的热槽还没查过任何词，盖「未找到」是误报');
+    expect(
+      find.byType(FushiPlaceholderMessage),
+      findsNothing,
+      reason: '停驻的热槽还没查过任何词，盖「未找到」是误报',
+    );
   });
 
-  testWidgets('热槽 + 搜索中：仍是进度盖板，不出现「未找到」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('热槽 + 搜索中：仍是进度盖板，不出现「未找到」', (WidgetTester tester) async {
     await tester.pumpWidget(
-      _host(_layer(
-        keepWebViewWarm: true,
-        result: kPopupSearchingPlaceholderResult,
-        isSearching: true,
-      )),
+      _host(
+        _layer(
+          keepWebViewWarm: true,
+          result: kPopupSearchingPlaceholderResult,
+          isSearching: true,
+        ),
+      ),
     );
     await tester.pump();
 

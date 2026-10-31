@@ -28,13 +28,16 @@ Future<VideoSourceScrapeWork?> resolveMetadataWorkTarget(
   VideoMetadataWorkKey key,
 ) async {
   if (key.isCollection) {
-    final MediaCollectionRow? collection =
-        await db.getMediaCollectionByNaturalKey(
-            key.collectionName!, key.collectionType!);
+    final MediaCollectionRow? collection = await db
+        .getMediaCollectionByNaturalKey(
+          key.collectionName!,
+          key.collectionType!,
+        );
     if (collection == null) return null;
     final List<VideoBookRow> members = <VideoBookRow>[];
-    for (final MediaCollectionItemRow item
-        in await db.getCollectionItems(collection.id)) {
+    for (final MediaCollectionItemRow item in await db.getCollectionItems(
+      collection.id,
+    )) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
       final VideoBookRow? row = await db.getVideoBookByBookUid(item.entryKey);
       if (row != null) members.add(row);
@@ -63,8 +66,9 @@ Future<VideoMetadataWorkKey?> metadataWorkKeyOf(
 ) async {
   final int? collectionId = row.collectionId;
   if (collectionId != null) {
-    final MediaCollectionRow? collection =
-        await db.getMediaCollectionById(collectionId);
+    final MediaCollectionRow? collection = await db.getMediaCollectionById(
+      collectionId,
+    );
     if (collection == null) return null;
     return VideoMetadataWorkKey.collection(
       name: collection.name,
@@ -129,8 +133,10 @@ Future<RemoteVideoMetadataApplyResult> applyRemoteVideoMetadata(
   int deferred = 0;
   for (final VideoMetadataWorkEntry entry in entries) {
     try {
-      final VideoSourceScrapeWork? target =
-          await resolveMetadataWorkTarget(db, entry.key);
+      final VideoSourceScrapeWork? target = await resolveMetadataWorkTarget(
+        db,
+        entry.key,
+      );
       if (target == null) {
         deferred += 1;
         continue;
@@ -160,7 +166,9 @@ Future<RemoteVideoMetadataApplyResult> applyRemoteVideoMetadata(
         // 落库后把 updatedAt 钉成 host 的戳：apply 写的是本机 now，会让两台互为
         // host 的设备无限乒乓、也让 host 下一次更新被误判为旧（审查 #3）。
         await db.setVideoMetadataWorkUpdatedAt(
-            persisted.workId, entry.updatedAt);
+          persisted.workId,
+          entry.updatedAt,
+        );
       } finally {
         lease.release();
       }

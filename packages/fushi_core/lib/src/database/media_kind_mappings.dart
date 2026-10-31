@@ -21,10 +21,10 @@ import 'tag_host_kind.dart';
 
 /// 合集/书架种类 → 活动事件种类（epub / srt 都折叠进活动域的 `book`）。
 ActivityMediaKind activityMediaKindOf(MediaKind kind) => switch (kind) {
-      MediaKind.epub || MediaKind.srt => ActivityMediaKind.book,
-      MediaKind.video => ActivityMediaKind.video,
-      MediaKind.game => ActivityMediaKind.game,
-    };
+  MediaKind.epub || MediaKind.srt => ActivityMediaKind.book,
+  MediaKind.video => ActivityMediaKind.video,
+  MediaKind.game => ActivityMediaKind.game,
+};
 
 /// 活动事件种类 → 其可能对应的合集/书架种类（**有序**：book 活动行的
 /// mediaKey 不带书架种类标记，按「epub 优先、srt 回退」逐一试探——与
@@ -32,9 +32,9 @@ ActivityMediaKind activityMediaKindOf(MediaKind kind) => switch (kind) {
 List<MediaKind> shelfKindsOfActivityMedia(ActivityMediaKind kind) =>
     switch (kind) {
       ActivityMediaKind.book => const <MediaKind>[
-          MediaKind.epub,
-          MediaKind.srt
-        ],
+        MediaKind.epub,
+        MediaKind.srt,
+      ],
       ActivityMediaKind.video => const <MediaKind>[MediaKind.video],
       ActivityMediaKind.game => const <MediaKind>[MediaKind.game],
       // 音乐曲目不在合集 / 书架域里（曲库有自己的专辑 / 歌单），没有对应书架种类。
@@ -47,10 +47,10 @@ List<MediaKind> shelfKindsOfActivityMedia(ActivityMediaKind kind) =>
 /// 表达；当前四个 kind 都有桶，故实际不返 null。game 自 [StatSourceKind.game]
 /// 起有了自己的桶——此前返 null 是因为统计域只有 book / video 两桶。
 StatSourceKind? statSourceKindOf(MediaKind kind) => switch (kind) {
-      MediaKind.epub || MediaKind.srt => StatSourceKind.book,
-      MediaKind.video => StatSourceKind.video,
-      MediaKind.game => StatSourceKind.game,
-    };
+  MediaKind.epub || MediaKind.srt => StatSourceKind.book,
+  MediaKind.video => StatSourceKind.video,
+  MediaKind.game => StatSourceKind.game,
+};
 
 /// 标签宿主种类 → 标签墓碑域（[BookTagMembershipTombstones].mediaType 的落库值）。
 ///
@@ -60,21 +60,21 @@ StatSourceKind? statSourceKindOf(MediaKind kind) => switch (kind) {
 /// 穷尽 switch：以后加宿主种类编译期就逼着在这里定墓碑域，不会静默写错域（写错
 /// 域的墓碑所有读取端都命不中，跨端标签移除会静默失传，review5-9）。
 String tagTombstoneDomainOf(TagHostKind kind) => switch (kind) {
-      TagHostKind.epub => MediaKind.epub.dbValue,
-      TagHostKind.srt => MediaKind.srt.dbValue,
-      TagHostKind.video => MediaKind.video.dbValue,
-      TagHostKind.game => MediaKind.game.dbValue,
-      TagHostKind.collection => TagHostKind.collection.dbValue,
-    };
+  TagHostKind.epub => MediaKind.epub.dbValue,
+  TagHostKind.srt => MediaKind.srt.dbValue,
+  TagHostKind.video => MediaKind.video.dbValue,
+  TagHostKind.game => MediaKind.game.dbValue,
+  TagHostKind.collection => TagHostKind.collection.dbValue,
+};
 
 /// 合集/书架种类 → 标签宿主种类（四个值同串同义；宿主域多一个 `collection`）。
 /// 合集成员（`media_collection_items.mediaType`）落到私密标记 / 标签宿主键时用。
 TagHostKind tagHostKindOfMediaKind(MediaKind kind) => switch (kind) {
-      MediaKind.epub => TagHostKind.epub,
-      MediaKind.srt => TagHostKind.srt,
-      MediaKind.video => TagHostKind.video,
-      MediaKind.game => TagHostKind.game,
-    };
+  MediaKind.epub => TagHostKind.epub,
+  MediaKind.srt => TagHostKind.srt,
+  MediaKind.video => TagHostKind.video,
+  MediaKind.game => TagHostKind.game,
+};
 
 /// 合集所属的**库页域**（书架 / 漫画库 / 视频库 / 游戏库）。合集表本身不带种类列
 /// （同一张 `media_collections` 承载全部库页），一个合集属于哪个库页由它的成员
@@ -86,11 +86,10 @@ enum CollectionShelfDomain { books, manga, video, games }
 CollectionShelfDomain collectionShelfDomainOf(
   MediaKind kind, {
   bool isManga = false,
-}) =>
-    switch (kind) {
-      MediaKind.epub =>
-        isManga ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
-      MediaKind.srt => CollectionShelfDomain.books,
-      MediaKind.video => CollectionShelfDomain.video,
-      MediaKind.game => CollectionShelfDomain.games,
-    };
+}) => switch (kind) {
+  MediaKind.epub =>
+    isManga ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
+  MediaKind.srt => CollectionShelfDomain.books,
+  MediaKind.video => CollectionShelfDomain.video,
+  MediaKind.game => CollectionShelfDomain.games,
+};

@@ -43,11 +43,11 @@ class _HotkeyAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'app.hibiki.reader',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'app.hibiki.reader',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   Directory get appDirectory => _dir;
@@ -73,8 +73,8 @@ class _HotkeyAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -101,8 +101,9 @@ class _HotkeyAppModel extends AppModel {
   }
 }
 
-const ValueKey<String> _searchFieldKey =
-    ValueKey<String>('home_dictionary_search_field');
+const ValueKey<String> _searchFieldKey = ValueKey<String>(
+  'home_dictionary_search_field',
+);
 
 /// mock `window_manager` 收到的方法名序列（断言 minimize 发没发）。
 final List<String> _windowCalls = <String>[];
@@ -112,8 +113,9 @@ Future<_HotkeyAppModel> _pumpHome(WidgetTester tester) async {
   addTearDown(db.close);
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
-  final Directory tmpDir =
-      Directory.systemTemp.createTempSync('fushi_home_dict_hotkey_');
+  final Directory tmpDir = Directory.systemTemp.createTempSync(
+    'fushi_home_dict_hotkey_',
+  );
   addTearDown(() {
     try {
       tmpDir.deleteSync(recursive: true);
@@ -215,8 +217,9 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('已在查词页且框里有上次的词：再按热键 → 仍持焦且全选（打字即替换，不打则保留）',
-        (WidgetTester tester) async {
+    testWidgets('已在查词页且框里有上次的词：再按热键 → 仍持焦且全选（打字即替换，不打则保留）', (
+      WidgetTester tester,
+    ) async {
       final _HotkeyAppModel appModel = await _pumpHome(tester);
       HomePage.debugSelectTab!(HomeTab.dictionaries);
       await _settle(tester);
@@ -233,8 +236,11 @@ void main() {
       await _settle(tester);
 
       final EditableText editable = _searchEditable(tester);
-      expect(editable.focusNode.hasFocus, isTrue,
-          reason: '「已经在查词页」的早退分支也必须落地聚焦意图。');
+      expect(
+        editable.focusNode.hasFocus,
+        isTrue,
+        reason: '「已经在查词页」的早退分支也必须落地聚焦意图。',
+      );
       expect(editable.controller.text, 'おばさん', reason: '不清空：用户可能只是切回来看上次的结果。');
       expect(
         editable.controller.selection,
@@ -244,8 +250,9 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('携带待查词的请求（focusSearch 默认 false）不碰焦点',
-        (WidgetTester tester) async {
+    testWidgets('携带待查词的请求（focusSearch 默认 false）不碰焦点', (
+      WidgetTester tester,
+    ) async {
       final _HotkeyAppModel appModel = await _pumpHome(tester);
 
       DesktopLookupService.instance.triggerLookup(' lyricword ');
@@ -264,8 +271,9 @@ void main() {
   });
 
   group('② 查词页按「返回上一级」最小化主窗', () {
-    testWidgets('偏好开着：搜索框持焦时按 Esc → window_manager 收到 minimize',
-        (WidgetTester tester) async {
+    testWidgets('偏好开着：搜索框持焦时按 Esc → window_manager 收到 minimize', (
+      WidgetTester tester,
+    ) async {
       final _HotkeyAppModel appModel = await _pumpHome(tester);
       await appModel.setLookupPageEscapeMinimizesWindow(true);
       await _settle(tester);
@@ -280,8 +288,11 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
 
-      expect(_windowCalls, contains('minimize'),
-          reason: '一键收窗：不走「关弹窗 → 清查询」阶梯，直接最小化。');
+      expect(
+        _windowCalls,
+        contains('minimize'),
+        reason: '一键收窗：不走「关弹窗 → 清查询」阶梯，直接最小化。',
+      );
       expect(
         _searchEditable(tester).controller.text,
         'おばさん',
@@ -290,11 +301,15 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('偏好关着（默认）：按 Esc 不发 minimize，仍走原有阶梯（清查询）',
-        (WidgetTester tester) async {
+    testWidgets('偏好关着（默认）：按 Esc 不发 minimize，仍走原有阶梯（清查询）', (
+      WidgetTester tester,
+    ) async {
       final _HotkeyAppModel appModel = await _pumpHome(tester);
-      expect(appModel.lookupPageEscapeMinimizesWindow, isFalse,
-          reason: '默认必须关：这是 opt-in 行为。');
+      expect(
+        appModel.lookupPageEscapeMinimizesWindow,
+        isFalse,
+        reason: '默认必须关：这是 opt-in 行为。',
+      );
 
       appModel.requestHomeDictionaryTab(focusSearch: true);
       await _settle(tester);
@@ -314,8 +329,9 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('偏好开着但不在查词页：Esc 与本功能无关，不发 minimize',
-        (WidgetTester tester) async {
+    testWidgets('偏好开着但不在查词页：Esc 与本功能无关，不发 minimize', (
+      WidgetTester tester,
+    ) async {
       final _HotkeyAppModel appModel = await _pumpHome(tester);
       await appModel.setLookupPageEscapeMinimizesWindow(true);
       await _settle(tester);
@@ -325,8 +341,11 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
 
-      expect(_windowCalls, isNot(contains('minimize')),
-          reason: '执行体只挂在查词页子树上，首页别的 tab 不受影响。');
+      expect(
+        _windowCalls,
+        isNot(contains('minimize')),
+        reason: '执行体只挂在查词页子树上，首页别的 tab 不受影响。',
+      );
       await _unmount(tester);
     });
   });

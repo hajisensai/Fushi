@@ -29,58 +29,72 @@ void main() {
     );
   }
 
-  testWidgets('DPAD moves focus, A activates, B pops — no taps',
-      (WidgetTester tester) async {
+  testWidgets('DPAD moves focus, A activates, B pops — no taps', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final FocusNode first = FocusNode(debugLabel: 'first');
     final FocusNode second = FocusNode(debugLabel: 'second');
     addTearDown(first.dispose);
     addTearDown(second.dispose);
 
-    await tester.pumpWidget(appWithLayer(
-      Scaffold(
-        body: Column(
-          children: <Widget>[
-            ElevatedButton(
-              focusNode: first,
-              autofocus: true,
-              onPressed: () {},
-              child: const Text('one'),
-            ),
-            ElevatedButton(
-              focusNode: second,
-              onPressed: () {
-                navKey.currentState!.push(MaterialPageRoute<void>(
-                  builder: (_) => const Scaffold(body: Text('detail')),
-                ));
-              },
-              child: const Text('two'),
-            ),
-          ],
+    await tester.pumpWidget(
+      appWithLayer(
+        Scaffold(
+          body: Column(
+            children: <Widget>[
+              ElevatedButton(
+                focusNode: first,
+                autofocus: true,
+                onPressed: () {},
+                child: const Text('one'),
+              ),
+              ElevatedButton(
+                focusNode: second,
+                onPressed: () {
+                  navKey.currentState!.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const Scaffold(body: Text('detail')),
+                    ),
+                  );
+                },
+                child: const Text('two'),
+              ),
+            ],
+          ),
         ),
+        navKey,
       ),
-      navKey,
-    ));
+    );
     await tester.pump();
     expect(first.hasPrimaryFocus, isTrue, reason: 'first autofocuses');
 
     // D-pad down -> focus moves to the second button.
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
-    expect(second.hasPrimaryFocus, isTrue,
-        reason: 'directional focus moves to the next control');
+    expect(
+      second.hasPrimaryFocus,
+      isTrue,
+      reason: 'directional focus moves to the next control',
+    );
 
     // gameButtonA -> activates the focused button -> pushes the detail route.
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonA);
     await tester.pumpAndSettle();
-    expect(find.text('detail'), findsOneWidget,
-        reason: 'gameButtonA activates the focused control');
+    expect(
+      find.text('detail'),
+      findsOneWidget,
+      reason: 'gameButtonA activates the focused control',
+    );
 
     // gameButtonB -> global back -> pops the detail route.
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
     await tester.pumpAndSettle();
-    expect(find.text('detail'), findsNothing,
-        reason: 'gameButtonB pops the route');
+    expect(
+      find.text('detail'),
+      findsNothing,
+      reason: 'gameButtonB pops the route',
+    );
     expect(find.text('one'), findsOneWidget);
   });
 }

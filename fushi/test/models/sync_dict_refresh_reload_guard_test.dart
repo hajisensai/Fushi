@@ -29,17 +29,24 @@ void main() {
 
   setUpAll(() {
     final File f = File('lib/src/models/app_model.dart');
-    expect(f.existsSync(), isTrue,
-        reason: 'app_model.dart not found at ${f.absolute.path}');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: 'app_model.dart not found at ${f.absolute.path}',
+    );
     src = f.readAsStringSync();
   });
 
   String dictImportBranch() {
-    final String body = maskComments(methodBody(
-        src, 'Future<void> refreshAfterSyncRun(SyncRunReport report)'));
+    final String body = maskComments(
+      methodBody(src, 'Future<void> refreshAfterSyncRun(SyncRunReport report)'),
+    );
     final int start = body.indexOf('report.dictionariesImported > 0');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'refreshAfterSyncRun must handle dictionariesImported');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'refreshAfterSyncRun must handle dictionariesImported',
+    );
     final int open = body.indexOf('{', start);
     int depth = 0;
     for (int i = open; i < body.length; i++) {
@@ -49,34 +56,49 @@ void main() {
     fail('unbalanced braces in dictionariesImported branch');
   }
 
-  test(
-      'BUG-2752: sync dictionary import reloads the repository from the DB '
+  test('BUG-2752: sync dictionary import reloads the repository from the DB '
       'instead of rebuilding the engine off an emptied cache', () {
     final String branch = dictImportBranch();
-    expect(branch.contains('clearDictionariesCache('), isFalse,
-        reason: 'clearing the in-memory cache here rebuilds the engine with '
-            'zero dictionaries — every local dictionary disappears');
+    expect(
+      branch.contains('clearDictionariesCache('),
+      isFalse,
+      reason:
+          'clearing the in-memory cache here rebuilds the engine with '
+          'zero dictionaries — every local dictionary disappears',
+    );
     expect(
       branch.contains('reloadDictionariesFromDb(') ||
           branch.contains('dictRepo.loadFromDb('),
       isTrue,
-      reason: 'the importer wrote dictionary_metadata directly; the cache '
+      reason:
+          'the importer wrote dictionary_metadata directly; the cache '
           'must be reloaded from the DB so local + pulled dicts are loaded',
     );
-    expect(branch.contains('dictionaryMenuNotifier.notifyListeners('), isTrue,
-        reason: 'the dictionary management list must refresh');
+    expect(
+      branch.contains('dictionaryMenuNotifier.notifyListeners('),
+      isTrue,
+      reason: 'the dictionary management list must refresh',
+    );
   });
 
-  test('BUG-2752: reloadDictionariesFromDb loads the DB before the rebuild',
-      () {
-    final String body = maskComments(
-        methodBody(src, 'Future<void> reloadDictionariesFromDb()'));
-    final int load = body.indexOf('dictRepo.loadFromDb(');
-    final int rebuild = body.indexOf('_rebuildDictPathsCacheAsync(');
-    expect(load, greaterThanOrEqualTo(0));
-    expect(rebuild, greaterThan(load),
-        reason: 'the engine must be rebuilt from the freshly loaded cache');
-    expect(body.contains('dictionarySearchAgainNotifier.notifyListeners('),
-        isTrue);
-  });
+  test(
+    'BUG-2752: reloadDictionariesFromDb loads the DB before the rebuild',
+    () {
+      final String body = maskComments(
+        methodBody(src, 'Future<void> reloadDictionariesFromDb()'),
+      );
+      final int load = body.indexOf('dictRepo.loadFromDb(');
+      final int rebuild = body.indexOf('_rebuildDictPathsCacheAsync(');
+      expect(load, greaterThanOrEqualTo(0));
+      expect(
+        rebuild,
+        greaterThan(load),
+        reason: 'the engine must be rebuilt from the freshly loaded cache',
+      );
+      expect(
+        body.contains('dictionarySearchAgainNotifier.notifyListeners('),
+        isTrue,
+      );
+    },
+  );
 }

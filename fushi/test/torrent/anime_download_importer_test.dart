@@ -28,20 +28,21 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/fake_image_bytes.dart';
+
 /// 最小合法 PNG 魔数字节。
 // 写侧唯一入口只收可解码字节（BUG-2496）：PNG 须以 IEND 收尾、JPEG 须以 FF D9 收尾。
 final List<int> _fakePng = fakePngBytes();
 
 AnimeDownloadPlan _plan({String? coverUrl}) => AnimeDownloadPlan(
-      id: 'plan-1',
-      createdAtMs: 0,
-      seriesTitle: '某番剧',
-      torrentTitle: '[组] 某番剧 01-02',
-      magnet: 'magnet:?xt=urn:btih:deadbeef',
-      qbCategory: 'hibiki',
-      anilistId: 42,
-      coverUrl: coverUrl,
-    );
+  id: 'plan-1',
+  createdAtMs: 0,
+  seriesTitle: '某番剧',
+  torrentTitle: '[组] 某番剧 01-02',
+  magnet: 'magnet:?xt=urn:btih:deadbeef',
+  qbCategory: 'hibiki',
+  anilistId: 42,
+  coverUrl: coverUrl,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -59,20 +60,18 @@ void main() {
     if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 
-  Future<AnimeDownloadImportOutcome?> Function(
-    AnimeDownloadPlan,
-    List<String>,
-  ) importer({List<int>? bytes}) => buildAnimeDownloadImporter(
-        db,
-        httpClient: MockClient(
-          (http.Request req) async => http.Response.bytes(
-            bytes ?? _fakePng,
-            200,
-            headers: const <String, String>{'content-type': 'image/png'},
-          ),
-        ),
-        collectionCoversDirectory: tmp,
-      );
+  Future<AnimeDownloadImportOutcome?> Function(AnimeDownloadPlan, List<String>)
+  importer({List<int>? bytes}) => buildAnimeDownloadImporter(
+    db,
+    httpClient: MockClient(
+      (http.Request req) async => http.Response.bytes(
+        bytes ?? _fakePng,
+        200,
+        headers: const <String, String>{'content-type': 'image/png'},
+      ),
+    ),
+    collectionCoversDirectory: tmp,
+  );
 
   test('作品海报落合集自有封面 coverPath，成员条目一张海报都不沾', () async {
     final AnimeDownloadImportOutcome? outcome = await importer()(
@@ -84,21 +83,26 @@ void main() {
     );
 
     expect(outcome, isNotNull);
-    final MediaCollectionRow col =
-        (await db.getMediaCollectionById(outcome!.collectionId))!;
-    final String expectedCover =
-        p.join(tmp.path, videoCoverFileName('${outcome.collectionId}'));
+    final MediaCollectionRow col = (await db.getMediaCollectionById(
+      outcome!.collectionId,
+    ))!;
+    final String expectedCover = p.join(
+      tmp.path,
+      videoCoverFileName('${outcome.collectionId}'),
+    );
     expect(col.coverPath, expectedCover, reason: '海报直落合集自有封面列');
     expect(File(expectedCover).readAsBytesSync(), _fakePng);
 
     // 成员条目（含首集）不落作品海报——测试环境抽帧不可用，封面应保持 null，
     // 而绝不是那张下载成功了的海报。
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(outcome.collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      outcome.collectionId,
+    );
     expect(items, hasLength(2));
     for (final MediaCollectionItemRow item in items) {
-      final VideoBookRow book =
-          (await db.getVideoBookByBookUid(item.entryKey))!;
+      final VideoBookRow book = (await db.getVideoBookByBookUid(
+        item.entryKey,
+      ))!;
       expect(book.coverPath, isNull, reason: '子篇条目封面只能是抽帧/剧照，绝不是作品海报');
     }
 
@@ -113,8 +117,10 @@ void main() {
     );
 
     expect(outcome, isNotNull);
-    expect((await db.getMediaCollectionById(outcome!.collectionId))!.coverPath,
-        isNull);
+    expect(
+      (await db.getMediaCollectionById(outcome!.collectionId))!.coverPath,
+      isNull,
+    );
   });
 
   test('重放导入覆盖同名合集封面：内容真被换掉（收口的原子写，非裸 writeAsBytes）', () async {
@@ -123,8 +129,10 @@ void main() {
       _plan(coverUrl: 'https://img.anili.st/poster.jpg'),
       <String>[p.join('D:', 'dl', '某番剧 - 01.mkv')],
     );
-    final String dest =
-        p.join(tmp.path, videoCoverFileName('${first!.collectionId}'));
+    final String dest = p.join(
+      tmp.path,
+      videoCoverFileName('${first!.collectionId}'),
+    );
     expect(File(dest).readAsBytesSync(), _fakePng);
 
     // reuseExistingPaths 让重放复用同一合集 → 同一目标文件名。
@@ -158,11 +166,15 @@ void main() {
 
     final List<ActivityEventRow> events = await addedEvents();
     expect(events, hasLength(1), reason: '多集合集整本 1 条，绝不每集一条');
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(outcome!.collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      outcome!.collectionId,
+    );
     expect(events.single.title, '某番剧');
-    expect(events.single.mediaKey, items.first.entryKey,
-        reason: 'mediaKey=首集 uid');
+    expect(
+      events.single.mediaKey,
+      items.first.entryKey,
+      reason: 'mediaKey=首集 uid',
+    );
   });
 
   test('崩溃重放（同批路径重跑复用既有条目）：不重复记 added', () async {
@@ -218,26 +230,28 @@ void main() {
   test('响应不是图片（错误页 HTML）：不落盘、合集 coverPath 保持空', () async {
     final AnimeDownloadImportOutcome? outcome =
         await buildAnimeDownloadImporter(
-      db,
-      httpClient: MockClient(
-        (http.Request req) async => http.Response(
-          '<html>404</html>',
-          200,
-          headers: const <String, String>{'content-type': 'text/html'},
-        ),
-      ),
-      collectionCoversDirectory: tmp,
-    )(
-      _plan(coverUrl: 'https://img.anili.st/poster.jpg'),
-      <String>[p.join('D:', 'dl', '某番剧 - 01.mkv')],
-    );
+          db,
+          httpClient: MockClient(
+            (http.Request req) async => http.Response(
+              '<html>404</html>',
+              200,
+              headers: const <String, String>{'content-type': 'text/html'},
+            ),
+          ),
+          collectionCoversDirectory: tmp,
+        )(_plan(coverUrl: 'https://img.anili.st/poster.jpg'), <String>[
+          p.join('D:', 'dl', '某番剧 - 01.mkv'),
+        ]);
 
     expect(outcome, isNotNull);
-    expect((await db.getMediaCollectionById(outcome!.collectionId))!.coverPath,
-        isNull);
     expect(
-      File(p.join(tmp.path, videoCoverFileName('${outcome.collectionId}')))
-          .existsSync(),
+      (await db.getMediaCollectionById(outcome!.collectionId))!.coverPath,
+      isNull,
+    );
+    expect(
+      File(
+        p.join(tmp.path, videoCoverFileName('${outcome.collectionId}')),
+      ).existsSync(),
       isFalse,
     );
   });

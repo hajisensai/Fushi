@@ -38,8 +38,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      'folder';
+  }) async => 'folder';
 
   @override
   Future<SyncFileTrio> listSyncFiles(String folderId) async =>
@@ -73,8 +72,10 @@ class _FakeSyncBackend implements SyncBackend {
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     _cachedRoot = rootFolderId;
     if (titleToFolderId != null) _cachedFolders.addAll(titleToFolderId);
   }
@@ -140,8 +141,9 @@ class _FakeSyncBackend implements SyncBackend {
   }) async {}
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      null;
+    String folderId,
+    String fileName,
+  ) async => null;
 
   // ── SyncAssetStore ──────────────────────────────────────────────────
   // run() 的常开阶段（root-spill 扫除、合集清单读-合并-写、删除墓碑发布/消费）
@@ -151,8 +153,8 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<String> ensureNamespace(String name) async =>
       name == kSyncCollectionsNamespace || name == kSyncTombstonesNamespace
-          ? name
-          : throw UnimplementedError();
+      ? name
+      : throw UnimplementedError();
   @override
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
@@ -165,22 +167,30 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       namespaceId == kSyncCollectionsNamespace
-          ? null
-          : throw UnimplementedError();
+      ? null
+      : throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
   @override
   Future<void> putJsonAsset(
-      String namespaceId, String name, Object? json) async {
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async {
     if (namespaceId != kSyncCollectionsNamespace) throw UnimplementedError();
     // 空库合并出空清单时不回写（canonical 相等跳过）；真的写到这里也只是记录。
   }
@@ -190,20 +200,22 @@ class _FakeSyncBackend implements SyncBackend {
 const String _chaptersJson = '[{"characters":1000}]';
 
 SyncFileRef _progressFile(int timestampMs, double fraction) => SyncFileRef(
-      id: 'progress-id',
-      name: progressFileName(timestampMs, fraction),
-    );
+  id: 'progress-id',
+  name: progressFileName(timestampMs, fraction),
+);
 
 Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/book.epub',
-    extractDir: '/fake/extract',
-    chapterCount: 1,
-    chaptersJson: _chaptersJson,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/book.epub',
+      extractDir: '/fake/extract',
+      chapterCount: 1,
+      chaptersJson: _chaptersJson,
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
   return (await db.getAllEpubBooks()).single;
 }
 
@@ -214,12 +226,14 @@ Future<void> _seedPosition(
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: const Value(0),
-    normCharOffset: Value(normOffset),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: const Value(0),
+      normCharOffset: Value(normOffset),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 /// Builds an orchestrator with every phase except the per-book progress sweep
@@ -229,20 +243,19 @@ SyncOrchestrator _orchestrator(
   FushiDatabase db,
   SyncBackend backend,
   Directory work,
-) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: Directory('${work.path}/dicts')..createSync(),
-      audioDatabaseRoot: Directory('${work.path}/audio')..createSync(),
-      tempDir: Directory('${work.path}/tmp')..createSync(),
-      syncStats: false,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: false,
-      syncDictionary: false,
-    );
+) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: Directory('${work.path}/dicts')..createSync(),
+  audioDatabaseRoot: Directory('${work.path}/audio')..createSync(),
+  tempDir: Directory('${work.path}/tmp')..createSync(),
+  syncStats: false,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: false,
+  syncDictionary: false,
+);
 
 void main() {
   const String title = 'Conflict Book';
@@ -256,73 +269,77 @@ void main() {
     if (work.existsSync()) await work.delete(recursive: true);
   });
 
-  test('both sides diverged → conflict collected into report, no import',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
+  test(
+    'both sides diverged → conflict collected into report, no import',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
 
-    final EpubBookRow book = await _seedBook(db, title);
-    // Local at ts 120, remote at ts 100, base 50 → both moved off base → fork.
-    await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
-    await db.setSyncBaseline(assetKey, 'progress', 50);
+      final EpubBookRow book = await _seedBook(db, title);
+      // Local at ts 120, remote at ts 100, base 50 → both moved off base → fork.
+      await _seedPosition(db, book.uid, updatedAt: 120, fraction: 0.6);
+      await db.setSyncBaseline(assetKey, 'progress', 50);
 
-    final _FakeSyncBackend backend = _FakeSyncBackend(
-      remoteProgressFile: _progressFile(100, 0.4),
-      remoteProgress: TtuProgress(
-        dataId: 0,
-        exploredCharCount: 400,
-        progress: 0.4,
-        lastBookmarkModified: 100,
-      ),
-    );
+      final _FakeSyncBackend backend = _FakeSyncBackend(
+        remoteProgressFile: _progressFile(100, 0.4),
+        remoteProgress: TtuProgress(
+          dataId: 0,
+          exploredCharCount: 400,
+          progress: 0.4,
+          lastBookmarkModified: 100,
+        ),
+      );
 
-    final SyncRunReport report = await _orchestrator(db, backend, work).run();
+      final SyncRunReport report = await _orchestrator(db, backend, work).run();
 
-    expect(report.conflicts.length, 1);
-    final SyncConflict conflict = report.conflicts.single;
-    expect(conflict.assetKey, assetKey);
-    expect(conflict.dimension, 'progress');
-    expect(conflict.title, title);
-    expect(conflict.localVersion, 120);
-    expect(conflict.remoteVersion, 100);
+      expect(report.conflicts.length, 1);
+      final SyncConflict conflict = report.conflicts.single;
+      expect(conflict.assetKey, assetKey);
+      expect(conflict.dimension, 'progress');
+      expect(conflict.title, title);
+      expect(conflict.localVersion, 120);
+      expect(conflict.remoteVersion, 100);
 
-    // A conflict is neither a transfer nor an error.
-    expect(report.booksImported, 0);
-    expect(report.errors, isEmpty);
+      // A conflict is neither a transfer nor an error.
+      expect(report.booksImported, 0);
+      expect(report.errors, isEmpty);
 
-    // Nothing was written: no export, base untouched, local position intact.
-    expect(backend.exportedProgress, isNull);
-    expect(await db.getSyncBaseline(assetKey, 'progress'), 50);
-    final ReaderPositionRow pos = (await db.getReaderPosition(book.uid))!;
-    expect(pos.updatedAt, 120);
+      // Nothing was written: no export, base untouched, local position intact.
+      expect(backend.exportedProgress, isNull);
+      expect(await db.getSyncBaseline(assetKey, 'progress'), 50);
+      final ReaderPositionRow pos = (await db.getReaderPosition(book.uid))!;
+      expect(pos.updatedAt, 120);
 
-    // Fingerprint embeds both versions so a later edit on either side reopens.
-    expect(conflict.fingerprint, '$assetKey|progress|120|100');
-  });
+      // Fingerprint embeds both versions so a later edit on either side reopens.
+      expect(conflict.fingerprint, '$assetKey|progress|120|100');
+    },
+  );
 
-  test('non-conflict book (only remote diverged) → no conflict collected',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
+  test(
+    'non-conflict book (only remote diverged) → no conflict collected',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
 
-    final EpubBookRow book = await _seedBook(db, title);
-    // Local == base 50, only remote moved → clean import, not a fork.
-    await _seedPosition(db, book.uid, updatedAt: 50, fraction: 0.3);
-    await db.setSyncBaseline(assetKey, 'progress', 50);
+      final EpubBookRow book = await _seedBook(db, title);
+      // Local == base 50, only remote moved → clean import, not a fork.
+      await _seedPosition(db, book.uid, updatedAt: 50, fraction: 0.3);
+      await db.setSyncBaseline(assetKey, 'progress', 50);
 
-    final _FakeSyncBackend backend = _FakeSyncBackend(
-      remoteProgressFile: _progressFile(100, 0.6),
-      remoteProgress: TtuProgress(
-        dataId: 0,
-        exploredCharCount: 600,
-        progress: 0.6,
-        lastBookmarkModified: 100,
-      ),
-    );
+      final _FakeSyncBackend backend = _FakeSyncBackend(
+        remoteProgressFile: _progressFile(100, 0.6),
+        remoteProgress: TtuProgress(
+          dataId: 0,
+          exploredCharCount: 600,
+          progress: 0.6,
+          lastBookmarkModified: 100,
+        ),
+      );
 
-    final SyncRunReport report = await _orchestrator(db, backend, work).run();
+      final SyncRunReport report = await _orchestrator(db, backend, work).run();
 
-    expect(report.conflicts, isEmpty);
-    expect(report.errors, isEmpty);
-  });
+      expect(report.conflicts, isEmpty);
+      expect(report.errors, isEmpty);
+    },
+  );
 }

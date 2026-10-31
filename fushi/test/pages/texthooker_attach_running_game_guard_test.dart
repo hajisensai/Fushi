@@ -43,33 +43,46 @@ String _methodBody(String src, RegExp signature) {
   return src.substring(bodyStart, i - 1);
 }
 
-final RegExp _toolbarSig =
-    RegExp(r'List<Widget> _buildToolbarActions\([\s\S]*?\)\s*\{');
-final RegExp _attachSig =
-    RegExp(r'Future<void> _attachToRunningGame\(\)\s*async\s*\{');
-final RegExp _pickSig =
-    RegExp(r'Future<void> _pickExternalWindow\(\)\s*async\s*\{');
+final RegExp _toolbarSig = RegExp(
+  r'List<Widget> _buildToolbarActions\([\s\S]*?\)\s*\{',
+);
+final RegExp _attachSig = RegExp(
+  r'Future<void> _attachToRunningGame\(\)\s*async\s*\{',
+);
+final RegExp _pickSig = RegExp(
+  r'Future<void> _pickExternalWindow\(\)\s*async\s*\{',
+);
 
 void main() {
-  final String pageSrc =
-      File('lib/src/pages/implementations/texthooker_page.dart')
-          .readAsStringSync();
+  final String pageSrc = File(
+    'lib/src/pages/implementations/texthooker_page.dart',
+  ).readAsStringSync();
 
   group('附着到运行中的游戏：一级入口存在', () {
     test('工具栏有 attach 按钮且接到 _attachToRunningGame', () {
       final String toolbar = _methodBody(pageSrc, _toolbarSig);
-      expect(toolbar.contains('t.game_attach_and_capture'), isTrue,
-          reason: '附着入口必须是工具栏一级按钮，不能退回「更多」溢出菜单');
-      expect(toolbar.contains('onTap: _attachToRunningGame'), isTrue,
-          reason: 'attach 按钮必须接到附着动作');
-      expect(toolbar.contains('t.game_launch_and_capture'), isTrue,
-          reason: '「启动并捕获」仍须并列存在——两条起点都是主路径');
+      expect(
+        toolbar.contains('t.game_attach_and_capture'),
+        isTrue,
+        reason: '附着入口必须是工具栏一级按钮，不能退回「更多」溢出菜单',
+      );
+      expect(
+        toolbar.contains('onTap: _attachToRunningGame'),
+        isTrue,
+        reason: 'attach 按钮必须接到附着动作',
+      );
+      expect(
+        toolbar.contains('t.game_launch_and_capture'),
+        isTrue,
+        reason: '「启动并捕获」仍须并列存在——两条起点都是主路径',
+      );
     });
 
     test('附着动作有独立方法', () {
       expect(
-        RegExp(r'Future<void> _attachToRunningGame\(\) async \{')
-            .hasMatch(pageSrc),
+        RegExp(
+          r'Future<void> _attachToRunningGame\(\) async \{',
+        ).hasMatch(pageSrc),
         isTrue,
         reason: '附着动作须是独立方法，便于工具栏与后续入口共用',
       );
@@ -79,45 +92,67 @@ void main() {
   group('附着动作不得退回双启动拼装', () {
     test('方法体直接调 startAttachedCapture', () {
       final String body = _methodBody(pageSrc, _attachSig);
-      expect(body.contains('startAttachedCapture('), isTrue,
-          reason: '附着必须一步起会话');
+      expect(
+        body.contains('startAttachedCapture('),
+        isTrue,
+        reason: '附着必须一步起会话',
+      );
     });
 
     test('方法体不得出现 bindWindow / setExternalWindowMode', () {
       final String body = _methodBody(pageSrc, _attachSig);
-      expect(body.contains('setExternalWindowMode'), isFalse,
-          reason: 'bindWindow 与 setExternalWindowMode 各自都会触发 '
-              'startAttachedCapture，拼装会起两次会话并丢掉已装好的 hook');
-      expect(body.contains('bindWindow'), isFalse,
-          reason: '同上：附着路径不经绑定方法，startAttachedCapture 自己会把 '
-              'externalWindowMode / boundWindow / gamePid 一次设对');
+      expect(
+        body.contains('setExternalWindowMode'),
+        isFalse,
+        reason:
+            'bindWindow 与 setExternalWindowMode 各自都会触发 '
+            'startAttachedCapture，拼装会起两次会话并丢掉已装好的 hook',
+      );
+      expect(
+        body.contains('bindWindow'),
+        isFalse,
+        reason:
+            '同上：附着路径不经绑定方法，startAttachedCapture 自己会把 '
+            'externalWindowMode / boundWindow / gamePid 一次设对',
+      );
     });
 
     test('已在捕获同一窗口时不重启会话', () {
       final String body = _methodBody(pageSrc, _attachSig);
       expect(body.contains('state.isActive'), isTrue, reason: '须先判当前是否已在捕获');
-      expect(body.contains('boundWindow?.hwnd == picked.hwnd'), isTrue,
-          reason: '选回正在捕获的同一窗口必须 no-op，否则重启会丢已收台词');
+      expect(
+        body.contains('boundWindow?.hwnd == picked.hwnd'),
+        isTrue,
+        reason: '选回正在捕获的同一窗口必须 no-op，否则重启会丢已收台词',
+      );
     });
   });
 
   group('选择器只负责选，处置交调用方', () {
     test('存在只返回选中窗口的 picker', () {
       expect(
-        RegExp(r'Future<ExternalWindowInfo\?> _showExternalWindowPicker\(\)')
-            .hasMatch(pageSrc),
+        RegExp(
+          r'Future<ExternalWindowInfo\?> _showExternalWindowPicker\(\)',
+        ).hasMatch(pageSrc),
         isTrue,
-        reason: '「附着并捕获」与「绑定窗口」对同一份列表有两种后续处置，'
+        reason:
+            '「附着并捕获」与「绑定窗口」对同一份列表有两种后续处置，'
             '把处置塞进选择器会逼出模式参数',
       );
     });
 
     test('_pickExternalWindow 仍走绑定路径（旧入口行为不变）', () {
       final String body = _methodBody(pageSrc, _pickSig);
-      expect(body.contains('_showExternalWindowPicker()'), isTrue,
-          reason: '旧入口复用同一个选择器');
-      expect(body.contains('_session.bindWindow(picked)'), isTrue,
-          reason: '旧入口语义是「绑定」，不得改成直接起捕获');
+      expect(
+        body.contains('_showExternalWindowPicker()'),
+        isTrue,
+        reason: '旧入口复用同一个选择器',
+      );
+      expect(
+        body.contains('_session.bindWindow(picked)'),
+        isTrue,
+        reason: '旧入口语义是「绑定」，不得改成直接起捕获',
+      );
     });
   });
 }

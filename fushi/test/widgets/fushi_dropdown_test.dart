@@ -8,14 +8,16 @@ import 'widget_test_helpers.dart';
 void main() {
   group('FushiDropdown', () {
     testWidgets('shows initial option label', (tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiDropdown<String>(
-          options: const ['Apple', 'Banana', 'Cherry'],
-          initialOption: 'Banana',
-          generateLabel: (v) => v,
-          onChanged: (_) {},
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiDropdown<String>(
+            options: const ['Apple', 'Banana', 'Cherry'],
+            initialOption: 'Banana',
+            generateLabel: (v) => v,
+            onChanged: (_) {},
+          ),
         ),
-      ));
+      );
 
       expect(find.byType(DropdownMenu<String>), findsOneWidget);
       expect(find.text('Banana'), findsOneWidget);
@@ -23,14 +25,16 @@ void main() {
 
     testWidgets('calls onChanged when new option selected', (tester) async {
       String? selected;
-      await tester.pumpWidget(buildTestApp(
-        FushiDropdown<String>(
-          options: const ['A', 'B'],
-          initialOption: 'A',
-          generateLabel: (v) => v,
-          onChanged: (v) => selected = v,
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiDropdown<String>(
+            options: const ['A', 'B'],
+            initialOption: 'A',
+            generateLabel: (v) => v,
+            onChanged: (v) => selected = v,
+          ),
         ),
-      ));
+      );
 
       await tester.tap(find.byType(DropdownMenu<String>));
       await tester.pumpAndSettle();
@@ -43,31 +47,36 @@ void main() {
 
     testWidgets('disabled dropdown does not call onChanged', (tester) async {
       bool changed = false;
-      await tester.pumpWidget(buildTestApp(
-        FushiDropdown<String>(
-          options: const ['X', 'Y'],
-          initialOption: 'X',
-          generateLabel: (v) => v,
-          onChanged: (_) => changed = true,
-          enabled: false,
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiDropdown<String>(
+            options: const ['X', 'Y'],
+            initialOption: 'X',
+            generateLabel: (v) => v,
+            onChanged: (_) => changed = true,
+            enabled: false,
+          ),
         ),
-      ));
+      );
 
-      final DropdownMenu<String> dropdown =
-          tester.widget(find.byType(DropdownMenu<String>));
+      final DropdownMenu<String> dropdown = tester.widget(
+        find.byType(DropdownMenu<String>),
+      );
       expect(dropdown.enabled, isFalse);
       expect(changed, isFalse);
     });
 
     testWidgets('deduplicates options via toSet', (tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiDropdown<String>(
-          options: const ['A', 'A', 'B'],
-          initialOption: 'A',
-          generateLabel: (v) => v,
-          onChanged: (_) {},
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiDropdown<String>(
+            options: const ['A', 'A', 'B'],
+            initialOption: 'A',
+            generateLabel: (v) => v,
+            onChanged: (_) {},
+          ),
         ),
-      ));
+      );
 
       await tester.tap(find.byType(DropdownMenu<String>));
       await tester.pumpAndSettle();
@@ -76,16 +85,19 @@ void main() {
       expect(find.text('B'), findsOneWidget);
     });
 
-    testWidgets('falls back to first option when initial not in list',
-        (tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiDropdown<String>(
-          options: const ['X', 'Y'],
-          initialOption: 'Z',
-          generateLabel: (v) => v,
-          onChanged: (_) {},
+    testWidgets('falls back to first option when initial not in list', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiDropdown<String>(
+            options: const ['X', 'Y'],
+            initialOption: 'Z',
+            generateLabel: (v) => v,
+            onChanged: (_) {},
+          ),
         ),
-      ));
+      );
 
       expect(find.text('X'), findsOneWidget);
     });
@@ -114,8 +126,9 @@ void main() {
       TargetPlatform.windows,
       TargetPlatform.linux,
     ]) {
-      testWidgets('uses MenuAnchor (not stock DropdownMenu) on $platform',
-          (tester) async {
+      testWidgets('uses MenuAnchor (not stock DropdownMenu) on $platform', (
+        tester,
+      ) async {
         await tester.pumpWidget(dropdownOn(platform));
 
         // The bare MenuAnchor path renders no DropdownMenu at all.
@@ -124,8 +137,9 @@ void main() {
       });
     }
 
-    testWidgets('keeps the stock DropdownMenu on Android (engine key events)',
-        (tester) async {
+    testWidgets('keeps the stock DropdownMenu on Android (engine key events)', (
+      tester,
+    ) async {
       await tester.pumpWidget(dropdownOn(TargetPlatform.android));
 
       // DropdownMenu is itself built on a MenuAnchor internally, so the
@@ -134,8 +148,9 @@ void main() {
       expect(find.byType(DropdownMenu<String>), findsOneWidget);
     });
 
-    testWidgets('MenuAnchor long labels can wrap in trigger and menu',
-        (tester) async {
+    testWidgets('MenuAnchor long labels can wrap in trigger and menu', (
+      tester,
+    ) async {
       const String longLabel = 'Fit keep ratio add black bars';
       await tester.pumpWidget(
         buildTestApp(
@@ -150,9 +165,9 @@ void main() {
               ),
             ),
           ),
-          theme: ThemeData.light(useMaterial3: true).copyWith(
-            platform: TargetPlatform.windows,
-          ),
+          theme: ThemeData.light(
+            useMaterial3: true,
+          ).copyWith(platform: TargetPlatform.windows),
         ),
       );
 
@@ -163,8 +178,9 @@ void main() {
       await tester.tap(find.byType(OutlinedButton));
       await tester.pumpAndSettle();
 
-      final Iterable<Text> longTexts =
-          tester.widgetList<Text>(find.text(longLabel));
+      final Iterable<Text> longTexts = tester.widgetList<Text>(
+        find.text(longLabel),
+      );
       expect(longTexts, hasLength(2));
       for (final Text text in longTexts) {
         expect(text.maxLines, 2);
@@ -172,11 +188,12 @@ void main() {
       }
     });
 
-    testWidgets(
-        'Android stock DropdownMenu caps menuHeight to the screen '
+    testWidgets('Android stock DropdownMenu caps menuHeight to the screen '
         '(no off-screen overflow with many options)', (tester) async {
-      final List<String> many =
-          List<String>.generate(40, (int i) => 'Option $i');
+      final List<String> many = List<String>.generate(
+        40,
+        (int i) => 'Option $i',
+      );
       await tester.pumpWidget(
         buildTestApp(
           FushiDropdown<String>(
@@ -185,13 +202,15 @@ void main() {
             generateLabel: (String v) => v,
             onChanged: (_) {},
           ),
-          theme: ThemeData.light(useMaterial3: true)
-              .copyWith(platform: TargetPlatform.android),
+          theme: ThemeData.light(
+            useMaterial3: true,
+          ).copyWith(platform: TargetPlatform.android),
         ),
       );
 
-      final DropdownMenu<String> dropdown =
-          tester.widget(find.byType(DropdownMenu<String>));
+      final DropdownMenu<String> dropdown = tester.widget(
+        find.byType(DropdownMenu<String>),
+      );
       final double screenHeight =
           tester.view.physicalSize.height / tester.view.devicePixelRatio;
       // A bounded menu means the 40-item list scrolls WITHIN the screen instead
@@ -200,22 +219,25 @@ void main() {
       expect(dropdown.menuHeight, lessThanOrEqualTo(screenHeight));
     });
 
-    testWidgets('MenuAnchor trigger registers with the focus root',
-        (tester) async {
-      await tester.pumpWidget(buildTestApp(
-        FushiFocusRoot(
-          child: FushiDropdown<String>(
-            focusId: const FushiFocusId('fruit-dropdown'),
-            options: const ['A', 'B'],
-            initialOption: 'A',
-            generateLabel: (v) => v,
-            onChanged: (_) {},
+    testWidgets('MenuAnchor trigger registers with the focus root', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiFocusRoot(
+            child: FushiDropdown<String>(
+              focusId: const FushiFocusId('fruit-dropdown'),
+              options: const ['A', 'B'],
+              initialOption: 'A',
+              generateLabel: (v) => v,
+              onChanged: (_) {},
+            ),
           ),
+          theme: ThemeData.light(
+            useMaterial3: true,
+          ).copyWith(platform: TargetPlatform.windows),
         ),
-        theme: ThemeData.light(useMaterial3: true).copyWith(
-          platform: TargetPlatform.windows,
-        ),
-      ));
+      );
       await tester.pump();
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(

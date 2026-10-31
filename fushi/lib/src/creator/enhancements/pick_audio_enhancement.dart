@@ -14,12 +14,12 @@ import 'package:fushi_audio/fushi_audio.dart';
 class PickAudioEnhancement extends AudioEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   PickAudioEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Pick Audio',
-          description: 'Pick an audio file to use with an external picker.',
-          icon: Icons.upload_file_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Pick Audio',
+        description: 'Pick an audio file to use with an external picker.',
+        icon: Icons.upload_file_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

@@ -56,8 +56,8 @@ abstract final class GamepadButtonAssets {
 
   // PlayStation Series（Kenney）：✕○□△ 彩色面键、L1/R1/L2/R2 扳机、Create/Options。
   // 无独立 PS/Guide 键图标 → mode 缺省（回退绘制符号）。
-  static const Map<GamepadButton, String> _playstation =
-      <GamepadButton, String>{
+  static const Map<GamepadButton, String>
+  _playstation = <GamepadButton, String>{
     GamepadButton.a: '$playstationDir/playstation_button_color_cross.png',
     GamepadButton.b: '$playstationDir/playstation_button_color_circle.png',
     GamepadButton.x: '$playstationDir/playstation_button_color_square.png',

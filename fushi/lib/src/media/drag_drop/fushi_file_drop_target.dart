@@ -15,13 +15,13 @@ import 'package:fushi/utils.dart';
 /// 返回 [FutureOr] 而不是 `void`：处理器可能要做真实 IO（书架落点要真读包才分得出
 /// 图片型 zip 与词典包）。声明成 `void` 时 `async` 处理器抛出的异常无人可接——
 /// 见 [FushiFileDropTarget.runDrop]。
-typedef FileDropCallback = FutureOr<void> Function(
-    List<String> paths, Offset globalPosition);
+typedef FileDropCallback =
+    FutureOr<void> Function(List<String> paths, Offset globalPosition);
 
 /// 拖放处理失败时的上报通道。默认弹 error toast；测试注入自己的收集器，用来断言
 /// 「失败**一定**被上报」——只断「没抛出来」是不够的，静默吞掉同样满足那条。
-typedef DropFailureReporter = void Function(
-    Object error, StackTrace stackTrace);
+typedef DropFailureReporter =
+    void Function(Object error, StackTrace stackTrace);
 
 /// drop 落地那一刻的唯一门：[context] 所在的这个 drop target 现在是不是用户真正
 /// 看得着的表面。
@@ -192,10 +192,7 @@ class _FushiFileDropTargetState extends State<FushiFileDropTarget> {
         );
         _setHovering(false);
       },
-      child: _FushiFileDragHoverScope(
-        hovering: _hovering,
-        child: widget.child,
-      ),
+      child: _FushiFileDragHoverScope(hovering: _hovering, child: widget.child),
     );
   }
 }

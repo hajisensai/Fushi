@@ -27,13 +27,17 @@ void main() {
   }
 
   Future<void> pumpHost(
-      WidgetTester tester, GlobalKey<NavigatorState> navKey) async {
-    await tester.pumpWidget(TranslationProvider(
-      child: MaterialApp(
-        navigatorKey: navKey,
-        home: const Scaffold(body: SizedBox.shrink()),
+    WidgetTester tester,
+    GlobalKey<NavigatorState> navKey,
+  ) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
       ),
-    ));
+    );
   }
 
   testWidgets('同源重试取代滞留的未决申请框、重开新框（BUG-987）', (WidgetTester tester) async {
@@ -50,8 +54,11 @@ void main() {
     );
     final Future<bool> first = controller.debugPromptPairApproval(firstReq);
     await tester.pump();
-    expect(find.text('Phone A · 192.168.1.50'), findsOneWidget,
-        reason: '第一次申请框应弹出、处于审批未决');
+    expect(
+      find.text('Phone A · 192.168.1.50'),
+      findsOneWidget,
+      reason: '第一次申请框应弹出、处于审批未决',
+    );
     expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
 
     // 第二次同源重试（同 remoteAddress，展示名不同以便区分是新框）：修复前会命中
@@ -67,10 +74,16 @@ void main() {
     // 旧未决框被取代 → 其审批 future 归为 false（拒绝，client 早已放弃这条）。
     expect(await first, isFalse, reason: '滞留的未决框被同源重试取代 → 判 declined');
     // 新框在，且是新请求的标签（旧标签已消失）。
-    expect(find.text('Phone A (retry) · 192.168.1.50'), findsOneWidget,
-        reason: '同源重试必须弹出新申请框（修复前被静默拒绝、无新框）');
-    expect(find.text('Phone A · 192.168.1.50'), findsNothing,
-        reason: '旧未决框应已收起');
+    expect(
+      find.text('Phone A (retry) · 192.168.1.50'),
+      findsOneWidget,
+      reason: '同源重试必须弹出新申请框（修复前被静默拒绝、无新框）',
+    );
+    expect(
+      find.text('Phone A · 192.168.1.50'),
+      findsNothing,
+      reason: '旧未决框应已收起',
+    );
 
     // 新框可正常允许（而非被挡成拒绝）。
     expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
@@ -79,8 +92,9 @@ void main() {
     expect(await second, isTrue, reason: '同源重试的审批应能正常允许');
   });
 
-  testWidgets('不同来源的新请求仍被防叠弹拒绝、旧未决框保留（BUG-987 未回退防护）',
-      (WidgetTester tester) async {
+  testWidgets('不同来源的新请求仍被防叠弹拒绝、旧未决框保留（BUG-987 未回退防护）', (
+    WidgetTester tester,
+  ) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final FushiSyncServerController controller = buildController(navKey);
     addTearDown(controller.dispose);
@@ -104,10 +118,16 @@ void main() {
     final Future<bool> second = controller.debugPromptPairApproval(reqB);
     await tester.pump();
     expect(await second, isFalse, reason: '不同来源不得取代别人正在审批的框');
-    expect(find.text('Attacker B · 192.168.1.99'), findsNothing,
-        reason: '不同来源不应弹出新框');
-    expect(find.text('Phone A · 192.168.1.50'), findsOneWidget,
-        reason: '原未决框应仍在');
+    expect(
+      find.text('Attacker B · 192.168.1.99'),
+      findsNothing,
+      reason: '不同来源不应弹出新框',
+    );
+    expect(
+      find.text('Phone A · 192.168.1.50'),
+      findsOneWidget,
+      reason: '原未决框应仍在',
+    );
 
     // 原框仍可正常允许。
     await tester.tap(find.text(t.sync_pair_allow_interconnect_only));

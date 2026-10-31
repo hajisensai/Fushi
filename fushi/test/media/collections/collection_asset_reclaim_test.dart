@@ -24,8 +24,9 @@ Future<FushiDatabase> _openDb() async {
 }
 
 Future<Directory> _tempCoversDir() async {
-  final Directory dir =
-      await Directory.systemTemp.createTemp('collection_covers_');
+  final Directory dir = await Directory.systemTemp.createTemp(
+    'collection_covers_',
+  );
   addTearDown(() async {
     if (await dir.exists()) await dir.delete(recursive: true);
   });
@@ -65,8 +66,11 @@ void main() {
 
       expect(removed, 1, reason: '返回值必须透传被删的合集行数，调用方判据零变化');
       expect(await db.getMediaCollectionById(id), isNull);
-      expect(cover.existsSync(), isFalse,
-          reason: '合集自有封面必须随合集一起回收，否则永久泄漏（BUG-1319）');
+      expect(
+        cover.existsSync(),
+        isFalse,
+        reason: '合集自有封面必须随合集一起回收，否则永久泄漏（BUG-1319）',
+      );
     });
 
     test('别的合集的封面文件一根汗毛都不许动', () async {
@@ -84,10 +88,15 @@ void main() {
       );
 
       expect(victimCover.existsSync(), isFalse);
-      expect(bystanderCover.existsSync(), isTrue,
-          reason: '同目录里其余合集的封面必须原样保留——这是删文件代码的第一红线');
-      expect((await db.getMediaCollectionById(bystander))!.coverPath,
-          bystanderCover.path);
+      expect(
+        bystanderCover.existsSync(),
+        isTrue,
+        reason: '同目录里其余合集的封面必须原样保留——这是删文件代码的第一红线',
+      );
+      expect(
+        (await db.getMediaCollectionById(bystander))!.coverPath,
+        bystanderCover.path,
+      );
     });
 
     test('两个合集共用同一张封面时，另一个还引用着就保留', () async {
@@ -110,8 +119,9 @@ void main() {
     test('落在合集封面目录之外的文件绝不删（用户外部图片）', () async {
       final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
-      final Directory outside =
-          await Directory.systemTemp.createTemp('user_pictures_');
+      final Directory outside = await Directory.systemTemp.createTemp(
+        'user_pictures_',
+      );
       addTearDown(() async {
         if (await outside.exists()) await outside.delete(recursive: true);
       });
@@ -199,8 +209,10 @@ void main() {
           '../packages/fushi_engine/lib/media/collections/collection_asset_reclaim.dart';
       // 前置负向后顾定标识符边界：deleteMediaCollectionWithAssets(（新入口）与
       // deleteMediaCollectionRaw(（同步引擎另行处理）都不该被这条判据命中。
-      final RegExp bare =
-          RegExp('(?<![A-Za-z0-9_\$])deleteMediaCollection' r'\s*\(');
+      final RegExp bare = RegExp(
+        '(?<![A-Za-z0-9_\$])deleteMediaCollection'
+        r'\s*\(',
+      );
       final List<String> offenders = <String>[];
       int scanned = 0;
       for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
@@ -225,35 +237,57 @@ void main() {
           offenders.add('$rel:${i + 1}: ${lines[i].trim()}');
         }
       }
-      expectScanScale(scanned,
-          what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
-      expect(offenders, isEmpty,
-          reason: '这些调用点删了 DB 行却不回收合集自有封面 = 确定性磁盘泄漏'
-              '（BUG-1319）。改调 deleteMediaCollectionWithAssets；'
-              '事务内删行的调用方用 reclaimDeletedCollectionAssets 在事务外收尾。');
+      expectScanScale(
+        scanned,
+        what: 'lib/ 下的 .dart',
+        atLeast: 750,
+        measured: 939,
+      );
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '这些调用点删了 DB 行却不回收合集自有封面 = 确定性磁盘泄漏'
+            '（BUG-1319）。改调 deleteMediaCollectionWithAssets；'
+            '事务内删行的调用方用 reclaimDeletedCollectionAssets 在事务外收尾。',
+      );
     });
 
     test('同步删除传播必须在事务外回收被解散合集的资产', () {
-      final String src =
-          File('../packages/fushi_engine/lib/sync/collection_sync_engine.dart').readAsStringSync();
+      final String src = File(
+        '../packages/fushi_engine/lib/sync/collection_sync_engine.dart',
+      ).readAsStringSync();
       final String body = methodBody(
         src,
         'Future<int> applyCollectionLocalChanges(',
       );
-      expect(containsCodeLine(body, 'dissolved.add(row)'), isTrue,
-          reason: '删行前必须入列行快照——行一删 coverPath 就推导不出来了');
-      expect(containsCodeLine(body, 'collectionOwnedImagePaths(db, row.id)'),
-          isTrue,
-          reason: 'v68 附加图行随删行 cascade 消失，路径同样必须删前快照');
-      expect(containsCodeLine(body, 'reclaimDeletedCollectionAssets('), isTrue,
-          reason: '同步删除传播同样会解散合集，不回收就同样泄漏');
-      expect(containsCodeLine(body, 'ownedImagePaths: dissolvedImagePaths'),
-          isTrue,
-          reason: 'v68 附加图快照必须真的传给回收入口，光快照不回收等于没做');
+      expect(
+        containsCodeLine(body, 'dissolved.add(row)'),
+        isTrue,
+        reason: '删行前必须入列行快照——行一删 coverPath 就推导不出来了',
+      );
+      expect(
+        containsCodeLine(body, 'collectionOwnedImagePaths(db, row.id)'),
+        isTrue,
+        reason: 'v68 附加图行随删行 cascade 消失，路径同样必须删前快照',
+      );
+      expect(
+        containsCodeLine(body, 'reclaimDeletedCollectionAssets('),
+        isTrue,
+        reason: '同步删除传播同样会解散合集，不回收就同样泄漏',
+      );
+      expect(
+        containsCodeLine(body, 'ownedImagePaths: dissolvedImagePaths'),
+        isTrue,
+        reason: 'v68 附加图快照必须真的传给回收入口，光快照不回收等于没做',
+      );
       final int txEnd = body.indexOf('});');
       final int reclaimAt = body.indexOf('reclaimDeletedCollectionAssets(');
-      expect(txEnd >= 0 && reclaimAt > txEnd, isTrue,
-          reason: '文件 IO 必须落在 db.transaction 之后，不能在事务里做');
+      expect(
+        txEnd >= 0 && reclaimAt > txEnd,
+        isTrue,
+        reason: '文件 IO 必须落在 db.transaction 之后，不能在事务里做',
+      );
     });
   });
 
@@ -270,8 +304,11 @@ void main() {
       final MediaCollectionRow? row = await db.getMediaCollectionById(id);
       expect(row, isNotNull, reason: '恢复默认封面绝不能把合集本身删掉');
       expect(row!.coverPath, isNull);
-      expect(cover.existsSync(), isFalse,
-          reason: '清掉的自有封面不回收就是泄漏——gcOrphanCovers 扫不到这个子目录');
+      expect(
+        cover.existsSync(),
+        isFalse,
+        reason: '清掉的自有封面不回收就是泄漏——gcOrphanCovers 扫不到这个子目录',
+      );
     });
 
     test('别的合集仍引用同一张图时保留文件，只清本合集的 coverPath', () async {
@@ -292,8 +329,9 @@ void main() {
     test('目录外的用户图片只解引用，绝不删除', () async {
       final FushiDatabase db = await _openDb();
       final Directory covers = await _tempCoversDir();
-      final Directory outside =
-          await Directory.systemTemp.createTemp('outside_cover_');
+      final Directory outside = await Directory.systemTemp.createTemp(
+        'outside_cover_',
+      );
       addTearDown(() async {
         if (await outside.exists()) await outside.delete(recursive: true);
       });
@@ -305,8 +343,11 @@ void main() {
       await clearCollectionOwnCover(db, id, collectionCoversDirectory: covers);
 
       expect((await db.getMediaCollectionById(id))!.coverPath, isNull);
-      expect(userImage.existsSync(), isTrue,
-          reason: '合集封面目录之外的文件是用户自己的，任何情况下都不许删');
+      expect(
+        userImage.existsSync(),
+        isTrue,
+        reason: '合集封面目录之外的文件是用户自己的，任何情况下都不许删',
+      );
     });
 
     test('本来就没有自有封面时是彻底的空操作', () async {

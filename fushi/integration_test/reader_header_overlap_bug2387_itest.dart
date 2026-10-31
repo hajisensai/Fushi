@@ -66,208 +66,245 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('BUG-2387 契约 2026-09-13：悬浮顶栏隐藏满屏、唤出恰好覆盖正文顶部',
-      timeout: const Timeout(Duration(minutes: 6)),
-      (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = [];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint('[HDROVL] FlutterError: ${details.exceptionAsString()}');
-    };
+  testWidgets(
+    'BUG-2387 契约 2026-09-13：悬浮顶栏隐藏满屏、唤出恰好覆盖正文顶部',
+    timeout: const Timeout(Duration(minutes: 6)),
+    (WidgetTester tester) async {
+      final List<FlutterErrorDetails> errors = [];
+      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        errors.add(details);
+        debugPrint('[HDROVL] FlutterError: ${details.exceptionAsString()}');
+      };
 
-    try {
-      await launchFushiTestApp();
-      expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
-      await tester.pump(const Duration(seconds: 2));
+      try {
+        await launchFushiTestApp();
+        expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
+        await tester.pump(const Duration(seconds: 2));
 
-      // 默认配置就是本 bug 的触发条件：底栏/顶栏悬浮 + marginTop 默认 0vh。
-      // 显式断言默认没被改，否则读数说明不了问题。
-      expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isTrue,
-          reason: '本探针要的是悬浮态（默认）。tap_empty_hide_chrome 默认必须为 true。');
+        // 默认配置就是本 bug 的触发条件：底栏/顶栏悬浮 + marginTop 默认 0vh。
+        // 显式断言默认没被改，否则读数说明不了问题。
+        expect(
+          ReaderFushiSource.instance.tapEmptyToHideChrome,
+          isTrue,
+          reason: '本探针要的是悬浮态（默认）。tap_empty_hide_chrome 默认必须为 true。',
+        );
 
-      await enableFocusNavigation(tester);
-      final FocusDriver driver = FocusDriver(tester);
+        await enableFocusNavigation(tester);
+        final FocusDriver driver = FocusDriver(tester);
 
-      await _openBooksTab(tester, driver);
-      final String bookKey = await _seedTestBook(tester);
+        await _openBooksTab(tester, driver);
+        final String bookKey = await _seedTestBook(tester);
 
-      // 不经书架卡片：_activateBook 直接驱动 AppModel.openMedia（与卡片 onTap 同一
-      // 调用），书架列表是否已刷出与本探针要量的几何无关。
-      await _activateBook(tester, bookKey);
-      await tester.pump(const Duration(seconds: 3));
+        // 不经书架卡片：_activateBook 直接驱动 AppModel.openMedia（与卡片 onTap 同一
+        // 调用），书架列表是否已刷出与本探针要量的几何无关。
+        await _activateBook(tester, bookKey);
+        await tester.pump(const Duration(seconds: 3));
 
-      for (int i = 0;
+        for (
+          int i = 0;
           i < 40 && find.byType(ReaderFushiPage).evaluate().isEmpty;
-          i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
-      expect(find.byType(ReaderFushiPage), findsOneWidget,
-          reason: 'ReaderFushiPage must mount after openMedia');
-
-      const Key webViewKey = ValueKey<String>('fushi_webview');
-      bool webViewPresent = false;
-      for (int i = 0; i < 180; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byKey(webViewKey).evaluate().isNotEmpty) {
-          webViewPresent = true;
-          break;
-        }
-        if (i % 20 == 0) debugPrint('[HDROVL] waiting for WebView i=$i');
-      }
-      expect(webViewPresent, isTrue, reason: 'WebView present');
-
-      const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
-      bool contentReady = false;
-      for (int i = 0; i < 120; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
-          contentReady = true;
-          break;
-        }
-      }
-      expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
-
-      final eval = ReaderFushiPage.debugEvaluateJavascript;
-      expect(eval, isNotNull, reason: 'Reader debug JS hook must be set');
-
-      Future<double> readNumber(String expr) async {
-        final Object? raw = await eval!('(function(){return $expr;})()');
-        return double.tryParse(raw.toString()) ?? double.nan;
-      }
-
-      Future<Map<String, dynamic>> readFirstTextLine() async {
-        final Object? raw = await eval!(jsFirstTextLineProbe);
-        final dynamic decoded = jsonDecode(raw.toString());
-        return decoded == null
-            ? <String, dynamic>{}
-            : (decoded as Map<String, dynamic>);
-      }
-
-      // 唤出悬浮 chrome：走真 JS 桥的 onTapEmpty（与用户点空白同一入口）。
-      await eval!(
-        'setTimeout(function(){window.flutter_inappwebview.callHandler('
-        "'onTapEmpty');},0)",
-      );
-
-      const Key headerKey = ValueKey<String>('fushi_desktop_header');
-      bool headerVisible = false;
-      for (int i = 0; i < 40; i++) {
-        await tester.pump(const Duration(milliseconds: 200));
-        if (find.byKey(headerKey).evaluate().isNotEmpty) {
-          headerVisible = true;
-          break;
-        }
-      }
-      expect(headerVisible, isTrue,
-          reason: 'onTapEmpty 必须唤出悬浮顶部工具栏（fushi_desktop_header）');
-
-      // ── 测量 ─────────────────────────────────────────────────────────
-      // 一次采样：读 Flutter 渲染树几何 + WebView DOM 几何，换算到同一坐标系。
-      // DOM→逻辑坐标比实测（webView 高 / clientHeight），不假设 1:1。
-      // 悬浮 chrome 3s 自动收起，每次采样前重新唤出并等它入树。
-      Future<bool> revealHeader() async {
-        for (int attempt = 0; attempt < 3; attempt++) {
-          await eval(
-            'setTimeout(function(){window.flutter_inappwebview.callHandler('
-            "'onTapEmpty');},0)",
-          );
-          for (int i = 0; i < 10; i++) {
-            await tester.pump(const Duration(milliseconds: 100));
-            if (find.byKey(headerKey).evaluate().isNotEmpty) return true;
-          }
-        }
-        return false;
-      }
-
-      Future<_Sample?> sample(String tag) async {
-        if (!await revealHeader()) {
-          debugPrint('[HDROVL] $tag: 工具栏唤不出，跳过本次采样');
-          return null;
-        }
-        final Rect headerRect = tester.getRect(find.byKey(headerKey));
-        final Rect webViewRect = tester.getRect(find.byKey(webViewKey));
-        final EdgeInsets viewPadding =
-            MediaQuery.viewPaddingOf(tester.element(find.byKey(webViewKey)));
-        final double chromeTopInset = await readNumber(
-          r'parseFloat(getComputedStyle(document.documentElement)'
-          r".getPropertyValue('--chrome-top-inset'))||0",
-        );
-        final double clientHeight =
-            await readNumber('document.documentElement.clientHeight');
-        final Map<String, dynamic> firstLine = await readFirstTextLine();
-        final double firstTopCss = (firstLine['top'] as num?)?.toDouble() ?? -1;
-        final double scale =
-            clientHeight > 0 ? webViewRect.height / clientHeight : double.nan;
-        final double firstTopLogical = webViewRect.top + firstTopCss * scale;
-        final _Sample s = _Sample(
-          tag: tag,
-          windowSize: tester.view.physicalSize / tester.view.devicePixelRatio,
-          viewPaddingTop: viewPadding.top,
-          headerRect: headerRect,
-          webViewRect: webViewRect,
-          chromeTopInset: chromeTopInset,
-          firstTopCss: firstTopCss,
-          firstTopLogical: firstTopLogical,
-          firstText: '${firstLine['text']}',
-        );
-        debugPrint('[HDROVL] $s');
-        return s;
-      }
-
-      final _Sample? baseline = await sample('BASELINE');
-      expect(baseline, isNotNull, reason: '基线采样必须成功（工具栏可唤出、正文可定位）');
-      expect(baseline!.firstTopCss, greaterThanOrEqualTo(0),
-          reason: '必须在 WebView 里定位到正文首个可见文本元素');
-
-      // 再采几次确认读数稳定（悬浮 chrome 3s 自动收起 → 每次采样前重新唤出，
-      // 顺带验证「显隐不改预留高」：多次采样的 header/inset 必须一致）。
-      const int kPolls = 3;
-      _Sample last = baseline;
-      for (int i = 0; i < kPolls; i++) {
-        for (int f = 0; f < 12; f++) {
+          i++
+        ) {
           await tester.pump(const Duration(milliseconds: 250));
         }
-        final _Sample? s = await sample('POLL#$i');
-        if (s != null) {
-          expect(s.chromeTopInset, closeTo(baseline.chromeTopInset, 1.0),
-              reason: '悬浮 chrome 的显隐不得改变 --chrome-top-inset（不重锚设计律）。'
-                  'baseline=${baseline.chromeTopInset} now=${s.chromeTopInset}');
-          last = s;
+        expect(
+          find.byType(ReaderFushiPage),
+          findsOneWidget,
+          reason: 'ReaderFushiPage must mount after openMedia',
+        );
+
+        const Key webViewKey = ValueKey<String>('fushi_webview');
+        bool webViewPresent = false;
+        for (int i = 0; i < 180; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          if (find.byKey(webViewKey).evaluate().isNotEmpty) {
+            webViewPresent = true;
+            break;
+          }
+          if (i % 20 == 0) debugPrint('[HDROVL] waiting for WebView i=$i');
         }
+        expect(webViewPresent, isTrue, reason: 'WebView present');
+
+        const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
+        bool contentReady = false;
+        for (int i = 0; i < 120; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
+            contentReady = true;
+            break;
+          }
+        }
+        expect(contentReady, isTrue, reason: 'Reader content ready within 60s');
+
+        final eval = ReaderFushiPage.debugEvaluateJavascript;
+        expect(eval, isNotNull, reason: 'Reader debug JS hook must be set');
+
+        Future<double> readNumber(String expr) async {
+          final Object? raw = await eval!('(function(){return $expr;})()');
+          return double.tryParse(raw.toString()) ?? double.nan;
+        }
+
+        Future<Map<String, dynamic>> readFirstTextLine() async {
+          final Object? raw = await eval!(jsFirstTextLineProbe);
+          final dynamic decoded = jsonDecode(raw.toString());
+          return decoded == null
+              ? <String, dynamic>{}
+              : (decoded as Map<String, dynamic>);
+        }
+
+        // 唤出悬浮 chrome：走真 JS 桥的 onTapEmpty（与用户点空白同一入口）。
+        await eval!(
+          'setTimeout(function(){window.flutter_inappwebview.callHandler('
+          "'onTapEmpty');},0)",
+        );
+
+        const Key headerKey = ValueKey<String>('fushi_desktop_header');
+        bool headerVisible = false;
+        for (int i = 0; i < 40; i++) {
+          await tester.pump(const Duration(milliseconds: 200));
+          if (find.byKey(headerKey).evaluate().isNotEmpty) {
+            headerVisible = true;
+            break;
+          }
+        }
+        expect(
+          headerVisible,
+          isTrue,
+          reason: 'onTapEmpty 必须唤出悬浮顶部工具栏（fushi_desktop_header）',
+        );
+
+        // ── 测量 ─────────────────────────────────────────────────────────
+        // 一次采样：读 Flutter 渲染树几何 + WebView DOM 几何，换算到同一坐标系。
+        // DOM→逻辑坐标比实测（webView 高 / clientHeight），不假设 1:1。
+        // 悬浮 chrome 3s 自动收起，每次采样前重新唤出并等它入树。
+        Future<bool> revealHeader() async {
+          for (int attempt = 0; attempt < 3; attempt++) {
+            await eval(
+              'setTimeout(function(){window.flutter_inappwebview.callHandler('
+              "'onTapEmpty');},0)",
+            );
+            for (int i = 0; i < 10; i++) {
+              await tester.pump(const Duration(milliseconds: 100));
+              if (find.byKey(headerKey).evaluate().isNotEmpty) return true;
+            }
+          }
+          return false;
+        }
+
+        Future<_Sample?> sample(String tag) async {
+          if (!await revealHeader()) {
+            debugPrint('[HDROVL] $tag: 工具栏唤不出，跳过本次采样');
+            return null;
+          }
+          final Rect headerRect = tester.getRect(find.byKey(headerKey));
+          final Rect webViewRect = tester.getRect(find.byKey(webViewKey));
+          final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(
+            tester.element(find.byKey(webViewKey)),
+          );
+          final double chromeTopInset = await readNumber(
+            r'parseFloat(getComputedStyle(document.documentElement)'
+            r".getPropertyValue('--chrome-top-inset'))||0",
+          );
+          final double clientHeight = await readNumber(
+            'document.documentElement.clientHeight',
+          );
+          final Map<String, dynamic> firstLine = await readFirstTextLine();
+          final double firstTopCss =
+              (firstLine['top'] as num?)?.toDouble() ?? -1;
+          final double scale = clientHeight > 0
+              ? webViewRect.height / clientHeight
+              : double.nan;
+          final double firstTopLogical = webViewRect.top + firstTopCss * scale;
+          final _Sample s = _Sample(
+            tag: tag,
+            windowSize: tester.view.physicalSize / tester.view.devicePixelRatio,
+            viewPaddingTop: viewPadding.top,
+            headerRect: headerRect,
+            webViewRect: webViewRect,
+            chromeTopInset: chromeTopInset,
+            firstTopCss: firstTopCss,
+            firstTopLogical: firstTopLogical,
+            firstText: '${firstLine['text']}',
+          );
+          debugPrint('[HDROVL] $s');
+          return s;
+        }
+
+        final _Sample? baseline = await sample('BASELINE');
+        expect(baseline, isNotNull, reason: '基线采样必须成功（工具栏可唤出、正文可定位）');
+        expect(
+          baseline!.firstTopCss,
+          greaterThanOrEqualTo(0),
+          reason: '必须在 WebView 里定位到正文首个可见文本元素',
+        );
+
+        // 再采几次确认读数稳定（悬浮 chrome 3s 自动收起 → 每次采样前重新唤出，
+        // 顺带验证「显隐不改预留高」：多次采样的 header/inset 必须一致）。
+        const int kPolls = 3;
+        _Sample last = baseline;
+        for (int i = 0; i < kPolls; i++) {
+          for (int f = 0; f < 12; f++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          final _Sample? s = await sample('POLL#$i');
+          if (s != null) {
+            expect(
+              s.chromeTopInset,
+              closeTo(baseline.chromeTopInset, 1.0),
+              reason:
+                  '悬浮 chrome 的显隐不得改变 --chrome-top-inset（不重锚设计律）。'
+                  'baseline=${baseline.chromeTopInset} now=${s.chromeTopInset}',
+            );
+            last = s;
+          }
+        }
+
+        await takeScreenshot(binding, 'header_overlap_probe');
+
+        debugPrint('[HDROVL] === FINAL ===');
+        debugPrint('[HDROVL] $last');
+
+        // 不变式 1（悬浮态正文满屏）：正文顶部让位只有系统顶 inset，没有顶栏那 48px。
+        expect(
+          last.chromeTopInset,
+          closeTo(last.viewPaddingTop, 1.0),
+          reason:
+              '悬浮态 --chrome-top-inset 必须等于系统顶 inset（隐藏满屏）；'
+              '多出来的就是 BUG-2387 时代那条常驻空带。$last',
+        );
+
+        // 不变式 2（唤出即覆盖）：顶栏上沿之上不露正文，下沿正好盖住正文顶部一条
+        // 顶栏高——覆盖是悬浮态的语义，不是重叠 bug。
+        expect(
+          last.aboveBar,
+          lessThanOrEqualTo(1.0),
+          reason:
+              '工具栏上沿(${last.headerRect.top}) 之上露出了正文'
+              '（首行上沿 ${last.firstTopLogical}），露出 ${last.aboveBar} 逻辑 px。$last',
+        );
+        expect(
+          last.overlap,
+          closeTo(kReaderDesktopHeaderHeight, 2.0),
+          reason:
+              '悬浮顶栏唤出时应恰好盖住正文顶部 $kReaderDesktopHeaderHeight px'
+              '（实测重叠 ${last.overlap}）。$last',
+        );
+
+        final NavigatorState nav = Navigator.of(
+          tester.element(find.byType(Scaffold).first),
+        );
+        nav.pop();
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pumpAndSettle();
+
+        assertStrictErrors(errors);
+        debugPrint('[HDROVL] === BUG-2387 HEADER OVERLAP TEST PASSED ===');
+      } finally {
+        FlutterError.onError = oldHandler;
       }
-
-      await takeScreenshot(binding, 'header_overlap_probe');
-
-      debugPrint('[HDROVL] === FINAL ===');
-      debugPrint('[HDROVL] $last');
-
-      // 不变式 1（悬浮态正文满屏）：正文顶部让位只有系统顶 inset，没有顶栏那 48px。
-      expect(last.chromeTopInset, closeTo(last.viewPaddingTop, 1.0),
-          reason: '悬浮态 --chrome-top-inset 必须等于系统顶 inset（隐藏满屏）；'
-              '多出来的就是 BUG-2387 时代那条常驻空带。$last');
-
-      // 不变式 2（唤出即覆盖）：顶栏上沿之上不露正文，下沿正好盖住正文顶部一条
-      // 顶栏高——覆盖是悬浮态的语义，不是重叠 bug。
-      expect(last.aboveBar, lessThanOrEqualTo(1.0),
-          reason: '工具栏上沿(${last.headerRect.top}) 之上露出了正文'
-              '（首行上沿 ${last.firstTopLogical}），露出 ${last.aboveBar} 逻辑 px。$last');
-      expect(last.overlap, closeTo(kReaderDesktopHeaderHeight, 2.0),
-          reason: '悬浮顶栏唤出时应恰好盖住正文顶部 $kReaderDesktopHeaderHeight px'
-              '（实测重叠 ${last.overlap}）。$last');
-
-      final NavigatorState nav =
-          Navigator.of(tester.element(find.byType(Scaffold).first));
-      nav.pop();
-      await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
-
-      assertStrictErrors(errors);
-      debugPrint('[HDROVL] === BUG-2387 HEADER OVERLAP TEST PASSED ===');
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  });
+    },
+  );
 }
 
 /// 一次几何采样。所有量都换算到 Flutter 逻辑坐标系，便于直接相减。
@@ -304,7 +341,8 @@ class _Sample {
   double get insetMismatch => viewPaddingTop - chromeTopInset;
 
   @override
-  String toString() => '$tag win=${windowSize.width.toStringAsFixed(1)}x'
+  String toString() =>
+      '$tag win=${windowSize.width.toStringAsFixed(1)}x'
       '${windowSize.height.toStringAsFixed(1)} '
       'vpTop=${viewPaddingTop.toStringAsFixed(2)} '
       'header=[${headerRect.top.toStringAsFixed(2)},'
@@ -367,8 +405,11 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before importing a book');
+  expect(
+    appModel.isInitialised,
+    isTrue,
+    reason: 'AppModel must be initialised before importing a book',
+  );
 
   final Uint8List bytes = EpubGenerator().generate();
   final String bookKey = await EpubImporter.import(
@@ -384,25 +425,33 @@ Future<String> _seedTestBook(WidgetTester tester) async {
 }
 
 Future<void> _activateBook(WidgetTester tester, String bookKey) async {
-  final BuildContext appContext =
-      tester.element(find.byType(MaterialApp).first);
+  final BuildContext appContext = tester.element(
+    find.byType(MaterialApp).first,
+  );
   final ProviderContainer container = ProviderScope.containerOf(appContext);
   final AppModel appModel = container.read(appProvider);
 
-  final ConsumerStatefulElement appElement = tester
-      .element(find.byType(app.FushiReaderApp)) as ConsumerStatefulElement;
+  final ConsumerStatefulElement appElement =
+      tester.element(find.byType(app.FushiReaderApp))
+          as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
 
-  final MediaItem? item =
-      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
-  expect(item, isNotNull,
-      reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)');
+  final MediaItem? item = await ReaderFushiSource.instance.mediaItemForBookKey(
+    bookKey,
+  );
+  expect(
+    item,
+    isNotNull,
+    reason: 'Seeded book must resolve to a MediaItem (key=$bookKey)',
+  );
 
-  unawaited(appModel.openMedia(
-    ref: ref,
-    mediaSource: ReaderFushiSource.instance,
-    item: item!,
-  ));
+  unawaited(
+    appModel.openMedia(
+      ref: ref,
+      mediaSource: ReaderFushiSource.instance,
+      item: item!,
+    ),
+  );
   for (int i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 250));
   }

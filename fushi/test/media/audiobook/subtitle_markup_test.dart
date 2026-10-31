@@ -26,8 +26,9 @@ void main() {
     });
 
     test('bold+underline combined, color BGR->ARGB, font size', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\b1\u1\c&H0000FF&\fs30}ab');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\b1\u1\c&H0000FF&\fs30}ab',
+      );
       final SubtitleSpan s = m.spans.single;
       expect(m.plainText, 'ab');
       expect(s.bold, isTrue);
@@ -43,16 +44,19 @@ void main() {
     });
 
     test(r'\pos normalized by playRes', () {
-      final SubtitleMarkup m = parseSubtitleMarkup(r'{\pos(960,540)}hi',
-          playResX: 1920, playResY: 1080);
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\pos(960,540)}hi',
+        playResX: 1920,
+        playResY: 1080,
+      );
       expect(m.posFraction!.xFraction, closeTo(0.5, 1e-9));
       expect(m.posFraction!.yFraction, closeTo(0.5, 1e-9));
     });
 
-    test('karaoke syllables become spans; drawing tag drops with no style',
-        () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\k50}あ{\t(0,500,\fscx120)}い{\p1}');
+    test('karaoke syllables become spans; drawing tag drops with no style', () {
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\k50}あ{\t(0,500,\fscx120)}い{\p1}',
+      );
       expect(m.plainText, 'あい');
       // \k50 起卡拉 OK 建模：两个 grapheme 都在音节 span 里（\t 块不清 karaoke 态）。
       expect(m.spans, isNotEmpty);
@@ -66,22 +70,25 @@ void main() {
       // Real OP karaoke line: \p1 enters drawing mode; the vector command
       // body (m/l/b coords) lives OUTSIDE the {...} block and must not render.
       final SubtitleMarkup m = parseSubtitleMarkup(
-          r'{\an7\pos(461.719,678.906)\p1\c&H7056F8&}m 0 0 l 8.475 0 l 0 16.0596{\p0}');
+        r'{\an7\pos(461.719,678.906)\p1\c&H7056F8&}m 0 0 l 8.475 0 l 0 16.0596{\p0}',
+      );
       expect(m.plainText, isEmpty);
       expect(m.plainText.contains('m 0 0 l'), isFalse);
       expect(m.spans, isEmpty);
     });
 
     test(r'\p0 ends drawing mode; later real text still renders', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\p1}m 0 0 l 8.475 0{\p0}本当のセリフ');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\p1}m 0 0 l 8.475 0{\p0}本当のセリフ',
+      );
       expect(m.plainText, '本当のセリフ');
       expect(m.plainText.contains('m 0 0'), isFalse);
     });
 
     test(r'drawing mode persists to end of cue when no \p0', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\p1}m 0 0 l 100 0 b 1 2 3 4 5 6');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\p1}m 0 0 l 100 0 b 1 2 3 4 5 6',
+      );
       expect(m.plainText, isEmpty);
     });
 
@@ -125,8 +132,9 @@ void main() {
     });
 
     test(r'combined \fn \3c \bord in one block', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\fnArial\3c&H0000FF&\bord3}ab');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\fnArial\3c&H0000FF&\bord3}ab',
+      );
       final SubtitleSpan s = m.spans.single;
       expect(m.plainText, 'ab');
       expect(s.fontName, 'Arial');
@@ -147,12 +155,14 @@ void main() {
       // Before the fix, \r was ignored and the leading red primary colour bled
       // past the reset onto the trailing text -> wrong colour, defeating
       // "respect subtitle's own style".
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\c&H0000FF&}akai{\r}shiro');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\c&H0000FF&}akai{\r}shiro',
+      );
       expect(m.plainText, 'akaishiro');
       // Only the pre-reset run carries the inline red span.
-      final Iterable<SubtitleSpan> coloured =
-          m.spans.where((SubtitleSpan s) => s.colorArgb != null);
+      final Iterable<SubtitleSpan> coloured = m.spans.where(
+        (SubtitleSpan s) => s.colorArgb != null,
+      );
       expect(coloured, hasLength(1));
       expect(coloured.single.colorArgb, 0xFFFF0000); // red, graphemes 0..4
       expect(coloured.single.startGrapheme, 0);
@@ -160,19 +170,24 @@ void main() {
       // The reset run (graphemes 4..9 = "shiro") has no inline colour override.
       for (final SubtitleSpan s in m.spans) {
         if (s.startGrapheme >= 4) {
-          expect(s.colorArgb, isNull,
-              reason: r'\r must clear the earlier inline primary colour');
+          expect(
+            s.colorArgb,
+            isNull,
+            reason: r'\r must clear the earlier inline primary colour',
+          );
         }
       }
     });
 
     test(r'\r clears outline / bold / font overrides too', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\b1\3c&H0000FF&\fnArial\bord5}A{\r}B');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\b1\3c&H0000FF&\fnArial\bord5}A{\r}B',
+      );
       expect(m.plainText, 'AB');
       final SubtitleSpan? resetSpan = m.spans.cast<SubtitleSpan?>().firstWhere(
-          (SubtitleSpan? s) => s != null && s.startGrapheme >= 1,
-          orElse: () => null);
+        (SubtitleSpan? s) => s != null && s.startGrapheme >= 1,
+        orElse: () => null,
+      );
       // Either no span is emitted for the reset run (all fields cleared ->
       // hasStyle false), or a span exists but carries none of the overrides.
       if (resetSpan != null) {
@@ -184,8 +199,9 @@ void main() {
     });
 
     test(r'\r<StyleName> is treated as a reset (baseline approximation)', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\c&H0000FF&}X{\rDefault}Y');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\c&H0000FF&}X{\rDefault}Y',
+      );
       expect(m.plainText, 'XY');
       for (final SubtitleSpan s in m.spans) {
         if (s.startGrapheme >= 1) {
@@ -228,8 +244,9 @@ void main() {
     });
 
     test(r'\blur combines with inline colour on same span', () {
-      final SubtitleSpan s =
-          parseSubtitleMarkup(r'{\blur5\c&H0000FF&}あ').spans.single;
+      final SubtitleSpan s = parseSubtitleMarkup(
+        r'{\blur5\c&H0000FF&}あ',
+      ).spans.single;
       expect(s.blur, 5);
       expect(s.colorArgb, 0xFFFF0000); // &H0000FF& -> red
     });
@@ -260,8 +277,9 @@ void main() {
     });
 
     test(r'\fad coexists with \an and \blur (real ED line shape)', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\fad(160,160)\an7\blur4}瞬き二つ');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\fad(160,160)\an7\blur4}瞬き二つ',
+      );
       expect(m.plainText, '瞬き二つ');
       expect(m.fade!.fadeInMs, 160);
       expect(m.anchor?.vertical, SubtitleVAlign.top);
@@ -270,8 +288,9 @@ void main() {
     });
 
     test(r'\fade(a1,a2,a3,t1,t2,t3,t4) parsed as full envelope', () {
-      final SubtitleMarkup m =
-          parseSubtitleMarkup(r'{\fade(255,0,255,0,300,2700,3000)}x');
+      final SubtitleMarkup m = parseSubtitleMarkup(
+        r'{\fade(255,0,255,0,300,2700,3000)}x',
+      );
       expect(m.fade, isNotNull);
       // alpha 255=透明→op0, alpha 0=不透明→op1.
       expect(m.fade!.opacityAt(0, 3000), closeTo(0.0, 1e-9));
@@ -320,14 +339,16 @@ void main() {
       expect(f.opacityAt(1000, 1000), 1.0);
     });
 
-    test('overlapping fade-in/out on a short cue stays monotonic (no reorder)',
-        () {
-      // dur(200) < in(160)+out(160): times get clamped monotonic, peaks mid.
-      const SubtitleFade f = SubtitleFade.simple(160, 160);
-      final double mid = f.opacityAt(160, 200);
-      expect(mid, inInclusiveRange(0.0, 1.0));
-      expect(f.opacityAt(0, 200), closeTo(0.0, 1e-9));
-      expect(f.opacityAt(200, 200), closeTo(0.0, 1e-9));
-    });
+    test(
+      'overlapping fade-in/out on a short cue stays monotonic (no reorder)',
+      () {
+        // dur(200) < in(160)+out(160): times get clamped monotonic, peaks mid.
+        const SubtitleFade f = SubtitleFade.simple(160, 160);
+        final double mid = f.opacityAt(160, 200);
+        expect(mid, inInclusiveRange(0.0, 1.0));
+        expect(f.opacityAt(0, 200), closeTo(0.0, 1e-9));
+        expect(f.opacityAt(200, 200), closeTo(0.0, 1e-9));
+      },
+    );
   });
 }

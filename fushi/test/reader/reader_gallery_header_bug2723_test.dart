@@ -49,8 +49,7 @@ Future<void> _pumpAt(
 void main() {
   for (final AppLocale locale in <AppLocale>[AppLocale.en, AppLocale.zhCn]) {
     for (final double width in <double>[320, 375, 390, 430]) {
-      testWidgets(
-          '手机竖屏 ${locale.languageTag} ${width.toInt()}pt：顶栏不溢出、'
+      testWidgets('手机竖屏 ${locale.languageTag} ${width.toInt()}pt：顶栏不溢出、'
           '计数可见、过滤按钮在第二行', (WidgetTester tester) async {
         await _pumpAt(tester, locale: locale, width: width);
 

@@ -35,7 +35,8 @@ File _repackWithManifest(
   final Archive out = Archive();
   final List<int> manifestBytes = utf8.encode(jsonEncode(manifest));
   out.addFile(
-      ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+    ArchiveFile('manifest.json', manifestBytes.length, manifestBytes),
+  );
   for (final ArchiveFile file in source.files) {
     if (!file.isFile || file.name == 'manifest.json') continue;
     final List<int> bytes = file.content as List<int>;
@@ -59,23 +60,27 @@ Future<(File, File, File)> _seedSrtBackedBook(
   final File cover = File(p.join(sourceAudio.path, 'cover.jpg'))
     ..writeAsStringSync('cover bytes');
 
-  await db.upsertAudiobook(AudiobooksCompanion.insert(
-    bookKey: 'ttu-77',
-    audioRoot: Value(sourceAudio.path),
-    audioPathsJson: Value(jsonEncode(<String>[track.path])),
-    alignmentFormat: 'srt',
-    alignmentPath: alignment.path,
-  ));
-  await db.upsertSrtBook(SrtBooksCompanion.insert(
-    uid: 'srt-77',
-    title: 'Paired',
-    audioRoot: Value(sourceAudio.path),
-    audioPathsJson: Value(jsonEncode(<String>[track.path])),
-    srtPath: alignment.path,
-    coverPath: Value(cover.path),
-    importedAt: 7,
-    bookKey: const Value('ttu-77'),
-  ));
+  await db.upsertAudiobook(
+    AudiobooksCompanion.insert(
+      bookKey: 'ttu-77',
+      audioRoot: Value(sourceAudio.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      alignmentFormat: 'srt',
+      alignmentPath: alignment.path,
+    ),
+  );
+  await db.upsertSrtBook(
+    SrtBooksCompanion.insert(
+      uid: 'srt-77',
+      title: 'Paired',
+      audioRoot: Value(sourceAudio.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      srtPath: alignment.path,
+      coverPath: Value(cover.path),
+      importedAt: 7,
+      bookKey: const Value('ttu-77'),
+    ),
+  );
   await db.replaceCuesForBook('ttu-77', <AudioCuesCompanion>[
     AudioCuesCompanion.insert(
       bookKey: 'ttu-77',
@@ -94,39 +99,49 @@ Future<(File, File, File)> _seedSrtBackedBook(
 void main() {
   group('audio package missing resources (BUG-1577)', () {
     test('导出：源音频文件不存在时记进 manifest.missingResources，不静默跳过', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-missing-export-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-missing-export-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       addTearDown(sourceDb.close);
 
       final Directory sourceAudio = Directory(p.join(temp.path, 'source'));
-      final (File track, _, _) =
-          await _seedSrtBackedBook(sourceDb, sourceAudio);
+      final (File track, _, _) = await _seedSrtBackedBook(
+        sourceDb,
+        sourceAudio,
+      );
       // 音频文件在导出前消失（用户删了 / 外接盘拔了）。
       track.deleteSync();
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookKey: 'ttu-77',
-        srtBookUid: 'srt-77',
-        outputFile: File(p.join(temp.path, 'incomplete.fushiaudio')),
-      );
+            bookKey: 'ttu-77',
+            srtBookUid: 'srt-77',
+            outputFile: File(p.join(temp.path, 'incomplete.fushiaudio')),
+          );
 
       final Map<String, Object?> manifest = _manifestOf(package);
-      expect(manifest['missingResources'], contains(track.path),
-          reason: '缺失的源文件必须写进 manifest，包不完整这件事不能没有痕迹');
+      expect(
+        manifest['missingResources'],
+        contains(track.path),
+        reason: '缺失的源文件必须写进 manifest，包不完整这件事不能没有痕迹',
+      );
       final Map<String, Object?> resources =
           manifest['resources']! as Map<String, Object?>;
-      expect(resources.containsKey(track.path), isFalse,
-          reason: '不存在的文件不进 resources 映射');
+      expect(
+        resources.containsKey(track.path),
+        isFalse,
+        reason: '不存在的文件不进 resources 映射',
+      );
       // 字幕/封面仍在包里：一本书缺 1 个文件不该让整个导出失败。
       expect(resources.length, 2, reason: '部分缺失时其余资源照常入包（不把 6 缺 1 变成整包失败）');
     });
 
     test('导入：必需资源在包里没有登记时抛 Incomplete 且一行都不写 DB', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-missing-import-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-missing-import-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -134,16 +149,18 @@ void main() {
       addTearDown(targetDb.close);
 
       final Directory sourceAudio = Directory(p.join(temp.path, 'source'));
-      final (File track, _, _) =
-          await _seedSrtBackedBook(sourceDb, sourceAudio);
+      final (File track, _, _) = await _seedSrtBackedBook(
+        sourceDb,
+        sourceAudio,
+      );
       track.deleteSync();
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookKey: 'ttu-77',
-        srtBookUid: 'srt-77',
-        outputFile: File(p.join(temp.path, 'incomplete.fushiaudio')),
-      );
+            bookKey: 'ttu-77',
+            srtBookUid: 'srt-77',
+            outputFile: File(p.join(temp.path, 'incomplete.fushiaudio')),
+          );
 
       final Directory targetAudio = Directory(p.join(temp.path, 'target'));
       await expectLater(
@@ -166,8 +183,9 @@ void main() {
     });
 
     test('导入：纯 SRT 包缺字幕资源时同样抛，不落 SrtBooks 行', () async {
-      final Directory temp = await Directory.systemTemp
-          .createTemp('fushi-pkg-missing-standalone-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-missing-standalone-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -180,22 +198,24 @@ void main() {
         ..writeAsStringSync('voice bytes');
       final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nこんにちは\n');
-      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-standalone-77',
-        title: 'Standalone',
-        audioRoot: Value(sourceAudio.path),
-        audioPathsJson: Value(jsonEncode(<String>[voice.path])),
-        srtPath: subs.path,
-        importedAt: 9,
-        bookKey: const Value(''),
-      ));
+      await sourceDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-standalone-77',
+          title: 'Standalone',
+          audioRoot: Value(sourceAudio.path),
+          audioPathsJson: Value(jsonEncode(<String>[voice.path])),
+          srtPath: subs.path,
+          importedAt: 9,
+          bookKey: const Value(''),
+        ),
+      );
       subs.deleteSync(); // 字幕文件在导出前消失。
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        srtBookUid: 'srt-standalone-77',
-        outputFile: File(p.join(temp.path, 'standalone.fushiaudio')),
-      );
+            srtBookUid: 'srt-standalone-77',
+            outputFile: File(p.join(temp.path, 'standalone.fushiaudio')),
+          );
 
       final Directory targetAudio = Directory(p.join(temp.path, 'target'));
       await expectLater(
@@ -209,8 +229,9 @@ void main() {
     });
 
     test('封面缺失只降级为无封面，不抛也不编造路径', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-missing-cover-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-missing-cover-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -218,16 +239,18 @@ void main() {
       addTearDown(targetDb.close);
 
       final Directory sourceAudio = Directory(p.join(temp.path, 'source'));
-      final (_, _, File cover) =
-          await _seedSrtBackedBook(sourceDb, sourceAudio);
+      final (_, _, File cover) = await _seedSrtBackedBook(
+        sourceDb,
+        sourceAudio,
+      );
       cover.deleteSync();
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookKey: 'ttu-77',
-        srtBookUid: 'srt-77',
-        outputFile: File(p.join(temp.path, 'nocover.fushiaudio')),
-      );
+            bookKey: 'ttu-77',
+            srtBookUid: 'srt-77',
+            outputFile: File(p.join(temp.path, 'nocover.fushiaudio')),
+          );
 
       final Directory targetAudio = Directory(p.join(temp.path, 'target'));
       await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
@@ -241,8 +264,9 @@ void main() {
     });
 
     test('向后兼容：旧格式 manifest（无 missingResources 键）导入仍成功', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-legacy-ok-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-legacy-ok-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -254,15 +278,18 @@ void main() {
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookKey: 'ttu-77',
-        srtBookUid: 'srt-77',
-        outputFile: File(p.join(temp.path, 'healthy.fushiaudio')),
-      );
+            bookKey: 'ttu-77',
+            srtBookUid: 'srt-77',
+            outputFile: File(p.join(temp.path, 'healthy.fushiaudio')),
+          );
 
       // 健康包与旧包同形：不带新键（旧版本导入端读到的 manifest 逐键不变）。
       final Map<String, Object?> manifest = _manifestOf(package);
-      expect(manifest.containsKey('missingResources'), isFalse,
-          reason: '没有缺失时不写新键，健康包与旧包同形');
+      expect(
+        manifest.containsKey('missingResources'),
+        isFalse,
+        reason: '没有缺失时不写新键，健康包与旧包同形',
+      );
 
       // 再显式重打一个「旧包」（哪怕将来默认写这个键，这条也仍在测缺键路径）。
       final Map<String, Object?> legacy = Map<String, Object?>.from(manifest)
@@ -279,19 +306,24 @@ void main() {
         audioDatabaseRoot: targetAudio,
       );
 
-      final AudiobookRow audiobook =
-          (await targetDb.getAudiobookByBookKey('ttu-77'))!;
+      final AudiobookRow audiobook = (await targetDb.getAudiobookByBookKey(
+        'ttu-77',
+      ))!;
       final List<dynamic> audioPaths =
           jsonDecode(audiobook.audioPathsJson!) as List<dynamic>;
       expect(audioPaths, hasLength(1));
-      expect(File(audioPaths.single as String).existsSync(), isTrue,
-          reason: '旧格式包必须照常导入，且落地路径真实存在');
+      expect(
+        File(audioPaths.single as String).existsSync(),
+        isTrue,
+        reason: '旧格式包必须照常导入，且落地路径真实存在',
+      );
       expect(File(audiobook.alignmentPath).existsSync(), isTrue);
     });
 
     test('向后兼容：旧格式坏包（resources 不全、无新键）也必须被拒绝', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-legacy-bad-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-legacy-bad-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -299,20 +331,22 @@ void main() {
       addTearDown(targetDb.close);
 
       final Directory sourceAudio = Directory(p.join(temp.path, 'source'));
-      final (File track, _, _) =
-          await _seedSrtBackedBook(sourceDb, sourceAudio);
+      final (File track, _, _) = await _seedSrtBackedBook(
+        sourceDb,
+        sourceAudio,
+      );
       track.deleteSync();
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookKey: 'ttu-77',
-        srtBookUid: 'srt-77',
-        outputFile: File(p.join(temp.path, 'incomplete.fushiaudio')),
-      );
+            bookKey: 'ttu-77',
+            srtBookUid: 'srt-77',
+            outputFile: File(p.join(temp.path, 'incomplete.fushiaudio')),
+          );
       // 抹掉新键，还原成「旧版本产出的坏包」：判据只能是 resources 映射本身。
-      final Map<String, Object?> legacy =
-          Map<String, Object?>.from(_manifestOf(package))
-            ..remove('missingResources');
+      final Map<String, Object?> legacy = Map<String, Object?>.from(
+        _manifestOf(package),
+      )..remove('missingResources');
       final File legacyPackage = _repackWithManifest(
         package,
         legacy,
@@ -331,8 +365,9 @@ void main() {
     });
 
     test('folder 模式（audioPaths 空、音频在 audioRoot）导出不再是零个音频文件', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-folder-mode-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-folder-mode-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -349,31 +384,30 @@ void main() {
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nfolder\n');
 
       // folder 模式：audioPathsJson 留空，音频只由 audioRoot 目录承载。
-      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-folder-1',
-        title: 'Folder mode',
-        audioRoot: Value(sourceAudio.path),
-        srtPath: subs.path,
-        importedAt: 3,
-        bookKey: const Value(''),
-      ));
+      await sourceDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-folder-1',
+          title: 'Folder mode',
+          audioRoot: Value(sourceAudio.path),
+          srtPath: subs.path,
+          importedAt: 3,
+          bookKey: const Value(''),
+        ),
+      );
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        srtBookUid: 'srt-folder-1',
-        outputFile: File(p.join(temp.path, 'folder.fushiaudio')),
-      );
+            srtBookUid: 'srt-folder-1',
+            outputFile: File(p.join(temp.path, 'folder.fushiaudio')),
+          );
 
       final Map<String, Object?> manifest = _manifestOf(package);
       final Map<String, Object?> srtBook =
           manifest['srtBook']! as Map<String, Object?>;
-      expect(
-          srtBook['audioPaths'],
-          <String>[
-            p.join(sourceAudio.path, 'ch01.mp3'),
-            p.join(sourceAudio.path, 'ch02.mp3'),
-          ],
-          reason: 'folder 模式必须展开成真实音频清单，且与播放端同序');
+      expect(srtBook['audioPaths'], <String>[
+        p.join(sourceAudio.path, 'ch01.mp3'),
+        p.join(sourceAudio.path, 'ch02.mp3'),
+      ], reason: 'folder 模式必须展开成真实音频清单，且与播放端同序');
 
       final Directory targetAudio = Directory(p.join(temp.path, 'target'));
       await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
@@ -389,15 +423,18 @@ void main() {
         expect(File(path as String).existsSync(), isTrue);
       }
       expect(
-          File(p.join(targetAudio.path, 'srt-folder-1', 'notes.txt'))
-              .existsSync(),
-          isFalse,
-          reason: '只收音频文件，不把目录里的杂物一起打包');
+        File(
+          p.join(targetAudio.path, 'srt-folder-1', 'notes.txt'),
+        ).existsSync(),
+        isFalse,
+        reason: '只收音频文件，不把目录里的杂物一起打包',
+      );
     });
 
     test('folder 模式音频目录为空时把 audioRoot 记进 missingResources', () async {
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-pkg-folder-empty-');
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-pkg-folder-empty-',
+      );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       addTearDown(sourceDb.close);
@@ -406,24 +443,28 @@ void main() {
         ..createSync(recursive: true);
       final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nempty\n');
-      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-folder-empty',
-        title: 'Folder empty',
-        audioRoot: Value(sourceAudio.path),
-        srtPath: subs.path,
-        importedAt: 4,
-        bookKey: const Value(''),
-      ));
+      await sourceDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-folder-empty',
+          title: 'Folder empty',
+          audioRoot: Value(sourceAudio.path),
+          srtPath: subs.path,
+          importedAt: 4,
+          bookKey: const Value(''),
+        ),
+      );
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        srtBookUid: 'srt-folder-empty',
-        outputFile: File(p.join(temp.path, 'folder-empty.fushiaudio')),
-      );
+            srtBookUid: 'srt-folder-empty',
+            outputFile: File(p.join(temp.path, 'folder-empty.fushiaudio')),
+          );
 
       expect(
-          _manifestOf(package)['missingResources'], contains(sourceAudio.path),
-          reason: '一个音频都没解析出来的空包必须留下痕迹');
+        _manifestOf(package)['missingResources'],
+        contains(sourceAudio.path),
+        reason: '一个音频都没解析出来的空包必须留下痕迹',
+      );
     });
   });
 }

@@ -25,8 +25,11 @@ void main() {
         GamepadButton.dpadRight,
         GamepadButton.a,
       ]) {
-        expect(isVideoPanelFocusNavButton(button), isTrue,
-            reason: '${button.label} 应在面板打开时让位');
+        expect(
+          isVideoPanelFocusNavButton(button),
+          isTrue,
+          reason: '${button.label} 应在面板打开时让位',
+        );
       }
     });
 
@@ -44,8 +47,11 @@ void main() {
         GamepadButton.thumbLeft,
         GamepadButton.thumbRight,
       ]) {
-        expect(isVideoPanelFocusNavButton(button), isFalse,
-            reason: '${button.label} 不该被面板抢走');
+        expect(
+          isVideoPanelFocusNavButton(button),
+          isFalse,
+          reason: '${button.label} 不该被面板抢走',
+        );
       }
     });
   });
@@ -58,8 +64,11 @@ void main() {
         LogicalKeyboardKey.arrowLeft,
         LogicalKeyboardKey.arrowRight,
       ]) {
-        expect(isVideoPanelFocusNavKey(key), isTrue,
-            reason: '${key.keyLabel} 应在面板持焦时让位给焦点遍历');
+        expect(
+          isVideoPanelFocusNavKey(key),
+          isTrue,
+          reason: '${key.keyLabel} 应在面板持焦时让位给焦点遍历',
+        );
       }
     });
 
@@ -78,9 +87,13 @@ void main() {
         LogicalKeyboardKey.keyL,
         LogicalKeyboardKey.keyF,
       ]) {
-        expect(isVideoPanelFocusNavKey(key), isFalse,
-            reason: '${key.keyLabel} 不该被面板抢走——面板开着时 L / F / 空格等'
-                '仍是视频动作');
+        expect(
+          isVideoPanelFocusNavKey(key),
+          isFalse,
+          reason:
+              '${key.keyLabel} 不该被面板抢走——面板开着时 L / F / 空格等'
+              '仍是视频动作',
+        );
       }
     });
   });
@@ -114,9 +127,12 @@ void main() {
 
     test('前置条件：裸 ↓ 在没有面板时是 videoVolumeDown', () {
       expect(
-        resolve(LogicalKeyboardKey.arrowDown, PhysicalKeyboardKey.arrowDown,
-                videoNavigablePanelOpen: false, videoSurfaceHoldsFocus: false)
-            .action,
+        resolve(
+          LogicalKeyboardKey.arrowDown,
+          PhysicalKeyboardKey.arrowDown,
+          videoNavigablePanelOpen: false,
+          videoSurfaceHoldsFocus: false,
+        ).action,
         ShortcutAction.videoVolumeDown,
         reason: '前置条件塌了下面几条就测了个寂寞',
       );
@@ -124,8 +140,12 @@ void main() {
 
     test('面板开着 + 焦点已不在画面上 → 裸 ↓ 让位', () {
       expect(
-        resolve(LogicalKeyboardKey.arrowDown, PhysicalKeyboardKey.arrowDown,
-            videoNavigablePanelOpen: true, videoSurfaceHoldsFocus: false),
+        resolve(
+          LogicalKeyboardKey.arrowDown,
+          PhysicalKeyboardKey.arrowDown,
+          videoNavigablePanelOpen: true,
+          videoSurfaceHoldsFocus: false,
+        ),
         VideoKeyboardResolution.ignored,
       );
     });
@@ -136,20 +156,25 @@ void main() {
       // ——它一改，面板开着而焦点仍在画面上时裸方向键就既不移焦也不 seek，静默失效
       // 且没有任何报错。判据必须把前提就地判掉，不能靠远程不变式。
       expect(
-        resolve(LogicalKeyboardKey.arrowDown, PhysicalKeyboardKey.arrowDown,
-                videoNavigablePanelOpen: true, videoSurfaceHoldsFocus: true)
-            .action,
+        resolve(
+          LogicalKeyboardKey.arrowDown,
+          PhysicalKeyboardKey.arrowDown,
+          videoNavigablePanelOpen: true,
+          videoSurfaceHoldsFocus: true,
+        ).action,
         ShortcutAction.videoVolumeDown,
       );
     });
 
     test('硬修饰组合不让位：Ctrl+← 在面板持焦时仍是「上一句字幕」', () {
       expect(
-        resolve(LogicalKeyboardKey.arrowLeft, PhysicalKeyboardKey.arrowLeft,
-                videoNavigablePanelOpen: true,
-                videoSurfaceHoldsFocus: false,
-                modifiers: const <ModifierKey>{ModifierKey.ctrl})
-            .action,
+        resolve(
+          LogicalKeyboardKey.arrowLeft,
+          PhysicalKeyboardKey.arrowLeft,
+          videoNavigablePanelOpen: true,
+          videoSurfaceHoldsFocus: false,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+        ).action,
         ShortcutAction.videoPreviousSubtitle,
         reason: 'Ctrl+←/→ 是明确的视频动作，面板开着时照常执行',
       );
@@ -179,23 +204,29 @@ void main() {
         ),
       );
       expect(
-        resolve(LogicalKeyboardKey.arrowDown, PhysicalKeyboardKey.arrowDown,
-                videoNavigablePanelOpen: false,
-                videoSurfaceHoldsFocus: false,
-                modifiers: const <ModifierKey>{ModifierKey.shift},
-                registry: rebound)
-            .action,
+        resolve(
+          LogicalKeyboardKey.arrowDown,
+          PhysicalKeyboardKey.arrowDown,
+          videoNavigablePanelOpen: false,
+          videoSurfaceHoldsFocus: false,
+          modifiers: const <ModifierKey>{ModifierKey.shift},
+          registry: rebound,
+        ).action,
         ShortcutAction.videoVolumeDown,
         reason: '前置条件：改键之后 Shift+↓ 确实是个视频动作，下一条才有分辨力',
       );
       expect(
-        resolve(LogicalKeyboardKey.arrowDown, PhysicalKeyboardKey.arrowDown,
-            videoNavigablePanelOpen: true,
-            videoSurfaceHoldsFocus: false,
-            modifiers: const <ModifierKey>{ModifierKey.shift},
-            registry: rebound),
+        resolve(
+          LogicalKeyboardKey.arrowDown,
+          PhysicalKeyboardKey.arrowDown,
+          videoNavigablePanelOpen: true,
+          videoSurfaceHoldsFocus: false,
+          modifiers: const <ModifierKey>{ModifierKey.shift},
+          registry: rebound,
+        ),
         VideoKeyboardResolution.ignored,
-        reason: '面板持焦时 Shift+方向键在列表里是扩选，仍归焦点遍历；'
+        reason:
+            '面板持焦时 Shift+方向键在列表里是扩选，仍归焦点遍历；'
             '判据退回 modifiers.isEmpty 就会在这里改调音量',
       );
     });
@@ -204,11 +235,14 @@ void main() {
   group('接线源码守卫（分类器单测抓不到「闸门被删」）', () {
     test('视频手柄处理器在注册表解析之前放行面板焦点导航按钮', () {
       final String code = maskComments(
-          File('lib/src/pages/implementations/video_fushi_page.dart')
-              .readAsStringSync());
+        File(
+          'lib/src/pages/implementations/video_fushi_page.dart',
+        ).readAsStringSync(),
+      );
       expect(
         code.contains(
-            'if (_videoNavigablePanelOpen && isVideoPanelFocusNavButton(button)) {'),
+          'if (_videoNavigablePanelOpen && isVideoPanelFocusNavButton(button)) {',
+        ),
         isTrue,
         reason: '闸门缺席：面板打开时 D-pad 仍会被解析成音量/seek，手柄进不了面板',
       );
@@ -221,9 +255,13 @@ void main() {
       };
       panels.forEach((String path, String label) {
         final String code = maskComments(File(path).readAsStringSync());
-        expect(code.contains('PanelFocusScope('), isTrue,
-            reason: '$label（$path）没包 PanelFocusScope：打开后焦点留在页面节点，'
-                'D-pad 让位了也没有可移动的焦点');
+        expect(
+          code.contains('PanelFocusScope('),
+          isTrue,
+          reason:
+              '$label（$path）没包 PanelFocusScope：打开后焦点留在页面节点，'
+              'D-pad 让位了也没有可移动的焦点',
+        );
       });
     });
 
@@ -232,22 +270,37 @@ void main() {
       // 页面又拒绝收回焦点，dpad/方向键既进不了列表也不调音量（比砍之前更差）；
       // 只改集合不砍 PanelFocusScope ⇒ 焦点仍被领进列表，方向键在列表里当遍历用。
       final String subtitle = maskComments(
-          File('lib/src/pages/implementations/video_fushi/subtitle.part.dart')
-              .readAsStringSync());
-      expect(subtitle.contains('PanelFocusScope('), isFalse,
-          reason: '字幕列表包了 PanelFocusScope：打开后焦点被领进列表，'
-              '←/→/↑/↓ 等视频快捷键失效（BUG-2040）');
+        File(
+          'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+        ).readAsStringSync(),
+      );
+      expect(
+        subtitle.contains('PanelFocusScope('),
+        isFalse,
+        reason:
+            '字幕列表包了 PanelFocusScope：打开后焦点被领进列表，'
+            '←/→/↑/↓ 等视频快捷键失效（BUG-2040）',
+      );
       final String page = maskComments(
-          File('lib/src/pages/implementations/video_fushi_page.dart')
-              .readAsStringSync());
+        File(
+          'lib/src/pages/implementations/video_fushi_page.dart',
+        ).readAsStringSync(),
+      );
       final int start = page.indexOf('bool get _videoNavigablePanelOpen =>');
       expect(start, greaterThan(0));
       final String body = page.substring(start, page.indexOf(';', start));
-      expect(body.contains('_subtitleListVisible'), isFalse,
-          reason: '_videoNavigablePanelOpen 仍计入字幕列表：列表开着时裸方向键 / dpad '
-              '让位给焦点遍历，而焦点根本不在列表里');
-      expect(body.contains('_episodeListVisible'), isTrue,
-          reason: '前置条件：锚点确实截到了 getter 主体（剧集轨仍在集内）');
+      expect(
+        body.contains('_subtitleListVisible'),
+        isFalse,
+        reason:
+            '_videoNavigablePanelOpen 仍计入字幕列表：列表开着时裸方向键 / dpad '
+            '让位给焦点遍历，而焦点根本不在列表里',
+      );
+      expect(
+        body.contains('_episodeListVisible'),
+        isTrue,
+        reason: '前置条件：锚点确实截到了 getter 主体（剧集轨仍在集内）',
+      );
     });
   });
 }

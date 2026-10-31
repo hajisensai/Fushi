@@ -14,14 +14,11 @@ import '../helpers/part_corpus.dart';
 /// 让新 part 自动进语料，负向断言不可能因为漏登记而假绿。
 const String _readerFushiShell =
     'lib/src/pages/implementations/reader_fushi_page.dart';
-const String kReaderFushiPartDir =
-    'lib/src/pages/implementations/reader_fushi';
+const String kReaderFushiPartDir = 'lib/src/pages/implementations/reader_fushi';
 
 /// 主壳 + 磁盘上全部 `*.part.dart`（按路径排序，保证跨机器/跨次运行顺序确定）。
-List<String> readerFushiPageFiles() => partCorpusFiles(
-      shell: _readerFushiShell,
-      partDir: kReaderFushiPartDir,
-    );
+List<String> readerFushiPageFiles() =>
+    partCorpusFiles(shell: _readerFushiShell, partDir: kReaderFushiPartDir);
 
 /// 读「阅读器页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。
 /// 统一把 CRLF 归一成 LF，与逐文件守卫此前的隐式假设一致。

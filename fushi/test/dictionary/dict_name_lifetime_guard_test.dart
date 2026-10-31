@@ -24,41 +24,61 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('add_dict copies index.title while index_buf is still in scope', () {
     final File src = File('../native/fushidicts/fushidicts_src/query.cpp');
-    expect(src.existsSync(), isTrue,
-        reason: 'query.cpp not found at ${src.absolute.path}');
+    expect(
+      src.existsSync(),
+      isTrue,
+      reason: 'query.cpp not found at ${src.absolute.path}',
+    );
     final String code = src.readAsStringSync();
 
     // Isolate the add_dict function body so unrelated code can't skew the scan.
     final int addDictStart = code.indexOf('void DictionaryQuery::add_dict(');
-    expect(addDictStart, greaterThanOrEqualTo(0),
-        reason: 'add_dict() not found in query.cpp');
+    expect(
+      addDictStart,
+      greaterThanOrEqualTo(0),
+      reason: 'add_dict() not found in query.cpp',
+    );
     final String body = code.substring(addDictStart);
 
     final int bufDecl = body.indexOf('index_buf');
-    expect(bufDecl, greaterThanOrEqualTo(0),
-        reason: 'index_buf declaration not found in add_dict()');
+    expect(
+      bufDecl,
+      greaterThanOrEqualTo(0),
+      reason: 'index_buf declaration not found in add_dict()',
+    );
 
     final RegExp titleUse = RegExp(r'index\.title');
     final Iterable<Match> uses = titleUse.allMatches(body);
     expect(uses, isNotEmpty, reason: 'expected add_dict() to read index.title');
 
     for (final Match m in uses) {
-      expect(m.start, greaterThan(bufDecl),
-          reason: 'index.title used before index_buf is declared');
+      expect(
+        m.start,
+        greaterThan(bufDecl),
+        reason: 'index.title used before index_buf is declared',
+      );
       // Relative brace depth from the index_buf declaration to this usage.
       // Each unmatched "}" that closes the buffer's block drops below 0.
       final String between = body.substring(bufDecl, m.start);
       final int opens = '{'.allMatches(between).length;
       final int closes = '}'.allMatches(between).length;
-      expect(opens - closes, greaterThanOrEqualTo(0),
-          reason: 'index.title is read after the index_buf block closed — '
-              'that is a use-after-free of a glaze string_view (BUG-051). '
-              'Copy index.title into dict.name *inside* the index_buf scope.');
+      expect(
+        opens - closes,
+        greaterThanOrEqualTo(0),
+        reason:
+            'index.title is read after the index_buf block closed — '
+            'that is a use-after-free of a glaze string_view (BUG-051). '
+            'Copy index.title into dict.name *inside* the index_buf scope.',
+      );
     }
 
     // Positive marker: the title must be taken as an owned copy.
-    expect(body.contains('std::string(index.title)'), isTrue,
-        reason: 'expected dict.name to take an owned std::string copy of '
-            'index.title (the glaze view must not outlive index_buf).');
+    expect(
+      body.contains('std::string(index.title)'),
+      isTrue,
+      reason:
+          'expected dict.name to take an owned std::string copy of '
+          'index.title (the glaze view must not outlive index_buf).',
+    );
   });
 }

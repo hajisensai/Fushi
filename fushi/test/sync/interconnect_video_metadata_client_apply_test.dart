@@ -21,35 +21,38 @@ void main() {
       name: 'Show',
       collectionType: 'collection',
     ),
-  }) =>
-      VideoMetadataWorkEntry(
-        key: key,
-        updatedAt: updatedAt,
-        lockedFields: const <String>[],
-        lookup: const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '7',
-          mediaKind: VideoMetadataMediaKind.tv,
-        ),
-        work: VideoMetadataWork(
-          provider: VideoMetadataProviderKind.mal,
-          kind: VideoMetadataMediaKind.tv,
-          title: 'Show',
-          plot: plot,
-          // 故意不带 id：wire 上 lookup 才是身份真相，apply 前须补齐。
-        ),
-      );
+  }) => VideoMetadataWorkEntry(
+    key: key,
+    updatedAt: updatedAt,
+    lockedFields: const <String>[],
+    lookup: const VideoMetadataLookup(
+      provider: VideoMetadataProviderKind.mal,
+      externalId: '7',
+      mediaKind: VideoMetadataMediaKind.tv,
+    ),
+    work: VideoMetadataWork(
+      provider: VideoMetadataProviderKind.mal,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Show',
+      plot: plot,
+      // 故意不带 id：wire 上 lookup 才是身份真相，apply 前须补齐。
+    ),
+  );
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     // 客户端典型形态：合集经清单同步建出来，成员一个在本机、一个只在 host。
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value<String>('Show S01E01'),
-      title: Value<String>('Show S01E01'),
-      videoPath: Value<String>('D:/dl/Show S01E01.mkv'),
-    ));
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'collection');
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('Show S01E01'),
+        title: Value<String>('Show S01E01'),
+        videoPath: Value<String>('D:/dl/Show S01E01.mkv'),
+      ),
+    );
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'collection',
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'Show S01E01');
     await db.addToCollection(collectionId, MediaKind.video, 'Show S01E02');
   });
@@ -58,13 +61,11 @@ void main() {
 
   test('合集在本机 → 落作品行并带上 host 主身份；只在 host 的成员不阻断', () async {
     final RemoteVideoMetadataApplyResult applied =
-        await applyRemoteVideoMetadata(
-      db,
-      <VideoMetadataWorkEntry>[entry()],
-    );
+        await applyRemoteVideoMetadata(db, <VideoMetadataWorkEntry>[entry()]);
     expect(applied.applied, 1);
-    final VideoMetadataWorkRow row =
-        (await db.getVideoMetadataWorkByCollection(collectionId))!;
+    final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkByCollection(
+      collectionId,
+    ))!;
     expect(row.overview, 'host plot');
     final VideoMetadataLookup? lookup = await lookupOfWork(db, row.id);
     expect(lookup?.provider, VideoMetadataProviderKind.mal);
@@ -73,16 +74,13 @@ void main() {
 
   test('本地作品行不比 host 旧则跳过（不重放旧数据）', () async {
     await applyRemoteVideoMetadata(db, <VideoMetadataWorkEntry>[entry()]);
-    final VideoMetadataWorkRow local =
-        (await db.getVideoMetadataWorkByCollection(collectionId))!;
+    final VideoMetadataWorkRow local = (await db
+        .getVideoMetadataWorkByCollection(collectionId))!;
     // host 的 updatedAt 比本地落库时刻早：跳过。
     final RemoteVideoMetadataApplyResult skipped =
-        await applyRemoteVideoMetadata(
-      db,
-      <VideoMetadataWorkEntry>[
-        entry(plot: 'stale', updatedAt: local.updatedAt - 1),
-      ],
-    );
+        await applyRemoteVideoMetadata(db, <VideoMetadataWorkEntry>[
+          entry(plot: 'stale', updatedAt: local.updatedAt - 1),
+        ]);
     expect(skipped.applied, 0);
     expect(
       (await db.getVideoMetadataWorkByCollection(collectionId))!.overview,
@@ -104,38 +102,32 @@ void main() {
 
   test('本机没有的合集 / 单条目跳过，不抛', () async {
     final RemoteVideoMetadataApplyResult applied =
-        await applyRemoteVideoMetadata(
-      db,
-      <VideoMetadataWorkEntry>[
-        entry(
-          key: const VideoMetadataWorkKey.collection(
-            name: 'Elsewhere',
-            collectionType: 'collection',
+        await applyRemoteVideoMetadata(db, <VideoMetadataWorkEntry>[
+          entry(
+            key: const VideoMetadataWorkKey.collection(
+              name: 'Elsewhere',
+              collectionType: 'collection',
+            ),
           ),
-        ),
-        entry(key: const VideoMetadataWorkKey.book('not-downloaded')),
-      ],
-    );
+          entry(key: const VideoMetadataWorkKey.book('not-downloaded')),
+        ]);
     expect(applied.applied, 0);
     expect(applied.deferred, 2, reason: '目标缺失计入 deferred，基线不得推进');
   });
 
   test('客户端自己锁的字段不被 host 覆盖', () async {
     await applyRemoteVideoMetadata(db, <VideoMetadataWorkEntry>[entry()]);
-    final VideoMetadataWorkRow local =
-        (await db.getVideoMetadataWorkByCollection(collectionId))!;
+    final VideoMetadataWorkRow local = (await db
+        .getVideoMetadataWorkByCollection(collectionId))!;
     await db.setVideoMetadataWorkLockedFields(
       local.id,
       encodeLockedFields(<VideoMetadataLockableField>{
         VideoMetadataLockableField.overview,
       }),
     );
-    await applyRemoteVideoMetadata(
-      db,
-      <VideoMetadataWorkEntry>[
-        entry(plot: 'host overwrite', updatedAt: local.updatedAt + 1),
-      ],
-    );
+    await applyRemoteVideoMetadata(db, <VideoMetadataWorkEntry>[
+      entry(plot: 'host overwrite', updatedAt: local.updatedAt + 1),
+    ]);
     expect(
       (await db.getVideoMetadataWorkByCollection(collectionId))!.overview,
       'host plot',

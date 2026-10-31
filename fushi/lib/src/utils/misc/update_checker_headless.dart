@@ -11,10 +11,10 @@ class _UpdateDownloadSession {
   /// [cancellation] 由调用方给时与调用方共享同一个取消令牌（控制通道
   /// `fushi_cli update cancel` 与浮层「取消」按的是同一个）。
   _UpdateDownloadSession({UpdateDownloadCancellation? cancellation})
-      // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
-      // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
-      : status = ValueNotifier<String>(t.update_connecting),
-        cancellation = cancellation ?? UpdateDownloadCancellation() {
+    // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
+    // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
+    : status = ValueNotifier<String>(t.update_connecting),
+      cancellation = cancellation ?? UpdateDownloadCancellation() {
     _statusController = UpdateDownloadStatusController(status);
   }
 
@@ -94,7 +94,7 @@ class _UpdateDownloadSession {
 /// [_UpdateDownloadSession]），返回它的取消令牌与收尾函数。
 @visibleForTesting
 ({UpdateDownloadCancellation cancellation, void Function() dispose})
-    showUpdateDownloadSessionForTest(OverlayState overlay) {
+showUpdateDownloadSessionForTest(OverlayState overlay) {
   final _UpdateDownloadSession session = _UpdateDownloadSession()
     ..showIn(overlay);
   return (cancellation: session.cancellation, dispose: session.dispose);
@@ -133,7 +133,8 @@ abstract final class HeadlessUpdateFlow {
   /// [selectUpdateReleaseForCurrentPlatform] → [isUpdateVersionNewer]）。返回 null =
   /// 已是最新 / 没有匹配 release；asset 为 null = 有新版但本平台没有可应用内安装的包。
   /// 网络失败照常抛出。
-  static Future<({String version, UpdateAsset? asset})?> resolveAvailableUpdate({
+  static Future<({String version, UpdateAsset? asset})?>
+  resolveAvailableUpdate({
     required String currentVersion,
     String? currentBuildNumber,
     required UpdateChannel channel,
@@ -175,24 +176,30 @@ abstract final class HeadlessUpdateFlow {
           await UpdateChecker._fetchReleasesForChannel(client, channel);
       final UpdateReleaseSelection? selection =
           await selectUpdateReleaseForCurrentPlatform(
-        releases,
-        currentVersion: currentVersion,
-        currentReleaseSeq: localSeq,
-        channel: channel,
-        updater: platformUpdater,
-      );
+            releases,
+            currentVersion: currentVersion,
+            currentReleaseSeq: localSeq,
+            channel: channel,
+            updater: platformUpdater,
+          );
       if (selection == null || selection.version.isEmpty) return null;
       if (cacheWriter != null) {
-        await cacheWriter(UpdateCheckCacheEntry(
-          lastCheckEpochMs: DateTime.now().toUtc().millisecondsSinceEpoch,
-          latestTag: selection.version,
-          htmlUrl: selection.htmlUrl ?? '',
-          channel: channel,
-        ));
+        await cacheWriter(
+          UpdateCheckCacheEntry(
+            lastCheckEpochMs: DateTime.now().toUtc().millisecondsSinceEpoch,
+            latestTag: selection.version,
+            htmlUrl: selection.htmlUrl ?? '',
+            channel: channel,
+          ),
+        );
       }
-      if (!isUpdateVersionNewer(selection.version, currentVersion, channel,
-          remoteSeq: selection.release['releaseSequence'] as int?,
-          localSeq: localSeq)) {
+      if (!isUpdateVersionNewer(
+        selection.version,
+        currentVersion,
+        channel,
+        remoteSeq: selection.release['releaseSequence'] as int?,
+        localSeq: localSeq,
+      )) {
         return null;
       }
       return HeadlessUpdateCheck(
@@ -230,25 +237,27 @@ abstract final class HeadlessUpdateFlow {
       throw StateError('update flow for $version already active');
     }
     return UpdateChecker._runExclusiveUpdateFlow(
-        UpdateChecker._updateFlowKey(version), () async {
-      final _UpdateDownloadSession session = _UpdateDownloadSession();
-      try {
-        final File outFile = await _downloadInSession(
-          session,
-          asset: asset,
-          version: version,
-          updater: updater,
-          customProxy: customProxy,
-          overlay: overlay,
-          onProgress: onProgress,
-        );
-        session.status.value = t.update_installing;
-        onInstalling();
-        await updater.apply(outFile, version);
-      } finally {
-        session.dispose();
-      }
-    });
+      UpdateChecker._updateFlowKey(version),
+      () async {
+        final _UpdateDownloadSession session = _UpdateDownloadSession();
+        try {
+          final File outFile = await _downloadInSession(
+            session,
+            asset: asset,
+            version: version,
+            updater: updater,
+            customProxy: customProxy,
+            overlay: overlay,
+            onProgress: onProgress,
+          );
+          session.status.value = t.update_installing;
+          onInstalling();
+          await updater.apply(outFile, version);
+        } finally {
+          session.dispose();
+        }
+      },
+    );
   }
 
   /// 只下载、不安装（控制通道 `update download`）：与 [downloadAndApply] 同一条下载
@@ -271,23 +280,26 @@ abstract final class HeadlessUpdateFlow {
     }
     File? outFile;
     await UpdateChecker._runExclusiveUpdateFlow(
-        UpdateChecker._updateFlowKey(version), () async {
-      final _UpdateDownloadSession session =
-          _UpdateDownloadSession(cancellation: cancellation);
-      try {
-        outFile = await _downloadInSession(
-          session,
-          asset: asset,
-          version: version,
-          updater: updater,
-          customProxy: customProxy,
-          overlay: overlay,
-          onProgress: onProgress,
+      UpdateChecker._updateFlowKey(version),
+      () async {
+        final _UpdateDownloadSession session = _UpdateDownloadSession(
+          cancellation: cancellation,
         );
-      } finally {
-        session.dispose();
-      }
-    });
+        try {
+          outFile = await _downloadInSession(
+            session,
+            asset: asset,
+            version: version,
+            updater: updater,
+            customProxy: customProxy,
+            overlay: overlay,
+            onProgress: onProgress,
+          );
+        } finally {
+          session.dispose();
+        }
+      },
+    );
     return outFile!;
   }
 

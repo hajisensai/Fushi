@@ -117,7 +117,4 @@ bool isAudioOnlyMediaPath(String path) {
 ///
 /// 注意边界：**远端** `http(s)://…/x.m3u8` 是 HLS 流 URL，ffmpeg 能直接吃
 /// （见 `streamImportCoverStrategy.ffmpegFrame`）——本集合只用于判定**本地文件**。
-const Set<String> kPlaylistManifestExtensions = <String>{
-  '.m3u8',
-  '.m3u',
-};
+const Set<String> kPlaylistManifestExtensions = <String>{'.m3u8', '.m3u'};

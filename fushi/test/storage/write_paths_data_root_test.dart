@@ -30,9 +30,9 @@ void main() {
   /// BUG-1115：默认 documents 根 = `<平台 Documents>/Fushi/data`（全新安装；本文件的
   /// mock support 根下没有 `fushi.db`，故一律判为新装）。
   String defaultDocsRoot() => p.joinAll(<String>[
-        defaultDocs.path,
-        ...AppPaths.defaultDocumentsChildSegments,
-      ]);
+    defaultDocs.path,
+    ...AppPaths.defaultDocumentsChildSegments,
+  ]);
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
@@ -41,20 +41,20 @@ void main() {
       ..createSync(recursive: true);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return defaultDocs.path;
-        }
-        if (call.method == 'getTemporaryDirectory') {
-          return p.join(tmp.path, 'systemp');
-        }
-        if (call.method == 'getApplicationSupportDirectory') {
-          return p.join(tmp.path, 'default_support');
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return defaultDocs.path;
+            }
+            if (call.method == 'getTemporaryDirectory') {
+              return p.join(tmp.path, 'systemp');
+            }
+            if (call.method == 'getApplicationSupportDirectory') {
+              return p.join(tmp.path, 'default_support');
+            }
+            return null;
+          },
+        );
     // 生产接线：app 启动期把有声书根解析接到 AppPaths（这里显式重放以端到端验证）。
     AudiobookStorage.documentsRootResolver = AppPaths.documentsRootDirectory;
   });
@@ -65,9 +65,9 @@ void main() {
     AudiobookStorage.documentsRootResolver = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
@@ -78,15 +78,22 @@ void main() {
 
     final String docsChild = p.join(dataRoot.path, 'documents');
 
-    expect((await AppPaths.videoSubtitlesDirectory()).path,
-        equals(p.join(docsChild, 'video_subtitles')));
-    expect((await AppPaths.videoCoversDirectory()).path,
-        equals(p.join(docsChild, 'video_covers')));
+    expect(
+      (await AppPaths.videoSubtitlesDirectory()).path,
+      equals(p.join(docsChild, 'video_subtitles')),
+    );
+    expect(
+      (await AppPaths.videoCoversDirectory()).path,
+      equals(p.join(docsChild, 'video_covers')),
+    );
     // 有声书根经注入的 resolver → 也落新根。
     expect(
-        p.equals(await AudiobookStorage.audiobooksRootDir(),
-            p.join(docsChild, 'audiobooks')),
-        isTrue);
+      p.equals(
+        await AudiobookStorage.audiobooksRootDir(),
+        p.join(docsChild, 'audiobooks'),
+      ),
+      isTrue,
+    );
   });
 
   test('未设自定义数据根（全新安装）→ 三个写路径落 <Documents>/Fushi/data', () async {
@@ -94,17 +101,26 @@ void main() {
     // 默认布局判定只在启动期的 resolve() 里做（mock support 根下无 fushi.db → 新装）。
     await AppPaths.resolve();
 
-    expect((await AppPaths.videoSubtitlesDirectory()).path,
-        equals(p.join(defaultDocsRoot(), 'video_subtitles')));
-    expect((await AppPaths.videoCoversDirectory()).path,
-        equals(p.join(defaultDocsRoot(), 'video_covers')));
     expect(
-        p.equals(await AudiobookStorage.audiobooksRootDir(),
-            p.join(defaultDocsRoot(), 'audiobooks')),
-        isTrue);
+      (await AppPaths.videoSubtitlesDirectory()).path,
+      equals(p.join(defaultDocsRoot(), 'video_subtitles')),
+    );
+    expect(
+      (await AppPaths.videoCoversDirectory()).path,
+      equals(p.join(defaultDocsRoot(), 'video_covers')),
+    );
+    expect(
+      p.equals(
+        await AudiobookStorage.audiobooksRootDir(),
+        p.join(defaultDocsRoot(), 'audiobooks'),
+      ),
+      isTrue,
+    );
     // BUG-1115 的核心断言：用户文档根下不再直接出现 Fushi 的内容目录。
-    expect((await AppPaths.videoCoversDirectory()).path,
-        isNot(equals(p.join(defaultDocs.path, 'video_covers'))));
+    expect(
+      (await AppPaths.videoCoversDirectory()).path,
+      isNot(equals(p.join(defaultDocs.path, 'video_covers'))),
+    );
   });
 
   test('data_root 指向不存在目录 → 回退默认（不落失效路径）', () async {
@@ -113,11 +129,16 @@ void main() {
     addTearDown(() => AppPaths.forceDefaultRootForSession = false);
     await AppPaths.resolve();
 
-    expect((await AppPaths.videoCoversDirectory()).path,
-        equals(p.join(defaultDocsRoot(), 'video_covers')));
     expect(
-        p.equals(await AudiobookStorage.audiobooksRootDir(),
-            p.join(defaultDocsRoot(), 'audiobooks')),
-        isTrue);
+      (await AppPaths.videoCoversDirectory()).path,
+      equals(p.join(defaultDocsRoot(), 'video_covers')),
+    );
+    expect(
+      p.equals(
+        await AudiobookStorage.audiobooksRootDir(),
+        p.join(defaultDocsRoot(), 'audiobooks'),
+      ),
+      isTrue,
+    );
   });
 }

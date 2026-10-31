@@ -75,8 +75,11 @@ void main() {
       for (final String tag in <String>['en', 'de', 'ru', 'ar', 'th', 'vi']) {
         final String out = formatCompactCount(68000, tag);
         for (final String marker in _myriadMarkers) {
-          expect(out.contains(marker), isFalse,
-              reason: '$tag 的缩写「$out」不该带万倍率标记「$marker」');
+          expect(
+            out.contains(marker),
+            isFalse,
+            reason: '$tag 的缩写「$out」不该带万倍率标记「$marker」',
+          );
         }
       }
     });
@@ -111,26 +114,39 @@ void main() {
           }
         });
       }
-      expect(offenders, isEmpty,
-          reason: '倍率分组是语言属性、由 formatCompactCount 决定，不该写进译文'
-              '（写进去就会让英文等界面显示「6.8万 characters」）：\n'
-              '${offenders.join("\n")}');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '倍率分组是语言属性、由 formatCompactCount 决定，不该写进译文'
+            '（写进去就会让英文等界面显示「6.8万 characters」）：\n'
+            '${offenders.join("\n")}',
+      );
     });
 
     test('已退役的 stat_format_chars_wan 键在所有语言都不存在', () {
       for (final String name in _allLocaleFiles) {
-        expect(_readLocale(name).containsKey('stat_format_chars_wan'), isFalse,
-            reason: '$name 仍留着已退役的 stat_format_chars_wan 键');
+        expect(
+          _readLocale(name).containsKey('stat_format_chars_wan'),
+          isFalse,
+          reason: '$name 仍留着已退役的 stat_format_chars_wan 键',
+        );
       }
     });
 
     test(r'stat_format_chars 模板在所有语言都在且带 $n 占位', () {
       for (final String name in _allLocaleFiles) {
         final Map<String, dynamic> json = _readLocale(name);
-        expect(json.containsKey('stat_format_chars'), isTrue,
-            reason: '$name 缺少 key "stat_format_chars"');
-        expect((json['stat_format_chars'] as String).contains(r'$n'), isTrue,
-            reason: '$name 的 stat_format_chars 丢了 \$n 占位符');
+        expect(
+          json.containsKey('stat_format_chars'),
+          isTrue,
+          reason: '$name 缺少 key "stat_format_chars"',
+        );
+        expect(
+          (json['stat_format_chars'] as String).contains(r'$n'),
+          isTrue,
+          reason: '$name 的 stat_format_chars 丢了 \$n 占位符',
+        );
       }
     });
   });

@@ -53,14 +53,16 @@ void main() {
       expect(await db.getSrtBookByUid('srt/1'), isNull);
     });
 
-    test('deleteSrtBookByUid reports 0 when the uid matched no row (BUG-439)',
-        () async {
-      final db = await _openDb();
+    test(
+      'deleteSrtBookByUid reports 0 when the uid matched no row (BUG-439)',
+      () async {
+        final db = await _openDb();
 
-      final int removed = await db.deleteSrtBookByUid('does-not-exist');
+        final int removed = await db.deleteSrtBookByUid('does-not-exist');
 
-      expect(removed, 0);
-    });
+        expect(removed, 0);
+      },
+    );
 
     // insertOnConflictUpdate resolves on primary key (id), not uid.
     // A second insert with a new auto-increment id hits the UNIQUE(uid)

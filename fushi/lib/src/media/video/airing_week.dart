@@ -15,10 +15,11 @@ DateTime localWeekStart(DateTime local) =>
 
 /// 本地日期差（b - a，忽略时分秒）。DST 安全：把两端日期组件搬到 UTC 再取
 /// 整天差，避免本地 Duration 差在 23/25 小时的日子上取整错位。
-int daysBetweenLocalDates(DateTime a, DateTime b) =>
-    DateTime.utc(b.year, b.month, b.day)
-        .difference(DateTime.utc(a.year, a.month, a.day))
-        .inDays;
+int daysBetweenLocalDates(DateTime a, DateTime b) => DateTime.utc(
+  b.year,
+  b.month,
+  b.day,
+).difference(DateTime.utc(a.year, a.month, a.day)).inDays;
 
 /// 把一批放送条目按**本地**星期几分进 7 个桶（0=周一 … 6=周日），桶内按放送
 /// 时刻升序；落在 [weekStartLocal] 起 7 天窗口外的条目丢弃（服务端窗口按 UTC
@@ -29,9 +30,9 @@ List<List<AniListAiringEpisode>> groupEpisodesByLocalWeekday({
 }) {
   final List<List<AniListAiringEpisode>> buckets =
       List<List<AniListAiringEpisode>>.generate(
-    7,
-    (_) => <AniListAiringEpisode>[],
-  );
+        7,
+        (_) => <AniListAiringEpisode>[],
+      );
   for (final AniListAiringEpisode episode in episodes) {
     final DateTime local = airingAtToLocal(episode.airingAtSeconds);
     final int index = daysBetweenLocalDates(weekStartLocal, local);
@@ -39,8 +40,10 @@ List<List<AniListAiringEpisode>> groupEpisodesByLocalWeekday({
     buckets[index].add(episode);
   }
   for (final List<AniListAiringEpisode> bucket in buckets) {
-    bucket.sort((AniListAiringEpisode a, AniListAiringEpisode b) =>
-        a.airingAtSeconds.compareTo(b.airingAtSeconds));
+    bucket.sort(
+      (AniListAiringEpisode a, AniListAiringEpisode b) =>
+          a.airingAtSeconds.compareTo(b.airingAtSeconds),
+    );
   }
   return buckets;
 }

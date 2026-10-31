@@ -26,16 +26,16 @@ void main() {
   }
 
   Widget hostPage(Widget body) => MaterialApp(
-        home: MediaQuery(
-          data: const MediaQueryData(
-            size: Size(screenWidth, screenHeight),
-            devicePixelRatio: 3.0,
-            padding: EdgeInsets.only(top: 59, bottom: bottomInset),
-            viewPadding: EdgeInsets.only(top: 59, bottom: bottomInset),
-          ),
-          child: FushiPageScaffold(title: 'Lookup', body: body),
-        ),
-      );
+    home: MediaQuery(
+      data: const MediaQueryData(
+        size: Size(screenWidth, screenHeight),
+        devicePixelRatio: 3.0,
+        padding: EdgeInsets.only(top: 59, bottom: bottomInset),
+        viewPadding: EdgeInsets.only(top: 59, bottom: bottomInset),
+      ),
+      child: FushiPageScaffold(title: 'Lookup', body: body),
+    ),
+  );
 
   testWidgets(
     'page body extends under the bottom safe area instead of being clipped above it',
@@ -98,47 +98,50 @@ void main() {
     },
   );
 
-  testWidgets('withBottomSafeInset adds to the base padding, never replaces it',
-      (WidgetTester tester) async {
-    late EdgeInsets resolved;
-    await tester.pumpWidget(
-      MediaQuery(
-        data: const MediaQueryData(
-          padding: EdgeInsets.only(bottom: bottomInset),
+  testWidgets(
+    'withBottomSafeInset adds to the base padding, never replaces it',
+    (WidgetTester tester) async {
+      late EdgeInsets resolved;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(
+            padding: EdgeInsets.only(bottom: bottomInset),
+          ),
+          child: Builder(
+            builder: (BuildContext context) {
+              resolved = withBottomSafeInset(
+                context,
+                const EdgeInsets.fromLTRB(8, 12, 8, 20),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
         ),
-        child: Builder(
-          builder: (BuildContext context) {
-            resolved = withBottomSafeInset(
-              context,
-              const EdgeInsets.fromLTRB(8, 12, 8, 20),
-            );
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
+      );
 
-    // 相加而不是取 max：base 是内容之间的呼吸位，inset 是被手势条吃掉的不可用区，
-    // 两段各自成立（与 BUG-383「逐边 max」的口径**故意**不同，语义不同）。
-    expect(resolved, const EdgeInsets.fromLTRB(8, 12, 8, 20 + bottomInset));
-  });
+      // 相加而不是取 max：base 是内容之间的呼吸位，inset 是被手势条吃掉的不可用区，
+      // 两段各自成立（与 BUG-383「逐边 max」的口径**故意**不同，语义不同）。
+      expect(resolved, const EdgeInsets.fromLTRB(8, 12, 8, 20 + bottomInset));
+    },
+  );
 
   testWidgets(
-      'no bottom inset on a desktop-shaped view leaves padding untouched',
-      (WidgetTester tester) async {
-    late EdgeInsets resolved;
-    await tester.pumpWidget(
-      MediaQuery(
-        data: const MediaQueryData(),
-        child: Builder(
-          builder: (BuildContext context) {
-            resolved = withBottomSafeInset(context, const EdgeInsets.all(24));
-            return const SizedBox.shrink();
-          },
+    'no bottom inset on a desktop-shaped view leaves padding untouched',
+    (WidgetTester tester) async {
+      late EdgeInsets resolved;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(),
+          child: Builder(
+            builder: (BuildContext context) {
+              resolved = withBottomSafeInset(context, const EdgeInsets.all(24));
+              return const SizedBox.shrink();
+            },
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(resolved, const EdgeInsets.all(24));
-  });
+      expect(resolved, const EdgeInsets.all(24));
+    },
+  );
 }

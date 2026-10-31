@@ -9,11 +9,11 @@ import 'package:fushi/src/pages/implementations/collections_page.dart';
 typedef _Row = ({String id, int? cid, String mediaKey, String? mediaLabel});
 
 List<CollectionGroupRow<_Row>> _group(List<_Row> items) => groupCollectionItems(
-      items: items,
-      collectionIdOf: (_Row r) => r.cid,
-      mediaKeyOf: (_Row r) => r.mediaKey,
-      mediaLabelOf: (_Row r) => r.mediaLabel,
-    );
+  items: items,
+  collectionIdOf: (_Row r) => r.cid,
+  mediaKeyOf: (_Row r) => r.mediaKey,
+  mediaLabelOf: (_Row r) => r.mediaLabel,
+);
 
 _Row _row(String id, {int? cid, String mediaKey = '', String? mediaLabel}) =>
     (id: id, cid: cid, mediaKey: mediaKey, mediaLabel: mediaLabel);
@@ -40,8 +40,10 @@ void main() {
       _row('b'),
     ]);
     expect(
-      rows.any((CollectionGroupRow<_Row> r) =>
-          r.kind == CollectionGroupRowKind.collectionHeader),
+      rows.any(
+        (CollectionGroupRow<_Row> r) =>
+            r.kind == CollectionGroupRowKind.collectionHeader,
+      ),
       isFalse,
       reason: '孤零零一个「未分组」头是噪音',
     );
@@ -61,8 +63,13 @@ void main() {
           CollectionGroupRowKind.item => r.item!.id,
         },
     ];
-    expect(shape, <String>['C1', 'HM1', 'a', 'c', 'b'],
-        reason: '媒体组内 a、c 保持输入序；无媒体键的 b 平铺殿后');
+    expect(shape, <String>[
+      'C1',
+      'HM1',
+      'a',
+      'c',
+      'b',
+    ], reason: '媒体组内 a、c 保持输入序；无媒体键的 b 平铺殿后');
   });
 
   test('媒体标签空时不出媒体头，行仍在', () {
@@ -70,14 +77,18 @@ void main() {
       _row('a', cid: 1, mediaKey: 'm1', mediaLabel: null),
     ]);
     expect(
-      rows.any((CollectionGroupRow<_Row> r) =>
-          r.kind == CollectionGroupRowKind.mediaHeader),
+      rows.any(
+        (CollectionGroupRow<_Row> r) =>
+            r.kind == CollectionGroupRowKind.mediaHeader,
+      ),
       isFalse,
     );
     expect(
       rows
-          .where((CollectionGroupRow<_Row> r) =>
-              r.kind == CollectionGroupRowKind.item)
+          .where(
+            (CollectionGroupRow<_Row> r) =>
+                r.kind == CollectionGroupRowKind.item,
+          )
           .length,
       1,
     );

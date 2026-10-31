@@ -103,10 +103,7 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   }
 
   @override
-  Future<void> markEpisodesDone(
-    int subjectId,
-    List<int> episodeIds,
-  ) async {
+  Future<void> markEpisodesDone(int subjectId, List<int> episodeIds) async {
     _throwIfNeeded();
     episodePatches.add(episodeIds);
   }
@@ -186,72 +183,76 @@ void main() {
     expect(watched.single.subject.displayName, '以前看过的番剧');
   });
 
-  test('anime sync creates doing collection and marks all episodes to progress',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.videoCollection,
-      mediaKey: '8',
-      mediaTitle: 'Anime',
-      kind: TrackingKind.anime,
-      subjectId: 88,
-      subjectName: 'Remote anime',
-      progressMode: TrackingProgressMode.episode,
-      progressOffset: 1,
-    );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.videoCollection,
-      mediaKey: '8',
-      localProgress: 1,
-      completed: false,
-    );
-    api.episodes = const <BangumiEpisode>[
-      BangumiEpisode(id: 11, type: 0, sort: 1),
-      BangumiEpisode(id: 12, type: 0, sort: 2),
-      BangumiEpisode(id: 13, type: 0, sort: 3),
-    ];
+  test(
+    'anime sync creates doing collection and marks all episodes to progress',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        mediaTitle: 'Anime',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        localProgress: 1,
+        completed: false,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+        BangumiEpisode(id: 13, type: 0, sort: 3),
+      ];
 
-    final MediaTrackingSyncResult result = await service.syncNow();
+      final MediaTrackingSyncResult result = await service.syncNow();
 
-    expect(result.succeeded, 1);
-    expect(api.creates.single, <String, dynamic>{'type': 3});
-    expect(api.episodePatches.single, <int>[11, 12]);
-    expect(await repository.pendingCount(), 0);
-  });
+      expect(result.succeeded, 1);
+      expect(api.creates.single, <String, dynamic>{'type': 3});
+      expect(api.episodePatches.single, <int>[11, 12]);
+      expect(await repository.pendingCount(), 0);
+    },
+  );
 
-  test('finishing a partial local playlist does not mark a longer subject done',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.videoCollection,
-      mediaKey: '8',
-      mediaTitle: 'Partial anime',
-      kind: TrackingKind.anime,
-      subjectId: 88,
-      subjectName: 'Long remote anime',
-      progressMode: TrackingProgressMode.episode,
-      progressOffset: 1,
-    );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.videoCollection,
-      mediaKey: '8',
-      localProgress: 1,
-      completed: true,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 3,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
-    api.episodes = const <BangumiEpisode>[
-      BangumiEpisode(id: 11, type: 0, sort: 1),
-      BangumiEpisode(id: 12, type: 0, sort: 2),
-      BangumiEpisode(id: 13, type: 0, sort: 3),
-    ];
+  test(
+    'finishing a partial local playlist does not mark a longer subject done',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        mediaTitle: 'Partial anime',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Long remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        localProgress: 1,
+        completed: true,
+      );
+      api.collection = const BangumiUserCollection(
+        type: 3,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+        BangumiEpisode(id: 13, type: 0, sort: 3),
+      ];
 
-    await service.syncNow();
+      await service.syncNow();
 
-    expect(api.episodePatches.single, <int>[11, 12]);
-    expect(api.patches, isEmpty);
-  });
+      expect(api.episodePatches.single, <int>[11, 12]);
+      expect(api.patches, isEmpty);
+    },
+  );
 
   test('watching a partial subject promotes wish to doing', () async {
     await repository.saveMapping(
@@ -321,166 +322,175 @@ void main() {
     expect(api.patches.single, <String, dynamic>{'type': 2});
   });
 
-  test('rewatching an earlier episode never downgrades watched to doing',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.video,
-      mediaKey: 'episode-2',
-      mediaTitle: 'Anime episode 2',
-      kind: TrackingKind.anime,
-      subjectId: 88,
-      subjectName: 'Remote anime',
-      progressMode: TrackingProgressMode.episode,
-      progressOffset: 2,
-    );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.video,
-      mediaKey: 'episode-2',
-      localProgress: 0,
-      completed: false,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 2,
-      episodeProgress: 3,
-      volumeProgress: 0,
-    );
-    api.episodes = const <BangumiEpisode>[
-      BangumiEpisode(id: 11, type: 0, sort: 1),
-      BangumiEpisode(id: 12, type: 0, sort: 2),
-      BangumiEpisode(id: 13, type: 0, sort: 3),
-    ];
-
-    await service.syncNow();
-
-    expect(api.episodePatches.single, <int>[11, 12]);
-    expect(api.patches, isEmpty);
-  });
-
-  test('sync repairs a completed legacy video whose outbox was already empty',
-      () async {
-    final DateTime completedAt = DateTime.fromMillisecondsSinceEpoch(2000);
-    await db.upsertVideoBook(
-      VideoBooksCompanion.insert(
-        bookUid: 'legacy-episode-2',
-        title: 'Legacy anime 02',
-        videoPath: r'C:\Anime\Legacy\02.mkv',
-        completedAt: Value<DateTime?>(completedAt),
-      ),
-    );
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.video,
-      mediaKey: 'legacy-episode-2',
-      mediaTitle: 'Legacy anime 02',
-      kind: TrackingKind.anime,
-      subjectId: 88,
-      subjectName: 'Remote anime',
-      progressMode: TrackingProgressMode.episode,
-      progressOffset: 2,
-    );
-    expect(await repository.pendingCount(), 0);
-    api.collection = const BangumiUserCollection(
-      type: 1,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
-    api.episodes = const <BangumiEpisode>[
-      BangumiEpisode(id: 11, type: 0, sort: 1),
-      BangumiEpisode(id: 12, type: 0, sort: 2),
-      BangumiEpisode(id: 13, type: 0, sort: 3),
-    ];
-
-    final MediaTrackingSyncResult result = await service.syncNow();
-
-    expect(result.succeeded, 1);
-    expect(api.episodePatches.single, <int>[11, 12]);
-    expect(api.patches.single, <String, dynamic>{'type': 3});
-    expect(await repository.pendingCount(), 0);
-    expect(
-      preferences.getPref(
-        kVideoTrackingReconcileWatermarkPref,
-        defaultValue: 0,
-      ),
-      isNonZero,
-    );
-  });
-
-  test('completed collection reconciliation uses its highest completed member',
-      () async {
-    final int collectionId = await db.createMediaCollection('Legacy playlist');
-    for (int index = 0; index < 3; index++) {
-      final String uid = 'legacy-collection-$index';
-      await db.upsertVideoBook(
-        VideoBooksCompanion.insert(
-          bookUid: uid,
-          title: 'Episode ${index + 1}',
-          videoPath: 'C:/Anime/Legacy/${index + 1}.mkv',
-          completedAt: index < 2
-              ? Value<DateTime?>(
-                  DateTime.fromMillisecondsSinceEpoch(3000 + index),
-                )
-              : const Value<DateTime?>.absent(),
-        ),
+  test(
+    'rewatching an earlier episode never downgrades watched to doing',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'episode-2',
+        mediaTitle: 'Anime episode 2',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 2,
       );
-      await db.addToCollection(collectionId, MediaKind.video, uid);
-    }
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.videoCollection,
-      mediaKey: '$collectionId',
-      mediaTitle: 'Legacy playlist',
-      kind: TrackingKind.anime,
-      subjectId: 88,
-      subjectName: 'Remote anime',
-      progressMode: TrackingProgressMode.episode,
-      progressOffset: 1,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 1,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
-    api.episodes = const <BangumiEpisode>[
-      BangumiEpisode(id: 11, type: 0, sort: 1),
-      BangumiEpisode(id: 12, type: 0, sort: 2),
-      BangumiEpisode(id: 13, type: 0, sort: 3),
-    ];
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'episode-2',
+        localProgress: 0,
+        completed: false,
+      );
+      api.collection = const BangumiUserCollection(
+        type: 2,
+        episodeProgress: 3,
+        volumeProgress: 0,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+        BangumiEpisode(id: 13, type: 0, sort: 3),
+      ];
 
-    await service.syncNow();
+      await service.syncNow();
 
-    expect(api.episodePatches.single, <int>[11, 12]);
-    expect(api.patches.single, <String, dynamic>{'type': 3});
-  });
+      expect(api.episodePatches.single, <int>[11, 12]);
+      expect(api.patches, isEmpty);
+    },
+  );
 
   test(
-      'episode progress uses subject-local order when Bangumi sort starts later',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.video,
-      mediaKey: 'episode-2',
-      mediaTitle: 'Split cour episode 2',
-      kind: TrackingKind.anime,
-      subjectId: 88,
-      subjectName: 'Split cour',
-      progressMode: TrackingProgressMode.episode,
-      progressOffset: 2,
-    );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.video,
-      mediaKey: 'episode-2',
-      localProgress: 0,
-      completed: false,
-    );
-    api.episodes = const <BangumiEpisode>[
-      BangumiEpisode(id: 51, type: 0, sort: 51),
-      BangumiEpisode(id: 52, type: 0, sort: 52),
-      BangumiEpisode(id: 53, type: 0, sort: 53),
-    ];
+    'sync repairs a completed legacy video whose outbox was already empty',
+    () async {
+      final DateTime completedAt = DateTime.fromMillisecondsSinceEpoch(2000);
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'legacy-episode-2',
+          title: 'Legacy anime 02',
+          videoPath: r'C:\Anime\Legacy\02.mkv',
+          completedAt: Value<DateTime?>(completedAt),
+        ),
+      );
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'legacy-episode-2',
+        mediaTitle: 'Legacy anime 02',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 2,
+      );
+      expect(await repository.pendingCount(), 0);
+      api.collection = const BangumiUserCollection(
+        type: 1,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+        BangumiEpisode(id: 13, type: 0, sort: 3),
+      ];
 
-    final MediaTrackingSyncResult result = await service.syncNow();
+      final MediaTrackingSyncResult result = await service.syncNow();
 
-    expect(result.succeeded, 1);
-    expect(api.episodePatches.single, <int>[51, 52]);
-    expect(await repository.pendingCount(), 0);
-  });
+      expect(result.succeeded, 1);
+      expect(api.episodePatches.single, <int>[11, 12]);
+      expect(api.patches.single, <String, dynamic>{'type': 3});
+      expect(await repository.pendingCount(), 0);
+      expect(
+        preferences.getPref(
+          kVideoTrackingReconcileWatermarkPref,
+          defaultValue: 0,
+        ),
+        isNonZero,
+      );
+    },
+  );
+
+  test(
+    'completed collection reconciliation uses its highest completed member',
+    () async {
+      final int collectionId = await db.createMediaCollection(
+        'Legacy playlist',
+      );
+      for (int index = 0; index < 3; index++) {
+        final String uid = 'legacy-collection-$index';
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: 'Episode ${index + 1}',
+            videoPath: 'C:/Anime/Legacy/${index + 1}.mkv',
+            completedAt: index < 2
+                ? Value<DateTime?>(
+                    DateTime.fromMillisecondsSinceEpoch(3000 + index),
+                  )
+                : const Value<DateTime?>.absent(),
+          ),
+        );
+        await db.addToCollection(collectionId, MediaKind.video, uid);
+      }
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '$collectionId',
+        mediaTitle: 'Legacy playlist',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+      api.collection = const BangumiUserCollection(
+        type: 1,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+        BangumiEpisode(id: 13, type: 0, sort: 3),
+      ];
+
+      await service.syncNow();
+
+      expect(api.episodePatches.single, <int>[11, 12]);
+      expect(api.patches.single, <String, dynamic>{'type': 3});
+    },
+  );
+
+  test(
+    'episode progress uses subject-local order when Bangumi sort starts later',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'episode-2',
+        mediaTitle: 'Split cour episode 2',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Split cour',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 2,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'episode-2',
+        localProgress: 0,
+        completed: false,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 51, type: 0, sort: 51),
+        BangumiEpisode(id: 52, type: 0, sort: 52),
+        BangumiEpisode(id: 53, type: 0, sort: 53),
+      ];
+
+      final MediaTrackingSyncResult result = await service.syncNow();
+
+      expect(result.succeeded, 1);
+      expect(api.episodePatches.single, <int>[51, 52]);
+      expect(await repository.pendingCount(), 0);
+    },
+  );
 
   test('book sync never regresses remote progress and can mark done', () async {
     await repository.saveMapping(
@@ -511,64 +521,68 @@ void main() {
     expect(api.patches.single, isNot(contains('ep_status')));
   });
 
-  test('starting a novel promotes wish to reading before chapter one ends',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'novel',
-      mediaTitle: 'Novel',
-      kind: TrackingKind.novel,
-      subjectId: 88,
-      subjectName: 'Remote novel',
-      progressMode: TrackingProgressMode.chapter,
-      progressOffset: 0,
-    );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'novel',
-      localProgress: 0,
-      completed: false,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 1,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
+  test(
+    'starting a novel promotes wish to reading before chapter one ends',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'novel',
+        mediaTitle: 'Novel',
+        kind: TrackingKind.novel,
+        subjectId: 88,
+        subjectName: 'Remote novel',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'novel',
+        localProgress: 0,
+        completed: false,
+      );
+      api.collection = const BangumiUserCollection(
+        type: 1,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
 
-    await service.syncNow();
+      await service.syncNow();
 
-    expect(api.patches.single, <String, dynamic>{'type': 3});
-  });
+      expect(api.patches.single, <String, dynamic>{'type': 3});
+    },
+  );
 
-  test('partial novel progress never downgrades an already read collection',
-      () async {
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'read-novel',
-      mediaTitle: 'Read novel',
-      kind: TrackingKind.novel,
-      subjectId: 88,
-      subjectName: 'Remote novel',
-      progressMode: TrackingProgressMode.chapter,
-      progressOffset: 0,
-    );
-    await repository.enqueueProgress(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'read-novel',
-      localProgress: 2,
-      completed: false,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 2,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
+  test(
+    'partial novel progress never downgrades an already read collection',
+    () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'read-novel',
+        mediaTitle: 'Read novel',
+        kind: TrackingKind.novel,
+        subjectId: 88,
+        subjectName: 'Remote novel',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'read-novel',
+        localProgress: 2,
+        completed: false,
+      );
+      api.collection = const BangumiUserCollection(
+        type: 2,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
 
-    await service.syncNow();
+      await service.syncNow();
 
-    expect(api.patches.single, <String, dynamic>{'ep_status': 2});
-    expect(api.patches.single, isNot(contains('type')));
-  });
+      expect(api.patches.single, <String, dynamic>{'ep_status': 2});
+      expect(api.patches.single, isNot(contains('type')));
+    },
+  );
 
   test('finishing one volume keeps a longer book subject in reading', () async {
     await repository.saveMapping(
@@ -604,10 +618,7 @@ void main() {
 
     await service.syncNow();
 
-    expect(
-      api.patches.single,
-      <String, dynamic>{'vol_status': 2, 'type': 3},
-    );
+    expect(api.patches.single, <String, dynamic>{'vol_status': 2, 'type': 3});
   });
 
   test('finishing the last remote volume promotes reading to read', () async {
@@ -644,65 +655,61 @@ void main() {
 
     await service.syncNow();
 
-    expect(
-      api.patches.single,
-      <String, dynamic>{'vol_status': 3, 'type': 2},
-    );
+    expect(api.patches.single, <String, dynamic>{'vol_status': 3, 'type': 2});
   });
 
-  test('sync restores a legacy novel reading position after outbox was cleared',
-      () async {
-    await db.insertEpubBook(
-      EpubBooksCompanion.insert(
-        bookKey: 'legacy-novel',
-        title: 'Legacy novel',
-        epubPath: '/tmp/legacy.epub',
-        extractDir: '/tmp/legacy',
-        chapterCount: 8,
-        chaptersJson: '[]',
-        importedAt: 1,
-      ),
-    );
-    await db.upsertReaderPosition(
-      ReaderPositionsCompanion.insert(
-        bookUid: (await db.resolveEpubBookUid('legacy-novel'))!,
-        sectionIndex: 2,
-        normCharOffset: 5000,
-        updatedAt: 4000,
-      ),
-    );
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'legacy-novel',
-      mediaTitle: 'Legacy novel',
-      kind: TrackingKind.novel,
-      subjectId: 88,
-      subjectName: 'Remote novel',
-      progressMode: TrackingProgressMode.chapter,
-      progressOffset: 0,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 1,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
-    expect(await repository.pendingCount(), 0);
+  test(
+    'sync restores a legacy novel reading position after outbox was cleared',
+    () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'legacy-novel',
+          title: 'Legacy novel',
+          epubPath: '/tmp/legacy.epub',
+          extractDir: '/tmp/legacy',
+          chapterCount: 8,
+          chaptersJson: '[]',
+          importedAt: 1,
+        ),
+      );
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await db.resolveEpubBookUid('legacy-novel'))!,
+          sectionIndex: 2,
+          normCharOffset: 5000,
+          updatedAt: 4000,
+        ),
+      );
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'legacy-novel',
+        mediaTitle: 'Legacy novel',
+        kind: TrackingKind.novel,
+        subjectId: 88,
+        subjectName: 'Remote novel',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      api.collection = const BangumiUserCollection(
+        type: 1,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+      expect(await repository.pendingCount(), 0);
 
-    await service.syncNow();
+      await service.syncNow();
 
-    expect(
-      api.patches.single,
-      <String, dynamic>{'ep_status': 2, 'type': 3},
-    );
-    expect(await repository.pendingCount(), 0);
-    expect(
-      preferences.getPref(
-        kBookTrackingReconcileWatermarkPref,
-        defaultValue: 0,
-      ),
-      isNonZero,
-    );
-  });
+      expect(api.patches.single, <String, dynamic>{'ep_status': 2, 'type': 3});
+      expect(await repository.pendingCount(), 0);
+      expect(
+        preferences.getPref(
+          kBookTrackingReconcileWatermarkPref,
+          defaultValue: 0,
+        ),
+        isNonZero,
+      );
+    },
+  );
 
   test('network failure keeps the update in the durable queue', () async {
     await repository.saveMapping(
@@ -803,10 +810,7 @@ void main() {
 
     test('下一轮同步开始时取消旧定时器，零待办不再安排新的', () async {
       await enqueueOneBookUpdate();
-      api.error = const BangumiApiException(
-        statusCode: 500,
-        message: 'boom',
-      );
+      api.error = const BangumiApiException(statusCode: 500, message: 'boom');
       await retryService.syncNow();
       expect(scheduled, hasLength(1));
 
@@ -828,41 +832,40 @@ void main() {
     });
   });
 
-  test('video completion reuses scraped Bangumi subject and creates mapping',
-      () async {
-    await db.upsertVideoBook(
-      VideoBooksCompanion.insert(
-        bookUid: 'video-1',
-        title: '葬送的芙莉莲 01',
-        videoPath: r'C:\Anime\Frieren\01.mkv',
-      ),
-    );
-    await db.upsertVideoScrapeMeta(
-      VideoScrapeMetaCompanion.insert(
-        bookUid: 'video-1',
-        source: 'bangumi',
-        subjectId: '400602',
-        title: '葬送的芙莉莲',
-        scrapedAt: DateTime.now(),
-      ),
-    );
+  test(
+    'video completion reuses scraped Bangumi subject and creates mapping',
+    () async {
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video-1',
+          title: '葬送的芙莉莲 01',
+          videoPath: r'C:\Anime\Frieren\01.mkv',
+        ),
+      );
+      await db.upsertVideoScrapeMeta(
+        VideoScrapeMetaCompanion.insert(
+          bookUid: 'video-1',
+          source: 'bangumi',
+          subjectId: '400602',
+          title: '葬送的芙莉莲',
+          scrapedAt: DateTime.now(),
+        ),
+      );
 
-    await service.recordVideoCompleted(
-      bookUid: 'video-1',
-      episodeIndex: 0,
-    );
-    await service.syncNow();
+      await service.recordVideoCompleted(bookUid: 'video-1', episodeIndex: 0);
+      await service.syncNow();
 
-    final MediaTrackingMappingRow? mapping = await repository.findMapping(
-      mediaType: TrackingMediaType.video,
-      mediaKey: 'video-1',
-    );
-    expect(mapping, isNotNull);
-    expect(mapping!.subjectId, 400602);
-    expect(mapping.subjectName, '葬送的芙莉莲');
-    expect(mapping.progressMode, TrackingProgressMode.episode.value);
-    expect(api.searches, isEmpty, reason: '已刮出的 Bangumi id 不应重复搜索');
-  });
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'video-1',
+      );
+      expect(mapping, isNotNull);
+      expect(mapping!.subjectId, 400602);
+      expect(mapping.subjectName, '葬送的芙莉莲');
+      expect(mapping.progressMode, TrackingProgressMode.episode.value);
+      expect(api.searches, isEmpty, reason: '已刮出的 Bangumi id 不应重复搜索');
+    },
+  );
 
   test('novel progress creates a unique exact-title chapter mapping', () async {
     await db.insertEpubBook(
@@ -906,16 +909,17 @@ void main() {
     expect(api.searches.single, (keyword: '药屋少女的呢喃', subjectType: 1));
   });
 
-  test('novel series selects novel over same-title manga and syncs chapter',
-      () async {
-    await db.insertEpubBook(
-      EpubBooksCompanion.insert(
-        bookKey: 'series-volume-1',
-        title: '同名系列 01 (MFブックス)',
-        epubPath: '/tmp/series-1.epub',
-        extractDir: '/tmp/series-1',
-        chapterCount: 4,
-        chaptersJson: '''
+  test(
+    'novel series selects novel over same-title manga and syncs chapter',
+    () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'series-volume-1',
+          title: '同名系列 01 (MFブックス)',
+          epubPath: '/tmp/series-1.epub',
+          extractDir: '/tmp/series-1',
+          chapterCount: 4,
+          chaptersJson: '''
 [
   {"href":"text/nav.xhtml"},
   {"href":"text/chapter-1.xhtml"},
@@ -923,35 +927,45 @@ void main() {
   {"href":"text/chapter-2.xhtml"}
 ]
 ''',
-        tocJson: const Value<String>('''
+          tocJson: const Value<String>('''
 [
   {"title":"目次","href":"text/nav.xhtml"},
   {"title":"第一話","href":"text/chapter-1.xhtml"},
   {"title":"第二話","href":"text/chapter-2.xhtml"}
 ]
 '''),
-        importedAt: 1,
-      ),
-    );
-    await db.upsertReaderPosition(
-      ReaderPositionsCompanion.insert(
-        bookUid: (await db.resolveEpubBookUid('series-volume-1'))!,
-        sectionIndex: 2,
-        normCharOffset: 0,
-        updatedAt: 2,
-      ),
-    );
-    api.searchResults = const <BangumiSubject>[
-      BangumiSubject(
-        id: 10,
-        type: 1,
-        name: '同名系列',
-        nameCn: '',
-        platform: '漫画',
-        episodeCount: 120,
-        volumeCount: 12,
-      ),
-      BangumiSubject(
+          importedAt: 1,
+        ),
+      );
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await db.resolveEpubBookUid('series-volume-1'))!,
+          sectionIndex: 2,
+          normCharOffset: 0,
+          updatedAt: 2,
+        ),
+      );
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 10,
+          type: 1,
+          name: '同名系列',
+          nameCn: '',
+          platform: '漫画',
+          episodeCount: 120,
+          volumeCount: 12,
+        ),
+        BangumiSubject(
+          id: 20,
+          type: 1,
+          name: '同名系列',
+          nameCn: '',
+          platform: '小说',
+          episodeCount: 262,
+          volumeCount: 26,
+        ),
+      ];
+      api.subject = const BangumiSubject(
         id: 20,
         type: 1,
         name: '同名系列',
@@ -959,105 +973,94 @@ void main() {
         platform: '小说',
         episodeCount: 262,
         volumeCount: 26,
-      ),
-    ];
-    api.subject = const BangumiSubject(
-      id: 20,
-      type: 1,
-      name: '同名系列',
-      nameCn: '',
-      platform: '小说',
-      episodeCount: 262,
-      volumeCount: 26,
-    );
-    api.collection = const BangumiUserCollection(
-      type: 1,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
+      );
+      api.collection = const BangumiUserCollection(
+        type: 1,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
 
-    await service.recordBookProgress(
-      bookKey: 'series-volume-1',
-      completedChapterCount: 17,
-      completed: false,
-    );
-    await service.syncNow();
-    while (await repository.pendingCount() > 0) {
+      await service.recordBookProgress(
+        bookKey: 'series-volume-1',
+        completedChapterCount: 17,
+        completed: false,
+      );
       await service.syncNow();
-    }
+      while (await repository.pendingCount() > 0) {
+        await service.syncNow();
+      }
 
-    final MediaTrackingMappingRow? volumeMapping = await repository.findMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'series-volume-1',
-    );
-    final MediaTrackingMappingRow? chapterMapping =
-        await repository.findMapping(
-      mediaType: TrackingMediaType.bookChapter,
-      mediaKey: 'series-volume-1',
-    );
-    expect(volumeMapping, isNotNull);
-    expect(volumeMapping!.subjectId, 20);
-    expect(volumeMapping.progressMode, TrackingProgressMode.volume.value);
-    expect(volumeMapping.progressOffset, 1);
-    expect(chapterMapping, isNotNull);
-    expect(chapterMapping!.subjectId, 20);
-    expect(chapterMapping.progressOffset, 0);
-    expect(api.searches.single, (keyword: '同名系列', subjectType: 1));
-    expect(
-      api.patches,
-      anyElement(equals(<String, dynamic>{'ep_status': 1})),
-      reason: '章节进度必须按 TOC 逻辑章节上报，不能使用 17 个 spine 文件',
-    );
-    expect(
-      api.patches,
-      anyElement(equals(<String, dynamic>{'type': 3})),
-    );
+      final MediaTrackingMappingRow? volumeMapping = await repository
+          .findMapping(
+            mediaType: TrackingMediaType.book,
+            mediaKey: 'series-volume-1',
+          );
+      final MediaTrackingMappingRow? chapterMapping = await repository
+          .findMapping(
+            mediaType: TrackingMediaType.bookChapter,
+            mediaKey: 'series-volume-1',
+          );
+      expect(volumeMapping, isNotNull);
+      expect(volumeMapping!.subjectId, 20);
+      expect(volumeMapping.progressMode, TrackingProgressMode.volume.value);
+      expect(volumeMapping.progressOffset, 1);
+      expect(chapterMapping, isNotNull);
+      expect(chapterMapping!.subjectId, 20);
+      expect(chapterMapping.progressOffset, 0);
+      expect(api.searches.single, (keyword: '同名系列', subjectType: 1));
+      expect(
+        api.patches,
+        anyElement(equals(<String, dynamic>{'ep_status': 1})),
+        reason: '章节进度必须按 TOC 逻辑章节上报，不能使用 17 个 spine 文件',
+      );
+      expect(api.patches, anyElement(equals(<String, dynamic>{'type': 3})));
 
-    await db.upsertReaderPosition(
-      ReaderPositionsCompanion.insert(
-        bookUid: (await db.resolveEpubBookUid('series-volume-1'))!,
-        sectionIndex: 3,
-        normCharOffset: 10000,
-        updatedAt: 3,
-      ),
-    );
-    await db.markEpubBookCompletedIfUnset(
-      'series-volume-1',
-      DateTime.fromMillisecondsSinceEpoch(3),
-    );
-    await service.recordBookProgress(
-      bookKey: 'series-volume-1',
-      completedChapterCount: 99,
-      completed: true,
-    );
-    await service.syncNow();
-    while (await repository.pendingCount() > 0) {
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await db.resolveEpubBookUid('series-volume-1'))!,
+          sectionIndex: 3,
+          normCharOffset: 10000,
+          updatedAt: 3,
+        ),
+      );
+      await db.markEpubBookCompletedIfUnset(
+        'series-volume-1',
+        DateTime.fromMillisecondsSinceEpoch(3),
+      );
+      await service.recordBookProgress(
+        bookKey: 'series-volume-1',
+        completedChapterCount: 99,
+        completed: true,
+      );
       await service.syncNow();
-    }
+      while (await repository.pendingCount() > 0) {
+        await service.syncNow();
+      }
 
-    expect(
-      api.patches,
-      anyElement(equals(<String, dynamic>{'vol_status': 1, 'type': 3})),
-      reason: '读完第 1/26 卷只增加卷数，收藏仍须保持在读',
-    );
-    expect(
-      api.patches,
-      anyElement(equals(<String, dynamic>{'ep_status': 2})),
-    );
-  });
+      expect(
+        api.patches,
+        anyElement(equals(<String, dynamic>{'vol_status': 1, 'type': 3})),
+        reason: '读完第 1/26 卷只增加卷数，收藏仍须保持在读',
+      );
+      expect(
+        api.patches,
+        anyElement(equals(<String, dynamic>{'ep_status': 2})),
+      );
+    },
+  );
 
   test('私密书无映射时 recordBookProgress 不向 Bangumi 搜索；公开书会搜（对照）', () async {
     Future<void> seed(String key) => db.insertEpubBook(
-          EpubBooksCompanion.insert(
-            bookKey: key,
-            title: 'Title $key',
-            epubPath: '/tmp/$key.epub',
-            extractDir: '/tmp/$key',
-            chapterCount: 10,
-            chaptersJson: '[]',
-            importedAt: 1,
-          ),
-        );
+      EpubBooksCompanion.insert(
+        bookKey: key,
+        title: 'Title $key',
+        epubPath: '/tmp/$key.epub',
+        extractDir: '/tmp/$key',
+        chapterCount: 10,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
     await seed('secret');
     await seed('open');
     await db.setMediaPrivate(TagHostKind.epub, 'secret', true);
@@ -1087,211 +1090,217 @@ void main() {
   });
 
   test(
-      'PDF auto mapping reports one volume only after completion and is idempotent',
-      () async {
-    await db.insertEpubBook(
-      EpubBooksCompanion.insert(
+    'PDF auto mapping reports one volume only after completion and is idempotent',
+    () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'pdf-key',
+          title: '单册 PDF 第3卷',
+          epubPath: '/tmp/single.pdf',
+          extractDir: '/tmp/pdf',
+          chapterCount: 200,
+          chaptersJson: '[]',
+          importedAt: 1,
+          format: const Value<String>('pdf'),
+        ),
+      );
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await db.resolveEpubBookUid('pdf-key'))!,
+          sectionIndex: 137,
+          normCharOffset: 5000,
+          updatedAt: 2,
+        ),
+      );
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 2289,
+          type: 1,
+          name: '单册 PDF',
+          nameCn: '',
+          platform: '小说',
+          episodeCount: 12,
+          volumeCount: 1,
+        ),
+      ];
+      api.subject = api.searchResults.single;
+
+      await service.recordBookProgress(
         bookKey: 'pdf-key',
-        title: '单册 PDF 第3卷',
-        epubPath: '/tmp/single.pdf',
-        extractDir: '/tmp/pdf',
-        chapterCount: 200,
-        chaptersJson: '[]',
-        importedAt: 1,
-        format: const Value<String>('pdf'),
-      ),
-    );
-    await db.upsertReaderPosition(
-      ReaderPositionsCompanion.insert(
-        bookUid: (await db.resolveEpubBookUid('pdf-key'))!,
-        sectionIndex: 137,
-        normCharOffset: 5000,
-        updatedAt: 2,
-      ),
-    );
-    api.searchResults = const <BangumiSubject>[
-      BangumiSubject(
-        id: 2289,
-        type: 1,
-        name: '单册 PDF',
-        nameCn: '',
-        platform: '小说',
-        episodeCount: 12,
-        volumeCount: 1,
-      ),
-    ];
-    api.subject = api.searchResults.single;
+        completedChapterCount: 137,
+        completed: false,
+      );
+      await service.syncNow();
 
-    await service.recordBookProgress(
-      bookKey: 'pdf-key',
-      completedChapterCount: 137,
-      completed: false,
-    );
-    await service.syncNow();
-
-    final MediaTrackingMappingRow? mapping = await repository.findMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'pdf-key',
-    );
-    expect(mapping, isNotNull);
-    expect(mapping!.progressMode, TrackingProgressMode.volume.value);
-    expect(mapping.progressOffset, 1,
-        reason: '一本 PDF 只算一卷，不能因标题带“第3卷”猜测此前两卷也已读');
-    expect(
-      await repository.findMapping(
-        mediaType: TrackingMediaType.bookChapter,
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.book,
         mediaKey: 'pdf-key',
-      ),
-      isNull,
-      reason: 'PDF 没有章节进度，不应创建章节伴随映射',
-    );
-    expect(api.createSubjectIds, <int>[2289]);
-    expect(
-      api.creates.single,
-      <String, dynamic>{'type': 3},
-      reason: '未完成 PDF 可以标记在读，但不能把第 137 页或本卷计入进度',
-    );
+      );
+      expect(mapping, isNotNull);
+      expect(mapping!.progressMode, TrackingProgressMode.volume.value);
+      expect(
+        mapping.progressOffset,
+        1,
+        reason: '一本 PDF 只算一卷，不能因标题带“第3卷”猜测此前两卷也已读',
+      );
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.bookChapter,
+          mediaKey: 'pdf-key',
+        ),
+        isNull,
+        reason: 'PDF 没有章节进度，不应创建章节伴随映射',
+      );
+      expect(api.createSubjectIds, <int>[2289]);
+      expect(api.creates.single, <String, dynamic>{
+        'type': 3,
+      }, reason: '未完成 PDF 可以标记在读，但不能把第 137 页或本卷计入进度');
 
-    api.collection = const BangumiUserCollection(
-      type: 3,
-      episodeProgress: 0,
-      volumeProgress: 0,
-    );
-    await db.markEpubBookCompletedIfUnset(
-      'pdf-key',
-      DateTime.fromMillisecondsSinceEpoch(3),
-    );
-    await service.recordBookProgress(
-      bookKey: 'pdf-key',
-      completedChapterCount: 200,
-      completed: true,
-    );
-    await service.syncNow();
+      api.collection = const BangumiUserCollection(
+        type: 3,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+      await db.markEpubBookCompletedIfUnset(
+        'pdf-key',
+        DateTime.fromMillisecondsSinceEpoch(3),
+      );
+      await service.recordBookProgress(
+        bookKey: 'pdf-key',
+        completedChapterCount: 200,
+        completed: true,
+      );
+      await service.syncNow();
 
-    expect(api.patchSubjectIds, <int>[2289]);
-    expect(
-      api.patches.single,
-      <String, dynamic>{'vol_status': 1, 'type': 2},
-      reason: '明确完成一本 PDF 后只上报 1 卷，并将单卷条目标为读过',
-    );
+      expect(api.patchSubjectIds, <int>[2289]);
+      expect(api.patches.single, <String, dynamic>{
+        'vol_status': 1,
+        'type': 2,
+      }, reason: '明确完成一本 PDF 后只上报 1 卷，并将单卷条目标为读过');
 
-    await service.recordBookProgress(
-      bookKey: 'pdf-key',
-      completedChapterCount: 200,
-      completed: true,
-    );
-    await service.syncNow();
-    expect(api.patches, hasLength(1), reason: '重复完成回调必须幂等，不二次写 Bangumi');
-  });
+      await service.recordBookProgress(
+        bookKey: 'pdf-key',
+        completedChapterCount: 200,
+        completed: true,
+      );
+      await service.syncNow();
+      expect(api.patches, hasLength(1), reason: '重复完成回调必须幂等，不二次写 Bangumi');
+    },
+  );
 
   test(
-      'manual PDF chapter mapping is preserved and never reports page progress',
-      () async {
-    await db.insertEpubBook(
-      EpubBooksCompanion.insert(
+    'manual PDF chapter mapping is preserved and never reports page progress',
+    () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'manual-pdf',
+          title: '手动映射 PDF',
+          epubPath: '/tmp/manual.pdf',
+          extractDir: '/tmp/manual-pdf',
+          chapterCount: 88,
+          chaptersJson: '[]',
+          importedAt: 1,
+          format: const Value<String>('pdf'),
+        ),
+      );
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'manual-pdf',
+        mediaTitle: '手动映射 PDF',
+        kind: TrackingKind.novel,
+        subjectId: 2290,
+        subjectName: '用户选择的条目',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 7,
+      );
+
+      await service.recordBookProgress(
         bookKey: 'manual-pdf',
-        title: '手动映射 PDF',
-        epubPath: '/tmp/manual.pdf',
-        extractDir: '/tmp/manual-pdf',
-        chapterCount: 88,
-        chaptersJson: '[]',
-        importedAt: 1,
-        format: const Value<String>('pdf'),
-      ),
-    );
-    await repository.saveMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'manual-pdf',
-      mediaTitle: '手动映射 PDF',
-      kind: TrackingKind.novel,
-      subjectId: 2290,
-      subjectName: '用户选择的条目',
-      progressMode: TrackingProgressMode.chapter,
-      progressOffset: 7,
-    );
+        completedChapterCount: 88,
+        completed: true,
+      );
+      await service.syncNow();
 
-    await service.recordBookProgress(
-      bookKey: 'manual-pdf',
-      completedChapterCount: 88,
-      completed: true,
-    );
-    await service.syncNow();
+      final MediaTrackingMappingRow mapping = (await repository.findMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'manual-pdf',
+      ))!;
+      expect(mapping.subjectId, 2290);
+      expect(mapping.progressMode, TrackingProgressMode.chapter.value);
+      expect(mapping.progressOffset, 7);
+      expect(api.searches, isEmpty);
+      expect(api.creates, isEmpty);
+      expect(api.patches, isEmpty);
+      expect(await repository.pendingCount(), 0);
+    },
+  );
 
-    final MediaTrackingMappingRow mapping = (await repository.findMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'manual-pdf',
-    ))!;
-    expect(mapping.subjectId, 2290);
-    expect(mapping.progressMode, TrackingProgressMode.chapter.value);
-    expect(mapping.progressOffset, 7);
-    expect(api.searches, isEmpty);
-    expect(api.creates, isEmpty);
-    expect(api.patches, isEmpty);
-    expect(await repository.pendingCount(), 0);
-  });
+  test(
+    'manga volume suffix reports previous volumes while current is reading',
+    () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'manga-key',
+          title: '迷宫饭 第3卷',
+          epubPath: '/tmp/manga/manga.json',
+          extractDir: '/tmp/manga',
+          chapterCount: 200,
+          chaptersJson: '[]',
+          importedAt: 1,
+          format: const Value<String>('manga'),
+        ),
+      );
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 110993,
+          type: 1,
+          name: 'ダンジョン飯',
+          nameCn: '迷宫饭',
+          platform: '漫画',
+          episodeCount: 0,
+          volumeCount: 14,
+        ),
+      ];
 
-  test('manga volume suffix reports previous volumes while current is reading',
-      () async {
-    await db.insertEpubBook(
-      EpubBooksCompanion.insert(
+      await service.recordBookProgress(
         bookKey: 'manga-key',
-        title: '迷宫饭 第3卷',
-        epubPath: '/tmp/manga/manga.json',
-        extractDir: '/tmp/manga',
-        chapterCount: 200,
-        chaptersJson: '[]',
-        importedAt: 1,
-        format: const Value<String>('manga'),
-      ),
-    );
-    api.searchResults = const <BangumiSubject>[
-      BangumiSubject(
-        id: 110993,
-        type: 1,
-        name: 'ダンジョン飯',
-        nameCn: '迷宫饭',
-        platform: '漫画',
-        episodeCount: 0,
-        volumeCount: 14,
-      ),
-    ];
+        completedChapterCount: 80,
+        completed: false,
+      );
 
-    await service.recordBookProgress(
-      bookKey: 'manga-key',
-      completedChapterCount: 80,
-      completed: false,
-    );
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'manga-key',
+      );
+      expect(mapping, isNotNull);
+      expect(mapping!.kind, TrackingKind.manga.value);
+      expect(mapping.progressMode, TrackingProgressMode.volume.value);
+      expect(mapping.progressOffset, 3);
+      expect(await repository.pendingCount(), 1);
+      await service.syncNow();
+      expect(
+        await repository.pendingCount(),
+        0,
+        reason: '漫画页码不能误写成 Bangumi 章节进度',
+      );
+      expect(api.creates.single, <String, dynamic>{
+        'vol_status': 2,
+        'type': 3,
+      }, reason: '开始第 3 卷只代表前 2 卷已读，当前收藏应为在读');
 
-    final MediaTrackingMappingRow? mapping = await repository.findMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: 'manga-key',
-    );
-    expect(mapping, isNotNull);
-    expect(mapping!.kind, TrackingKind.manga.value);
-    expect(mapping.progressMode, TrackingProgressMode.volume.value);
-    expect(mapping.progressOffset, 3);
-    expect(await repository.pendingCount(), 1);
-    await service.syncNow();
-    expect(await repository.pendingCount(), 0,
-        reason: '漫画页码不能误写成 Bangumi 章节进度');
-    expect(
-      api.creates.single,
-      <String, dynamic>{'vol_status': 2, 'type': 3},
-      reason: '开始第 3 卷只代表前 2 卷已读，当前收藏应为在读',
-    );
-
-    api.error = const BangumiApiException(
-      statusCode: 503,
-      message: 'keep queued',
-    );
-    await service.recordBookProgress(
-      bookKey: 'manga-key',
-      completedChapterCount: 200,
-      completed: true,
-    );
-    await service.syncNow();
-    expect(await repository.pendingCount(), 1);
-  });
+      api.error = const BangumiApiException(
+        statusCode: 503,
+        message: 'keep queued',
+      );
+      await service.recordBookProgress(
+        bookKey: 'manga-key',
+        completedChapterCount: 200,
+        completed: true,
+      );
+      await service.syncNow();
+      expect(await repository.pendingCount(), 1);
+    },
+  );
 
   test('ambiguous exact-title book results are not auto-mapped', () async {
     await db.insertEpubBook(
@@ -1346,17 +1355,16 @@ void main() {
       String id, {
       required String name,
       int playStatus = 0,
-    }) =>
-        db.upsertGalgame(
-          GalgamesCompanion.insert(
-            id: id,
-            name: name,
-            exePath: 'C:\\games\\$id.exe',
-            workdir: 'C:\\games',
-            addedAt: 1000,
-            playStatus: Value<int>(playStatus),
-          ),
-        );
+    }) => db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: id,
+        name: name,
+        exePath: 'C:\\games\\$id.exe',
+        workdir: 'C:\\games',
+        addedAt: 1000,
+        playStatus: Value<int>(playStatus),
+      ),
+    );
 
     Future<void> scrapeBangumi(String gameId, String subjectId) =>
         db.upsertGalgameSource(
@@ -1506,15 +1514,15 @@ void main() {
   // 退避最长 6 小时、没建映射就静默返回。用户「看完了没反应」时无从判断断在哪一段。
   group('可见状态快照（BUG-1220）', () {
     Future<void> saveAnimeMapping() => repository.saveMapping(
-          mediaType: TrackingMediaType.videoCollection,
-          mediaKey: '8',
-          mediaTitle: 'Anime',
-          kind: TrackingKind.anime,
-          subjectId: 88,
-          subjectName: 'Remote anime',
-          progressMode: TrackingProgressMode.episode,
-          progressOffset: 1,
-        );
+      mediaType: TrackingMediaType.videoCollection,
+      mediaKey: '8',
+      mediaTitle: 'Anime',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 1,
+    );
 
     test('从未同步过与同步过零待办可区分', () async {
       final MediaTrackingStatus before = await service.loadStatus();
@@ -1592,8 +1600,11 @@ void main() {
       expect((await service.loadStatus()).accountName, 'Alice');
 
       await service.setAccessToken('another-token');
-      expect(service.accountName, isEmpty,
-          reason: '账号名属于旧令牌，换令牌后必须失效，不能挂着上一个账号');
+      expect(
+        service.accountName,
+        isEmpty,
+        reason: '账号名属于旧令牌，换令牌后必须失效，不能挂着上一个账号',
+      );
     });
 
     test('待发送计数走 COUNT(*)，不被展示上限截断', () async {
@@ -1707,8 +1718,8 @@ void main() {
           volumeCount: 1,
         ),
       ];
-      final MediaTrackingMappingRetryResult result =
-          await service.retryAutomaticMappings();
+      final MediaTrackingMappingRetryResult result = await service
+          .retryAutomaticMappings();
 
       expect(result.attempted, 1);
       expect(result.matched, 1);
@@ -1747,17 +1758,17 @@ void main() {
         ),
       );
 
-      final MediaTrackingSyncResult result =
-          await service.saveManualMappingAndSync(
-        mediaType: TrackingMediaType.book,
-        mediaKey: 'manual-book',
-        mediaTitle: 'Manual Book',
-        kind: TrackingKind.novel,
-        subjectId: 77,
-        subjectName: 'Remote manual book',
-        progressMode: TrackingProgressMode.chapter,
-        progressOffset: 0,
-      );
+      final MediaTrackingSyncResult result = await service
+          .saveManualMappingAndSync(
+            mediaType: TrackingMediaType.book,
+            mediaKey: 'manual-book',
+            mediaTitle: 'Manual Book',
+            kind: TrackingKind.novel,
+            subjectId: 77,
+            subjectName: 'Remote manual book',
+            progressMode: TrackingProgressMode.chapter,
+            progressOffset: 0,
+          );
 
       expect(result.succeeded, 1);
       expect(api.creates, <Map<String, dynamic>>[
@@ -1766,8 +1777,11 @@ void main() {
       expect(await repository.pendingCount(), 0);
 
       await service.syncNow(force: true);
-      expect(api.creates, hasLength(1),
-          reason: '同一 mapping 水位后的重复同步不得再次补发当前进度');
+      expect(
+        api.creates,
+        hasLength(1),
+        reason: '同一 mapping 水位后的重复同步不得再次补发当前进度',
+      );
     });
 
     test('自动匹配网络失败保留可诊断 miss 状态', () async {
@@ -1810,11 +1824,13 @@ void main() {
         ('s1e2', 'Adachi to Shimamura S01E02'),
         ('s2e1', 'Adachi to Shimamura S02E01'),
       ]) {
-        await db.upsertVideoBook(VideoBooksCompanion.insert(
-          bookUid: uid,
-          title: title,
-          videoPath: 'C:/anime/$title.mkv',
-        ));
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: title,
+            videoPath: 'C:/anime/$title.mkv',
+          ),
+        );
       }
       final int cid = await db.createMediaCollection(
         'Adachi to Shimamura',
@@ -1828,27 +1844,29 @@ void main() {
 
     /// 旧的「整合集 → 第一季 subject」映射（用户显式配置或旧版自动建）。
     Future<void> seedCollectionMapping(int cid) => repository.saveMapping(
-          mediaType: TrackingMediaType.videoCollection,
-          mediaKey: '$cid',
-          mediaTitle: 'Adachi to Shimamura',
-          kind: TrackingKind.anime,
-          subjectId: 100,
-          subjectName: '安達與島村',
-          progressMode: TrackingProgressMode.episode,
-          progressOffset: 1,
-        );
+      mediaType: TrackingMediaType.videoCollection,
+      mediaKey: '$cid',
+      mediaTitle: 'Adachi to Shimamura',
+      kind: TrackingKind.anime,
+      subjectId: 100,
+      subjectName: '安達與島村',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 1,
+    );
 
     test('看完 S02E01：改走按集通道（第二季 subject + 季内集号），不再用合集下标', () async {
       final int cid = await seedMultiSeason();
       await seedCollectionMapping(cid);
       // 季度感知刮削结果：S02E01 已确认属于第二季 subject 200。
-      await db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
-        bookUid: 's2e1',
-        source: 'bangumi',
-        subjectId: '200',
-        title: '安達與島村 2',
-        scrapedAt: DateTime.now(),
-      ));
+      await db.upsertVideoScrapeMeta(
+        VideoScrapeMetaCompanion.insert(
+          bookUid: 's2e1',
+          source: 'bangumi',
+          subjectId: '200',
+          title: '安達與島村 2',
+          scrapedAt: DateTime.now(),
+        ),
+      );
 
       api.episodes = const <BangumiEpisode>[
         BangumiEpisode(id: 11, type: 0, sort: 1),
@@ -1868,8 +1886,11 @@ void main() {
         mediaType: TrackingMediaType.video,
         mediaKey: 's2e1',
       );
-      expect(itemMapping, isNotNull,
-          reason: '多季合集必须落到按集映射（修复前在合集映射分支就 return 了）');
+      expect(
+        itemMapping,
+        isNotNull,
+        reason: '多季合集必须落到按集映射（修复前在合集映射分支就 return 了）',
+      );
       expect(itemMapping!.subjectId, 200, reason: '报到第二季条目，不是第一季');
       expect(itemMapping.progressOffset, 1, reason: '季内集号（S02E01 → 第 1 集）');
       // 合集级映射保留（绝不改写），但本次没有以它入队。
@@ -1891,14 +1912,18 @@ void main() {
         ('e1', 'Solo Show 01'),
         ('e2', 'Solo Show 02'),
       ]) {
-        await db.upsertVideoBook(VideoBooksCompanion.insert(
-          bookUid: uid,
-          title: title,
-          videoPath: 'C:/anime/$title.mkv',
-        ));
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: title,
+            videoPath: 'C:/anime/$title.mkv',
+          ),
+        );
       }
-      final int cid = await db.createMediaCollection('Solo Show',
-          collectionType: 'playlist');
+      final int cid = await db.createMediaCollection(
+        'Solo Show',
+        collectionType: 'playlist',
+      );
       await db.addToCollection(cid, MediaKind.video, 'e1');
       await db.addToCollection(cid, MediaKind.video, 'e2');
       await seedCollectionMapping(cid);
@@ -1928,11 +1953,13 @@ void main() {
 
     test('多季合集里的 PV/特典（解析不出集号）：不上报也不建映射', () async {
       final int cid = await seedMultiSeason();
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'pv',
-        title: 'Adachi to Shimamura Fan Disc',
-        videoPath: 'C:/anime/Adachi to Shimamura Fan Disc.mkv',
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'pv',
+          title: 'Adachi to Shimamura Fan Disc',
+          videoPath: 'C:/anime/Adachi to Shimamura Fan Disc.mkv',
+        ),
+      );
       await db.addToCollection(cid, MediaKind.video, 'pv');
 
       await service.recordVideoCompleted(
@@ -1962,8 +1989,8 @@ void main() {
         await db.markVideoCompleted(uid, DateTime.now());
       }
 
-      final List<CompletedVideoTrackingProgress> progress =
-          await repository.loadCompletedVideoTrackingProgress(afterMs: -1);
+      final List<CompletedVideoTrackingProgress> progress = await repository
+          .loadCompletedVideoTrackingProgress(afterMs: -1);
       expect(
         progress.where(
           (CompletedVideoTrackingProgress p) =>

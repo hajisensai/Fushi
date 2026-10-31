@@ -5,8 +5,10 @@ import 'package:fushi_engine/media/video/scraper/sidecar_scanner.dart';
 import 'package:path/path.dart' as p;
 
 class _StubGeneratedArtifactChecker implements SidecarGeneratedArtifactChecker {
-  const _StubGeneratedArtifactChecker(
-      {required this.result, this.throwError = false});
+  const _StubGeneratedArtifactChecker({
+    required this.result,
+    this.throwError = false,
+  });
 
   final bool result;
   final bool throwError;
@@ -95,8 +97,9 @@ void main() {
 
       final SidecarResult result = await SidecarScanner.scan(
         videoPath,
-        generatedArtifactChecker:
-            const _StubGeneratedArtifactChecker(result: true),
+        generatedArtifactChecker: const _StubGeneratedArtifactChecker(
+          result: true,
+        ),
       );
 
       expect(result.posterFile, isNotNull);
@@ -108,8 +111,9 @@ void main() {
 
       final SidecarResult result = await SidecarScanner.scan(
         videoPath,
-        generatedArtifactChecker:
-            const _StubGeneratedArtifactChecker(result: false),
+        generatedArtifactChecker: const _StubGeneratedArtifactChecker(
+          result: false,
+        ),
       );
 
       expect(result.posterFile, isNotNull);

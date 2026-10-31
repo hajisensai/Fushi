@@ -24,8 +24,9 @@ void main() {
   late String primaryMaterialAppSource;
 
   setUpAll(() {
-    final String source =
-        File('lib/src/models/app_model.dart').readAsStringSync();
+    final String source = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
     // Anchor on the bare member name so the guard survives a getter-shape
     // change (`=> ...` vs `{ ... }`) and the red signal comes from the content
     // assertions below, not from the marker disappearing.
@@ -36,8 +37,9 @@ void main() {
       'TextTheme get textTheme',
     );
 
-    final String mainSource =
-        File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n');
+    final String mainSource = File(
+      'lib/main.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     appLocaleGetterSource = _functionSource(
       mainSource,
       'Locale get locale',
@@ -74,8 +76,7 @@ void main() {
     );
   });
 
-  test(
-      'textStyle.fontFamily is the user custom font or system default (no '
+  test('textStyle.fontFamily is the user custom font or system default (no '
       'Japanese pin)', () {
     expect(
       textStyleSource,
@@ -94,43 +95,47 @@ void main() {
     );
   });
 
-  test('textStyle carries the locale-aware fallback chain, not a bare family',
-      () {
-    // 字体本质是有序回退链。只设 fontFamily 时，主字体缺字（日文 face 上的简中
-    // 「们/东」、中文 face 上的假名）会逐字掉进引擎默认 fallback —— 同一行里字形
-    // 忽宽忽窄，且用户在字体库里排第 2、3 位的字体永远轮不到。
-    expect(
-      textStyleSource,
-      contains('fontFamilyFallback: appFontFallbacks,'),
-      reason:
-          'textStyle must feed the resolved chain tail to fontFamilyFallback',
-    );
-    // 链本身必须由 appUiFontChain 构造（跟随显示语言），不能在 textStyle 里
-    // 就地硬编码一串家族名。
-    final String source =
-        File('lib/src/models/app_model.dart').readAsStringSync();
-    expect(source, contains('appUiFontChain('));
-    // appUi 目标消费整张有序列表；resolveAndLoad（只取第一条）会静默丢掉用户
-    // 自己排的回退顺序。
-    expect(source, contains('AppFontLoader.resolveAndLoadAll('));
-  });
+  test(
+    'textStyle carries the locale-aware fallback chain, not a bare family',
+    () {
+      // 字体本质是有序回退链。只设 fontFamily 时，主字体缺字（日文 face 上的简中
+      // 「们/东」、中文 face 上的假名）会逐字掉进引擎默认 fallback —— 同一行里字形
+      // 忽宽忽窄，且用户在字体库里排第 2、3 位的字体永远轮不到。
+      expect(
+        textStyleSource,
+        contains('fontFamilyFallback: appFontFallbacks,'),
+        reason:
+            'textStyle must feed the resolved chain tail to fontFamilyFallback',
+      );
+      // 链本身必须由 appUiFontChain 构造（跟随显示语言），不能在 textStyle 里
+      // 就地硬编码一串家族名。
+      final String source = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(source, contains('appUiFontChain('));
+      // appUi 目标消费整张有序列表；resolveAndLoad（只取第一条）会静默丢掉用户
+      // 自己排的回退顺序。
+      expect(source, contains('AppFontLoader.resolveAndLoadAll('));
+    },
+  );
 
-  test('textBaseline is derived from the UI locale, not pinned to Japanese',
-      () {
-    expect(
-      textStyleSource,
-      contains('_isIdeographicLocale(uiLocale)'),
-      reason: 'CJK locales → ideographic, others → alphabetic baseline',
-    );
-    expect(
-      textStyleSource,
-      isNot(contains('targetLanguage.textBaseline')),
-      reason: 'baseline must follow the UI locale, not the reading language',
-    );
-  });
+  test(
+    'textBaseline is derived from the UI locale, not pinned to Japanese',
+    () {
+      expect(
+        textStyleSource,
+        contains('_isIdeographicLocale(uiLocale)'),
+        reason: 'CJK locales → ideographic, others → alphabetic baseline',
+      );
+      expect(
+        textStyleSource,
+        isNot(contains('targetLanguage.textBaseline')),
+        reason: 'baseline must follow the UI locale, not the reading language',
+      );
+    },
+  );
 
-  test('MaterialApp.locale follows display language for system back labels',
-      () {
+  test('MaterialApp.locale follows display language for system back labels', () {
     expect(
       primaryMaterialAppSource,
       contains('locale: locale,'),
@@ -145,8 +150,9 @@ void main() {
           'MaterialApp.locale must not use the pinned Japanese reading language',
     );
     expect(
-      RegExp(r'locale:\s*[^,\n]*targetLanguage\.locale')
-          .hasMatch(primaryMaterialAppSource),
+      RegExp(
+        r'locale:\s*[^,\n]*targetLanguage\.locale',
+      ).hasMatch(primaryMaterialAppSource),
       isFalse,
       reason:
           'changing MaterialApp to locale: JapaneseLanguage.instance.locale must '

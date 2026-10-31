@@ -155,9 +155,7 @@ DeletionDisclosure buildDeletionDisclosure({
       //   2) AudiobookStorage.deletePersistDir(bookKey) 递归删整个持久化目录。
       // 书本身、解压目录、阅读进度都不动。
       return DeletionDisclosure(
-        willDelete: <String>[
-          t.delete_disclosure_audiobook_files,
-        ],
+        willDelete: <String>[t.delete_disclosure_audiobook_files],
         willKeep: <String>[
           t.delete_disclosure_audiobook_book_kept,
           t.delete_disclosure_audio_source_files,
@@ -200,14 +198,18 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            FushiIcon(FushiIcons.devices,
-                size: 18, color: colors.onSurfaceVariant),
+            FushiIcon(
+              FushiIcons.devices,
+              size: 18,
+              color: colors.onSurfaceVariant,
+            ),
             SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Text(
                 t.delete_scope_no_channel,
-                style: tokens.type.listSubtitle
-                    .copyWith(color: colors.onSurfaceVariant),
+                style: tokens.type.listSubtitle.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -274,12 +276,12 @@ class DeleteLocalFilesRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
-        title: t.delete_local_files,
-        subtitle: subtitle,
-        value: value,
-        onChanged: onChanged,
-        destructive: true,
-      );
+    title: t.delete_local_files,
+    subtitle: subtitle,
+    value: value,
+    onChanged: onChanged,
+    destructive: true,
+  );
 }
 
 /// 「同时删除统计数据」勾选行。
@@ -303,12 +305,12 @@ class DeleteStatisticsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
-        title: t.delete_statistics,
-        subtitle: subtitle,
-        value: value,
-        onChanged: onChanged,
-        destructive: true,
-      );
+    title: t.delete_statistics,
+    subtitle: subtitle,
+    value: value,
+    onChanged: onChanged,
+    destructive: true,
+  );
 }
 
 /// 把 [DeletionDisclosure] 渲染成确认框里的「会被删除 / 会被保留」两段列表。
@@ -352,8 +354,9 @@ class DeletionDisclosureView extends StatelessWidget {
                 Flexible(
                   child: Text(
                     label,
-                    style: context.fushiType.labelLargeEmphasized
-                        .copyWith(color: fg),
+                    style: context.fushiType.labelLargeEmphasized.copyWith(
+                      color: fg,
+                    ),
                   ),
                 ),
               ],

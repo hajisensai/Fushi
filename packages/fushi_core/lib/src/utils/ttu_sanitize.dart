@@ -19,8 +19,7 @@ String sanitizeTtuFilename(String title) {
   result = result.replaceAll('*', '~ttu-star~');
   result = result.replaceAllMapped(
     RegExp(r'[/?\<>\\:|%"]'),
-    (match) => match[0]!
-        .codeUnits
+    (match) => match[0]!.codeUnits
         .map((c) => '%${c.toRadixString(16).toUpperCase().padLeft(2, '0')}')
         .join(),
   );

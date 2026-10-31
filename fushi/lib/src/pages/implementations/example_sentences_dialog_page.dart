@@ -106,7 +106,9 @@ class _ExampleSentencesDialogPageState
         controller: _scrollController,
         child: widget.exampleSentences.isEmpty
             ? SingleChildScrollView(
-                controller: _scrollController, child: buildEmptyMessage())
+                controller: _scrollController,
+                child: buildEmptyMessage(),
+              )
             : buildTextWidgets(),
       ),
     );
@@ -121,10 +123,9 @@ class _ExampleSentencesDialogPageState
     return MasonryGridView.builder(
       controller: _scrollController,
       gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount:
-              MediaQuery.of(context).orientation == Orientation.portrait
-                  ? 1
-                  : 3),
+        crossAxisCount:
+            MediaQuery.of(context).orientation == Orientation.portrait ? 1 : 3,
+      ),
       mainAxisSpacing: FushiDesignTokens.of(context).spacing.gap,
       crossAxisSpacing: FushiDesignTokens.of(context).spacing.gap,
       itemCount: widget.exampleSentences.length,
@@ -154,9 +155,9 @@ class _ExampleSentencesDialogPageState
   }
 
   List<Widget> get actions => [
-        if (widget.onAppend != null) buildAppendButton(),
-        buildSelectButton(),
-      ];
+    if (widget.onAppend != null) buildAppendButton(),
+    buildSelectButton(),
+  ];
 
   Widget buildAppendButton() {
     return adaptiveDialogAction(
@@ -213,8 +214,9 @@ class _SentenceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiSpringSpec spring = context.fushiMotion.spatialFast;
-    final FushiCardTone tone =
-        selected ? FushiCardTone.secondary : FushiCardTone.neutral;
+    final FushiCardTone tone = selected
+        ? FushiCardTone.secondary
+        : FushiCardTone.neutral;
     // listTitle 自带页面 onSurface，会盖掉卡片写下的配对前景；
     // 中性卡为 null，保持原色。
     final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;

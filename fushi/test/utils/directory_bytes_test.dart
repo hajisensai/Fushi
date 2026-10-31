@@ -30,17 +30,20 @@ void main() {
     File(p.join(root.path, 'a.bin')).writeAsBytesSync(List<int>.filled(100, 1));
     final Directory nested = Directory(p.join(root.path, 'sub', 'deep'))
       ..createSync(recursive: true);
-    File(p.join(nested.path, 'b.bin'))
-        .writeAsBytesSync(List<int>.filled(23, 1));
+    File(
+      p.join(nested.path, 'b.bin'),
+    ).writeAsBytesSync(List<int>.filled(23, 1));
 
     expect(await measureDirectoryBytes(root), 123);
   });
 
   test('任何扩展名都算，包含未完成的 .part', () async {
-    File(p.join(root.path, 'encoder_model.onnx'))
-        .writeAsBytesSync(List<int>.filled(7, 1));
-    File(p.join(root.path, 'encoder_model.onnx.part'))
-        .writeAsBytesSync(List<int>.filled(11, 1));
+    File(
+      p.join(root.path, 'encoder_model.onnx'),
+    ).writeAsBytesSync(List<int>.filled(7, 1));
+    File(
+      p.join(root.path, 'encoder_model.onnx.part'),
+    ).writeAsBytesSync(List<int>.filled(11, 1));
 
     expect(await measureDirectoryBytes(root), 18);
   });

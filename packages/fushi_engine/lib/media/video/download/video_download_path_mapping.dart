@@ -16,12 +16,11 @@ class VideoDownloadBackendPathMappingConfig {
 
   factory VideoDownloadBackendPathMappingConfig.fromJson(
     Map<String, Object?> json,
-  ) =>
-      VideoDownloadBackendPathMappingConfig(
-        backendProfileId: json['backendProfileId'] as String? ?? '',
-        remoteRoot: json['remoteRoot'] as String? ?? '',
-        localRoot: json['localRoot'] as String? ?? '',
-      );
+  ) => VideoDownloadBackendPathMappingConfig(
+    backendProfileId: json['backendProfileId'] as String? ?? '',
+    remoteRoot: json['remoteRoot'] as String? ?? '',
+    localRoot: json['localRoot'] as String? ?? '',
+  );
 
   final String backendProfileId;
   final String remoteRoot;
@@ -32,20 +31,18 @@ class VideoDownloadBackendPathMappingConfig {
       remoteRoot.trim().isNotEmpty &&
       localRoot.trim().isNotEmpty;
 
-  VideoDownloadPathMapping toMapping() => VideoDownloadPathMapping(
-        remoteRoot: remoteRoot,
-        localRoot: localRoot,
-      );
+  VideoDownloadPathMapping toMapping() =>
+      VideoDownloadPathMapping(remoteRoot: remoteRoot, localRoot: localRoot);
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'backendProfileId': backendProfileId,
-        'remoteRoot': remoteRoot,
-        'localRoot': localRoot,
-      };
+    'backendProfileId': backendProfileId,
+    'remoteRoot': remoteRoot,
+    'localRoot': localRoot,
+  };
 }
 
 List<VideoDownloadBackendPathMappingConfig>
-    decodeVideoDownloadBackendPathMappings(String raw) {
+decodeVideoDownloadBackendPathMappings(String raw) {
   if (raw.trim().isEmpty) {
     return const <VideoDownloadBackendPathMappingConfig>[];
   }
@@ -58,14 +55,15 @@ List<VideoDownloadBackendPathMappingConfig>
       decoded
           .whereType<Map<Object?, Object?>>()
           .map((Map<Object?, Object?> entry) {
-        final Map<String, Object?> json = <String, Object?>{
-          for (final MapEntry<Object?, Object?> field in entry.entries)
-            field.key.toString(): field.value,
-        };
-        return VideoDownloadBackendPathMappingConfig.fromJson(json);
-      }).where(
-        (VideoDownloadBackendPathMappingConfig value) => value.isValid,
-      ),
+            final Map<String, Object?> json = <String, Object?>{
+              for (final MapEntry<Object?, Object?> field in entry.entries)
+                field.key.toString(): field.value,
+            };
+            return VideoDownloadBackendPathMappingConfig.fromJson(json);
+          })
+          .where(
+            (VideoDownloadBackendPathMappingConfig value) => value.isValid,
+          ),
     );
   } on Object {
     return const <VideoDownloadBackendPathMappingConfig>[];
@@ -74,17 +72,12 @@ List<VideoDownloadBackendPathMappingConfig>
 
 String encodeVideoDownloadBackendPathMappings(
   Iterable<VideoDownloadBackendPathMappingConfig> mappings,
-) =>
-    jsonEncode(
-      mappings
-          .where(
-            (VideoDownloadBackendPathMappingConfig value) => value.isValid,
-          )
-          .map(
-            (VideoDownloadBackendPathMappingConfig value) => value.toJson(),
-          )
-          .toList(growable: false),
-    );
+) => jsonEncode(
+  mappings
+      .where((VideoDownloadBackendPathMappingConfig value) => value.isValid)
+      .map((VideoDownloadBackendPathMappingConfig value) => value.toJson())
+      .toList(growable: false),
+);
 
 /// qBittorrent 所见路径与 Fushi 本机路径之间的双向映射。
 ///
@@ -95,9 +88,9 @@ class VideoDownloadPathMapping {
     required String remoteRoot,
     required String localRoot,
     bool? localCaseSensitive,
-  })  : remoteRoot = _normalizeRemoteRoot(remoteRoot),
-        localRoot = p.normalize(p.absolute(localRoot)),
-        localCaseSensitive = localCaseSensitive ?? !Platform.isWindows {
+  }) : remoteRoot = _normalizeRemoteRoot(remoteRoot),
+       localRoot = p.normalize(p.absolute(localRoot)),
+       localCaseSensitive = localCaseSensitive ?? !Platform.isWindows {
     if (this.remoteRoot.isEmpty || this.localRoot.isEmpty) {
       throw ArgumentError('download path mapping roots must not be empty');
     }
@@ -119,10 +112,12 @@ class VideoDownloadPathMapping {
     );
     if (suffix == null) return null;
     if (suffix.isEmpty) return localRoot;
-    return p.normalize(p.joinAll(<String>[
-      localRoot,
-      ...suffix.split('/').where((String segment) => segment.isNotEmpty),
-    ]));
+    return p.normalize(
+      p.joinAll(<String>[
+        localRoot,
+        ...suffix.split('/').where((String segment) => segment.isNotEmpty),
+      ]),
+    );
   }
 
   String? localToRemote(String localPath) {
@@ -171,8 +166,9 @@ class VideoDownloadPathMapping {
     final String comparablePath = caseSensitive ? path : path.toLowerCase();
     final String comparableRoot = caseSensitive ? root : root.toLowerCase();
     if (comparablePath == comparableRoot) return '';
-    final String prefix =
-        comparableRoot.endsWith('/') ? comparableRoot : '$comparableRoot/';
+    final String prefix = comparableRoot.endsWith('/')
+        ? comparableRoot
+        : '$comparableRoot/';
     if (!comparablePath.startsWith(prefix)) return null;
     return path.substring(prefix.length);
   }
@@ -265,18 +261,16 @@ VideoDownloadPathMapping? videoDownloadMappingForLocalPath(
 String? videoDownloadRemoteToLocal(
   Iterable<VideoDownloadPathMapping> mappings,
   String remotePath,
-) =>
-    videoDownloadMappingForRemotePath(
-      mappings,
-      remotePath,
-    )?.remoteToLocal(remotePath);
+) => videoDownloadMappingForRemotePath(
+  mappings,
+  remotePath,
+)?.remoteToLocal(remotePath);
 
 /// 本机路径 → 后端路径；映射不到返回 null（**不得**把本机路径直接发给后端）。
 String? videoDownloadLocalToRemote(
   Iterable<VideoDownloadPathMapping> mappings,
   String localPath,
-) =>
-    videoDownloadMappingForLocalPath(
-      mappings,
-      localPath,
-    )?.localToRemote(localPath);
+) => videoDownloadMappingForLocalPath(
+  mappings,
+  localPath,
+)?.localToRemote(localPath);

@@ -36,14 +36,18 @@ void main() {
       ('video/e1', 'Show 01'),
       ('video/e2', 'Show 02'),
     ]) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(title),
-        videoPath: Value('/v/$title.mkv'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(title),
+          videoPath: Value('/v/$title.mkv'),
+        ),
+      );
     }
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'video/e1');
     await db.addToCollection(collectionId, MediaKind.video, 'video/e2');
   });
@@ -51,8 +55,9 @@ void main() {
   tearDown(() => db.close());
 
   Future<List<VideoBookRow>> loadMembers() async {
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     final List<VideoBookRow> all = await db.allVideoBooks();
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow r in all) r.bookUid: r,
@@ -108,22 +113,24 @@ void main() {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     final FushiShortcutRegistry registry = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows);
-    await tester.pumpWidget(TranslationProvider(
-      child: MaterialApp(
-        navigatorKey: navKey,
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
           navigatorKey: navKey,
-          focusNavigationEnabled: focusNavigationEnabled,
-          registry: registry,
-          child: FushiFocusRoot(
-            enabled: focusNavigationEnabled,
-            child: child!,
-          ),
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(
+                navigatorKey: navKey,
+                focusNavigationEnabled: focusNavigationEnabled,
+                registry: registry,
+                child: FushiFocusRoot(
+                  enabled: focusNavigationEnabled,
+                  child: child!,
+                ),
+              ),
+          home: const Scaffold(body: Center(child: Text('library-home'))),
         ),
-        home: const Scaffold(body: Center(child: Text('library-home'))),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     return navKey;
   }
@@ -133,8 +140,11 @@ void main() {
       navKey.currentContext!,
       listen: false,
     );
-    expect(controller, isNotNull,
-        reason: '焦点导航开启时 Navigator 子树必须拿得到控制器（harness 前提）');
+    expect(
+      controller,
+      isNotNull,
+      reason: '焦点导航开启时 Navigator 子树必须拿得到控制器（harness 前提）',
+    );
     return controller!;
   }
 
@@ -145,12 +155,16 @@ void main() {
   /// 进详情页（从未键盘聚焦任何卡）、按 Esc。
   void assertShadowFaultState(FushiFocusController controller) {
     final BuildContext? activeContext = controller.activeContext;
-    expect(activeContext, isNotNull,
-        reason: '前置：activeContext 回落到兜底 context（非 null 才会遮蔽 primaryFocus）');
+    expect(
+      activeContext,
+      isNotNull,
+      reason: '前置：activeContext 回落到兜底 context（非 null 才会遮蔽 primaryFocus）',
+    );
     expect(
       ModalRoute.of(activeContext!),
       isNull,
-      reason: '前置：兜底 context 位于 Navigator 之上、解析不出任何 ModalRoute——'
+      reason:
+          '前置：兜底 context 位于 Navigator 之上、解析不出任何 ModalRoute——'
           'BUG-1349 里被旧代码当成弹窗吞掉的正是这个状态',
     );
     final BuildContext? primaryContext =
@@ -184,56 +198,77 @@ void main() {
     );
     final BuildContext? activeContext = controller.activeContext;
     expect(activeContext, isNotNull);
-    expect(ModalRoute.of(activeContext!), isNull,
-        reason: '前置：activeContext 解析不出路由');
+    expect(
+      ModalRoute.of(activeContext!),
+      isNull,
+      reason: '前置：activeContext 解析不出路由',
+    );
   }
 
   testWidgets('注册表接线（焦点导航关闭）：详情页按 Esc 退出层级', (WidgetTester tester) async {
     useTallSurface(tester);
-    final GlobalKey<NavigatorState> navKey =
-        await pumpApp(tester, focusNavigationEnabled: false);
+    final GlobalKey<NavigatorState> navKey = await pumpApp(
+      tester,
+      focusNavigationEnabled: false,
+    );
 
-    navKey.currentState!
-        .push(MaterialPageRoute<void>(builder: (_) => detailPage()));
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => detailPage()),
+    );
     await tester.pumpAndSettle();
     expect(find.text('library-home'), findsNothing, reason: '详情页已压上');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.byType(MediaCollectionDetailPage), findsNothing,
-        reason: 'Esc 必须退出详情页层级');
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsNothing,
+      reason: 'Esc 必须退出详情页层级',
+    );
     expect(find.text('library-home'), findsOneWidget);
   });
 
-  testWidgets('BUG-1349 核心（遮蔽态）：进页未聚焦任何受管目标，activeContext 解析不出路由仍能 Esc 退页',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1349 核心（遮蔽态）：进页未聚焦任何受管目标，activeContext 解析不出路由仍能 Esc 退页', (
+    WidgetTester tester,
+  ) async {
     useTallSurface(tester);
-    final GlobalKey<NavigatorState> navKey =
-        await pumpApp(tester, focusNavigationEnabled: true);
+    final GlobalKey<NavigatorState> navKey = await pumpApp(
+      tester,
+      focusNavigationEnabled: true,
+    );
 
-    navKey.currentState!
-        .push(MaterialPageRoute<void>(builder: (_) => emptyDetailPage()));
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => emptyDetailPage()),
+    );
     await tester.pumpAndSettle();
     assertShadowFaultState(controllerOf(navKey));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.byType(MediaCollectionDetailPage), findsNothing,
-        reason: 'BUG-1349：无效的 activeContext 候选不得遮蔽能解析出路由的 '
-            'primaryFocus——Esc 必须退页');
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsNothing,
+      reason:
+          'BUG-1349：无效的 activeContext 候选不得遮蔽能解析出路由的 '
+          'primaryFocus——Esc 必须退页',
+    );
     expect(find.text('library-home'), findsOneWidget);
   });
 
-  testWidgets('BUG-1349 双失效态：零受管目标页焦点被回收到 fallbackNode，两候选都解析不出路由仍能 Esc 退页',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1349 双失效态：零受管目标页焦点被回收到 fallbackNode，两候选都解析不出路由仍能 Esc 退页', (
+    WidgetTester tester,
+  ) async {
     useTallSurface(tester);
-    final GlobalKey<NavigatorState> navKey =
-        await pumpApp(tester, focusNavigationEnabled: true);
+    final GlobalKey<NavigatorState> navKey = await pumpApp(
+      tester,
+      focusNavigationEnabled: true,
+    );
 
-    navKey.currentState!
-        .push(MaterialPageRoute<void>(builder: (_) => emptyDetailPage()));
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => emptyDetailPage()),
+    );
     await tester.pumpAndSettle();
     await parkFocusOnFallback(tester, controllerOf(navKey));
 
@@ -242,18 +277,24 @@ void main() {
 
     // 钉住 _handleGlobalEscape 的行为翻转面：两个候选 context 都解析不出路由 →
     // 不再视作弹窗吞掉，maybePop 顶层页面。
-    expect(find.byType(MediaCollectionDetailPage), findsNothing,
-        reason: 'BUG-1349：焦点 park 在 Navigator 之上的兜底节点时 Esc 必须仍能退页');
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsNothing,
+      reason: 'BUG-1349：焦点 park 在 Navigator 之上的兜底节点时 Esc 必须仍能退页',
+    );
     expect(find.text('library-home'), findsOneWidget);
   });
 
   testWidgets('负向：弹窗开着（焦点在弹窗内）按 Esc 只关弹窗，不误退详情页', (WidgetTester tester) async {
     useTallSurface(tester);
-    final GlobalKey<NavigatorState> navKey =
-        await pumpApp(tester, focusNavigationEnabled: true);
+    final GlobalKey<NavigatorState> navKey = await pumpApp(
+      tester,
+      focusNavigationEnabled: true,
+    );
 
-    navKey.currentState!
-        .push(MaterialPageRoute<void>(builder: (_) => detailPage()));
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => detailPage()),
+    );
     await tester.pumpAndSettle();
 
     showDialog<void>(
@@ -267,18 +308,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('detail-dialog'), findsNothing, reason: 'Esc 关掉弹窗');
-    expect(find.byType(MediaCollectionDetailPage), findsOneWidget,
-        reason: '弹窗消费 Esc 后详情页必须原地不动');
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsOneWidget,
+      reason: '弹窗消费 Esc 后详情页必须原地不动',
+    );
   });
 
-  testWidgets('负向（翻转面）：弹窗开着且焦点 park 在 fallbackNode，Esc 只弹掉顶层弹窗、不退页',
-      (WidgetTester tester) async {
+  testWidgets('负向（翻转面）：弹窗开着且焦点 park 在 fallbackNode，Esc 只弹掉顶层弹窗、不退页', (
+    WidgetTester tester,
+  ) async {
     useTallSurface(tester);
-    final GlobalKey<NavigatorState> navKey =
-        await pumpApp(tester, focusNavigationEnabled: true);
+    final GlobalKey<NavigatorState> navKey = await pumpApp(
+      tester,
+      focusNavigationEnabled: true,
+    );
 
-    navKey.currentState!
-        .push(MaterialPageRoute<void>(builder: (_) => emptyDetailPage()));
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => emptyDetailPage()),
+    );
     await tester.pumpAndSettle();
 
     showDialog<void>(
@@ -294,10 +342,16 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.text('detail-dialog'), findsNothing,
-        reason: '解析不出路由时 maybePop 作用于顶层路由 = 弹窗');
-    expect(find.byType(MediaCollectionDetailPage), findsOneWidget,
-        reason: '一次 Esc 只动一层：弹窗关、详情页在');
+    expect(
+      find.text('detail-dialog'),
+      findsNothing,
+      reason: '解析不出路由时 maybePop 作用于顶层路由 = 弹窗',
+    );
+    expect(
+      find.byType(MediaCollectionDetailPage),
+      findsOneWidget,
+      reason: '一次 Esc 只动一层：弹窗关、详情页在',
+    );
   });
 
   test('源码守卫：main.dart 的焦点导航层必须挂在 wrapWithGlobalNavigation 之内', () {
@@ -309,10 +363,13 @@ void main() {
     // 判别性锚：从 wrapWithGlobalNavigation 调用起、到其后 macOS 分支之前的这段
     // 实参文本里必须出现 _wrapFocusNavigation ——旧接线里它在 FushiAppUiScale
     // 的 child（macOS 分支**之后**），裸 contains 会两种接线都绿（假防护）。
-    final int wrapperStart =
-        mainSrc.indexOf('Widget navigation = wrapWithGlobalNavigation(');
-    final int macosBranch =
-        mainSrc.indexOf('if (isMacosPlatform', wrapperStart);
+    final int wrapperStart = mainSrc.indexOf(
+      'Widget navigation = wrapWithGlobalNavigation(',
+    );
+    final int macosBranch = mainSrc.indexOf(
+      'if (isMacosPlatform',
+      wrapperStart,
+    );
     expect(wrapperStart, greaterThanOrEqualTo(0));
     expect(macosBranch, greaterThan(wrapperStart));
     expect(
@@ -320,7 +377,8 @@ void main() {
           .substring(wrapperStart, macosBranch)
           .contains('_wrapFocusNavigation('),
       isTrue,
-      reason: 'BUG-1349 第二处根因：FushiFocusRoot（fallbackNode）必须作为 '
+      reason:
+          'BUG-1349 第二处根因：FushiFocusRoot（fallbackNode）必须作为 '
           'wrapWithGlobalNavigation 的 child 挂载（即出现在其实参段内），否则'
           '兜底节点的键事件冒泡不到全局处理器，零受管目标页的 Esc/全局快捷键'
           '整体失效',

@@ -112,37 +112,50 @@ CREATE TABLE book_tag_mappings (
 }
 
 void main() {
-  test('opening a future-version DB is refused, not destructively rebuilt',
-      () async {
-    final FushiDatabase db = await _openDowngradedFromFuture();
-    addTearDown(db.close);
+  test(
+    'opening a future-version DB is refused, not destructively rebuilt',
+    () async {
+      final FushiDatabase db = await _openDowngradedFromFuture();
+      addTearDown(db.close);
 
-    // Reading forces the lazy DB to open, which triggers onUpgrade(future -> current)
-    // and must throw the protection exception instead of dropping/rebuilding.
-    await expectLater(
-      db.customSelect('PRAGMA user_version').getSingle(),
-      throwsA(isA<FushiDatabaseDowngradeException>()
-          .having((FushiDatabaseDowngradeException e) => e.dbVersion,
-              'dbVersion', kFutureSchemaVersion)
-          .having((FushiDatabaseDowngradeException e) => e.appSchemaVersion,
-              'appSchemaVersion', db.schemaVersion)),
-      reason: 'a newer-schema DB must be refused to protect user data, '
-          'never silently dropped and recreated',
-    );
-  });
+      // Reading forces the lazy DB to open, which triggers onUpgrade(future -> current)
+      // and must throw the protection exception instead of dropping/rebuilding.
+      await expectLater(
+        db.customSelect('PRAGMA user_version').getSingle(),
+        throwsA(
+          isA<FushiDatabaseDowngradeException>()
+              .having(
+                (FushiDatabaseDowngradeException e) => e.dbVersion,
+                'dbVersion',
+                kFutureSchemaVersion,
+              )
+              .having(
+                (FushiDatabaseDowngradeException e) => e.appSchemaVersion,
+                'appSchemaVersion',
+                db.schemaVersion,
+              ),
+        ),
+        reason:
+            'a newer-schema DB must be refused to protect user data, '
+            'never silently dropped and recreated',
+      );
+    },
+  );
 
-  test('BUG-075: future-version refusal is clean under foreign_keys=ON',
-      () async {
-    final FushiDatabase db = await _openDowngradedWithForeignKeys();
-    addTearDown(db.close);
+  test(
+    'BUG-075: future-version refusal is clean under foreign_keys=ON',
+    () async {
+      final FushiDatabase db = await _openDowngradedWithForeignKeys();
+      addTearDown(db.close);
 
-    // Pre-fix this FK-ordered teardown crashed mid-drop; the protection path
-    // throws before any DROP runs, so FK state is irrelevant and no table is
-    // ever touched.
-    await expectLater(
-      db.customSelect('PRAGMA user_version').getSingle(),
-      throwsA(isA<FushiDatabaseDowngradeException>()),
-      reason: 'FK-on downgrade must be refused cleanly, not crash mid-drop',
-    );
-  });
+      // Pre-fix this FK-ordered teardown crashed mid-drop; the protection path
+      // throws before any DROP runs, so FK state is irrelevant and no table is
+      // ever touched.
+      await expectLater(
+        db.customSelect('PRAGMA user_version').getSingle(),
+        throwsA(isA<FushiDatabaseDowngradeException>()),
+        reason: 'FK-on downgrade must be refused cleanly, not crash mid-drop',
+      );
+    },
+  );
 }

@@ -34,10 +34,7 @@ void main() {
         _cue(startMs: 90000, endMs: 95000),
       ];
 
-      reindexCuesByFileBoundaries(
-        cues: cues,
-        fileDurationsMs: <int>[60000],
-      );
+      reindexCuesByFileBoundaries(cues: cues, fileDurationsMs: <int>[60000]);
 
       expect(cues[0].audioFileIndex, 0);
       expect(cues[0].startMs, 1000);

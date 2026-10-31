@@ -37,8 +37,9 @@ class AnkiIntegration {
 
   Future<List<String>> getDecks(BuildContext? ctx) async {
     try {
-      Map<dynamic, dynamic> result =
-          await methodChannel.invokeMethod('getDecks');
+      Map<dynamic, dynamic> result = await methodChannel.invokeMethod(
+        'getDecks',
+      );
       List<String> decks = result.values.toList().cast<String>();
       decks.sort((a, b) => a.compareTo(b));
       return decks;
@@ -50,8 +51,9 @@ class AnkiIntegration {
 
   Future<List<String>> getModelList(BuildContext? ctx) async {
     try {
-      Map<dynamic, dynamic> result =
-          await methodChannel.invokeMethod('getModelList');
+      Map<dynamic, dynamic> result = await methodChannel.invokeMethod(
+        'getModelList',
+      );
       List<String> models = result.values.toList().cast<String>();
       models.sort((a, b) => a.compareTo(b));
       return models;
@@ -64,10 +66,9 @@ class AnkiIntegration {
   Future<List<String>> getFieldList(String model, BuildContext? ctx) async {
     try {
       return List<String>.from(
-        await methodChannel.invokeMethod(
-          'getFieldList',
-          <String, dynamic>{'model': model},
-        ),
+        await methodChannel.invokeMethod('getFieldList', <String, dynamic>{
+          'model': model,
+        }),
       );
     } catch (e) {
       if (ctx != null && ctx.mounted) showApiMessage(ctx);
@@ -78,10 +79,7 @@ class AnkiIntegration {
 
 @visibleForTesting
 class AnkiApiMessageDialog extends StatelessWidget {
-  const AnkiApiMessageDialog({
-    required this.onLaunch,
-    super.key,
-  });
+  const AnkiApiMessageDialog({required this.onLaunch, super.key});
 
   final VoidCallback onLaunch;
 

@@ -170,9 +170,7 @@ class ReaderTocRow extends StatelessWidget {
                 builder: (BuildContext context, double s, Widget? child) =>
                     Transform.scale(scale: s, child: child),
                 child: ReaderShapeBadge(
-                  icon: glass
-                      ? FushiIcons.play
-                      : FushiIcons.readingMode,
+                  icon: glass ? FushiIcons.play : FushiIcons.readingMode,
                   size: glass ? 26 : 32,
                   shape: ReaderBadgeShape.cookie4,
                   iconSize: glass ? 18 : 17,

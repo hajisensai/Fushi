@@ -110,15 +110,11 @@ Widget buildTapOutsideTestApp({
   required GlobalKey<TapOutsideHostPageState> hostKey,
 }) {
   return ProviderScope(
-    overrides: [
-      appProvider.overrideWith((ref) => appModel),
-    ],
+    overrides: [appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),
-        home: Scaffold(
-          body: TapOutsideHostPage(key: hostKey),
-        ),
+        home: Scaffold(body: TapOutsideHostPage(key: hostKey)),
       ),
     ),
   );
@@ -142,10 +138,10 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  testWidgets(
-      'tap on a middle layer body closes its descendants (3 -> 2), '
-      'keeping that layer + ancestors and NOT ending the session',
-      (tester) async {
+  testWidgets('tap on a middle layer body closes its descendants (3 -> 2), '
+      'keeping that layer + ancestors and NOT ending the session', (
+    tester,
+  ) async {
     final appModel = TapOutsideTestAppModel();
     final hostKey = GlobalKey<TapOutsideHostPageState>();
     await tester.pumpWidget(
@@ -175,64 +171,71 @@ void main() {
     expect(twoStack.every((e) => e.visible), isTrue, reason: '本层 + 祖先仍可见');
     expect(host.debugTopVisiblePopupIndex, 1);
     expect(host.allDismissedCalls, 0, reason: '没清整栈，不触发会话收尾');
-    expect(host.stackChangedCalls, 1,
-        reason: '关后代调一次 onDictionaryStackChanged');
-  });
-
-  testWidgets('tap on the top layer body is a no-op when it has no descendants',
-      (tester) async {
-    final appModel = TapOutsideTestAppModel();
-    final hostKey = GlobalKey<TapOutsideHostPageState>();
-    await tester.pumpWidget(
-      buildTapOutsideTestApp(appModel: appModel, hostKey: hostKey),
+    expect(
+      host.stackChangedCalls,
+      1,
+      reason: '关后代调一次 onDictionaryStackChanged',
     );
-    await tester.pump();
-    await tester.pump();
-
-    final host = hostKey.currentState!;
-    await buildVisibleLayers(tester, host, <String>['a', 'b']);
-    expect(host.debugPopupStack, hasLength(2));
-
-    host.allDismissedCalls = 0;
-    host.stackChangedCalls = 0;
-
-    // 点顶层 (index 1) 本体空白 = 无后代 → no-op，栈不变。
-    host.tapOutsideLayer(1);
-    await tester.pump();
-
-    expect(host.debugPopupStack, hasLength(2), reason: '点顶层无后代，栈不变');
-    expect(host.debugTopVisiblePopupIndex, 1);
-    expect(host.allDismissedCalls, 0, reason: 'no-op 不收尾');
-    expect(host.stackChangedCalls, 0, reason: 'no-op 不触发栈变更钩子');
   });
 
   testWidgets(
-      'barrier tap (true blank outside all popups) clears the whole stack '
-      'and ends the session, keeping the hidden warm slot', (tester) async {
-    final appModel = TapOutsideTestAppModel();
-    final hostKey = GlobalKey<TapOutsideHostPageState>();
-    await tester.pumpWidget(
-      buildTapOutsideTestApp(appModel: appModel, hostKey: hostKey),
-    );
-    await tester.pump();
-    await tester.pump();
+    'tap on the top layer body is a no-op when it has no descendants',
+    (tester) async {
+      final appModel = TapOutsideTestAppModel();
+      final hostKey = GlobalKey<TapOutsideHostPageState>();
+      await tester.pumpWidget(
+        buildTapOutsideTestApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    final host = hostKey.currentState!;
-    await buildVisibleLayers(tester, host, <String>['a', 'b', 'c']);
-    expect(host.debugPopupStack, hasLength(3));
+      final host = hostKey.currentState!;
+      await buildVisibleLayers(tester, host, <String>['a', 'b']);
+      expect(host.debugPopupStack, hasLength(2));
 
-    host.allDismissedCalls = 0;
+      host.allDismissedCalls = 0;
+      host.stackChangedCalls = 0;
 
-    // 点所有弹窗外真空白（barrier）→ 一次清整栈 + 会话收尾。
-    host.tapBarrier();
-    await tester.pump();
+      // 点顶层 (index 1) 本体空白 = 无后代 → no-op，栈不变。
+      host.tapOutsideLayer(1);
+      await tester.pump();
 
-    expect(host.dictionaryPopupShown, isFalse, reason: '整栈清空，无可见弹窗');
-    expect(host.allDismissedCalls, 1, reason: '清整栈触发一次会话收尾');
-    // BUG-092：清整栈保留隐藏热槽（index 0，visible=false）而非销毁。
-    final after = host.debugPopupStack;
-    expect(after, hasLength(1), reason: '保留隐藏热槽');
-    expect(after.single.isWarmSlot, isTrue);
-    expect(after.single.visible, isFalse, reason: '热槽隐身复用，不可见');
-  });
+      expect(host.debugPopupStack, hasLength(2), reason: '点顶层无后代，栈不变');
+      expect(host.debugTopVisiblePopupIndex, 1);
+      expect(host.allDismissedCalls, 0, reason: 'no-op 不收尾');
+      expect(host.stackChangedCalls, 0, reason: 'no-op 不触发栈变更钩子');
+    },
+  );
+
+  testWidgets(
+    'barrier tap (true blank outside all popups) clears the whole stack '
+    'and ends the session, keeping the hidden warm slot',
+    (tester) async {
+      final appModel = TapOutsideTestAppModel();
+      final hostKey = GlobalKey<TapOutsideHostPageState>();
+      await tester.pumpWidget(
+        buildTapOutsideTestApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final host = hostKey.currentState!;
+      await buildVisibleLayers(tester, host, <String>['a', 'b', 'c']);
+      expect(host.debugPopupStack, hasLength(3));
+
+      host.allDismissedCalls = 0;
+
+      // 点所有弹窗外真空白（barrier）→ 一次清整栈 + 会话收尾。
+      host.tapBarrier();
+      await tester.pump();
+
+      expect(host.dictionaryPopupShown, isFalse, reason: '整栈清空，无可见弹窗');
+      expect(host.allDismissedCalls, 1, reason: '清整栈触发一次会话收尾');
+      // BUG-092：清整栈保留隐藏热槽（index 0，visible=false）而非销毁。
+      final after = host.debugPopupStack;
+      expect(after, hasLength(1), reason: '保留隐藏热槽');
+      expect(after.single.isWarmSlot, isTrue);
+      expect(after.single.visible, isFalse, reason: '热槽隐身复用，不可见');
+    },
+  );
 }

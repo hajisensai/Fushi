@@ -20,35 +20,44 @@ void main() {
       const String code = '/HQN4@4CE90:nine_kokoiro.exe';
       expect(normalizeGalHookCode(code), code);
       // 不带斜杠的写法同样原样保留 —— 两种写法都是上游生态里的合法形式。
-      expect(normalizeGalHookCode('HQN4@4CE90:nine_kokoiro.exe'),
-          'HQN4@4CE90:nine_kokoiro.exe');
+      expect(
+        normalizeGalHookCode('HQN4@4CE90:nine_kokoiro.exe'),
+        'HQN4@4CE90:nine_kokoiro.exe',
+      );
       // 大小写是有意义的（H/Q/N/S/W 是数据类型标志），绝不能规整。
       expect(normalizeGalHookCode('EXHVXN0@2198:x.exe'), 'EXHVXN0@2198:x.exe');
     });
 
     test('去掉首尾空白与包裹引号（从网页/聊天复制的常态）', () {
       expect(
-          normalizeGalHookCode('  /HQN4@4CE90:a.exe  '), '/HQN4@4CE90:a.exe');
+        normalizeGalHookCode('  /HQN4@4CE90:a.exe  '),
+        '/HQN4@4CE90:a.exe',
+      );
       expect(normalizeGalHookCode('"/HQN4@4CE90:a.exe"'), '/HQN4@4CE90:a.exe');
       expect(normalizeGalHookCode("'/HQN4@4CE90:a.exe'"), '/HQN4@4CE90:a.exe');
       expect(normalizeGalHookCode('「/HQN4@4CE90:a.exe」'), '/HQN4@4CE90:a.exe');
       // 嵌套引号也剥干净。
       expect(
-          normalizeGalHookCode('"「/HQN4@4CE90:a.exe」"'), '/HQN4@4CE90:a.exe');
+        normalizeGalHookCode('"「/HQN4@4CE90:a.exe」"'),
+        '/HQN4@4CE90:a.exe',
+      );
     });
 
     test('去掉内部空白与换行（复制时的软折行）', () {
       expect(normalizeGalHookCode('/HQN4@4CE90\n:a.exe'), '/HQN4@4CE90:a.exe');
       expect(normalizeGalHookCode('/HQN4 @4CE90:a.exe'), '/HQN4@4CE90:a.exe');
       expect(
-          normalizeGalHookCode('/HQN4@4CE90:a.exe\r\n'), '/HQN4@4CE90:a.exe');
+        normalizeGalHookCode('/HQN4@4CE90:a.exe\r\n'),
+        '/HQN4@4CE90:a.exe',
+      );
       // 全角空格（U+3000）不在 FF01..FF5E 区间里，必须单独处理。
       expect(normalizeGalHookCode('/HQN4　@4CE90:a.exe'), '/HQN4@4CE90:a.exe');
     });
 
     test('全角 ASCII → 半角（中日文 IME 下粘出来的码 native 一个字都认不出）', () {
       // ／ＨＱＮ４＠４ＣＥ９０：ａ．ｅｘｅ
-      const String fullWidth = '／ＨＱＮ４＠'
+      const String fullWidth =
+          '／ＨＱＮ４＠'
           '４ＣＥ９０：ａ．ｅｘｅ';
       expect(normalizeGalHookCode(fullWidth), '/HQN4@4CE90:a.exe');
     });
@@ -85,12 +94,21 @@ void main() {
     final int end = page.indexOf('Future<void> _saveSelectedLunaHookCode(');
     expect(end, greaterThan(start));
     final String body = page.substring(start, end);
-    expect(body.contains('store.upsert('), isTrue,
-        reason: '粘一条码不该把用户其它 profile 全部清掉');
-    expect(body.contains('replaceFrom('), isFalse,
-        reason: 'replaceFrom 是整表替换，那是导入文件那条路的语义');
+    expect(
+      body.contains('store.upsert('),
+      isTrue,
+      reason: '粘一条码不该把用户其它 profile 全部清掉',
+    );
+    expect(
+      body.contains('replaceFrom('),
+      isFalse,
+      reason: 'replaceFrom 是整表替换，那是导入文件那条路的语义',
+    );
     expect(body.contains('normalizeGalHookCode('), isTrue, reason: '必须先洗噪声再入库');
-    expect(body.contains('sha256File('), isTrue,
-        reason: '必须补上 exe 身份哈希 —— 否则这条 profile 永远匹配不上');
+    expect(
+      body.contains('sha256File('),
+      isTrue,
+      reason: '必须补上 exe 身份哈希 —— 否则这条 profile 永远匹配不上',
+    );
   });
 }

@@ -28,20 +28,27 @@ void main() {
   /// 让墙钟前进：基线/墓碑裁决按毫秒比较，步骤之间隔开避免同毫秒歧义。
   Future<void> tick() => Future<void>.delayed(const Duration(milliseconds: 3));
 
-  Future<List<String>> orderOf(FushiDatabase db, String name,
-      [String type = 'playlist']) async {
-    final MediaCollectionRow? row =
-        await db.getMediaCollectionByNaturalKey(name, type);
+  Future<List<String>> orderOf(
+    FushiDatabase db,
+    String name, [
+    String type = 'playlist',
+  ]) async {
+    final MediaCollectionRow? row = await db.getMediaCollectionByNaturalKey(
+      name,
+      type,
+    );
     if (row == null) return const <String>[];
-    return (await db.getCollectionItems(row.id))
-        .map((MediaCollectionItemRow m) => m.entryKey)
-        .toList();
+    return (await db.getCollectionItems(
+      row.id,
+    )).map((MediaCollectionItemRow m) => m.entryKey).toList();
   }
 
   /// 初始收敛态：A 建 playlist S{v1,v2,v3}，双端互推一轮。
   Future<void> seedConverged() async {
-    final int c =
-        await a.db.createMediaCollection('S', collectionType: 'playlist');
+    final int c = await a.db.createMediaCollection(
+      'S',
+      collectionType: 'playlist',
+    );
     await a.db.addToCollection(c, MediaKind.video, 'v1');
     await a.db.addToCollection(c, MediaKind.video, 'v2');
     await a.db.addToCollection(c, MediaKind.video, 'v3');
@@ -67,16 +74,21 @@ void main() {
     await a.sync(cloud);
     final int applied = await b.sync(cloud);
     expect(applied, 1, reason: 'B 恰好应用一个合集的变更');
-    expect(await orderOf(b.db, 'S'), <String>['v3', 'v1', 'v2'],
-        reason: 'orderUpdatedAt 新者整表覆盖 sortIndex');
+    expect(await orderOf(b.db, 'S'), <String>[
+      'v3',
+      'v1',
+      'v2',
+    ], reason: 'orderUpdatedAt 新者整表覆盖 sortIndex');
 
     // 两端 orderUpdatedAt 镜像一致（B 不得写 now 伪装人为改序）。
-    final int atA =
-        (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!
-            .orderUpdatedAt;
-    final int atB =
-        (await b.db.getMediaCollectionByNaturalKey('S', 'playlist'))!
-            .orderUpdatedAt;
+    final int atA = (await a.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.orderUpdatedAt;
+    final int atB = (await b.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.orderUpdatedAt;
     expect(atB, atA);
 
     // 幂等：再互推一轮，双方零变更、清单字节不变。
@@ -90,14 +102,18 @@ void main() {
   test('A 移出成员 → B 不复活（成员墓碑跨端生效）', () async {
     await seedConverged();
 
-    final int cA =
-        (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+    final int cA = (await a.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.id;
     await a.db.removeFromCollection(cA, MediaKind.video, 'v2');
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
-    expect(await orderOf(b.db, 'S'), <String>['v1', 'v3'],
-        reason: 'B 应用移出，不靠 B 自己删');
+    expect(await orderOf(b.db, 'S'), <String>[
+      'v1',
+      'v3',
+    ], reason: 'B 应用移出，不靠 B 自己删');
 
     // 多轮互推：B 端并集绝不把 v2 加回来（无墓碑就会复活——这就是墓碑存在意义）。
     await tick();
@@ -112,8 +128,10 @@ void main() {
     await seedConverged();
 
     // A 移出 v2 并传播到 B。
-    final int cA =
-        (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+    final int cA = (await a.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.id;
     await a.db.removeFromCollection(cA, MediaKind.video, 'v2');
     await tick();
     await a.sync(cloud);
@@ -122,21 +140,27 @@ void main() {
 
     // B 重加 v2（addToCollection 清 B 本地镜像的墓碑）→ 互推。
     await tick();
-    final int cB =
-        (await b.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+    final int cB = (await b.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.id;
     await b.db.addToCollection(cB, MediaKind.video, 'v2');
     await tick();
     await b.sync(cloud);
     await a.sync(cloud);
 
-    expect(await orderOf(a.db, 'S'), <String>['v1', 'v3', 'v2'],
-        reason: 'A 端成员复归（重加胜过已发布的旧墓碑）');
+    expect(await orderOf(a.db, 'S'), <String>[
+      'v1',
+      'v3',
+      'v2',
+    ], reason: 'A 端成员复归（重加胜过已发布的旧墓碑）');
     expect(await orderOf(b.db, 'S'), <String>['v1', 'v3', 'v2']);
     // 墓碑两端 + 云清单全清。
     expect(await a.db.getAllCollectionMemberTombstones(), isEmpty);
     expect(await b.db.getAllCollectionMemberTombstones(), isEmpty);
-    final CollectionManifestEntry entry = cloud.manifest.collections
-        .firstWhere((CollectionManifestEntry e) => e.name == 'S');
+    final CollectionManifestEntry entry = cloud.manifest.collections.firstWhere(
+      (CollectionManifestEntry e) => e.name == 'S',
+    );
     expect(entry.memberTombstones, isEmpty);
   });
 
@@ -152,33 +176,42 @@ void main() {
     await a.sync(cloud);
 
     expect(await orderOf(a.db, 'Fav', 'collection'), <String>['x', 'y']);
-    expect(await orderOf(b.db, 'Fav', 'collection'), <String>['x', 'y'],
-        reason: '同名同类型对齐成一个合集，成员并集且两端同序');
+    expect(await orderOf(b.db, 'Fav', 'collection'), <String>[
+      'x',
+      'y',
+    ], reason: '同名同类型对齐成一个合集，成员并集且两端同序');
     // 各端仍只有一个 Fav。
     expect(
-        (await a.db.getAllMediaCollections())
-            .where((c) => c.name == 'Fav')
-            .length,
-        1);
+      (await a.db.getAllMediaCollections())
+          .where((c) => c.name == 'Fav')
+          .length,
+      1,
+    );
     expect(
-        (await b.db.getAllMediaCollections())
-            .where((c) => c.name == 'Fav')
-            .length,
-        1);
+      (await b.db.getAllMediaCollections())
+          .where((c) => c.name == 'Fav')
+          .length,
+      1,
+    );
   });
 
   test('合集删除防复活 + 对端重建传播回来', () async {
     await seedConverged();
 
     // A 删除合集 → 传播到 B（B 端不复活）。
-    final int cA =
-        (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+    final int cA = (await a.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.id;
     await a.db.deleteMediaCollection(cA);
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
-    expect(await b.db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull,
-        reason: '合集级墓碑跨端生效');
+    expect(
+      await b.db.getMediaCollectionByNaturalKey('S', 'playlist'),
+      isNull,
+      reason: '合集级墓碑跨端生效',
+    );
     // 多轮互推不复活。
     await tick();
     await b.sync(cloud);
@@ -187,14 +220,17 @@ void main() {
 
     // B 重建同名合集（createMediaCollection 清本地哨兵）→ 传播回 A。
     await tick();
-    final int cB =
-        await b.db.createMediaCollection('S', collectionType: 'playlist');
+    final int cB = await b.db.createMediaCollection(
+      'S',
+      collectionType: 'playlist',
+    );
     await b.db.addToCollection(cB, MediaKind.video, 'v9');
     await tick();
     await b.sync(cloud);
     await a.sync(cloud);
-    expect(await orderOf(a.db, 'S'), <String>['v9'],
-        reason: '重建胜过已发布的旧删除墓碑，只带重建后的成员');
+    expect(await orderOf(a.db, 'S'), <String>[
+      'v9',
+    ], reason: '重建胜过已发布的旧删除墓碑，只带重建后的成员');
   });
 
   test('移空自删的移出知识进清单：对端不复活刚移出的最后一个成员', () async {
@@ -204,8 +240,10 @@ void main() {
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
-    final int cB =
-        (await b.db.getMediaCollectionByNaturalKey('Solo', 'collection'))!.id;
+    final int cB = (await b.db.getMediaCollectionByNaturalKey(
+      'Solo',
+      'collection',
+    ))!.id;
     await b.db.addToCollection(cB, MediaKind.epub, 'y');
     await tick();
     await b.sync(cloud);
@@ -214,18 +252,24 @@ void main() {
 
     // A 移出 x、再移出 y → 移空自删（本地无行，只剩成员墓碑知识）。
     await tick();
-    final int cA2 =
-        (await a.db.getMediaCollectionByNaturalKey('Solo', 'collection'))!.id;
+    final int cA2 = (await a.db.getMediaCollectionByNaturalKey(
+      'Solo',
+      'collection',
+    ))!.id;
     await a.db.removeFromCollection(cA2, MediaKind.epub, 'x');
     await a.db.removeFromCollection(cA2, MediaKind.epub, 'y');
-    expect(await a.db.getMediaCollectionByNaturalKey('Solo', 'collection'),
-        isNull);
+    expect(
+      await a.db.getMediaCollectionByNaturalKey('Solo', 'collection'),
+      isNull,
+    );
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
     expect(
-        await b.db.getMediaCollectionByNaturalKey('Solo', 'collection'), isNull,
-        reason: '两个成员的移出墓碑都传播，B 端合集移空后按本地语义自删');
+      await b.db.getMediaCollectionByNaturalKey('Solo', 'collection'),
+      isNull,
+      reason: '两个成员的移出墓碑都传播，B 端合集移空后按本地语义自删',
+    );
   });
 
   test('纯引擎：首次同步（基线 0）一切墓碑皆新闻；旧闻墓碑输给在册成员', () {
@@ -236,7 +280,10 @@ void main() {
           collectionType: 'playlist',
           members: <CollectionManifestMember>[
             CollectionManifestMember(
-                mediaType: 'video', entryKey: 'v1', sortIndex: 0),
+              mediaType: 'video',
+              entryKey: 'v1',
+              sortIndex: 0,
+            ),
           ],
         ),
       ],
@@ -248,7 +295,10 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video', entryKey: 'v1', removedAt: 500),
+              mediaType: 'video',
+              entryKey: 'v1',
+              removedAt: 500,
+            ),
           ],
         ),
       ],
@@ -256,13 +306,19 @@ void main() {
 
     // 基线 0：removedAt=500 是没见过的新闻 → 移出生效。
     final CollectionSyncOutcome fresh = CollectionSyncEngine.merge(
-        local: local, remote: remote, lastSyncedAtMs: 0);
+      local: local,
+      remote: remote,
+      lastSyncedAtMs: 0,
+    );
     expect(fresh.merged.collections.single.members, isEmpty);
     expect(fresh.merged.collections.single.memberTombstones, hasLength(1));
 
     // 基线 1000 > 500：本端见过并裁决过，成员仍在 = 之后重加 → 成员胜、墓碑清。
     final CollectionSyncOutcome seen = CollectionSyncEngine.merge(
-        local: local, remote: remote, lastSyncedAtMs: 1000);
+      local: local,
+      remote: remote,
+      lastSyncedAtMs: 1000,
+    );
     expect(seen.merged.collections.single.members, hasLength(1));
     expect(seen.merged.collections.single.memberTombstones, isEmpty);
     expect(seen.changes.isEmpty, isTrue, reason: '本地已是目标态，零变更');
@@ -278,7 +334,10 @@ void main() {
           collectionType: 'playlist',
           members: <CollectionManifestMember>[
             CollectionManifestMember(
-                mediaType: 'video', entryKey: 'M', sortIndex: 0),
+              mediaType: 'video',
+              entryKey: 'M',
+              sortIndex: 0,
+            ),
           ],
         ),
       ],
@@ -292,10 +351,11 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video',
-                entryKey: 'M',
-                removedAt: 100,
-                publishedAt: 200),
+              mediaType: 'video',
+              entryKey: 'M',
+              removedAt: 100,
+              publishedAt: 200,
+            ),
           ],
         ),
       ],
@@ -303,9 +363,15 @@ void main() {
 
     // 修复后：对端用 publishedAt=200 > 基线150 ⇒ 新闻 ⇒ M 移出（不复活）。
     final CollectionSyncOutcome fixed = CollectionSyncEngine.merge(
-        local: bLocal, remote: sharedPublished, lastSyncedAtMs: 150);
-    expect(fixed.merged.collections.single.members, isEmpty,
-        reason: 'publishedAt 判新旧：上线后发布的墓碑对 B 是新闻，M 不复活');
+      local: bLocal,
+      remote: sharedPublished,
+      lastSyncedAtMs: 150,
+    );
+    expect(
+      fixed.merged.collections.single.members,
+      isEmpty,
+      reason: 'publishedAt 判新旧：上线后发布的墓碑对 B 是新闻，M 不复活',
+    );
     expect(fixed.merged.collections.single.memberTombstones, hasLength(1));
 
     // 旧清单兼容：无 publishedAt 时回退 removedAt=100 <= 基线150 ⇒ 旧闻 ⇒ 保留旧行为。
@@ -316,15 +382,24 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video', entryKey: 'M', removedAt: 100),
+              mediaType: 'video',
+              entryKey: 'M',
+              removedAt: 100,
+            ),
           ],
         ),
       ],
     );
     final CollectionSyncOutcome legacy = CollectionSyncEngine.merge(
-        local: bLocal, remote: sharedLegacy, lastSyncedAtMs: 150);
-    expect(legacy.merged.collections.single.members, hasLength(1),
-        reason: '旧清单无 publishedAt 回退 removedAt，行为不变（向后兼容）');
+      local: bLocal,
+      remote: sharedLegacy,
+      lastSyncedAtMs: 150,
+    );
+    expect(
+      legacy.merged.collections.single.members,
+      hasLength(1),
+      reason: '旧清单无 publishedAt 回退 removedAt，行为不变（向后兼容）',
+    );
 
     // 已见过的发布（publishedAt=100 <= 基线150）：真·旧闻 ⇒ 成员是之后重加 ⇒ 保留。
     final CollectionManifest seen = CollectionManifest(
@@ -334,18 +409,25 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video',
-                entryKey: 'M',
-                removedAt: 80,
-                publishedAt: 100),
+              mediaType: 'video',
+              entryKey: 'M',
+              removedAt: 80,
+              publishedAt: 100,
+            ),
           ],
         ),
       ],
     );
     final CollectionSyncOutcome seenOutcome = CollectionSyncEngine.merge(
-        local: bLocal, remote: seen, lastSyncedAtMs: 150);
-    expect(seenOutcome.merged.collections.single.members, hasLength(1),
-        reason: 'publishedAt<=基线：本端已见过，成员在=重加胜');
+      local: bLocal,
+      remote: seen,
+      lastSyncedAtMs: 150,
+    );
+    expect(
+      seenOutcome.merged.collections.single.members,
+      hasLength(1),
+      reason: 'publishedAt<=基线：本端已见过，成员在=重加胜',
+    );
   });
 
   test('finding2 发布盖戳：本端新造墓碑写进合并结果时盖 publishedAt=now', () {
@@ -356,7 +438,10 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video', entryKey: 'M', removedAt: 500),
+              mediaType: 'video',
+              entryKey: 'M',
+              removedAt: 500,
+            ),
           ],
         ),
       ],
@@ -368,8 +453,10 @@ void main() {
       nowMs: 9999,
     );
     expect(
-        out.merged.collections.single.memberTombstones.single.publishedAt, 9999,
-        reason: '远端清单不含该墓碑 → 本端首次发布 → 盖 now');
+      out.merged.collections.single.memberTombstones.single.publishedAt,
+      9999,
+      reason: '远端清单不含该墓碑 → 本端首次发布 → 盖 now',
+    );
     // 幂等：把发布结果当远端再合，publishedAt 保持 9999，不重盖。
     final CollectionSyncOutcome again = CollectionSyncEngine.merge(
       local: local,
@@ -377,9 +464,11 @@ void main() {
       lastSyncedAtMs: 0,
       nowMs: 12345,
     );
-    expect(again.merged.collections.single.memberTombstones.single.publishedAt,
-        9999,
-        reason: '已发布戳保真，不被后续 now 重盖（幂等）');
+    expect(
+      again.merged.collections.single.memberTombstones.single.publishedAt,
+      9999,
+      reason: '已发布戳保真，不被后续 now 重盖（幂等）',
+    );
   });
 
   // ── finding 12：负 removedAt 参与 max 比较不崩（历史 `(lt ?? -1)!` 空断言崩溃）──
@@ -391,7 +480,10 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video', entryKey: 'M', removedAt: 0),
+              mediaType: 'video',
+              entryKey: 'M',
+              removedAt: 0,
+            ),
           ],
         ),
       ],
@@ -403,15 +495,21 @@ void main() {
           collectionType: 'playlist',
           memberTombstones: <CollectionMemberTombstone>[
             CollectionMemberTombstone(
-                mediaType: 'video', entryKey: 'M', removedAt: 10),
+              mediaType: 'video',
+              entryKey: 'M',
+              removedAt: 10,
+            ),
           ],
         ),
       ],
     );
     // 两侧都无成员、都有 M 墓碑 → 走 _mergeTomb（历史 `(lt ?? -1) > (rt ?? -1) ? lt! : rt!`
     // 在一侧墓碑缺失 + 另一侧值 <= -1 时 `!` 崩）。这里断言合并正常、removedAt 取较大。
-    final CollectionSyncOutcome out =
-        CollectionSyncEngine.merge(local: a, remote: b, lastSyncedAtMs: 0);
+    final CollectionSyncOutcome out = CollectionSyncEngine.merge(
+      local: a,
+      remote: b,
+      lastSyncedAtMs: 0,
+    );
     expect(out.merged.collections.single.memberTombstones.single.removedAt, 10);
   });
 
@@ -420,18 +518,26 @@ void main() {
     await seedConverged(); // A/B 收敛于 playlist S{v1,v2,v3}。
 
     // A 把 S 改名为 S2。
-    final int cA =
-        (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+    final int cA = (await a.db.getMediaCollectionByNaturalKey(
+      'S',
+      'playlist',
+    ))!.id;
     await a.db.renameMediaCollection(cA, 'S2');
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
 
     // B 端：旧名 S 被删除墓碑清掉，新名 S2 带原成员。
-    expect(await b.db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull,
-        reason: '旧名副本被合集级墓碑跨端删除');
-    expect(await orderOf(b.db, 'S2'), <String>['v1', 'v2', 'v3'],
-        reason: '新名带原成员');
+    expect(
+      await b.db.getMediaCollectionByNaturalKey('S', 'playlist'),
+      isNull,
+      reason: '旧名副本被合集级墓碑跨端删除',
+    );
+    expect(await orderOf(b.db, 'S2'), <String>[
+      'v1',
+      'v2',
+      'v3',
+    ], reason: '新名带原成员');
 
     // 多轮互推：旧名绝不复活（这就是给旧自然键写墓碑的意义）。
     await tick();
@@ -449,73 +555,81 @@ void main() {
     final int id2 = await a.db.createMediaCollection('Dup');
     expect(id2, id1, reason: '同 (name,type) 复用已有 id');
     expect(
-        (await a.db.getAllMediaCollections())
-            .where((c) => c.name == 'Dup')
-            .length,
-        1,
-        reason: '绝不再造重复自然键行');
+      (await a.db.getAllMediaCollections())
+          .where((c) => c.name == 'Dup')
+          .length,
+      1,
+      reason: '绝不再造重复自然键行',
+    );
     // 不同 collectionType 不算重复。
-    final int id3 =
-        await a.db.createMediaCollection('Dup', collectionType: 'playlist');
+    final int id3 = await a.db.createMediaCollection(
+      'Dup',
+      collectionType: 'playlist',
+    );
     expect(id3, isNot(id1));
   });
 
   // ── finding 1：combinePeers 折叠按文件级 lastWrittenAt 裁决墓碑（非本端基线）─────
   group('finding1 combinePeers uses file lastWrittenAt', () {
     CollectionManifest tombFile(int lwt, {int pub = 100}) => CollectionManifest(
-          lastWrittenAt: lwt,
-          collections: <CollectionManifestEntry>[
-            CollectionManifestEntry(
-              name: 'S',
-              collectionType: 'playlist',
-              memberTombstones: <CollectionMemberTombstone>[
-                CollectionMemberTombstone(
-                    mediaType: 'video',
-                    entryKey: 'm',
-                    removedAt: pub,
-                    publishedAt: pub),
-              ],
+      lastWrittenAt: lwt,
+      collections: <CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+              mediaType: 'video',
+              entryKey: 'm',
+              removedAt: pub,
+              publishedAt: pub,
             ),
           ],
-        );
+        ),
+      ],
+    );
     CollectionManifest aliveFile(int lwt) => CollectionManifest(
-          lastWrittenAt: lwt,
-          collections: <CollectionManifestEntry>[
-            const CollectionManifestEntry(
-              name: 'S',
-              collectionType: 'playlist',
-              members: <CollectionManifestMember>[
-                CollectionManifestMember(
-                    mediaType: 'video', entryKey: 'm', sortIndex: 0),
-              ],
+      lastWrittenAt: lwt,
+      collections: <CollectionManifestEntry>[
+        const CollectionManifestEntry(
+          name: 'S',
+          collectionType: 'playlist',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+              mediaType: 'video',
+              entryKey: 'm',
+              sortIndex: 0,
             ),
           ],
-        );
+        ),
+      ],
+    );
 
     test('stale peer alive member loses to a newer published tombstone', () {
       // 墓碑文件 pub=100/lwt=100；活成员文件更旧（lwt=50）——陈旧，墓碑默认获胜。
-      final CollectionManifest union =
-          CollectionSyncEngine.combinePeers(<CollectionManifest>[
-        tombFile(100),
-        aliveFile(50),
-      ]);
+      final CollectionManifest union = CollectionSyncEngine.combinePeers(
+        <CollectionManifest>[tombFile(100), aliveFile(50)],
+      );
       final CollectionManifestEntry e = union.collections.single;
-      expect(e.members, isEmpty,
-          reason: '陈旧文件(lwt=50)的活成员输给已发布墓碑(pub=100)——不复活');
+      expect(
+        e.members,
+        isEmpty,
+        reason: '陈旧文件(lwt=50)的活成员输给已发布墓碑(pub=100)——不复活',
+      );
       expect(e.memberTombstones, hasLength(1));
     });
 
     test('fresher peer alive member (re-add after tombstone) wins', () {
       // 活成员文件 lwt=200 > 墓碑 pub=100 ⇒「看过墓碑后的有意重加」，成员胜、墓碑清。
-      final CollectionManifest union =
-          CollectionSyncEngine.combinePeers(<CollectionManifest>[
-        tombFile(100),
-        aliveFile(200),
-      ]);
+      final CollectionManifest union = CollectionSyncEngine.combinePeers(
+        <CollectionManifest>[tombFile(100), aliveFile(200)],
+      );
       final CollectionManifestEntry e = union.collections.single;
-      expect(e.members.map((CollectionManifestMember m) => m.entryKey).toList(),
-          <String>['m'],
-          reason: '文件晚于墓碑 = 有意重加胜');
+      expect(
+        e.members.map((CollectionManifestMember m) => m.entryKey).toList(),
+        <String>['m'],
+        reason: '文件晚于墓碑 = 有意重加胜',
+      );
       expect(e.memberTombstones, isEmpty);
     });
 
@@ -529,60 +643,72 @@ void main() {
             collectionType: 'playlist',
             members: <CollectionManifestMember>[
               CollectionManifestMember(
-                  mediaType: 'video', entryKey: 'm', sortIndex: 0),
+                mediaType: 'video',
+                entryKey: 'm',
+                sortIndex: 0,
+              ),
             ],
           ),
         ],
       );
       final CollectionManifest union = CollectionSyncEngine.combinePeers(
-          <CollectionManifest>[tombFile(1), legacyAlive]);
-      expect(union.collections.single.members, isEmpty,
-          reason: '旧文件(lwt=0)活成员恒陈旧，墓碑胜');
+        <CollectionManifest>[tombFile(1), legacyAlive],
+      );
+      expect(
+        union.collections.single.members,
+        isEmpty,
+        reason: '旧文件(lwt=0)活成员恒陈旧，墓碑胜',
+      );
     });
 
     test(
-        'fold is order-independent (max/min aggregation + canonical tie-break)',
-        () {
-      final CollectionManifest ab =
-          CollectionSyncEngine.combinePeers(<CollectionManifest>[
-        tombFile(100),
-        aliveFile(200),
-      ]);
-      final CollectionManifest ba =
-          CollectionSyncEngine.combinePeers(<CollectionManifest>[
-        aliveFile(200),
-        tombFile(100),
-      ]);
-      expect(ab.canonicalJson(), ba.canonicalJson(), reason: '折叠对顺序不变（收敛前提）');
-    });
+      'fold is order-independent (max/min aggregation + canonical tie-break)',
+      () {
+        final CollectionManifest ab = CollectionSyncEngine.combinePeers(
+          <CollectionManifest>[tombFile(100), aliveFile(200)],
+        );
+        final CollectionManifest ba = CollectionSyncEngine.combinePeers(
+          <CollectionManifest>[aliveFile(200), tombFile(100)],
+        );
+        expect(ab.canonicalJson(), ba.canonicalJson(), reason: '折叠对顺序不变（收敛前提）');
+      },
+    );
   });
 
   // ── collection-tags Task 8：tagNames 全触点透传 + 双活并集（只增不删）──────────
   test('tagNames union across two devices (add-only)', () {
-    const CollectionManifest local =
-        CollectionManifest(collections: <CollectionManifestEntry>[
-      CollectionManifestEntry(
-        name: 'C',
-        collectionType: 'collection',
-        members: <CollectionManifestMember>[
-          CollectionManifestMember(
-              mediaType: 'video', entryKey: 'u1', sortIndex: 0),
-        ],
-        tagNames: <String>['a'],
-      ),
-    ]);
-    const CollectionManifest remote =
-        CollectionManifest(collections: <CollectionManifestEntry>[
-      CollectionManifestEntry(
-        name: 'C',
-        collectionType: 'collection',
-        members: <CollectionManifestMember>[
-          CollectionManifestMember(
-              mediaType: 'video', entryKey: 'u1', sortIndex: 0),
-        ],
-        tagNames: <String>['b'],
-      ),
-    ]);
+    const CollectionManifest local = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'C',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+              mediaType: 'video',
+              entryKey: 'u1',
+              sortIndex: 0,
+            ),
+          ],
+          tagNames: <String>['a'],
+        ),
+      ],
+    );
+    const CollectionManifest remote = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'C',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+              mediaType: 'video',
+              entryKey: 'u1',
+              sortIndex: 0,
+            ),
+          ],
+          tagNames: <String>['b'],
+        ),
+      ],
+    );
     final CollectionSyncOutcome out = CollectionSyncEngine.merge(
       local: local,
       remote: remote,
@@ -595,56 +721,75 @@ void main() {
 
   test('combinePeers unions tagNames across folded peer files', () {
     const CollectionManifest peerA = CollectionManifest(
-        lastWrittenAt: 100,
-        collections: <CollectionManifestEntry>[
-          CollectionManifestEntry(
-            name: 'C',
-            collectionType: 'collection',
-            members: <CollectionManifestMember>[
-              CollectionManifestMember(
-                  mediaType: 'video', entryKey: 'u1', sortIndex: 0),
-            ],
-            tagNames: <String>['alpha', 'zebra'],
-          ),
-        ]);
+      lastWrittenAt: 100,
+      collections: <CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'C',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+              mediaType: 'video',
+              entryKey: 'u1',
+              sortIndex: 0,
+            ),
+          ],
+          tagNames: <String>['alpha', 'zebra'],
+        ),
+      ],
+    );
     const CollectionManifest peerB = CollectionManifest(
-        lastWrittenAt: 200,
-        collections: <CollectionManifestEntry>[
-          CollectionManifestEntry(
-            name: 'C',
-            collectionType: 'collection',
-            members: <CollectionManifestMember>[
-              CollectionManifestMember(
-                  mediaType: 'video', entryKey: 'u1', sortIndex: 0),
-            ],
-            tagNames: <String>['mid'],
-          ),
-        ]);
-    final CollectionManifest union =
-        CollectionSyncEngine.combinePeers(<CollectionManifest>[peerA, peerB]);
-    expect(union.collections.single.tagNames, <String>['alpha', 'mid', 'zebra'],
-        reason: '折叠多端清单时活分支标签并集');
+      lastWrittenAt: 200,
+      collections: <CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'C',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+              mediaType: 'video',
+              entryKey: 'u1',
+              sortIndex: 0,
+            ),
+          ],
+          tagNames: <String>['mid'],
+        ),
+      ],
+    );
+    final CollectionManifest union = CollectionSyncEngine.combinePeers(
+      <CollectionManifest>[peerA, peerB],
+    );
+    expect(union.collections.single.tagNames, <String>[
+      'alpha',
+      'mid',
+      'zebra',
+    ], reason: '折叠多端清单时活分支标签并集');
   });
 
   test('tagNames survive _stampEntry rebuild when stamping tombstones', () {
     // 单侧活条目：带标签 + 未发布成员墓碑 → merge 走 l.toEntry() 再经 _stampEntry
     // 盖 publishedAt。_stampEntry 重建整个 entry，必须透传 tagNames（否则丢标签）。
-    const CollectionManifest local =
-        CollectionManifest(collections: <CollectionManifestEntry>[
-      CollectionManifestEntry(
-        name: 'C',
-        collectionType: 'collection',
-        members: <CollectionManifestMember>[
-          CollectionManifestMember(
-              mediaType: 'video', entryKey: 'u1', sortIndex: 0),
-        ],
-        memberTombstones: <CollectionMemberTombstone>[
-          CollectionMemberTombstone(
-              mediaType: 'video', entryKey: 'gone', removedAt: 500),
-        ],
-        tagNames: <String>['keepme'],
-      ),
-    ]);
+    const CollectionManifest local = CollectionManifest(
+      collections: <CollectionManifestEntry>[
+        CollectionManifestEntry(
+          name: 'C',
+          collectionType: 'collection',
+          members: <CollectionManifestMember>[
+            CollectionManifestMember(
+              mediaType: 'video',
+              entryKey: 'u1',
+              sortIndex: 0,
+            ),
+          ],
+          memberTombstones: <CollectionMemberTombstone>[
+            CollectionMemberTombstone(
+              mediaType: 'video',
+              entryKey: 'gone',
+              removedAt: 500,
+            ),
+          ],
+          tagNames: <String>['keepme'],
+        ),
+      ],
+    );
     final CollectionSyncOutcome out = CollectionSyncEngine.merge(
       local: local,
       remote: CollectionManifest.empty,
@@ -652,33 +797,40 @@ void main() {
       nowMs: 9999,
     );
     final CollectionManifestEntry merged = out.merged.collections.single;
-    expect(merged.memberTombstones.single.publishedAt, 9999,
-        reason: '未发布墓碑经 _stampEntry 盖 now');
-    expect(merged.tagNames, <String>['keepme'],
-        reason: '_stampEntry 重建 entry 时透传 tagNames，不丢标签');
+    expect(
+      merged.memberTombstones.single.publishedAt,
+      9999,
+      reason: '未发布墓碑经 _stampEntry 盖 now',
+    );
+    expect(merged.tagNames, <String>[
+      'keepme',
+    ], reason: '_stampEntry 重建 entry 时透传 tagNames，不丢标签');
   });
 
   // ── collection-tags Task 9：DB ↔ 清单标签物化（load 读标签 / apply 写标签）──────
   test('load reads collection tags; apply materializes them', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    final int cid =
-        await db.createMediaCollection('C', collectionType: 'collection');
+    final int cid = await db.createMediaCollection(
+      'C',
+      collectionType: 'collection',
+    );
     await db.addToCollection(cid, MediaKind.video, 'u1');
     final int t = await db.createTag('日语', 0xFF0000FF);
     await db.addTagToCollection(cid, t);
 
     final CollectionManifest manifest = await loadLocalCollectionManifest(db);
-    expect(manifest.collections.single.tagNames, <String>['日语'],
-        reason: 'load 从 DB 读合集标签进清单');
+    expect(manifest.collections.single.tagNames, <String>[
+      '日语',
+    ], reason: 'load 从 DB 读合集标签进清单');
 
     // 反向：清单里带一个本地没有的标签，apply 应物化到 DB。
-    final FushiDatabase db2 =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db2 = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db2.close);
-    final int cid2 =
-        await db2.createMediaCollection('C', collectionType: 'collection');
+    final int cid2 = await db2.createMediaCollection(
+      'C',
+      collectionType: 'collection',
+    );
     await db2.addToCollection(cid2, MediaKind.video, 'u1');
     await applyCollectionLocalChanges(
       db2,
@@ -688,15 +840,21 @@ void main() {
           collectionType: 'collection',
           members: <CollectionManifestMember>[
             CollectionManifestMember(
-                mediaType: 'video', entryKey: 'u1', sortIndex: 0),
+              mediaType: 'video',
+              entryKey: 'u1',
+              sortIndex: 0,
+            ),
           ],
           tagNames: <String>['N1'],
         ),
       ]),
     );
     final List<BookTagRow> tags = await db2.getTagsForCollection(cid2);
-    expect(tags.map((BookTagRow t) => t.name), contains('N1'),
-        reason: 'apply 把清单标签物化到 DB（getOrCreate + addTagToCollection）');
+    expect(
+      tags.map((BookTagRow t) => t.name),
+      contains('N1'),
+      reason: 'apply 把清单标签物化到 DB（getOrCreate + addTagToCollection）',
+    );
   });
 }
 

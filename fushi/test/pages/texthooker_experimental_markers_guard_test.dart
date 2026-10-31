@@ -20,32 +20,49 @@ String _read(String relative) {
   final File f = File(relative);
   if (!f.existsSync()) {
     throw StateError(
-        'missing source: $relative (cwd=${Directory.current.path})');
+      'missing source: $relative (cwd=${Directory.current.path})',
+    );
   }
   return f.readAsStringSync();
 }
 
 void main() {
   group('文本钩子不再有实验性提示横幅', () {
-    final String pageSrc =
-        _read('lib/src/pages/implementations/texthooker_page.dart');
+    final String pageSrc = _read(
+      'lib/src/pages/implementations/texthooker_page.dart',
+    );
     final String baseI18n = _read('lib/i18n/strings.i18n.json');
     final String zhI18n = _read('lib/i18n/strings_zh-CN.i18n.json');
 
     test('页面不再渲染实验性横幅（方法与调用均已删除）', () {
-      expect(pageSrc.contains('_buildExperimentalBanner'), isFalse,
-          reason: '实验性横幅方法/调用应已删除');
-      expect(pageSrc.contains('texthooker_experimental_banner'), isFalse,
-          reason: '页面不应再引用 texthooker_experimental_banner 文案');
-      expect(pageSrc.contains('Icons.science_outlined'), isFalse,
-          reason: '实验性烧瓶图标应随横幅一并删除');
+      expect(
+        pageSrc.contains('_buildExperimentalBanner'),
+        isFalse,
+        reason: '实验性横幅方法/调用应已删除',
+      );
+      expect(
+        pageSrc.contains('texthooker_experimental_banner'),
+        isFalse,
+        reason: '页面不应再引用 texthooker_experimental_banner 文案',
+      );
+      expect(
+        pageSrc.contains('Icons.science_outlined'),
+        isFalse,
+        reason: '实验性烧瓶图标应随横幅一并删除',
+      );
     });
 
     test('i18n key texthooker_experimental_banner 已从源文件删除', () {
-      expect(baseI18n.contains('texthooker_experimental_banner'), isFalse,
-          reason: '英文源文件不应再有该 key');
-      expect(zhI18n.contains('texthooker_experimental_banner'), isFalse,
-          reason: '中文源文件不应再有该 key');
+      expect(
+        baseI18n.contains('texthooker_experimental_banner'),
+        isFalse,
+        reason: '英文源文件不应再有该 key',
+      );
+      expect(
+        zhI18n.contains('texthooker_experimental_banner'),
+        isFalse,
+        reason: '中文源文件不应再有该 key',
+      );
     });
 
     test('页面正文仍在（确认上面三条不是因为整个文件读空而假绿）', () {

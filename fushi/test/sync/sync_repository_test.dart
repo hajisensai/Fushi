@@ -7,33 +7,33 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
-  test('sync preferences use typed pref codec and read legacy raw values',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final SyncRepository repo = SyncRepository(db);
+  test(
+    'sync preferences use typed pref codec and read legacy raw values',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
 
-    await db.setPref(SyncRepository.syncStatsPreferenceKey, 'false');
-    await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'false');
+      await db.setPref(SyncRepository.syncStatsPreferenceKey, 'false');
+      await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'false');
 
-    expect(await repo.isSyncStatsEnabled(), isFalse);
-    expect(await repo.isSyncAudioBookEnabled(), isTrue);
+      expect(await repo.isSyncStatsEnabled(), isFalse);
+      expect(await repo.isSyncAudioBookEnabled(), isTrue);
 
-    await repo.setSyncStatsEnabled(true);
-    await repo.setSyncAudioBookEnabled(false);
+      await repo.setSyncStatsEnabled(true);
+      await repo.setSyncAudioBookEnabled(false);
 
-    expect(await db.getPref(SyncRepository.syncStatsPreferenceKey), 'b:true');
-    expect(
-      await db.getPref(SyncRepository.syncAudioBookPreferenceKey),
-      'b:true',
-    );
-  });
+      expect(await db.getPref(SyncRepository.syncStatsPreferenceKey), 'b:true');
+      expect(
+        await db.getPref(SyncRepository.syncAudioBookPreferenceKey),
+        'b:true',
+      );
+    },
+  );
 
   // 「同步词典」/「同步本地音频」两个开关已删除（改成设置页的显式上传 / 下载动作），
   // 但存量库里的 `sync_dictionary_enabled` / `sync_local_audio_enabled` 还要被读**一次**：
@@ -51,8 +51,11 @@ void main() {
     expect(await repo.hadLegacyAssetAutoSync(), isTrue);
 
     await repo.acknowledgeLegacyAssetAutoSync();
-    expect(await repo.hadLegacyAssetAutoSync(), isFalse,
-        reason: '确认后必须不再出现，否则每次进设置页都弹一遍');
+    expect(
+      await repo.hadLegacyAssetAutoSync(),
+      isFalse,
+      reason: '确认后必须不再出现，否则每次进设置页都弹一遍',
+    );
 
     // 另一个键单独为真同样要提示（任一即可）。
     await db.setPref('sync_local_audio_enabled', 'true');
@@ -62,24 +65,27 @@ void main() {
   });
 
   test('deleted sync toggles have no accessor left', () {
-    final String src =
-        File('lib/src/sync/sync_repository.dart').readAsStringSync();
+    final String src = File(
+      'lib/src/sync/sync_repository.dart',
+    ).readAsStringSync();
     expect(src.contains('isSyncDictionaryEnabled'), isFalse);
     expect(src.contains('isSyncLocalAudioEnabled'), isFalse);
   });
 
-  test('audiobook-files sync preference defaults false and round-trips',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final SyncRepository repo = SyncRepository(db);
+  test(
+    'audiobook-files sync preference defaults false and round-trips',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
 
-    expect(await repo.isSyncAudioBookFilesEnabled(), isFalse);
-    await repo.setSyncAudioBookFilesEnabled(true);
-    expect(await repo.isSyncAudioBookFilesEnabled(), isTrue);
-    await repo.setSyncAudioBookFilesEnabled(false);
-    expect(await repo.isSyncAudioBookFilesEnabled(), isFalse);
-  });
+      expect(await repo.isSyncAudioBookFilesEnabled(), isFalse);
+      await repo.setSyncAudioBookFilesEnabled(true);
+      expect(await repo.isSyncAudioBookFilesEnabled(), isTrue);
+      await repo.setSyncAudioBookFilesEnabled(false);
+      expect(await repo.isSyncAudioBookFilesEnabled(), isFalse);
+    },
+  );
 
   test('auto sync preference defaults to false', () async {
     final FushiDatabase db = _testDb();
@@ -109,10 +115,12 @@ void main() {
       expect(await db.getPref(oldKey), isNull);
 
       expect(await repo.isInterconnectAutoSyncEnabled(), isTrue);
-      expect(await repo.isAutoSyncEnabled(), isFalse,
-          reason: '云通道默认仍是关');
-      expect(await db.getPrefTyped<bool>(newKey, false), isTrue,
-          reason: '迁移结论读即落盘');
+      expect(await repo.isAutoSyncEnabled(), isFalse, reason: '云通道默认仍是关');
+      expect(
+        await db.getPrefTyped<bool>(newKey, false),
+        isTrue,
+        reason: '迁移结论读即落盘',
+      );
     });
 
     test('old switch explicitly on → interconnect inherits on', () async {
@@ -130,30 +138,37 @@ void main() {
       expect(await SyncRepository(db).isInterconnectAutoSyncEnabled(), isFalse);
     });
 
-    test('migrates once: later cloud writes do not move interconnect',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      await db.setPrefTyped<bool>(oldKey, false);
-      final SyncRepository repo = SyncRepository(db);
-      expect(await repo.isInterconnectAutoSyncEnabled(), isFalse);
+    test(
+      'migrates once: later cloud writes do not move interconnect',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        await db.setPrefTyped<bool>(oldKey, false);
+        final SyncRepository repo = SyncRepository(db);
+        expect(await repo.isInterconnectAutoSyncEnabled(), isFalse);
 
-      await repo.setAutoSyncEnabled(true);
-      expect(await repo.isInterconnectAutoSyncEnabled(), isFalse,
-          reason: '迁移只发生一次，之后旧键只管云通道');
-    });
+        await repo.setAutoSyncEnabled(true);
+        expect(
+          await repo.isInterconnectAutoSyncEnabled(),
+          isFalse,
+          reason: '迁移只发生一次，之后旧键只管云通道',
+        );
+      },
+    );
 
-    test('writing the cloud switch first cannot leak into interconnect',
-        () async {
-      // 迁移还没被读触发时用户先关了云同步：setAutoSyncEnabled 必须先落迁移结论，
-      // 否则这次写会被当成「历史显式值」把互联一起关掉。
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final SyncRepository repo = SyncRepository(db);
-      await repo.setAutoSyncEnabled(false);
-      expect(await repo.isInterconnectAutoSyncEnabled(), isTrue);
-      expect(await repo.isAutoSyncEnabled(), isFalse);
-    });
+    test(
+      'writing the cloud switch first cannot leak into interconnect',
+      () async {
+        // 迁移还没被读触发时用户先关了云同步：setAutoSyncEnabled 必须先落迁移结论，
+        // 否则这次写会被当成「历史显式值」把互联一起关掉。
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
+        await repo.setAutoSyncEnabled(false);
+        expect(await repo.isInterconnectAutoSyncEnabled(), isTrue);
+        expect(await repo.isAutoSyncEnabled(), isFalse);
+      },
+    );
 
     test('interconnect switch round-trips independently', () async {
       final FushiDatabase db = _testDb();
@@ -179,27 +194,33 @@ void main() {
       ]);
 
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
-      expect(urls.map((FushiClientUrl u) => u.url).toList(),
-          <String>['http://192.168.1.5:8765', 'http://home.ddns.net:8765']);
-      expect(urls.map((FushiClientUrl u) => u.enabled).toList(),
-          <bool>[true, false]);
+      expect(urls.map((FushiClientUrl u) => u.url).toList(), <String>[
+        'http://192.168.1.5:8765',
+        'http://home.ddns.net:8765',
+      ]);
+      expect(urls.map((FushiClientUrl u) => u.enabled).toList(), <bool>[
+        true,
+        false,
+      ]);
     });
 
-    test('migrates legacy single url into a one-element enabled list',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final SyncRepository repo = SyncRepository(db);
+    test(
+      'migrates legacy single url into a one-element enabled list',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
 
-      // Simulate data left by an older app version: only the legacy
-      // single-url key is set (no new list key).
-      await db.setPref('sync_hibiki_client_url', 'http://192.168.1.5:8765');
+        // Simulate data left by an older app version: only the legacy
+        // single-url key is set (no new list key).
+        await db.setPref('sync_hibiki_client_url', 'http://192.168.1.5:8765');
 
-      final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
-      expect(urls, hasLength(1));
-      expect(urls.first.url, 'http://192.168.1.5:8765');
-      expect(urls.first.enabled, isTrue);
-    });
+        final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
+        expect(urls, hasLength(1));
+        expect(urls.first.url, 'http://192.168.1.5:8765');
+        expect(urls.first.enabled, isTrue);
+      },
+    );
 
     test('returns empty list when nothing is configured', () async {
       final FushiDatabase db = _testDb();
@@ -224,34 +245,42 @@ void main() {
       expect(urls.first.url, 'http://new.example:8765');
     });
 
-    test('addFushiClientUrl appends a new url, keeping order and token',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final SyncRepository repo = SyncRepository(db);
+    test(
+      'addFushiClientUrl appends a new url, keeping order and token',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
 
-      await repo.setFushiClientUrls(
-          const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
-      await repo.setFushiClientToken('tok');
+        await repo.setFushiClientUrls(const <FushiClientUrl>[
+          FushiClientUrl(url: 'http://lan:8765'),
+        ]);
+        await repo.setFushiClientToken('tok');
 
-      final List<FushiClientUrl> result =
-          await repo.addFushiClientUrl('http://wan:8765');
+        final List<FushiClientUrl> result = await repo.addFushiClientUrl(
+          'http://wan:8765',
+        );
 
-      expect(result.map((FushiClientUrl u) => u.url).toList(),
-          <String>['http://lan:8765', 'http://wan:8765']);
-      expect(await repo.getFushiClientToken(), 'tok'); // token untouched
-    });
+        expect(result.map((FushiClientUrl u) => u.url).toList(), <String>[
+          'http://lan:8765',
+          'http://wan:8765',
+        ]);
+        expect(await repo.getFushiClientToken(), 'tok'); // token untouched
+      },
+    );
 
     test('addFushiClientUrl does not add a duplicate', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setFushiClientUrls(
-          const <FushiClientUrl>[FushiClientUrl(url: 'http://lan:8765')]);
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://lan:8765'),
+      ]);
 
-      final List<FushiClientUrl> result =
-          await repo.addFushiClientUrl('http://lan:8765');
+      final List<FushiClientUrl> result = await repo.addFushiClientUrl(
+        'http://lan:8765',
+      );
 
       expect(result, hasLength(1));
       expect(await repo.getFushiClientUrls(), hasLength(1));
@@ -282,11 +311,15 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.addFushiClientUrl('https://host:38765',
-          fingerprint: 'aa:bb:cc');
+      await repo.addFushiClientUrl(
+        'https://host:38765',
+        fingerprint: 'aa:bb:cc',
+      );
       // 同一指纹换大小写 + 去冒号：归一化后相等，不应抛、不应改。
-      final List<FushiClientUrl> result = await repo
-          .addFushiClientUrl('https://host:38765', fingerprint: 'AABBCC');
+      final List<FushiClientUrl> result = await repo.addFushiClientUrl(
+        'https://host:38765',
+        fingerprint: 'AABBCC',
+      );
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, 'aa:bb:cc'); // 保留原存值。
@@ -297,46 +330,55 @@ void main() {
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      await repo.setFushiClientUrls(
-          const <FushiClientUrl>[FushiClientUrl(url: 'https://host:38765')]);
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'https://host:38765'),
+      ]);
 
-      final List<FushiClientUrl> result = await repo
-          .addFushiClientUrl('https://host:38765', fingerprint: 'aa:bb:cc');
+      final List<FushiClientUrl> result = await repo.addFushiClientUrl(
+        'https://host:38765',
+        fingerprint: 'aa:bb:cc',
+      );
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, 'aa:bb:cc');
     });
 
     test(
-        'addFushiClientUrl 指纹变更必抛 FushiFingerprintMismatchException 且不覆盖（MITM 守卫）',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final SyncRepository repo = SyncRepository(db);
+      'addFushiClientUrl 指纹变更必抛 FushiFingerprintMismatchException 且不覆盖（MITM 守卫）',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
 
-      await repo.addFushiClientUrl('https://host:38765',
-          fingerprint: 'aa:bb:cc');
+        await repo.addFushiClientUrl(
+          'https://host:38765',
+          fingerprint: 'aa:bb:cc',
+        );
 
-      // 同一 URL 再来一个 **不同** 指纹 → 拒绝并抛异常。
-      expect(
-        () => repo.addFushiClientUrl('https://host:38765',
-            fingerprint: 'de:ad:be'),
-        throwsA(isA<FushiFingerprintMismatchException>()),
-      );
+        // 同一 URL 再来一个 **不同** 指纹 → 拒绝并抛异常。
+        expect(
+          () => repo.addFushiClientUrl(
+            'https://host:38765',
+            fingerprint: 'de:ad:be',
+          ),
+          throwsA(isA<FushiFingerprintMismatchException>()),
+        );
 
-      // 已存指纹绝不被覆盖：仍是首记录值。
-      final List<FushiClientUrl> reread = await repo.getFushiClientUrls();
-      expect(reread, hasLength(1));
-      expect(reread.first.fingerprintSha256, 'aa:bb:cc');
-    });
+        // 已存指纹绝不被覆盖：仍是首记录值。
+        final List<FushiClientUrl> reread = await repo.getFushiClientUrls();
+        expect(reread, hasLength(1));
+        expect(reread.first.fingerprintSha256, 'aa:bb:cc');
+      },
+    );
 
     test('addFushiClientUrl 明文 http（无指纹）路径保持向后兼容', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
-      final List<FushiClientUrl> result =
-          await repo.addFushiClientUrl('http://lan:8765');
+      final List<FushiClientUrl> result = await repo.addFushiClientUrl(
+        'http://lan:8765',
+      );
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, isNull);
@@ -393,25 +435,29 @@ void main() {
       final SyncRepository repo = SyncRepository(db);
 
       expect(
-          await repo.getAudiobookPosition('book-7'), 0); // default when unset
+        await repo.getAudiobookPosition('book-7'),
+        0,
+      ); // default when unset
       await repo.setAudiobookPosition('book-7', 1234);
       expect(await repo.getAudiobookPosition('book-7'), 1234);
     });
 
-    test('uses the exact legacy key so old values read back identically',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final SyncRepository repo = SyncRepository(db);
+    test(
+      'uses the exact legacy key so old values read back identically',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
 
-      // Value written by older code paths (raw key + typed int codec).
-      await db.setPrefTyped<int>('audiobook_pos_book-7', 9);
-      expect(await repo.getAudiobookPosition('book-7'), 9);
+        // Value written by older code paths (raw key + typed int codec).
+        await db.setPrefTyped<int>('audiobook_pos_book-7', 9);
+        expect(await repo.getAudiobookPosition('book-7'), 9);
 
-      // And the new setter writes to the same key the legacy readers use.
-      await repo.setAudiobookPosition('book-7', 55);
-      expect(await db.getPrefTyped<int>('audiobook_pos_book-7', 0), 55);
-    });
+        // And the new setter writes to the same key the legacy readers use.
+        await repo.setAudiobookPosition('book-7', 55);
+        expect(await db.getPrefTyped<int>('audiobook_pos_book-7', 0), 55);
+      },
+    );
   });
 
   group('device id', () {
@@ -451,10 +497,14 @@ void main() {
       expect(keys, isNot(contains('sync_root_folder_id')));
       expect(keys, isNot(contains('sync_folder_cache')));
       // 分槽后同理：folder 缓存的任何一格都不该跟着备份跨设备（BUG-1576）。
-      expect(keys.where((String k) => k.startsWith('sync_root_folder_id')),
-          isEmpty);
       expect(
-          keys.where((String k) => k.startsWith('sync_folder_cache')), isEmpty);
+        keys.where((String k) => k.startsWith('sync_root_folder_id')),
+        isEmpty,
+      );
+      expect(
+        keys.where((String k) => k.startsWith('sync_folder_cache')),
+        isEmpty,
+      );
       expect(keys.where((String k) => k.startsWith('audiobook_pos_')), isEmpty);
     });
 

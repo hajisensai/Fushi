@@ -11,8 +11,9 @@ void main() {
   late String schema;
 
   setUp(() {
-    schema =
-        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
+    schema = File(
+      'lib/src/settings/settings_schema_system.dart',
+    ).readAsStringSync();
   });
 
   test('诊断区有崩溃转储项且 Windows-only 可见', () {
@@ -28,20 +29,28 @@ void main() {
       isTrue,
       reason: '崩溃转储项必须 Windows-only（native dump 仅 Windows runner 写）',
     );
-    expect(item.contains('CrashDumpPage'), isTrue,
-        reason: '崩溃转储项导航到 CrashDumpPage');
+    expect(
+      item.contains('CrashDumpPage'),
+      isTrue,
+      reason: '崩溃转储项导航到 CrashDumpPage',
+    );
   });
 
   test('CrashDumpPage 列表/打开文件夹/分享均经 Windows 门控的 locator', () {
-    final String page =
-        File('lib/src/pages/implementations/crash_dump_page.dart')
-            .readAsStringSync();
+    final String page = File(
+      'lib/src/pages/implementations/crash_dump_page.dart',
+    ).readAsStringSync();
     // 列表：经 listCurrentPlatformDumps（内部 Platform.isWindows 门控，非 Windows 空）。
     expect(
-        page.contains('CrashDumpLocator.listCurrentPlatformDumps()'), isTrue);
+      page.contains('CrashDumpLocator.listCurrentPlatformDumps()'),
+      isTrue,
+    );
     // 打开文件夹：Process.run explorer（净新增能力）。
-    expect(page.contains("Process.run('explorer'"), isTrue,
-        reason: '打开文件夹用 explorer');
+    expect(
+      page.contains("Process.run('explorer'"),
+      isTrue,
+      reason: '打开文件夹用 explorer',
+    );
     // 分享：FushiShare.shareFiles 分享 .dmp（净新增使用点）。
     expect(page.contains('FushiShare.shareFiles'), isTrue);
     // 打开文件夹的目录解析也走 Windows 门控的 resolveDumpDirectory。
@@ -53,9 +62,9 @@ void main() {
   });
 
   test('CrashDumpPage 常驻 .dmp 隐私提示文案', () {
-    final String page =
-        File('lib/src/pages/implementations/crash_dump_page.dart')
-            .readAsStringSync();
+    final String page = File(
+      'lib/src/pages/implementations/crash_dump_page.dart',
+    ).readAsStringSync();
     expect(
       page.contains('t.crash_dump_privacy_notice'),
       isTrue,
@@ -64,13 +73,17 @@ void main() {
   });
 
   test('locator 把 crashdumps 目录门控在 Windows', () {
-    final String locator =
-        File('lib/src/utils/misc/crash_dump_locator.dart').readAsStringSync();
+    final String locator = File(
+      'lib/src/utils/misc/crash_dump_locator.dart',
+    ).readAsStringSync();
     // resolveDumpDirectory 非 Windows 返回 null（整项隐藏的根因门控）。
     final int idx = locator.indexOf('static Directory? resolveDumpDirectory(');
     expect(idx, isNonNegative);
     final String body = locator.substring(idx, idx + 300);
-    expect(body.contains('if (!isWindows) return null;'), isTrue,
-        reason: '非 Windows 必须返回 null，使诊断项与列表整体不可用');
+    expect(
+      body.contains('if (!isWindows) return null;'),
+      isTrue,
+      reason: '非 Windows 必须返回 null，使诊断项与列表整体不可用',
+    );
   });
 }

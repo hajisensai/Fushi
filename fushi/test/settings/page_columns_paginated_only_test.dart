@@ -32,7 +32,8 @@ void main() {
         .expand((SettingsSection s) => s.items)
         .whereType<SettingsStepperItem>()
         .firstWhere(
-            (SettingsStepperItem i) => i.id == 'reading_display.page_columns');
+          (SettingsStepperItem i) => i.id == 'reading_display.page_columns',
+        );
   }
 
   group('page columns visibility (schema)', () {
@@ -80,16 +81,25 @@ void main() {
       );
 
       await readerSettings.setViewMode('paginated');
-      expect(item.isVisible(settingsContext), isTrue,
-          reason: '翻页模式：每页列数生效，必须显示');
+      expect(
+        item.isVisible(settingsContext),
+        isTrue,
+        reason: '翻页模式：每页列数生效，必须显示',
+      );
 
       await readerSettings.setViewMode('continuous');
-      expect(item.isVisible(settingsContext), isFalse,
-          reason: '连续滚动无「页」可分列 → 该项无效 → 隐藏，避免误导');
+      expect(
+        item.isVisible(settingsContext),
+        isFalse,
+        reason: '连续滚动无「页」可分列 → 该项无效 → 隐藏，避免误导',
+      );
 
       await readerSettings.setViewMode('vn');
-      expect(item.isVisible(settingsContext), isFalse,
-          reason: 'VN 模式单屏 stage 布局无 multicol → 隐藏');
+      expect(
+        item.isVisible(settingsContext),
+        isFalse,
+        reason: 'VN 模式单屏 stage 布局无 multicol → 隐藏',
+      );
     });
   });
 
@@ -113,15 +123,21 @@ void main() {
     test('continuous mode ignores pageColumns (no column-count)', () async {
       await settings.setViewMode('continuous');
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, isNot(contains('column-count')),
-          reason: '连续模式布局不含 multicol，列数无从生效——正是隐藏该设置的理由');
+      expect(
+        css,
+        isNot(contains('column-count')),
+        reason: '连续模式布局不含 multicol，列数无从生效——正是隐藏该设置的理由',
+      );
     });
 
     test('paginated mode honors pageColumns (column-count: 4)', () async {
       await settings.setViewMode('paginated');
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('column-count: 4'),
-          reason: '翻页模式必须真发 column-count:4，每页排 4 列');
+      expect(
+        css,
+        contains('column-count: 4'),
+        reason: '翻页模式必须真发 column-count:4，每页排 4 列',
+      );
     });
   });
 }

@@ -28,7 +28,9 @@ class _Req {
   final HttpHeaders headers;
   final Uint8List body;
 
-  Map<String, Object?> get json => (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>).cast<String, Object?>();
+  Map<String, Object?> get json =>
+      (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)
+          .cast<String, Object?>();
 }
 
 /// 假排行榜 Worker：认识 [known] 里的设备钥匙，签名不对 / 钥匙不认识回 401。
@@ -36,7 +38,9 @@ class _FakeLeaderboard {
   _FakeLeaderboard._(this._server);
 
   static Future<_FakeLeaderboard> start() async {
-    final _FakeLeaderboard f = _FakeLeaderboard._(await HttpServer.bind(InternetAddress.loopbackIPv4, 0));
+    final _FakeLeaderboard f = _FakeLeaderboard._(
+      await HttpServer.bind(InternetAddress.loopbackIPv4, 0),
+    );
     f._server.listen(f._handle);
     return f;
   }
@@ -67,7 +71,10 @@ class _FakeLeaderboard {
 
   Future<void> _handle(HttpRequest req) async {
     final Uint8List body = Uint8List.fromList(
-      await req.fold<List<int>>(<int>[], (List<int> a, List<int> b) => a..addAll(b)),
+      await req.fold<List<int>>(
+        <int>[],
+        (List<int> a, List<int> b) => a..addAll(b),
+      ),
     );
     final String path = req.uri.path;
     requests.add(_Req(req.method, path, req.headers, body));
@@ -86,19 +93,30 @@ class _FakeLeaderboard {
     Uint8List? spki;
     if (path == '/v1/login' || path == '/v1/register') {
       spki = leaderboardBase64UrlDecode(
-        ((jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)['pubkey'] as String?) ?? '',
+        ((jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)['pubkey']
+                as String?) ??
+            '',
       );
     } else if (keyId != null) {
       spki = known[keyId];
-      if (spki == null) return reply(401, <String, Object?>{'error': 'unknown_account'});
+      if (spki == null)
+        return reply(401, <String, Object?>{'error': 'unknown_account'});
     }
     if (spki != null) {
-      final String pathWithQuery = req.uri.hasQuery ? '${req.uri.path}?${req.uri.query}' : req.uri.path;
-      final String message = leaderboardSigningString(req.method, pathWithQuery, int.parse(time ?? '0'), body);
+      final String pathWithQuery = req.uri.hasQuery
+          ? '${req.uri.path}?${req.uri.query}'
+          : req.uri.path;
+      final String message = leaderboardSigningString(
+        req.method,
+        pathWithQuery,
+        int.parse(time ?? '0'),
+        body,
+      );
       if (sig == null || !LeaderboardIdentity.verify(spki, message, sig)) {
         return reply(401, <String, Object?>{'error': 'bad_signature'});
       }
-      if (force401 != null) return reply(401, <String, Object?>{'error': force401});
+      if (force401 != null)
+        return reply(401, <String, Object?>{'error': force401});
     }
     Map<String, Object?> self() => <String, Object?>{
       ..._account,
@@ -110,19 +128,28 @@ class _FakeLeaderboard {
     };
     switch ('${req.method} $path') {
       case 'POST /v1/login':
-        final Map<String, Object?> j = (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>).cast<String, Object?>();
-        if (j['code'] != '123456') return reply(401, <String, Object?>{'error': 'bad_code'});
+        final Map<String, Object?> j =
+            (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)
+                .cast<String, Object?>();
+        if (j['code'] != '123456')
+          return reply(401, <String, Object?>{'error': 'bad_code'});
         known[leaderboardAccountIdFromSpki(spki!)] = spki;
         return reply(200, self());
       case 'GET /v1/me':
         return reply(200, self());
       case 'POST /v1/shelf':
-        if (ownedElsewhere) return reply(409, <String, Object?>{'error': 'upload_owned_by_other_device'});
-        final List<Object?> put = (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)['put']! as List<Object?>;
+        if (ownedElsewhere)
+          return reply(409, <String, Object?>{
+            'error': 'upload_owned_by_other_device',
+          });
+        final List<Object?> put =
+            (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)['put']!
+                as List<Object?>;
         serverShelfCount = put.length;
         return reply(200, <String, Object?>{
           'works': <Object?>[
-            for (int i = 0; i < put.length; i++) <String, Object?>{'i': i, 'workId': 'w$i', 'needsCover': false},
+            for (int i = 0; i < put.length; i++)
+              <String, Object?>{'i': i, 'workId': 'w$i', 'needsCover': false},
           ],
           'shelfCount': serverShelfCount,
         });
@@ -155,7 +182,9 @@ void main() {
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('fushi_leaderboard_cli_');
     configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
-    await ServerConfig.defaults(dataDir: p.join(tmp.path, 'data')).save(configFile);
+    await ServerConfig.defaults(
+      dataDir: p.join(tmp.path, 'data'),
+    ).save(configFile);
     server = await _FakeLeaderboard.start();
     identity = LeaderboardIdentity.generate();
     server.known[identity.accountId] = identity.spki;
@@ -192,15 +221,32 @@ void main() {
     );
   }
 
-  Map<String, Object?> json() => (jsonDecode(out.toString()) as Map<Object?, Object?>).cast<String, Object?>();
+  Map<String, Object?> json() =>
+      (jsonDecode(out.toString()) as Map<Object?, Object?>)
+          .cast<String, Object?>();
 
-  File accountFile(int profileId) =>
-      File(p.join(tmp.path, 'data', 'support', 'leaderboard', 'profile_$profileId.json'));
+  File accountFile(int profileId) => File(
+    p.join(
+      tmp.path,
+      'data',
+      'support',
+      'leaderboard',
+      'profile_$profileId.json',
+    ),
+  );
 
   Future<int> importAccount({bool consent = false}) async {
     final int code = await lb(
-      <String>['import', '--server', server.url, if (consent) '--consent', '--json'],
-      env: <String, String>{kLeaderboardRecoveryCodeEnv: identity.toRecoveryCode()},
+      <String>[
+        'import',
+        '--server',
+        server.url,
+        if (consent) '--consent',
+        '--json',
+      ],
+      env: <String, String>{
+        kLeaderboardRecoveryCodeEnv: identity.toRecoveryCode(),
+      },
     );
     expect(code, 0, reason: '$out\n$err');
     return json()['profileId']! as int;
@@ -221,8 +267,9 @@ void main() {
     if (!Platform.isWindows) {
       expect(file.statSync().modeString(), 'rw-------');
     }
-    final Map<String, Object?> stored = (jsonDecode(file.readAsStringSync()) as Map<Object?, Object?>)
-        .cast<String, Object?>();
+    final Map<String, Object?> stored =
+        (jsonDecode(file.readAsStringSync()) as Map<Object?, Object?>)
+            .cast<String, Object?>();
     expect(stored['recoveryCode'], identity.toRecoveryCode());
     expect(stored['accountId'], 'acct0000000000AA');
     expect(stored['uploadEnabled'], isFalse);
@@ -231,14 +278,21 @@ void main() {
     expect(await lb(<String>['sync']), 69);
     expect(err.toString(), contains('--consent'));
 
-    expect(await lb(<String>['sync', '--consent', '--json']), 0, reason: '$out\n$err');
+    expect(
+      await lb(<String>['sync', '--consent', '--json']),
+      0,
+      reason: '$out\n$err',
+    );
     expect(json()['ok'], isTrue);
-    final Iterable<_Req> shelf = server.requests.where((_Req r) => r.path == '/v1/shelf');
+    final Iterable<_Req> shelf = server.requests.where(
+      (_Req r) => r.path == '/v1/shelf',
+    );
     expect(shelf, hasLength(1));
     expect(shelf.single.json['reset'], isTrue);
     expect(shelf.single.headers.value('x-fushi-account'), identity.accountId);
-    final Map<String, Object?> after = (jsonDecode(file.readAsStringSync()) as Map<Object?, Object?>)
-        .cast<String, Object?>();
+    final Map<String, Object?> after =
+        (jsonDecode(file.readAsStringSync()) as Map<Object?, Object?>)
+            .cast<String, Object?>();
     expect(after['uploadEnabled'], isTrue);
     expect(after['consentAt'], isNotNull);
     expect(after['lastSyncAt'], isNotNull);
@@ -272,7 +326,9 @@ void main() {
     expect(
       await lb(
         <String>['import', '--server', server.url],
-        env: <String, String>{kLeaderboardRecoveryCodeEnv: identity.toRecoveryCode()},
+        env: <String, String>{
+          kLeaderboardRecoveryCodeEnv: identity.toRecoveryCode(),
+        },
       ),
       1,
     );
@@ -292,7 +348,9 @@ void main() {
     expect(
       await lb(
         <String>['import', '--server', server.url],
-        env: <String, String>{kLeaderboardRecoveryCodeEnv: stranger.toRecoveryCode()},
+        env: <String, String>{
+          kLeaderboardRecoveryCodeEnv: stranger.toRecoveryCode(),
+        },
       ),
       77,
     );
@@ -309,7 +367,15 @@ void main() {
     expect(accountFile(profileId).existsSync(), isFalse);
     expect(
       await lb(
-        <String>['login', '--email', 'a@b.cd', '--server', server.url, '--consent', '--json'],
+        <String>[
+          'login',
+          '--email',
+          'a@b.cd',
+          '--server',
+          server.url,
+          '--consent',
+          '--json',
+        ],
         env: <String, String>{kLeaderboardEmailCodeEnv: '123456'},
       ),
       0,
@@ -328,7 +394,9 @@ void main() {
     expect(
       await lb(
         <String>['import', '--server', deadUrl, '--force'],
-        env: <String, String>{kLeaderboardRecoveryCodeEnv: identity.toRecoveryCode()},
+        env: <String, String>{
+          kLeaderboardRecoveryCodeEnv: identity.toRecoveryCode(),
+        },
       ),
       69,
     );
@@ -339,35 +407,73 @@ void main() {
     server.ownedElsewhere = true;
     expect(await lb(<String>['sync']), 75);
     expect(err.toString(), contains('--claim'));
-    final Map<String, Object?> stored = (jsonDecode(accountFile(profileId).readAsStringSync()) as Map<Object?, Object?>)
-        .cast<String, Object?>();
+    final Map<String, Object?> stored =
+        (jsonDecode(accountFile(profileId).readAsStringSync())
+                as Map<Object?, Object?>)
+            .cast<String, Object?>();
     expect(stored['uploadBlockedByOtherDevice'], isTrue);
 
-    expect(await lb(<String>['rank', '--metric', 'chars', '--json']), 0, reason: '$err');
+    expect(
+      await lb(<String>['rank', '--metric', 'chars', '--json']),
+      0,
+      reason: '$err',
+    );
     final Map<String, Object?> page = json();
     expect(page['metric'], 'chars');
     expect(page['me'], isNotNull);
     expect((page['rows']! as List<Object?>), hasLength(1));
-    final _Req rankReq = server.requests.lastWhere((_Req r) => r.path == '/v1/rank');
+    final _Req rankReq = server.requests.lastWhere(
+      (_Req r) => r.path == '/v1/rank',
+    );
     expect(rankReq.headers.value('x-fushi-account'), identity.accountId);
 
     expect(await lb(<String>['logout']), 0);
-    expect(await lb(<String>['rank', '--server', server.url]), 0, reason: '$err');
+    expect(
+      await lb(<String>['rank', '--server', server.url]),
+      0,
+      reason: '$err',
+    );
     expect(out.toString(), contains('猫#0042'));
     expect(server.requests.last.headers.value('x-fushi-account'), isNull);
-    expect(await lb(<String>['rank', '--scope', 'friends', '--server', server.url]), 69);
+    expect(
+      await lb(<String>['rank', '--scope', 'friends', '--server', server.url]),
+      69,
+    );
   });
 
   test('封面缩略图：长边缩到 300 的 JPEG；解不开返回 null', () {
     final Uint8List png = img.encodePng(img.Image(width: 600, height: 900));
     final img.Image thumb = img.decodeJpg(encodeLeaderboardCoverThumb(png)!)!;
     expect((thumb.width, thumb.height), (200, 300));
-    expect(encodeLeaderboardCoverThumb(Uint8List.fromList(<int>[1, 2, 3])), isNull);
+    expect(
+      encodeLeaderboardCoverThumb(Uint8List.fromList(<int>[1, 2, 3])),
+      isNull,
+    );
   });
 
   test('request-code 不碰数据库；邮箱不对 64', () async {
-    expect(await lb(<String>['request-code', '--email', 'nope', '--server', server.url]), 64);
-    expect(await lb(<String>['request-code', '--email', 'a@b.cd', '--login', '--server', server.url, '--json']), 0);
+    expect(
+      await lb(<String>[
+        'request-code',
+        '--email',
+        'nope',
+        '--server',
+        server.url,
+      ]),
+      64,
+    );
+    expect(
+      await lb(<String>[
+        'request-code',
+        '--email',
+        'a@b.cd',
+        '--login',
+        '--server',
+        server.url,
+        '--json',
+      ]),
+      0,
+    );
     expect(json()['purpose'], 'login');
     expect(server.requests.single.json, containsPair('purpose', 'login'));
   });

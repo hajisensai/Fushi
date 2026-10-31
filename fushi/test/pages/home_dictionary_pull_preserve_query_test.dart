@@ -30,8 +30,8 @@ class _ClearRaceAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -125,13 +125,15 @@ void main() {
   String read(String path) => File(path).readAsStringSync();
 
   test('home dictionary submitted lookup keeps the search field focused', () {
-    final String src =
-        read('lib/src/pages/implementations/home_dictionary_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    );
 
     expect(
       src,
       isNot(contains('void _submitSearch(String query)')),
-      reason: 'Home dictionary lookup is intentionally an input-mode flow: '
+      reason:
+          'Home dictionary lookup is intentionally an input-mode flow: '
           'mobile should keep the keyboard/search field open and desktop '
           'typing should stay in the search box after lookup.',
     );
@@ -145,8 +147,9 @@ void main() {
   });
 
   test('back while a dictionary query is active clears the query directly', () {
-    final String src =
-        read('lib/src/pages/implementations/home_dictionary_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    );
 
     final int popScopeStart = src.indexOf('return PopScope(');
     final int desktopLayoutStart = src.indexOf('child: DesktopContentLayout(');
@@ -157,7 +160,8 @@ void main() {
     expect(
       popScope,
       isNot(contains('else if (_searchFocusNode.hasFocus)')),
-      reason: 'Home dictionary result state keeps search input focused; back '
+      reason:
+          'Home dictionary result state keeps search input focused; back '
           'from an active query should clear the query instead of only '
           'leaving input mode.',
     );
@@ -167,15 +171,18 @@ void main() {
   });
 
   test('home dictionary result pull release clears the search query', () {
-    final String src =
-        read('lib/src/pages/implementations/home_dictionary_page.dart');
-    final String webViewSrc =
-        read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+    final String src = read(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    );
+    final String webViewSrc = read(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    );
 
     expect(
       src,
       contains('void _clearSearch()'),
-      reason: 'The page can still clear from explicit second back/navigation '
+      reason:
+          'The page can still clear from explicit second back/navigation '
           'paths.',
     );
 
@@ -186,10 +193,13 @@ void main() {
     final String resultBody = src.substring(resultBodyStart, pushPopupStart);
 
     expect(
-        resultBody, contains('onTopPullReleased: _clearSearchFromResultPull'));
+      resultBody,
+      contains('onTopPullReleased: _clearSearchFromResultPull'),
+    );
 
-    final int clearFromPullStart =
-        src.indexOf('void _clearSearchFromResultPull()');
+    final int clearFromPullStart = src.indexOf(
+      'void _clearSearchFromResultPull()',
+    );
     final int buildStart = src.indexOf('// ── build');
     expect(clearFromPullStart, isNonNegative);
     expect(buildStart, greaterThan(clearFromPullStart));
@@ -209,13 +219,17 @@ void main() {
     // 真相源搬到了共享常量。
     expect(webViewSrc, contains('_topPullReleaseJs = kPopupTopPullReleaseJs'));
     expect(
-        webViewSrc, contains('evaluateJavascript(source: _topPullReleaseJs)'));
-    final String swipeJsSrc =
-        read('lib/src/reader/popup_swipe_close_script.dart');
+      webViewSrc,
+      contains('evaluateJavascript(source: _topPullReleaseJs)'),
+    );
+    final String swipeJsSrc = read(
+      'lib/src/reader/popup_swipe_close_script.dart',
+    );
     expect(
       swipeJsSrc,
       contains("callHandler('topPullReleased', kind)"),
-      reason: 'The real definition WebView must report a top pull release; '
+      reason:
+          'The real definition WebView must report a top pull release; '
           'an outer Flutter scroll wrapper would not reliably receive WebView '
           'touch drags.',
     );
@@ -240,8 +254,9 @@ void main() {
   });
 
   test('home dictionary search field exposes a focused clear affordance', () {
-    final String src =
-        read('lib/src/pages/implementations/home_dictionary_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    );
 
     final int searchHeaderStart = src.indexOf('Widget _buildSearchHeader()');
     final int bodyStart = src.indexOf('Widget _buildBody()');
@@ -252,7 +267,8 @@ void main() {
     expect(
       searchHeader,
       contains("'home_dictionary_search_clear_button'"),
-      reason: 'TODO-510 needs a stable X clear button on the home dictionary '
+      reason:
+          'TODO-510 needs a stable X clear button on the home dictionary '
           'search field when text is present.',
     );
     expect(searchHeader, contains('onClear: _clearSearch'));
@@ -272,7 +288,8 @@ void main() {
     expect(
       clearSearch,
       isNot(contains('_searchFocusNode.unfocus()')),
-      reason: 'Clearing text is still input mode; focus should stay in the '
+      reason:
+          'Clearing text is still input mode; focus should stay in the '
           'search box where possible.',
     );
   });
@@ -331,10 +348,7 @@ void main() {
           'while the new Future is still pending.',
     );
 
-    appModel.completeSearch(
-      'new',
-      DictionarySearchResult(searchTerm: 'new'),
-    );
+    appModel.completeSearch('new', DictionarySearchResult(searchTerm: 'new'));
     await tester.pump();
   });
 }

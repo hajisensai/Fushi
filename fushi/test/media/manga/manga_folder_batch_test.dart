@@ -49,8 +49,10 @@ void main() {
 
       expect(MangaModule.directoryHasPageImages(root.path), isFalse);
       expect(MangaModule.directoryCarrierFileCount(root.path), 2);
-      expect(_classifyWithRealPredicates(root.path),
-          ImportCarrier.mangaBatchFolder);
+      expect(
+        _classifyWithRealPredicates(root.path),
+        ImportCarrier.mangaBatchFolder,
+      );
     });
 
     test('页图目录仍是 mangaFolder（修复不得改动既有路径）', () {
@@ -74,12 +76,17 @@ void main() {
       Directory(p.join(root.path, 'vol1')).createSync();
       File(p.join(root.path, 'vol1', '001.png')).writeAsBytesSync(_pngBytes());
 
-      expect(MangaModule.directoryHasPageImages(root.path), isTrue,
-          reason: '前提：页图判据会递归看到子目录里的图（这正是抢先误判的来源）');
+      expect(
+        MangaModule.directoryHasPageImages(root.path),
+        isTrue,
+        reason: '前提：页图判据会递归看到子目录里的图（这正是抢先误判的来源）',
+      );
       expect(MangaModule.directoryMokuroFileCount(root.path), 1);
       expect(_classifyWithRealPredicates(root.path), ImportCarrier.mangaMokuro);
-      expect(MangaModule.directorySingleMokuroPath(root.path),
-          p.join(root.path, 'vol1.mokuro'));
+      expect(
+        MangaModule.directorySingleMokuroPath(root.path),
+        p.join(root.path, 'vol1.mokuro'),
+      );
     });
 
     test('两个 .mokuro → mangaBatchFolder；换不出单个文件', () {
@@ -89,8 +96,10 @@ void main() {
         File(p.join(root.path, vol, '001.png')).writeAsBytesSync(_pngBytes());
       }
 
-      expect(_classifyWithRealPredicates(root.path),
-          ImportCarrier.mangaBatchFolder);
+      expect(
+        _classifyWithRealPredicates(root.path),
+        ImportCarrier.mangaBatchFolder,
+      );
       expect(MangaModule.directorySingleMokuroPath(root.path), isNull);
     });
   });
@@ -105,9 +114,9 @@ void main() {
         ..createSync();
       _writeCbz(nested, 'vol99.cbz');
 
-      final List<String> names = mangaCarrierFilesIn(root)
-          .map((File f) => p.basename(f.path))
-          .toList();
+      final List<String> names = mangaCarrierFilesIn(
+        root,
+      ).map((File f) => p.basename(f.path)).toList();
       // 自然序：vol2 在 vol10 之前（字典序会把 vol10 排前面，那会打乱卷号）。
       expect(names, <String>['vol1.cbz', 'vol2.cbz', 'vol10.cbz']);
     });
@@ -131,38 +140,47 @@ void main() {
       _writeCbz(root, '銀河英雄伝説 01.cbz');
       _writeCbz(root, '銀河英雄伝説 02.cbz');
 
-      final MangaBatchImportReport report =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport report = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
 
       expect(report.importedCount, 2);
       expect(report.failedCount, 0);
       final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books.map((EpubBookRow b) => b.title).toList()..sort(), <String>[
+        '銀河英雄伝説 01',
+        '銀河英雄伝説 02',
+      ]);
       expect(
-        books.map((EpubBookRow b) => b.title).toList()..sort(),
-        <String>['銀河英雄伝説 01', '銀河英雄伝説 02'],
-      );
-      expect(
-        books.every((EpubBookRow b) =>
-            BookFormat.parseOrEpub(b.format) == BookFormat.manga),
+        books.every(
+          (EpubBookRow b) =>
+              BookFormat.parseOrEpub(b.format) == BookFormat.manga,
+        ),
         isTrue,
       );
     });
 
     test('一卷坏包不中断整批：其余卷照样进库', () async {
       _writeCbz(root, 'vol1.cbz');
-      File(p.join(root.path, 'vol2.cbz'))
-          .writeAsBytesSync(<int>[0x00, 0x01, 0x02, 0x03]); // 不是 zip
+      File(
+        p.join(root.path, 'vol2.cbz'),
+      ).writeAsBytesSync(<int>[0x00, 0x01, 0x02, 0x03]); // 不是 zip
       _writeCbz(root, 'vol3.cbz');
 
-      final MangaBatchImportReport report =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport report = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
 
       expect(report.importedCount, 2, reason: '坏的那一卷不该把另外两卷一起废掉');
       expect(report.failedCount, 1);
       expect(
         report.volumes
-            .firstWhere((MangaBatchVolumeResult v) =>
-                v.status == MangaBatchVolumeStatus.failed)
+            .firstWhere(
+              (MangaBatchVolumeResult v) =>
+                  v.status == MangaBatchVolumeStatus.failed,
+            )
             .name,
         'vol2.cbz',
       );
@@ -173,35 +191,49 @@ void main() {
       _writeCbz(root, 'vol1.cbz');
       _writeYomitanDictZip(root, 'dict.zip');
 
-      final MangaBatchImportReport report =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport report = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
 
       expect(report.importedCount, 1);
       expect(report.notMangaCount, 1);
-      expect((await db.getAllEpubBooks()).length, 1,
-          reason: '词典包被导成一本只有插图的垃圾「漫画」是糟蹋用户数据');
+      expect(
+        (await db.getAllEpubBooks()).length,
+        1,
+        reason: '词典包被导成一本只有插图的垃圾「漫画」是糟蹋用户数据',
+      );
     });
 
     test('重跑同一个文件夹是幂等的：已在库的卷计入跳过而不是复制一份', () async {
       _writeCbz(root, 'vol1.cbz');
 
-      final MangaBatchImportReport first =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport first = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
       expect(first.importedCount, 1);
 
-      final MangaBatchImportReport second =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport second = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
       expect(second.importedCount, 0);
       expect(second.duplicateCount, 1);
-      expect((await db.getAllEpubBooks()).length, 1,
-          reason: '批量路径用 skip 策略，不得留下 `vol1 (2)`');
+      expect(
+        (await db.getAllEpubBooks()).length,
+        1,
+        reason: '批量路径用 skip 策略，不得留下 `vol1 (2)`',
+      );
     });
 
     test('一卷都没进来时报告 isEmpty（调用方据此报失败而不是「成功 0 卷」）', () async {
       _writeYomitanDictZip(root, 'dict.zip');
 
-      final MangaBatchImportReport report =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport report = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
 
       expect(report.importedCount, 0);
       expect(report.isEmpty, isTrue);
@@ -309,26 +341,30 @@ void main() {
       // 一卷好的 + 一卷坏的：坏卷是页图在任何布局下都找不到的 .mokuro——正是用户
       // 撞上的那种失败，只不过这里让它发生在批量路径里。
       _writeCbz(root, 'good.cbz');
-      File(p.join(root.path, 'broken.mokuro'))
-          .writeAsStringSync(jsonEncode(<String, Object?>{
-        'version': '0.2.0',
-        'title': 'Broken',
-        'pages': <Object?>[
-          <String, Object?>{
-            'img_width': 800,
-            'img_height': 1200,
-            'img_path': 'nowhere.jpg',
-            'blocks': <Object?>[],
-          },
-        ],
-      }));
+      File(p.join(root.path, 'broken.mokuro')).writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'version': '0.2.0',
+          'title': 'Broken',
+          'pages': <Object?>[
+            <String, Object?>{
+              'img_width': 800,
+              'img_height': 1200,
+              'img_path': 'nowhere.jpg',
+              'blocks': <Object?>[],
+            },
+          ],
+        }),
+      );
 
-      final MangaBatchImportReport report =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport report = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
 
       expect(report.failedCount, 1, reason: '坏卷必须计入失败');
-      final List<ErrorLogEntry> added =
-          ErrorLogService.instance.entries.skip(before).toList();
+      final List<ErrorLogEntry> added = ErrorLogService.instance.entries
+          .skip(before)
+          .toList();
       expect(
         added.where((ErrorLogEntry e) => e.source == 'MangaBatchImport.volume'),
         isNotEmpty,
@@ -349,8 +385,10 @@ void main() {
       _writeCbz(root, 'ok1.cbz');
       _writeCbz(root, 'ok2.cbz');
 
-      final MangaBatchImportReport report =
-          await importMangaBatchFolder(db: db, path: root.path);
+      final MangaBatchImportReport report = await importMangaBatchFolder(
+        db: db,
+        path: root.path,
+      );
 
       expect(report.failedCount, 0);
       expect(
@@ -364,13 +402,13 @@ void main() {
 }
 
 ImportCarrier _classifyWithRealPredicates(String path) => classifyImportCarrier(
-      path,
-      isDirectory: (String pth) => Directory(pth).existsSync(),
-      isImageArchive: MangaModule.isImageArchive,
-      directoryHasPageImages: MangaModule.directoryHasPageImages,
-      directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
-      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
-    );
+  path,
+  isDirectory: (String pth) => Directory(pth).existsSync(),
+  isImageArchive: MangaModule.isImageArchive,
+  directoryHasPageImages: MangaModule.directoryHasPageImages,
+  directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+  directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
+);
 
 Uint8List _pngBytes() =>
     Uint8List.fromList(img.encodePng(img.Image(width: 20, height: 40)));
@@ -379,21 +417,24 @@ void _writeCbz(Directory dir, String name) {
   final Uint8List png = _pngBytes();
   final Archive archive = Archive()
     ..addFile(ArchiveFile('001.png', png.length, png));
-  File(p.join(dir.path, name))
-      .writeAsBytesSync(ZipEncoder().encode(archive) ?? <int>[]);
+  File(
+    p.join(dir.path, name),
+  ).writeAsBytesSync(ZipEncoder().encode(archive) ?? <int>[]);
 }
 
 /// 词典包与图片包同形，唯一的结构指纹是 `index.json` + `*_bank_*.json`；这里连
 /// 插图一起放，正是「只看有没有图片」会误判的那种包。
 void _writeYomitanDictZip(Directory dir, String name) {
   final Uint8List png = _pngBytes();
-  final List<int> index =
-      utf8.encode('{"title":"Test Dict","format":3,"revision":"1"}');
+  final List<int> index = utf8.encode(
+    '{"title":"Test Dict","format":3,"revision":"1"}',
+  );
   final List<int> bank = utf8.encode('[]');
   final Archive archive = Archive()
     ..addFile(ArchiveFile('index.json', index.length, index))
     ..addFile(ArchiveFile('term_bank_1.json', bank.length, bank))
     ..addFile(ArchiveFile('illustration.png', png.length, png));
-  File(p.join(dir.path, name))
-      .writeAsBytesSync(ZipEncoder().encode(archive) ?? <int>[]);
+  File(
+    p.join(dir.path, name),
+  ).writeAsBytesSync(ZipEncoder().encode(archive) ?? <int>[]);
 }

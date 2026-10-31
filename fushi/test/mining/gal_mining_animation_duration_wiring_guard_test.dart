@@ -45,10 +45,14 @@ void main() {
 
     // 该变量的来源：等音频字节回来后，从行条目读 audioDurationMs。三样缺一不可，
     // 少了 audioFuture 就是没等音频、少了 audioDurationMs 就是没读时长。
-    final int declaration =
-        body.indexOf('final Future<Duration?> targetDuration');
-    expect(declaration, greaterThan(0),
-        reason: 'targetDuration 必须由音频 Future 派生，不能是外部传入的任意值');
+    final int declaration = body.indexOf(
+      'final Future<Duration?> targetDuration',
+    );
+    expect(
+      declaration,
+      greaterThan(0),
+      reason: 'targetDuration 必须由音频 Future 派生，不能是外部传入的任意值',
+    );
     final String derivation = body.substring(
       declaration,
       body.indexOf(anchor, declaration),

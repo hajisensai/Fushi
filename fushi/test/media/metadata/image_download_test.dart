@@ -20,8 +20,9 @@ final class _RequestAbortTrackingClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    if (request case http.Abortable(:final Future<void>? abortTrigger)
-        when abortTrigger != null) {
+    if (request case http.Abortable(
+      :final Future<void>? abortTrigger,
+    ) when abortTrigger != null) {
       await abortTrigger;
       if (!abortObserved.isCompleted) abortObserved.complete();
       throw http.RequestAbortedException(request.url);
@@ -51,8 +52,9 @@ final class _AbortTriggerCapturingClient extends http.BaseClient {
   Future<http.StreamedResponse> send(http.BaseRequest request) {
     final Completer<http.StreamedResponse> pending =
         Completer<http.StreamedResponse>();
-    if (request case http.Abortable(:final Future<void>? abortTrigger)
-        when abortTrigger != null) {
+    if (request case http.Abortable(
+      :final Future<void>? abortTrigger,
+    ) when abortTrigger != null) {
       triggers.add(abortTrigger);
       unawaited(
         abortTrigger.whenComplete(() {
@@ -78,8 +80,9 @@ void main() {
   group('CoverDownloadDeadline', () {
     test('到点：置位 isExpired 并触发共享 abortTrigger', () {
       fakeAsync((FakeAsync async) {
-        final CoverDownloadDeadline deadline =
-            CoverDownloadDeadline(const Duration(seconds: 10));
+        final CoverDownloadDeadline deadline = CoverDownloadDeadline(
+          const Duration(seconds: 10),
+        );
         bool aborted = false;
         unawaited(deadline.abortTrigger.then((void _) => aborted = true));
 
@@ -99,8 +102,9 @@ void main() {
 
     test('dispose 后不再到点，也不留空跑的定时器', () {
       fakeAsync((FakeAsync async) {
-        final CoverDownloadDeadline deadline =
-            CoverDownloadDeadline(const Duration(seconds: 10));
+        final CoverDownloadDeadline deadline = CoverDownloadDeadline(
+          const Duration(seconds: 10),
+        );
         deadline.dispose();
 
         async.elapse(const Duration(seconds: 30));
@@ -114,8 +118,9 @@ void main() {
       fakeAsync((FakeAsync async) {
         final _AbortTriggerCapturingClient client =
             _AbortTriggerCapturingClient();
-        final CoverDownloadDeadline deadline =
-            CoverDownloadDeadline(const Duration(seconds: 10));
+        final CoverDownloadDeadline deadline = CoverDownloadDeadline(
+          const Duration(seconds: 10),
+        );
 
         void ignoreOutcome(Future<http.Response> attempt) {
           unawaited(
@@ -126,12 +131,20 @@ void main() {
           );
         }
 
-        ignoreOutcome(fetchCoverImageResponse(
-            client, Uri.parse('https://example.invalid/1'),
-            deadline: deadline));
-        ignoreOutcome(fetchCoverImageResponse(
-            client, Uri.parse('https://example.invalid/2'),
-            deadline: deadline));
+        ignoreOutcome(
+          fetchCoverImageResponse(
+            client,
+            Uri.parse('https://example.invalid/1'),
+            deadline: deadline,
+          ),
+        );
+        ignoreOutcome(
+          fetchCoverImageResponse(
+            client,
+            Uri.parse('https://example.invalid/2'),
+            deadline: deadline,
+          ),
+        );
         async.flushMicrotasks();
 
         expect(client.triggers, hasLength(2));
@@ -158,16 +171,27 @@ void main() {
     });
 
     test('字节魔数：JPEG/PNG/GIF/WebP', () {
-      expect(looksLikeImageBytes(const <int>[0xFF, 0xD8, 0xFF, 0x00], null),
-          isTrue); // JPEG
-      expect(looksLikeImageBytes(const <int>[0x89, 0x50, 0x4E, 0x47], null),
-          isTrue); // PNG
-      expect(looksLikeImageBytes(const <int>[0x47, 0x49, 0x46, 0x38], null),
-          isTrue); // GIF
       expect(
-        looksLikeImageBytes(
-            <int>[...utf8.encode('RIFF'), 0, 0, 0, 0, ...utf8.encode('WEBP')],
-            null),
+        looksLikeImageBytes(const <int>[0xFF, 0xD8, 0xFF, 0x00], null),
+        isTrue,
+      ); // JPEG
+      expect(
+        looksLikeImageBytes(const <int>[0x89, 0x50, 0x4E, 0x47], null),
+        isTrue,
+      ); // PNG
+      expect(
+        looksLikeImageBytes(const <int>[0x47, 0x49, 0x46, 0x38], null),
+        isTrue,
+      ); // GIF
+      expect(
+        looksLikeImageBytes(<int>[
+          ...utf8.encode('RIFF'),
+          0,
+          0,
+          0,
+          0,
+          ...utf8.encode('WEBP'),
+        ], null),
         isTrue,
       );
     });
@@ -184,8 +208,9 @@ void main() {
   group('downloadImageToTempFile', () {
     late Directory tempDir;
     setUp(() async {
-      tempDir =
-          await Directory.systemTemp.createTemp('fushi_img_download_test');
+      tempDir = await Directory.systemTemp.createTemp(
+        'fushi_img_download_test',
+      );
     });
     tearDown(() async {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
@@ -194,8 +219,11 @@ void main() {
     test('成功：写出图片文件、内容为响应字节', () async {
       final List<int> png = <int>[0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4];
       final MockClient client = MockClient(
-        (http.Request req) async => http.Response.bytes(png, 200,
-            headers: <String, String>{'content-type': 'image/png'}),
+        (http.Request req) async => http.Response.bytes(
+          png,
+          200,
+          headers: <String, String>{'content-type': 'image/png'},
+        ),
       );
       final File file = await downloadImageToTempFile(
         'https://example.invalid/cover.png',
@@ -271,25 +299,41 @@ void main() {
     });
 
     test('非图片响应 → 抛 ImageDownloadException，不落文件', () async {
-      final MockClient client = MockClient((http.Request req) async =>
-          http.Response('<html/>', 200,
-              headers: <String, String>{'content-type': 'text/html'}));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response(
+          '<html/>',
+          200,
+          headers: <String, String>{'content-type': 'text/html'},
+        ),
+      );
       await expectLater(
-        downloadImageToTempFile('https://example.invalid/x',
-            client: client, tempDir: tempDir),
+        downloadImageToTempFile(
+          'https://example.invalid/x',
+          client: client,
+          tempDir: tempDir,
+        ),
         throwsA(isA<ImageDownloadException>()),
       );
       expect(tempDir.listSync(), isEmpty);
     });
 
     test('404 → 抛 ImageDownloadException(statusCode=404)', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => http.Response('x', 404));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response('x', 404),
+      );
       await expectLater(
-        downloadImageToTempFile('https://example.invalid/x',
-            client: client, tempDir: tempDir),
-        throwsA(isA<ImageDownloadException>().having(
-            (ImageDownloadException e) => e.statusCode, 'statusCode', 404)),
+        downloadImageToTempFile(
+          'https://example.invalid/x',
+          client: client,
+          tempDir: tempDir,
+        ),
+        throwsA(
+          isA<ImageDownloadException>().having(
+            (ImageDownloadException e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
       );
     });
   });

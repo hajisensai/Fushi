@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
@@ -132,8 +131,10 @@ List<JimakuEntry> pickJimakuEntriesForTitles(
     }
   }
   final List<String> normalizedNames = TitleNormalizer.normalizeAll(names);
-  final Float64List matrix =
-      TitleNormalizer.similarityNormalizedMatrix(queries, normalizedNames);
+  final Float64List matrix = TitleNormalizer.similarityNormalizedMatrix(
+    queries,
+    normalizedNames,
+  );
   final List<double> best = List<double>.filled(entries.length, 0);
   for (int q = 0; q < queries.length; q++) {
     for (int c = 0; c < normalizedNames.length; c++) {
@@ -221,17 +222,18 @@ class JimakuFile {
 /// 的文本字幕；压缩包/图片字幕不会被误报成「可用」。
 class JimakuFileInventory {
   JimakuFileInventory._(this.files)
-      : episodes = <int>{
-          for (final JimakuFile file in files)
-            if (file.episode != null) file.episode!,
-        },
-        languages = <String>{
-          for (final JimakuFile file in files)
-            if (detectSubtitleLanguage(file.name) != null)
-              detectSubtitleLanguage(file.name)!,
-        },
-        unlabeledCount =
-            files.where((JimakuFile file) => file.episode == null).length;
+    : episodes = <int>{
+        for (final JimakuFile file in files)
+          if (file.episode != null) file.episode!,
+      },
+      languages = <String>{
+        for (final JimakuFile file in files)
+          if (detectSubtitleLanguage(file.name) != null)
+            detectSubtitleLanguage(file.name)!,
+      },
+      unlabeledCount = files
+          .where((JimakuFile file) => file.episode == null)
+          .length;
 
   factory JimakuFileInventory.fromFiles(Iterable<JimakuFile> files) {
     return JimakuFileInventory._(
@@ -291,7 +293,8 @@ List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
       if (e is! Map) {
         if (strict) {
           throw FormatException(
-              'Jimaku entry at index $index is not an object');
+            'Jimaku entry at index $index is not an object',
+          );
         }
         continue;
       }
@@ -299,7 +302,8 @@ List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
       if (id is! int) {
         if (strict) {
           throw FormatException(
-              'Jimaku entry at index $index has no integer id');
+            'Jimaku entry at index $index has no integer id',
+          );
         }
         continue;
       }
@@ -307,21 +311,23 @@ List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
       final String englishName = (e['english_name'] as String?)?.trim() ?? '';
       final String japaneseName = (e['japanese_name'] as String?)?.trim() ?? '';
       final String tmdbId = (e['tmdb_id'] as String?)?.trim() ?? '';
-      out.add(JimakuEntry(
-        id: id,
-        name: primaryName.isNotEmpty
-            ? primaryName
-            : englishName.isNotEmpty
-                ? englishName
-                : japaneseName.isNotEmpty
-                    ? japaneseName
-                    : '#$id',
-        anilistId: e['anilist_id'] as int?,
-        tmdbId: tmdbId.isEmpty ? null : tmdbId,
-        japaneseName: japaneseName.isEmpty ? null : japaneseName,
-        englishName: englishName.isEmpty ? null : englishName,
-        flags: parseJimakuEntryFlags(e['flags']),
-      ));
+      out.add(
+        JimakuEntry(
+          id: id,
+          name: primaryName.isNotEmpty
+              ? primaryName
+              : englishName.isNotEmpty
+              ? englishName
+              : japaneseName.isNotEmpty
+              ? japaneseName
+              : '#$id',
+          anilistId: e['anilist_id'] as int?,
+          tmdbId: tmdbId.isEmpty ? null : tmdbId,
+          japaneseName: japaneseName.isEmpty ? null : japaneseName,
+          englishName: englishName.isEmpty ? null : englishName,
+          flags: parseJimakuEntryFlags(e['flags']),
+        ),
+      );
     }
     return out;
   } catch (e, stack) {
@@ -371,8 +377,9 @@ String? detectSubtitleLanguage(String fileName) {
     if (fileName.contains(e.key)) return e.value;
   }
   // 方括号 / 圆括号语言标记，如 [JP] / [CHS] / (ENG)。
-  for (final RegExpMatch m
-      in RegExp(r'[\[\(]([a-z\-]{2,5})[\]\)]').allMatches(lower)) {
+  for (final RegExpMatch m in RegExp(
+    r'[\[\(]([a-z\-]{2,5})[\]\)]',
+  ).allMatches(lower)) {
     final String? byBracket = _languageFromToken(m.group(1)!);
     if (byBracket != null) return byBracket;
   }
@@ -484,12 +491,14 @@ List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
         }
         continue;
       }
-      out.add(JimakuFile(
-        name: name,
-        url: url,
-        size: f['size'] is int ? f['size'] as int : null,
-        lastModifiedMs: parseJimakuTimestampMs(f['last_modified']),
-      ));
+      out.add(
+        JimakuFile(
+          name: name,
+          url: url,
+          size: f['size'] is int ? f['size'] as int : null,
+          lastModifiedMs: parseJimakuTimestampMs(f['last_modified']),
+        ),
+      );
     }
     return out;
   } catch (e, stack) {
@@ -515,10 +524,7 @@ int? parseJimakuTimestampMs(Object? raw) {
 /// Jimaku 请求失败。默认客户端路径仍可 fail-open；需要向用户区分「零结果」与「请求
 /// 失败」的界面可通过 `throwOnError: true` 保留这个异常。
 class JimakuRequestException implements Exception {
-  const JimakuRequestException(
-    this.message, {
-    this.statusCode,
-  });
+  const JimakuRequestException(this.message, {this.statusCode});
 
   final String message;
   final int? statusCode;
@@ -570,11 +576,11 @@ enum JimakuAnimeFilter {
   /// 动画排在前面不是随手定的：本 app 的主用例是动画，动画命中就不该为一个同名
   /// 真人条目多打一次请求，且结果顺序直接决定 `searchEntries` 返回的首条。
   List<String> get queryValues => switch (this) {
-        JimakuAnimeFilter.anime => const <String>['true'],
-        JimakuAnimeFilter.liveAction => const <String>['false'],
-        JimakuAnimeFilter.either => const <String>['true', 'false'],
-        JimakuAnimeFilter.liveActionFirst => const <String>['false', 'true'],
-      };
+    JimakuAnimeFilter.anime => const <String>['true'],
+    JimakuAnimeFilter.liveAction => const <String>['false'],
+    JimakuAnimeFilter.either => const <String>['true', 'false'],
+    JimakuAnimeFilter.liveActionFirst => const <String>['false', 'true'],
+  };
 }
 
 /// Jimaku API 客户端（参照 asbplayer 的 Jimaku 集成）。需用户在设置/对话框填 API key。
@@ -583,7 +589,7 @@ enum JimakuAnimeFilter {
 /// （列文件）、文件 `url` 直接下载。鉴权头 `Authorization: <apiKey>`。
 class JimakuClient {
   JimakuClient({required this.apiKey, http.Client? client})
-      : _client = client ?? createAppHttpIoClient();
+    : _client = client ?? createAppHttpIoClient();
 
   final String apiKey;
   final http.Client _client;
@@ -591,9 +597,9 @@ class JimakuClient {
   static const String _base = 'https://jimaku.cc/api';
 
   Map<String, String> get _headers => <String, String>{
-        'Authorization': apiKey,
-        'Accept': 'application/json',
-      };
+    'Authorization': apiKey,
+    'Accept': 'application/json',
+  };
 
   /// 组 `/entries/search` 的 query 参数。Jimaku 的 `anime` 是**硬相等过滤且服务端默认
   /// true**：不显式带 `anime=false` 永远搜不到真人剧/日剧条目（jimaku.cc 的 dramas 区）。
@@ -665,10 +671,10 @@ class JimakuClient {
     required bool throwOnError,
   }) async {
     for (final String value in filter.queryValues) {
-      final List<JimakuEntry> found = await _searchEntries(
-        <String, String>{...params, 'anime': value},
-        throwOnError: throwOnError,
-      );
+      final List<JimakuEntry> found = await _searchEntries(<String, String>{
+        ...params,
+        'anime': value,
+      }, throwOnError: throwOnError);
       if (found.isNotEmpty) return found;
     }
     return const <JimakuEntry>[];
@@ -721,8 +727,9 @@ class JimakuClient {
     required bool throwOnError,
   }) async {
     try {
-      final Uri uri =
-          Uri.parse('$_base/entries/search').replace(queryParameters: params);
+      final Uri uri = Uri.parse(
+        '$_base/entries/search',
+      ).replace(queryParameters: params);
       final http.Response res = await _client.get(uri, headers: _headers);
       if (res.statusCode != 200) {
         if (throwOnError) {
@@ -785,8 +792,10 @@ class JimakuClient {
     bool throwOnError = false,
   }) async {
     try {
-      final http.Response res =
-          await _client.get(Uri.parse(fileUrl), headers: _headers);
+      final http.Response res = await _client.get(
+        Uri.parse(fileUrl),
+        headers: _headers,
+      );
       if (res.statusCode != 200) {
         if (throwOnError) {
           throw JimakuRequestException(

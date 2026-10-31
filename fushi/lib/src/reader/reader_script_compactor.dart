@@ -270,8 +270,9 @@ class _JsLexer {
   void _note(int c) {
     if (c == 0x20 || c == 0x09 || c == 0x0D) return; // 空白不算有效字符
     _prevSignificant = c;
-    _prevWord =
-        _isIdentifierChar(c) ? '$_prevWord${String.fromCharCode(c)}' : '';
+    _prevWord = _isIdentifierChar(c)
+        ? '$_prevWord${String.fromCharCode(c)}'
+        : '';
   }
 
   static int _peek(String line, int i) =>

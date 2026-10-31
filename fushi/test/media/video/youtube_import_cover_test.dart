@@ -65,12 +65,14 @@ void main() {
       expect(result, outputPath);
       expect(File(outputPath).existsSync(), isTrue);
       expect(File(outputPath).readAsBytesSync(), bytes);
-      expect(File('$outputPath.tmp').existsSync(), isFalse,
-          reason: '收口的原子写不该留 .tmp');
+      expect(
+        File('$outputPath.tmp').existsSync(),
+        isFalse,
+        reason: '收口的原子写不该留 .tmp',
+      );
     });
 
-    test('content-type image/* 但字节不可解码：拒收、不落盘（BUG-2496，服务端头不算数）',
-        () async {
+    test('content-type image/* 但字节不可解码：拒收、不落盘（BUG-2496，服务端头不算数）', () async {
       // 此前的契约是「服务端 content-type 权威」；BUG-2496 后写侧唯一入口按字节判
       // 可解码性，头说 image/jpeg 而正文是截断/占位字节的一律不落盘——落了就是
       // 下次 Image.file 的「Invalid image data」。
@@ -134,8 +136,9 @@ void main() {
     });
 
     test('non-2xx returns null and writes nothing', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => http.Response('nope', 404));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response('nope', 404),
+      );
       final String outputPath = p.join(tmp.path, 'cover.jpg');
       final String? result = await downloadVideoCoverToPath(
         coverUrl: 'https://i.ytimg.com/vi/x/hqdefault.jpg',
@@ -148,7 +151,8 @@ void main() {
 
     test('empty 2xx body returns null (no zero-byte cover)', () async {
       final MockClient client = MockClient(
-          (http.Request req) async => http.Response.bytes(<int>[], 200));
+        (http.Request req) async => http.Response.bytes(<int>[], 200),
+      );
       final String outputPath = p.join(tmp.path, 'cover.jpg');
       final String? result = await downloadVideoCoverToPath(
         coverUrl: 'https://i.ytimg.com/vi/x/hqdefault.jpg',

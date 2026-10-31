@@ -101,7 +101,8 @@ void main() {
       'auto',
       CoverMeta(
         origin: CoverOrigin.autoScraped,
-        contentSha256: sha256.convert(await coverFiles['auto']!.readAsBytes())
+        contentSha256: sha256
+            .convert(await coverFiles['auto']!.readAsBytes())
             .toString(),
       ),
     );
@@ -172,16 +173,14 @@ void main() {
     );
     final List<int> manualBackdropBytes = <int>[4, 2, 4, 2];
     await manualBackdrop.writeAsBytes(manualBackdropBytes);
-    await database.replaceMediaImagesForCollection(
-      collectionId,
-      <MediaImagesCompanion>[
-        MediaImagesCompanion.insert(
-          collectionId: Value<int?>(collectionId),
-          kind: MediaImageKind.backdrop.dbValue,
-          path: manualBackdrop.path,
-        ),
-      ],
-    );
+    await database
+        .replaceMediaImagesForCollection(collectionId, <MediaImagesCompanion>[
+          MediaImagesCompanion.insert(
+            collectionId: Value<int?>(collectionId),
+            kind: MediaImageKind.backdrop.dbValue,
+            path: manualBackdrop.path,
+          ),
+        ]);
     // 即使历史 ledger 错误残留，sourceUrl=null 的手动附加图也必须优先受保护。
     await _insertArtifact(
       database,
@@ -278,8 +277,8 @@ void main() {
     );
     expect(await modifiedPoster.readAsBytes(), modifiedPosterBytes);
     expect(await manualBackdrop.readAsBytes(), manualBackdropBytes);
-    final List<MediaImageRow> retainedManualImages =
-        await database.getMediaImagesForCollection(collectionId);
+    final List<MediaImageRow> retainedManualImages = await database
+        .getMediaImagesForCollection(collectionId);
     expect(retainedManualImages, hasLength(1));
     expect(retainedManualImages.single.path, manualBackdrop.path);
     expect(retainedManualImages.single.sourceUrl, isNull);
@@ -538,10 +537,7 @@ void main() {
       ),
     );
     final CoverMetaStore store = CoverMetaStore(coversDirectory);
-    await store.set(
-      bookUid,
-      const CoverMeta(origin: CoverOrigin.autoScraped),
-    );
+    await store.set(bookUid, const CoverMeta(origin: CoverOrigin.autoScraped));
 
     final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
       database: database,
@@ -882,8 +878,7 @@ void main() {
       throwsA(
         isA<VideoScrapeCleanupRecoveryException>()
             .having(
-              (VideoScrapeCleanupRecoveryException error) =>
-                  error.originalPath,
+              (VideoScrapeCleanupRecoveryException error) => error.originalPath,
               'originalPath',
               artifact.path,
             )

@@ -28,36 +28,40 @@ void main() {
     src = readVideoFushiSource();
   });
 
-  test('字幕列表枚举已从 overlay side-panel 系统移除（subtitleList 不再是 _VideoSidePanelKind）',
-      () {
-    final int enumStart = src.indexOf('enum _VideoSidePanelKind {');
-    expect(enumStart, greaterThan(-1), reason: '应有 _VideoSidePanelKind 枚举');
-    final int enumEnd = src.indexOf('}', enumStart);
-    final String enumBody = src.substring(enumStart, enumEnd);
-    expect(
-      enumBody.contains('subtitleList'),
-      isFalse,
-      reason: 'subtitleList 已改 push-aside，不应再是 overlay 面板 kind',
-    );
-  });
+  test(
+    '字幕列表枚举已从 overlay side-panel 系统移除（subtitleList 不再是 _VideoSidePanelKind）',
+    () {
+      final int enumStart = src.indexOf('enum _VideoSidePanelKind {');
+      expect(enumStart, greaterThan(-1), reason: '应有 _VideoSidePanelKind 枚举');
+      final int enumEnd = src.indexOf('}', enumStart);
+      final String enumBody = src.substring(enumStart, enumEnd);
+      expect(
+        enumBody.contains('subtitleList'),
+        isFalse,
+        reason: 'subtitleList 已改 push-aside，不应再是 overlay 面板 kind',
+      );
+    },
+  );
 
-  test('_toggleSubtitleJumpList 驱动 _subtitleListVisible（push-aside），不走 overlay',
-      () {
-    final int start = src.indexOf('void _toggleSubtitleJumpList() {');
-    expect(start, greaterThan(-1), reason: '应有 _toggleSubtitleJumpList 方法');
-    final int end = src.indexOf('\n  }', start);
-    final String body = src.substring(start, end);
-    expect(
-      body.contains('_subtitleListVisible.value'),
-      isTrue,
-      reason: '应翻转 push-aside 可见性 _subtitleListVisible',
-    );
-    expect(
-      body.contains('_showVideoSidePanel(_VideoSidePanelKind.subtitleList'),
-      isFalse,
-      reason: '不应再经 overlay side-panel 系统开字幕列表',
-    );
-  });
+  test(
+    '_toggleSubtitleJumpList 驱动 _subtitleListVisible（push-aside），不走 overlay',
+    () {
+      final int start = src.indexOf('void _toggleSubtitleJumpList() {');
+      expect(start, greaterThan(-1), reason: '应有 _toggleSubtitleJumpList 方法');
+      final int end = src.indexOf('\n  }', start);
+      final String body = src.substring(start, end);
+      expect(
+        body.contains('_subtitleListVisible.value'),
+        isTrue,
+        reason: '应翻转 push-aside 可见性 _subtitleListVisible',
+      );
+      expect(
+        body.contains('_showVideoSidePanel(_VideoSidePanelKind.subtitleList'),
+        isFalse,
+        reason: '不应再经 overlay side-panel 系统开字幕列表',
+      );
+    },
+  );
 
   test('字幕列表与浮层互斥：开 push-aside 列表先关浮层，开浮层关 push-aside 列表', () {
     // _toggleSubtitleJumpList 开列表前关浮层。
@@ -72,8 +76,10 @@ void main() {
     // _showVideoSidePanel 开浮层时关 push-aside 列表。
     final int showStart = src.indexOf('void _showVideoSidePanel(');
     expect(showStart, greaterThan(-1));
-    final int showEnd =
-        src.indexOf('\n  void _hideVideoSidePanel()', showStart);
+    final int showEnd = src.indexOf(
+      '\n  void _hideVideoSidePanel()',
+      showStart,
+    );
     expect(showEnd, greaterThan(showStart));
     final String showBody = src.substring(showStart, showEnd);
     expect(
@@ -83,8 +89,7 @@ void main() {
     );
   });
 
-  test(
-      'TODO-637 non-blocking sidebar: video area has NO opaque barrier '
+  test('TODO-637 non-blocking sidebar: video area has NO opaque barrier '
       '(restores picture-subtitle lookup, TODO-636)', () {
     // 边界由 [methodBody] 做括号配对，不再用 `indexOf('\n  }')` 猜——那个写法把
     // 「函数体到哪结束」交给缩进巧合，函数里多一层 2 空格闭合就整段截错。
@@ -102,13 +107,18 @@ void main() {
     //  ② 全函数只允许存在那**一个** barrier，且必须是选集那一个（按 key 认）。
     // 两条都要：只有①的话，在横轨分支外再挂一层无门控 barrier 仍能过。
     final int episodeGate = code.indexOf('if (episodeVisible)');
-    expect(episodeGate, greaterThan(-1),
-        reason: '选集横轨 barrier 必须由 episodeVisible 门控（BUG-1501）；'
-            '门控没了就是画面区常驻一层罩子');
+    expect(
+      episodeGate,
+      greaterThan(-1),
+      reason:
+          '选集横轨 barrier 必须由 episodeVisible 门控（BUG-1501）；'
+          '门控没了就是画面区常驻一层罩子',
+    );
     expect(
       code.substring(0, episodeGate).contains('HitTestBehavior.opaque'),
       isFalse,
-      reason: 'video area must not have an opaque barrier '
+      reason:
+          'video area must not have an opaque barrier '
           '(it would eat the picture-subtitle lookup gesture, TODO-636)',
     );
     expect(
@@ -126,7 +136,8 @@ void main() {
     expect(
       body.contains('_subtitleJumpSidePanel(controller, visible)'),
       isTrue,
-      reason: 'layout should delegate the panel column to '
+      reason:
+          'layout should delegate the panel column to '
           '_subtitleJumpSidePanel (no lock arg)',
     );
   });
@@ -143,38 +154,44 @@ void main() {
   // 语义等价——都经单一真相源 _closeSubtitleJumpList，避免「关闭副作用各写一份」再分叉
   // （此前 × 的 onClose 只隐藏列表，漏 _pokeControlsVisible / _refocusVideo，致点 ×
   // 后控制条不被唤回、焦点不归还视频，键盘 / 手柄后续失焦）。
-  group(
-      'TODO-637 close-path parity: three close paths funnel through '
+  group('TODO-637 close-path parity: three close paths funnel through '
       '_closeSubtitleJumpList', () {
-    test(
-        '_closeSubtitleJumpList 含全部三项关闭副作用'
+    test('_closeSubtitleJumpList 含全部三项关闭副作用'
         '（隐藏列表 + 唤回控制条 + 归还焦点）', () {
       final int start = src.indexOf('void _closeSubtitleJumpList() {');
       expect(start, greaterThan(-1), reason: '应有单一真相源 _closeSubtitleJumpList');
       final int end = src.indexOf('\n  }', start);
       final String body = src.substring(start, end);
-      expect(body.contains('_subtitleListVisible.value = false'), isTrue,
-          reason: '关闭应隐藏 push-aside 列表');
-      expect(body.contains('_pokeControlsVisible()'), isTrue,
-          reason: '关闭应唤回控制条（× 路径此前漏此项）');
       expect(
-          body.contains(
-              '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
-          isTrue,
-          reason: '关闭应把焦点归还视频（× 路径此前漏此项，否则键盘 / 手柄失焦）');
+        body.contains('_subtitleListVisible.value = false'),
+        isTrue,
+        reason: '关闭应隐藏 push-aside 列表',
+      );
+      expect(
+        body.contains('_pokeControlsVisible()'),
+        isTrue,
+        reason: '关闭应唤回控制条（× 路径此前漏此项）',
+      );
+      expect(
+        body.contains(
+          '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)',
+        ),
+        isTrue,
+        reason: '关闭应把焦点归还视频（× 路径此前漏此项，否则键盘 / 手柄失焦）',
+      );
     });
 
     test('面板头部 × 的 onClose 经 _closeSubtitleJumpList（不再各写一份副作用）', () {
       expect(
         src.contains('onClose: _closeSubtitleJumpList'),
         isTrue,
-        reason: 'VideoSubtitleJumpPanel 的 onClose 应直接复用 _closeSubtitleJumpList，'
+        reason:
+            'VideoSubtitleJumpPanel 的 onClose 应直接复用 _closeSubtitleJumpList，'
             '与 Esc / 控制条字幕按钮关闭路径等价',
       );
     });
 
-    test(
-        '_toggleSubtitleJumpList 的关闭分支经 _closeSubtitleJumpList'
+    test('_toggleSubtitleJumpList 的关闭分支经 _closeSubtitleJumpList'
         '（Esc / 控制条字幕按钮共用此入口）', () {
       final int start = src.indexOf('void _toggleSubtitleJumpList() {');
       expect(start, greaterThan(-1));
@@ -187,7 +204,8 @@ void main() {
       expect(
         elseBody.contains('_closeSubtitleJumpList()'),
         isTrue,
-        reason: 'toggle 的关闭分支应复用 _closeSubtitleJumpList，'
+        reason:
+            'toggle 的关闭分支应复用 _closeSubtitleJumpList，'
             'Esc（line ~3427）与控制条字幕按钮经此分支自动等价',
       );
     });

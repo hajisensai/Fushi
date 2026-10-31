@@ -121,9 +121,9 @@ class GoogleDriveAuth {
 
   GoogleSignIn? _googleSignIn;
   GoogleSignIn get _signIn => _googleSignIn ??= GoogleSignIn(
-        clientId: Platform.isIOS ? _iosClientId : null,
-        scopes: [_space.scope],
-      );
+    clientId: Platform.isIOS ? _iosClientId : null,
+    scopes: [_space.scope],
+  );
 
   // The signed-in mobile account, populated by authenticate() or by
   // restoreMobileAuth() on launch. google_sign_in does NOT auto-restore the
@@ -195,8 +195,9 @@ class GoogleDriveAuth {
     // (TODO-045).
     if (!desktopCredentialsConfigured) {
       throw GoogleDriveAuthError(
-          'sync_credentials_not_configured: this build has no Google desktop '
-          'OAuth client secret (placeholder shipped)');
+        'sync_credentials_not_configured: this build has no Google desktop '
+        'OAuth client secret (placeholder shipped)',
+      );
     }
     // Desktop: drive the RFC 8252 loopback flow ourselves (same helper as the
     // Dropbox/OneDrive backends) so we fully control the authorization URL.
@@ -235,7 +236,8 @@ class GoogleDriveAuth {
         // refresh token; bail rather than persist a session that could never
         // be restored after a restart.
         throw GoogleDriveAuthError(
-            'Google did not return a refresh token; cannot stay signed in');
+          'Google did not return a refresh token; cannot stay signed in',
+        );
       }
 
       _desktopClient?.close();
@@ -277,22 +279,21 @@ class GoogleDriveAuth {
     required String redirectUri,
     required String challenge,
     required String scope,
-  }) =>
-      Uri.https('accounts.google.com', 'o/oauth2/v2/auth', {
-        'client_id': _oauthClientId,
-        'response_type': 'code',
-        'redirect_uri': redirectUri,
-        'scope': [scope, _emailScope].join(' '),
-        'code_challenge': challenge,
-        'code_challenge_method': 'S256',
-        // Required for Google to issue a refresh token; without it the desktop
-        // session cannot survive an app restart (BUG-034).
-        'access_type': 'offline',
-        // Force the consent screen so a refresh token is returned even when the
-        // account previously authorized the app; offer the account chooser so
-        // multi-account users can pick which Google account to use.
-        'prompt': 'consent select_account',
-      });
+  }) => Uri.https('accounts.google.com', 'o/oauth2/v2/auth', {
+    'client_id': _oauthClientId,
+    'response_type': 'code',
+    'redirect_uri': redirectUri,
+    'scope': [scope, _emailScope].join(' '),
+    'code_challenge': challenge,
+    'code_challenge_method': 'S256',
+    // Required for Google to issue a refresh token; without it the desktop
+    // session cannot survive an app restart (BUG-034).
+    'access_type': 'offline',
+    // Force the consent screen so a refresh token is returned even when the
+    // account previously authorized the app; offer the account chooser so
+    // multi-account users can pick which Google account to use.
+    'prompt': 'consent select_account',
+  });
 
   static String _createCodeVerifier() {
     final rng = Random.secure();
@@ -321,12 +322,11 @@ class GoogleDriveAuth {
   static Uri debugBuildDesktopAuthUrl(
     String redirectUri, {
     String scope = 'https://www.googleapis.com/auth/drive.appdata',
-  }) =>
-      _buildDesktopAuthUrl(
-        redirectUri: redirectUri,
-        challenge: 'test-challenge',
-        scope: scope,
-      );
+  }) => _buildDesktopAuthUrl(
+    redirectUri: redirectUri,
+    challenge: 'test-challenge',
+    scope: scope,
+  );
 
   @visibleForTesting
   static bool debugIsCredentialsRejected(Object error) =>

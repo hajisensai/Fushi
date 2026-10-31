@@ -19,7 +19,6 @@ export 'package:fushi_engine/sync/sync_asset_store.dart'
     show SyncTransferProgress, syncTransferFractionOnly;
 export 'package:fushi_engine/sync/sync_backend_type.dart';
 
-
 class SyncBackendError implements Exception {
   SyncBackendError(this.message, {this.isRetryable = false});
   final String message;
@@ -39,7 +38,7 @@ class SyncBackendError implements Exception {
 /// （与 SyncAuthFailureKind 的教训同款）。
 class SyncPeerUnreachableError extends SyncBackendError {
   SyncPeerUnreachableError()
-      : super('No reachable Fushi server address', isRetryable: true);
+    : super('No reachable Fushi server address', isRetryable: true);
 }
 
 /// 鉴权类失败的三种**互不相同**的语义（BUG-1323 / BUG-1348）。
@@ -383,19 +382,25 @@ SyncBackend resolveSyncBackend(SyncBackendType type) {
 /// 的槽位，不与任何真实通道共用，绝不会把测试状态写进用户通道的账上。
 SyncChannelScope syncChannelScopeOf(SyncBackend backend) {
   // 混淆装饰器是纯包装：槽位属于被它包着的那个真后端。
-  final SyncBackend inner =
-      backend is ObfuscatingSyncBackend ? backend.inner : backend;
+  final SyncBackend inner = backend is ObfuscatingSyncBackend
+      ? backend.inner
+      : backend;
   return switch (inner) {
-    GoogleDriveSyncBackend() =>
-      SyncChannelScope.forBackendType(SyncBackendType.googleDrive),
-    InterconnectSyncBackend() =>
-      SyncChannelScope.forBackendType(SyncBackendType.fushiServer),
-    WebDavSyncBackend() =>
-      SyncChannelScope.forBackendType(SyncBackendType.webDav),
-    OneDriveSyncBackend() =>
-      SyncChannelScope.forBackendType(SyncBackendType.oneDrive),
-    DropboxSyncBackend() =>
-      SyncChannelScope.forBackendType(SyncBackendType.dropbox),
+    GoogleDriveSyncBackend() => SyncChannelScope.forBackendType(
+      SyncBackendType.googleDrive,
+    ),
+    InterconnectSyncBackend() => SyncChannelScope.forBackendType(
+      SyncBackendType.fushiServer,
+    ),
+    WebDavSyncBackend() => SyncChannelScope.forBackendType(
+      SyncBackendType.webDav,
+    ),
+    OneDriveSyncBackend() => SyncChannelScope.forBackendType(
+      SyncBackendType.oneDrive,
+    ),
+    DropboxSyncBackend() => SyncChannelScope.forBackendType(
+      SyncBackendType.dropbox,
+    ),
     FtpSyncBackend() => SyncChannelScope.forBackendType(SyncBackendType.ftp),
     SftpSyncBackend() => SyncChannelScope.forBackendType(SyncBackendType.sftp),
     _ => SyncChannelScope.unscoped,

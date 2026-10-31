@@ -22,8 +22,10 @@ void main() {
       // 只剩一个切片之后，「探测机器架构」没有任何消费者（ARM64 走系统 x64 模拟）。
       // 恢复架构分发必须先恢复第二个随包产物，不是在客户端加一个探测函数。
       expect(kMagpieBundledArch, 'x64');
-      expect(magpieBundledZipName(kMagpieBundledArch),
-          'Magpie-hibiki-slim-x64.zip');
+      expect(
+        magpieBundledZipName(kMagpieBundledArch),
+        'Magpie-hibiki-slim-x64.zip',
+      );
       expect(
         File('lib/src/mining/magpie_installer.dart').readAsStringSync(),
         isNot(contains('PROCESSOR_ARCHITECTURE')),
@@ -38,10 +40,11 @@ void main() {
 
   group('安装完整性清单', () {
     test('根文件只含缩放必需项，effects 目录必需', () {
-      expect(
-        kMagpieRequiredRootFiles,
-        <String>['Magpie.exe', 'Microsoft.UI.Xaml.dll', 'resources.pri'],
-      );
+      expect(kMagpieRequiredRootFiles, <String>[
+        'Magpie.exe',
+        'Microsoft.UI.Xaml.dll',
+        'resources.pri',
+      ]);
       expect(kMagpieRequiredDirs, <String>['effects']);
     });
 
@@ -66,8 +69,9 @@ void main() {
       const String body =
           '{"upstreamVersion":"v0.12.1","forkCommit":"abc","configVersion":4}';
       for (final String raw in <String>[body, '\uFEFF$body']) {
-        final MagpiePackageMetadata metadata =
-            MagpiePackageMetadata.parse(raw)!;
+        final MagpiePackageMetadata metadata = MagpiePackageMetadata.parse(
+          raw,
+        )!;
         expect(metadata.upstreamVersion, 'v0.12.1');
         expect(metadata.forkCommit, 'abc');
         expect(metadata.configVersion, 4);
@@ -82,8 +86,9 @@ void main() {
     });
 
     test('只有已验证 configVersion 才写 0 字节便携配置', () async {
-      final Directory dir =
-          Directory.systemTemp.createTempSync('magpie_cfg_ok_');
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'magpie_cfg_ok_',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
       final bool wrote = await MagpieInstaller().ensurePortableConfig(
         metadata: const MagpiePackageMetadata(
@@ -100,8 +105,9 @@ void main() {
     });
 
     test('版本不符或配置已存在时绝不覆盖', () async {
-      final Directory dir =
-          Directory.systemTemp.createTempSync('magpie_cfg_keep_');
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'magpie_cfg_keep_',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
       final File config = File(p.join(dir.path, 'config', 'config.json'));
       config.parent.createSync(recursive: true);
@@ -121,21 +127,26 @@ void main() {
 
   group('解压防护', () {
     test('保留 effects 子目录并拒绝 zip-slip', () async {
-      final Directory out =
-          Directory.systemTemp.createTempSync('magpie_unzip_');
+      final Directory out = Directory.systemTemp.createTempSync(
+        'magpie_unzip_',
+      );
       addTearDown(() => out.deleteSync(recursive: true));
       final File zip = File(p.join(out.path, 'in.zip'))
-        ..writeAsBytesSync(_buildZip(<String, List<int>>{
-          'Magpie.exe': utf8.encode('exe'),
-          'Microsoft.UI.Xaml.dll': utf8.encode('dll'),
-          'resources.pri': utf8.encode('pri'),
-          'effects/Lanczos.hlsl': utf8.encode('shader'),
-          '../pwned.txt': utf8.encode('pwned'),
-        }));
+        ..writeAsBytesSync(
+          _buildZip(<String, List<int>>{
+            'Magpie.exe': utf8.encode('exe'),
+            'Microsoft.UI.Xaml.dll': utf8.encode('dll'),
+            'resources.pri': utf8.encode('pri'),
+            'effects/Lanczos.hlsl': utf8.encode('shader'),
+            '../pwned.txt': utf8.encode('pwned'),
+          }),
+        );
       final Directory target = Directory(p.join(out.path, 'target'));
 
-      final Set<String> rootFiles =
-          await MagpieInstaller().extractZip(zip, target);
+      final Set<String> rootFiles = await MagpieInstaller().extractZip(
+        zip,
+        target,
+      );
 
       expect(magpieMissingFiles(rootFiles), isEmpty);
       expect(
@@ -160,22 +171,24 @@ void main() {
       // helper 安装器是 Magpie 唯一的项目内依赖。这里若退化成整包 import（或多 show
       // 一个符号），对面新加的任何东西都会自动出现在 Magpie 的可达面上。
       // 折掉换行/缩进再比，免得 dart format 的换行策略变一次就假红。
-      final String source = File('lib/src/mining/magpie_installer.dart')
-          .readAsStringSync()
-          .replaceAll(RegExp(r'\s+'), ' ');
+      final String source = File(
+        'lib/src/mining/magpie_installer.dart',
+      ).readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
       expect(
         source,
         contains(
-            "import 'package:fushi/src/mining/galgame_helper_installer.dart' "
-            'show galgameHelperSwapInstall, galgameHelperSweepStaleFiles, '
-            'parseSha256Sidecar, sha256Matches;'),
+          "import 'package:fushi/src/mining/galgame_helper_installer.dart' "
+          'show galgameHelperSwapInstall, galgameHelperSweepStaleFiles, '
+          'parseSha256Sidecar, sha256Matches;',
+        ),
         reason: '复用面必须逐个点名；退化成整包 import 就等于把对面的全部符号拉进来',
       );
     });
 
     test('ensureInstalled 只调用随包安装，缺包明确返回 bundleMissing', () {
-      final String source =
-          File('lib/src/mining/magpie_installer.dart').readAsStringSync();
+      final String source = File(
+        'lib/src/mining/magpie_installer.dart',
+      ).readAsStringSync();
       expect(source, contains('_installBundledMagpie(targetArch)'));
       expect(source, contains('MagpieInstallResult.bundleMissing'));
       expect(source, isNot(contains('fallback')));

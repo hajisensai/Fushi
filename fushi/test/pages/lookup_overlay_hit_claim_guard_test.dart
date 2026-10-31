@@ -40,11 +40,8 @@ void main() {
     );
     // 浮层 entry：与 `_buildPopupOverlay` 同形——barrier + 一层弹窗，两处都套着
     // `opaque: false` 的悬停探针。
-    Widget probe(Widget child) => MouseRegion(
-          opaque: false,
-          onEnter: enters.add,
-          child: child,
-        );
+    Widget probe(Widget child) =>
+        MouseRegion(opaque: false, onEnter: enters.add, child: child);
     final OverlayEntry popupEntry = OverlayEntry(
       builder: (BuildContext context) => Stack(
         children: <Widget>[
@@ -98,21 +95,27 @@ void main() {
     return pageSignals;
   }
 
-  testWidgets('① 裸 MouseRegion(opaque:false) 探针让页面收得到浮层上的滚轮（几何事实）',
-      (WidgetTester tester) async {
+  testWidgets('① 裸 MouseRegion(opaque:false) 探针让页面收得到浮层上的滚轮（几何事实）', (
+    WidgetTester tester,
+  ) async {
     final List<PointerEnterEvent> enters = <PointerEnterEvent>[];
     final int leaked = await pageSignalsWith(
       tester,
       wrapProbe: (Widget probe) => probe,
       enters: enters,
     );
-    expect(leaked, 2,
-        reason: 'opaque:false 的 MouseRegion 把子树命中翻成 false，'
-            '弹窗矩形与 barrier 上的滚轮都会穿到页面——这就是 BUG-2633 的机制');
+    expect(
+      leaked,
+      2,
+      reason:
+          'opaque:false 的 MouseRegion 把子树命中翻成 false，'
+          '弹窗矩形与 barrier 上的滚轮都会穿到页面——这就是 BUG-2633 的机制',
+    );
   });
 
-  testWidgets('② 探针外包 lookupOverlayHitClaim 后滚轮不再穿透，hover 探针照常工作',
-      (WidgetTester tester) async {
+  testWidgets('② 探针外包 lookupOverlayHitClaim 后滚轮不再穿透，hover 探针照常工作', (
+    WidgetTester tester,
+  ) async {
     final List<PointerEnterEvent> enters = <PointerEnterEvent>[];
     final int leaked = await pageSignalsWith(
       tester,
@@ -120,9 +123,13 @@ void main() {
       enters: enters,
     );
     expect(leaked, 0, reason: '认领层在探针外面，浮层 entry 重新吞掉命中');
-    expect(enters, isNotEmpty,
-        reason: '探针仍是非 opaque 的 MouseRegion，进浮层时 enter 照常回报；'
-            'hover 归属本身是变了的（barrier 会收到 exit），见 lookupOverlayHitClaim 的文档');
+    expect(
+      enters,
+      isNotEmpty,
+      reason:
+          '探针仍是非 opaque 的 MouseRegion，进浮层时 enter 照常回报；'
+          'hover 归属本身是变了的（barrier 会收到 exit），见 lookupOverlayHitClaim 的文档',
+    );
   });
 
   test('③ 视频页两处悬停探针都经 lookupOverlayHitClaim 认领命中', () {
@@ -130,25 +137,35 @@ void main() {
       'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
     // 浮层内容探针：wrapContent → _wrapPopupHoverProbe。
-    final int probe =
-        src.indexOf('Widget _wrapPopupHoverProbe(Widget child) =>');
+    final int probe = src.indexOf(
+      'Widget _wrapPopupHoverProbe(Widget child) =>',
+    );
     expect(probe, greaterThan(-1), reason: '探针改名了？同步更新本守卫');
     final String probeBody = src.substring(probe, probe + 400);
     final int claimAt = probeBody.indexOf('lookupOverlayHitClaim(');
     final int regionAt = probeBody.indexOf('MouseRegion(');
-    expect(claimAt, greaterThan(-1),
-        reason: '_wrapPopupHoverProbe 必须用 lookupOverlayHitClaim 认领命中');
-    expect(claimAt, lessThan(regionAt),
-        reason: '认领层必须是 MouseRegion(opaque:false) 的祖先——放在里面会被探针翻成 false');
+    expect(
+      claimAt,
+      greaterThan(-1),
+      reason: '_wrapPopupHoverProbe 必须用 lookupOverlayHitClaim 认领命中',
+    );
+    expect(
+      claimAt,
+      lessThan(regionAt),
+      reason: '认领层必须是 MouseRegion(opaque:false) 的祖先——放在里面会被探针翻成 false',
+    );
     // barrier 探针：Positioned.fill 里那层 MouseRegion(onExit: _handlePointerLeftLookupSurface)。
     final int exitAt = src.indexOf('_handlePointerLeftLookupSurface(),');
     expect(exitAt, greaterThan(-1), reason: 'barrier 探针改名了？同步更新本守卫');
     final String before = src.substring(exitAt - 700, exitAt);
     final int barrierClaim = before.lastIndexOf('lookupOverlayHitClaim(');
     final int barrierRegion = before.lastIndexOf('MouseRegion(');
-    expect(barrierClaim, greaterThan(-1),
-        reason:
-            'barrier 外面的 MouseRegion(opaque:false) 也必须由 lookupOverlayHitClaim 包住');
+    expect(
+      barrierClaim,
+      greaterThan(-1),
+      reason:
+          'barrier 外面的 MouseRegion(opaque:false) 也必须由 lookupOverlayHitClaim 包住',
+    );
     expect(barrierClaim, lessThan(barrierRegion), reason: '认领层要在 barrier 探针外面');
   });
 
@@ -166,8 +183,9 @@ void main() {
     final RegExp probe = RegExp(r'MouseRegion\(\s*opaque:\s*false');
     final List<String> hosts = <String>[];
     final List<String> offenders = <String>[];
-    for (final FileSystemEntity entity
-        in Directory('lib').listSync(recursive: true)) {
+    for (final FileSystemEntity entity in Directory(
+      'lib',
+    ).listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String code = maskComments(entity.readAsStringSync());
       if (!code.contains('LookupDismissBarrier(')) continue;
@@ -177,7 +195,8 @@ void main() {
         if (code.substring(from, m.start).contains('lookupOverlayHitClaim(')) {
           continue;
         }
-        final int line = code
+        final int line =
+            code
                 .substring(0, m.start)
                 .codeUnits
                 .where((int c) => c == 10)
@@ -187,10 +206,14 @@ void main() {
       }
     }
     expect(hosts, isNotEmpty, reason: '一个查词浮层宿主都没扫到？本守卫的判据失效了');
-    expect(offenders, isEmpty,
-        reason: 'MouseRegion(opaque: false) 的 hitTest 恒为 false，会让它上面整棵子树'
-            '认领的命中全部作废、事件穿到下面的页面（BUG-2633）。查词浮层里的探针要么'
-            '用 lookupOverlayHitClaim 在外面认领命中，要么别用 opaque: false。'
-            '命中泄漏点：$offenders');
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'MouseRegion(opaque: false) 的 hitTest 恒为 false，会让它上面整棵子树'
+          '认领的命中全部作废、事件穿到下面的页面（BUG-2633）。查词浮层里的探针要么'
+          '用 lookupOverlayHitClaim 在外面认领命中，要么别用 opaque: false。'
+          '命中泄漏点：$offenders',
+    );
   });
 }

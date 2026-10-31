@@ -50,11 +50,11 @@ void main() {
   });
 
   group('resolveInterconnectDeviceName', () {
-    test(
-        'mobile "localhost" hostname resolves to the generic label, never '
+    test('mobile "localhost" hostname resolves to the generic label, never '
         'advertising localhost (TODO-1356)', () async {
-      final String name =
-          await resolveInterconnectDeviceName(_FakeDeviceInfo('localhost'));
+      final String name = await resolveInterconnectDeviceName(
+        _FakeDeviceInfo('localhost'),
+      );
       expect(name, kGenericInterconnectDeviceName);
       expect(name.toLowerCase(), isNot(contains('localhost')));
     });
@@ -91,12 +91,12 @@ void main() {
       );
     });
 
-    test(
-        'a throwing device-info source degrades to the generic label, not a '
+    test('a throwing device-info source degrades to the generic label, not a '
         'crash', () async {
       expect(
         await resolveInterconnectDeviceName(
-            _FakeDeviceInfo(null, throws: true)),
+          _FakeDeviceInfo(null, throws: true),
+        ),
         kGenericInterconnectDeviceName,
       );
     });
@@ -111,21 +111,23 @@ void main() {
     late List<FushiPairedPeerRegistration> registrations;
 
     Future<void> startServer() async {
-      tempDir =
-          Directory.systemTemp.createTempSync('fushi_peer_name_guard_test');
+      tempDir = Directory.systemTemp.createTempSync(
+        'fushi_peer_name_guard_test',
+      );
       registrations = <FushiPairedPeerRegistration>[];
-      server = FushiSyncServer(
-        syncDataDir: tempDir.path,
-        port: 0,
-        token: 'shared-token',
-        allowLan: true,
-      )
-        ..onPairRequest = ((FushiPairRequest _) async => true)
-        ..lanRequiresPinProvider = (() async => false)
-        ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
-          registrations.add(reg);
-        })
-        ..pairedPeerTokensProvider = (() async => const <String>{});
+      server =
+          FushiSyncServer(
+              syncDataDir: tempDir.path,
+              port: 0,
+              token: 'shared-token',
+              allowLan: true,
+            )
+            ..onPairRequest = ((FushiPairRequest _) async => true)
+            ..lanRequiresPinProvider = (() async => false)
+            ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
+              registrations.add(reg);
+            })
+            ..pairedPeerTokensProvider = (() async => const <String>{});
       await server.start();
     }
 
@@ -134,8 +136,11 @@ void main() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
 
-    Future<String> startSession(String clientNonce,
-        {required String name, String? clientDeviceId}) async {
+    Future<String> startSession(
+      String clientNonce, {
+      required String name,
+      String? clientDeviceId,
+    }) async {
       final http.Response resp = await http.post(
         Uri.parse('http://127.0.0.1:${server.port}/api/pair/v2'),
         headers: <String, String>{'Content-Type': 'application/json'},
@@ -161,8 +166,11 @@ void main() {
 
     test('name "localhost" is dropped to null (not stored verbatim)', () async {
       await startServer();
-      final String sid = await startSession('cn-lh',
-          name: 'localhost', clientDeviceId: 'device-lh');
+      final String sid = await startSession(
+        'cn-lh',
+        name: 'localhost',
+        clientDeviceId: 'device-lh',
+      );
       await confirm(sid);
 
       expect(registrations, hasLength(1));
@@ -171,8 +179,11 @@ void main() {
 
     test('a real name is stored verbatim', () async {
       await startServer();
-      final String sid = await startSession('cn-real',
-          name: 'Galaxy S21', clientDeviceId: 'device-real');
+      final String sid = await startSession(
+        'cn-real',
+        name: 'Galaxy S21',
+        clientDeviceId: 'device-real',
+      );
       await confirm(sid);
 
       expect(registrations, hasLength(1));

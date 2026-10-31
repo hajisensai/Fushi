@@ -24,16 +24,20 @@ void main() {
 
   testWidgets('M3E type scale 真正穿过 geometry 渲染出来', (tester) async {
     late TextTheme tt;
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        textTheme: FushiTypeScale.buildTextTheme(latin),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          textTheme: FushiTypeScale.buildTextTheme(latin),
+        ),
+        home: Builder(
+          builder: (context) {
+            tt = Theme.of(context).textTheme;
+            return const SizedBox();
+          },
+        ),
       ),
-      home: Builder(builder: (context) {
-        tt = Theme.of(context).textTheme;
-        return const SizedBox();
-      }),
-    ));
+    );
 
     // M3 baseline 字号（material-components-android typography tokens）。
     expect(tt.displayLarge?.fontSize, 57);
@@ -131,13 +135,17 @@ void main() {
 
   testWidgets('context.fushiType：基础角色 = 主题槽位，Emphasized 只加重字重', (tester) async {
     late FushiTypography type;
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(textTheme: FushiTypeScale.buildTextTheme(latin)),
-      home: Builder(builder: (context) {
-        type = context.fushiType;
-        return const SizedBox();
-      }),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(textTheme: FushiTypeScale.buildTextTheme(latin)),
+        home: Builder(
+          builder: (context) {
+            type = context.fushiType;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
     expect(type.apple, isFalse);
     expect(type.titleLarge.fontSize, 22);
     expect(type.titleLargeEmphasized.fontSize, 22);
@@ -149,20 +157,25 @@ void main() {
 
   testWidgets('Apple 设计系统：同一 API 映射到 HIG 字阶', (tester) async {
     late FushiTypography type;
-    final TextTheme apple =
-        appleTextTheme(FushiTypeScale.buildTextTheme(latin));
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(
-        textTheme: apple,
-        extensions: <ThemeExtension<dynamic>>[
-          FushiAppleColors.of(Brightness.light, const Color(0xFF007AFF)),
-        ],
+    final TextTheme apple = appleTextTheme(
+      FushiTypeScale.buildTextTheme(latin),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          textTheme: apple,
+          extensions: <ThemeExtension<dynamic>>[
+            FushiAppleColors.of(Brightness.light, const Color(0xFF007AFF)),
+          ],
+        ),
+        home: Builder(
+          builder: (context) {
+            type = context.fushiType;
+            return const SizedBox();
+          },
+        ),
       ),
-      home: Builder(builder: (context) {
-        type = context.fushiType;
-        return const SizedBox();
-      }),
-    ));
+    );
     expect(type.apple, isTrue);
     expect(type.bodyLarge.fontSize, 17, reason: 'HIG Body');
     expect(type.titleLarge.fontSize, 17, reason: 'HIG Headline');

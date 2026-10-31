@@ -109,21 +109,22 @@ Future<ImmersionMiningResult> _mine(
   _CountingRepo repo,
   Directory tmp,
   Future<void>? fieldsMediaReady,
-) => ImmersionMiningEngine(
-  gifExtractor: spy.takeGif,
-  audioExtractor: spy.takeAudio,
-  frameExtractor: spy.takeFrame,
-  audioMaterializer: _noMaterialize,
-).mine(
-  _request(fieldsMediaReady),
-  compression: MiningMediaCompression.resolve(
-    imageTier: 1,
-    audioTier: 0,
-    format: MiningAnimatedFormat.gif,
-  ),
-  tempDir: tmp.path,
-  repo: repo,
-);
+) =>
+    ImmersionMiningEngine(
+      gifExtractor: spy.takeGif,
+      audioExtractor: spy.takeAudio,
+      frameExtractor: spy.takeFrame,
+      audioMaterializer: _noMaterialize,
+    ).mine(
+      _request(fieldsMediaReady),
+      compression: MiningMediaCompression.resolve(
+        imageTier: 1,
+        audioTier: 0,
+        format: MiningAnimatedFormat.gif,
+      ),
+      tempDir: tmp.path,
+      repo: repo,
+    );
 
 void main() {
   late Directory tmp;

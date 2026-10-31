@@ -15,8 +15,11 @@ void main() {
     final String body = readSyncSettingsSchemaSource();
 
     final int signInIdx = body.indexOf('Future<void> _signIn() async');
-    expect(signInIdx, greaterThanOrEqualTo(0),
-        reason: '_signIn was renamed/removed — update this guard');
+    expect(
+      signInIdx,
+      greaterThanOrEqualTo(0),
+      reason: '_signIn was renamed/removed — update this guard',
+    );
 
     // Scope the search to the _signIn method body (up to the next method).
     final int signOutIdx = body.indexOf('Future<void> _signOut() async');
@@ -27,9 +30,13 @@ void main() {
     final int logCount = "ErrorLogService.instance.log('SyncSettings.signIn'"
         .allMatches(signInBody)
         .length;
-    expect(logCount, greaterThanOrEqualTo(2),
-        reason: 'both the SyncAuthError and the generic catch arms of _signIn '
-            'must write the failure to ErrorLogService (TODO-045); found '
-            '$logCount call(s)');
+    expect(
+      logCount,
+      greaterThanOrEqualTo(2),
+      reason:
+          'both the SyncAuthError and the generic catch arms of _signIn '
+          'must write the failure to ErrorLogService (TODO-045); found '
+          '$logCount call(s)',
+    );
   });
 }

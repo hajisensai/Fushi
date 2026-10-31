@@ -44,7 +44,20 @@ const int _kFrames = 50; // 10 fps × 5 s
 
 /// 灰阶色块的有限范围亮度码值（从左到右等宽排列）。
 const List<int> _kLevels = <int>[
-  16, 24, 32, 40, 52, 64, 80, 96, 112, 128, 150, 175, 200, 235,
+  16,
+  24,
+  32,
+  40,
+  52,
+  64,
+  80,
+  96,
+  112,
+  128,
+  150,
+  175,
+  200,
+  235,
 ];
 
 Uint8List _buildGrayRampY4m() {
@@ -93,11 +106,14 @@ double _expected(int level, {required bool srgbTarget}) {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('macOS mpv output is sRGB-encoded for the sRGB Flutter surface',
-      (WidgetTester tester) async {
+  testWidgets('macOS mpv output is sRGB-encoded for the sRGB Flutter surface', (
+    WidgetTester tester,
+  ) async {
     final Uint8List y4m = _buildGrayRampY4m();
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     server.listen((HttpRequest req) async {
       req.response.headers.contentType = ContentType('video', 'x-yuv4mpeg');
       req.response.contentLength = y4m.length;
@@ -121,15 +137,20 @@ void main() {
         id: 'video/stream/color-target-itest',
         title: 'gray ramp',
       );
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoFushiPage.neutralizedRemote(
-          info: info,
-          repo: repo,
-          client: client,
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage.neutralizedRemote(
+              info: info,
+              repo: repo,
+              client: client,
+            ),
+          ),
         ),
-      )));
+      );
 
       VideoFushiTestHooks? readHooks() {
         if (find.byType(VideoFushiPage).evaluate().isEmpty) return null;
@@ -153,8 +174,10 @@ void main() {
       final Video video = tester.widget<Video>(find.byType(Video).first);
       final NativePlayer mpv = video.controller.player.platform as NativePlayer;
       const bool hdr = _kProbeMode == 'hdr';
-      debugPrint('[color-itest] platform=${Platform.operatingSystem} '
-          'mode=$_kProbeMode');
+      debugPrint(
+        '[color-itest] platform=${Platform.operatingSystem} '
+        'mode=$_kProbeMode',
+      );
       if (hdr) {
         // 同一段灰阶按 PQ 信号解释；关掉动态峰值检测，让 A/B 两次色调映射可比。
         await mpv.setProperty('hdr-compute-peak', 'no');
@@ -185,7 +208,9 @@ void main() {
         await hooks.debugSeekMs(hooks.debugPositionMs ?? 1200);
         await tester.pump(const Duration(milliseconds: 1500));
         await tester.pump(const Duration(milliseconds: 500));
-        final RenderBox texture = tester.renderObject(find.byType(Texture).first);
+        final RenderBox texture = tester.renderObject(
+          find.byType(Texture).first,
+        );
         RenderObject? node = texture;
         while (node != null && node is! RenderRepaintBoundary) {
           node = node.parent;
@@ -195,9 +220,8 @@ void main() {
           texture.getTransformTo(boundary),
           Offset.zero & texture.size,
         );
-        final ui.Image image = await tester.runAsync(
-              () => boundary.toImage(pixelRatio: 1),
-            ) ??
+        final ui.Image image =
+            await tester.runAsync(() => boundary.toImage(pixelRatio: 1)) ??
             (throw StateError('toImage returned null'));
         final ByteData bytes = (await tester.runAsync<ByteData?>(
           () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
@@ -222,8 +246,10 @@ void main() {
           }
           means.add(n == 0 ? -1 : sum / n);
         }
-        debugPrint('[color-itest] $tag rect=$rect image='
-            '${image.width}x${image.height} bands=${means.map((double m) => m.toStringAsFixed(1)).join(',')}');
+        debugPrint(
+          '[color-itest] $tag rect=$rect image='
+          '${image.width}x${image.height} bands=${means.map((double m) => m.toStringAsFixed(1)).join(',')}',
+        );
         return means;
       }
 
@@ -240,8 +266,10 @@ void main() {
         double worst = 0;
         for (int i = 0; i < _kLevels.length; i++) {
           final double e = _expected(_kLevels[i], srgbTarget: srgbTarget);
-          debugPrint('[color-itest] srgb=$srgbTarget Y=${_kLevels[i]} '
-              'expect=${e.toStringAsFixed(1)} got=${got[i].toStringAsFixed(1)}');
+          debugPrint(
+            '[color-itest] srgb=$srgbTarget Y=${_kLevels[i]} '
+            'expect=${e.toStringAsFixed(1)} got=${got[i].toStringAsFixed(1)}',
+          );
           worst = math.max(worst, (got[i] - e).abs());
         }
         return worst;
@@ -262,11 +290,13 @@ void main() {
           for (int i = 0; i < _kLevels.length; i++) {
             final double linB = math.pow(auto[i] / 255, trc.value).toDouble();
             final double reenc = 255 * _srgbEncode(linB);
-            debugPrint('[color-itest] hdr ${trc.key} Y=${_kLevels[i]} '
-                'A=${prod[i]} B=${auto[i]} '
-                'linA=${_srgbDecode(prod[i] / 255).toStringAsFixed(4)} '
-                'linB=${linB.toStringAsFixed(4)} '
-                'B->srgb=${reenc.toStringAsFixed(1)}');
+            debugPrint(
+              '[color-itest] hdr ${trc.key} Y=${_kLevels[i]} '
+              'A=${prod[i]} B=${auto[i]} '
+              'linA=${_srgbDecode(prod[i] / 255).toStringAsFixed(4)} '
+              'linB=${linB.toStringAsFixed(4)} '
+              'B->srgb=${reenc.toStringAsFixed(1)}',
+            );
             w = math.max(w, (reenc - prod[i]).abs());
           }
           worstBy[trc.key] = w;
@@ -277,22 +307,34 @@ void main() {
         for (int i = 1; i < prod.length; i++) {
           if (prod[i] < prod[i - 1]) monotonic = false;
         }
-        debugPrint('[color-itest] RESULT hdr maxErr(B->srgb vs A)=$worst '
-            'monotonic=$monotonic span=${prod.first}..${prod.last}');
-        expect(worst, lessThan(4),
-            reason: '色调映射后的线性光应与输出编码无关，只差 sRGB 编码');
+        debugPrint(
+          '[color-itest] RESULT hdr maxErr(B->srgb vs A)=$worst '
+          'monotonic=$monotonic span=${prod.first}..${prod.last}',
+        );
+        expect(worst, lessThan(4), reason: '色调映射后的线性光应与输出编码无关，只差 sRGB 编码');
         expect(monotonic, isTrue, reason: 'HDR 灰阶色调映射后应保持单调');
-        expect(prod.last - prod.first, greaterThan(150),
-            reason: 'HDR 灰阶不应被压成一片');
+        expect(
+          prod.last - prod.first,
+          greaterThan(150),
+          reason: 'HDR 灰阶不应被压成一片',
+        );
       } else {
         final double errProd = maxErr(prod, srgbTarget: true);
         final double errAuto = maxErr(auto, srgbTarget: false);
-        debugPrint('[color-itest] RESULT maxErr prod(srgb)=$errProd '
-            'auto(raw)=$errAuto');
-        expect(errAuto, lessThan(4),
-            reason: 'B 组应是 BT.1886 原值直通（修复前行为），否则探针本身不可信');
-        expect(errProd, lessThan(4),
-            reason: '生产配置下 mpv 应把 BT.1886 换算成 sRGB 编码');
+        debugPrint(
+          '[color-itest] RESULT maxErr prod(srgb)=$errProd '
+          'auto(raw)=$errAuto',
+        );
+        expect(
+          errAuto,
+          lessThan(4),
+          reason: 'B 组应是 BT.1886 原值直通（修复前行为），否则探针本身不可信',
+        );
+        expect(
+          errProd,
+          lessThan(4),
+          reason: '生产配置下 mpv 应把 BT.1886 换算成 sRGB 编码',
+        );
       }
 
       await navigator.maybePop();

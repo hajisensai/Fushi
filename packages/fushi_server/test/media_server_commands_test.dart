@@ -27,14 +27,25 @@ void main() {
   late bool lanReachable;
   late int pmsStatus;
 
-  http.Response jsonResponse(Object body, [int status = 200]) =>
-      http.Response(jsonEncode(body), status, headers: <String, String>{'content-type': 'application/json'});
+  http.Response jsonResponse(Object body, [int status = 200]) => http.Response(
+    jsonEncode(body),
+    status,
+    headers: <String, String>{'content-type': 'application/json'},
+  );
 
   Future<http.Response> handler(http.Request req) async {
     final Uri u = req.url;
-    seen.add('${req.method} ${u.host}${u.path} token=${req.headers['X-Plex-Token'] ?? '-'}');
-    if (u.host == 'plex.tv' && u.path == '/api/v2/pins' && req.method == 'POST') {
-      return jsonResponse(<String, Object?>{'id': 7, 'code': 'ABCD', 'expiresAt': '2099-01-01T00:00:00Z'});
+    seen.add(
+      '${req.method} ${u.host}${u.path} token=${req.headers['X-Plex-Token'] ?? '-'}',
+    );
+    if (u.host == 'plex.tv' &&
+        u.path == '/api/v2/pins' &&
+        req.method == 'POST') {
+      return jsonResponse(<String, Object?>{
+        'id': 7,
+        'code': 'ABCD',
+        'expiresAt': '2099-01-01T00:00:00Z',
+      });
     }
     if (u.host == 'plex.tv' && u.path == '/api/v2/pins/7') {
       pinChecks++;
@@ -49,9 +60,14 @@ void main() {
       return jsonResponse(<String, Object?>{'id': 1, 'username': 'neko'});
     }
     if (u.host == 'clients.plex.tv' && u.path == '/api/v2/resources') {
-      if (req.headers['X-Plex-Token'] != 'acct-token') return http.Response('', 401);
+      if (req.headers['X-Plex-Token'] != 'acct-token')
+        return http.Response('', 401);
       return jsonResponse(<Object?>[
-        <String, Object?>{'name': 'Phone', 'provides': 'player', 'clientIdentifier': 'p1'},
+        <String, Object?>{
+          'name': 'Phone',
+          'provides': 'player',
+          'clientIdentifier': 'p1',
+        },
         <String, Object?>{
           'name': 'Home',
           'provides': 'server',
@@ -59,14 +75,18 @@ void main() {
           'accessToken': 'srv-token',
           'owned': true,
           'connections': <Object?>[
-            <String, Object?>{'uri': 'https://relay.plex.direct:8443', 'relay': true},
+            <String, Object?>{
+              'uri': 'https://relay.plex.direct:8443',
+              'relay': true,
+            },
             <String, Object?>{'uri': 'http://10.0.0.9:32400', 'local': true},
           ],
         },
       ]);
     }
     // PMS
-    if (u.host == '10.0.0.9' && !lanReachable) throw http.ClientException('connection refused');
+    if (u.host == '10.0.0.9' && !lanReachable)
+      throw http.ClientException('connection refused');
     if (pmsStatus != 200) return http.Response('', pmsStatus);
     if (u.path == '/identity') {
       return jsonResponse(<String, Object?>{
@@ -88,7 +108,12 @@ void main() {
         'MediaContainer': <String, Object?>{
           'totalSize': 1,
           'Metadata': <Object?>[
-            <String, Object?>{'ratingKey': '100', 'type': 'show', 'title': 'ぼっち・ざ・ろっく！', 'year': 2022},
+            <String, Object?>{
+              'ratingKey': '100',
+              'type': 'show',
+              'title': 'ぼっち・ざ・ろっく！',
+              'year': 2022,
+            },
           ],
         },
       });
@@ -97,7 +122,12 @@ void main() {
       return jsonResponse(<String, Object?>{
         'MediaContainer': <String, Object?>{
           'Metadata': <Object?>[
-            <String, Object?>{'ratingKey': '101', 'type': 'season', 'title': 'Season 1', 'index': 1},
+            <String, Object?>{
+              'ratingKey': '101',
+              'type': 'season',
+              'title': 'Season 1',
+              'index': 1,
+            },
           ],
         },
       });
@@ -123,7 +153,10 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  Future<int> plex(List<String> args, {Map<String, String> env = const <String, String>{}}) {
+  Future<int> plex(
+    List<String> args, {
+    Map<String, String> env = const <String, String>{},
+  }) {
     final MediaServerModule module = MediaServerModule(
       out: out,
       err: err,
@@ -153,7 +186,8 @@ void main() {
     expect(out.toString(), contains('已登录 Plex: neko'));
     expect(pinChecks, 2);
     final File f = PlexCredentialStore.under(paths.support).file;
-    final Map<String, Object?> saved = jsonDecode(await f.readAsString()) as Map<String, Object?>;
+    final Map<String, Object?> saved =
+        jsonDecode(await f.readAsString()) as Map<String, Object?>;
     expect(saved['accountToken'], 'acct-token');
     expect(saved['username'], 'neko');
     expect(saved['clientIdentifier'], startsWith('fushi-server-'));
@@ -176,43 +210,77 @@ void main() {
 
   test('servers：只列 server 资源，连接按 局域网 → relay 排序', () async {
     await login();
-    expect(await plex(<String>['plex', 'servers', '--json']), 0, reason: err.toString());
+    expect(
+      await plex(<String>['plex', 'servers', '--json']),
+      0,
+      reason: err.toString(),
+    );
     final List<Object?> servers = jsonDecode(out.toString()) as List<Object?>;
     expect(servers, hasLength(1));
     final Map<String, Object?> s = servers.single! as Map<String, Object?>;
     expect(s['id'], 'mid1');
-    expect((s['connections']! as List<Object?>).map((Object? c) => (c! as Map<String, Object?>)['uri']), <String>[
-      'http://10.0.0.9:32400',
-      'https://relay.plex.direct:8443',
-    ]);
+    expect(
+      (s['connections']! as List<Object?>).map(
+        (Object? c) => (c! as Map<String, Object?>)['uri'],
+      ),
+      <String>['http://10.0.0.9:32400', 'https://relay.plex.direct:8443'],
+    );
   });
 
   test('ls：媒体库 → 库内条目 → 子级，用服务器自己的 accessToken', () async {
     await login();
-    expect(await plex(<String>['plex', 'ls', '--json']), 0, reason: err.toString());
-    final Map<String, Object?> root = jsonDecode(out.toString()) as Map<String, Object?>;
+    expect(
+      await plex(<String>['plex', 'ls', '--json']),
+      0,
+      reason: err.toString(),
+    );
+    final Map<String, Object?> root =
+        jsonDecode(out.toString()) as Map<String, Object?>;
     expect(root['server'], 'http://10.0.0.9:32400');
     expect(root['sections'], <Object?>[
       <String, Object?>{'key': '1', 'title': 'Anime', 'type': 'show'},
     ]);
-    expect(seen.where((String s) => s.contains('/library/')), everyElement(endsWith('token=srv-token')));
+    expect(
+      seen.where((String s) => s.contains('/library/')),
+      everyElement(endsWith('token=srv-token')),
+    );
 
     out.clear();
-    expect(await plex(<String>['plex', 'ls', '--section', '1', '--json']), 0, reason: err.toString());
-    final Map<String, Object?> items = jsonDecode(out.toString()) as Map<String, Object?>;
+    expect(
+      await plex(<String>['plex', 'ls', '--section', '1', '--json']),
+      0,
+      reason: err.toString(),
+    );
+    final Map<String, Object?> items =
+        jsonDecode(out.toString()) as Map<String, Object?>;
     expect(items['totalSize'], 1);
-    expect(((items['items']! as List<Object?>).single! as Map<String, Object?>)['ratingKey'], '100');
+    expect(
+      ((items['items']! as List<Object?>).single!
+          as Map<String, Object?>)['ratingKey'],
+      '100',
+    );
 
     out.clear();
-    expect(await plex(<String>['plex', 'ls', '100', '--server', 'home']), 0, reason: err.toString());
+    expect(
+      await plex(<String>['plex', 'ls', '100', '--server', 'home']),
+      0,
+      reason: err.toString(),
+    );
     expect(out.toString(), contains('101  [season] #1 Season 1'));
   });
 
   test('局域网连接不通时退到 relay', () async {
     await login();
     lanReachable = false;
-    expect(await plex(<String>['plex', 'ls', '--json']), 0, reason: err.toString());
-    expect((jsonDecode(out.toString()) as Map<String, Object?>)['server'], 'https://relay.plex.direct:8443');
+    expect(
+      await plex(<String>['plex', 'ls', '--json']),
+      0,
+      reason: err.toString(),
+    );
+    expect(
+      (jsonDecode(out.toString()) as Map<String, Object?>)['server'],
+      'https://relay.plex.direct:8443',
+    );
   });
 
   test('--url 直连：token 取环境变量', () async {
@@ -230,16 +298,25 @@ void main() {
   test('未登录 / 没 token = 69；PMS 401 = 69；连不上 = 69', () async {
     expect(await plex(<String>['plex', 'servers']), 69);
     expect(await plex(<String>['plex', 'ls']), 69);
-    expect(await plex(<String>['plex', 'ls', '--url', 'http://10.0.0.9:32400']), 69);
+    expect(
+      await plex(<String>['plex', 'ls', '--url', 'http://10.0.0.9:32400']),
+      69,
+    );
     pmsStatus = 401;
     expect(
-      await plex(<String>['plex', 'ls', '--url', 'http://10.0.0.9:32400'], env: <String, String>{kPlexTokenEnv: 't'}),
+      await plex(
+        <String>['plex', 'ls', '--url', 'http://10.0.0.9:32400'],
+        env: <String, String>{kPlexTokenEnv: 't'},
+      ),
       69,
     );
     pmsStatus = 200;
     lanReachable = false;
     expect(
-      await plex(<String>['plex', 'ls', '--url', 'http://10.0.0.9:32400'], env: <String, String>{kPlexTokenEnv: 't'}),
+      await plex(
+        <String>['plex', 'ls', '--url', 'http://10.0.0.9:32400'],
+        env: <String, String>{kPlexTokenEnv: 't'},
+      ),
       69,
     );
   });

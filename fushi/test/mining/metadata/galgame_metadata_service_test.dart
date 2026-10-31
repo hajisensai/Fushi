@@ -51,8 +51,10 @@ class _FakeAdapter implements GalgameMetadataAdapter {
   }
 
   @override
-  Future<List<SourceCandidate>> searchByName(String name,
-      {int limit = 10}) async {
+  Future<List<SourceCandidate>> searchByName(
+    String name, {
+    int limit = 10,
+  }) async {
     searchCalls++;
     return candidates.take(limit).toList(growable: false);
   }
@@ -85,23 +87,27 @@ void main() {
     test('availableSources 按枚举声明顺序列出已注册源', () {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.vndb:
-            _FakeAdapter(source: GalgameMetadataSource.vndb),
-        GalgameMetadataSource.bgm:
-            _FakeAdapter(source: GalgameMetadataSource.bgm),
-      });
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+            ),
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+            ),
+          });
       expect(service.availableSources, <GalgameMetadataSource>[
         GalgameMetadataSource.bgm,
-        GalgameMetadataSource.vndb
+        GalgameMetadataSource.vndb,
       ]);
     });
 
     test('未注册的源抛异常，不静默返回空', () {
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm:
-            _FakeAdapter(source: GalgameMetadataSource.bgm),
-      });
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{
+          GalgameMetadataSource.bgm: _FakeAdapter(
+            source: GalgameMetadataSource.bgm,
+          ),
+        },
+      );
       expect(
         () => service.adapterFor(GalgameMetadataSource.vndb),
         throwsA(isA<GalgameMetadataException>()),
@@ -110,15 +116,19 @@ void main() {
 
     test('externalUrl 委托给 adapter；close 传播到所有 adapter', () {
       final _FakeAdapter bgm = _FakeAdapter(source: GalgameMetadataSource.bgm);
-      final _FakeAdapter vndb =
-          _FakeAdapter(source: GalgameMetadataSource.vndb);
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: bgm,
-        GalgameMetadataSource.vndb: vndb,
-      });
-      expect(service.externalUrl(GalgameMetadataSource.bgm, '8'),
-          'https://fake.invalid/bgm/8');
+      final _FakeAdapter vndb = _FakeAdapter(
+        source: GalgameMetadataSource.vndb,
+      );
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{
+          GalgameMetadataSource.bgm: bgm,
+          GalgameMetadataSource.vndb: vndb,
+        },
+      );
+      expect(
+        service.externalUrl(GalgameMetadataSource.bgm, '8'),
+        'https://fake.invalid/bgm/8',
+      );
       service.close();
       expect(bgm.closed, isTrue);
       expect(vndb.closed, isTrue);
@@ -138,13 +148,14 @@ void main() {
           externalId: '8',
         ),
       );
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: bgm,
-      });
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{GalgameMetadataSource.bgm: bgm},
+      );
 
-      final List<SourceCandidate> candidates =
-          await service.searchCandidates(GalgameMetadataSource.bgm, ' 8 ');
+      final List<SourceCandidate> candidates = await service.searchCandidates(
+        GalgameMetadataSource.bgm,
+        ' 8 ',
+      );
       expect(bgm.fetchCalls, 1);
       expect(bgm.searchCalls, 0);
       expect(candidates, hasLength(1));
@@ -155,10 +166,9 @@ void main() {
 
     test('ID 直取查不到 → 空表', () async {
       final _FakeAdapter bgm = _FakeAdapter(source: GalgameMetadataSource.bgm);
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: bgm,
-      });
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{GalgameMetadataSource.bgm: bgm},
+      );
       expect(
         await service.searchCandidates(GalgameMetadataSource.bgm, '8'),
         isEmpty,
@@ -171,18 +181,26 @@ void main() {
         source: GalgameMetadataSource.bgm,
         candidates: const <SourceCandidate>[
           SourceCandidate(
-              source: GalgameMetadataSource.bgm, externalId: '8', name: 'A'),
+            source: GalgameMetadataSource.bgm,
+            externalId: '8',
+            name: 'A',
+          ),
           SourceCandidate(
-              source: GalgameMetadataSource.bgm, externalId: '9', name: 'B'),
+            source: GalgameMetadataSource.bgm,
+            externalId: '9',
+            name: 'B',
+          ),
         ],
       );
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: bgm,
-      });
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{GalgameMetadataSource.bgm: bgm},
+      );
       expect(
-        await service.searchCandidates(GalgameMetadataSource.bgm, 'fate',
-            limit: 1),
+        await service.searchCandidates(
+          GalgameMetadataSource.bgm,
+          'fate',
+          limit: 1,
+        ),
         hasLength(1),
       );
       expect(bgm.searchCalls, 1);
@@ -191,10 +209,9 @@ void main() {
 
     test('空查询不打网络', () async {
       final _FakeAdapter bgm = _FakeAdapter(source: GalgameMetadataSource.bgm);
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: bgm,
-      });
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{GalgameMetadataSource.bgm: bgm},
+      );
       expect(
         await service.searchCandidates(GalgameMetadataSource.bgm, '  '),
         isEmpty,
@@ -208,11 +225,15 @@ void main() {
     test('两源都成功 → 合并结果 + 无失败', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm:
-            _FakeAdapter(source: GalgameMetadataSource.bgm, draft: _bgmDraft),
-        GalgameMetadataSource.vndb:
-            _FakeAdapter(source: GalgameMetadataSource.vndb, draft: _vndbDraft),
-      });
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+              draft: _bgmDraft,
+            ),
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              draft: _vndbDraft,
+            ),
+          });
 
       final GalgameMixedResolution result = await service.resolveMixed(
         externalIds: <GalgameMetadataSource, String>{
@@ -232,16 +253,18 @@ void main() {
     test('部分源失败 → 降级为该源为空，结果照常返回并带失败原因', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: _FakeAdapter(
-          source: GalgameMetadataSource.bgm,
-          error: const GalgameMetadataException(
-            'Bangumi request failed: down',
-            source: GalgameMetadataSource.bgm,
-          ),
-        ),
-        GalgameMetadataSource.vndb:
-            _FakeAdapter(source: GalgameMetadataSource.vndb, draft: _vndbDraft),
-      });
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+              error: const GalgameMetadataException(
+                'Bangumi request failed: down',
+                source: GalgameMetadataSource.bgm,
+              ),
+            ),
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              draft: _vndbDraft,
+            ),
+          });
 
       final GalgameMixedResolution result = await service.resolveMixed(
         externalIds: <GalgameMetadataSource, String>{
@@ -260,15 +283,15 @@ void main() {
     test('全部源失败 → 抛异常，消息里带逐源原因', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: _FakeAdapter(
-          source: GalgameMetadataSource.bgm,
-          error: const GalgameMetadataException('bgm down'),
-        ),
-        GalgameMetadataSource.vndb: _FakeAdapter(
-          source: GalgameMetadataSource.vndb,
-          error: const GalgameMetadataException('vndb down'),
-        ),
-      });
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+              error: const GalgameMetadataException('bgm down'),
+            ),
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              error: const GalgameMetadataException('vndb down'),
+            ),
+          });
 
       await expectLater(
         service.resolveMixed(
@@ -290,13 +313,15 @@ void main() {
     test('非 GalgameMetadataException 的意外异常也被收进 failures，不逃逸', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm: _FakeAdapter(
-          source: GalgameMetadataSource.bgm,
-          error: StateError('unexpected'),
-        ),
-        GalgameMetadataSource.vndb:
-            _FakeAdapter(source: GalgameMetadataSource.vndb, draft: _vndbDraft),
-      });
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+              error: StateError('unexpected'),
+            ),
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              draft: _vndbDraft,
+            ),
+          });
 
       final GalgameMixedResolution result = await service.resolveMixed(
         externalIds: <GalgameMetadataSource, String>{
@@ -314,13 +339,14 @@ void main() {
     test('源侧「没这条」不算失败，进 notFound', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm:
-            _FakeAdapter(source: GalgameMetadataSource.bgm),
-        GalgameMetadataSource.vndb: _FakeAdapter(
-          source: GalgameMetadataSource.vndb,
-          error: const GalgameMetadataException('vndb down'),
-        ),
-      });
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+            ),
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              error: const GalgameMetadataException('vndb down'),
+            ),
+          });
 
       final GalgameMixedResolution result = await service.resolveMixed(
         externalIds: <GalgameMetadataSource, String>{
@@ -329,19 +355,22 @@ void main() {
         },
       );
       // 一个 notFound + 一个失败：不是「全部失败」，所以不抛。
-      expect(
-          result.notFound, <GalgameMetadataSource>{GalgameMetadataSource.bgm});
+      expect(result.notFound, <GalgameMetadataSource>{
+        GalgameMetadataSource.bgm,
+      });
       expect(result.failures, hasLength(1));
       expect(result.hasAnyData, isFalse);
       expect(result.merged.isEmpty, isTrue);
     });
 
     test('空 externalIds → 只剩 custom 覆盖层，不抛', () async {
-      final GalgameMetadataService service =
-          _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm:
-            _FakeAdapter(source: GalgameMetadataSource.bgm),
-      });
+      final GalgameMetadataService service = _service(
+        <GalgameMetadataSource, _FakeAdapter>{
+          GalgameMetadataSource.bgm: _FakeAdapter(
+            source: GalgameMetadataSource.bgm,
+          ),
+        },
+      );
       final GalgameMixedResolution result = await service.resolveMixed(
         externalIds: const <GalgameMetadataSource, String>{},
         custom: const GalgameCustomData(name: '纯手填'),
@@ -354,9 +383,11 @@ void main() {
     test('custom 覆盖层在 mixed 结果上生效', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.bgm:
-            _FakeAdapter(source: GalgameMetadataSource.bgm, draft: _bgmDraft),
-      });
+            GalgameMetadataSource.bgm: _FakeAdapter(
+              source: GalgameMetadataSource.bgm,
+              draft: _bgmDraft,
+            ),
+          });
       final GalgameMixedResolution result = await service.resolveMixed(
         externalIds: <GalgameMetadataSource, String>{
           GalgameMetadataSource.bgm: '8',
@@ -372,22 +403,26 @@ void main() {
     test('透传 adapter 结果', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.vndb:
-            _FakeAdapter(source: GalgameMetadataSource.vndb, draft: _vndbDraft),
-      });
-      final GalgameMetadataDraft? draft =
-          await service.fetchDraft(GalgameMetadataSource.vndb, 'v17');
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              draft: _vndbDraft,
+            ),
+          });
+      final GalgameMetadataDraft? draft = await service.fetchDraft(
+        GalgameMetadataSource.vndb,
+        'v17',
+      );
       expect(draft?.externalId, 'v17');
     });
 
     test('adapter 异常原样上抛（不吞）', () async {
       final GalgameMetadataService service =
           _service(<GalgameMetadataSource, _FakeAdapter>{
-        GalgameMetadataSource.vndb: _FakeAdapter(
-          source: GalgameMetadataSource.vndb,
-          error: const GalgameMetadataException('vndb down'),
-        ),
-      });
+            GalgameMetadataSource.vndb: _FakeAdapter(
+              source: GalgameMetadataSource.vndb,
+              error: const GalgameMetadataException('vndb down'),
+            ),
+          });
       await expectLater(
         service.fetchDraft(GalgameMetadataSource.vndb, 'v17'),
         throwsA(isA<GalgameMetadataException>()),

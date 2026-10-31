@@ -42,9 +42,9 @@ class VideoMetadataResolveRequest {
     this.fallbackProvider,
     this.includeAdult = false,
     List<String> identityHints = const <String>[],
-  })  : assert(fallbackProvider != selectedProvider),
-        titleCandidates = List<String>.unmodifiable(titleCandidates),
-        identityHints = List<String>.unmodifiable(identityHints);
+  }) : assert(fallbackProvider != selectedProvider),
+       titleCandidates = List<String>.unmodifiable(titleCandidates),
+       identityHints = List<String>.unmodifiable(identityHints);
 
   final VideoMetadataProviderKind selectedProvider;
 
@@ -114,34 +114,34 @@ class VideoMetadataProviderRegistry {
   factory VideoMetadataProviderRegistry.production(
     VideoSourceScrapeGlobalConfig config, {
     String? locale,
-  }) =>
-      VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-        // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
-        // 任一处漏传就是「刮削不同语言」。
-        // AniDB HTTP 资料链（Shoko 的主源）：吃 **HTTP** 身份，不是 UDP 身份——
-        // 随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空（BUG-2623），此时
-        // provider 发请求前就判不可用、只剩标题目录；用户自定义 client 时两边同一
-        // 对（禁 Shoko 的 animeplugin/ommserver）。进程级 2s+ 限流闸按 endpoint
-        // 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
-        AniDbVideoMetadataProvider(
-          clientName: config.anidbHttpClientName,
-          clientVersion: config.anidbHttpClientVersion,
-          language: locale ?? config.locale,
-          xmlCacheDirectory: () async => Directory(p.join(
-              (await enginePaths.supportRootDirectory()).path, 'anidb_anime')),
-        ),
-        MalVideoMetadataProvider(language: locale ?? config.locale),
-        TmdbVideoMetadataProvider(
-          apiKey: config.tmdbApiKey,
-          language: locale ?? config.locale,
-        ),
-      ]);
+  }) => VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+    // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
+    // 任一处漏传就是「刮削不同语言」。
+    // AniDB HTTP 资料链（Shoko 的主源）：吃 **HTTP** 身份，不是 UDP 身份——
+    // 随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空（BUG-2623），此时
+    // provider 发请求前就判不可用、只剩标题目录；用户自定义 client 时两边同一
+    // 对（禁 Shoko 的 animeplugin/ommserver）。进程级 2s+ 限流闸按 endpoint
+    // 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
+    AniDbVideoMetadataProvider(
+      clientName: config.anidbHttpClientName,
+      clientVersion: config.anidbHttpClientVersion,
+      language: locale ?? config.locale,
+      xmlCacheDirectory: () async => Directory(
+        p.join((await enginePaths.supportRootDirectory()).path, 'anidb_anime'),
+      ),
+    ),
+    MalVideoMetadataProvider(language: locale ?? config.locale),
+    TmdbVideoMetadataProvider(
+      apiKey: config.tmdbApiKey,
+      language: locale ?? config.locale,
+    ),
+  ]);
 
   VideoMetadataProviderRegistry(Iterable<VideoMetadataProvider> providers)
-      : _providers = <VideoMetadataProviderKind, VideoMetadataProvider>{
-          for (final VideoMetadataProvider provider in providers)
-            provider.providerKind: provider,
-        };
+    : _providers = <VideoMetadataProviderKind, VideoMetadataProvider>{
+        for (final VideoMetadataProvider provider in providers)
+          provider.providerKind: provider,
+      };
 
   final Map<VideoMetadataProviderKind, VideoMetadataProvider> _providers;
 
@@ -211,15 +211,19 @@ class VideoMetadataResolver {
     for (final VideoMetadataProviderKind kind in request.providerChain) {
       final VideoMetadataProvider? provider = registry.provider(kind);
       if (provider == null || !provider.isAvailable) {
-        failures.add(VideoMetadataResolution(
-          status: VideoMetadataResolutionStatus.providerUnavailable,
-          providerKind: kind,
-          reason: '${kind.name} is not configured',
-        ));
+        failures.add(
+          VideoMetadataResolution(
+            status: VideoMetadataResolutionStatus.providerUnavailable,
+            providerKind: kind,
+            reason: '${kind.name} is not configured',
+          ),
+        );
         continue;
       }
-      final VideoMetadataResolution resolved =
-          await _attempt(kind, () => _searchWithProvider(provider, request));
+      final VideoMetadataResolution resolved = await _attempt(
+        kind,
+        () => _searchWithProvider(provider, request),
+      );
       switch (resolved.status) {
         case VideoMetadataResolutionStatus.matched:
           return resolved;
@@ -247,15 +251,20 @@ class VideoMetadataResolver {
     }
     return VideoMetadataResolution(
       searchedWithoutResult: exhausted,
-      status: failures.any((VideoMetadataResolution result) =>
-              result.status ==
-              VideoMetadataResolutionStatus.providerUnavailable)
+      status:
+          failures.any(
+            (VideoMetadataResolution result) =>
+                result.status ==
+                VideoMetadataResolutionStatus.providerUnavailable,
+          )
           ? VideoMetadataResolutionStatus.providerUnavailable
           : VideoMetadataResolutionStatus.notFound,
       providerKind: failures.last.providerKind,
       reason: failures
-          .map((VideoMetadataResolution result) =>
-              '${result.providerKind?.name}: ${result.reason}')
+          .map(
+            (VideoMetadataResolution result) =>
+                '${result.providerKind?.name}: ${result.reason}',
+          )
           .join('; '),
       // 链上任一家是临时故障，它恢复后重试就可能命中。
       transient: failures.any((VideoMetadataResolution r) => r.transient),
@@ -271,8 +280,10 @@ class VideoMetadataResolver {
     final Map<String, VideoMetadataWork> merged = <String, VideoMetadataWork>{};
     for (final VideoMetadataResolution result in results) {
       for (final VideoMetadataWork candidate in result.candidates) {
-        final VideoMetadataLookup? lookup =
-            _lookupForWork(candidate, candidate.provider);
+        final VideoMetadataLookup? lookup = _lookupForWork(
+          candidate,
+          candidate.provider,
+        );
         final String key = lookup == null
             ? '${candidate.provider.name}:${identityHashCode(candidate)}'
             : '${lookup.provider.name}:${lookup.externalId}';
@@ -285,8 +296,10 @@ class VideoMetadataResolver {
       candidates: merged.values.toList(growable: false),
       providerKind: results.first.providerKind,
       reason: results
-          .map((VideoMetadataResolution result) =>
-              '${result.providerKind?.name}: ${result.reason}')
+          .map(
+            (VideoMetadataResolution result) =>
+                '${result.providerKind?.name}: ${result.reason}',
+          )
           .join('; '),
     );
   }
@@ -345,19 +358,28 @@ class VideoMetadataResolver {
       if (title.isEmpty) continue;
       final Set<String> normalizedTitles = _normalizedTitles(title);
       if (normalizedTitles.isEmpty) continue;
-      final VideoMetadataResolveRequest titleRequest =
-          _requestForTitle(request, title);
-      final List<VideoMetadataWork> searched =
-          await _searchGated(provider, titleRequest, title);
+      final VideoMetadataResolveRequest titleRequest = _requestForTitle(
+        request,
+        title,
+      );
+      final List<VideoMetadataWork> searched = await _searchGated(
+        provider,
+        titleRequest,
+        title,
+      );
       final Map<String, VideoMetadataWork> exact =
           <String, VideoMetadataWork>{};
       for (final VideoMetadataWork candidate in searched) {
-        final VideoMetadataLookup? lookup =
-            _lookupForWork(candidate, provider.providerKind);
+        final VideoMetadataLookup? lookup = _lookupForWork(
+          candidate,
+          provider.providerKind,
+        );
         if (lookup == null) continue;
         final String lookupKey = '${lookup.provider.name}:${lookup.externalId}';
-        final bool summaryMatches =
-            _matchesNormalizedTitle(candidate, normalizedTitles);
+        final bool summaryMatches = _matchesNormalizedTitle(
+          candidate,
+          normalizedTitles,
+        );
         if (provider.providerKind == VideoMetadataProviderKind.anidb &&
             !summaryMatches) {
           // AniDB's local titles dump already carries the searchable title and
@@ -373,8 +395,12 @@ class VideoMetadataResolver {
             ? fetchedDetails[lookupKey]
             : await provider.fetchWork(lookup);
         if (details != null) {
-          details =
-              await _validatedDetails(provider, lookup, details, titleRequest);
+          details = await _validatedDetails(
+            provider,
+            lookup,
+            details,
+            titleRequest,
+          );
         }
         fetchedDetails[lookupKey] = details;
         if (details == null) {
@@ -386,8 +412,8 @@ class VideoMetadataResolver {
         // 会唯一精确命中 X 的 TV 第一季并被自动绑上。没有类型与年份证据的摘要
         // 不能当自动命中，只进待确认（自动路径是离线标题索引阶段，那里按 Fribb
         // 的作品类型过门）。
-        if (validated.rawPayload?[
-                AniDbVideoMetadataProvider.catalogOnlyPayloadKey] ==
+        if (validated.rawPayload?[AniDbVideoMetadataProvider
+                .catalogOnlyPayloadKey] ==
             true) {
           reviewCandidates.putIfAbsent(lookupKey, () => validated);
           continue;
@@ -588,20 +614,21 @@ class VideoMetadataResolver {
     )) {
       return work;
     }
-    final List<VideoMetadataSeason> seasons =
-        await provider.fetchSeasons(lookup);
+    final List<VideoMetadataSeason> seasons = await provider.fetchSeasons(
+      lookup,
+    );
     if (seasons.any(
       (VideoMetadataSeason season) => season.seasonNumber == seasonNumber,
     )) {
       return work;
     }
     if (provider case final VideoMetadataEpisodeGroupProvider groupProvider) {
-      final VideoMetadataLookup? grouped =
-          await groupProvider.resolveEpisodeGroup(
-        lookup,
-        seasonNumber: seasonNumber,
-        episodeCount: request.episodeCount,
-      );
+      final VideoMetadataLookup? grouped = await groupProvider
+          .resolveEpisodeGroup(
+            lookup,
+            seasonNumber: seasonNumber,
+            episodeCount: request.episodeCount,
+          );
       if (grouped != null) {
         return work.copyWith(episodeGroupId: grouped.episodeGroupId);
       }
@@ -614,8 +641,9 @@ Set<String> _normalizedTitles(String value) {
   final Set<String> result = <String>{};
   final String direct = TitleNormalizer.normalize(value);
   if (direct.isNotEmpty) result.add(direct);
-  final String parsed =
-      TitleNormalizer.normalize(FilenameParser.parse(value).title);
+  final String parsed = TitleNormalizer.normalize(
+    FilenameParser.parse(value).title,
+  );
   if (parsed.isNotEmpty) result.add(parsed);
   return result;
 }
@@ -624,11 +652,7 @@ bool _matchesNormalizedTitle(
   VideoMetadataWork work,
   Set<String> normalizedTitles,
 ) {
-  return <String?>[
-    work.title,
-    work.originalTitle,
-    ...work.aliases,
-  ].any(
+  return <String?>[work.title, work.originalTitle, ...work.aliases].any(
     (String? value) =>
         value != null &&
         _normalizedTitles(value).any(normalizedTitles.contains),
@@ -685,16 +709,19 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
     final String key =
         '${provider.name}:$normalizedId:${mediaKind.name}:${normalizedGroup ?? ''}';
     if (normalizedId.isNotEmpty && seen.add(key)) {
-      result.add(VideoMetadataLookup(
-        provider: provider,
-        externalId: normalizedId,
-        mediaKind: mediaKind,
-        episodeGroupId: provider == VideoMetadataProviderKind.tmdb &&
-                normalizedGroup != null &&
-                normalizedGroup.isNotEmpty
-            ? normalizedGroup
-            : null,
-      ));
+      result.add(
+        VideoMetadataLookup(
+          provider: provider,
+          externalId: normalizedId,
+          mediaKind: mediaKind,
+          episodeGroupId:
+              provider == VideoMetadataProviderKind.tmdb &&
+                  normalizedGroup != null &&
+                  normalizedGroup.isNotEmpty
+              ? normalizedGroup
+              : null,
+        ),
+      );
     }
   }
 
@@ -776,8 +803,9 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
     for (final RegExpMatch match in pattern.allMatches(value)) {
       final String source = match.group(1)!.toLowerCase();
       final String id = match.group(3)!;
-      final VideoMetadataMediaKind tokenKind =
-          switch (match.group(2)?.toLowerCase()) {
+      final VideoMetadataMediaKind tokenKind = switch (match
+          .group(2)
+          ?.toLowerCase()) {
         'tv' => VideoMetadataMediaKind.tv,
         'movie' => VideoMetadataMediaKind.movie,
         _ => declaredKind,
@@ -796,12 +824,7 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
           !RegExp(r'^[0-9]+$').hasMatch(id)) {
         continue;
       }
-      add(
-        provider,
-        id,
-        tokenKind,
-        episodeGroupId: episodeGroupId,
-      );
+      add(provider, id, tokenKind, episodeGroupId: episodeGroupId);
     }
   }
   return result;

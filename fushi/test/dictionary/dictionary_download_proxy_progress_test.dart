@@ -35,8 +35,11 @@ void main() {
       addTearDown(dio.close);
 
       expect(dio.options.connectTimeout, kDictionaryConnectTimeout);
-      expect(dio.options.receiveTimeout, kDictionaryStallTimeout,
-          reason: '无超时 = 服务器晾着连接就能把用户永远留在「正在更新…」上');
+      expect(
+        dio.options.receiveTimeout,
+        kDictionaryStallTimeout,
+        reason: '无超时 = 服务器晾着连接就能把用户永远留在「正在更新…」上',
+      );
     });
 
     test('接线后每次出站都经工厂拿 Dio（代理才可能生效）', () async {
@@ -115,8 +118,9 @@ void main() {
 
   group('BUG-1493 进度可归因：切进导入阶段', () {
     test('进度条归零（退化成不定态），文案切到导入中', () {
-      final ValueNotifier<String> message =
-          ValueNotifier<String>('downloading...');
+      final ValueNotifier<String> message = ValueNotifier<String>(
+        'downloading...',
+      );
       final ValueNotifier<double> progress = ValueNotifier<double>(1);
       addTearDown(message.dispose);
       addTearDown(progress.dispose);
@@ -127,8 +131,11 @@ void main() {
         downloadProgress: progress,
       );
 
-      expect(progress.value, 0,
-          reason: '不归零 → 进度条定格在下载结束时的满格，整个导入期一动不动 = 看起来卡死');
+      expect(
+        progress.value,
+        0,
+        reason: '不归零 → 进度条定格在下载结束时的满格，整个导入期一动不动 = 看起来卡死',
+      );
       expect(message.value, contains('Pixiv Light [2026-02-01]'));
       expect(message.value, isNot(equals('downloading...')));
     });
@@ -151,24 +158,38 @@ void main() {
 
         // 唯一允许的裸构造是 `createDictionaryDio` 内部「工厂未接线」的回退
         // （`?? Dio()`）；别处再直接 new 一个就是绕开代理与超时装配。
-        final Iterable<RegExpMatch> bare =
-            RegExp(r'(?<!\?\?\s)\bDio\(\)').allMatches(code);
-        expect(bare, isEmpty,
-            reason: '$p 里出现裸 Dio()：那条请求会绕开代理与超时装配，'
-                '正是 BUG-1493 的根因形态');
+        final Iterable<RegExpMatch> bare = RegExp(
+          r'(?<!\?\?\s)\bDio\(\)',
+        ).allMatches(code);
+        expect(
+          bare,
+          isEmpty,
+          reason:
+              '$p 里出现裸 Dio()：那条请求会绕开代理与超时装配，'
+              '正是 BUG-1493 的根因形态',
+        );
 
-        expect(code.contains('createDictionaryDio'), isTrue,
-            reason: '$p 必须经统一装配入口出站');
+        expect(
+          code.contains('createDictionaryDio'),
+          isTrue,
+          reason: '$p 必须经统一装配入口出站',
+        );
       }
     });
 
     test('掩码器在本判据上有效：注释里的裸构造不算命中，代码里的算', () {
-      expect(maskComments('// 用裸 Dio() 出站\nfinal x = 1;'),
-          isNot(contains('Dio()')));
-      expect(maskComments('/// 回退裸 Dio()\nfinal Dio d = Dio();'),
-          contains('Dio()'));
-      expect(maskComments('/* 块注释 Dio() */\nfinal y = 2;'),
-          isNot(contains('Dio()')));
+      expect(
+        maskComments('// 用裸 Dio() 出站\nfinal x = 1;'),
+        isNot(contains('Dio()')),
+      );
+      expect(
+        maskComments('/// 回退裸 Dio()\nfinal Dio d = Dio();'),
+        contains('Dio()'),
+      );
+      expect(
+        maskComments('/* 块注释 Dio() */\nfinal y = 2;'),
+        isNot(contains('Dio()')),
+      );
     });
   });
 }

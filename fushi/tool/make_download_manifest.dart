@@ -147,7 +147,8 @@ void main(List<String> argv) async {
     if (args.deflateManifest != null) 'deflate_pack': args.deflateManifest,
   };
 
-  final String outPath = args.manifestPath ??
+  final String outPath =
+      args.manifestPath ??
       (args.slice
           ? '${outDir!.path}${Platform.pathSeparator}$packName.manifest.json'
           : '${input.parent.path}${Platform.pathSeparator}$packName.manifest.json');

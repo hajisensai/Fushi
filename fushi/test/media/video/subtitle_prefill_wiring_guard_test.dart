@@ -27,7 +27,8 @@ void main() {
       expect(
         body,
         contains('remoteSubtitleSeriesQuery('),
-        reason: '远端番名必须由该纯函数选词（合集名优先），不要在页面里就地判断——'
+        reason:
+            '远端番名必须由该纯函数选词（合集名优先），不要在页面里就地判断——'
             '就地写回去等于把 `Episode 1` 当番名搜。',
       );
       expect(
@@ -40,7 +41,8 @@ void main() {
         contains(
           'collectionIsWork: _effectiveRemoteClient is RemoteVideoCollectionIsWork',
         ),
-        reason: '合集名只在来源声明「合集 = 作品」时参与——互联 host 的合集是用户库里'
+        reason:
+            '合集名只在来源声明「合集 = 作品」时参与——互联 host 的合集是用户库里'
             '的任意合集（「待看」），拿它当番名搜必然空手。',
       );
     });
@@ -53,7 +55,8 @@ void main() {
       expect(
         body,
         contains('episode: seed.isMovie ? null : _jimakuEpisodeNumber()'),
-        reason: '集号必须随请求下发，否则集数框恒空（用户得自己数第几集再手填）；'
+        reason:
+            '集号必须随请求下发，否则集数框恒空（用户得自己数第几集再手填）；'
             '刮成电影的不预填——「Doraemon Movie 25」的 25 是系列序号（BUG-3747）。',
       );
     });
@@ -65,14 +68,12 @@ void main() {
         contains('remoteVideoEpisodeNumber('),
         reason: '远端集号只认来源自己报的那个（RemoteVideoEpisodeNumber 能力）。',
       );
-      for (final String forbidden in <String>[
-        '_currentEpisode',
-        'sortIndex',
-      ]) {
+      for (final String forbidden in <String>['_currentEpisode', 'sortIndex']) {
         expect(
           body.contains(forbidden),
           isFalse,
-          reason: '$forbidden 是**播放序**：有特别篇/OVA 或不从第 1 集开始的季度时它与'
+          reason:
+              '$forbidden 是**播放序**：有特别篇/OVA 或不从第 1 集开始的季度时它与'
               '集号不等。填错的集号比留空更坏——留空只是多几条候选，填错会把用户引到'
               '另一集的字幕上。',
         );

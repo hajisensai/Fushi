@@ -108,49 +108,55 @@ Future<File> _tmpFile(String name, List<int> bytes) async {
 
 void main() {
   group('ObfuscatingSyncBackend content upload/download round-trip', () {
-    test('uploadContentFile obfuscates bytes (inner sees magic header)',
-        () async {
-      final inner = _RecordingBackend();
-      final backend = ObfuscatingSyncBackend(inner);
-      final plain =
-          Uint8List.fromList(List<int>.generate(5000, (i) => i & 0xFF));
-      final src = await _tmpFile('content.epub', plain);
+    test(
+      'uploadContentFile obfuscates bytes (inner sees magic header)',
+      () async {
+        final inner = _RecordingBackend();
+        final backend = ObfuscatingSyncBackend(inner);
+        final plain = Uint8List.fromList(
+          List<int>.generate(5000, (i) => i & 0xFF),
+        );
+        final src = await _tmpFile('content.epub', plain);
 
-      await backend.uploadContentFile(
-        folderId: 'F',
-        fileName: 'content.epub',
-        file: src,
-      );
+        await backend.uploadContentFile(
+          folderId: 'F',
+          fileName: 'content.epub',
+          file: src,
+        );
 
-      final stored = inner.uploaded['F/content.epub']!;
-      // 云端字节必须带 magic header 且与明文不同（确实混淆）。
-      expect(SyncObfuscator.hasMagicHeader(stored), isTrue);
-      expect(stored, isNot(equals(plain)));
-      // 反混淆云端字节得回原文（体积仅多 magic header）。
-      expect(SyncObfuscator.deobfuscateBytes(stored), plain);
-      expect(stored.length, plain.length + SyncObfuscator.magicHeaderLength);
-    });
+        final stored = inner.uploaded['F/content.epub']!;
+        // 云端字节必须带 magic header 且与明文不同（确实混淆）。
+        expect(SyncObfuscator.hasMagicHeader(stored), isTrue);
+        expect(stored, isNot(equals(plain)));
+        // 反混淆云端字节得回原文（体积仅多 magic header）。
+        expect(SyncObfuscator.deobfuscateBytes(stored), plain);
+        expect(stored.length, plain.length + SyncObfuscator.magicHeaderLength);
+      },
+    );
 
     test(
-        'downloadContentFile deobfuscates obfuscated remote bytes to plaintext',
-        () async {
-      final inner = _RecordingBackend();
-      final backend = ObfuscatingSyncBackend(inner);
-      final plain =
-          Uint8List.fromList(List<int>.generate(8000, (i) => (i * 3) & 0xFF));
-      inner.remoteBytes['asset1'] = SyncObfuscator.obfuscateBytes(plain);
+      'downloadContentFile deobfuscates obfuscated remote bytes to plaintext',
+      () async {
+        final inner = _RecordingBackend();
+        final backend = ObfuscatingSyncBackend(inner);
+        final plain = Uint8List.fromList(
+          List<int>.generate(8000, (i) => (i * 3) & 0xFF),
+        );
+        inner.remoteBytes['asset1'] = SyncObfuscator.obfuscateBytes(plain);
 
-      final dest = await _tmpFile('out.epub', const <int>[]);
-      await backend.downloadContentFile(fileId: 'asset1', destination: dest);
+        final dest = await _tmpFile('out.epub', const <int>[]);
+        await backend.downloadContentFile(fileId: 'asset1', destination: dest);
 
-      expect(await dest.readAsBytes(), plain);
-    });
+        expect(await dest.readAsBytes(), plain);
+      },
+    );
 
     test('full round-trip: upload then download yields original', () async {
       final inner = _RecordingBackend();
       final backend = ObfuscatingSyncBackend(inner);
       final plain = Uint8List.fromList(
-          List<int>.generate(12345, (i) => (i * 7 + 1) & 0xFF));
+        List<int>.generate(12345, (i) => (i * 7 + 1) & 0xFF),
+      );
       final src = await _tmpFile('a.bin', plain);
 
       await backend.putAsset('NS', 'a.bin', src);
@@ -164,29 +170,33 @@ void main() {
   });
 
   group('ObfuscatingSyncBackend backward compat (mixed read)', () {
-    test('downloadContentFile passes through legacy plaintext (no header)',
-        () async {
-      final inner = _RecordingBackend();
-      final backend = ObfuscatingSyncBackend(inner);
-      // 现有 Drive 明文：无 magic header。
-      final legacy =
-          Uint8List.fromList(List<int>.generate(4096, (i) => (i * 5) & 0xFF));
-      inner.remoteBytes['old'] = legacy;
+    test(
+      'downloadContentFile passes through legacy plaintext (no header)',
+      () async {
+        final inner = _RecordingBackend();
+        final backend = ObfuscatingSyncBackend(inner);
+        // 现有 Drive 明文：无 magic header。
+        final legacy = Uint8List.fromList(
+          List<int>.generate(4096, (i) => (i * 5) & 0xFF),
+        );
+        inner.remoteBytes['old'] = legacy;
 
-      final dest = await _tmpFile('legacy_out.epub', const <int>[]);
-      await backend.downloadContentFile(fileId: 'old', destination: dest);
+        final dest = await _tmpFile('legacy_out.epub', const <int>[]);
+        await backend.downloadContentFile(fileId: 'old', destination: dest);
 
-      // 旧明文原样落地（向后兼容，仍可导入）。
-      expect(await dest.readAsBytes(), legacy);
-    });
+        // 旧明文原样落地（向后兼容，仍可导入）。
+        expect(await dest.readAsBytes(), legacy);
+      },
+    );
   });
 
   group('ObfuscatingSyncBackend cover obfuscation', () {
     test('ensureBookFolder obfuscates lazily-read cover bytes', () async {
       final inner = _RecordingBackend();
       final backend = ObfuscatingSyncBackend(inner);
-      final cover =
-          Uint8List.fromList(List<int>.generate(2048, (i) => (i * 9) & 0xFF));
+      final cover = Uint8List.fromList(
+        List<int>.generate(2048, (i) => (i * 9) & 0xFF),
+      );
 
       await backend.ensureBookFolder(
         bookTitle: 'Book',
@@ -229,24 +239,26 @@ void main() {
     });
   });
 
-  group('ObfuscatingSyncBackend JSON methods are pure delegation (A2 deferred)',
-      () {
-    test('updateProgressFile delegates without obfuscation', () async {
-      final inner = _RecordingBackend();
-      final backend = ObfuscatingSyncBackend(inner);
-      final prog = TtuProgress(
-        dataId: 1,
-        exploredCharCount: 0,
-        progress: 0,
-        lastBookmarkModified: 0,
-      );
-      await backend.updateProgressFile(
-        folderId: 'F',
-        fileId: null,
-        progress: prog,
-      );
-      // JSON 原样透传给 inner（A1 不碰 JSON，留 A2）。
-      expect(inner.lastProgress, same(prog));
-    });
-  });
+  group(
+    'ObfuscatingSyncBackend JSON methods are pure delegation (A2 deferred)',
+    () {
+      test('updateProgressFile delegates without obfuscation', () async {
+        final inner = _RecordingBackend();
+        final backend = ObfuscatingSyncBackend(inner);
+        final prog = TtuProgress(
+          dataId: 1,
+          exploredCharCount: 0,
+          progress: 0,
+          lastBookmarkModified: 0,
+        );
+        await backend.updateProgressFile(
+          folderId: 'F',
+          fileId: null,
+          progress: prog,
+        );
+        // JSON 原样透传给 inner（A1 不碰 JSON，留 A2）。
+        expect(inner.lastProgress, same(prog));
+      });
+    },
+  );
 }

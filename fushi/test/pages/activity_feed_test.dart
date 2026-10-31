@@ -14,18 +14,17 @@ ActivityEventRow _ev({
   String? mediaKey,
   int? durationMs,
   int? charsDelta,
-}) =>
-    ActivityEventRow(
-      id: timestampMs, // 测试里用时间戳当 id 保证唯一即可
-      eventType: eventType,
-      mediaType: mediaType,
-      title: title,
-      mediaKey: mediaKey,
-      dateKey: dateKey,
-      timestampMs: timestampMs,
-      durationMs: durationMs,
-      charsDelta: charsDelta,
-    );
+}) => ActivityEventRow(
+  id: timestampMs, // 测试里用时间戳当 id 保证唯一即可
+  eventType: eventType,
+  mediaType: mediaType,
+  title: title,
+  mediaKey: mediaKey,
+  dateKey: dateKey,
+  timestampMs: timestampMs,
+  durationMs: durationMs,
+  charsDelta: charsDelta,
+);
 
 void main() {
   group('activityRelativeTime', () {
@@ -33,29 +32,35 @@ void main() {
 
     test('不足 1 分钟 = justNow', () {
       final rel = activityRelativeTime(
-          now.subtract(const Duration(seconds: 30)).millisecondsSinceEpoch,
-          now);
+        now.subtract(const Duration(seconds: 30)).millisecondsSinceEpoch,
+        now,
+      );
       expect(rel.unit, ActivityRelativeUnit.justNow);
     });
 
     test('分钟级', () {
       final rel = activityRelativeTime(
-          now.subtract(const Duration(minutes: 45)).millisecondsSinceEpoch,
-          now);
+        now.subtract(const Duration(minutes: 45)).millisecondsSinceEpoch,
+        now,
+      );
       expect(rel.unit, ActivityRelativeUnit.minutesAgo);
       expect(rel.value, 45);
     });
 
     test('小时级', () {
       final rel = activityRelativeTime(
-          now.subtract(const Duration(hours: 8)).millisecondsSinceEpoch, now);
+        now.subtract(const Duration(hours: 8)).millisecondsSinceEpoch,
+        now,
+      );
       expect(rel.unit, ActivityRelativeUnit.hoursAgo);
       expect(rel.value, 8);
     });
 
     test('天级', () {
       final rel = activityRelativeTime(
-          now.subtract(const Duration(days: 3)).millisecondsSinceEpoch, now);
+        now.subtract(const Duration(days: 3)).millisecondsSinceEpoch,
+        now,
+      );
       expect(rel.unit, ActivityRelativeUnit.daysAgo);
       expect(rel.value, 3);
     });
@@ -66,19 +71,21 @@ void main() {
       final int base = DateTime(2026, 7, 18, 9).millisecondsSinceEpoch;
       final List<ActivityEventRow> events = <ActivityEventRow>[
         _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: base,
-            durationMs: 60000,
-            charsDelta: 100),
+          eventType: kActivityRead,
+          title: 'A',
+          dateKey: '2026-07-18',
+          timestampMs: base,
+          durationMs: 60000,
+          charsDelta: 100,
+        ),
         _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: base + 5 * 60000,
-            durationMs: 120000,
-            charsDelta: 200),
+          eventType: kActivityRead,
+          title: 'A',
+          dateKey: '2026-07-18',
+          timestampMs: base + 5 * 60000,
+          durationMs: 120000,
+          charsDelta: 200,
+        ),
       ];
       final List<ActivityDateGroup> groups = aggregateActivityEvents(events);
       expect(groups.length, 1);
@@ -95,37 +102,41 @@ void main() {
       // 两次相隔 5 分钟（< 30min gap）→ 1 session
       final List<ActivityDateGroup> near =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: base,
-            durationMs: 1),
-        _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: base + 5 * 60000,
-            durationMs: 1),
-      ]);
+            _ev(
+              eventType: kActivityRead,
+              title: 'A',
+              dateKey: '2026-07-18',
+              timestampMs: base,
+              durationMs: 1,
+            ),
+            _ev(
+              eventType: kActivityRead,
+              title: 'A',
+              dateKey: '2026-07-18',
+              timestampMs: base + 5 * 60000,
+              durationMs: 1,
+            ),
+          ]);
       expect(near.first.entries.first.sessionCount, 1);
 
       // 两次相隔 2 小时（> gap）→ 2 sessions
       final List<ActivityDateGroup> far =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: base,
-            durationMs: 1),
-        _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: base + const Duration(hours: 2).inMilliseconds,
-            durationMs: 1),
-      ]);
+            _ev(
+              eventType: kActivityRead,
+              title: 'A',
+              dateKey: '2026-07-18',
+              timestampMs: base,
+              durationMs: 1,
+            ),
+            _ev(
+              eventType: kActivityRead,
+              title: 'A',
+              dateKey: '2026-07-18',
+              timestampMs: base + const Duration(hours: 2).inMilliseconds,
+              durationMs: 1,
+            ),
+          ]);
       expect(far.first.entries.first.sessionCount, 2);
     });
 
@@ -135,29 +146,36 @@ void main() {
       final int d19b = DateTime(2026, 7, 19, 20).millisecondsSinceEpoch;
       final List<ActivityDateGroup> groups =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityRead,
-            title: 'A',
-            dateKey: '2026-07-18',
-            timestampMs: d18),
-        _ev(
-            eventType: kActivityWatch,
-            mediaType: 'video',
-            title: 'B',
-            dateKey: '2026-07-19',
-            timestampMs: d19a),
-        _ev(
-            eventType: kActivityAdded,
-            title: 'C',
-            dateKey: '2026-07-19',
-            timestampMs: d19b),
-      ]);
+            _ev(
+              eventType: kActivityRead,
+              title: 'A',
+              dateKey: '2026-07-18',
+              timestampMs: d18,
+            ),
+            _ev(
+              eventType: kActivityWatch,
+              mediaType: 'video',
+              title: 'B',
+              dateKey: '2026-07-19',
+              timestampMs: d19a,
+            ),
+            _ev(
+              eventType: kActivityAdded,
+              title: 'C',
+              dateKey: '2026-07-19',
+              timestampMs: d19b,
+            ),
+          ]);
       // 两个日期组，19 在前（倒序）。
-      expect(groups.map((g) => g.dateKey).toList(),
-          <String>['2026-07-19', '2026-07-18']);
+      expect(groups.map((g) => g.dateKey).toList(), <String>[
+        '2026-07-19',
+        '2026-07-18',
+      ]);
       // 19 号组内两条不合并（类型不同），按最近时刻倒序 → C(20:00) 在 B(08:00) 前。
-      expect(groups.first.entries.map((e) => e.title).toList(),
-          <String>['C', 'B']);
+      expect(groups.first.entries.map((e) => e.title).toList(), <String>[
+        'C',
+        'B',
+      ]);
     });
 
     // BUG-1350：拆集后视频行的 title 是裸集号（S01E01），同日看两部不同作品的
@@ -167,27 +185,32 @@ void main() {
       final int base = DateTime(2026, 7, 31, 21).millisecondsSinceEpoch;
       final List<ActivityDateGroup> groups =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityWatch,
-            mediaType: 'video',
-            title: 'S01E01',
-            mediaKey: 'video/Seven Mortal Sins - S01E01',
-            dateKey: '2026-07-31',
-            timestampMs: base,
-            durationMs: 18718),
-        _ev(
-            eventType: kActivityWatch,
-            mediaType: 'video',
-            title: 'S01E01',
-            mediaKey: 'video/Tensei Oujo - S01E01',
-            dateKey: '2026-07-31',
-            timestampMs: base + const Duration(hours: 2).inMilliseconds,
-            durationMs: 1019979),
-      ]);
+            _ev(
+              eventType: kActivityWatch,
+              mediaType: 'video',
+              title: 'S01E01',
+              mediaKey: 'video/Seven Mortal Sins - S01E01',
+              dateKey: '2026-07-31',
+              timestampMs: base,
+              durationMs: 18718,
+            ),
+            _ev(
+              eventType: kActivityWatch,
+              mediaType: 'video',
+              title: 'S01E01',
+              mediaKey: 'video/Tensei Oujo - S01E01',
+              dateKey: '2026-07-31',
+              timestampMs: base + const Duration(hours: 2).inMilliseconds,
+              durationMs: 1019979,
+            ),
+          ]);
       expect(groups, hasLength(1));
       final List<ActivityEntry> entries = groups.first.entries;
-      expect(entries, hasLength(2),
-          reason: '不同 mediaKey 不得因 title 同为 S01E01 被合并');
+      expect(
+        entries,
+        hasLength(2),
+        reason: '不同 mediaKey 不得因 title 同为 S01E01 被合并',
+      );
       // 组内按最近时刻倒序：Tensei（更晚）在前，各自保留自己的身份与时长。
       expect(entries[0].mediaKey, 'video/Tensei Oujo - S01E01');
       expect(entries[0].totalDurationMs, 1019979);
@@ -199,23 +222,25 @@ void main() {
       final int base = DateTime(2026, 7, 31, 9).millisecondsSinceEpoch;
       final List<ActivityDateGroup> groups =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityWatch,
-            mediaType: 'video',
-            title: 'S01E01',
-            mediaKey: 'video/X - S01E01',
-            dateKey: '2026-07-31',
-            timestampMs: base,
-            durationMs: 100),
-        _ev(
-            eventType: kActivityWatch,
-            mediaType: 'video',
-            title: 'X 第一集', // 改名后的快照：身份仍是同一 mediaKey
-            mediaKey: 'video/X - S01E01',
-            dateKey: '2026-07-31',
-            timestampMs: base + const Duration(hours: 2).inMilliseconds,
-            durationMs: 200),
-      ]);
+            _ev(
+              eventType: kActivityWatch,
+              mediaType: 'video',
+              title: 'S01E01',
+              mediaKey: 'video/X - S01E01',
+              dateKey: '2026-07-31',
+              timestampMs: base,
+              durationMs: 100,
+            ),
+            _ev(
+              eventType: kActivityWatch,
+              mediaType: 'video',
+              title: 'X 第一集', // 改名后的快照：身份仍是同一 mediaKey
+              mediaKey: 'video/X - S01E01',
+              dateKey: '2026-07-31',
+              timestampMs: base + const Duration(hours: 2).inMilliseconds,
+              durationMs: 200,
+            ),
+          ]);
       final List<ActivityEntry> entries = groups.single.entries;
       expect(entries, hasLength(1), reason: '同一媒体同日合并成一条');
       expect(entries.single.totalDurationMs, 300);
@@ -226,21 +251,23 @@ void main() {
       final int base = DateTime(2026, 7, 18, 9).millisecondsSinceEpoch;
       final List<ActivityDateGroup> groups =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityGame,
-            mediaType: 'game',
-            title: 'G',
-            dateKey: '2026-07-18',
-            timestampMs: base,
-            charsDelta: 10),
-        _ev(
-            eventType: kActivityGame,
-            mediaType: 'game',
-            title: 'G',
-            dateKey: '2026-07-18',
-            timestampMs: base + 60000,
-            charsDelta: 20),
-      ]);
+            _ev(
+              eventType: kActivityGame,
+              mediaType: 'game',
+              title: 'G',
+              dateKey: '2026-07-18',
+              timestampMs: base,
+              charsDelta: 10,
+            ),
+            _ev(
+              eventType: kActivityGame,
+              mediaType: 'game',
+              title: 'G',
+              dateKey: '2026-07-18',
+              timestampMs: base + 60000,
+              charsDelta: 20,
+            ),
+          ]);
       expect(groups.single.entries, hasLength(1));
       expect(groups.single.entries.single.totalChars, 30);
     });
@@ -249,21 +276,23 @@ void main() {
       final int base = DateTime(2026, 7, 18, 9).millisecondsSinceEpoch;
       final List<ActivityDateGroup> groups =
           aggregateActivityEvents(<ActivityEventRow>[
-        _ev(
-            eventType: kActivityAdded,
-            mediaType: 'book',
-            title: 'Same',
-            mediaKey: 'Same',
-            dateKey: '2026-07-18',
-            timestampMs: base),
-        _ev(
-            eventType: kActivityAdded,
-            mediaType: 'video',
-            title: 'Same',
-            mediaKey: 'Same',
-            dateKey: '2026-07-18',
-            timestampMs: base + 1000),
-      ]);
+            _ev(
+              eventType: kActivityAdded,
+              mediaType: 'book',
+              title: 'Same',
+              mediaKey: 'Same',
+              dateKey: '2026-07-18',
+              timestampMs: base,
+            ),
+            _ev(
+              eventType: kActivityAdded,
+              mediaType: 'video',
+              title: 'Same',
+              mediaKey: 'Same',
+              dateKey: '2026-07-18',
+              timestampMs: base + 1000,
+            ),
+          ]);
       expect(groups.single.entries, hasLength(2), reason: '书与视频即使同名同键也各自成条');
     });
 
@@ -306,12 +335,17 @@ void main() {
 
       final List<ActivityDateGroup> visible = takeActivityEntries(groups, 3);
 
-      expect(visible.map((ActivityDateGroup g) => g.dateKey),
-          <String>['2026-08-30', '2026-08-29']);
-      expect(visible[0].entries.map((ActivityEntry e) => e.title),
-          <String>['a', 'b']);
-      expect(visible[1].entries.map((ActivityEntry e) => e.title),
-          <String>['c']);
+      expect(visible.map((ActivityDateGroup g) => g.dateKey), <String>[
+        '2026-08-30',
+        '2026-08-29',
+      ]);
+      expect(visible[0].entries.map((ActivityEntry e) => e.title), <String>[
+        'a',
+        'b',
+      ]);
+      expect(visible[1].entries.map((ActivityEntry e) => e.title), <String>[
+        'c',
+      ]);
       expect(groups[1].entries, hasLength(2), reason: '分页不得修改完整聚合结果');
     });
 

@@ -32,8 +32,8 @@ class _PullSyncAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -66,16 +66,16 @@ Widget _wrap(_PullSyncAppModel appModel) {
 }
 
 DictionarySearchResult _result(String term) => DictionarySearchResult(
-      searchTerm: term,
-      entries: <DictionaryEntry>[
-        DictionaryEntry(
-          dictionaryName: 'Test',
-          word: term,
-          reading: term,
-          meaning: '["x"]',
-        ),
-      ],
-    );
+  searchTerm: term,
+  entries: <DictionaryEntry>[
+    DictionaryEntry(
+      dictionaryName: 'Test',
+      word: term,
+      reading: term,
+      meaning: '["x"]',
+    ),
+  ],
+);
 
 /// RefreshIndicator 下面挂着的、真正会响应下拉的 Scrollable 的 physics。
 ScrollPhysics? _refreshablePhysics(WidgetTester tester) {
@@ -104,8 +104,9 @@ void main() {
   });
 
   testWidgets('空历史（空态）也能下拉同步：Center 被撑成可滚动视口', (WidgetTester tester) async {
-    final _PullSyncAppModel appModel =
-        _PullSyncAppModel(history: <DictionarySearchResult>[]);
+    final _PullSyncAppModel appModel = _PullSyncAppModel(
+      history: <DictionarySearchResult>[],
+    );
     await tester.pumpWidget(_wrap(appModel));
     await tester.pump();
 
@@ -147,8 +148,9 @@ void main() {
 
     // 从列表区域往下拖，RefreshIndicator 应当露出进度圈。用 fling 之外的持续拖拽，
     // 避免依赖 fling 速度阈值。
-    final TestGesture gesture =
-        await tester.startGesture(tester.getCenter(find.byType(ListView)));
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(find.byType(ListView)),
+    );
     await gesture.moveBy(const Offset(0, 250));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));

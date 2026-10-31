@@ -71,8 +71,9 @@ class AudioSourceConfig {
 
   factory AudioSourceConfig.fromJson(Map<String, dynamic> json) {
     final AudioSourceKind kind = AudioSourceKind.fromWireName(json['kind']);
-    final bool enabled =
-        json['enabled'] is bool ? json['enabled'] as bool : true;
+    final bool enabled = json['enabled'] is bool
+        ? json['enabled'] as bool
+        : true;
     final String? label = _nullableString(json['label']);
     switch (kind) {
       case AudioSourceKind.fushiRemote:
@@ -140,8 +141,9 @@ class AudioSourceConfig {
   /// 绝不静默失败（TODO-1171）。模板占位符先中性化，避免污染 host 解析。
   static bool isLoopbackAudioUrl(String? url) {
     if (url == null || url.isEmpty) return false;
-    final String probe =
-        url.replaceAll('{term}', 'x').replaceAll('{reading}', 'x');
+    final String probe = url
+        .replaceAll('{term}', 'x')
+        .replaceAll('{reading}', 'x');
     final String host = (Uri.tryParse(probe)?.host ?? '').toLowerCase();
     if (host.isNotEmpty) {
       return host == 'localhost' ||

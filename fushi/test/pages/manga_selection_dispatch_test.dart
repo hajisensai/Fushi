@@ -130,8 +130,9 @@ void main() {
     });
 
     test('双页 spread 精确解析命中页图片，不取 spread 首页', () async {
-      final Directory root =
-          await Directory.systemTemp.createTemp('fushi-mining-page-');
+      final Directory root = await Directory.systemTemp.createTemp(
+        'fushi-mining-page-',
+      );
       addTearDown(() async {
         if (await root.exists()) await root.delete(recursive: true);
       });
@@ -318,11 +319,16 @@ void main() {
       );
       expect(page.existsSync(), isTrue);
       final String src = page.readAsStringSync();
-      final int handlerCount =
-          "handlerName: 'onTextSelected'".allMatches(src).length;
-      expect(handlerCount, 1,
-          reason: '漫画页是其 onTextSelected handler 的唯一所有者；'
-              '恰好一处注册（多注册会把同一 payload 双发查词）');
+      final int handlerCount = "handlerName: 'onTextSelected'"
+          .allMatches(src)
+          .length;
+      expect(
+        handlerCount,
+        1,
+        reason:
+            '漫画页是其 onTextSelected handler 的唯一所有者；'
+            '恰好一处注册（多注册会把同一 payload 双发查词）',
+      );
     });
 
     test('漫画页绝不再挂第二个 pointerup JS 监听', () {
@@ -340,9 +346,7 @@ void main() {
         'lib/src/media/manga/reader/manga_fushi_page.dart',
       ).readAsStringSync();
       expect(
-        src.contains(
-          'bool get popupVerticalWriting => _popupVerticalWriting;',
-        ),
+        src.contains('bool get popupVerticalWriting => _popupVerticalWriting;'),
         isTrue,
       );
       expect(
@@ -368,16 +372,17 @@ void main() {
     });
 
     test('唯一 pointerup 监听只在 manga_overlay_html，且选词调用显式传 maxLength', () {
-      final File overlay = File(
-        'lib/src/media/manga/manga_overlay_html.dart',
-      );
+      final File overlay = File('lib/src/media/manga/manga_overlay_html.dart');
       expect(overlay.existsSync(), isTrue);
       final String src = overlay.readAsStringSync();
       final int pointerupCount =
           'addEventListener("pointerup"'.allMatches(src).length +
-              "addEventListener('pointerup'".allMatches(src).length;
-      expect(pointerupCount, 1,
-          reason: 'manga_overlay_html.dart 必须持有唯一的 pointerup 监听');
+          "addEventListener('pointerup'".allMatches(src).length;
+      expect(
+        pointerupCount,
+        1,
+        reason: 'manga_overlay_html.dart 必须持有唯一的 pointerup 监听',
+      );
       // 这条守卫防的是「选词调用漏传 maxLength → 扫描循环 gate `< undefined`
       // 恒假 → text 恒空 → onTextSelected 永不触发」。
       //
@@ -392,10 +397,16 @@ void main() {
       final RegExp selectRe = RegExp(
         r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*,\s*fromHover\s*\)',
       );
-      expect(selectRe.allMatches(src).length, 1,
-          reason: '选词必须是唯一调用点，且显式传 maxLength=40');
-      expect(src.contains('fushiSelection.selectText('), isFalse,
-          reason: '旧的按坐标猜节点入口已下线，不得复活成第二条选词路径');
+      expect(
+        selectRe.allMatches(src).length,
+        1,
+        reason: '选词必须是唯一调用点，且显式传 maxLength=40',
+      );
+      expect(
+        src.contains('fushiSelection.selectText('),
+        isFalse,
+        reason: '旧的按坐标猜节点入口已下线，不得复活成第二条选词路径',
+      );
     });
   });
 }

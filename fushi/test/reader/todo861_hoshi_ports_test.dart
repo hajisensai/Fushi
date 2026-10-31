@@ -7,9 +7,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-FushiDatabase _testDb() => FushiDatabase.forTesting(
-      DatabaseConnection(NativeDatabase.memory()),
-    );
+FushiDatabase _testDb() =>
+    FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 String _read(String relPath) => File(relPath).readAsStringSync();
 
@@ -38,30 +37,32 @@ void main() {
     });
   });
 
-  group('TODO-861② scanNonJapaneseText persistence (PreferencesRepository)',
-      () {
-    late FushiDatabase db;
-    late PreferencesRepository repo;
+  group(
+    'TODO-861② scanNonJapaneseText persistence (PreferencesRepository)',
+    () {
+      late FushiDatabase db;
+      late PreferencesRepository repo;
 
-    setUp(() async {
-      db = _testDb();
-      repo = PreferencesRepository(db);
-      await repo.loadFromDb();
-    });
-    tearDown(() async {
-      repo.dispose();
-      await db.close();
-    });
+      setUp(() async {
+        db = _testDb();
+        repo = PreferencesRepository(db);
+        await repo.loadFromDb();
+      });
+      tearDown(() async {
+        repo.dispose();
+        await db.close();
+      });
 
-    test('默认 true（向后兼容，不破坏现有查词）', () {
-      expect(repo.scanNonJapaneseText, isTrue);
-    });
+      test('默认 true（向后兼容，不破坏现有查词）', () {
+        expect(repo.scanNonJapaneseText, isTrue);
+      });
 
-    test('设 false 写穿读回', () async {
-      await repo.setScanNonJapaneseText(false);
-      expect(repo.scanNonJapaneseText, isFalse);
-    });
-  });
+      test('设 false 写穿读回', () async {
+        await repo.setScanNonJapaneseText(false);
+        expect(repo.scanNonJapaneseText, isFalse);
+      });
+    },
+  );
 
   group('TODO-861③ dictionary auto-update prefs (PreferencesRepository)', () {
     late FushiDatabase db;
@@ -109,10 +110,15 @@ void main() {
       final String src = _read(
         'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
-      expect(src, isNot(contains('window.scanNonJapaneseText = true;')),
-          reason: '注入端必须读 pref，不能回退硬编码 true');
-      expect(src,
-          contains(r'window.scanNonJapaneseText = C.scanNonJapaneseText;'));
+      expect(
+        src,
+        isNot(contains('window.scanNonJapaneseText = true;')),
+        reason: '注入端必须读 pref，不能回退硬编码 true',
+      );
+      expect(
+        src,
+        contains(r'window.scanNonJapaneseText = C.scanNonJapaneseText;'),
+      );
     });
 
     test('② selection 消费端仍含 scanNonJapaneseText === false 分支', () {
@@ -138,14 +144,19 @@ void main() {
         'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       );
       // 长按定时器体内：必须在调用 onImageLongPress 之前先尝试揭开仍 blurred 的图。
-      final int revealIdx =
-          src.indexOf('if (_fushiRevealBlurredImage(pressEl)) return;');
+      final int revealIdx = src.indexOf(
+        'if (_fushiRevealBlurredImage(pressEl)) return;',
+      );
       final int longPressIdx = src.indexOf(
-          "window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);");
+        "window.flutter_inappwebview.callHandler('onImageLongPress', imgUrl);",
+      );
       expect(revealIdx, isNonNegative, reason: '长按分支必须先尝试揭开 blurred 图');
       expect(longPressIdx, isNonNegative);
-      expect(revealIdx, lessThan(longPressIdx),
-          reason: '揭开必须在 onImageLongPress 之前（揭开优先）');
+      expect(
+        revealIdx,
+        lessThan(longPressIdx),
+        reason: '揭开必须在 onImageLongPress 之前（揭开优先）',
+      );
     });
   });
 }

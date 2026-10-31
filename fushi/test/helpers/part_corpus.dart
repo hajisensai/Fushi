@@ -17,26 +17,28 @@ import 'dart:io';
 ///
 /// 目录不存在 / 一个 part 都没有一律 `throw`，绝不退化成「只剩主壳」——那正是最典型的
 /// 静默假绿形态（语料变短，所有 `isNot(contains(...))` 一起真空通过）。
-List<String> partCorpusFiles({
-  required String shell,
-  required String partDir,
-}) {
+List<String> partCorpusFiles({required String shell, required String partDir}) {
   final Directory dir = Directory(partDir);
   if (!dir.existsSync()) {
-    throw StateError('$partDir 不存在——part 目录被搬走了，'
-        '本语料及其全部消费方守卫需同步更新（否则它们会静默只扫主壳）');
+    throw StateError(
+      '$partDir 不存在——part 目录被搬走了，'
+      '本语料及其全部消费方守卫需同步更新（否则它们会静默只扫主壳）',
+    );
   }
-  final List<String> parts = dir
-      .listSync()
-      .whereType<File>()
-      .map((File f) => f.path.replaceAll(r'\', '/'))
-      .where((String p) => p.endsWith('.part.dart'))
-      .toList()
-    ..sort();
+  final List<String> parts =
+      dir
+          .listSync()
+          .whereType<File>()
+          .map((File f) => f.path.replaceAll(r'\', '/'))
+          .where((String p) => p.endsWith('.part.dart'))
+          .toList()
+        ..sort();
   if (parts.isEmpty) {
-    throw StateError('$partDir 下一个 *.part.dart 都没有——要么目录结构变了，'
-        '要么工作目录不是 fushi/；此时语料只剩主壳，'
-        '所有落在 part 里的守卫（含负向断言）都会真空通过');
+    throw StateError(
+      '$partDir 下一个 *.part.dart 都没有——要么目录结构变了，'
+      '要么工作目录不是 fushi/；此时语料只剩主壳，'
+      '所有落在 part 里的守卫（含负向断言）都会真空通过',
+    );
   }
   return <String>[shell, ...parts];
 }

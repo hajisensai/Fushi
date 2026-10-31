@@ -19,14 +19,11 @@ Future<GalJapaneseLocaleMode?> pickGalJapaneseLocaleMode(
   BuildContext context, {
   required GalJapaneseLocaleMode current,
   required String gameName,
-}) =>
-    showAppDialog<GalJapaneseLocaleMode>(
-      context: context,
-      builder: (BuildContext dialogContext) => GalJapaneseLocaleModeDialog(
-        current: current,
-        gameName: gameName,
-      ),
-    );
+}) => showAppDialog<GalJapaneseLocaleMode>(
+  context: context,
+  builder: (BuildContext dialogContext) =>
+      GalJapaneseLocaleModeDialog(current: current, gameName: gameName),
+);
 
 class GalJapaneseLocaleModeDialog extends StatelessWidget {
   const GalJapaneseLocaleModeDialog({

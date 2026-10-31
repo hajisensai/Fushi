@@ -81,10 +81,7 @@ Set<String> decodeOrganizeAliases(String? raw) {
   final Set<String> aliases = <String>{...aliasesA, ...aliasesB};
   if (keys.isEmpty) return (key: null, aliases: aliases);
   final String key = pickCanonicalOrganizeKey(keys);
-  return (
-    key: key,
-    aliases: <String>{...aliases, ...keys}..remove(key),
-  );
+  return (key: key, aliases: <String>{...aliases, ...keys}..remove(key));
 }
 
 /// 一组分组键里的规范键：外部 id 键优先，同类取字典序最小。

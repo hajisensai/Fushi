@@ -90,13 +90,12 @@ class _MiscellaneousSettingsBodyState
     if (Platform.isAndroid) {
       final results = await Future.wait([
         FushiChannels.iconSwitch.invokeMethod<String>('getCurrentIcon'),
-        FushiChannels.iconSwitch
-            .invokeMethod<bool>('isCustomShortcutSupported'),
+        FushiChannels.iconSwitch.invokeMethod<bool>(
+          'isCustomShortcutSupported',
+        ),
       ]);
       await publishAppIconSelection(
-        AppIconSelection(
-          presetKey: (results[0] as String?) ?? 'default',
-        ),
+        AppIconSelection(presetKey: (results[0] as String?) ?? 'default'),
       );
       if (!mounted) return;
       setState(() {
@@ -122,9 +121,9 @@ class _MiscellaneousSettingsBodyState
         if (!mounted) return;
         // 选中态由 _currentIcon getter 从已发布的真值读；这里只需触发重建。
         setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.icon_switch_success)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.icon_switch_success)));
       }
     } finally {
       if (mounted) setState(() => _switching = false);
@@ -217,9 +216,11 @@ class _MiscellaneousSettingsBodyState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       FushiSnackBar(
-        content: Text(Platform.isAndroid
-            ? (ok ? t.icon_shortcut_created : t.icon_shortcut_unsupported)
-            : (ok ? t.icon_switch_success : t.icon_shortcut_unsupported)),
+        content: Text(
+          Platform.isAndroid
+              ? (ok ? t.icon_shortcut_created : t.icon_shortcut_unsupported)
+              : (ok ? t.icon_switch_success : t.icon_shortcut_unsupported),
+        ),
       ),
     );
   }
@@ -344,8 +345,8 @@ class _AppIconTile extends StatelessWidget {
               borderColor: selected
                   ? theme.colorScheme.primary
                   : (isGlassDesign(context)
-                      ? null
-                      : theme.colorScheme.outlineVariant),
+                        ? null
+                        : theme.colorScheme.outlineVariant),
               onTap: enabled ? onTap : null,
               child: Stack(
                 fit: StackFit.expand,

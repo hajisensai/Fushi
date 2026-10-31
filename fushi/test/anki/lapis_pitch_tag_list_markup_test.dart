@@ -38,8 +38,11 @@ void main() {
     /// [maskComments]——后者不认模板串/正则，扫 JS 会把内容吃错。
     String functionBody(String name) {
       final int start = src.indexOf('function $name(');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'popup.js 缺少 function $name');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'popup.js 缺少 function $name',
+      );
       final int end = src.indexOf('\n}', start);
       expect(end, greaterThan(start), reason: '$name 函数体未闭合？');
       return maskJsComments(src.substring(start, end + 2));
@@ -54,7 +57,8 @@ void main() {
         expect(
           body,
           contains(r'`<ul>${items}</ul>`'),
-          reason: '$name 的列表标记必须是 ul —— Lapis #pitch-tags 的样式归一只认那条 '
+          reason:
+              '$name 的列表标记必须是 ul —— Lapis #pitch-tags 的样式归一只认那条 '
               'ul/ol 规则，写别的标签就等于让黑框吃浏览器默认列表样式',
         );
         expect(
@@ -70,7 +74,8 @@ void main() {
       expect(
         body,
         contains('mergeIdenticalPitchGroups(pitches || [])'),
-        reason: '制卡侧又直接吃原始 pitches 了 —— 两本词典给出同一份发音时，'
+        reason:
+            '制卡侧又直接吃原始 pitches 了 —— 两本词典给出同一份发音时，'
             '弹窗里合成一行、卡片上却会重复两遍',
       );
       expect(body, contains('constructPitchPositionHtml(normalizedPitches)'));
@@ -110,12 +115,14 @@ void main() {
     // override 里（`css` 逐字节 vendored 自 donkuri/lapis 1.7.0，重新 vendor 会
     // 把写进去的补丁静默冲掉，且会让原版 Lapis 用户被 lapis_styling 的 pristine
     // 集合判成「手改过」）。而 `template.css` 才是真正推给 Anki 的那份。
-    final List<List<String>> parsed =
-        rules(maskCssComments(LapisNoteType.template.css));
+    final List<List<String>> parsed = rules(
+      maskCssComments(LapisNoteType.template.css),
+    );
 
     String declsOf(bool Function(List<String>) where, String what) {
-      final Iterable<String> hits =
-          parsed.where(where).map((List<String> r) => r[1]);
+      final Iterable<String> hits = parsed
+          .where(where)
+          .map((List<String> r) => r[1]);
       expect(hits, isNotEmpty, reason: '$what 规则整条没了');
       return hits.join('\n');
     }
@@ -124,14 +131,18 @@ void main() {
       final Iterable<String> selectors = parsed
           .where((List<String> r) => r[1].contains('list-style: none'))
           .map((List<String> r) => r[0]);
-      expect(selectors, isNotEmpty,
-          reason: '#pitch-tags 的 list 归一规则整条没了 —— 黑框会吃回浏览器默认列表样式');
+      expect(
+        selectors,
+        isNotEmpty,
+        reason: '#pitch-tags 的 list 归一规则整条没了 —— 黑框会吃回浏览器默认列表样式',
+      );
       final String joined = selectors.join('\n');
       expect(joined, contains('#pitch-tags ul'));
       expect(
         joined,
         contains('#pitch-tags ol'),
-        reason: 'BUG-2151 之前制卡侧写的是 <ol>，那批卡已经在用户 Anki 里、改不了；'
+        reason:
+            'BUG-2151 之前制卡侧写的是 <ol>，那批卡已经在用户 Anki 里、改不了；'
             'CSS 漏掉 ol 就等于放着它们继续错版',
       );
     });
@@ -157,16 +168,22 @@ void main() {
             r[1].contains('list-style: none'),
         '#pitch-tags 的列表',
       );
-      expect(decls, contains('display: inline-flex'),
-          reason: '退回 display:inline 就没有换行机会了：制卡侧产出的 li 之间没有空白');
+      expect(
+        decls,
+        contains('display: inline-flex'),
+        reason: '退回 display:inline 就没有换行机会了：制卡侧产出的 li 之间没有空白',
+      );
       expect(decls, contains('flex-wrap: wrap'));
 
       final String liDecls = declsOf(
         (List<String> r) => r[0].trim() == '#pitch-tags li',
         '#pitch-tags li',
       );
-      expect(liDecls, contains('white-space: nowrap'),
-          reason: '一条音标是一个整体，断成 `[/fɜː` + `st/]` 比不换行更糟');
+      expect(
+        liDecls,
+        contains('white-space: nowrap'),
+        reason: '一条音标是一个整体，断成 `[/fɜː` + `st/]` 比不换行更糟',
+      );
     });
 
     test('#pitch-tags 的宽度上限相对容器，不是相对视口（BUG-2155）', () {
@@ -174,11 +191,18 @@ void main() {
         (List<String> r) => r[0].trim() == '#pitch-tags',
         '#pitch-tags 自身',
       );
-      expect(decls, contains('max-width: 100%'),
-          reason: '不覆盖 .tags 的 max-width:60dvw 的话，宽屏上这个框比整个卡头还宽，'
-              '窄卡上会把 .def-header 顶出视口、封面被推到看不见');
-      expect(decls, contains('white-space: normal'),
-          reason: '.tags 的 nowrap 是给单个短标签设计的，音标词典一个词能给十几条');
+      expect(
+        decls,
+        contains('max-width: 100%'),
+        reason:
+            '不覆盖 .tags 的 max-width:60dvw 的话，宽屏上这个框比整个卡头还宽，'
+            '窄卡上会把 .def-header 顶出视口、封面被推到看不见',
+      );
+      expect(
+        decls,
+        contains('white-space: normal'),
+        reason: '.tags 的 nowrap 是给单个短标签设计的，音标词典一个词能给十几条',
+      );
     });
 
     test('.dh-vocab 有 min-width: 0，不会饿死封面图那一列（BUG-2155）', () {
@@ -186,9 +210,13 @@ void main() {
         (List<String> r) => r[0].trim() == '.dh-vocab',
         '.dh-vocab',
       );
-      expect(decls, contains('min-width: 0'),
-          reason: 'flex item 的 min-width 默认 auto = 不小于内容最小尺寸；'
-              '标签框一宽，.dh-image 就被压成 0');
+      expect(
+        decls,
+        contains('min-width: 0'),
+        reason:
+            'flex item 的 min-width 默认 auto = 不小于内容最小尺寸；'
+            '标签框一宽，.dh-image 就被压成 0',
+      );
     });
   });
 }

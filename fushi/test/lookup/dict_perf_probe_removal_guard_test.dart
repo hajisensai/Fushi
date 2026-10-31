@@ -59,7 +59,8 @@ void main() {
     expect(
       src.contains('_isSearchingNotifier.dispose()'),
       isTrue,
-      reason: '$baseSourcePagePath 的 dispose() 必须释放 _isSearchingNotifier，'
+      reason:
+          '$baseSourcePagePath 的 dispose() 必须释放 _isSearchingNotifier，'
           '否则 ValueNotifier 监听器泄漏（BUG-913）',
     );
   });

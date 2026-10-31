@@ -15,8 +15,9 @@ void main() {
   // path_provider 平台通道；单测里没有插件实现，mock 一个临时目录即可。
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_manga_reg_path_provider');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_manga_reg_path_provider',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -42,10 +43,7 @@ void main() {
     final Map<String, MediaSource>? readerSources =
         appModel.mediaSources[ReaderMediaType.instance];
     expect(readerSources, isNotNull);
-    expect(
-      readerSources!['reader_manga'],
-      same(MangaFushiSource.instance),
-    );
+    expect(readerSources!['reader_manga'], same(MangaFushiSource.instance));
     // 既有 EPUB / PDF 源必须仍在（无覆盖）。
     expect(readerSources['reader_fushi'], same(ReaderFushiSource.instance));
     expect(readerSources['reader_pdf'], same(ReaderPdfSource.instance));

@@ -19,40 +19,58 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final String pageSrc =
-      File('lib/src/pages/implementations/texthooker_page.dart')
-          .readAsStringSync();
-  final String panelSrc =
-      File('lib/src/mining/gal_audio_tracks_panel.dart').readAsStringSync();
+  final String pageSrc = File(
+    'lib/src/pages/implementations/texthooker_page.dart',
+  ).readAsStringSync();
+  final String panelSrc = File(
+    'lib/src/mining/gal_audio_tracks_panel.dart',
+  ).readAsStringSync();
 
   test('工作台顶栏有音轨面板直达入口（BUG-1128 ①）', () {
     final int entryAt = pageSrc.indexOf("FushiFocusId('game-toolbar-tracks')");
     expect(
       entryAt,
       greaterThan(0),
-      reason: '工作台顶栏必须保留音轨面板按钮（焦点 id game-toolbar-tracks）——'
+      reason:
+          '工作台顶栏必须保留音轨面板按钮（焦点 id game-toolbar-tracks）——'
           '排除 BGM 是会话级操作，不能又退回「先随便找一句才能进」',
     );
     // 按钮声明块内必须直接打开会话音轨面板。
     final int openAt = pageSrc.indexOf('_showSessionTrackPanel()', entryAt);
-    expect(openAt, greaterThan(entryAt),
-        reason: '顶栏音轨按钮必须打开 _showSessionTrackPanel');
-    expect(openAt - entryAt, lessThan(400),
-        reason: '打开调用必须就在该按钮声明内，不得匹配到远处无关调用');
-    expect(pageSrc.contains('t.game_audio_tracks'), isTrue,
-        reason: '顶栏音轨入口必须有可读文案');
+    expect(
+      openAt,
+      greaterThan(entryAt),
+      reason: '顶栏音轨按钮必须打开 _showSessionTrackPanel',
+    );
+    expect(
+      openAt - entryAt,
+      lessThan(400),
+      reason: '打开调用必须就在该按钮声明内，不得匹配到远处无关调用',
+    );
+    expect(
+      pageSrc.contains('t.game_audio_tracks'),
+      isTrue,
+      reason: '顶栏音轨入口必须有可读文案',
+    );
   });
 
   test('面板刷新快照 + 逐轨 setTrackExcluded 接线（BUG-1128 ②）', () {
-    final int dialogAt =
-        pageSrc.indexOf('Future<void> _showSessionTrackPanel()');
+    final int dialogAt = pageSrc.indexOf(
+      'Future<void> _showSessionTrackPanel()',
+    );
     expect(dialogAt, greaterThan(0), reason: '_showSessionTrackPanel 必须存在');
     final String dialog = pageSrc.substring(dialogAt, dialogAt + 3000);
 
-    expect(dialog.contains('refreshAudioTracks()'), isTrue,
-        reason: '打开面板要先刷新音轨快照，避免展示过期列表');
-    expect(dialog.contains('GalAudioTracksPanel('), isTrue,
-        reason: '工作台音轨面板必须复用共享组件，不许再写第二份轨列表');
+    expect(
+      dialog.contains('refreshAudioTracks()'),
+      isTrue,
+      reason: '打开面板要先刷新音轨快照，避免展示过期列表',
+    );
+    expect(
+      dialog.contains('GalAudioTracksPanel('),
+      isTrue,
+      reason: '工作台音轨面板必须复用共享组件，不许再写第二份轨列表',
+    );
     expect(
       dialog.contains('onToggleExcluded: _session.setTrackExcluded'),
       isTrue,
@@ -61,8 +79,11 @@ void main() {
   });
 
   test('共享面板按后端门控并渲染排除/恢复操作（BUG-1128 ③）', () {
-    expect(panelSrc.contains('galTrackSelectionAffectsCapture'), isTrue,
-        reason: '排除只在引擎 PCM 后端生效——必须按后端门控，不让用户点不生效的开关');
+    expect(
+      panelSrc.contains('galTrackSelectionAffectsCapture'),
+      isTrue,
+      reason: '排除只在引擎 PCM 后端生效——必须按后端门控，不让用户点不生效的开关',
+    );
     expect(
       panelSrc.contains('game_track_exclude_bgm') &&
           panelSrc.contains('game_track_restore'),
@@ -71,7 +92,10 @@ void main() {
     );
     final int tileAt = panelSrc.indexOf('class GalTrackTile');
     expect(tileAt, greaterThan(0), reason: '逐轨 tile 组件必须存在');
-    expect(panelSrc.indexOf('onToggleExcluded', tileAt), greaterThan(tileAt),
-        reason: '逐轨 tile 必须把排除动作回调出去');
+    expect(
+      panelSrc.indexOf('onToggleExcluded', tileAt),
+      greaterThan(tileAt),
+      reason: '逐轨 tile 必须把排除动作回调出去',
+    );
   });
 }

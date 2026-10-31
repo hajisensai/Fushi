@@ -19,9 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///    且顶栏构建仍以 `_showTopProgress` 为唯一门控（关后顶栏 'fushi_progress' 不渲染）。
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 /// 收集 behavior（阅读操作）组的 schema 项（按 group 聚合，零 harness 依赖；
@@ -76,46 +74,64 @@ void main() {
     // 同一 DB key；decode 端两者皆兼容——BUG-1116 后 ReaderSettings 与
     // MediaSource 读侧均走 PrefCodec.decodeUntyped（标签值 + 裸值都认）。
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_fushi:show_top_progress_bar'], 'false',
-        reason: 'key 实际落 src:reader_fushi:show_top_progress_bar');
+    expect(
+      prefs['src:reader_fushi:show_top_progress_bar'],
+      'false',
+      reason: 'key 实际落 src:reader_fushi:show_top_progress_bar',
+    );
   });
 
   test('ReaderFushiSource 回退路径（无 readerSettings 时经 getPreference）', () async {
     // readerSettings == null → 走 getPreference 路径。
-    expect(ReaderFushiSource.instance.showTopProgressBar, isTrue,
-        reason: '回退路径默认 true');
+    expect(
+      ReaderFushiSource.instance.showTopProgressBar,
+      isTrue,
+      reason: '回退路径默认 true',
+    );
 
     ReaderFushiSource.instance.toggleShowTopProgressBar();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_fushi:show_top_progress_bar'], 'b:false',
-        reason: '回退 toggle 也必须写穿同一 DB key');
+    expect(
+      prefs['src:reader_fushi:show_top_progress_bar'],
+      'b:false',
+      reason: '回退 toggle 也必须写穿同一 DB key',
+    );
     expect(ReaderFushiSource.instance.showTopProgressBar, isFalse);
   });
 
   test('schema 项存在、落 behavior 组、order≥12（不撞 TODO-725 的 0..11）', () {
     final List<SettingsItem> items = _behaviorItems();
     final SettingsItem? item = items.cast<SettingsItem?>().firstWhere(
-          (SettingsItem? i) =>
-              i!.id == 'reading_controls.show_top_progress_bar',
-          orElse: () => null,
-        );
-    expect(item, isNotNull,
-        reason: 'behavior 组应含 reading_controls.show_top_progress_bar');
+      (SettingsItem? i) => i!.id == 'reading_controls.show_top_progress_bar',
+      orElse: () => null,
+    );
+    expect(
+      item,
+      isNotNull,
+      reason: 'behavior 组应含 reading_controls.show_top_progress_bar',
+    );
 
     final int order = item!.reader!.order;
-    expect(order, greaterThanOrEqualTo(12),
-        reason: 'order 必须 ≥12，落在 TODO-725 收敛的 0..11 之外，避免撞号');
+    expect(
+      order,
+      greaterThanOrEqualTo(12),
+      reason: 'order 必须 ≥12，落在 TODO-725 收敛的 0..11 之外，避免撞号',
+    );
 
     // 组内不与现有任何 order 撞号。
     final List<int> others = items
-        .where((SettingsItem i) =>
-            i.id != 'reading_controls.show_top_progress_bar')
+        .where(
+          (SettingsItem i) => i.id != 'reading_controls.show_top_progress_bar',
+        )
         .map((SettingsItem i) => i.reader!.order)
         .toList();
-    expect(others, isNot(contains(order)),
-        reason: 'behavior 组 order 不得撞号：others=$others new=$order');
+    expect(
+      others,
+      isNot(contains(order)),
+      reason: 'behavior 组 order 不得撞号：others=$others new=$order',
+    );
   });
 
   test('源码：_showTopProgress 与门并入 showTopProgressBar（关后顶栏隐藏）', () {
@@ -136,14 +152,20 @@ void main() {
     final String chrome = File(
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     ).readAsStringSync();
-    expect(chrome.contains("ValueKey<String>('fushi_progress')"), isTrue,
-        reason: '顶栏文本 key 仍为 fushi_progress');
+    expect(
+      chrome.contains("ValueKey<String>('fushi_progress')"),
+      isTrue,
+      reason: '顶栏文本 key 仍为 fushi_progress',
+    );
     // TODO-975：顶栏门控收敛进 _topProgressShouldPaint（挤压恒随 _showTopProgress、
     // 悬浮再加 transient 旗），关进度仍隐藏（topProgressVisible 在 showTopProgress=false
     // 返 false）；不变式不退回。
-    expect(chrome.contains('!_topProgressShouldPaint'), isTrue,
-        reason:
-            '_buildTopProgressBar 由 _topProgressShouldPaint 门控（含 _showTopProgress）');
+    expect(
+      chrome.contains('!_topProgressShouldPaint'),
+      isTrue,
+      reason:
+          '_buildTopProgressBar 由 _topProgressShouldPaint 门控（含 _showTopProgress）',
+    );
     final String pageSrc = File(
       'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();

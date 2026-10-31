@@ -8,12 +8,12 @@ import 'package:fushi/utils.dart';
 class TextSegmentationEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   TextSegmentationEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Text Segmentation',
-          description: 'Search or select a new term from segmented text.',
-          icon: Icons.account_tree_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Text Segmentation',
+        description: 'Search or select a new term from segmented text.',
+        icon: Icons.account_tree_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

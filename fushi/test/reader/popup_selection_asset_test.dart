@@ -16,16 +16,16 @@ void main() {
   test('defines selectFromPosition and keeps selectText delegating to it', () {
     expect(js, contains('selectFromPosition('));
     expect(js, contains('selectText('));
-    expect(
-      js,
-      contains('return this.selectFromPosition(hit.node, hit.offset'),
-    );
+    expect(js, contains('return this.selectFromPosition(hit.node, hit.offset'));
   });
 
   test('fires textSelected from a single place (the shared core)', () {
     final int emitters = "callHandler('textSelected'".allMatches(js).length;
-    expect(emitters, 1,
-        reason: 'textSelected should only be emitted by selectFromPosition');
+    expect(
+      emitters,
+      1,
+      reason: 'textSelected should only be emitted by selectFromPosition',
+    );
   });
 
   test('still exposes the methods the caret depends on', () {

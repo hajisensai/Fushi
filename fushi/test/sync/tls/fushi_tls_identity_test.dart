@@ -54,10 +54,8 @@ void main() {
         commonName: 'hibiki-test',
         sanIpAddresses: <String>['127.0.0.1'],
       );
-      final fp1 =
-          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
-      final fp2 =
-          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
+      final fp1 = FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
+      final fp2 = FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
       expect(fp1, fp2);
       // 32 字节 -> 32 个两位 hex，31 个冒号分隔。
       final parts = fp1.split(':');
@@ -76,8 +74,9 @@ void main() {
       // 用 X509Certificate 解析出的 DER 经 fingerprintOfDer 应与 store 的一致。
       final ctx = SecurityContext();
       ctx.useCertificateChainBytes(generated.certificatePem.codeUnits);
-      final storeFp =
-          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem);
+      final storeFp = FushiTlsIdentityStore.fingerprintOf(
+        generated.certificatePem,
+      );
       // store 走 PEM->DER->sha256；pinning 走 cert.der->sha256。两者比对在
       // 下面的 handshake 测试里被端到端验证；这里仅断言 store 自洽且非空。
       expect(storeFp.isNotEmpty, isTrue);
@@ -101,8 +100,11 @@ void main() {
       expect(first.fingerprintSha256.split(':').length, 32);
 
       final second = await store.loadOrCreate();
-      expect(second.fingerprintSha256, first.fingerprintSha256,
-          reason: '二次加载应复用落盘证书，指纹不变。');
+      expect(
+        second.fingerprintSha256,
+        first.fingerprintSha256,
+        reason: '二次加载应复用落盘证书，指纹不变。',
+      );
     });
 
     test('regenerate 产出新证书（指纹变化，旧钉扎失效）', () async {
@@ -127,8 +129,9 @@ void main() {
       identity = FushiTlsIdentity(
         certificatePem: generated.certificatePem,
         privateKeyPem: generated.privateKeyPem,
-        fingerprintSha256:
-            FushiTlsIdentityStore.fingerprintOf(generated.certificatePem),
+        fingerprintSha256: FushiTlsIdentityStore.fingerprintOf(
+          generated.certificatePem,
+        ),
       );
       serverCtx = SecurityContext()
         ..useCertificateChainBytes(identity.certificatePem.codeUnits)
@@ -164,7 +167,8 @@ void main() {
 
     test('指纹错 -> 握手失败（HandshakeException / 连接被拒）', () async {
       // 一个合法形态但与 server 证书不同的指纹（全 00）。
-      const wrongFp = '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:'
+      const wrongFp =
+          '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:'
           '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00';
       final client = createPinnedHttpPackageClient(
         expectedFingerprint: wrongFp,
@@ -172,11 +176,13 @@ void main() {
       try {
         await expectLater(
           client.get(Uri.parse('https://127.0.0.1:$port/')),
-          throwsA(anyOf(
-            isA<HandshakeException>(),
-            isA<http.ClientException>(),
-            isA<SocketException>(),
-          )),
+          throwsA(
+            anyOf(
+              isA<HandshakeException>(),
+              isA<http.ClientException>(),
+              isA<SocketException>(),
+            ),
+          ),
           reason: '指纹不匹配必须握手失败，绝不放行。',
         );
       } finally {

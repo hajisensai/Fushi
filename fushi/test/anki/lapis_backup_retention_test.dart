@@ -31,13 +31,13 @@ class _FakeRepo extends BaseAnkiRepository {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      AnkiNoteTypeDefinition(
-        name: LapisNoteType.modelName,
-        fields: LapisNoteType.fields,
-        templates: const <AnkiCardTemplate>[],
-        css: LapisNoteType.template.css,
-      );
+    String modelName,
+  ) async => AnkiNoteTypeDefinition(
+    name: LapisNoteType.modelName,
+    fields: LapisNoteType.fields,
+    templates: const <AnkiCardTemplate>[],
+    css: LapisNoteType.template.css,
+  );
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async =>
@@ -47,8 +47,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -82,8 +81,10 @@ void main() {
     expect(parseLapisBackupTimestamp(_backupName(at)), at);
     expect(parseLapisBackupTimestamp('lapis-garbage.json'), isNull);
     expect(parseLapisBackupTimestamp('other-file.json'), isNull);
-    expect(parseLapisBackupTimestamp('lapis-2026-01-01T00-00-00.000Z.txt'),
-        isNull);
+    expect(
+      parseLapisBackupTimestamp('lapis-2026-01-01T00-00-00.000Z.txt'),
+      isNull,
+    );
   });
 
   test('边界：正好 10 份、全都远超 90 天 → 一份都不删', () {
@@ -103,8 +104,9 @@ void main() {
   });
 
   test('边界：第 11 份 90 天零 1 毫秒 → 删这一份', () {
-    final DateTime doomedAt =
-        now.subtract(const Duration(days: 90, milliseconds: 1));
+    final DateTime doomedAt = now.subtract(
+      const Duration(days: 90, milliseconds: 1),
+    );
     final List<String> names = _namesNewestFirst(<DateTime>[
       for (int i = 0; i < 10; i++) now.subtract(Duration(days: i)),
       doomedAt,
@@ -121,10 +123,10 @@ void main() {
       now.subtract(const Duration(days: 400)),
     ];
     final List<String> names = _namesNewestFirst(stamps);
-    expect(
-      _prune(names, now),
-      <String>[_backupName(stamps[12]), _backupName(stamps[13])],
-    );
+    expect(_prune(names, now), <String>[
+      _backupName(stamps[12]),
+      _backupName(stamps[13]),
+    ]);
   });
 
   test('时刻解析不出的条目永不删（年龄不可判定 → 保守保留）', () {
@@ -133,10 +135,9 @@ void main() {
       'lapis-not-a-timestamp.json',
       _backupName(now.subtract(const Duration(days: 999))),
     ];
-    expect(
-      _prune(names, now),
-      <String>[_backupName(now.subtract(const Duration(days: 999)))],
-    );
+    expect(_prune(names, now), <String>[
+      _backupName(now.subtract(const Duration(days: 999))),
+    ]);
   });
 
   test('少于保留下限时直接短路（一份都不碰）', () {
@@ -169,8 +170,9 @@ void main() {
 
     Future<void> seed(List<DateTime> stamps) async {
       for (final DateTime at in stamps) {
-        await File('${dir.path}${Platform.pathSeparator}${_backupName(at)}')
-            .writeAsString('{}');
+        await File(
+          '${dir.path}${Platform.pathSeparator}${_backupName(at)}',
+        ).writeAsString('{}');
       }
     }
 
@@ -183,8 +185,10 @@ void main() {
         now.subtract(const Duration(days: 400)),
       ]);
 
-      final LapisBackupOutcome? outcome =
-          await _TempDirLapisService(_FakeRepo(), dir).backupNow();
+      final LapisBackupOutcome? outcome = await _TempDirLapisService(
+        _FakeRepo(),
+        dir,
+      ).backupNow();
 
       expect(outcome, isNotNull);
       expect(await outcome!.file.exists(), isTrue);
@@ -192,8 +196,10 @@ void main() {
       // 掉出了保留窗口但只有 10 天大，不满 90 天照样留着；只有最后两份同时
       // 满足「窗口外 + 超 90 天」，删的就是它们。
       expect(outcome.prunedCount, 2);
-      final List<File> left =
-          await _TempDirLapisService(_FakeRepo(), dir).listBackups();
+      final List<File> left = await _TempDirLapisService(
+        _FakeRepo(),
+        dir,
+      ).listBackups();
       expect(left, hasLength(11));
     });
 
@@ -203,8 +209,10 @@ void main() {
         for (int i = 0; i < 5; i++) now.subtract(Duration(days: 900 + i)),
       ]);
 
-      final LapisBackupOutcome? outcome =
-          await _TempDirLapisService(_FakeRepo(), dir).backupNow();
+      final LapisBackupOutcome? outcome = await _TempDirLapisService(
+        _FakeRepo(),
+        dir,
+      ).backupNow();
 
       expect(outcome!.prunedCount, 0);
       expect(

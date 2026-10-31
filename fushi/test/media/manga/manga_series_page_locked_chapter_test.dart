@@ -302,7 +302,11 @@ void main() {
       await openPage(tester, _LoginAdapter());
       expect(find.byKey(appBarLoginKey), findsOneWidget);
       expect(
-        tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(appBarLoginKey))).onPressed,
+        tester
+            .widget<IconButton>(
+              glassUnwrap<IconButton>(find.byKey(appBarLoginKey)),
+            )
+            .onPressed,
         isNotNull,
       );
     });

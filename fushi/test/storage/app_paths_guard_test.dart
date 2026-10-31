@@ -34,19 +34,29 @@ void main() {
         'FUSHI_TEST_ROOT': root.path,
       };
       // 旧解析（各模块原先各自调用的等价物）。
-      final Directory expectedDocs =
-          fushiTestDirectory('app-documents', environment: env)!;
-      final Directory expectedSupport =
-          fushiTestDirectory('app-support', environment: env)!;
-      final Directory expectedTemp =
-          fushiTestDirectory('temp', environment: env)!;
+      final Directory expectedDocs = fushiTestDirectory(
+        'app-documents',
+        environment: env,
+      )!;
+      final Directory expectedSupport = fushiTestDirectory(
+        'app-support',
+        environment: env,
+      )!;
+      final Directory expectedTemp = fushiTestDirectory(
+        'temp',
+        environment: env,
+      )!;
 
       // 三个根逐字节落在注入的临时根下，子目录名与旧解析一致（app-documents /
       // app-support / temp）——这正是 AppPaths._resolve* 内部沿用的同一 helper。
-      expect(expectedDocs.path,
-          equals(p.join(root.absolute.path, 'app-documents')));
-      expect(expectedSupport.path,
-          equals(p.join(root.absolute.path, 'app-support')));
+      expect(
+        expectedDocs.path,
+        equals(p.join(root.absolute.path, 'app-documents')),
+      );
+      expect(
+        expectedSupport.path,
+        equals(p.join(root.absolute.path, 'app-support')),
+      );
       expect(expectedTemp.path, equals(p.join(root.absolute.path, 'temp')));
     });
 
@@ -86,10 +96,16 @@ void main() {
     for (final String rel in convergedModules) {
       test('$rel 不直连 documents/support 数据根（经 AppPaths）', () {
         final String src = read(rel);
-        expect(src.contains('getApplicationDocumentsDirectory'), isFalse,
-            reason: '$rel 应经 AppPaths 取 documents 根，不得直连 path_provider');
-        expect(src.contains('getApplicationSupportDirectory'), isFalse,
-            reason: '$rel 应经 AppPaths 取 support 根，不得直连 path_provider');
+        expect(
+          src.contains('getApplicationDocumentsDirectory'),
+          isFalse,
+          reason: '$rel 应经 AppPaths 取 documents 根，不得直连 path_provider',
+        );
+        expect(
+          src.contains('getApplicationSupportDirectory'),
+          isFalse,
+          reason: '$rel 应经 AppPaths 取 support 根，不得直连 path_provider',
+        );
       });
     }
 
@@ -103,8 +119,11 @@ void main() {
 
     test('app_model 经 AppPaths.resolve 派生三个根', () {
       final String src = read('lib/src/models/app_model.dart');
-      expect(src.contains('AppPaths.resolve()'), isTrue,
-          reason: '_prepareRuntimeDirectories 必须经 AppPaths.resolve 解析');
+      expect(
+        src.contains('AppPaths.resolve()'),
+        isTrue,
+        reason: '_prepareRuntimeDirectories 必须经 AppPaths.resolve 解析',
+      );
       expect(src.contains('_appPaths.documentsRoot'), isTrue);
       expect(src.contains('_appPaths.supportRoot'), isTrue);
       expect(src.contains('_appPaths.tempRoot'), isTrue);
@@ -114,9 +133,13 @@ void main() {
       // 上游包不能 import app 层 AppPaths，故包内自有单一解析点 _documentsRoot；
       // 三处持久目录方法都经它，不再各自直连 path_provider。
       final String src = read(
-          '../packages/fushi_audio/lib/src/audiobook/audiobook_storage.dart');
-      expect(src.contains('_documentsRoot()'), isTrue,
-          reason: 'audiobook_storage 必须有包内单一 documents 解析点 _documentsRoot');
+        '../packages/fushi_audio/lib/src/audiobook/audiobook_storage.dart',
+      );
+      expect(
+        src.contains('_documentsRoot()'),
+        isTrue,
+        reason: 'audiobook_storage 必须有包内单一 documents 解析点 _documentsRoot',
+      );
       // _documentsRoot 是唯一真正调用 path_provider 的地方：三个持久目录方法都改读
       // `await _documentsRoot()`，包内对 getApplicationDocumentsDirectory() 的实际
       // 调用表达式只剩 _documentsRoot 自身一处（注释里提到名字不算调用）。
@@ -129,19 +152,25 @@ void main() {
       // audiobook_storage.dart 是纯 Dart，**不再直连 path_provider**——平台兜底
       // `getApplicationDocumentsDirectory` 挪到重文件 audiobook_storage_platform.dart，
       // 由 installAudiobookStoragePlatform() 以 `??=` 装入（不覆盖 app 层注入的 AppPaths）。
-      expect(src.contains('path_provider'), isFalse,
-          reason: 'audiobook_storage.dart 必须零插件（无头服务端消费）');
       expect(
-        RegExp(r'documentsRootResolver \?\? _unassignedDocumentsRoot')
-            .hasMatch(src),
+        src.contains('path_provider'),
+        isFalse,
+        reason: 'audiobook_storage.dart 必须零插件（无头服务端消费）',
+      );
+      expect(
+        RegExp(
+          r'documentsRootResolver \?\? _unassignedDocumentsRoot',
+        ).hasMatch(src),
         isTrue,
         reason: '_documentsRoot 应经 resolver 门控、未装配时抛 StateError',
       );
       final String platformSrc = read(
-          'lib/src/media/audiobook/audiobook_storage_platform.dart');
+        'lib/src/media/audiobook/audiobook_storage_platform.dart',
+      );
       expect(
-        RegExp(r'documentsRootResolver \?\?= getApplicationDocumentsDirectory')
-            .hasMatch(platformSrc),
+        RegExp(
+          r'documentsRootResolver \?\?= getApplicationDocumentsDirectory',
+        ).hasMatch(platformSrc),
         isTrue,
         reason: '平台兜底只能以 ??= 补默认值，不得覆盖 AppPaths 注入',
       );
@@ -158,49 +187,73 @@ void main() {
     // caller。有声书有 resolver 注入契约 + 上面的正则守卫，字幕/封面写路径此前无专属
     // 守卫——加源码扫描防这两个 caller 回退直连 path_provider 数据根。
     test('subtitle.part.dart 字幕写路径经 AppPaths.videoSubtitlesDirectory', () {
-      final String src =
-          read('lib/src/pages/implementations/video_fushi/subtitle.part.dart');
+      final String src = read(
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+      );
       // Jimaku 下载 saveDir(:468) 与外挂字幕导入 destDir(:651) 两处写目录都经
       // AppPaths.videoSubtitlesDirectory()——跟随桌面自定义数据根，不落回平台 Documents。
       expect(
         'AppPaths.videoSubtitlesDirectory'.allMatches(src).length,
         greaterThanOrEqualTo(2),
-        reason: '字幕下载 saveDir 与导入 destDir 都必须经 '
+        reason:
+            '字幕下载 saveDir 与导入 destDir 都必须经 '
             'AppPaths.videoSubtitlesDirectory 解析（至少 2 处）',
       );
       // 回退直连 documents/support 数据根就是本守卫要拦的回归；这两个 path_provider
       // 入口在本文件没有任何合法用途（唯一合法的 getTemporaryDirectory 抽远端字幕临时
       // 副本，:594，不在此禁列——只禁 documents/support 数据根）。
-      expect(src.contains('getApplicationDocumentsDirectory'), isFalse,
-          reason: '字幕写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths');
-      expect(src.contains('getApplicationSupportDirectory'), isFalse,
-          reason: '字幕写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths');
+      expect(
+        src.contains('getApplicationDocumentsDirectory'),
+        isFalse,
+        reason: '字幕写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths',
+      );
+      expect(
+        src.contains('getApplicationSupportDirectory'),
+        isFalse,
+        reason: '字幕写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths',
+      );
     });
 
-    test(
-        'video_cover_extractor.dart extractVideoCover 封面写路径经 '
+    test('video_cover_extractor.dart extractVideoCover 封面写路径经 '
         'AppPaths.videoCoversDirectory', () {
       // 审计 §1-A：封面抽取从 desktop_audio_clipper.dart 迁到
       // media/video/video_cover_extractor.dart，守卫跟着实现走。
-      final String src = read('../packages/fushi_engine/lib/media/video/video_cover_extractor.dart');
+      final String src = read(
+        '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart',
+      );
       // extractVideoCover 封面目录经 AppPaths.videoCoversDirectory()——同上跟随
       // 数据根，不落回平台 Documents。
-      expect(src.contains('AppPaths.videoCoversDirectory'), isTrue,
-          reason: 'extractVideoCover 封面目录必须经 AppPaths.videoCoversDirectory 解析');
+      expect(
+        src.contains('AppPaths.videoCoversDirectory'),
+        isTrue,
+        reason: 'extractVideoCover 封面目录必须经 AppPaths.videoCoversDirectory 解析',
+      );
       // 封面写路径同样不得回退直连 documents/support 数据根。
-      expect(src.contains('getApplicationDocumentsDirectory'), isFalse,
-          reason: '封面写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths');
-      expect(src.contains('getApplicationSupportDirectory'), isFalse,
-          reason: '封面写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths');
+      expect(
+        src.contains('getApplicationDocumentsDirectory'),
+        isFalse,
+        reason: '封面写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths',
+      );
+      expect(
+        src.contains('getApplicationSupportDirectory'),
+        isFalse,
+        reason: '封面写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths',
+      );
       // 原宿主文件（音频剪辑工具）也不得回退直连数据根（迁移后其不应再包含封面
       // 目录解析逻辑）。
-      final String clipper =
-          read('../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart');
-      expect(clipper.contains('getApplicationDocumentsDirectory'), isFalse,
-          reason:
-              'desktop_audio_clipper 不得直连 getApplicationDocumentsDirectory');
-      expect(clipper.contains('getApplicationSupportDirectory'), isFalse,
-          reason: 'desktop_audio_clipper 不得直连 getApplicationSupportDirectory');
+      final String clipper = read(
+        '../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart',
+      );
+      expect(
+        clipper.contains('getApplicationDocumentsDirectory'),
+        isFalse,
+        reason: 'desktop_audio_clipper 不得直连 getApplicationDocumentsDirectory',
+      );
+      expect(
+        clipper.contains('getApplicationSupportDirectory'),
+        isFalse,
+        reason: 'desktop_audio_clipper 不得直连 getApplicationSupportDirectory',
+      );
     });
   });
 }

@@ -144,8 +144,9 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
     if (moving.isEmpty) return;
     setState(() {
       for (final _SplitGroup g in _groups) {
-        g.members
-            .removeWhere((CollectionSplitMember m) => _selected.contains(m.id));
+        g.members.removeWhere(
+          (CollectionSplitMember m) => _selected.contains(m.id),
+        );
       }
       final _SplitGroup target = targetIndex < 0
           ? _appendNewGroup()
@@ -244,10 +245,9 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
     if (group.members.isEmpty) {
       return Text(
         t.collection_empty,
-        style: Theme.of(context)
-            .textTheme
-            .bodySmall
-            ?.copyWith(color: cs.onSurfaceVariant),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
       );
     }
     return ConstrainedBox(
@@ -271,10 +271,9 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
                     m.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ),
               ],
@@ -294,8 +293,8 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
         Text(
           t.collection_split_selected(n: _selected.length),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: enabled ? cs.onSurface : cs.onSurfaceVariant,
-              ),
+            color: enabled ? cs.onSurface : cs.onSurfaceVariant,
+          ),
         ),
         const SizedBox(width: 12),
         FushiPopupMenuButton<int>(
@@ -334,19 +333,21 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
 
   /// 确认：丢掉被搬空的组（空合集在数据模型上不存在），其余按当前归属返回。
   void _confirm() {
-    Navigator.of(context).pop(CollectionSplitChoice(
-      groups: <CollectionSplitGroupChoice>[
-        for (final _SplitGroup g in _groups)
-          if (g.members.isNotEmpty)
-            CollectionSplitGroupChoice(
-              name: g.controller.text.trim(),
-              memberIds: <String>[
-                for (final CollectionSplitMember m in g.members) m.id,
-              ],
-              isSeason: g.isSeason,
-            ),
-      ],
-      keepOriginal: _keepOriginal,
-    ));
+    Navigator.of(context).pop(
+      CollectionSplitChoice(
+        groups: <CollectionSplitGroupChoice>[
+          for (final _SplitGroup g in _groups)
+            if (g.members.isNotEmpty)
+              CollectionSplitGroupChoice(
+                name: g.controller.text.trim(),
+                memberIds: <String>[
+                  for (final CollectionSplitMember m in g.members) m.id,
+                ],
+                isSeason: g.isSeason,
+              ),
+        ],
+        keepOriginal: _keepOriginal,
+      ),
+    );
   }
 }

@@ -28,8 +28,8 @@ import '../helpers/scan_scale.dart';
 /// `ShortcutAction.<名>`）和「该通道的取用」，才算这个 (scope, channel) 的消费者。
 void main() {
   /// 通道 → 该通道在源码里的取用写法（命中任一即算取用）。
-  const Map<ShortcutChannel, List<String>> channelTokens =
-      <ShortcutChannel, List<String>>{
+  const Map<ShortcutChannel, List<String>>
+  channelTokens = <ShortcutChannel, List<String>>{
     ShortcutChannel.keyboard: <String>['resolveKeyboard(', '.keyboardBindings'],
     ShortcutChannel.gamepad: <String>['resolveGamepad(', '.gamepadBindings'],
     // 第三种写法是本轮新增的**共享解析阶梯**：页面不再各自写
@@ -107,14 +107,19 @@ void main() {
         .whereType<File>()
         .where((File f) => f.path.endsWith('.dart'))
         .where((File f) {
-      final String p = f.path.replaceAll('\\', '/');
-      return !definitionOnly.any((String d) => p.startsWith(d));
-    }).toList();
+          final String p = f.path.replaceAll('\\', '/');
+          return !definitionOnly.any((String d) => p.startsWith(d));
+        })
+        .toList();
   }
 
   test('扫描规模哨兵：消费方文件确实被枚举到了', () {
-    expectScanScale(consumerFiles().length,
-        what: 'lib/ 下的 .dart（已排除纯定义目录）', atLeast: 750, measured: 931);
+    expectScanScale(
+      consumerFiles().length,
+      what: 'lib/ 下的 .dart（已排除纯定义目录）',
+      atLeast: 750,
+      measured: 931,
+    );
   });
 
   /// 实际存在消费者的 (scope, channel)。
@@ -127,8 +132,9 @@ void main() {
           in byScope.entries) {
         final bool identifiesScope =
             source.contains('ShortcutScope.${entry.key.name}') ||
-                entry.value.any((ShortcutAction a) =>
-                    source.contains('ShortcutAction.${a.name}'));
+            entry.value.any(
+              (ShortcutAction a) => source.contains('ShortcutAction.${a.name}'),
+            );
         if (!identifiesScope) continue;
         for (final MapEntry<ShortcutChannel, List<String>> ch
             in channelTokens.entries) {
@@ -166,12 +172,16 @@ void main() {
           if (!ch.value) continue;
           final String pair = '${scope.name}.${ch.key.name}';
           if (!scope.channels.contains(ch.key)) {
-            violations.add('$platform ${entry.key.key}：默认表配了 '
-                '${ch.key.name} 绑定，但 ${scope.name}.channels 没开放该通道');
+            violations.add(
+              '$platform ${entry.key.key}：默认表配了 '
+              '${ch.key.name} 绑定，但 ${scope.name}.channels 没开放该通道',
+            );
           } else if (!consumed.contains(pair)) {
-            violations.add('$platform ${entry.key.key}：默认表配了 '
-                '${ch.key.name} 绑定，但全仓找不到 $pair 的解析入口'
-                '（${channelTokens[ch.key]!.join(" / ")} 一个都没出现）');
+            violations.add(
+              '$platform ${entry.key.key}：默认表配了 '
+              '${ch.key.name} 绑定，但全仓找不到 $pair 的解析入口'
+              '（${channelTokens[ch.key]!.join(" / ")} 一个都没出现）',
+            );
           }
         }
       }
@@ -179,7 +189,8 @@ void main() {
     expect(
       violations,
       isEmpty,
-      reason: '开箱即带默认绑定却无人解析 = 用户配了/直接按都没反应，'
+      reason:
+          '开箱即带默认绑定却无人解析 = 用户配了/直接按都没反应，'
           '比没有这个选项更糟。要么接上解析入口，要么把默认绑定和通道一起撤掉。'
           '命中：\n${violations.join('\n')}',
     );
@@ -195,22 +206,26 @@ void main() {
       }
     }
 
-    final Set<String> newlyDead =
-        unconsumed.difference(knownUnconsumedChannels);
+    final Set<String> newlyDead = unconsumed.difference(
+      knownUnconsumedChannels,
+    );
     expect(
       newlyDead,
       isEmpty,
-      reason: '新增了「设置页开放、却没有任何解析入口」的通道：$newlyDead。'
+      reason:
+          '新增了「设置页开放、却没有任何解析入口」的通道：$newlyDead。'
           '用户能在设置里配，按下去不会有任何反应。要么接上解析入口，'
           '要么别在 channels 里开放它。',
     );
 
-    final Set<String> alreadyFixed =
-        knownUnconsumedChannels.difference(unconsumed);
+    final Set<String> alreadyFixed = knownUnconsumedChannels.difference(
+      unconsumed,
+    );
     expect(
       alreadyFixed,
       isEmpty,
-      reason: '$alreadyFixed 已经有解析入口（或通道已摘掉），'
+      reason:
+          '$alreadyFixed 已经有解析入口（或通道已摘掉），'
           '请从 knownUnconsumedChannels 里删掉，别让欠账清单虚高。',
     );
   });
@@ -242,30 +257,40 @@ void main() {
     ]) {
       final Map<ShortcutAction, ShortcutBindingSet> table =
           ShortcutDefaults.forPlatform(platform);
-      for (final ShortcutAction action in ShortcutAction.values
-          .where((ShortcutAction a) => a.scope == ShortcutScope.manga)) {
+      for (final ShortcutAction action in ShortcutAction.values.where(
+        (ShortcutAction a) => a.scope == ShortcutScope.manga,
+      )) {
         expect(
-            table[action]!
-                .gamepadBindings
-                .where((GamepadBinding b) => b.button == GamepadButton.b),
-            isEmpty,
-            reason: '$platform ${action.key} 不得默认绑手柄 B'
-                '（B 归 universal globalBack 的两级阶梯）');
+          table[action]!.gamepadBindings.where(
+            (GamepadBinding b) => b.button == GamepadButton.b,
+          ),
+          isEmpty,
+          reason:
+              '$platform ${action.key} 不得默认绑手柄 B'
+              '（B 归 universal globalBack 的两级阶梯）',
+        );
         // mangaDismissDict 是**有意**留空的可选动作：Esc 已归全 app 唯一的
         // 「返回上一级」(globalBack)，它在这里再绑一个键盘默认就会在 manga scope
         // 先命中，把「无弹窗时退出漫画」那一级永久遮蔽（v8 统一的核心不变式，
         // 见 universal_back_test）。翻页动作仍必须有键盘默认。
         if (action == ShortcutAction.mangaDismissDict) continue;
-        expect(table[action]!.keyboardBindings, isNotEmpty,
-            reason: '$platform ${action.key} 必须有键盘默认绑定');
+        expect(
+          table[action]!.keyboardBindings,
+          isNotEmpty,
+          reason: '$platform ${action.key} 必须有键盘默认绑定',
+        );
       }
       for (final ShortcutAction action in const <ShortcutAction>[
         ShortcutAction.mangaPageForward,
         ShortcutAction.mangaPageBackward,
       ]) {
-        expect(table[action]!.gamepadBindings, isNotEmpty,
-            reason: '$platform ${action.key} 必须有手柄默认绑定'
-                '（v8→v9 迁移补发的就是这组，删了老用户就拿不到）');
+        expect(
+          table[action]!.gamepadBindings,
+          isNotEmpty,
+          reason:
+              '$platform ${action.key} 必须有手柄默认绑定'
+              '（v8→v9 迁移补发的就是这组，删了老用户就拿不到）',
+        );
       }
     }
   });
@@ -292,8 +317,9 @@ void main() {
       dotAll: true,
     );
     final List<String> found = <String>[];
-    for (final FileSystemEntity e
-        in Directory('lib').listSync(recursive: true)) {
+    for (final FileSystemEntity e in Directory(
+      'lib',
+    ).listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String src = e.readAsStringSync();
       for (final RegExpMatch m in decl.allMatches(src)) {
@@ -302,7 +328,8 @@ void main() {
         expect(
           body.contains('ShortcutScope.universal'),
           isTrue,
-          reason: '${e.path} 的鼠标阶梯不含 universal：'
+          reason:
+              '${e.path} 的鼠标阶梯不含 universal：'
               '该表面的「返回上一级」会绕过页面自己的逐级退出，'
               '直接落到 app 根的平 Navigator.maybePop()，与键盘 Esc 行为分叉',
         );
@@ -357,7 +384,8 @@ void main() {
       expect(
         body.contains('if (!hostOwnsWebViewPointerInput) return;'),
         isTrue,
-        reason: '$path 的 $handler 必须在指针归 WebView 的平台让位给 JS 腿；'
+        reason:
+            '$path 的 $handler 必须在指针归 WebView 的平台让位给 JS 腿；'
             '缺这道门 = 同一次按下被 Flutter 腿与 JS 腿各执行一次'
             '（JS 腿没有 pointer id，认领协议兜不住）',
       );

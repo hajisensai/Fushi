@@ -55,10 +55,10 @@ void main() {
     });
 
     test('decodes tagged list', () {
-      expect(
-        PrefCodec.decode<List<String>>('j:["a","b"]', <String>[]),
-        ['a', 'b'],
-      );
+      expect(PrefCodec.decode<List<String>>('j:["a","b"]', <String>[]), [
+        'a',
+        'b',
+      ]);
     });
 
     test('string "123" stays string when tagged', () {

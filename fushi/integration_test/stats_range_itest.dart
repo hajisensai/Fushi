@@ -83,160 +83,152 @@ Future<void> _seedHistory(AppModel appModel) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    '统计中心范围：月 / 年 / 全部 + 按书封面槽 + 桌面对话框',
-    (WidgetTester tester) async {
-      final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
-      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-      FlutterError.onError = (FlutterErrorDetails details) {
-        errors.add(details);
-        debugPrint(
-          '[stats-range] FlutterError: ${details.exceptionAsString()}',
-        );
-      };
-      try {
-        await launchFushiTestApp();
-        expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
-        await tester.pump(const Duration(seconds: 2));
-        final AppModel appModel = await readyAppModel(tester);
-        await _seedHistory(appModel);
+  testWidgets('统计中心范围：月 / 年 / 全部 + 按书封面槽 + 桌面对话框', (WidgetTester tester) async {
+    final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      errors.add(details);
+      debugPrint('[stats-range] FlutterError: ${details.exceptionAsString()}');
+    };
+    try {
+      await launchFushiTestApp();
+      expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
+      await tester.pump(const Duration(seconds: 2));
+      final AppModel appModel = await readyAppModel(tester);
+      await _seedHistory(appModel);
 
-        Future<void> settle([int frames = 12]) async {
-          for (int f = 0; f < frames; f++) {
-            await tester.pump(const Duration(milliseconds: 250));
-          }
+      Future<void> settle([int frames = 12]) async {
+        for (int f = 0; f < frames; f++) {
+          await tester.pump(const Duration(milliseconds: 250));
         }
-
-        Future<ObserveShot> shot(String name) async {
-          final ObserveShot s = await captureFlutterFrame(tester, name);
-          expect(s.saved, isTrue, reason: '$name 应落盘');
-          expect(s.nonBlank, isTrue, reason: '$name 不应白屏');
-          return s;
-        }
-
-        /// 直接调范围 chip 的回调（集成测试禁坐标点击；这里要证明的是渲染，
-        /// 不是命中测试）。
-        Future<void> selectMode(String label) async {
-          final FushiSelectableChip chip = tester.widget<FushiSelectableChip>(
-            find
-                .byWidgetPredicate(
-                  (Widget w) => w is FushiSelectableChip && w.label == label,
-                )
-                .first,
-          );
-          chip.onSelected!(true);
-          await settle();
-        }
-
-        Future<void> scrollTo(Finder target) async {
-          final ScrollableState scroller = tester.state<ScrollableState>(
-            find
-                .byWidgetPredicate(
-                  (Widget w) =>
-                      w is Scrollable && w.axisDirection == AxisDirection.down,
-                )
-                .last,
-          );
-          for (int step = 0; step < 60 && target.evaluate().isEmpty; step++) {
-            final double next = scroller.position.pixels + 240;
-            scroller.position.jumpTo(
-              next > scroller.position.maxScrollExtent
-                  ? scroller.position.maxScrollExtent
-                  : next,
-            );
-            await tester.pump(const Duration(milliseconds: 60));
-            if (scroller.position.pixels >= scroller.position.maxScrollExtent) {
-              break;
-            }
-          }
-          await Scrollable.ensureVisible(
-            tester.element(target.first),
-            alignment: 0.05,
-            duration: Duration.zero,
-          );
-          await settle(4);
-        }
-
-        final NavigatorState nav = appModel.navigatorKey.currentState!;
-        nav.push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext _) =>
-                const StatisticsCenterPage(initialTab: StatsCenterTab.overview),
-          ),
-        );
-        await settle(20);
-
-        // 1. 默认「月」。
-        await scrollTo(find.text(t.stat_range_calendar));
-        await shot('range-1-overview-month');
-        expect(find.textContaining(t.stat_range_summary), findsWidgets);
-
-        // 2. 「年」：图按周。
-        await selectMode(t.stat_range_mode_year);
-        await shot('range-2-overview-year');
-
-        // 3. 「全部」：图按月，起点 = 最早一天。
-        await selectMode(t.stat_all_time);
-        await shot('range-3-overview-all');
-        final String earliest = FushiDatabase.statDateKeyOf(
-          DateTime.now().subtract(const Duration(days: 417)),
-        );
-        debugPrint('[stats-range] 期望「全部」起点附近 $earliest');
-        await scrollTo(find.textContaining(t.stat_range_summary));
-        await shot('range-4-overview-all-summary');
-
-        nav.pop();
-        await settle(4);
-
-        // 4. 阅读 tab：书架对比按范围 + 封面槽（范围跨 tab 不共享：新开的中心页
-        //    回到默认「月」，只剩近期那本书）。
-        nav.push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext _) =>
-                const StatisticsCenterPage(initialTab: StatsCenterTab.reading),
-          ),
-        );
-        await settle(20);
-        await selectMode(t.stat_all_time);
-        await scrollTo(find.textContaining(t.stat_bookshelf_compare));
-        await shot('range-5-reading-bookshelf-all');
-        expect(find.text('新装版 タイム・リープ〈上〉'), findsOneWidget);
-        await selectMode(t.stat_range_mode_month);
-        await scrollTo(find.textContaining(t.stat_bookshelf_compare));
-        await shot('range-6-reading-bookshelf-month');
-        expect(
-          find.text('新装版 タイム・リープ〈上〉'),
-          findsNothing,
-          reason: '本月没读过的书不进按月的书架对比',
-        );
-
-        // 5. 桌面时段明细 = 居中对话框。
-        final StatFacts facts = await loadStatFacts(appModel.database);
-        final BuildContext host = appModel.navigatorKey.currentContext!;
-        if (!host.mounted) return;
-        // ignore: unawaited_futures
-        showStatPeriodDetailSheet(
-          host,
-          periodLabel: t.stat_this_month,
-          contains: (String _) => true,
-          facts: facts.dailyBooks,
-          resolvers: StatPeriodDetailResolvers(
-            titleOf: (StatFact f) => f.title,
-          ),
-        );
-        await settle(8);
-        expect(find.byType(Dialog), findsOneWidget);
-        expect(find.byType(BottomSheet), findsNothing);
-        await shot('range-7-period-detail-dialog');
-        nav.pop();
-        await settle(4);
-        nav.pop();
-        await settle(4);
-        debugPrint('[stats-range] 完成，启动期错误 ${errors.length} 条');
-      } finally {
-        FlutterError.onError = oldHandler;
       }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+
+      Future<ObserveShot> shot(String name) async {
+        final ObserveShot s = await captureFlutterFrame(tester, name);
+        expect(s.saved, isTrue, reason: '$name 应落盘');
+        expect(s.nonBlank, isTrue, reason: '$name 不应白屏');
+        return s;
+      }
+
+      /// 直接调范围 chip 的回调（集成测试禁坐标点击；这里要证明的是渲染，
+      /// 不是命中测试）。
+      Future<void> selectMode(String label) async {
+        final FushiSelectableChip chip = tester.widget<FushiSelectableChip>(
+          find
+              .byWidgetPredicate(
+                (Widget w) => w is FushiSelectableChip && w.label == label,
+              )
+              .first,
+        );
+        chip.onSelected!(true);
+        await settle();
+      }
+
+      Future<void> scrollTo(Finder target) async {
+        final ScrollableState scroller = tester.state<ScrollableState>(
+          find
+              .byWidgetPredicate(
+                (Widget w) =>
+                    w is Scrollable && w.axisDirection == AxisDirection.down,
+              )
+              .last,
+        );
+        for (int step = 0; step < 60 && target.evaluate().isEmpty; step++) {
+          final double next = scroller.position.pixels + 240;
+          scroller.position.jumpTo(
+            next > scroller.position.maxScrollExtent
+                ? scroller.position.maxScrollExtent
+                : next,
+          );
+          await tester.pump(const Duration(milliseconds: 60));
+          if (scroller.position.pixels >= scroller.position.maxScrollExtent) {
+            break;
+          }
+        }
+        await Scrollable.ensureVisible(
+          tester.element(target.first),
+          alignment: 0.05,
+          duration: Duration.zero,
+        );
+        await settle(4);
+      }
+
+      final NavigatorState nav = appModel.navigatorKey.currentState!;
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) =>
+              const StatisticsCenterPage(initialTab: StatsCenterTab.overview),
+        ),
+      );
+      await settle(20);
+
+      // 1. 默认「月」。
+      await scrollTo(find.text(t.stat_range_calendar));
+      await shot('range-1-overview-month');
+      expect(find.textContaining(t.stat_range_summary), findsWidgets);
+
+      // 2. 「年」：图按周。
+      await selectMode(t.stat_range_mode_year);
+      await shot('range-2-overview-year');
+
+      // 3. 「全部」：图按月，起点 = 最早一天。
+      await selectMode(t.stat_all_time);
+      await shot('range-3-overview-all');
+      final String earliest = FushiDatabase.statDateKeyOf(
+        DateTime.now().subtract(const Duration(days: 417)),
+      );
+      debugPrint('[stats-range] 期望「全部」起点附近 $earliest');
+      await scrollTo(find.textContaining(t.stat_range_summary));
+      await shot('range-4-overview-all-summary');
+
+      nav.pop();
+      await settle(4);
+
+      // 4. 阅读 tab：书架对比按范围 + 封面槽（范围跨 tab 不共享：新开的中心页
+      //    回到默认「月」，只剩近期那本书）。
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) =>
+              const StatisticsCenterPage(initialTab: StatsCenterTab.reading),
+        ),
+      );
+      await settle(20);
+      await selectMode(t.stat_all_time);
+      await scrollTo(find.textContaining(t.stat_bookshelf_compare));
+      await shot('range-5-reading-bookshelf-all');
+      expect(find.text('新装版 タイム・リープ〈上〉'), findsOneWidget);
+      await selectMode(t.stat_range_mode_month);
+      await scrollTo(find.textContaining(t.stat_bookshelf_compare));
+      await shot('range-6-reading-bookshelf-month');
+      expect(
+        find.text('新装版 タイム・リープ〈上〉'),
+        findsNothing,
+        reason: '本月没读过的书不进按月的书架对比',
+      );
+
+      // 5. 桌面时段明细 = 居中对话框。
+      final StatFacts facts = await loadStatFacts(appModel.database);
+      final BuildContext host = appModel.navigatorKey.currentContext!;
+      if (!host.mounted) return;
+      // ignore: unawaited_futures
+      showStatPeriodDetailSheet(
+        host,
+        periodLabel: t.stat_this_month,
+        contains: (String _) => true,
+        facts: facts.dailyBooks,
+        resolvers: StatPeriodDetailResolvers(titleOf: (StatFact f) => f.title),
+      );
+      await settle(8);
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.byType(BottomSheet), findsNothing);
+      await shot('range-7-period-detail-dialog');
+      nav.pop();
+      await settle(4);
+      nav.pop();
+      await settle(4);
+      debugPrint('[stats-range] 完成，启动期错误 ${errors.length} 条');
+    } finally {
+      FlutterError.onError = oldHandler;
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }

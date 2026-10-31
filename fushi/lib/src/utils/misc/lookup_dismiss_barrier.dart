@@ -361,7 +361,8 @@ class BarrierSwipeDismissTracker {
 
   /// 松手：判定为横向且过阈返回 true（调用方关一层），否则 false。无论如何都复位。
   bool end() {
-    final bool passed = _tracking &&
+    final bool passed =
+        _tracking &&
         _decided &&
         _isHorizontal &&
         _dragX.abs() > swipeDismissThreshold(_sensitivity);

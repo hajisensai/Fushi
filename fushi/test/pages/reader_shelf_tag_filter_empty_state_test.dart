@@ -34,8 +34,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_shelf_filter_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_shelf_filter_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -84,25 +85,29 @@ void main() {
   });
 
   Future<void> seedEpub(String bookKey, String title) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: title,
-      epubPath: '${pathProviderDir.path}/$bookKey.epub',
-      extractDir: pathProviderDir.path,
-      chapterCount: 1,
-      chaptersJson: '["a"]',
-      importedAt: 0,
-    ));
-    epubItems.add(MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
-      title: title,
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 0,
-      duration: 1,
-      canDelete: false,
-      canEdit: true,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: title,
+        epubPath: '${pathProviderDir.path}/$bookKey.epub',
+        extractDir: pathProviderDir.path,
+        chapterCount: 1,
+        chaptersJson: '["a"]',
+        importedAt: 0,
+      ),
+    );
+    epubItems.add(
+      MediaItem(
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
+        title: title,
+        mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      ),
+    );
   }
 
   Future<SrtBook> seedSrt(String uid, String title) async {
@@ -119,33 +124,35 @@ void main() {
   }
 
   Widget buildApp({required Set<int> selectedTagIds}) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) => Future<List<MediaItem>>.value(epubItems),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(srtItems),
-          ),
-          // 选中标签集直接覆写（真 UI 入口是标签栏 chip，这里只测筛选渲染分支）；
-          // filtered*Provider 用真实实现，从真 DB 的标签映射推导命中集。
-          selectedTagIdsProvider.overrideWith((ref) => selectedTagIds),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => null,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(epubItems),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(srtItems),
+      ),
+      // 选中标签集直接覆写（真 UI 入口是标签栏 chip，这里只测筛选渲染分支）；
+      // filtered*Provider 用真实实现，从真 DB 的标签映射推导命中集。
+      selectedTagIdsProvider.overrideWith((ref) => selectedTagIds),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => null,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  Future<void> pumpPage(WidgetTester tester,
-      {required Set<int> selectedTagIds}) async {
+  Future<void> pumpPage(
+    WidgetTester tester, {
+    required Set<int> selectedTagIds,
+  }) async {
     tester.view.physicalSize = const Size(1400, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -154,8 +161,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('BUG-1008：筛选命中 1 本 SRT + 0 本 EPUB → 渲染网格，无矛盾空态、保留下拉刷新',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1008：筛选命中 1 本 SRT + 0 本 EPUB → 渲染网格，无矛盾空态、保留下拉刷新', (
+    WidgetTester tester,
+  ) async {
     final SrtBook tagged = await seedSrt('srtHit', '命中的有声书');
     await seedEpub('epubMiss', '未命中的书');
     final int tagId = await db.createTag('日语', 0xFF112233);
@@ -165,34 +173,51 @@ void main() {
 
     // 命中的 SRT 卡在网格里；未命中的 EPUB 卡被筛掉。
     expect(
-        find.byKey(const ValueKey<String>('srt_entry_srtHit')), findsOneWidget,
-        reason: '命中的 SRT 卡必须渲染');
+      find.byKey(const ValueKey<String>('srt_entry_srtHit')),
+      findsOneWidget,
+      reason: '命中的 SRT 卡必须渲染',
+    );
     expect(
-      find.byKey(ValueKey<String>(
-          'book_entry_${ReaderFushiSource.mediaIdentifierFor('epubMiss')}')),
+      find.byKey(
+        ValueKey<String>(
+          'book_entry_${ReaderFushiSource.mediaIdentifierFor('epubMiss')}',
+        ),
+      ),
       findsNothing,
       reason: '未命中的 EPUB 卡必须被筛掉',
     );
     // 有结果时绝不能再叠「没有符合筛选的书」（旧特殊分支的矛盾空态）。
-    expect(find.text(t.tag_no_books_for_filter), findsNothing,
-        reason: '有命中结果时不得显示空态文案（BUG-1008）');
+    expect(
+      find.text(t.tag_no_books_for_filter),
+      findsNothing,
+      reason: '有命中结果时不得显示空态文案（BUG-1008）',
+    );
     // 筛选态不再丢下拉刷新（旧特殊分支没有 RefreshIndicator）。
-    expect(find.byType(RefreshIndicator), findsOneWidget,
-        reason: '筛选态必须保留下拉刷新（BUG-1008）');
+    expect(
+      find.byType(RefreshIndicator),
+      findsOneWidget,
+      reason: '筛选态必须保留下拉刷新（BUG-1008）',
+    );
   });
 
-  testWidgets('BUG-1008：筛选全不命中 → 显示 tag_no_books_for_filter 空态',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1008：筛选全不命中 → 显示 tag_no_books_for_filter 空态', (
+    WidgetTester tester,
+  ) async {
     await seedSrt('srtMiss', '有声书');
     await seedEpub('epubMiss', '书');
     final int tagId = await db.createTag('无人命中', 0xFF445566);
 
     await pumpPage(tester, selectedTagIds: <int>{tagId});
 
-    expect(find.text(t.tag_no_books_for_filter), findsOneWidget,
-        reason: '整体为空时才显示空态文案');
     expect(
-        find.byKey(const ValueKey<String>('srt_entry_srtMiss')), findsNothing);
+      find.text(t.tag_no_books_for_filter),
+      findsOneWidget,
+      reason: '整体为空时才显示空态文案',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srt_entry_srtMiss')),
+      findsNothing,
+    );
     expect(find.byType(RefreshIndicator), findsNothing);
   });
 }

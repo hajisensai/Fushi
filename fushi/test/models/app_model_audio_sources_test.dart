@@ -13,9 +13,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../helpers/test_platform_services.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 /// 写一个「可用」的本地音频源库（entries + android schema + 一行音频字节），让
@@ -29,16 +27,19 @@ void _writeValidAudioDb(String path) {
   if (dbFile.existsSync()) dbFile.deleteSync();
   final Database sdb = sqlite3.open(path);
   try {
-    sdb.execute('CREATE TABLE entries '
-        '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+    sdb.execute(
+      'CREATE TABLE entries '
+      '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+    );
     sdb.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
     sdb.execute("INSERT INTO entries VALUES ('猫','ねこ','neko.mp3','forvo')");
-    final PreparedStatement stmt =
-        sdb.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    final PreparedStatement stmt = sdb.prepare(
+      'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+    );
     stmt.execute(<Object?>[
       'neko.mp3',
       'forvo',
-      Uint8List.fromList(<int>[1, 2, 3])
+      Uint8List.fromList(<int>[1, 2, 3]),
     ]);
     stmt.dispose();
   } finally {
@@ -54,8 +55,9 @@ void main() {
   // path_provider 平台通道；单测里没有插件实现，mock 一个临时目录即可。
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_path_provider');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_path_provider',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -86,8 +88,9 @@ void main() {
     appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
 
-    final Directory src =
-        Directory.systemTemp.createTempSync('fushi_app_model_audio_src');
+    final Directory src = Directory.systemTemp.createTempSync(
+      'fushi_app_model_audio_src',
+    );
     srcA = File('${src.path}/a.db');
     srcB = File('${src.path}/b.db');
     _writeValidAudioDb(srcA.path);
@@ -108,58 +111,76 @@ void main() {
     }
   });
 
-  test('setAudioSourceConfigs deletes files of removed local audio dbs',
-      () async {
-    final LocalAudioDbEntry a =
-        await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
-    final LocalAudioDbEntry b =
-        await appModel.importLocalAudioDbFile(srcB.path, displayName: 'B');
-    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
-      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
-      AudioSourceConfig.localAudio(label: 'B', path: b.path, enabled: true),
-    ]);
-    expect(File(a.path).existsSync(), isTrue);
-    expect(File(b.path).existsSync(), isTrue);
+  test(
+    'setAudioSourceConfigs deletes files of removed local audio dbs',
+    () async {
+      final LocalAudioDbEntry a = await appModel.importLocalAudioDbFile(
+        srcA.path,
+        displayName: 'A',
+      );
+      final LocalAudioDbEntry b = await appModel.importLocalAudioDbFile(
+        srcB.path,
+        displayName: 'B',
+      );
+      await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
+        AudioSourceConfig.localAudio(label: 'B', path: b.path, enabled: true),
+      ]);
+      expect(File(a.path).existsSync(), isTrue);
+      expect(File(b.path).existsSync(), isTrue);
 
-    // remove B
-    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
-      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
-    ]);
-    expect(File(a.path).existsSync(), isTrue);
-    expect(File(b.path).existsSync(), isFalse);
-  });
+      // remove B
+      await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
+      ]);
+      expect(File(a.path).existsSync(), isTrue);
+      expect(File(b.path).existsSync(), isFalse);
+    },
+  );
 
-  test('local db enabled survives a setAudioSourceConfigs round-trip',
-      () async {
-    final LocalAudioDbEntry a =
-        await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
-    // persist the db as enabled
-    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
-      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
-    ]);
-    // open then close the dialog: read the projection and save it back
-    final List<AudioSourceConfig> projected = appModel.audioSourceConfigs;
-    await appModel.setAudioSourceConfigs(projected);
-    // the db's real per-db enabled must be preserved across the round-trip
-    expect(appModel.localAudioDbs.single.enabled, isTrue);
-  });
+  test(
+    'local db enabled survives a setAudioSourceConfigs round-trip',
+    () async {
+      final LocalAudioDbEntry a = await appModel.importLocalAudioDbFile(
+        srcA.path,
+        displayName: 'A',
+      );
+      // persist the db as enabled
+      await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
+      ]);
+      // open then close the dialog: read the projection and save it back
+      final List<AudioSourceConfig> projected = appModel.audioSourceConfigs;
+      await appModel.setAudioSourceConfigs(projected);
+      // the db's real per-db enabled must be preserved across the round-trip
+      expect(appModel.localAudioDbs.single.enabled, isTrue);
+    },
+  );
 
-  test('enabledAudioSourceConfigs gates local audio by per-db enabled only',
-      () async {
-    final LocalAudioDbEntry a =
-        await appModel.importLocalAudioDbFile(srcA.path, displayName: 'A');
-    final LocalAudioDbEntry b =
-        await appModel.importLocalAudioDbFile(srcB.path, displayName: 'B');
-    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
-      AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
-      AudioSourceConfig.localAudio(label: 'B', path: b.path, enabled: false),
-    ]);
-    final List<AudioSourceConfig> enabled = appModel.enabledAudioSourceConfigs;
-    final Iterable<AudioSourceConfig> localEnabled = enabled
-        .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio);
-    expect(localEnabled.length, 1);
-    expect(localEnabled.single.path, a.path);
-  });
+  test(
+    'enabledAudioSourceConfigs gates local audio by per-db enabled only',
+    () async {
+      final LocalAudioDbEntry a = await appModel.importLocalAudioDbFile(
+        srcA.path,
+        displayName: 'A',
+      );
+      final LocalAudioDbEntry b = await appModel.importLocalAudioDbFile(
+        srcB.path,
+        displayName: 'B',
+      );
+      await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.localAudio(label: 'A', path: a.path, enabled: true),
+        AudioSourceConfig.localAudio(label: 'B', path: b.path, enabled: false),
+      ]);
+      final List<AudioSourceConfig> enabled =
+          appModel.enabledAudioSourceConfigs;
+      final Iterable<AudioSourceConfig> localEnabled = enabled.where(
+        (AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio,
+      );
+      expect(localEnabled.length, 1);
+      expect(localEnabled.single.path, a.path);
+    },
+  );
 
   /// Guards the BUG-483 fix: "添加本地音频数据库" must support referencing the
   /// original file instead of unconditionally copying it into AppData. The
@@ -169,27 +190,47 @@ void main() {
   /// test, so it stays a source-level guard (moved from
   /// test/tools/local_audio_reference_guard_test.dart).
   group('local audio reference-original contract (BUG-483)', () {
-    final String appModel =
-        File('lib/src/models/app_model.dart').readAsStringSync();
+    final String appModel = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
     final String dialog = File(
-            'lib/src/pages/implementations/dictionary_settings_dialog_page.dart')
-        .readAsStringSync();
-    final String schema =
-        File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
+      'lib/src/pages/implementations/dictionary_settings_dialog_page.dart',
+    ).readAsStringSync();
+    final String schema = File(
+      'lib/src/settings/settings_schema_lookup.dart',
+    ).readAsStringSync();
 
     test('reference flag is threaded through app model and UI', () {
-      expect(appModel, contains('bool reference = false'),
-          reason: 'AppModel.importLocalAudioDbFile must forward reference.');
-      expect(appModel, contains('reference: reference'),
-          reason: 'AppModel must pass reference into the manager.');
-      expect(dialog, contains('isDesktopPlatform'),
-          reason: 'The reference toggle must be desktop-gated.');
-      expect(dialog, contains('local_audio_reference_original'),
-          reason: 'The dialog must surface the reference toggle label.');
-      expect(dialog, contains('Function(bool reference)?'),
-          reason: 'onPickLocalDb must receive the reference flag.');
-      expect(schema, contains('reference: reference'),
-          reason: 'The lookup settings wiring must forward the flag.');
+      expect(
+        appModel,
+        contains('bool reference = false'),
+        reason: 'AppModel.importLocalAudioDbFile must forward reference.',
+      );
+      expect(
+        appModel,
+        contains('reference: reference'),
+        reason: 'AppModel must pass reference into the manager.',
+      );
+      expect(
+        dialog,
+        contains('isDesktopPlatform'),
+        reason: 'The reference toggle must be desktop-gated.',
+      );
+      expect(
+        dialog,
+        contains('local_audio_reference_original'),
+        reason: 'The dialog must surface the reference toggle label.',
+      );
+      expect(
+        dialog,
+        contains('Function(bool reference)?'),
+        reason: 'onPickLocalDb must receive the reference flag.',
+      );
+      expect(
+        schema,
+        contains('reference: reference'),
+        reason: 'The lookup settings wiring must forward the flag.',
+      );
     });
   });
 }

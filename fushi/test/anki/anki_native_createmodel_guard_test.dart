@@ -19,8 +19,11 @@ void main() {
 
     test('legacy hardcoded Lapis model is gone', () {
       expect(java.contains('case "addDefaultModel"'), isFalse);
-      expect(java.contains('"Cloze Before"'), isFalse,
-          reason: 'old Term/Meaning hardcoded schema must be removed');
+      expect(
+        java.contains('"Cloze Before"'),
+        isFalse,
+        reason: 'old Term/Meaning hardcoded schema must be removed',
+      );
       expect(java.contains('"Expanded Meaning"'), isFalse);
     });
 
@@ -62,15 +65,22 @@ void main() {
   // 目前最强的可落地层。
   group('BUG-2380 native create paths must not swallow a failed creation', () {
     test('createDeck 判 addNewDeck 的 null 并报 CREATE_DECK_FAILED', () {
-      expect(java, contains('api.addNewDeck(deckName) == null'),
-          reason: 'addNewDeck 返回 null = 建组失败，必须判空，'
-              '不能像旧实现那样裸调用后无条件 success');
+      expect(
+        java,
+        contains('api.addNewDeck(deckName) == null'),
+        reason:
+            'addNewDeck 返回 null = 建组失败，必须判空，'
+            '不能像旧实现那样裸调用后无条件 success',
+      );
       expect(java, contains('result.error("CREATE_DECK_FAILED"'));
     });
 
     test('createNoteType 判 addNewCustomModel 的 null', () {
-      expect(java, contains('if (modelId == null)'),
-          reason: 'addNewCustomModel 返回 null = 建笔记类型失败，必须判空');
+      expect(
+        java,
+        contains('if (modelId == null)'),
+        reason: 'addNewCustomModel 返回 null = 建笔记类型失败，必须判空',
+      );
       expect(java, contains('result.error("CREATE_MODEL_FAILED"'));
     });
 
@@ -87,19 +97,29 @@ void main() {
       // 「Dart 要求创建 → native 静默跳过 → 报成功」是本 bug 的第二段根因。
       final int createDeckStart = repo.indexOf('Future<bool> createDeck(');
       expect(createDeckStart, greaterThan(-1));
-      final String createDeckBody =
-          repo.substring(createDeckStart, createDeckStart + 500);
-      expect(createDeckBody.contains("invokeMethod('getDecks')"), isFalse,
-          reason: 'createDeck 不该自己再查一遍牌组清单');
+      final String createDeckBody = repo.substring(
+        createDeckStart,
+        createDeckStart + 500,
+      );
+      expect(
+        createDeckBody.contains("invokeMethod('getDecks')"),
+        isFalse,
+        reason: 'createDeck 不该自己再查一遍牌组清单',
+      );
 
-      final int createNoteTypeStart =
-          repo.indexOf('Future<bool> createNoteType(');
+      final int createNoteTypeStart = repo.indexOf(
+        'Future<bool> createNoteType(',
+      );
       expect(createNoteTypeStart, greaterThan(-1));
-      final String createNoteTypeBody =
-          repo.substring(createNoteTypeStart, createNoteTypeStart + 700);
-      expect(createNoteTypeBody.contains("invokeMethod('getModelList')"),
-          isFalse,
-          reason: 'createNoteType 不该自己再查一遍笔记类型清单');
+      final String createNoteTypeBody = repo.substring(
+        createNoteTypeStart,
+        createNoteTypeStart + 700,
+      );
+      expect(
+        createNoteTypeBody.contains("invokeMethod('getModelList')"),
+        isFalse,
+        reason: 'createNoteType 不该自己再查一遍笔记类型清单',
+      );
     });
   });
 
@@ -113,8 +133,11 @@ void main() {
       expect(start, greaterThan(-1));
       final int end = vm.indexOf('_lapisSetupFailure(Object e)', start);
       final String body = vm.substring(start, end > start ? end : vm.length);
-      expect(body.contains('availableNoteTypes.first'), isFalse,
-          reason: '找不到 Lapis 就选清单第一个 = 把用户自己的牌组当成 Lapis');
+      expect(
+        body.contains('availableNoteTypes.first'),
+        isFalse,
+        reason: '找不到 Lapis 就选清单第一个 = 把用户自己的牌组当成 Lapis',
+      );
       expect(body.contains('availableDecks.first'), isFalse);
       expect(body, contains('AnkiErrorCode.lapisSetupMissing'));
     });
@@ -123,13 +146,15 @@ void main() {
   // BUG-2380：连接 Anki 之后与新手引导「下一步」都要判一次「这套配置真能制出卡吗」，
   // 判不过就走同一个弹窗。两处不许各写一套判据。
   group('BUG-2380 mining-readiness check is wired at both entry points', () {
-    final controls =
-        File('lib/src/anki/anki_config_controls.dart').readAsStringSync();
-    final page = File('lib/src/pages/implementations/anki_settings_page.dart')
-        .readAsStringSync();
-    final wizard =
-        File('lib/src/pages/implementations/onboarding_wizard_page.dart')
-            .readAsStringSync();
+    final controls = File(
+      'lib/src/anki/anki_config_controls.dart',
+    ).readAsStringSync();
+    final page = File(
+      'lib/src/pages/implementations/anki_settings_page.dart',
+    ).readAsStringSync();
+    final wizard = File(
+      'lib/src/pages/implementations/onboarding_wizard_page.dart',
+    ).readAsStringSync();
 
     test('弹窗只有一处实现，判据是 canMineCards', () {
       expect(controls, contains('promptCreateLapisIfCannotMine'));
@@ -141,9 +166,13 @@ void main() {
     });
 
     test('新手引导的下一步与测试连接都调它', () {
-      expect('promptCreateLapisIfCannotMine('.allMatches(wizard).length, 2,
-          reason: '一处在 _goNextAsync（离开 Anki 步之前），'
-              '一处在 _testAnkiConnection（连上之后）');
+      expect(
+        'promptCreateLapisIfCannotMine('.allMatches(wizard).length,
+        2,
+        reason:
+            '一处在 _goNextAsync（离开 Anki 步之前），'
+            '一处在 _testAnkiConnection（连上之后）',
+      );
     });
   });
 }

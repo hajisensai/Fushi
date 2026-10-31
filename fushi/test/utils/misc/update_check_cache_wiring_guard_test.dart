@@ -23,38 +23,53 @@ void main() {
     // 写缓存发生在「拿到 tag」之后、「是否更新」判断之前。
     final int writeIdx = src.indexOf('await cacheWriter(entry);');
     expect(writeIdx, isNonNegative, reason: '_check 必须写回缓存');
-    final int newerIdx =
-        src.indexOf('if (!isUpdateVersionNewer(version, currentVersion');
+    final int newerIdx = src.indexOf(
+      'if (!isUpdateVersionNewer(version, currentVersion',
+    );
     expect(newerIdx, isNonNegative);
-    expect(writeIdx, lessThan(newerIdx),
-        reason: '写缓存须在「是否更新」判断之前，覆盖 up-to-date 与 newer 两路');
+    expect(
+      writeIdx,
+      lessThan(newerIdx),
+      reason: '写缓存须在「是否更新」判断之前，覆盖 up-to-date 与 newer 两路',
+    );
     // 缓存条目带本通道 + tag + html + 时间戳。
     expect(src, contains('latestTag: version,'));
     expect(src, contains('channel: channel,'));
     expect(src, contains('lastCheckEpochMs:'));
     // 写缓存失败不得影响检查流程（吞 + 记日志）。
     expect(
-        src, contains("debugPrint('[UpdateChecker] write update cache failed"));
+      src,
+      contains("debugPrint('[UpdateChecker] write update cache failed"),
+    );
   });
 
   test('scheduleCheck threads cacheWriter into _check', () {
     final String src = read('lib/src/utils/misc/update_checker_release.dart');
-    expect(src, contains('cacheWriter: cacheWriter,'),
-        reason: 'scheduleCheck 须把 cacheWriter 透传给 _check');
+    expect(
+      src,
+      contains('cacheWriter: cacheWriter,'),
+      reason: 'scheduleCheck 须把 cacheWriter 透传给 _check',
+    );
   });
 
   test('home_page auto-check passes a cacheWriter (background refresh)', () {
     final String src = read('lib/src/pages/implementations/home_page.dart');
-    expect(src, contains('cacheWriter: appModel.setUpdateCheckCache,'),
-        reason: '启动期后台检查跑完写回缓存');
+    expect(
+      src,
+      contains('cacheWriter: appModel.setUpdateCheckCache,'),
+      reason: '启动期后台检查跑完写回缓存',
+    );
   });
 
   test('manual check reads cache optimistically before the network', () {
     // 手动检查编排住在 updates/app_update_check.dart（设置页与更新中心共用）。
     final String src = read('lib/src/updates/app_update_check.dart');
     expect(src, contains('cachedEntryForChannel('), reason: '手动检查先读缓存');
-    expect(src, contains('updateTagIsNewerThanCurrent('),
-        reason: '据缓存 tag 判断给「发现新版」/「已是最新」乐观反馈（公开通道感知判定）');
+    expect(
+      src,
+      contains('updateTagIsNewerThanCurrent('),
+      reason: '据缓存 tag 判断给「发现新版」/「已是最新」乐观反馈（公开通道感知判定）',
+    );
     expect(src, contains('t.update_cached_newer('));
     expect(src, contains('t.update_cached_up_to_date('));
     // 无缓存才退回原「正在检查…」。

@@ -8,9 +8,10 @@ import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 
-typedef _Loader = Future<ProviderBatchResult<DiscoveryResultPage>> Function(
-  DiscoveryRequest request,
-);
+typedef _Loader =
+    Future<ProviderBatchResult<DiscoveryResultPage>> Function(
+      DiscoveryRequest request,
+    );
 
 class _FakeSource extends MediaDiscoverySource {
   _FakeSource({
@@ -19,9 +20,9 @@ class _FakeSource extends MediaDiscoverySource {
     required DiscoveryCapabilities capabilities,
     _Loader? onSearch,
     _Loader? onBrowse,
-  })  : _capabilities = capabilities,
-        _onSearch = onSearch,
-        _onBrowse = onBrowse;
+  }) : _capabilities = capabilities,
+       _onSearch = onSearch,
+       _onBrowse = onBrowse;
 
   @override
   final String id;
@@ -70,24 +71,22 @@ ProviderBatchResult<DiscoveryResultPage> _pageOf(
   List<String> titles, {
   bool hasMore = false,
 }) {
-  return ProviderBatchResult<DiscoveryResultPage>.success(
-    <DiscoveryResultPage>[
-      DiscoveryResultPage(
-        entries: <DiscoveryEntry>[
-          for (final String title in titles)
-            DiscoveryResourceItem(
-              sourceId: sourceId,
-              title: title,
-              id: title,
-              kind: DiscoveryMediaKind.novel,
-              payloadKind: DiscoveryPayloadKind.httpFile,
-            ),
-        ],
-        page: 1,
-        hasMore: hasMore,
-      ),
-    ],
-  );
+  return ProviderBatchResult<DiscoveryResultPage>.success(<DiscoveryResultPage>[
+    DiscoveryResultPage(
+      entries: <DiscoveryEntry>[
+        for (final String title in titles)
+          DiscoveryResourceItem(
+            sourceId: sourceId,
+            title: title,
+            id: title,
+            kind: DiscoveryMediaKind.novel,
+            payloadKind: DiscoveryPayloadKind.httpFile,
+          ),
+      ],
+      page: 1,
+      hasMore: hasMore,
+    ),
+  ]);
 }
 
 void main() {
@@ -173,14 +172,14 @@ void main() {
       const DiscoveryRequest(kind: DiscoveryMediaKind.novel, query: 'q'),
     );
 
-    expect(
-      result.slices.map((DiscoverySourceSlice s) => s.sourceId),
-      <String>['b', 'a'],
-    );
-    expect(
-      result.entries.map((DiscoveryEntry e) => e.title),
-      <String>['b1', 'a1'],
-    );
+    expect(result.slices.map((DiscoverySourceSlice s) => s.sourceId), <String>[
+      'b',
+      'a',
+    ]);
+    expect(result.entries.map((DiscoveryEntry e) => e.title), <String>[
+      'b1',
+      'a1',
+    ]);
     expect(result.successfulSourceCount, 2);
     expect(result.hasFailures, isFalse);
     expect(noSearch.searchCalls, 0);
@@ -327,8 +326,9 @@ void main() {
       capabilities: novelSearch,
       onSearch: (DiscoveryRequest _) async => _pageOf('s', <String>[]),
     );
-    const DiscoveryHttpPayload payload =
-        DiscoveryHttpPayload(url: 'https://example.com/f.epub');
+    const DiscoveryHttpPayload payload = DiscoveryHttpPayload(
+      url: 'https://example.com/f.epub',
+    );
     const DiscoveryResourceItem withPayload = DiscoveryResourceItem(
       sourceId: 's',
       title: 't',
@@ -389,10 +389,10 @@ void main() {
     // 最终快照与返回值都按 priority 序（slow priority 1 在前），
     // 与完成顺序无关。
     expect(snapshots.last, <String>['slow', 'fast']);
-    expect(
-      result.slices.map((DiscoverySourceSlice s) => s.sourceId),
-      <String>['slow', 'fast'],
-    );
+    expect(result.slices.map((DiscoverySourceSlice s) => s.sourceId), <String>[
+      'slow',
+      'fast',
+    ]);
   });
 
   test('close 逐源下发', () {

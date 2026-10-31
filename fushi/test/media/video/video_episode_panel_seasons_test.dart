@@ -108,7 +108,10 @@ void main() {
         tester.getTopLeft(chip('s2')).dx,
         lessThan(tester.getTopLeft(chip(kCollectionExtrasGroupKey)).dx),
       );
-      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s2'))).selected, isTrue);
+      expect(
+        tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s2'))).selected,
+        isTrue,
+      );
 
       // 轨道只有第 2 季的卡片，且 key 仍是全局下标。
       expect(card(3), findsOneWidget);
@@ -151,12 +154,18 @@ void main() {
           ),
         ),
       );
-      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s1'))).selected, isTrue);
+      expect(
+        tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s1'))).selected,
+        isTrue,
+      );
       expect(card(0), findsOneWidget);
 
       await tester.tap(chip('s2'));
       await tester.pumpAndSettle();
-      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s2'))).selected, isTrue);
+      expect(
+        tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s2'))).selected,
+        isTrue,
+      );
       expect(card(0), findsNothing);
       expect(card(4), findsOneWidget);
 
@@ -175,7 +184,10 @@ void main() {
       // 页面换集到 S1E2（全局 1）→ chip 跟回第 1 季。
       setOuter(() => current = 1);
       await tester.pumpAndSettle();
-      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s1'))).selected, isTrue);
+      expect(
+        tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s1'))).selected,
+        isTrue,
+      );
       expect(card(1), findsOneWidget);
       expect(
         find.descendant(

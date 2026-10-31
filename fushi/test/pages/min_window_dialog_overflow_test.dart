@@ -32,9 +32,9 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   ThemeData theme() => ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-      );
+    useMaterial3: true,
+    colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+  );
 
   Future<void> pumpFrame(
     WidgetTester tester, {
@@ -72,31 +72,32 @@ void main() {
   }
 
   Widget sentenceAudioLikeBody() => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const <Widget>[
-          SizedBox(height: 140, width: double.infinity),
-          SizedBox(height: 16),
-          SizedBox(height: 140, width: double.infinity),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: const <Widget>[
+      SizedBox(height: 140, width: double.infinity),
+      SizedBox(height: 16),
+      SizedBox(height: 140, width: double.infinity),
+    ],
+  );
 
   Widget seriesLikeBody() => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const <Widget>[
-          Center(child: SizedBox(width: 92, height: 120)),
-          SizedBox(height: 12),
-          SizedBox(height: 56),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: const <Widget>[
+      Center(child: SizedBox(width: 92, height: 120)),
+      SizedBox(height: 12),
+      SizedBox(height: 56),
+    ],
+  );
 
   bool isOverflow(Object? e) =>
       e != null && e.toString().toLowerCase().contains('overflow');
 
   group('sentenceAudioHighlight rematch dialog (0.62 cap) mechanism', () {
-    testWidgets('scrollable false overflows at a short window (root cause)',
-        (WidgetTester tester) async {
+    testWidgets('scrollable false overflows at a short window (root cause)', (
+      WidgetTester tester,
+    ) async {
       await pumpFrame(
         tester,
         screen: const Size(360, 400),
@@ -104,12 +105,16 @@ void main() {
         innerScrollable: false,
         body: sentenceAudioLikeBody(),
       );
-      expect(isOverflow(tester.takeException()), isTrue,
-          reason: 'non-scrolling two-slider Column overflows under 248px cap');
+      expect(
+        isOverflow(tester.takeException()),
+        isTrue,
+        reason: 'non-scrolling two-slider Column overflows under 248px cap',
+      );
     });
 
-    testWidgets('scrollable true scrolls without overflow (fix)',
-        (WidgetTester tester) async {
+    testWidgets('scrollable true scrolls without overflow (fix)', (
+      WidgetTester tester,
+    ) async {
       await pumpFrame(
         tester,
         screen: const Size(360, 400),
@@ -130,8 +135,9 @@ void main() {
   });
 
   group('series rename dialog (0.74 cap) mechanism', () {
-    testWidgets('scrollable false overflows at a short window (root cause)',
-        (WidgetTester tester) async {
+    testWidgets('scrollable false overflows at a short window (root cause)', (
+      WidgetTester tester,
+    ) async {
       await pumpFrame(
         tester,
         screen: const Size(360, 320),
@@ -139,12 +145,16 @@ void main() {
         innerScrollable: false,
         body: seriesLikeBody(),
       );
-      expect(isOverflow(tester.takeException()), isTrue,
-          reason: 'cover image + field non-scrolling Column overflows');
+      expect(
+        isOverflow(tester.takeException()),
+        isTrue,
+        reason: 'cover image + field non-scrolling Column overflows',
+      );
     });
 
-    testWidgets('scrollable true scrolls without overflow (fix)',
-        (WidgetTester tester) async {
+    testWidgets('scrollable true scrolls without overflow (fix)', (
+      WidgetTester tester,
+    ) async {
       await pumpFrame(
         tester,
         screen: const Size(360, 320),
@@ -159,7 +169,8 @@ void main() {
   group('MediaSourcesDialog (real widget, BUG-445 shape)', () {
     Future<FushiDatabase> seededDb(int sourceCount) async {
       final FushiDatabase db = FushiDatabase.forTesting(
-          DatabaseConnection(NativeDatabase.memory()));
+        DatabaseConnection(NativeDatabase.memory()),
+      );
       for (int i = 0; i < sourceCount; i++) {
         await db.insertMediaSource(
           MediaSourcesCompanion.insert(
@@ -203,27 +214,37 @@ void main() {
     }
 
     testWidgets(
-        'TODO-1389 many sources scroll without overflow under min window cap',
-        (WidgetTester tester) async {
-      final FushiDatabase db = await seededDb(24);
-      addTearDown(db.close);
-      await pumpDialog(tester, db: db, screen: const Size(520, 440));
+      'TODO-1389 many sources scroll without overflow under min window cap',
+      (WidgetTester tester) async {
+        final FushiDatabase db = await seededDb(24);
+        addTearDown(db.close);
+        await pumpDialog(tester, db: db, screen: const Size(520, 440));
 
-      expect(tester.takeException(), isNull,
-          reason: 'overflowing sources should scroll, not RenderFlex-overflow');
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'overflowing sources should scroll, not RenderFlex-overflow',
+        );
 
-      final Finder reorderable = find.byType(FushiReorderableColumn);
-      expect(reorderable, findsOneWidget);
-      final Finder outerScrollable = find.ancestor(
-        of: reorderable,
-        matching: find.byType(Scrollable),
-      );
-      expect(outerScrollable, findsWidgets,
-          reason: 'fixed: reorderable wrapped in SingleChildScrollView');
+        final Finder reorderable = find.byType(FushiReorderableColumn);
+        expect(reorderable, findsOneWidget);
+        final Finder outerScrollable = find.ancestor(
+          of: reorderable,
+          matching: find.byType(Scrollable),
+        );
+        expect(
+          outerScrollable,
+          findsWidgets,
+          reason: 'fixed: reorderable wrapped in SingleChildScrollView',
+        );
 
-      final ScrollableState state = tester.state(outerScrollable.first);
-      expect(state.position.maxScrollExtent, greaterThan(0.0),
-          reason: 'overflowing content leaves scroll extent');
-    });
+        final ScrollableState state = tester.state(outerScrollable.first);
+        expect(
+          state.position.maxScrollExtent,
+          greaterThan(0.0),
+          reason: 'overflowing content leaves scroll extent',
+        );
+      },
+    );
   });
 }

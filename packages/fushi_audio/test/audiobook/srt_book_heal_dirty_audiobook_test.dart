@@ -108,8 +108,7 @@ void main() {
     );
   }
 
-  test(
-      'heals: replaceAudio deletes the dirty (no-alignment) Audiobook row for '
+  test('heals: replaceAudio deletes the dirty (no-alignment) Audiobook row for '
       'the same bookKey', () async {
     final SrtBookRepository repo = SrtBookRepository(db);
     await seedPairedSrtBook(repo, bookKey: 'A');
@@ -123,16 +122,21 @@ void main() {
 
     await doReplaceAudio(repo, bookKey: 'A');
 
-    expect(await db.getAudiobookByBookKey('A'), isNull,
-        reason: 'dirty audioOnly Audiobook row must be healed away');
+    expect(
+      await db.getAudiobookByBookKey('A'),
+      isNull,
+      reason: 'dirty audioOnly Audiobook row must be healed away',
+    );
     final SrtBook? srt = await repo.findByBookKey('A');
     expect(srt!.audioPaths, isNotNull);
-    expect(srt.audioPaths!.single, contains('new01.mp3'),
-        reason: 'SrtBook now owns the freshly imported audio');
+    expect(
+      srt.audioPaths!.single,
+      contains('new01.mp3'),
+      reason: 'SrtBook now owns the freshly imported audio',
+    );
   });
 
-  test(
-      'does NOT heal a real EPUB-backed audiobook row (has alignment) for the '
+  test('does NOT heal a real EPUB-backed audiobook row (has alignment) for the '
       'same bookKey', () async {
     final SrtBookRepository repo = SrtBookRepository(db);
     await seedPairedSrtBook(repo, bookKey: 'A');
@@ -146,29 +150,39 @@ void main() {
     await doReplaceAudio(repo, bookKey: 'A');
 
     final AudiobookRow? abRow = await db.getAudiobookByBookKey('A');
-    expect(abRow, isNotNull,
-        reason: 'real audiobook (with alignment) must never be deleted');
+    expect(
+      abRow,
+      isNotNull,
+      reason: 'real audiobook (with alignment) must never be deleted',
+    );
     expect(abRow!.alignmentPath, '/abs/persist/A/aligned.srt');
   });
 
-  test('does NOT heal when the freshly written audio set is empty (no-op)',
-      () async {
-    final SrtBookRepository repo = SrtBookRepository(db);
-    await seedPairedSrtBook(repo, bookKey: 'A');
-    await insertAudiobookRow(
-      bookKey: 'A',
-      alignmentFormat: '',
-      alignmentPath: '',
-      audioPaths: <String>['/old/wrong.mp3'],
-    );
+  test(
+    'does NOT heal when the freshly written audio set is empty (no-op)',
+    () async {
+      final SrtBookRepository repo = SrtBookRepository(db);
+      await seedPairedSrtBook(repo, bookKey: 'A');
+      await insertAudiobookRow(
+        bookKey: 'A',
+        alignmentFormat: '',
+        alignmentPath: '',
+        audioPaths: <String>['/old/wrong.mp3'],
+      );
 
-    final List<String> persisted =
-        await repo.replaceAudio(uid: 'srtbook_epub_A', pickedPaths: <String>[]);
-    expect(persisted, isEmpty);
+      final List<String> persisted = await repo.replaceAudio(
+        uid: 'srtbook_epub_A',
+        pickedPaths: <String>[],
+      );
+      expect(persisted, isEmpty);
 
-    expect(await db.getAudiobookByBookKey('A'), isNotNull,
-        reason: 'empty import must not heal anything');
-  });
+      expect(
+        await db.getAudiobookByBookKey('A'),
+        isNotNull,
+        reason: 'empty import must not heal anything',
+      );
+    },
+  );
 
   test('does NOT heal for a standalone SRT book (empty bookKey)', () async {
     final SrtBookRepository repo = SrtBookRepository(db);
@@ -191,12 +205,14 @@ void main() {
     final File a = File(p.join(srcDir.path, 'sa.mp3'))..writeAsStringSync('S');
     await repo.replaceAudio(uid: 'srtbook_999', pickedPaths: <String>[a.path]);
 
-    expect(await db.getAudiobookByBookKey(''), isNotNull,
-        reason: 'standalone (empty bookKey) must never trigger heal');
+    expect(
+      await db.getAudiobookByBookKey(''),
+      isNotNull,
+      reason: 'standalone (empty bookKey) must never trigger heal',
+    );
   });
 
-  test(
-      'cue isolation: healing a dirty Audiobook row deletes only the bookKey '
+  test('cue isolation: healing a dirty Audiobook row deletes only the bookKey '
       'cues, never the SrtBook uid cues', () async {
     final SrtBookRepository repo = SrtBookRepository(db);
     await seedPairedSrtBook(repo, bookKey: 'A');
@@ -207,34 +223,47 @@ void main() {
       audioPaths: <String>['/old/wrong.mp3'],
     );
 
-    await repo.saveCues(uid: 'srtbook_epub_A', cues: <AudioCue>[
-      makeCue(
-        bookKey: 'srtbook_epub_A',
-        chapterHref: SrtParser.defaultChapter,
-        sentenceIndex: 0,
-        startMs: 0,
-        endMs: 1000,
-      ),
-    ]);
+    await repo.saveCues(
+      uid: 'srtbook_epub_A',
+      cues: <AudioCue>[
+        makeCue(
+          bookKey: 'srtbook_epub_A',
+          chapterHref: SrtParser.defaultChapter,
+          sentenceIndex: 0,
+          startMs: 0,
+          endMs: 1000,
+        ),
+      ],
+    );
 
-    await AudiobookRepository(db).saveCues(bookKey: 'A', cues: <AudioCue>[
-      makeCue(
-        bookKey: 'A',
-        chapterHref: 'c.xhtml',
-        sentenceIndex: 0,
-        startMs: 0,
-        endMs: 500,
-      ),
-    ]);
+    await AudiobookRepository(db).saveCues(
+      bookKey: 'A',
+      cues: <AudioCue>[
+        makeCue(
+          bookKey: 'A',
+          chapterHref: 'c.xhtml',
+          sentenceIndex: 0,
+          startMs: 0,
+          endMs: 500,
+        ),
+      ],
+    );
 
     await doReplaceAudio(repo, bookKey: 'A');
 
-    final List<AudioCue> remainingDirty =
-        await AudiobookRepository(db).cuesForBook('A');
-    expect(remainingDirty, isEmpty,
-        reason: 'dirty bookKey cues deleted with the row');
+    final List<AudioCue> remainingDirty = await AudiobookRepository(
+      db,
+    ).cuesForBook('A');
+    expect(
+      remainingDirty,
+      isEmpty,
+      reason: 'dirty bookKey cues deleted with the row',
+    );
     final List<AudioCue> remainingSrt = await repo.cuesFor('srtbook_epub_A');
-    expect(remainingSrt, hasLength(1),
-        reason: 'SrtBook uid cues must survive (different namespace)');
+    expect(
+      remainingSrt,
+      hasLength(1),
+      reason: 'SrtBook uid cues must survive (different namespace)',
+    );
   });
 }

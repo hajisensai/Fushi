@@ -57,18 +57,18 @@ void main() {
 
   test('会话快照行：字/时与统计页同口径，样本不足写 -', () {
     StudySession session({required int ms, required int chars}) => StudySession(
-          mediaKind: kActivityMediaBook,
-          mediaKey: 'k',
-          title: '小説',
-          format: 'epub',
-          deviceId: 'dev',
-          startAt: 0,
-          endAt: ms,
-          durationMs: ms,
-          chars: chars,
-          pages: 0,
-          segmentUids: const <String>['a', 'b'],
-        );
+      mediaKind: kActivityMediaBook,
+      mediaKey: 'k',
+      title: '小説',
+      format: 'epub',
+      deviceId: 'dev',
+      startAt: 0,
+      endAt: ms,
+      durationMs: ms,
+      chars: chars,
+      pages: 0,
+      segmentUids: const <String>['a', 'b'],
+    );
     final String ok = formatStudySessionDiagRow(
       session(ms: 30 * 60000, chars: 6000),
     );
@@ -127,11 +127,14 @@ void main() {
       // 正文与参数；守卫跟着两跳：动作走 _buildStudyDiagLog，它再走
       // buildStudyDiagExport。
       expect(body, contains('_buildStudyDiagLog('));
-      final int builder =
-          settings.indexOf('Future<String> _buildStudyDiagLog(');
+      final int builder = settings.indexOf(
+        'Future<String> _buildStudyDiagLog(',
+      );
       expect(builder, greaterThanOrEqualTo(0));
-      final String builderBody =
-          settings.substring(builder, settings.indexOf(');\n', builder));
+      final String builderBody = settings.substring(
+        builder,
+        settings.indexOf(');\n', builder),
+      );
       expect(builderBody, contains('=> buildStudyDiagExport('));
       expect(builderBody, contains('appModel.database'));
       expect(body, contains('saveLogToFile('));

@@ -76,7 +76,8 @@ void main() {
     test('都没有 → 全局默认内容语言', () {
       expect(
         resolveSubtitleDownloadLanguage(
-            globalDefaultContentLanguage: 'zh-Hant'),
+          globalDefaultContentLanguage: 'zh-Hant',
+        ),
         'zh',
       );
     });
@@ -136,11 +137,10 @@ void main() {
         'ja',
         (_Cand c) => c.language,
       );
-      expect(
-        namesOf(ranked).sublist(0, 2),
-        <String>['ja1', 'ja2'],
-        reason: '候选进来时已按 provider 优先级+下载量排好，语言只是外层键',
-      );
+      expect(namesOf(ranked).sublist(0, 2), <String>[
+        'ja1',
+        'ja2',
+      ], reason: '候选进来时已按 provider 优先级+下载量排好，语言只是外层键');
     });
 
     test('首选为 null / 无人命中 → 原样返回（不做无谓重排）', () {
@@ -209,8 +209,9 @@ void main() {
 
     test('无 tags / 非 json / 空 → 空结果，不抛', () {
       expect(
-        parseFfprobeFacts('{"streams":[{"codec_type":"audio"}]}')
-            .audioLanguages,
+        parseFfprobeFacts(
+          '{"streams":[{"codec_type":"audio"}]}',
+        ).audioLanguages,
         isEmpty,
       );
       expect(parseFfprobeFacts('not json').durationMs, isNull);

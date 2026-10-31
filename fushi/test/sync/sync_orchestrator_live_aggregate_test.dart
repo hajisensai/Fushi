@@ -34,14 +34,15 @@ Future<void> _seedReading(
   required int chars,
   required int timeMs,
   required int modified,
-}) =>
-    db.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: title,
-      dateKey: dateKey,
-      charactersRead: chars,
-      readingTimeMs: timeMs,
-      lastStatisticModified: modified,
-    ));
+}) => db.setReadingStatistic(
+  ReadingStatisticsCompanion.insert(
+    title: title,
+    dateKey: dateKey,
+    charactersRead: chars,
+    readingTimeMs: timeMs,
+    lastStatisticModified: modified,
+  ),
+);
 
 Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
@@ -53,8 +54,9 @@ Future<InterconnectSyncBackend> _buildClientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -64,20 +66,19 @@ SyncOrchestrator _orchestrator({
   required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
-}) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: tmp,
-      audioDatabaseRoot: tmp,
-      tempDir: tmp,
-      syncStats: true,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: false,
-      syncDictionary: false,
-    );
+}) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: tmp,
+  audioDatabaseRoot: tmp,
+  tempDir: tmp,
+  syncStats: true,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: false,
+  syncDictionary: false,
+);
 
 void main() {
   late Directory work;
@@ -124,18 +125,22 @@ void main() {
     await startServer(withLibraryService: true);
 
     // host 有 Book A(chars=40, time=5000) + wHost；且有独立 Book B。
-    await _seedReading(hostDb,
-        title: 'Book A',
-        dateKey: '2026-06-01',
-        chars: 40,
-        timeMs: 5000,
-        modified: 2);
-    await _seedReading(hostDb,
-        title: 'Book B',
-        dateKey: '2026-06-01',
-        chars: 10,
-        timeMs: 100,
-        modified: 1);
+    await _seedReading(
+      hostDb,
+      title: 'Book A',
+      dateKey: '2026-06-01',
+      chars: 40,
+      timeMs: 5000,
+      modified: 2,
+    );
+    await _seedReading(
+      hostDb,
+      title: 'Book B',
+      dateKey: '2026-06-01',
+      chars: 10,
+      timeMs: 100,
+      modified: 1,
+    );
     await hostDb.addFavoriteWord(
       expression: 'wHost',
       reading: 'r',
@@ -147,12 +152,14 @@ void main() {
     // client 有 Book A(chars=100, time=1000) + wLocal。
     final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
-    await _seedReading(localDb,
-        title: 'Book A',
-        dateKey: '2026-06-01',
-        chars: 100,
-        timeMs: 1000,
-        modified: 1);
+    await _seedReading(
+      localDb,
+      title: 'Book A',
+      dateKey: '2026-06-01',
+      chars: 100,
+      timeMs: 1000,
+      modified: 1,
+    );
     await localDb.addFavoriteWord(
       expression: 'wLocal',
       reading: 'r',
@@ -162,10 +169,15 @@ void main() {
     );
 
     final Directory tmp = Directory(p.join(work.path, 't1'))..createSync();
-    final InterconnectSyncBackend backend =
-        await _buildClientBackend(base: base, token: token);
-    final SyncOrchestrator orch =
-        _orchestrator(db: localDb, backend: backend, tmp: tmp);
+    final InterconnectSyncBackend backend = await _buildClientBackend(
+      base: base,
+      token: token,
+    );
+    final SyncOrchestrator orch = _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: tmp,
+    );
 
     final SyncRunReport report = SyncRunReport();
     await orch.syncAggregateLiveForTest(report, backend);
@@ -175,10 +187,10 @@ void main() {
     // 且拉回 host 独有 Book B + wHost。
     final Map<String, ReadingStatisticRow> localByTitle =
         <String, ReadingStatisticRow>{
-      for (final ReadingStatisticRow r
-          in await localDb.getAllReadingStatistics())
-        r.title: r,
-    };
+          for (final ReadingStatisticRow r
+              in await localDb.getAllReadingStatistics())
+            r.title: r,
+        };
     expect(localByTitle['Book A']!.charactersRead, 100);
     expect(localByTitle['Book A']!.readingTimeMs, 5000);
     expect(localByTitle.containsKey('Book B'), isTrue);
@@ -190,10 +202,10 @@ void main() {
     // host 端也收敛：Book A chars=MAX(40,100)=100, time=5000；且拿到 client 的 wLocal。
     final Map<String, ReadingStatisticRow> hostByTitle =
         <String, ReadingStatisticRow>{
-      for (final ReadingStatisticRow r
-          in await hostDb.getAllReadingStatistics())
-        r.title: r,
-    };
+          for (final ReadingStatisticRow r
+              in await hostDb.getAllReadingStatistics())
+            r.title: r,
+        };
     expect(hostByTitle['Book A']!.charactersRead, 100);
     expect(hostByTitle['Book A']!.readingTimeMs, 5000);
     final Set<String> hostWords = (await hostDb.getAllFavoriteWords())
@@ -205,18 +217,29 @@ void main() {
   test('幂等：连跑两次不缩小、不翻倍', () async {
     await startServer(withLibraryService: true);
     await hostDb.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 5);
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 5,
+    );
 
     final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 3);
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 3,
+    );
 
     final Directory tmp = Directory(p.join(work.path, 't2'))..createSync();
-    final InterconnectSyncBackend backend =
-        await _buildClientBackend(base: base, token: token);
-    final SyncOrchestrator orch =
-        _orchestrator(db: localDb, backend: backend, tmp: tmp);
+    final InterconnectSyncBackend backend = await _buildClientBackend(
+      base: base,
+      token: token,
+    );
+    final SyncOrchestrator orch = _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: tmp,
+    );
 
     await orch.syncAggregateLiveForTest(SyncRunReport(), backend);
     await orch.syncAggregateLiveForTest(SyncRunReport(), backend);
@@ -232,13 +255,21 @@ void main() {
     final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
     await localDb.setMiningCount(
-        sourceType: 'book', dateKey: '2026-06-01', count: 7);
+      sourceType: 'book',
+      dateKey: '2026-06-01',
+      count: 7,
+    );
 
     final Directory tmp = Directory(p.join(work.path, 't3'))..createSync();
-    final InterconnectSyncBackend backend =
-        await _buildClientBackend(base: base, token: token);
-    final SyncOrchestrator orch =
-        _orchestrator(db: localDb, backend: backend, tmp: tmp);
+    final InterconnectSyncBackend backend = await _buildClientBackend(
+      base: base,
+      token: token,
+    );
+    final SyncOrchestrator orch = _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: tmp,
+    );
 
     final SyncRunReport report = SyncRunReport();
     // 老 host GET 返 404 → getRemoteAggregate 返 null → push-only；不崩、不产生 error。

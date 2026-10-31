@@ -27,8 +27,11 @@ void main() {
     }
   }
 
-  Future<bool> waitFor(WidgetTester tester, Finder f,
-      {int maxTicks = 40}) async {
+  Future<bool> waitFor(
+    WidgetTester tester,
+    Finder f, {
+    int maxTicks = 40,
+  }) async {
     for (int i = 0; i < maxTicks; i++) {
       await tester.pump(const Duration(milliseconds: 250));
       if (f.evaluate().isNotEmpty) return true;
@@ -36,8 +39,11 @@ void main() {
     return false;
   }
 
-  Future<void> key(WidgetTester tester, LogicalKeyboardKey k,
-      {bool ctrl = false}) async {
+  Future<void> key(
+    WidgetTester tester,
+    LogicalKeyboardKey k, {
+    bool ctrl = false,
+  }) async {
     if (ctrl) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(k);
     if (ctrl) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
@@ -45,132 +51,164 @@ void main() {
   }
 
   testWidgets(
-      'desktop reader chrome: G gallery / I statistics / Ctrl+F left drawer / '
-      'T right drawer open and close via keyboard',
-      (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint(
-          '[desktop-chrome] FlutterError: ${details.exceptionAsString()}');
-    };
-    try {
-      await launchFushiTestApp();
-      expect(await waitForHome(tester), isTrue,
-          reason: 'Home must render within 90s');
-
-      final String bookKey = await seedReaderBook(tester);
-      await openBookViaProductionPath(tester, bookKey);
-
-      // 首屏恢复完成后底部状态行才出现（桌面端 ッツ 形态的可见证据）。
-      final Finder footer =
-          find.byKey(const ValueKey<String>('fushi_status_footer'));
-      expect(await waitFor(tester, footer, maxTicks: 120), isTrue,
-          reason: 'reader status footer must appear after first restore');
-
-      // G → 画廊页（生成书没有插图也会进空态页），Esc 关。
-      await key(tester, LogicalKeyboardKey.keyG);
-      final Finder galleryClose =
-          find.byKey(const ValueKey<String>('fushi_gallery_close'));
-      expect(await waitFor(tester, galleryClose), isTrue,
-          reason: 'G must open the gallery page');
-      await key(tester, LogicalKeyboardKey.escape);
-      expect(await waitFor(tester, footer), isTrue);
-      expect(galleryClose, findsNothing);
-
-      // I → 统计浮层，Esc 关。
-      await key(tester, LogicalKeyboardKey.keyI);
-      final Finder statsClose =
-          find.byKey(const ValueKey<String>('fushi_reader_stats_close'));
-      expect(await waitFor(tester, statsClose), isTrue,
-          reason: 'I must open the statistics dialog');
-      await key(tester, LogicalKeyboardKey.escape);
-      await pumpFor(tester, 4);
-      expect(statsClose, findsNothing);
-
-      // Ctrl+F → 导航抽屉贴左。
-      await key(tester, LogicalKeyboardKey.keyF, ctrl: true);
-      final Finder sheet =
-          find.byKey(const ValueKey<String>('fushi_reader_side_sheet'));
-      expect(await waitFor(tester, sheet), isTrue,
-          reason: 'Ctrl+F must open the navigation drawer');
-      final Size screen = tester.getSize(find.byType(MaterialApp).first);
-      final Rect navRect = tester.getRect(sheet);
-      expect(navRect.left, 0, reason: 'navigation drawer is left-anchored');
-      expect(navRect.right, lessThan(screen.width));
-      await key(tester, LogicalKeyboardKey.escape);
-      await pumpFor(tester, 4);
-      expect(sheet, findsNothing);
-
-      // T → 设置抽屉贴右，分段条在。
-      await key(tester, LogicalKeyboardKey.keyT);
-      expect(await waitFor(tester, sheet), isTrue,
-          reason: 'T must open the settings drawer');
-      final Rect settingsRect = tester.getRect(sheet);
-      expect(settingsRect.right, screen.width,
-          reason: 'settings drawer is right-anchored');
-      expect(
-        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsWidgets,
-      );
-      await key(tester, LogicalKeyboardKey.escape);
-      await pumpFor(tester, 4);
-      expect(sheet, findsNothing);
-
-      // Exercise the same production chrome at phone-like width in the native
-      // Windows runner; this covers responsive geometry, not mobile WebView.
-      final Size originalSize = await windowManager.getSize();
-      try {
-        await windowManager.setSize(const Size(360, 720));
-        await pumpFor(tester, 8);
-        await key(tester, LogicalKeyboardKey.keyT);
-        expect(await waitFor(tester, sheet), isTrue);
-        final Size narrowScreen =
-            tester.getSize(find.byType(MaterialApp).first);
-        expect(narrowScreen.width, lessThan(400));
-        expect(tester.getRect(sheet).right, narrowScreen.width);
-        final model = await enableFocusNavigation(tester);
-        final String previousBrightness = model.brightnessMode;
-        final Finder brightnessRow = find.byWidgetPredicate(
-          (Widget widget) =>
-              widget is AdaptiveSettingsSegmentedRow<String> &&
-              widget.title == t.dark_mode,
+    'desktop reader chrome: G gallery / I statistics / Ctrl+F left drawer / '
+    'T right drawer open and close via keyboard',
+    (WidgetTester tester) async {
+      final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        errors.add(details);
+        debugPrint(
+          '[desktop-chrome] FlutterError: ${details.exceptionAsString()}',
         );
-        final FocusDriver focus = FocusDriver(tester);
-        expect(await focus.focusWidget(brightnessRow), isTrue);
-        try {
-          await focus.adjust(steps: -2);
-          expect(model.brightnessMode, 'light');
-          await focus.adjust(steps: 2);
-          expect(model.brightnessMode, 'dark');
-          await captureFlutterFrame(tester, 'observe-reader-night-selector');
-          await focus.adjust(steps: -1);
-          expect(model.brightnessMode, 'system');
-        } finally {
-          await model.setBrightnessMode(previousBrightness);
-        }
-        final ObserveShot settingsShot =
-            await captureFlutterFrame(tester, 'observe-reader-narrow-settings');
-        expect(settingsShot.saved, isTrue);
-        await key(tester, LogicalKeyboardKey.escape);
-        expect(sheet, findsNothing);
-        await key(tester, LogicalKeyboardKey.keyF, ctrl: true);
-        expect(await waitFor(tester, sheet), isTrue);
-        expect(tester.getRect(sheet).left, 0);
-        await key(tester, LogicalKeyboardKey.escape);
-        expect(sheet, findsNothing);
-        expect(footer, findsOneWidget);
-        await captureFlutterFrame(tester, 'observe-reader-narrow-chrome');
-      } finally {
-        await windowManager.setSize(originalSize);
-      }
+      };
+      try {
+        await launchFushiTestApp();
+        expect(
+          await waitForHome(tester),
+          isTrue,
+          reason: 'Home must render within 90s',
+        );
 
-      assertStrictErrors(errors);
-      debugPrint('[desktop-chrome] PASS — gallery / statistics / left nav / '
-          'right settings all reachable by keyboard');
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  });
+        final String bookKey = await seedReaderBook(tester);
+        await openBookViaProductionPath(tester, bookKey);
+
+        // 首屏恢复完成后底部状态行才出现（桌面端 ッツ 形态的可见证据）。
+        final Finder footer = find.byKey(
+          const ValueKey<String>('fushi_status_footer'),
+        );
+        expect(
+          await waitFor(tester, footer, maxTicks: 120),
+          isTrue,
+          reason: 'reader status footer must appear after first restore',
+        );
+
+        // G → 画廊页（生成书没有插图也会进空态页），Esc 关。
+        await key(tester, LogicalKeyboardKey.keyG);
+        final Finder galleryClose = find.byKey(
+          const ValueKey<String>('fushi_gallery_close'),
+        );
+        expect(
+          await waitFor(tester, galleryClose),
+          isTrue,
+          reason: 'G must open the gallery page',
+        );
+        await key(tester, LogicalKeyboardKey.escape);
+        expect(await waitFor(tester, footer), isTrue);
+        expect(galleryClose, findsNothing);
+
+        // I → 统计浮层，Esc 关。
+        await key(tester, LogicalKeyboardKey.keyI);
+        final Finder statsClose = find.byKey(
+          const ValueKey<String>('fushi_reader_stats_close'),
+        );
+        expect(
+          await waitFor(tester, statsClose),
+          isTrue,
+          reason: 'I must open the statistics dialog',
+        );
+        await key(tester, LogicalKeyboardKey.escape);
+        await pumpFor(tester, 4);
+        expect(statsClose, findsNothing);
+
+        // Ctrl+F → 导航抽屉贴左。
+        await key(tester, LogicalKeyboardKey.keyF, ctrl: true);
+        final Finder sheet = find.byKey(
+          const ValueKey<String>('fushi_reader_side_sheet'),
+        );
+        expect(
+          await waitFor(tester, sheet),
+          isTrue,
+          reason: 'Ctrl+F must open the navigation drawer',
+        );
+        final Size screen = tester.getSize(find.byType(MaterialApp).first);
+        final Rect navRect = tester.getRect(sheet);
+        expect(navRect.left, 0, reason: 'navigation drawer is left-anchored');
+        expect(navRect.right, lessThan(screen.width));
+        await key(tester, LogicalKeyboardKey.escape);
+        await pumpFor(tester, 4);
+        expect(sheet, findsNothing);
+
+        // T → 设置抽屉贴右，分段条在。
+        await key(tester, LogicalKeyboardKey.keyT);
+        expect(
+          await waitFor(tester, sheet),
+          isTrue,
+          reason: 'T must open the settings drawer',
+        );
+        final Rect settingsRect = tester.getRect(sheet);
+        expect(
+          settingsRect.right,
+          screen.width,
+          reason: 'settings drawer is right-anchored',
+        );
+        expect(
+          find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+          findsWidgets,
+        );
+        await key(tester, LogicalKeyboardKey.escape);
+        await pumpFor(tester, 4);
+        expect(sheet, findsNothing);
+
+        // Exercise the same production chrome at phone-like width in the native
+        // Windows runner; this covers responsive geometry, not mobile WebView.
+        final Size originalSize = await windowManager.getSize();
+        try {
+          await windowManager.setSize(const Size(360, 720));
+          await pumpFor(tester, 8);
+          await key(tester, LogicalKeyboardKey.keyT);
+          expect(await waitFor(tester, sheet), isTrue);
+          final Size narrowScreen = tester.getSize(
+            find.byType(MaterialApp).first,
+          );
+          expect(narrowScreen.width, lessThan(400));
+          expect(tester.getRect(sheet).right, narrowScreen.width);
+          final model = await enableFocusNavigation(tester);
+          final String previousBrightness = model.brightnessMode;
+          final Finder brightnessRow = find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is AdaptiveSettingsSegmentedRow<String> &&
+                widget.title == t.dark_mode,
+          );
+          final FocusDriver focus = FocusDriver(tester);
+          expect(await focus.focusWidget(brightnessRow), isTrue);
+          try {
+            await focus.adjust(steps: -2);
+            expect(model.brightnessMode, 'light');
+            await focus.adjust(steps: 2);
+            expect(model.brightnessMode, 'dark');
+            await captureFlutterFrame(tester, 'observe-reader-night-selector');
+            await focus.adjust(steps: -1);
+            expect(model.brightnessMode, 'system');
+          } finally {
+            await model.setBrightnessMode(previousBrightness);
+          }
+          final ObserveShot settingsShot = await captureFlutterFrame(
+            tester,
+            'observe-reader-narrow-settings',
+          );
+          expect(settingsShot.saved, isTrue);
+          await key(tester, LogicalKeyboardKey.escape);
+          expect(sheet, findsNothing);
+          await key(tester, LogicalKeyboardKey.keyF, ctrl: true);
+          expect(await waitFor(tester, sheet), isTrue);
+          expect(tester.getRect(sheet).left, 0);
+          await key(tester, LogicalKeyboardKey.escape);
+          expect(sheet, findsNothing);
+          expect(footer, findsOneWidget);
+          await captureFlutterFrame(tester, 'observe-reader-narrow-chrome');
+        } finally {
+          await windowManager.setSize(originalSize);
+        }
+
+        assertStrictErrors(errors);
+        debugPrint(
+          '[desktop-chrome] PASS — gallery / statistics / left nav / '
+          'right settings all reachable by keyboard',
+        );
+      } finally {
+        FlutterError.onError = oldHandler;
+      }
+    },
+  );
 }

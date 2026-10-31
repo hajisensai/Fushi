@@ -17,9 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 修复后 _parseValue 委托 PrefCodec.decodeUntyped（严格超集：标签 + 裸值都认，
 /// 裸值分支与旧启发式逐行等价）。
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -42,15 +40,21 @@ void main() {
     await ReaderFushiSource.instance.setReaderFontSize(30);
 
     final Map<String, String> prefs = await db.getAllPrefs();
-    expect(prefs['src:reader_fushi:font_size'], 'd:30.0',
-        reason: '回退路径写 PrefCodec 标签值（复现双编码前提）');
+    expect(
+      prefs['src:reader_fushi:font_size'],
+      'd:30.0',
+      reason: '回退路径写 PrefCodec 标签值（复现双编码前提）',
+    );
 
     // 模拟重启：新 ReaderSettings 实例从 DB 加载。修复前 _parseValue 不认
     // 'd:30.0' → fontSize 回落默认 22；修复后必须读回 30。
     final ReaderSettings restored = ReaderSettings(db);
     await restored.refreshFromDb();
-    expect(restored.fontSize, 30.0,
-        reason: '标签 double 值必须被 ReaderSettings 读回（修复前丢为默认 22）');
+    expect(
+      restored.fontSize,
+      30.0,
+      reason: '标签 double 值必须被 ReaderSettings 读回（修复前丢为默认 22）',
+    );
   });
 
   test('(b) bool 标签值：b:false → showTopProgressBar == false', () async {
@@ -58,8 +62,11 @@ void main() {
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
-    expect(settings.showTopProgressBar, isFalse,
-        reason: '修复前标签 bool 解析失败回落默认 true');
+    expect(
+      settings.showTopProgressBar,
+      isFalse,
+      reason: '修复前标签 bool 解析失败回落默认 true',
+    );
   });
 
   test('(c) int 标签值：i:600 → wheelPageTurnInterval == 600', () async {
@@ -67,8 +74,11 @@ void main() {
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
-    expect(settings.wheelPageTurnInterval, 600,
-        reason: '修复前标签 int 解析失败回落默认 450');
+    expect(
+      settings.wheelPageTurnInterval,
+      600,
+      reason: '修复前标签 int 解析失败回落默认 450',
+    );
   });
 
   test('(d) String 标签值：s:horizontal-tb → writingMode 不吃进污染串', () async {
@@ -76,8 +86,11 @@ void main() {
 
     final ReaderSettings settings = ReaderSettings(db);
     await settings.refreshFromDb();
-    expect(settings.writingMode, 'horizontal-tb',
-        reason: '修复前整串 "s:horizontal-tb" 被当值采纳（类型匹配不回落）');
+    expect(
+      settings.writingMode,
+      'horizontal-tb',
+      reason: '修复前整串 "s:horizontal-tb" 被当值采纳（类型匹配不回落）',
+    );
   });
 
   test('(e) 旧裸值行为不回归：26.5 / false / vertical-rl 逐值不变', () async {

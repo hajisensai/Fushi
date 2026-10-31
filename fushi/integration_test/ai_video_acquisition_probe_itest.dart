@@ -91,8 +91,8 @@ void main() {
 
     HomePage.debugSelectTab?.call(HomeTab.video);
     await tester.pump(const Duration(seconds: 2));
-    final VideoDiscoveryActions actions =
-        HomePage.debugVideoDiscoveryActions!.call();
+    final VideoDiscoveryActions actions = HomePage.debugVideoDiscoveryActions!
+        .call();
     expect(actions.onAiAcquire, isNotNull, reason: '入口应已接线');
     actions.onAiAcquire!.call(null);
     for (int i = 0; i < 20; i++) {
@@ -165,7 +165,9 @@ void main() {
         }
       }
       await captureFlutterFrame(
-          tester, '0${3 + round}-after-${question.slot.name}');
+        tester,
+        '0${3 + round}-after-${question.slot.name}',
+      );
     }
     final VideoAcquisitionView finalState = page.service.view;
     debugPrint(
@@ -177,8 +179,8 @@ void main() {
     await captureFlutterFrame(tester, '09-final');
     expect(
       finalState.transcript.whereType<VideoAcquisitionAssistantMessage>().map(
-            (VideoAcquisitionAssistantMessage m) => m.say.kind,
-          ),
+        (VideoAcquisitionAssistantMessage m) => m.say.kind,
+      ),
       contains(VideoAcquisitionSayKind.aiUnavailable),
       reason: 'AI 连不上时必须走退化路径而不是卡住',
     );

@@ -10,10 +10,10 @@ import 'package:fushi/src/sync/backup_service.dart';
 /// 抛出），且只在 Windows 触发、只对瞬时码触发；非 Windows / 非瞬时码直接抛。
 void main() {
   FileSystemException winError(int code) => FileSystemException(
-        'Deletion failed',
-        r'C:\Users\wrds\AppData\Local\Temp\fushi_backup_abc',
-        OSError('目录不是空的。', code),
-      );
+    'Deletion failed',
+    r'C:\Users\wrds\AppData\Local\Temp\fushi_backup_abc',
+    OSError('目录不是空的。', code),
+  );
 
   group('deleteDirectoryWithRetry', () {
     test('happy path: 目录存在，删一次成功，不重试', () async {
@@ -43,10 +43,8 @@ void main() {
     test('PathNotFoundException：检查与删除之间消失，吞掉不抛', () async {
       await deleteDirectoryWithRetry(
         exists: () async => true,
-        delete: () async => throw const PathNotFoundException(
-          'gone',
-          OSError('not found', 2),
-        ),
+        delete: () async =>
+            throw const PathNotFoundException('gone', OSError('not found', 2)),
         sleep: (_) async {},
         isWindows: true,
       );

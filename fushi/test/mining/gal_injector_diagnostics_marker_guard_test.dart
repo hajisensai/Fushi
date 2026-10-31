@@ -27,10 +27,12 @@ void main() {
   late String failurePolicySource;
 
   setUpAll(() {
-    final File injector =
-        File('../native/galgame_hook/injector/injector_main.cpp');
-    final File policy =
-        File('../native/galgame_hook/include/launch_failure_policy.h');
+    final File injector = File(
+      '../native/galgame_hook/injector/injector_main.cpp',
+    );
+    final File policy = File(
+      '../native/galgame_hook/include/launch_failure_policy.h',
+    );
     expect(injector.existsSync(), isTrue, reason: '${injector.path} 不存在');
     expect(policy.existsSync(), isTrue, reason: '${policy.path} 不存在');
     injectorSource = injector.readAsStringSync();
@@ -44,7 +46,8 @@ void main() {
       expect(
         injectorSource.contains(entry.sourceLiteral),
         isTrue,
-        reason: 'injector 已不再产出「${entry.sourceLiteral}」，'
+        reason:
+            'injector 已不再产出「${entry.sourceLiteral}」，'
             '而 Dart 仍拿 「${entry.marker}」 把它归类成 ${entry.failure.name}。'
             'injector 改了文案就必须同步改这张表（或把它标成空 sourceLiteral 的'
             '旧二进制兼容项），否则用户会拿到一句与事实相反的处置建议',
@@ -64,7 +67,8 @@ void main() {
       expect(
         entry.sourceLiteral.contains(entry.marker),
         isTrue,
-        reason: '「${entry.marker}」不是「${entry.sourceLiteral}」的子串——'
+        reason:
+            '「${entry.marker}」不是「${entry.sourceLiteral}」的子串——'
             '锚点与实际匹配串对不上，锚点就证明不了这条 marker 还有产出方',
       );
     }
@@ -80,7 +84,8 @@ void main() {
         expect(
           later.marker.contains(earlier.marker),
           isFalse,
-          reason: '「${earlier.marker}」($i) 是「${later.marker}」($j) 的子串，'
+          reason:
+              '「${earlier.marker}」($i) 是「${later.marker}」($j) 的子串，'
               '排在前面会把后者整条吃掉——这正是 staleSession 与 '
               'residentHookMismatch 被折成一类的形状（两者处置相反）',
         );
@@ -133,10 +138,16 @@ void main() {
   });
 
   test('native LaunchFailureToken 的每个 token 都能落到 Dart 枚举名上', () {
-    final Iterable<RegExpMatch> tokens =
-        RegExp(r'return "([A-Za-z]+)";').allMatches(failurePolicySource);
-    expect(tokens, isNotEmpty, reason: 'LaunchFailureToken 的 token 表没解析到，'
-        '守卫会空转——先确认 launch_failure_policy.h 的写法有没有变');
+    final Iterable<RegExpMatch> tokens = RegExp(
+      r'return "([A-Za-z]+)";',
+    ).allMatches(failurePolicySource);
+    expect(
+      tokens,
+      isNotEmpty,
+      reason:
+          'LaunchFailureToken 的 token 表没解析到，'
+          '守卫会空转——先确认 launch_failure_policy.h 的写法有没有变',
+    );
     final Set<String> dartNames = GalHookInjectorFailure.values
         .map((GalHookInjectorFailure value) => value.name)
         .toSet();
@@ -145,7 +156,8 @@ void main() {
       expect(
         dartNames.contains(token),
         isTrue,
-        reason: 'injector 会打 `ERR reason=$token`，但 GalHookInjectorFailure '
+        reason:
+            'injector 会打 `ERR reason=$token`，但 GalHookInjectorFailure '
             '里没有同名成员——结构化分类会静默退化成 fallback',
       );
     }

@@ -25,10 +25,7 @@ void main() {
     });
 
     test('完整路径同样解析（Windows 分隔符）', () {
-      expect(
-        parsedEpisodeNumberOf(r'D:\anime\Show\Show.S02E11.mkv'),
-        11,
-      );
+      expect(parsedEpisodeNumberOf(r'D:\anime\Show\Show.S02E11.mkv'), 11);
     });
 
     test('解析不出集号（PV/特典）→ null，调用方回落顺位号', () {
@@ -44,26 +41,28 @@ void main() {
       'Young.Ladies.Dont.Play.Fighting.Games.S01E05.1080p.mkv',
       'Young.Ladies.Dont.Play.Fighting.Games.S01E06.1080p.mkv',
     ];
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoEpisodePanel(
-          episodes: <VideoEpisodeEntry>[
-            for (final String path in paths)
-              VideoEpisodeEntry(
-                title: path,
-                episodeNumber: parsedEpisodeNumberOf(path),
-              ),
-          ],
-          // 当前集放在第 0 张，其余 1..3 张都是普通集卡。
-          currentIndex: 0,
-          onTapEpisode: (_) {},
-          onClose: () {},
-          colorScheme: const ColorScheme.light(),
-          title: 'Episodes',
-          emptyHint: 'No episodes',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoEpisodePanel(
+            episodes: <VideoEpisodeEntry>[
+              for (final String path in paths)
+                VideoEpisodeEntry(
+                  title: path,
+                  episodeNumber: parsedEpisodeNumberOf(path),
+                ),
+            ],
+            // 当前集放在第 0 张，其余 1..3 张都是普通集卡。
+            currentIndex: 0,
+            onTapEpisode: (_) {},
+            onClose: () {},
+            colorScheme: const ColorScheme.light(),
+            title: 'Episodes',
+            emptyHint: 'No episodes',
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('02'), findsOneWidget);
@@ -86,25 +85,27 @@ void main() {
   });
 
   testWidgets('解析不出集号的条目回落顺位号', (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoEpisodePanel(
-          episodes: <VideoEpisodeEntry>[
-            const VideoEpisodeEntry(title: 'Trailer'),
-            VideoEpisodeEntry(
-              title: 'Special Preview.mkv',
-              episodeNumber: parsedEpisodeNumberOf('Special Preview.mkv'),
-            ),
-          ],
-          currentIndex: 0,
-          onTapEpisode: (_) {},
-          onClose: () {},
-          colorScheme: const ColorScheme.light(),
-          title: 'Episodes',
-          emptyHint: 'No episodes',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoEpisodePanel(
+            episodes: <VideoEpisodeEntry>[
+              const VideoEpisodeEntry(title: 'Trailer'),
+              VideoEpisodeEntry(
+                title: 'Special Preview.mkv',
+                episodeNumber: parsedEpisodeNumberOf('Special Preview.mkv'),
+              ),
+            ],
+            currentIndex: 0,
+            onTapEpisode: (_) {},
+            onClose: () {},
+            colorScheme: const ColorScheme.light(),
+            title: 'Episodes',
+            emptyHint: 'No episodes',
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('02'), findsOneWidget, reason: '无集号 → 回落顺位号 02');

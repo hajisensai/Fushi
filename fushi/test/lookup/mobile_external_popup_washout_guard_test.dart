@@ -28,121 +28,178 @@ void main() {
 
     test('html.mobile-external is transparent (kills the viewport wash)', () {
       expect(
-        RegExp(r'html\.mobile-external\s*\{[^}]*background:\s*transparent')
-            .hasMatch(css),
+        RegExp(
+          r'html\.mobile-external\s*\{[^}]*background:\s*transparent',
+        ).hasMatch(css),
         isTrue,
-        reason: 'html.mobile-external must be transparent so the opaque '
+        reason:
+            'html.mobile-external must be transparent so the opaque '
             'documentElement fill no longer washes the external popup white',
       );
     });
 
-    test('the mobile-external rule adds NO body chrome (Flutter owns the card)',
-        () {
-      expect(css.contains('html.mobile-external body'), isFalse,
-          reason: 'the Flutter surface owns the card chrome; the mobile scope '
-              'only makes <html> transparent, it must not draw a body card');
-    });
+    test(
+      'the mobile-external rule adds NO body chrome (Flutter owns the card)',
+      () {
+        expect(
+          css.contains('html.mobile-external body'),
+          isFalse,
+          reason:
+              'the Flutter surface owns the card chrome; the mobile scope '
+              'only makes <html> transparent, it must not draw a body card',
+        );
+      },
+    );
 
-    test('the in-app html,body opaque var fill is untouched (no scope leak)',
-        () {
-      expect(
-        css.contains('background-color: var(--background-color, transparent)'),
-        isTrue,
-        reason: 'the in-app opaque html,body fill must remain (no regression)',
-      );
-    });
+    test(
+      'the in-app html,body opaque var fill is untouched (no scope leak)',
+      () {
+        expect(
+          css.contains(
+            'background-color: var(--background-color, transparent)',
+          ),
+          isTrue,
+          reason:
+              'the in-app opaque html,body fill must remain (no regression)',
+        );
+      },
+    );
   });
 
   group('shared builder -- mobile-external class is gated', () {
     late String inject;
-    setUpAll(() => inject =
-        read('lib/src/pages/implementations/popup_settings_injection.dart'));
+    setUpAll(
+      () => inject = read(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ),
+    );
 
     test('PopupSettingsOptions exposes a mobileExternal flag', () {
-      expect(inject.contains('final bool mobileExternal;'), isTrue,
-          reason: 'the shared options must carry the mobile-external toggle');
-      expect(inject.contains('this.mobileExternal = false'), isTrue,
-          reason: 'mobileExternal must default to false (in-app / desktop '
-              'global-lookup stay opaque-html)');
-    });
-
-    test('the shared builder adds the mobile-external class when requested',
-        () {
       expect(
-        inject.contains("classList.add('mobile-external')"),
+        inject.contains('final bool mobileExternal;'),
+        isTrue,
+        reason: 'the shared options must carry the mobile-external toggle',
+      );
+      expect(
+        inject.contains('this.mobileExternal = false'),
         isTrue,
         reason:
-            'the single source of truth must tag the doc mobile-external so '
-            'popup.css turns <html> transparent on the external popup path',
+            'mobileExternal must default to false (in-app / desktop '
+            'global-lookup stay opaque-html)',
       );
     });
 
-    test('global-lookup and mobile-external are mutually exclusive branches',
-        () {
-      expect(inject.contains("classList.add('global-lookup')"), isTrue);
-      final int gAt = inject.indexOf('final String classLine = globalLookup');
-      expect(gAt, greaterThan(-1));
-      final String block = inject.substring(gAt, gAt + 400);
-      expect(block.contains('mobileExternal'), isTrue,
-          reason: 'the class ternary must branch on mobileExternal after '
-              'globalLookup (mutually exclusive)');
-    });
+    test(
+      'the shared builder adds the mobile-external class when requested',
+      () {
+        expect(
+          inject.contains("classList.add('mobile-external')"),
+          isTrue,
+          reason:
+              'the single source of truth must tag the doc mobile-external so '
+              'popup.css turns <html> transparent on the external popup path',
+        );
+      },
+    );
+
+    test(
+      'global-lookup and mobile-external are mutually exclusive branches',
+      () {
+        expect(inject.contains("classList.add('global-lookup')"), isTrue);
+        final int gAt = inject.indexOf('final String classLine = globalLookup');
+        expect(gAt, greaterThan(-1));
+        final String block = inject.substring(gAt, gAt + 400);
+        expect(
+          block.contains('mobileExternal'),
+          isTrue,
+          reason:
+              'the class ternary must branch on mobileExternal after '
+              'globalLookup (mutually exclusive)',
+        );
+      },
+    );
   });
 
   group('widget wiring -- external popup sets the flag, in-app never', () {
-    test('DictionaryPopupWebView exposes transparentDocumentBackground (false)',
-        () {
-      final String src =
-          read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-      expect(src.contains('final bool transparentDocumentBackground;'), isTrue,
-          reason: 'the popup WebView must carry the transparent-doc toggle');
-      expect(src.contains('this.transparentDocumentBackground = false'), isTrue,
+    test(
+      'DictionaryPopupWebView exposes transparentDocumentBackground (false)',
+      () {
+        final String src = read(
+          'lib/src/pages/implementations/dictionary_popup_webview.dart',
+        );
+        expect(
+          src.contains('final bool transparentDocumentBackground;'),
+          isTrue,
+          reason: 'the popup WebView must carry the transparent-doc toggle',
+        );
+        expect(
+          src.contains('this.transparentDocumentBackground = false'),
+          isTrue,
           reason:
-              'it must default to false (in-app opaque-html, no regression)');
-      expect(
-        src.contains('mobileExternal: widget.transparentDocumentBackground'),
-        isTrue,
-        reason: 'the widget flag must feed the shared builder mobileExternal',
-      );
-    });
+              'it must default to false (in-app opaque-html, no regression)',
+        );
+        expect(
+          src.contains('mobileExternal: widget.transparentDocumentBackground'),
+          isTrue,
+          reason: 'the widget flag must feed the shared builder mobileExternal',
+        );
+      },
+    );
 
     test('DictionaryPopupLayer forwards the flag to the WebView', () {
-      final String layer =
-          read('lib/src/pages/implementations/dictionary_popup_layer.dart');
+      final String layer = read(
+        'lib/src/pages/implementations/dictionary_popup_layer.dart',
+      );
       expect(
-          layer.contains('final bool transparentDocumentBackground;'), isTrue,
-          reason: 'the layer must carry the toggle to forward');
+        layer.contains('final bool transparentDocumentBackground;'),
+        isTrue,
+        reason: 'the layer must carry the toggle to forward',
+      );
       expect(
         layer.contains(
-            'transparentDocumentBackground: transparentDocumentBackground'),
+          'transparentDocumentBackground: transparentDocumentBackground',
+        ),
         isTrue,
         reason:
             'the layer must pass the flag straight to DictionaryPopupWebView',
       );
       expect(
-          layer.contains('this.transparentDocumentBackground = false'), isTrue,
-          reason: 'default false so in-app hosts stay opaque-html');
+        layer.contains('this.transparentDocumentBackground = false'),
+        isTrue,
+        reason: 'default false so in-app hosts stay opaque-html',
+      );
     });
 
     test('popup_dictionary_page (mobile external host) sets the flag true', () {
-      final String page =
-          read('lib/src/pages/implementations/popup_dictionary_page.dart');
-      expect(page.contains('transparentDocumentBackground: true'), isTrue,
-          reason: 'the app-outside / floating-subtitle popup MUST request the '
-              'transparent <html> (this is the washout fix entry point)');
+      final String page = read(
+        'lib/src/pages/implementations/popup_dictionary_page.dart',
+      );
+      expect(
+        page.contains('transparentDocumentBackground: true'),
+        isTrue,
+        reason:
+            'the app-outside / floating-subtitle popup MUST request the '
+            'transparent <html> (this is the washout fix entry point)',
+      );
     });
 
-    test('in-app hosts do NOT set the flag (stay opaque-html, zero regression)',
-        () {
-      for (final String path in <String>[
-        'lib/src/pages/base_source_page.dart',
-        'lib/src/pages/implementations/dictionary_page_mixin.dart',
-      ]) {
-        final String src = read(path);
-        expect(src.contains('transparentDocumentBackground'), isFalse,
-            reason: '$path is an in-app host; it must not request the '
-                'transparent <html> (that would wash the in-app popup)');
-      }
-    });
+    test(
+      'in-app hosts do NOT set the flag (stay opaque-html, zero regression)',
+      () {
+        for (final String path in <String>[
+          'lib/src/pages/base_source_page.dart',
+          'lib/src/pages/implementations/dictionary_page_mixin.dart',
+        ]) {
+          final String src = read(path);
+          expect(
+            src.contains('transparentDocumentBackground'),
+            isFalse,
+            reason:
+                '$path is an in-app host; it must not request the '
+                'transparent <html> (that would wash the in-app popup)',
+          );
+        }
+      },
+    );
   });
 }

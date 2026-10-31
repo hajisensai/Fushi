@@ -16,22 +16,37 @@ void main() {
   String read(String p) => File(p).readAsStringSync();
 
   test('DictionaryPopupWebView.build 带净缩放=1 的不变式 assert', () {
-    final String src =
-        read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-    expect(src.contains('assert('), isTrue,
-        reason: '不变式必须是 assert（debug/测试触发），不是注释');
-    expect(src.contains('FushiAppUiScale.of(context)'), isTrue,
-        reason: 'DictionaryPopupWebView 必须在 build 里读取当前界面缩放');
-    expect(src.contains('FushiAppUiScale.defaultScale'), isTrue,
-        reason: 'assert 必须断言净缩放=defaultScale(中和后)，否则被全局缩放拉糊');
+    final String src = read(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    );
+    expect(
+      src.contains('assert('),
+      isTrue,
+      reason: '不变式必须是 assert（debug/测试触发），不是注释',
+    );
+    expect(
+      src.contains('FushiAppUiScale.of(context)'),
+      isTrue,
+      reason: 'DictionaryPopupWebView 必须在 build 里读取当前界面缩放',
+    );
+    expect(
+      src.contains('FushiAppUiScale.defaultScale'),
+      isTrue,
+      reason: 'assert 必须断言净缩放=defaultScale(中和后)，否则被全局缩放拉糊',
+    );
   });
 
   test('home_dictionary_page 查词结果区用中和器包裹（且在 LayoutBuilder 外层）', () {
-    final String src =
-        read('lib/src/pages/implementations/home_dictionary_page.dart');
-    expect(src.contains('FushiAppUiScaleNeutralizer'), isTrue,
-        reason: '首页词典标签查词结果（DictionaryPopupWebView+嵌套弹窗）'
-            '必须用中和器包裹整块区域');
+    final String src = read(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    );
+    expect(
+      src.contains('FushiAppUiScaleNeutralizer'),
+      isTrue,
+      reason:
+          '首页词典标签查词结果（DictionaryPopupWebView+嵌套弹窗）'
+          '必须用中和器包裹整块区域',
+    );
     // 关键不变式：中和器必须在 LayoutBuilder 外层——内层 constraints 才是真实视口、
     // WebView 与嵌套弹窗共用同一净缩放=1 坐标系。若错放进 LayoutBuilder 内层只中和
     // 局部，会重蹈被撤销的 FushiNativeScale 坐标错位坑。锚点用代码形态 child:
@@ -45,11 +60,16 @@ void main() {
   });
 
   test('popup_dictionary_page 整页用中和器包裹 _buildOuterContainer', () {
-    final String src =
-        read('lib/src/pages/implementations/popup_dictionary_page.dart');
-    expect(src.contains('FushiAppUiScaleNeutralizer'), isTrue,
-        reason: '弹窗词典窗口经 popup_main 套了 FushiAppUiScale，'
-            '其 DictionaryPopupWebView 必须用中和器包裹');
+    final String src = read(
+      'lib/src/pages/implementations/popup_dictionary_page.dart',
+    );
+    expect(
+      src.contains('FushiAppUiScaleNeutralizer'),
+      isTrue,
+      reason:
+          '弹窗词典窗口经 popup_main 套了 FushiAppUiScale，'
+          '其 DictionaryPopupWebView 必须用中和器包裹',
+    );
     // 中和器必须包住整块 _buildOuterContainer（透明关闭遮罩+卡片+嵌套层同坐标系）。
     expect(
       src.indexOf('FushiAppUiScaleNeutralizer') <

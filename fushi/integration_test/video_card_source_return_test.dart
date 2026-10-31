@@ -146,8 +146,9 @@ void main() {
       final String? coverageBefore = await db.getPref(
         videoWatchCoveragePrefKey(_bookUid),
       );
-      final WidgetRef ref = tester.element(find.byType(FushiReaderApp))
-          as ConsumerStatefulElement;
+      final WidgetRef ref =
+          tester.element(find.byType(FushiReaderApp))
+              as ConsumerStatefulElement;
       final CardSourceLink link = CardSourceLink(
         kind: CardSourceKind.video,
         uid: _bookUid,
@@ -272,8 +273,8 @@ void main() {
       await _finish(
         tester,
         ExternalMediaNavigation.instance.closeActive().then(
-              (bool result) => closed = result,
-            ),
+          (bool result) => closed = result,
+        ),
       );
       expect(closed, isTrue);
       expect(find.byType(VideoFushiPage), findsNothing);

@@ -53,14 +53,13 @@ void main() {
     required double rectStart,
     required double currentScroll,
     double columnGap = gap,
-  }) =>
-      ReaderPaginationScripts.revealScrollTargetForTesting(
-        rectStart: rectStart,
-        currentScroll: currentScroll,
-        pageSize: pageSize,
-        contentStart: contentStart,
-        columnGap: columnGap,
-      );
+  }) => ReaderPaginationScripts.revealScrollTargetForTesting(
+    rectStart: rectStart,
+    currentScroll: currentScroll,
+    pageSize: pageSize,
+    contentStart: contentStart,
+    columnGap: columnGap,
+  );
 
   group('BUG-2325 累积网格漂移下，列顶首字不得被判进前一列', () {
     test('漂移是真的：真机几何下每页差 ~0.0111px，第 9 页起就超过 0.1px', () {
@@ -213,7 +212,8 @@ void main() {
           r'charPage\s*=\s*Math\.round\(\s*this\.alignToPage\(',
         ).hasMatch(body),
         isTrue,
-        reason: '裸 floor(scrollOffset/pageSize) 既漏相位也吃不住漂移，'
+        reason:
+            '裸 floor(scrollOffset/pageSize) 既漏相位也吃不住漂移，'
             '精确锚恢复 / 样式重锚落到页首字时同样退回前一列',
       );
     });

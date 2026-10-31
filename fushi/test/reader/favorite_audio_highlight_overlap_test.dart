@@ -33,34 +33,49 @@ void main() {
         final String block = css.substring(start, end);
 
         expect(block, contains('background-color'), reason: color);
-        expect(block, contains('text-decoration-line: underline'),
-            reason: '收藏高亮和 fushi-sentence-audio 音频背景重叠时，必须还有独立可见语义');
+        expect(
+          block,
+          contains('text-decoration-line: underline'),
+          reason: '收藏高亮和 fushi-sentence-audio 音频背景重叠时，必须还有独立可见语义',
+        );
         expect(block, contains('text-decoration-color'), reason: color);
         expect(block, contains('text-decoration-thickness'), reason: color);
       }
     });
 
     test('HighlightBridge 同时更新 CSS highlight 变量和旧 span fallback 标记', () {
-      final String bridge =
-          File('lib/src/media/audiobook/highlight_bridge.dart')
-              .readAsStringSync();
+      final String bridge = File(
+        'lib/src/media/audiobook/highlight_bridge.dart',
+      ).readAsStringSync();
 
-      expect(bridge, contains('--fushi-hl-yellow-mark'),
-          reason: 'CSS Highlights 路径要给收藏 underline 提供独立颜色变量');
-      expect(bridge, contains('_hlMarkColor'),
-          reason: '标记色应与背景色分开计算，避免只是另一层半透明背景');
-      expect(bridge, contains('span.style.textDecorationLine = \'underline\''),
-          reason: '旧 WebView span fallback 也要保留收藏语义');
-      expect(bridge, contains('span.style.textDecorationColor = markColor'),
-          reason: 'fallback underline 要使用独立标记色');
+      expect(
+        bridge,
+        contains('--fushi-hl-yellow-mark'),
+        reason: 'CSS Highlights 路径要给收藏 underline 提供独立颜色变量',
+      );
+      expect(
+        bridge,
+        contains('_hlMarkColor'),
+        reason: '标记色应与背景色分开计算，避免只是另一层半透明背景',
+      );
+      expect(
+        bridge,
+        contains('span.style.textDecorationLine = \'underline\''),
+        reason: '旧 WebView span fallback 也要保留收藏语义',
+      );
+      expect(
+        bridge,
+        contains('span.style.textDecorationColor = markColor'),
+        reason: 'fallback underline 要使用独立标记色',
+      );
     });
 
     test('收藏高亮 ruby 和 fallback span 都保留 fushi-hl 语义', () async {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
-      final String bridge =
-          File('lib/src/media/audiobook/highlight_bridge.dart')
-              .readAsStringSync();
+      final String bridge = File(
+        'lib/src/media/audiobook/highlight_bridge.dart',
+      ).readAsStringSync();
 
       for (final String color in <String>[
         'yellow',
@@ -69,17 +84,29 @@ void main() {
         'pink',
         'purple',
       ]) {
-        expect(css, contains('.fushi-hl-$color'),
-            reason: '旧 WebView span fallback 应使用和 CSS Highlight 同名的颜色 class');
-        expect(css, contains('ruby.fushi-hl-$color-ruby-active'),
-            reason: '收藏句高亮遇到 ruby 时应改用元素 class，避免 ::highlight 双绘遮字');
+        expect(
+          css,
+          contains('.fushi-hl-$color'),
+          reason: '旧 WebView span fallback 应使用和 CSS Highlight 同名的颜色 class',
+        );
+        expect(
+          css,
+          contains('ruby.fushi-hl-$color-ruby-active'),
+          reason: '收藏句高亮遇到 ruby 时应改用元素 class，避免 ::highlight 双绘遮字',
+        );
       }
 
-      expect(bridge, contains('_rubyForNode'),
-          reason:
-              'HighlightBridge 需要像 sentenceAudioHighlight/selection 一样识别 ruby 节点');
-      expect(bridge, contains('rubyElements'),
-          reason: 'ruby 元素应从 CSS Highlight range / fallback span 包裹中分流出来');
+      expect(
+        bridge,
+        contains('_rubyForNode'),
+        reason:
+            'HighlightBridge 需要像 sentenceAudioHighlight/selection 一样识别 ruby 节点',
+      );
+      expect(
+        bridge,
+        contains('rubyElements'),
+        reason: 'ruby 元素应从 CSS Highlight range / fallback span 包裹中分流出来',
+      );
       expect(
         bridge,
         contains("className = 'fushi-hl fushi-hl-' + color"),

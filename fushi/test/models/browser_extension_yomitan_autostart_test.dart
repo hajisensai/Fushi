@@ -21,17 +21,16 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 /// 用内存 DB + prefsRepo 接线一个最小 AppModel，只驱动 yomitan 相关 getter/setter。
 Future<AppModel> _prefsBackedAppModel(FushiDatabase db) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
-  final Directory tempDir =
-      Directory.systemTemp.createTempSync('fushi_ext_yomitan_');
+  final Directory tempDir = Directory.systemTemp.createTempSync(
+    'fushi_ext_yomitan_',
+  );
   addTearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
@@ -46,61 +45,76 @@ class _TestAppModel extends AppModel {
 }
 
 void main() {
-  test('disabled server → enables and starts, seeds token, returns true',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final AppModel appModel = await _prefsBackedAppModel(db);
-    // 绑临时端口（0=系统分配空闲端口），避免与真机 app 的 19633 冲突/端口占用抖动。
-    await appModel.setFushiApiPort(0);
-    addTearDown(appModel.stopFushiApiServer);
+  test(
+    'disabled server → enables and starts, seeds token, returns true',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final AppModel appModel = await _prefsBackedAppModel(db);
+      // 绑临时端口（0=系统分配空闲端口），避免与真机 app 的 19633 冲突/端口占用抖动。
+      await appModel.setFushiApiPort(0);
+      addTearDown(appModel.stopFushiApiServer);
 
-    expect(appModel.fushiApiServerEnabled, isFalse);
-    expect(appModel.fushiApiKey, isEmpty);
+      expect(appModel.fushiApiServerEnabled, isFalse);
+      expect(appModel.fushiApiKey, isEmpty);
 
-    final bool ready =
-        await appModel.ensureFushiApiServerForBrowserExtension();
+      final bool ready = await appModel
+          .ensureFushiApiServerForBrowserExtension();
 
-    expect(ready, isTrue, reason: '空闲端口应能成功启动');
-    expect(appModel.fushiApiServerEnabled, isTrue,
-        reason: '安装扩展应默认开启 server');
-    expect(appModel.fushiApiKey, isNotEmpty,
-        reason: 'token 为空时应播种，避免扩展无鉴权/展示不完整');
-  });
+      expect(ready, isTrue, reason: '空闲端口应能成功启动');
+      expect(
+        appModel.fushiApiServerEnabled,
+        isTrue,
+        reason: '安装扩展应默认开启 server',
+      );
+      expect(
+        appModel.fushiApiKey,
+        isNotEmpty,
+        reason: 'token 为空时应播种，避免扩展无鉴权/展示不完整',
+      );
+    },
+  );
 
-  test('non-empty token is preserved (never overwritten → avoids 401)',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final AppModel appModel = await _prefsBackedAppModel(db);
-    // server 已启用 → 方法走「跳过不重启」早退分支，不绑 socket，纯确定性。
-    await appModel.setFushiApiKey('user-existing-token');
-    await appModel.setFushiApiServerEnabled(true);
+  test(
+    'non-empty token is preserved (never overwritten → avoids 401)',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final AppModel appModel = await _prefsBackedAppModel(db);
+      // server 已启用 → 方法走「跳过不重启」早退分支，不绑 socket，纯确定性。
+      await appModel.setFushiApiKey('user-existing-token');
+      await appModel.setFushiApiServerEnabled(true);
 
-    final bool ready =
-        await appModel.ensureFushiApiServerForBrowserExtension();
+      final bool ready = await appModel
+          .ensureFushiApiServerForBrowserExtension();
 
-    expect(ready, isTrue);
-    expect(appModel.fushiApiKey, 'user-existing-token',
-        reason: '已有 token 必须原样保留，否则踢掉扩展已配 token 造成 401');
-    expect(appModel.fushiApiServerEnabled, isTrue);
-  });
+      expect(ready, isTrue);
+      expect(
+        appModel.fushiApiKey,
+        'user-existing-token',
+        reason: '已有 token 必须原样保留，否则踢掉扩展已配 token 造成 401',
+      );
+      expect(appModel.fushiApiServerEnabled, isTrue);
+    },
+  );
 
-  test('empty token seeded even when server already enabled, no restart',
-      () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final AppModel appModel = await _prefsBackedAppModel(db);
-    await appModel.setFushiApiServerEnabled(true);
-    expect(appModel.fushiApiKey, isEmpty);
+  test(
+    'empty token seeded even when server already enabled, no restart',
+    () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final AppModel appModel = await _prefsBackedAppModel(db);
+      await appModel.setFushiApiServerEnabled(true);
+      expect(appModel.fushiApiKey, isEmpty);
 
-    final bool ready =
-        await appModel.ensureFushiApiServerForBrowserExtension();
+      final bool ready = await appModel
+          .ensureFushiApiServerForBrowserExtension();
 
-    expect(ready, isTrue);
-    expect(appModel.fushiApiKey, isNotEmpty, reason: 'token 空则播种，非空才保留');
-    expect(appModel.fushiApiServerEnabled, isTrue);
-  });
+      expect(ready, isTrue);
+      expect(appModel.fushiApiKey, isNotEmpty, reason: 'token 空则播种，非空才保留');
+      expect(appModel.fushiApiServerEnabled, isTrue);
+    },
+  );
 
   // 用户诉求核心（TODO-1266 复核）：装扩展走 yomitan-api（查词 API），与「Fushi 互联/
   // 同步」是两个独立子系统。装扩展只能开 yomitan-api server，绝不能连带启动互联/同步
@@ -115,50 +129,74 @@ void main() {
     addTearDown(appModel.stopFushiApiServer);
 
     // 前置：互联/同步 server（FushiSyncServerController）未启动。
-    expect(appModel.syncServerController.isRunning, isFalse,
-        reason: '前置：Fushi 互联/同步 server 应处于未启动');
+    expect(
+      appModel.syncServerController.isRunning,
+      isFalse,
+      reason: '前置：Fushi 互联/同步 server 应处于未启动',
+    );
 
-    final bool ready =
-        await appModel.ensureFushiApiServerForBrowserExtension();
+    final bool ready = await appModel.ensureFushiApiServerForBrowserExtension();
 
     expect(ready, isTrue);
     // yomitan-api（查词 API）子系统已开——这是扩展真正要连的 server。
-    expect(appModel.fushiApiServerEnabled, isTrue,
-        reason: '装扩展应开启 yomitan-api server（扩展查词走此 API）');
+    expect(
+      appModel.fushiApiServerEnabled,
+      isTrue,
+      reason: '装扩展应开启 yomitan-api server（扩展查词走此 API）',
+    );
     // 互联/同步 server 全程未被触碰——装扩展与设备互联无关。
-    expect(appModel.syncServerController.isRunning, isFalse,
-        reason: '装扩展绝不能连带启动 Fushi 互联/同步 server（两者是独立子系统）');
+    expect(
+      appModel.syncServerController.isRunning,
+      isFalse,
+      reason: '装扩展绝不能连带启动 Fushi 互联/同步 server（两者是独立子系统）',
+    );
   });
 
   test('生产接线守卫：安装入口在注入扩展前自动开启 server，且只在 token 为空时播种', () async {
     // TODO-1266 复核：安装入口已从查词设置迁到桌面专属页 BrowserExtensionPage，接线契约不变。
     // 准备步骤抽进 browser_extension_setup.dart（页面与控制通道共用），页面只调它。
-    final File page =
-        File('lib/src/pages/implementations/browser_extension_page.dart');
+    final File page = File(
+      'lib/src/pages/implementations/browser_extension_page.dart',
+    );
     expect(page.existsSync(), isTrue, reason: '浏览器扩展页文件应存在');
-    expect(page.readAsStringSync(),
-        contains('prepareBrowserExtensionForInstall(appModel)'),
-        reason: '页面的「准备扩展」必须走共用的 prepareBrowserExtensionForInstall');
-    final String pageSrc =
-        File('lib/src/lookup/browser_extension_setup.dart').readAsStringSync();
-    final int callIdx =
-        pageSrc.indexOf('ensureFushiApiServerForBrowserExtension(');
+    expect(
+      page.readAsStringSync(),
+      contains('prepareBrowserExtensionForInstall(appModel)'),
+      reason: '页面的「准备扩展」必须走共用的 prepareBrowserExtensionForInstall',
+    );
+    final String pageSrc = File(
+      'lib/src/lookup/browser_extension_setup.dart',
+    ).readAsStringSync();
+    final int callIdx = pageSrc.indexOf(
+      'ensureFushiApiServerForBrowserExtension(',
+    );
     final int prepareIdx = pageSrc.indexOf('await extract(');
-    expect(callIdx, greaterThanOrEqualTo(0),
-        reason: '安装入口必须调用 ensureFushiApiServerForBrowserExtension');
+    expect(
+      callIdx,
+      greaterThanOrEqualTo(0),
+      reason: '安装入口必须调用 ensureFushiApiServerForBrowserExtension',
+    );
     expect(prepareIdx, greaterThanOrEqualTo(0));
-    expect(callIdx, lessThan(prepareIdx),
-        reason: '必须在解压/注入扩展（prepareBundledBrowserExtension）之前开启 server，'
-            '保证注入扩展的 token 与 server 实际使用的 token 一致');
+    expect(
+      callIdx,
+      lessThan(prepareIdx),
+      reason:
+          '必须在解压/注入扩展（prepareBundledBrowserExtension）之前开启 server，'
+          '保证注入扩展的 token 与 server 实际使用的 token 一致',
+    );
 
     final File model = File('lib/src/models/app_model.dart');
     final String modelSrc = model.readAsStringSync();
-    final int methodIdx = modelSrc
-        .indexOf('Future<bool> ensureFushiApiServerForBrowserExtension');
+    final int methodIdx = modelSrc.indexOf(
+      'Future<bool> ensureFushiApiServerForBrowserExtension',
+    );
     expect(methodIdx, greaterThanOrEqualTo(0));
     final String methodTail = modelSrc.substring(methodIdx);
     // 播种被 `fushiApiKey.isEmpty` 门控 → 绝不覆盖已有 token。
-    expect(methodTail.contains('fushiApiKey.isEmpty'), isTrue,
-        reason: 'token 播种必须以 fushiApiKey.isEmpty 门控，绝不覆盖已有 token');
+    expect(
+      methodTail.contains('fushiApiKey.isEmpty'),
+      isTrue,
+      reason: 'token 播种必须以 fushiApiKey.isEmpty 门控，绝不覆盖已有 token',
+    );
   });
 }

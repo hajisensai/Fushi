@@ -15,10 +15,8 @@ class SyncFileRef {
   final String id;
   final String name;
 
-  factory SyncFileRef.fromJson(Map<String, dynamic> json) => SyncFileRef(
-        id: json['id'] as String,
-        name: json['name'] as String,
-      );
+  factory SyncFileRef.fromJson(Map<String, dynamic> json) =>
+      SyncFileRef(id: json['id'] as String, name: json['name'] as String);
 }
 
 /// 某本书远端文件夹里 progress / statistics / audioBook 元数据三件套的句柄集
@@ -38,10 +36,4 @@ enum SyncDirection { importFromTtu, exportToTtu, synced }
 enum StatisticsSyncMode { merge, replace }
 
 /// 单本书云同步的结果分类（进度提示/汇总用，不落盘）。
-enum SyncResult {
-  synced,
-  imported,
-  exported,
-  skipped,
-  conflict,
-}
+enum SyncResult { synced, imported, exported, skipped, conflict }

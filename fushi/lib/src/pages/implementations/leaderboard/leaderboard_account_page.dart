@@ -283,15 +283,15 @@ class _LeaderboardAccountPageState
           ),
         ];
       }
-      return <Widget>[if (_devicesLoading) const FushiLinearProgressIndicator()];
+      return <Widget>[
+        if (_devicesLoading) const FushiLinearProgressIndicator(),
+      ];
     }
     return <Widget>[
       for (final LeaderboardDevice d in devices)
         FushiListItem(
           key: ValueKey<String>('leaderboard-device-${d.keyId}'),
-          leading: FushiIcon(
-            d.current ? FushiIcons.phone : FushiIcons.devices,
-          ),
+          leading: FushiIcon(d.current ? FushiIcons.phone : FushiIcons.devices),
           title: Text(
             d.current
                 ? '${d.keyId} · ${t.leaderboard_account_device_current}'
@@ -368,7 +368,9 @@ class _LeaderboardAccountPageState
                         ),
                       ),
                       FushiOutlinedButton.icon(
-                        onPressed: _busy ? null : () => unawaited(_pickAvatar()),
+                        onPressed: _busy
+                            ? null
+                            : () => unawaited(_pickAvatar()),
                         icon: const FushiIcon(FushiIcons.image),
                         label: Text(t.leaderboard_account_avatar),
                       ),
@@ -384,7 +386,9 @@ class _LeaderboardAccountPageState
                   Align(
                     alignment: Alignment.centerLeft,
                     child: FushiFilledButton.tonal(
-                      onPressed: _busy ? null : () => unawaited(_saveNickname()),
+                      onPressed: _busy
+                          ? null
+                          : () => unawaited(_saveNickname()),
                       child: Text(t.leaderboard_account_save_nickname),
                     ),
                   ),

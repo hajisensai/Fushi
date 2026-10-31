@@ -74,15 +74,15 @@ class _ConfiguredAnkiRepository extends AnkiRepository {
 
 /// 旧存档形状：只有 selectedDeckId，selectedDeckName 刻意为 null。
 AnkiSettings _legacyIdOnlySettings() => AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
-      ],
-      fieldMappings: const <String, String>{'Expression': '{expression}'},
-      allowDupes: true,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: const <AnkiNoteType>[
+    AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
+  ],
+  fieldMappings: const <String, String>{'Expression': '{expression}'},
+  allowDupes: true,
+);
 
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
@@ -93,9 +93,9 @@ void main() {
           _RecordingAnkiConnectService();
       final _ConfiguredAnkiConnectRepository repo =
           _ConfiguredAnkiConnectRepository(
-        service: service,
-        settings: _legacyIdOnlySettings(),
-      );
+            service: service,
+            settings: _legacyIdOnlySettings(),
+          );
       final MineOutcome outcome = await repo.mineEntry(
         rawPayloadJson: _payload,
         context: const AnkiMiningContext(sentence: ''),
@@ -112,9 +112,9 @@ void main() {
           _RecordingAnkiConnectService();
       final _ConfiguredAnkiConnectRepository repo =
           _ConfiguredAnkiConnectRepository(
-        service: service,
-        settings: _legacyIdOnlySettings(),
-      );
+            service: service,
+            settings: _legacyIdOnlySettings(),
+          );
       final MineOutcome outcome = await repo.updateMinedNote(
         noteId: 42,
         rawPayloadJson: _payload,
@@ -131,26 +131,28 @@ void main() {
       final List<String> addedDecks = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        switch (call.method) {
-          // BUG-2098：申请权限成了碰 provider 前的固定前置调用。
-          case 'requestAnkidroidPermissions':
-            return true;
-          case 'addNote':
-            final Map<String, dynamic> args =
-                Map<String, dynamic>.from(call.arguments as Map);
-            addedDecks.add(args['deck'] as String);
-            return 42;
-          default:
-            fail('Unexpected AnkiDroid channel call: ${call.method}');
-        }
-      });
+            switch (call.method) {
+              // BUG-2098：申请权限成了碰 provider 前的固定前置调用。
+              case 'requestAnkidroidPermissions':
+                return true;
+              case 'addNote':
+                final Map<String, dynamic> args = Map<String, dynamic>.from(
+                  call.arguments as Map,
+                );
+                addedDecks.add(args['deck'] as String);
+                return 42;
+              default:
+                fail('Unexpected AnkiDroid channel call: ${call.method}');
+            }
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null);
       });
 
-      final _ConfiguredAnkiRepository repo =
-          _ConfiguredAnkiRepository(_legacyIdOnlySettings());
+      final _ConfiguredAnkiRepository repo = _ConfiguredAnkiRepository(
+        _legacyIdOnlySettings(),
+      );
       final MineOutcome outcome = await repo.mineEntry(
         rawPayloadJson: _payload,
         context: const AnkiMiningContext(sentence: ''),

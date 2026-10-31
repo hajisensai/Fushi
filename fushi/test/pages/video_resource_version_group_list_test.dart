@@ -111,14 +111,19 @@ void main() {
     // 体积 / **做种数**整体挤出可视区——做种数恰恰是这张卡最重要的选择信号。
     final Set<int> scattered = <int>{for (int i = 1; i <= 47; i += 2) i};
     final String out = formatEpisodeSpans(scattered);
-    expect(out, 'EP1, EP3, EP5, …, EP47',
-        reason: '24 个离散段不封顶会展开成 137 字符，把做种数整条截掉');
-    expect(out.length, lessThan(40),
-        reason: '上限必须真的把长度框住，而不只是看着短');
+    expect(
+      out,
+      'EP1, EP3, EP5, …, EP47',
+      reason: '24 个离散段不封顶会展开成 137 字符，把做种数整条截掉',
+    );
+    expect(out.length, lessThan(40), reason: '上限必须真的把长度框住，而不只是看着短');
     // 末段保留是刻意的：只截前几段会丢掉上界，读者无法判断覆盖到第几集。
     expect(out, contains('EP47'), reason: '上界必须留住');
-    expect(out, isNot(contains('EP1–EP47')),
-        reason: '收缩后仍然不得伪装成连续范围——那正是 BUG-1986 本体');
+    expect(
+      out,
+      isNot(contains('EP1–EP47')),
+      reason: '收缩后仍然不得伪装成连续范围——那正是 BUG-1986 本体',
+    );
   });
 
   test('BUG-1986 段数正好等于上限时不收缩（边界不 off-by-one）', () {
@@ -191,7 +196,11 @@ void main() {
       find.byKey(ValueKey<String>('resource-version-${movie.key}')),
     );
     await tester.pumpAndSettle();
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('video-resource-submit')),
+      ),
+    );
     expect(submit.onPressed, isNotNull, reason: '选中即可提交');
   });
 
@@ -234,7 +243,11 @@ void main() {
     expect(row, findsOneWidget, reason: '多条组点卡应展开而不是瞎选');
     await tester.tap(row);
     await tester.pumpAndSettle();
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('video-resource-submit')),
+      ),
+    );
     expect(submit.onPressed, isNotNull, reason: '点行选中后提交可用');
   });
 
@@ -286,7 +299,11 @@ void main() {
       findsOneWidget,
       reason: '提交失败后仍应留在资源搜索页',
     );
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('video-resource-submit')),
+      ),
+    );
     expect(submit.onPressed, isNotNull, reason: '提示后应允许用户重试');
   });
 
@@ -314,7 +331,11 @@ void main() {
       findsOneWidget,
       reason: '选了多条时按钮上要写清这一下会入队几条',
     );
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('video-resource-submit')),
+      ),
+    );
     expect(submit.onPressed, isNotNull);
   });
 
@@ -332,7 +353,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),)
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(
+              find.byKey(const ValueKey<String>('video-resource-submit')),
+            ),
+          )
           .onPressed,
       isNotNull,
     );
@@ -341,16 +366,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),)
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(
+              find.byKey(const ValueKey<String>('video-resource-submit')),
+            ),
+          )
           .onPressed,
       isNull,
       reason: '一条都没选还能提交的话，点下去只会入队 0 条',
     );
   });
 
-  testWidgets('多选提交把每一条都入队，顺序与勾选顺序一致', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('多选提交把每一条都入队，顺序与勾选顺序一致', (WidgetTester tester) async {
     final List<String> enqueued = <String>[];
     await pumpSurface(
       tester,
@@ -385,9 +412,7 @@ void main() {
     );
   });
 
-  testWidgets('订阅模式仍是单选：选新的替换旧的，不摆勾选框', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('订阅模式仍是单选：选新的替换旧的，不摆勾选框', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

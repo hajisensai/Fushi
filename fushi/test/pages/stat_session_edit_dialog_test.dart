@@ -29,13 +29,13 @@ String _fieldText(WidgetTester tester, String key) => tester
 Finder get _saveButton => find.widgetWithText(FilledButton, t.dialog_save);
 
 bool _saveEnabled(WidgetTester tester) =>
-    tester.widget<FilledButton>(glassUnwrap<FilledButton>(_saveButton)).onPressed != null;
+    tester
+        .widget<FilledButton>(glassUnwrap<FilledButton>(_saveButton))
+        .onPressed !=
+    null;
 
 /// 直接把弹窗挂在 Scaffold 上（只看渲染 / 校验，不点保存——那要 Navigator）。
-Future<void> _pumpDialog(
-  WidgetTester tester, {
-  int chars = 1200,
-}) async {
+Future<void> _pumpDialog(WidgetTester tester, {int chars = 1200}) async {
   await tester.pumpWidget(
     TranslationProvider(
       child: MaterialApp(
@@ -88,9 +88,7 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  testWidgets('初值回填：日期 = startAt 的日历日，字数 = 会话总字数', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('初值回填：日期 = startAt 的日历日，字数 = 会话总字数', (WidgetTester tester) async {
     await _pumpDialog(tester);
     expect(tester.takeException(), isNull);
     expect(
@@ -110,7 +108,7 @@ void main() {
       '2026-9-8',
       '今天',
       '',
-      '2026-09-08T00:00'
+      '2026-09-08T00:00',
     ]) {
       await tester.enterText(
         find.byKey(const ValueKey<String>('stat-session-edit-date')),
@@ -205,10 +203,13 @@ void main() {
   ) async {
     int calls = 0;
     StudySessionEdit? edit;
-    await _pumpHost(tester, sink: (StudySessionEdit? e) {
-      calls++;
-      edit = e;
-    });
+    await _pumpHost(
+      tester,
+      sink: (StudySessionEdit? e) {
+        calls++;
+        edit = e;
+      },
+    );
     await tester.tap(_saveButton);
     await tester.pumpAndSettle();
     expect(calls, 1, reason: '确实回来了，不是还卡在弹窗里');
@@ -218,10 +219,13 @@ void main() {
   testWidgets('取消 → 返回 null，改过的输入不生效', (WidgetTester tester) async {
     StudySessionEdit? edit;
     int calls = 0;
-    await _pumpHost(tester, sink: (StudySessionEdit? e) {
-      calls++;
-      edit = e;
-    });
+    await _pumpHost(
+      tester,
+      sink: (StudySessionEdit? e) {
+        calls++;
+        edit = e;
+      },
+    );
     await tester.enterText(
       find.byKey(const ValueKey<String>('stat-session-edit-chars')),
       '900',

@@ -52,26 +52,28 @@ void main() {
   }
 
   testWidgets(
-      'TODO-1050b: existing mouse binding renders a small icon + localized label',
-      (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    // audiobookSeekToClickedSentence ships a MouseBinding(1) = middle click.
-    await pumpDialog(
-      tester,
-      registry,
-      action: ShortcutAction.audiobookSeekToClickedSentence,
-      initial: const ShortcutBindingSet(
-        mouseBindings: <MouseBinding>[MouseBinding(1)],
-      ),
-    );
+    'TODO-1050b: existing mouse binding renders a small icon + localized label',
+    (WidgetTester tester) async {
+      final FushiShortcutRegistry registry = buildRegistry();
+      // audiobookSeekToClickedSentence ships a MouseBinding(1) = middle click.
+      await pumpDialog(
+        tester,
+        registry,
+        action: ShortcutAction.audiobookSeekToClickedSentence,
+        initial: const ShortcutBindingSet(
+          mouseBindings: <MouseBinding>[MouseBinding(1)],
+        ),
+      );
 
-    // The middle-click glyph (outlined mouse) and its localized label both show.
-    expect(find.byIcon(FushiIcons.mouse), findsOneWidget);
-    expect(find.text(t.shortcut_mouse_middle), findsWidgets);
-  });
+      // The middle-click glyph (outlined mouse) and its localized label both show.
+      expect(find.byIcon(FushiIcons.mouse), findsOneWidget);
+      expect(find.text(t.shortcut_mouse_middle), findsWidgets);
+    },
+  );
 
-  testWidgets('right-click mouse binding uses the filled mouse icon + label',
-      (WidgetTester tester) async {
+  testWidgets('right-click mouse binding uses the filled mouse icon + label', (
+    WidgetTester tester,
+  ) async {
     final FushiShortcutRegistry registry = buildRegistry();
     await pumpDialog(
       tester,
@@ -87,36 +89,41 @@ void main() {
   });
 
   testWidgets(
-      'TODO-1060②: prefillKey seeds the keyboard draft with the tapped key',
-      (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    await pumpDialog(
-      tester,
-      registry,
-      action: ShortcutAction.homeFocusSearch,
-      prefillKey: LogicalKeyboardKey.f9,
-    );
+    'TODO-1060②: prefillKey seeds the keyboard draft with the tapped key',
+    (WidgetTester tester) async {
+      final FushiShortcutRegistry registry = buildRegistry();
+      await pumpDialog(
+        tester,
+        registry,
+        action: ShortcutAction.homeFocusSearch,
+        prefillKey: LogicalKeyboardKey.f9,
+      );
 
-    // Opening on an empty slot pre-adds an F9 chip (user can delete/confirm).
-    expect(find.widgetWithText(FushiTagChip, 'F9'), findsOneWidget);
-  });
+      // Opening on an empty slot pre-adds an F9 chip (user can delete/confirm).
+      expect(find.widgetWithText(FushiTagChip, 'F9'), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'TODO-1060②: prefillButton seeds the gamepad draft with the tapped button',
-      (WidgetTester tester) async {
-    final FushiShortcutRegistry registry = buildRegistry();
-    await pumpDialog(
-      tester,
-      registry,
-      action: ShortcutAction.homeFocusSearch,
-      prefillButton: GamepadButton.y,
-    );
-    expect(find.widgetWithText(FushiTagChip, GamepadButton.y.label),
-        findsOneWidget);
-  });
+    'TODO-1060②: prefillButton seeds the gamepad draft with the tapped button',
+    (WidgetTester tester) async {
+      final FushiShortcutRegistry registry = buildRegistry();
+      await pumpDialog(
+        tester,
+        registry,
+        action: ShortcutAction.homeFocusSearch,
+        prefillButton: GamepadButton.y,
+      );
+      expect(
+        find.widgetWithText(FushiTagChip, GamepadButton.y.label),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('prefillKey does not duplicate an already-bound key',
-      (WidgetTester tester) async {
+  testWidgets('prefillKey does not duplicate an already-bound key', (
+    WidgetTester tester,
+  ) async {
     final FushiShortcutRegistry registry = buildRegistry();
     // Seed the action with F9 already, then prefill F9 again: must stay single.
     await pumpDialog(

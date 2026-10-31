@@ -35,8 +35,9 @@ Future<InterconnectSyncBackend> _buildClientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -46,21 +47,20 @@ SyncOrchestrator _orchestrator({
   required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
-}) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: tmp,
-      audioDatabaseRoot: tmp,
-      tempDir: tmp,
-      syncStats: false,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: false,
-      syncVideoFiles: true,
-      syncDictionary: false,
-    );
+}) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: tmp,
+  audioDatabaseRoot: tmp,
+  tempDir: tmp,
+  syncStats: false,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: false,
+  syncVideoFiles: true,
+  syncDictionary: false,
+);
 
 void main() {
   late Directory work;
@@ -107,45 +107,69 @@ void main() {
     // 可上传：真实本地单文件视频。
     final File localVid = File(p.join(work.path, 'movie.mp4'))
       ..writeAsBytesSync(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
-    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/movie',
-      title: 'Movie',
-      videoPath: localVid.path,
-    ));
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/movie',
+        title: 'Movie',
+        videoPath: localVid.path,
+      ),
+    );
     // 流媒体：http 路径，无本地字节 → _isUploadableLocalVideo 跳过。
-    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/stream',
-      title: 'Stream',
-      videoPath: 'https://example.com/s.m3u8',
-    ));
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/stream',
+        title: 'Stream',
+        videoPath: 'https://example.com/s.m3u8',
+      ),
+    );
     // 多集播放列表：单文件资产模型装不下 → 跳过。
-    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/playlist',
-      title: 'Playlist',
-      videoPath: localVid.path,
-      playlistJson:
-          const Value<String?>('[{"path":"/a.mp4"},{"path":"/b.mp4"}]'),
-    ));
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/playlist',
+        title: 'Playlist',
+        videoPath: localVid.path,
+        playlistJson: const Value<String?>(
+          '[{"path":"/a.mp4"},{"path":"/b.mp4"}]',
+        ),
+      ),
+    );
 
-    final InterconnectSyncBackend backend =
-        await _buildClientBackend(base: base, token: token);
-    final SyncRunReport report =
-        await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+    final InterconnectSyncBackend backend = await _buildClientBackend(
+      base: base,
+      token: token,
+    );
+    final SyncRunReport report = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
 
     // host 只收到可上传的单文件视频，字节完整；流媒体/播放列表未上传。
     final List<VideoBookRow> hostVideos = await hostDb.allVideoBooks();
-    expect(hostVideos.map((VideoBookRow v) => v.bookUid).toList(),
-        <String>['video/movie']);
+    expect(hostVideos.map((VideoBookRow v) => v.bookUid).toList(), <String>[
+      'video/movie',
+    ]);
     expect(report.videosExported, 1);
     final VideoBookRow hosted = hostVideos.single;
     expect(hosted.title, 'Movie');
     expect(p.isWithin(hostUploads.path, hosted.videoPath), isTrue);
-    expect(File(hosted.videoPath).readAsBytesSync(),
-        <int>[1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(File(hosted.videoPath).readAsBytesSync(), <int>[
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+    ]);
 
     // 幂等：再跑一次 sweep，host 不重复、videosExported 归零（同尺寸跳过）。
-    final SyncRunReport report2 =
-        await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+    final SyncRunReport report2 = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
     expect((await hostDb.allVideoBooks()).length, 1);
     expect(report2.videosExported, 0);
   });
@@ -155,25 +179,34 @@ void main() {
     addTearDown(localDb.close);
 
     // IPTV 频道：rtsp 直播地址，本机无字节。
-    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/channel',
-      title: 'Channel',
-      videoPath: 'rtsp://10.0.0.1:554/live/1',
-    ));
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/channel',
+        title: 'Channel',
+        videoPath: 'rtsp://10.0.0.1:554/live/1',
+      ),
+    );
     // 本地 `.strm`：磁盘上真实存在，但内容只是一行地址——传过去 host 会把它当视频
     // 下发给其它端，播不了。
     final File strm = File(p.join(work.path, 'show.strm'))
       ..writeAsStringSync('https://example.com/live.m3u8\n');
-    await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/strm',
-      title: 'Strm',
-      videoPath: strm.path,
-    ));
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/strm',
+        title: 'Strm',
+        videoPath: strm.path,
+      ),
+    );
 
-    final InterconnectSyncBackend backend =
-        await _buildClientBackend(base: base, token: token);
-    final SyncRunReport report =
-        await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+    final InterconnectSyncBackend backend = await _buildClientBackend(
+      base: base,
+      token: token,
+    );
+    final SyncRunReport report = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
 
     expect(await hostDb.allVideoBooks(), isEmpty);
     expect(report.videosExported, 0);

@@ -36,16 +36,18 @@ class ServerVideoScrape {
     required this.db,
     required PrefStore prefs,
     required ServerConfig Function() config,
-    VideoSourceScrapeCoordinator Function(VideoSourceScrapeGlobalConfig config)? coordinatorFactory,
+    VideoSourceScrapeCoordinator Function(VideoSourceScrapeGlobalConfig config)?
+    coordinatorFactory,
     VideoScrapeSweepLedger? ledger,
   }) : _config = config {
     final ServerConfig snapshot = config();
-    final VideoSourceScrapeGlobalConfig scrapeConfig = VideoSourceScrapeGlobalConfig.fromPreferences(
-      prefs,
-      resolvedTmdbApiKey: resolveServerTmdbApiKey(snapshot, prefs),
-      // 无头服务端没有界面语言，资料语言来自 `metadata_locale` 配置项。
-      uiLocaleTag: snapshot.metadataLocale,
-    );
+    final VideoSourceScrapeGlobalConfig scrapeConfig =
+        VideoSourceScrapeGlobalConfig.fromPreferences(
+          prefs,
+          resolvedTmdbApiKey: resolveServerTmdbApiKey(snapshot, prefs),
+          // 无头服务端没有界面语言，资料语言来自 `metadata_locale` 配置项。
+          uiLocaleTag: snapshot.metadataLocale,
+        );
     this.scrapeConfig = scrapeConfig;
     final VideoSourceScrapeCoordinator coordinator = coordinatorFactory != null
         ? coordinatorFactory(scrapeConfig)
@@ -57,7 +59,8 @@ class ServerVideoScrape {
             enableOfflineTitleIndex: true,
           );
     this.coordinator = coordinator;
-    final VideoSourceScrapeTaskController controller = VideoSourceScrapeTaskController(coordinator);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(coordinator);
     this.controller = controller;
     _sweep = VideoLibraryScrapeSweep(
       database: db,
@@ -68,7 +71,9 @@ class ServerVideoScrape {
       configFingerprint: scrapeConfig.runtimeFingerprint,
       // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
       tmdbChangedTvIds: ({required DateTime since}) {
-        final VideoMetadataProvider? tmdb = coordinator.registry.provider(VideoMetadataProviderKind.tmdb);
+        final VideoMetadataProvider? tmdb = coordinator.registry.provider(
+          VideoMetadataProviderKind.tmdb,
+        );
         return tmdb is TmdbVideoMetadataProvider && tmdb.isAvailable
             ? tmdb.changedTvShowIds(since: since)
             : Future<Set<int>>.value(const <int>{});
@@ -105,7 +110,8 @@ class ServerVideoScrape {
     final VideoPendingScrapeWork? entry = (await _sweep.pendingWorks())
         .where((VideoPendingScrapeWork e) => e.work.stableKey == workKey)
         .firstOrNull;
-    if (entry == null) throw StateError('work "$workKey" is not in the pending list');
+    if (entry == null)
+      throw StateError('work "$workKey" is not in the pending list');
     final SourceScrapeReport report = await coordinator.identifyWorkWithAi(
       source: entry.source,
       workTitle: entry.work.title,
@@ -118,25 +124,27 @@ class ServerVideoScrape {
 
   /// 待人工指定身份的作品清单（带最近一次没认出来的原因）。`key` 与互联
   /// `/api/library/metadata/*` 的作品键同形，可直接喂给 `ctl scrape search|identify`。
-  Future<List<Map<String, Object?>>> pendingWorks() async => <Map<String, Object?>>[
-        for (final VideoPendingScrapeWork entry in await _sweep.pendingWorksWithReasons())
-          <String, Object?>{
-            'id': entry.work.stableKey,
-            'title': entry.work.title,
-            'source': entry.source.id,
-            'members': entry.work.members.length,
-            'key': entry.work.collection == null
-                ? <String, Object?>{'bookUid': entry.work.members.single.bookUid}
-                : <String, Object?>{
-                    'collection': <String, Object?>{
-                      'name': entry.work.collection!.name,
-                      'collectionType': entry.work.collection!.collectionType,
-                    },
-                  },
-            if (entry.pendingNote != null) 'status': entry.pendingNote!.cause.name,
-            if (entry.pendingNote != null) 'reason': entry.pendingNote!.reason,
-          },
-      ];
+  Future<List<Map<String, Object?>>>
+  pendingWorks() async => <Map<String, Object?>>[
+    for (final VideoPendingScrapeWork entry
+        in await _sweep.pendingWorksWithReasons())
+      <String, Object?>{
+        'id': entry.work.stableKey,
+        'title': entry.work.title,
+        'source': entry.source.id,
+        'members': entry.work.members.length,
+        'key': entry.work.collection == null
+            ? <String, Object?>{'bookUid': entry.work.members.single.bookUid}
+            : <String, Object?>{
+                'collection': <String, Object?>{
+                  'name': entry.work.collection!.name,
+                  'collectionType': entry.work.collection!.collectionType,
+                },
+              },
+        if (entry.pendingNote != null) 'status': entry.pendingNote!.cause.name,
+        if (entry.pendingNote != null) 'reason': entry.pendingNote!.reason,
+      },
+  ];
 
   /// 给 WebUI / admin status 的刮削状态。
   Map<String, Object?> status() {
@@ -176,11 +184,14 @@ class ServerVideoScrape {
 String resolveServerTmdbApiKey(ServerConfig config, PrefStore prefs) {
   final String fromConfig = (config.tmdbApiKey ?? '').trim();
   if (fromConfig.isNotEmpty) return fromConfig;
-  return (prefs.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String).trim();
+  return (prefs.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
+          as String)
+      .trim();
 }
 
 /// [SourceScrapeReport] 的 JSON 摘要（admin / CLI 输出用）。
-Map<String, Object?> scrapeReportJson(SourceScrapeReport report) => <String, Object?>{
+Map<String, Object?> scrapeReportJson(SourceScrapeReport report) =>
+    <String, Object?>{
       'sourceIds': report.sourceIds,
       'totalWorks': report.totalWorks,
       'succeededWorks': report.succeededWorks,

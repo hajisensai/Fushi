@@ -18,9 +18,7 @@ class PickerTestAppModel extends AppModel {
   Locale get appLocale => const Locale('en');
 
   @override
-  MediaSource getCurrentSourceForMediaType({
-    required MediaType mediaType,
-  }) {
+  MediaSource getCurrentSourceForMediaType({required MediaType mediaType}) {
     return mediaSources[mediaType]!.values.first;
   }
 
@@ -36,14 +34,9 @@ void main() {
     LocaleSettings.setLocale(AppLocale.en);
   });
 
-  Widget buildApp({
-    required AppModel appModel,
-    required Widget home,
-  }) {
+  Widget buildApp({required AppModel appModel, required Widget home}) {
     return ProviderScope(
-      overrides: [
-        appProvider.overrideWith((ref) => appModel),
-      ],
+      overrides: [appProvider.overrideWith((ref) => appModel)],
       child: TranslationProvider(
         child: MaterialApp(
           builder: (context, child) => child ?? const SizedBox.shrink(),
@@ -65,9 +58,7 @@ void main() {
     await tester.pumpWidget(
       buildApp(
         appModel: appModel,
-        home: MediaSourcePickerDialogPage(
-          mediaType: ReaderMediaType.instance,
-        ),
+        home: MediaSourcePickerDialogPage(mediaType: ReaderMediaType.instance),
       ),
     );
 

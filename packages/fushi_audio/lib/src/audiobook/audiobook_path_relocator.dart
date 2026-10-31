@@ -40,8 +40,8 @@ class AudiobookPathRelocator {
     required this.audiobooksRoot,
     bool Function(String path)? exists,
     List<String> Function(String root)? listEntries,
-  })  : _exists = exists ?? defaultExists,
-        _listEntries = listEntries ?? _defaultListEntries;
+  }) : _exists = exists ?? defaultExists,
+       _listEntries = listEntries ?? _defaultListEntries;
 
   /// 数据根内有声书子目录名（`AppPaths.audiobooksDirectory` / `app_model` 的
   /// `audioDatabaseRoot` 同名，两处都是 `<documents>/audiobooks`）。

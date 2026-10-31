@@ -23,10 +23,9 @@ void main() {
     });
 
     test('globalExternal is its own co-active group', () {
-      expect(
-        ShortcutScope.globalExternal.coactiveScopes,
-        const <ShortcutScope>[ShortcutScope.globalExternal],
-      );
+      expect(ShortcutScope.globalExternal.coactiveScopes, const <ShortcutScope>[
+        ShortcutScope.globalExternal,
+      ]);
       for (final ShortcutScope other in ShortcutScope.values) {
         if (other == ShortcutScope.globalExternal) continue;
         expect(
@@ -44,33 +43,34 @@ void main() {
         TargetPlatform.linux,
       ]) {
         final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-            platform)[ShortcutAction.globalExternalLookup]!;
+          platform,
+        )[ShortcutAction.globalExternalLookup]!;
         expect(set.keyboardBindings, hasLength(1));
         final InputBinding binding = set.keyboardBindings.first;
         expect(binding.key, LogicalKeyboardKey.keyD);
-        expect(
-          binding.modifiers,
-          <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
-        );
+        expect(binding.modifiers, <ModifierKey>{
+          ModifierKey.ctrl,
+          ModifierKey.alt,
+        });
         expect(binding.physicalKey, PhysicalKeyboardKey.keyD);
       }
     });
 
-    test('macOS default keeps Ctrl (⌘⌥D is the system Dock-hiding hotkey)',
-        () {
+    test('macOS default keeps Ctrl (⌘⌥D is the system Dock-hiding hotkey)', () {
       // The generic macOS table swaps Ctrl→Meta, but ⌘⌥D is macOS's own
       // "Turn Dock Hiding On/Off" symbolic hotkey: the system consumes it
       // before RegisterEventHotKey ever sees it, so the app-external lookup
       // would never fire. Ctrl⌥D is free on macOS and matches Windows.
       final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-          TargetPlatform.macOS)[ShortcutAction.globalExternalLookup]!;
+        TargetPlatform.macOS,
+      )[ShortcutAction.globalExternalLookup]!;
       expect(set.keyboardBindings, hasLength(1));
       final InputBinding binding = set.keyboardBindings.first;
       expect(binding.key, LogicalKeyboardKey.keyD);
-      expect(
-        binding.modifiers,
-        <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
-      );
+      expect(binding.modifiers, <ModifierKey>{
+        ModifierKey.ctrl,
+        ModifierKey.alt,
+      });
     });
 
     test('mobile has no binding for this scope', () {
@@ -79,7 +79,8 @@ void main() {
         TargetPlatform.iOS,
       ]) {
         final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-            platform)[ShortcutAction.globalExternalLookup]!;
+          platform,
+        )[ShortcutAction.globalExternalLookup]!;
         expect(set.keyboardBindings, isEmpty);
         expect(set.gamepadBindings, isEmpty);
       }
@@ -92,8 +93,9 @@ void main() {
         TargetPlatform.android,
       ]) {
         expect(
-          ShortcutDefaults.forPlatform(platform)
-              .containsKey(ShortcutAction.globalExternalLookup),
+          ShortcutDefaults.forPlatform(
+            platform,
+          ).containsKey(ShortcutAction.globalExternalLookup),
           isTrue,
         );
       }
@@ -107,30 +109,34 @@ void main() {
 
     test('legacy snapshot without the key upgrades to default Ctrl+Alt+D', () {
       final FushiShortcutRegistry registry = FushiShortcutRegistry();
-      const String legacyJson = '{'
+      const String legacyJson =
+          '{'
           '"__schema_version__": 3,'
           '"reader_page_forward": {"keyboard": ["KeyN"], "gamepad": [], "mouse": []}'
           '}';
       registry.loadFromJsonString(legacyJson, TargetPlatform.windows);
 
-      final ShortcutBindingSet set =
-          registry.bindingsFor(ShortcutAction.globalExternalLookup);
+      final ShortcutBindingSet set = registry.bindingsFor(
+        ShortcutAction.globalExternalLookup,
+      );
       expect(set.keyboardBindings, hasLength(1));
       expect(set.keyboardBindings.first.key, LogicalKeyboardKey.keyD);
-      expect(
-        set.keyboardBindings.first.modifiers,
-        <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
-      );
+      expect(set.keyboardBindings.first.modifiers, <ModifierKey>{
+        ModifierKey.ctrl,
+        ModifierKey.alt,
+      });
 
-      final ShortcutBindingSet fwd =
-          registry.bindingsFor(ShortcutAction.readerPageForward);
+      final ShortcutBindingSet fwd = registry.bindingsFor(
+        ShortcutAction.readerPageForward,
+      );
       expect(fwd.keyboardBindings, hasLength(1));
       expect(fwd.keyboardBindings.first.key, LogicalKeyboardKey.keyN);
     });
 
     test('user-cleared hotkey is not refilled on upgrade', () {
       final FushiShortcutRegistry registry = FushiShortcutRegistry();
-      const String json = '{'
+      const String json =
+          '{'
           '"__schema_version__": 4,'
           '"global_external_lookup": {"keyboard": [], "gamepad": [], "mouse": []}'
           '}';
@@ -162,10 +168,7 @@ void main() {
         isTrue,
         reason: 'controller 必须从 registry 取绑定，不得写死按键',
       );
-      expect(
-        controllerSrc.contains('addListener(_onRegistryChanged)'),
-        isTrue,
-      );
+      expect(controllerSrc.contains('addListener(_onRegistryChanged)'), isTrue);
     });
 
     // globalExternal 的动作**不经 resolveKeyboard / 页面派发**，执行体只在
@@ -174,8 +177,11 @@ void main() {
     // 反复出现的那类病，故按 scope 枚举正向核对，不逐个写死动作名。
     test('每个 globalExternal 动作都在控制器的执行体表里登记', () {
       final int tableStart = controllerSrc.indexOf('_osHotKeyActions =>');
-      expect(tableStart, greaterThan(0),
-          reason: 'OS 热键执行体表必须收口在 _osHotKeyActions 这一个地方');
+      expect(
+        tableStart,
+        greaterThan(0),
+        reason: 'OS 热键执行体表必须收口在 _osHotKeyActions 这一个地方',
+      );
       final int tableEnd = controllerSrc.indexOf('\n      };', tableStart);
       expect(tableEnd, greaterThan(tableStart));
       final String table = controllerSrc.substring(tableStart, tableEnd);
@@ -188,20 +194,19 @@ void main() {
         expect(
           table.contains('ShortcutAction.${action.name}:'),
           isTrue,
-          reason: '${action.name} 是 globalExternal 动作，必须在 '
+          reason:
+              '${action.name} 是 globalExternal 动作，必须在 '
               '_osHotKeyActions 里登记执行体，否则「设置里能配、按了没反应」',
         );
       }
     });
 
     test('controller no longer hard-codes the Ctrl+Alt+D constant', () {
-      expect(
-        controllerSrc.contains('key: PhysicalKeyboardKey.keyD'),
-        isFalse,
-      );
+      expect(controllerSrc.contains('key: PhysicalKeyboardKey.keyD'), isFalse);
       expect(
         controllerSrc.contains(
-            'modifiers: <HotKeyModifier>[HotKeyModifier.control, HotKeyModifier.alt]'),
+          'modifiers: <HotKeyModifier>[HotKeyModifier.control, HotKeyModifier.alt]',
+        ),
         isFalse,
       );
     });
@@ -225,18 +230,16 @@ void main() {
     });
 
     test('ShortcutScopeLabel covers globalExternal', () {
-      expect(
-        labelsSrc.contains('case ShortcutScope.globalExternal:'),
-        isTrue,
-      );
+      expect(labelsSrc.contains('case ShortcutScope.globalExternal:'), isTrue);
     });
 
     test('settings page still iterates ShortcutScope.values', () {
       expect(
-        RegExp('for'
-                r'\s*\(\s*final\s+ShortcutScope\s+scope\s+in\s+'
-                r'ShortcutScope\.values')
-            .hasMatch(pageSrc),
+        RegExp(
+          'for'
+          r'\s*\(\s*final\s+ShortcutScope\s+scope\s+in\s+'
+          r'ShortcutScope\.values',
+        ).hasMatch(pageSrc),
         isTrue,
       );
     });

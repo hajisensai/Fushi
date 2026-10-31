@@ -16,10 +16,10 @@ import '../helpers/source_guard.dart';
 /// 或 `wil::MakeAgileCallback`),并禁止把裸 `Callback<PumpTickHandler>(...)`
 /// 直接喂给 `add_Tick`。
 String _read(List<String> candidates, String name) {
-  final File? file = candidates.map(File.new).cast<File?>().firstWhere(
-        (File? f) => f != null && f.existsSync(),
-        orElse: () => null,
-      );
+  final File? file = candidates
+      .map(File.new)
+      .cast<File?>()
+      .firstWhere((File? f) => f != null && f.existsSync(), orElse: () => null);
   expect(file, isNotNull, reason: '$name not found');
   return file!.readAsStringSync();
 }
@@ -38,40 +38,56 @@ void main() {
 
     // 1) tick 处理器赋值必须存在,且使用 agile 委托工厂。
     final int assignIdx = src.indexOf('lifetime->pump_tick_handler =');
-    expect(assignIdx, greaterThanOrEqualTo(0),
-        reason: 'pump_tick_handler assignment must exist');
+    expect(
+      assignIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'pump_tick_handler assignment must exist',
+    );
 
     // 取赋值语句到结尾分号前的 lambda 开头一段(委托工厂头部)。
     final int factoryEnd = src.indexOf('[pump_state]', assignIdx);
-    expect(factoryEnd, greaterThan(assignIdx),
-        reason: 'tick handler must capture pump_state in its lambda');
+    expect(
+      factoryEnd,
+      greaterThan(assignIdx),
+      reason: 'tick handler must capture pump_state in its lambda',
+    );
     final String factoryHead = src.substring(assignIdx, factoryEnd);
 
-    final bool usesFtmBase = factoryHead.contains('FtmBase') &&
+    final bool usesFtmBase =
+        factoryHead.contains('FtmBase') &&
         factoryHead.contains('Implements') &&
         factoryHead.contains('PumpTickHandler');
-    final bool usesWilAgile =
-        factoryHead.contains('MakeAgileCallback<PumpTickHandler>');
-    expect(usesFtmBase || usesWilAgile, isTrue,
-        reason: 'Tick delegate must be agile: either Microsoft::WRL::Callback<'
-            'Implements<..., PumpTickHandler, FtmBase>>(...) or '
-            'wil::MakeAgileCallback<PumpTickHandler>(...). '
-            'DispatcherQueueTimer::add_Tick rejects non-agile delegates with '
-            'RO_E_MUST_BE_AGILE -> pump-start-fail -> blank WebView.');
+    final bool usesWilAgile = factoryHead.contains(
+      'MakeAgileCallback<PumpTickHandler>',
+    );
+    expect(
+      usesFtmBase || usesWilAgile,
+      isTrue,
+      reason:
+          'Tick delegate must be agile: either Microsoft::WRL::Callback<'
+          'Implements<..., PumpTickHandler, FtmBase>>(...) or '
+          'wil::MakeAgileCallback<PumpTickHandler>(...). '
+          'DispatcherQueueTimer::add_Tick rejects non-agile delegates with '
+          'RO_E_MUST_BE_AGILE -> pump-start-fail -> blank WebView.',
+    );
 
     // 2) 禁止把裸 Callback<PumpTickHandler>(...) 直接作为委托工厂喂给 add_Tick。
-    expect(factoryHead.contains('Callback<PumpTickHandler>'), isFalse,
-        reason:
-            'bare Microsoft::WRL::Callback<PumpTickHandler>(...) is non-agile '
-            'and is the exact regression that blanked all Windows WebViews');
+    expect(
+      factoryHead.contains('Callback<PumpTickHandler>'),
+      isFalse,
+      reason:
+          'bare Microsoft::WRL::Callback<PumpTickHandler>(...) is non-agile '
+          'and is the exact regression that blanked all Windows WebViews',
+    );
 
     // 3) 注册路径仍存在: add_Tick 用的就是这个被聚合 FtmBase 的处理器成员。
     expect(
-        src.contains('add_Tick(\n        lifetime->pump_tick_handler.Get()') ||
-            src.contains('add_Tick(lifetime->pump_tick_handler.Get()') ||
-            src.contains('pump_tick_handler.Get(), &lifetime->on_tick_token'),
-        isTrue,
-        reason:
-            'the agile tick handler must be the delegate registered via add_Tick');
+      src.contains('add_Tick(\n        lifetime->pump_tick_handler.Get()') ||
+          src.contains('add_Tick(lifetime->pump_tick_handler.Get()') ||
+          src.contains('pump_tick_handler.Get(), &lifetime->on_tick_token'),
+      isTrue,
+      reason:
+          'the agile tick handler must be the delegate registered via add_Tick',
+    );
   });
 }

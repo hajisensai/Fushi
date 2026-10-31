@@ -19,9 +19,13 @@ void main() {
   /// 建一个真实 v98 形状的库：当前 schema 建满 + 存量行，再 DROP 掉 v99 的两列、
   /// 版本写回 98。
   Future<void> seedV98(String path) async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(path, isMainProcess: false);
-    final int sourceId = await fresh.into(fresh.mediaSources).insert(
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      path,
+      isMainProcess: false,
+    );
+    final int sourceId = await fresh
+        .into(fresh.mediaSources)
+        .insert(
           MediaSourcesCompanion.insert(
             label: '本地番剧',
             mediaKind: 'video',
@@ -29,17 +33,23 @@ void main() {
             createdAt: 1700000000,
           ),
         );
-    await fresh.into(fresh.videoSourceScrapeSettings).insert(
+    await fresh
+        .into(fresh.videoSourceScrapeSettings)
+        .insert(
           VideoSourceScrapeSettingsCompanion.insert(
             sourceId: Value<int>(sourceId),
             providerOverride: const Value<String?>('tmdb'),
             updatedAt: 1700000001,
           ),
         );
-    final int collectionId = await fresh.into(fresh.mediaCollections).insert(
+    final int collectionId = await fresh
+        .into(fresh.mediaCollections)
+        .insert(
           MediaCollectionsCompanion.insert(name: '某番', createdAt: 1700000000),
         );
-    await fresh.into(fresh.videoMetadataWorks).insert(
+    await fresh
+        .into(fresh.videoMetadataWorks)
+        .insert(
           VideoMetadataWorksCompanion.insert(
             collectionId: Value<int?>(collectionId),
             mediaType: 'tv',
@@ -52,8 +62,10 @@ void main() {
 
     final sqlite3.Database raw = sqlite3.sqlite3.open(path);
     try {
-      raw.execute('ALTER TABLE video_source_scrape_settings '
-          'DROP COLUMN metadata_locale');
+      raw.execute(
+        'ALTER TABLE video_source_scrape_settings '
+        'DROP COLUMN metadata_locale',
+      );
       raw.execute('ALTER TABLE video_metadata_works DROP COLUMN locked_fields');
       raw.execute('PRAGMA user_version = 98');
     } finally {
@@ -78,8 +90,10 @@ void main() {
     final String path = newDbPath('fushi_v99_precheck');
     await seedV98(path);
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(path, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      path,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 98);
       expect(
@@ -87,7 +101,9 @@ void main() {
         isFalse,
       );
       expect(
-          hasColumn(probe, 'video_metadata_works', 'locked_fields'), isFalse);
+        hasColumn(probe, 'video_metadata_works', 'locked_fields'),
+        isFalse,
+      );
     } finally {
       probe.dispose();
     }
@@ -97,24 +113,30 @@ void main() {
     final String path = newDbPath('fushi_v99_upgrade');
     await seedV98(path);
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(path, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      path,
+      isMainProcess: false,
+    );
 
-    final VideoSourceScrapeSettingRow settings =
-        await migrated.select(migrated.videoSourceScrapeSettings).getSingle();
+    final VideoSourceScrapeSettingRow settings = await migrated
+        .select(migrated.videoSourceScrapeSettings)
+        .getSingle();
     expect(settings.providerOverride, 'tmdb', reason: '存量来源覆盖不能被迁移抹掉');
     expect(settings.metadataLocale, isNull, reason: 'NULL = 跟随全局资料语言 = 升级前行为');
 
-    final VideoMetadataWorkRow work =
-        await migrated.select(migrated.videoMetadataWorks).getSingle();
+    final VideoMetadataWorkRow work = await migrated
+        .select(migrated.videoMetadataWorks)
+        .getSingle();
     expect(work.title, '某番');
     expect(work.overview, '旧简介');
     expect(work.lockedFields, isNull, reason: 'NULL = 无锁 = 升级前行为');
 
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(path, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      path,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
       expect(
@@ -129,10 +151,14 @@ void main() {
 
   test('新建库直接就有这两列，且可读写', () async {
     final String path = newDbPath('fushi_v99_fresh');
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(path, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      path,
+      isMainProcess: false,
+    );
     expect(fresh.schemaVersion, 142);
-    final int sourceId = await fresh.into(fresh.mediaSources).insert(
+    final int sourceId = await fresh
+        .into(fresh.mediaSources)
+        .insert(
           MediaSourcesCompanion.insert(
             label: '本地番剧',
             mediaKind: 'video',
@@ -140,16 +166,18 @@ void main() {
             createdAt: 1700000000,
           ),
         );
-    await fresh.into(fresh.videoSourceScrapeSettings).insert(
+    await fresh
+        .into(fresh.videoSourceScrapeSettings)
+        .insert(
           VideoSourceScrapeSettingsCompanion.insert(
             sourceId: Value<int>(sourceId),
             metadataLocale: const Value<String?>('ja'),
             updatedAt: 1700000001,
           ),
         );
-    final int collectionId = await fresh.into(fresh.mediaCollections).insert(
-          MediaCollectionsCompanion.insert(name: '某番', createdAt: 1),
-        );
+    final int collectionId = await fresh
+        .into(fresh.mediaCollections)
+        .insert(MediaCollectionsCompanion.insert(name: '某番', createdAt: 1));
     final int workId = await fresh.upsertVideoMetadataWork(
       VideoMetadataWorksCompanion.insert(
         collectionId: Value<int?>(collectionId),
@@ -165,17 +193,19 @@ void main() {
           .metadataLocale,
       'ja',
     );
-    expect((await fresh.getVideoMetadataWorkById(workId))!.lockedFields,
-        'title,overview');
+    expect(
+      (await fresh.getVideoMetadataWorkById(workId))!.lockedFields,
+      'title,overview',
+    );
     await fresh.close();
   });
 
   test('setVideoMetadataWorkLockedFields 写穿并可清空', () async {
     final String path = newDbPath('fushi_v99_setter');
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
-    final int collectionId = await db.into(db.mediaCollections).insert(
-          MediaCollectionsCompanion.insert(name: '某番', createdAt: 1),
-        );
+    final int collectionId = await db
+        .into(db.mediaCollections)
+        .insert(MediaCollectionsCompanion.insert(name: '某番', createdAt: 1));
     final int workId = await db.upsertVideoMetadataWork(
       VideoMetadataWorksCompanion.insert(
         collectionId: Value<int?>(collectionId),

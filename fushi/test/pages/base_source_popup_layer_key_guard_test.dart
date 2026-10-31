@@ -14,8 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// （与 dictionary_popup_eager_mount_guard_test / parked_popup_layer_dedup_test
 /// 同款守卫层）。
 void main() {
-  final String base =
-      File('lib/src/pages/base_source_page.dart').readAsStringSync();
+  final String base = File(
+    'lib/src/pages/base_source_page.dart',
+  ).readAsStringSync();
   final String mixin = File(
     'lib/src/pages/implementations/dictionary_page_mixin.dart',
   ).readAsStringSync();
@@ -24,9 +25,13 @@ void main() {
     final int start = base.indexOf('Widget _buildPopupLayer(');
     expect(start, greaterThanOrEqualTo(0));
     final String body = base.substring(start);
-    expect(body.contains('key: ObjectKey(item)'), isTrue,
-        reason: 'barrier/占位层插拔时弹窗层必须按身份搬位，而不是被按位置错配拆建'
-            '原生 WebView（热槽冷重载）');
+    expect(
+      body.contains('key: ObjectKey(item)'),
+      isTrue,
+      reason:
+          'barrier/占位层插拔时弹窗层必须按身份搬位，而不是被按位置错配拆建'
+          '原生 WebView（热槽冷重载）',
+    );
   });
 
   test('base 加载占位层 Positioned 带稳定 key', () {
@@ -36,15 +41,20 @@ void main() {
     expect(end, greaterThan(start), reason: '占位方法应在弹窗层方法之前');
     final String body = base.substring(start, end);
     expect(
-        body.contains(
-            "key: const ValueKey<String>('base-source-popup-loading-placeholder')"),
-        isTrue,
-        reason: '占位层无 key 时，其插拔同样会让后续 keyed/非 keyed 子项错配');
+      body.contains(
+        "key: const ValueKey<String>('base-source-popup-loading-placeholder')",
+      ),
+      isTrue,
+      reason: '占位层无 key 时，其插拔同样会让后续 keyed/非 keyed 子项错配',
+    );
   });
 
   test('mixin 侧 BUG-941 key 仍在（同族两处一起守）', () {
-    expect(mixin.contains('key: ObjectKey(entry)'), isTrue,
-        reason: 'mixin buildNestedPopupLayer 的 entry 身份 key 不得回归');
+    expect(
+      mixin.contains('key: ObjectKey(entry)'),
+      isTrue,
+      reason: 'mixin buildNestedPopupLayer 的 entry 身份 key 不得回归',
+    );
   });
 
   test('Android 独立查词窗（popup_dictionary_page）弹窗层同样以 entry 钉 key', () {
@@ -54,8 +64,12 @@ void main() {
     final int call = popupPage.indexOf('return parkedPopupLayer(');
     expect(call, greaterThanOrEqualTo(0));
     final String body = popupPage.substring(call, call + 400);
-    expect(body.contains('key: ObjectKey(entry)'), isTrue,
-        reason: '独立查词窗与三个 in-app 宿主同机制（隐藏热槽/占位层插拔），'
-            '无 key 同样会拆建原生 WebView 冷重载热槽');
+    expect(
+      body.contains('key: ObjectKey(entry)'),
+      isTrue,
+      reason:
+          '独立查词窗与三个 in-app 宿主同机制（隐藏热槽/占位层插拔），'
+          '无 key 同样会拆建原生 WebView 冷重载热槽',
+    );
   });
 }

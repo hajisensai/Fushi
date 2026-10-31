@@ -44,10 +44,10 @@ class CollectionManifest implements CanonicalJsonManifest {
 
   /// 复制一份并盖上新的 [lastWrittenAt]（写盘前用当前发布时刻盖戳；内容不变）。
   CollectionManifest withLastWrittenAt(int ms) => CollectionManifest(
-        version: version,
-        lastWrittenAt: ms,
-        collections: collections,
-      );
+    version: version,
+    lastWrittenAt: ms,
+    collections: collections,
+  );
 
   /// 解码。[json] 是 `jsonDecode` 的产物（Map）。结构非法抛 [FormatException]
   /// （编排器捕获后计入 report.errors，不让一份坏清单毁掉整轮同步）。严格门
@@ -55,17 +55,24 @@ class CollectionManifest implements CanonicalJsonManifest {
   factory CollectionManifest.fromJson(Object? json) {
     const String label = 'collection manifest';
     final Map<String, dynamic> map = requireManifestObject(json, label);
-    final int version = requireManifestVersion(map,
-        currentVersion: currentVersion, label: label);
-    final List<Object?> rawCollections =
-        requireManifestList(map, 'collections', label);
+    final int version = requireManifestVersion(
+      map,
+      currentVersion: currentVersion,
+      label: label,
+    );
+    final List<Object?> rawCollections = requireManifestList(
+      map,
+      'collections',
+      label,
+    );
     // lastWrittenAt 是 additive 文件级字段（finding 1）：旧清单缺它 / 非法 / 负值一律
     // 解码为 0（恒陈旧），绝不因缺字段拒绝解析——向后兼容读老写新。
     final Object? lastWrittenAt = map['lastWrittenAt'];
     return CollectionManifest(
       version: version,
-      lastWrittenAt:
-          (lastWrittenAt is int && lastWrittenAt >= 0) ? lastWrittenAt : 0,
+      lastWrittenAt: (lastWrittenAt is int && lastWrittenAt >= 0)
+          ? lastWrittenAt
+          : 0,
       collections: <CollectionManifestEntry>[
         for (final Object? c in rawCollections)
           CollectionManifestEntry.fromJson(c),
@@ -89,14 +96,15 @@ class CollectionManifest implements CanonicalJsonManifest {
   Map<String, dynamic> contentJson() {
     // 跳过非法自然键条目（空 name / 空 collectionType）：绝不把本地脏行原样发布
     // 毒害对端（对端 fromJson 对空自然键抛 FormatException，拖垮整份清单解析）。
-    final List<CollectionManifestEntry> sorted = <CollectionManifestEntry>[
-      for (final CollectionManifestEntry c in collections)
-        if (c.name.isNotEmpty && c.collectionType.isNotEmpty) c,
-    ]..sort((CollectionManifestEntry a, CollectionManifestEntry b) {
-        final int byName = a.name.compareTo(b.name);
-        if (byName != 0) return byName;
-        return a.collectionType.compareTo(b.collectionType);
-      });
+    final List<CollectionManifestEntry> sorted =
+        <CollectionManifestEntry>[
+          for (final CollectionManifestEntry c in collections)
+            if (c.name.isNotEmpty && c.collectionType.isNotEmpty) c,
+        ]..sort((CollectionManifestEntry a, CollectionManifestEntry b) {
+          final int byName = a.name.compareTo(b.name);
+          if (byName != 0) return byName;
+          return a.collectionType.compareTo(b.collectionType);
+        });
     return <String, dynamic>{
       'version': version,
       'collections': <Map<String, dynamic>>[
@@ -251,25 +259,27 @@ class CollectionManifestEntry {
     // （对端 fromJson 会对空键抛 FormatException，一条坏成员会拖垮整份清单解析）。
     final List<CollectionManifestMember> sortedMembers =
         <CollectionManifestMember>[
-      for (final CollectionManifestMember m in members)
-        if (m.mediaType.isNotEmpty && m.entryKey.isNotEmpty) m,
-    ]..sort((CollectionManifestMember a, CollectionManifestMember b) {
-            final int byIndex = a.sortIndex.compareTo(b.sortIndex);
-            if (byIndex != 0) return byIndex;
-            final int byType = a.mediaType.compareTo(b.mediaType);
-            if (byType != 0) return byType;
-            return a.entryKey.compareTo(b.entryKey);
-          });
+          for (final CollectionManifestMember m in members)
+            if (m.mediaType.isNotEmpty && m.entryKey.isNotEmpty) m,
+        ]..sort((CollectionManifestMember a, CollectionManifestMember b) {
+          final int byIndex = a.sortIndex.compareTo(b.sortIndex);
+          if (byIndex != 0) return byIndex;
+          final int byType = a.mediaType.compareTo(b.mediaType);
+          if (byType != 0) return byType;
+          return a.entryKey.compareTo(b.entryKey);
+        });
     final List<CollectionMemberTombstone> sortedTombstones =
         <CollectionMemberTombstone>[
-      for (final CollectionMemberTombstone t in memberTombstones)
-        if (t.mediaType.isNotEmpty && t.entryKey.isNotEmpty && t.removedAt >= 0)
-          t,
-    ]..sort((CollectionMemberTombstone a, CollectionMemberTombstone b) {
-            final int byType = a.mediaType.compareTo(b.mediaType);
-            if (byType != 0) return byType;
-            return a.entryKey.compareTo(b.entryKey);
-          });
+          for (final CollectionMemberTombstone t in memberTombstones)
+            if (t.mediaType.isNotEmpty &&
+                t.entryKey.isNotEmpty &&
+                t.removedAt >= 0)
+              t,
+        ]..sort((CollectionMemberTombstone a, CollectionMemberTombstone b) {
+          final int byType = a.mediaType.compareTo(b.mediaType);
+          if (byType != 0) return byType;
+          return a.entryKey.compareTo(b.entryKey);
+        });
     // 标签确定性排序副本（过滤空串）：内容相等 ⇒ 字节相等，供 canonicalJson 幂等。
     final List<String> sortedTags = <String>[
       for (final String tn in tagNames)
@@ -298,8 +308,7 @@ class CollectionManifestEntry {
         'organizeAliases': (<String>{
           for (final String a in organizeAliases)
             if (a.isNotEmpty) a,
-        }.toList()
-          ..sort()),
+        }.toList()..sort()),
       if (organizeMerged) 'organizeMerged': true,
     };
   }
@@ -355,10 +364,10 @@ class CollectionManifestMember {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'mediaType': mediaType,
-        'entryKey': entryKey,
-        'sortIndex': sortIndex,
-      };
+    'mediaType': mediaType,
+    'entryKey': entryKey,
+    'sortIndex': sortIndex,
+  };
 }
 
 /// 清单里的一条成员移出墓碑。
@@ -414,9 +423,9 @@ class CollectionMemberTombstone {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'mediaType': mediaType,
-        'entryKey': entryKey,
-        'removedAt': removedAt,
-        if (publishedAt != null) 'publishedAt': publishedAt,
-      };
+    'mediaType': mediaType,
+    'entryKey': entryKey,
+    'removedAt': removedAt,
+    if (publishedAt != null) 'publishedAt': publishedAt,
+  };
 }

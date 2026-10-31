@@ -50,8 +50,11 @@ void main() {
 
   test('17 个语言的 i18n 值里不得出现「实验性」标注', () {
     final Directory dir = Directory('lib/i18n');
-    expect(dir.existsSync(), isTrue,
-        reason: 'i18n 目录必须存在（cwd=${Directory.current.path}）');
+    expect(
+      dir.existsSync(),
+      isTrue,
+      reason: 'i18n 目录必须存在（cwd=${Directory.current.path}）',
+    );
 
     final List<File> files = dir
         .listSync()
@@ -59,8 +62,7 @@ void main() {
         .where((File f) => f.path.endsWith('.i18n.json'))
         .toList();
     // 反空转：Slang 要求 17 个语言文件齐全，扫描面必须真的是这 17 个。
-    expect(files.length, 17,
-        reason: '应扫到 17 个语言文件，实际 ${files.length} 个');
+    expect(files.length, 17, reason: '应扫到 17 个语言文件，实际 ${files.length} 个');
 
     final List<String> offenders = <String>[];
     for (final File f in files) {

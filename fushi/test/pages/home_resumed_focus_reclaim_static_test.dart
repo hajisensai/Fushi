@@ -17,8 +17,11 @@ void main() {
   });
 
   test('存在 _reclaimHomeFocusIfOwned 回收 helper', () {
-    expect(src, contains('void _reclaimHomeFocusIfOwned()'),
-        reason: '应有统一的 resumed 焦点回收 helper');
+    expect(
+      src,
+      contains('void _reclaimHomeFocusIfOwned()'),
+      reason: '应有统一的 resumed 焦点回收 helper',
+    );
   });
 
   test('didChangeAppLifecycleState 的 resumed 分支调回收 helper', () {
@@ -26,10 +29,16 @@ void main() {
     expect(lifecycle, greaterThanOrEqualTo(0));
     final int end = src.indexOf('\n  }', lifecycle);
     final String body = src.substring(lifecycle, end);
-    expect(body, contains('AppLifecycleState.resumed'),
-        reason: 'resumed 分支不能缺失');
-    expect(body, contains('_reclaimHomeFocusIfOwned();'),
-        reason: 'resumed 时必须调回收 helper');
+    expect(
+      body,
+      contains('AppLifecycleState.resumed'),
+      reason: 'resumed 分支不能缺失',
+    );
+    expect(
+      body,
+      contains('_reclaimHomeFocusIfOwned();'),
+      reason: 'resumed 时必须调回收 helper',
+    );
   });
 
   test('回收 helper 两态分支 + 路由门控 + 不新造节点', () {
@@ -39,13 +48,22 @@ void main() {
     final String body = src.substring(start, end);
     // [M1] 红线：路由 isCurrent 门控。
     expect(body, contains('ModalRoute.of(context)'), reason: 'helper 必须取所有者路由');
-    expect(body, contains('isCurrent'),
-        reason: 'helper 必须含路由 isCurrent 门控（否则夺对话框焦点）');
+    expect(
+      body,
+      contains('isCurrent'),
+      reason: 'helper 必须含路由 isCurrent 门控（否则夺对话框焦点）',
+    );
     // [M2]：开态走控制器 ensureFocus，关态走既有 _keyboardFocusNode（不新造节点）。
-    expect(body, contains('FushiFocusRoot.maybeControllerOf'),
-        reason: '开态须经控制器解析');
+    expect(
+      body,
+      contains('FushiFocusRoot.maybeControllerOf'),
+      reason: '开态须经控制器解析',
+    );
     expect(body, contains('.ensureFocus()'), reason: '实验焦点导航开态须 ensureFocus');
-    expect(body, contains('_keyboardFocusNode.requestFocus()'),
-        reason: '关态须 requestFocus 既有 _keyboardFocusNode（不新造节点）');
+    expect(
+      body,
+      contains('_keyboardFocusNode.requestFocus()'),
+      reason: '关态须 requestFocus 既有 _keyboardFocusNode（不新造节点）',
+    );
   });
 }

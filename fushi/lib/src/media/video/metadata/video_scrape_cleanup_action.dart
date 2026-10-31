@@ -105,5 +105,7 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
 
 void _showVideoScrapeCleanupSnackBar(BuildContext context, String message) {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(message)));
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(FushiSnackBar(content: Text(message)));
 }

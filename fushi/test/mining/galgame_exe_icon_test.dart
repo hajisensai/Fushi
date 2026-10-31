@@ -13,12 +13,14 @@ void main() {
     test('解析出所有 RT_ICON 并读对尺寸（PNG 与 DIB 混合）', () {
       final Uint8List png = _png(64, 64);
       final Uint8List dib = _dib(32, 32);
-      final List<PeIconEntry> icons =
-          parsePeIcons(_buildPeWithIcons(<Uint8List>[dib, png]));
+      final List<PeIconEntry> icons = parsePeIcons(
+        _buildPeWithIcons(<Uint8List>[dib, png]),
+      );
 
       expect(icons, hasLength(2));
-      final PeIconEntry dibEntry =
-          icons.firstWhere((PeIconEntry e) => !e.isPng);
+      final PeIconEntry dibEntry = icons.firstWhere(
+        (PeIconEntry e) => !e.isPng,
+      );
       final PeIconEntry pngEntry = icons.firstWhere((PeIconEntry e) => e.isPng);
       expect(dibEntry.width, 32);
       // DIB 的 biHeight 含 AND 掩码（写入 64），解析后应还原成 32。
@@ -30,12 +32,15 @@ void main() {
     test('非 PE / 截断 / 无 .rsrc 都返回空列表，不抛', () {
       expect(parsePeIcons(Uint8List.fromList(<int>[1, 2, 3])), isEmpty);
       expect(parsePeIcons(Uint8List(0)), isEmpty);
-      expect(parsePeIcons(_buildPeWithIcons(<Uint8List>[], omitRsrc: true)),
-          isEmpty);
+      expect(
+        parsePeIcons(_buildPeWithIcons(<Uint8List>[], omitRsrc: true)),
+        isEmpty,
+      );
 
       // .rsrc 声明的大小远超文件实际长度：越界读必须被夹住而不是抛出。
-      final Uint8List truncated =
-          _buildPeWithIcons(<Uint8List>[_dib(32, 32)], inflateRsrcSize: true);
+      final Uint8List truncated = _buildPeWithIcons(<Uint8List>[
+        _dib(32, 32),
+      ], inflateRsrcSize: true);
       expect(parsePeIcons(truncated), isNotNull);
     });
   });
@@ -43,8 +48,11 @@ void main() {
   group('extractLargestIconPng', () {
     test('多尺寸时取面积最大的一张，PNG 资源原样直通', () {
       final Uint8List png = _png(128, 128);
-      final Uint8List bytes =
-          _buildPeWithIcons(<Uint8List>[_dib(32, 32), png, _dib(48, 48)]);
+      final Uint8List bytes = _buildPeWithIcons(<Uint8List>[
+        _dib(32, 32),
+        png,
+        _dib(48, 48),
+      ]);
 
       final Uint8List? out = extractLargestIconPng(bytes);
       expect(out, isNotNull);
@@ -64,8 +72,10 @@ void main() {
     });
 
     test('所有图标都小于 minSize 时返回 null（不拿 32px 托盘图标当封面）', () {
-      final Uint8List bytes =
-          _buildPeWithIcons(<Uint8List>[_dib(16, 16), _dib(32, 32)]);
+      final Uint8List bytes = _buildPeWithIcons(<Uint8List>[
+        _dib(16, 16),
+        _dib(32, 32),
+      ]);
       expect(extractLargestIconPng(bytes, minSize: 48), isNull);
       // 放宽下限后同一份字节应能取到 32×32。
       expect(extractLargestIconPng(bytes, minSize: 16), isNotNull);
@@ -151,7 +161,10 @@ Uint8List _buildPeWithIcons(
   out[peOffset + 1] = 0x45;
   view.setUint16(peOffset + 4 + 2, 1, Endian.little); // NumberOfSections
   view.setUint16(
-      peOffset + 4 + 16, optionalHeaderSize, Endian.little); // SizeOfOptional
+    peOffset + 4 + 16,
+    optionalHeaderSize,
+    Endian.little,
+  ); // SizeOfOptional
 
   // 段头。
   final String sectionName = omitRsrc ? '.text' : '.rsrc';
@@ -159,7 +172,10 @@ Uint8List _buildPeWithIcons(
     out[sectionTableOffset + i] = sectionName.codeUnitAt(i);
   }
   view.setUint32(
-      sectionTableOffset + 8, rsrcSize, Endian.little); // VirtualSize
+    sectionTableOffset + 8,
+    rsrcSize,
+    Endian.little,
+  ); // VirtualSize
   view.setUint32(sectionTableOffset + 12, rsrcRva, Endian.little);
   view.setUint32(
     sectionTableOffset + 16,
@@ -195,7 +211,10 @@ Uint8List _buildPeWithIcons(
     view.setUint32(leaf, rsrcRva + dataOffsets[i], Endian.little);
     view.setUint32(leaf + 4, icons[i].length, Endian.little);
     out.setRange(
-        abs(dataOffsets[i]), abs(dataOffsets[i]) + icons[i].length, icons[i]);
+      abs(dataOffsets[i]),
+      abs(dataOffsets[i]) + icons[i].length,
+      icons[i],
+    );
   }
   return out;
 }

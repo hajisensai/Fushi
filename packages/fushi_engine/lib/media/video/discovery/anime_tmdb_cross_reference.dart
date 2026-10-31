@@ -51,15 +51,16 @@ class AnimeTmdbCrossReferenceStore implements AnimeTmdbCrossReference {
     this.refreshInterval = const Duration(days: 7),
     this.maxResponseBytes = 32 * 1024 * 1024,
     DateTime Function()? now,
-  })  : _http = httpClient ??
-            VideoMetadataHttpClient(
-              // 全表十几 MB：默认 15 秒整包超时在慢网下必然失败。
-              timeout: const Duration(minutes: 3),
-              maxAttempts: 2,
-            ),
-        _ownsHttp = httpClient == null,
-        _directory = directory,
-        _now = now ?? DateTime.now;
+  }) : _http =
+           httpClient ??
+           VideoMetadataHttpClient(
+             // 全表十几 MB：默认 15 秒整包超时在慢网下必然失败。
+             timeout: const Duration(minutes: 3),
+             maxAttempts: 2,
+           ),
+       _ownsHttp = httpClient == null,
+       _directory = directory,
+       _now = now ?? DateTime.now;
 
   static final Uri sourceUri = AnimeIdentityMapping.sourceUri;
   static const String fileName = 'mal_tmdb_index.json';
@@ -179,7 +180,8 @@ class AnimeTmdbCrossReferenceStore implements AnimeTmdbCrossReference {
   }
 
   Future<File> _file() async {
-    final Directory directory = _directory ??
+    final Directory directory =
+        _directory ??
         Directory(
           p.join(
             (await enginePaths.supportRootDirectory()).path,
@@ -259,30 +261,30 @@ class _CompactIndex {
   final String? lastModified;
 
   List<AnimeIdentityEntry> entriesForMal(int malId) => <AnimeIdentityEntry>[
-        for (final List<int> row in byMal[malId] ?? const <List<int>>[])
-          AnimeIdentityEntry(
-            anidbId: row[0],
-            malIds: <int>{malId},
-            tmdbId: row[1],
-            tmdbIsMovieNamespace: row[2] == 1,
-            tmdbSeason: row[3] < 0 ? null : row[3],
-            tmdbEpisodeOffset: row[4] < 0 ? null : row[4],
-          ),
-      ];
+    for (final List<int> row in byMal[malId] ?? const <List<int>>[])
+      AnimeIdentityEntry(
+        anidbId: row[0],
+        malIds: <int>{malId},
+        tmdbId: row[1],
+        tmdbIsMovieNamespace: row[2] == 1,
+        tmdbSeason: row[3] < 0 ? null : row[3],
+        tmdbEpisodeOffset: row[4] < 0 ? null : row[4],
+      ),
+  ];
 
   _CompactIndex withCheckedAt(DateTime value) => _CompactIndex(
-        byMal: byMal,
-        checkedAt: value,
-        etag: etag,
-        lastModified: lastModified,
-      );
+    byMal: byMal,
+    checkedAt: value,
+    etag: etag,
+    lastModified: lastModified,
+  );
 
   String encode() => _encodeCompact(
-        byMal,
-        etag: etag,
-        lastModified: lastModified,
-        checkedAt: checkedAt.millisecondsSinceEpoch,
-      );
+    byMal,
+    etag: etag,
+    lastModified: lastModified,
+    checkedAt: checkedAt.millisecondsSinceEpoch,
+  );
 }
 
 String _encodeCompact(
@@ -290,17 +292,16 @@ String _encodeCompact(
   required String? etag,
   required String? lastModified,
   required int checkedAt,
-}) =>
-    jsonEncode(<String, Object?>{
-      'format': kAnimeTmdbCrossReferenceFormat,
-      'etag': etag,
-      'lastModified': lastModified,
-      'checkedAt': checkedAt,
-      'mal': <String, Object?>{
-        for (final MapEntry<int, List<List<int>>> entry in byMal.entries)
-          '${entry.key}': entry.value,
-      },
-    });
+}) => jsonEncode(<String, Object?>{
+  'format': kAnimeTmdbCrossReferenceFormat,
+  'etag': etag,
+  'lastModified': lastModified,
+  'checkedAt': checkedAt,
+  'mal': <String, Object?>{
+    for (final MapEntry<int, List<List<int>>> entry in byMal.entries)
+      '${entry.key}': entry.value,
+  },
+});
 
 /// 后台 isolate 入口：Fribb 全表 → 紧凑索引 JSON（只留带 TMDB id 的行）。
 String _buildCompactJson(

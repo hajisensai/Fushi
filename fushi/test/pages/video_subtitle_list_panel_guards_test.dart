@@ -43,8 +43,11 @@ void main() {
     /// 方法签名」可作结束端点，故改用花括号配对截取方法体。
     String pushAsidePanelBody() {
       final int start = src.indexOf('Widget _subtitleJumpSidePanel(');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '需有 push-aside 字幕面板列 _subtitleJumpSidePanel');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: '需有 push-aside 字幕面板列 _subtitleJumpSidePanel',
+      );
       final int open = src.indexOf('{', start);
       expect(open, greaterThan(start), reason: '_subtitleJumpSidePanel 应有方法体');
       int depth = 0;
@@ -66,30 +69,38 @@ void main() {
 
     test('push-aside 字幕面板直接渲染 VideoSubtitleJumpPanel（自带 header，不双标题）', () {
       final String body = pushAsidePanelBody();
-      expect(body.contains('VideoSubtitleJumpPanel('), isTrue,
-          reason: 'push-aside 面板应直接渲染 VideoSubtitleJumpPanel（自带 header + 关闭）');
-      expect(body.contains('VideoTranslucentSidePanel('), isFalse,
-          reason: '字幕面板不应再被 VideoTranslucentSidePanel 套一层标题栏（否则双标题，BUG-245）');
-    });
-
-    test('字幕列表已无 overlay 路径（不再走 _buildVideoSidePanelContent 的 subtitleList 分支）',
-        () {
-      // overlay 内容构造器不应再对 subtitleList 单独分支（该 kind 已删）。
-      // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_fushi/side_panel.part.dart
-      // 并是该 part 末方法；旧的 _buildAudioTracksSidePanel 终点失效（它在 audio_track.part，
-      // 排在合并语料里 side_panel.part 之前，即在搬出后的 content 之前）。改用 part 顶格
-      // extension 闭合 `\n}` 作终点（content 体内无顶格 `}`）。
-      final int start = src.indexOf('Widget _buildVideoSidePanelContent(');
-      expect(start, greaterThanOrEqualTo(0));
-      final int end = src.indexOf('\n}', start);
-      expect(end, greaterThan(start));
-      final String contentBody = src.substring(start, end);
       expect(
-        contentBody.contains('_VideoSidePanelKind.subtitleList'),
+        body.contains('VideoSubtitleJumpPanel('),
+        isTrue,
+        reason: 'push-aside 面板应直接渲染 VideoSubtitleJumpPanel（自带 header + 关闭）',
+      );
+      expect(
+        body.contains('VideoTranslucentSidePanel('),
         isFalse,
-        reason: 'overlay 内容构造器不应再引用 subtitleList（已改 push-aside）',
+        reason: '字幕面板不应再被 VideoTranslucentSidePanel 套一层标题栏（否则双标题，BUG-245）',
       );
     });
+
+    test(
+      '字幕列表已无 overlay 路径（不再走 _buildVideoSidePanelContent 的 subtitleList 分支）',
+      () {
+        // overlay 内容构造器不应再对 subtitleList 单独分支（该 kind 已删）。
+        // TODO-590 batch10：_buildVideoSidePanelContent 已抽到 video_fushi/side_panel.part.dart
+        // 并是该 part 末方法；旧的 _buildAudioTracksSidePanel 终点失效（它在 audio_track.part，
+        // 排在合并语料里 side_panel.part 之前，即在搬出后的 content 之前）。改用 part 顶格
+        // extension 闭合 `\n}` 作终点（content 体内无顶格 `}`）。
+        final int start = src.indexOf('Widget _buildVideoSidePanelContent(');
+        expect(start, greaterThanOrEqualTo(0));
+        final int end = src.indexOf('\n}', start);
+        expect(end, greaterThan(start));
+        final String contentBody = src.substring(start, end);
+        expect(
+          contentBody.contains('_VideoSidePanelKind.subtitleList'),
+          isFalse,
+          reason: 'overlay 内容构造器不应再引用 subtitleList（已改 push-aside）',
+        );
+      },
+    );
   });
 
   group('打开字幕列表保留控制条（BUG-371）', () {
@@ -97,8 +108,11 @@ void main() {
       final int start = src.indexOf(signature);
       expect(start, greaterThanOrEqualTo(0), reason: '需有 $signature');
       final int end = src.indexOf(endMarker, start + signature.length);
-      expect(end, greaterThan(start),
-          reason: '需有 $endMarker 作为 $signature 的段终点');
+      expect(
+        end,
+        greaterThan(start),
+        reason: '需有 $endMarker 作为 $signature 的段终点',
+      );
       return src.substring(start, end);
     }
 
@@ -107,11 +121,18 @@ void main() {
         'void _toggleSubtitleJumpList() {',
         'void _closeSubtitleJumpList() {',
       );
-      expect(body.contains('_subtitleListVisible.value = true;'), isTrue,
-          reason: '打开分支仍应置 _subtitleListVisible = true（push-aside 入口）');
-      expect(body.contains('_markControlsVisible(false);'), isFalse,
-          reason: 'BUG-371：打开字幕列表不应主动收起控制条——它是 push-aside 不遮控制条，'
-              '左/右按钮应继续可见可用');
+      expect(
+        body.contains('_subtitleListVisible.value = true;'),
+        isTrue,
+        reason: '打开分支仍应置 _subtitleListVisible = true（push-aside 入口）',
+      );
+      expect(
+        body.contains('_markControlsVisible(false);'),
+        isFalse,
+        reason:
+            'BUG-371：打开字幕列表不应主动收起控制条——它是 push-aside 不遮控制条，'
+            '左/右按钮应继续可见可用',
+      );
     });
   });
 }

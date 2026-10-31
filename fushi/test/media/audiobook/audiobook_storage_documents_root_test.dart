@@ -26,38 +26,43 @@ void main() {
     AudiobookStorage.documentsRootResolver = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
   });
 
   test('注入自定义数据根 → 有声书持久根落新根下的 audiobooks/', () async {
-    final Directory custom =
-        Directory(p.join(Directory.systemTemp.path, 'todo1236_custom_root'));
+    final Directory custom = Directory(
+      p.join(Directory.systemTemp.path, 'todo1236_custom_root'),
+    );
     AudiobookStorage.documentsRootResolver = () async => custom;
 
     final String root = await AudiobookStorage.audiobooksRootDir();
 
-    expect(p.equals(root, p.join(custom.path, 'audiobooks')), isTrue,
-        reason: '自定义数据根生效时新写入应落 <custom>/audiobooks，实际=$root');
+    expect(
+      p.equals(root, p.join(custom.path, 'audiobooks')),
+      isTrue,
+      reason: '自定义数据根生效时新写入应落 <custom>/audiobooks，实际=$root',
+    );
   });
 
   Future<Directory> mockPlatformDocs() async {
-    final Directory platformDocs =
-        await Directory.systemTemp.createTemp('todo1236_default_docs_');
+    final Directory platformDocs = await Directory.systemTemp.createTemp(
+      'todo1236_default_docs_',
+    );
     addTearDown(() {
       if (platformDocs.existsSync()) platformDocs.deleteSync(recursive: true);
     });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return platformDocs.path;
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return platformDocs.path;
+            }
+            return null;
+          },
+        );
     return platformDocs;
   }
 
@@ -70,23 +75,31 @@ void main() {
 
     final String root = await AudiobookStorage.audiobooksRootDir();
 
-    expect(p.equals(root, p.join(platformDocs.path, 'audiobooks')), isTrue,
-        reason: '未注入时应退回平台 Documents/audiobooks，实际=$root');
+    expect(
+      p.equals(root, p.join(platformDocs.path, 'audiobooks')),
+      isTrue,
+      reason: '未注入时应退回平台 Documents/audiobooks，实际=$root',
+    );
   });
 
   test('平台默认已装配后 app 注入 → app 根优先（??= 不覆盖）', () async {
     final Directory platformDocs = await mockPlatformDocs();
-    final Directory custom =
-        Directory(p.join(Directory.systemTemp.path, 'todo1236_custom_root2'));
+    final Directory custom = Directory(
+      p.join(Directory.systemTemp.path, 'todo1236_custom_root2'),
+    );
 
     AudiobookStorage.documentsRootResolver = () async => custom;
     installAudiobookStoragePlatform();
 
     final String root = await AudiobookStorage.audiobooksRootDir();
 
-    expect(p.equals(root, p.join(custom.path, 'audiobooks')), isTrue,
-        reason: 'installAudiobookStoragePlatform 只能补默认值，不得覆盖 app 注入；'
-            '实际=$root（平台=${platformDocs.path}）');
+    expect(
+      p.equals(root, p.join(custom.path, 'audiobooks')),
+      isTrue,
+      reason:
+          'installAudiobookStoragePlatform 只能补默认值，不得覆盖 app 注入；'
+          '实际=$root（平台=${platformDocs.path}）',
+    );
   });
 
   test('两处都未装配 → StateError，不静默猜目录', () async {

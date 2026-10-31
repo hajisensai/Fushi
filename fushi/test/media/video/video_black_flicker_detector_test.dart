@@ -10,20 +10,24 @@ class _Feeder {
   /// 喂一个 1000ms 播放窗，本窗新增 [deltaLateFrames] 迟帧，返回是否刚触发。
   bool play(int deltaLateFrames) {
     _cumulative += deltaLateFrames;
-    return detector.addSample(VideoFlickerSample(
-      cumulativeLateFrames: _cumulative,
-      windowMs: 1000,
-      playing: true,
-    ));
+    return detector.addSample(
+      VideoFlickerSample(
+        cumulativeLateFrames: _cumulative,
+        windowMs: 1000,
+        playing: true,
+      ),
+    );
   }
 
   /// 喂一个暂停窗（累计不变），返回是否触发（应恒 false）。
   bool pause() {
-    return detector.addSample(VideoFlickerSample(
-      cumulativeLateFrames: _cumulative,
-      windowMs: 1000,
-      playing: false,
-    ));
+    return detector.addSample(
+      VideoFlickerSample(
+        cumulativeLateFrames: _cumulative,
+        windowMs: 1000,
+        playing: false,
+      ),
+    );
   }
 }
 
@@ -45,8 +49,9 @@ void main() {
     });
 
     test('触发后永不再触发（每生命周期一次）', () {
-      final VideoBlackFlickerDetector d =
-          VideoBlackFlickerDetector(sustainedBadWindows: 2);
+      final VideoBlackFlickerDetector d = VideoBlackFlickerDetector(
+        sustainedBadWindows: 2,
+      );
       final _Feeder f = _Feeder(d);
       f.play(0);
       f.play(20);
@@ -107,46 +112,56 @@ void main() {
     });
 
     test('累计计数器回退（换片重置）时按 0 增量处理，不误报', () {
-      final VideoBlackFlickerDetector d =
-          VideoBlackFlickerDetector(sustainedBadWindows: 2);
+      final VideoBlackFlickerDetector d = VideoBlackFlickerDetector(
+        sustainedBadWindows: 2,
+      );
       // 基线很高。
       expect(
-        d.addSample(const VideoFlickerSample(
-          cumulativeLateFrames: 1000,
-          windowMs: 1000,
-          playing: true,
-        )),
+        d.addSample(
+          const VideoFlickerSample(
+            cumulativeLateFrames: 1000,
+            windowMs: 1000,
+            playing: true,
+          ),
+        ),
         isFalse,
       );
       // libmpv 换片把计数器重置回小值：负增量按 0，好窗、清连击。
       expect(
-        d.addSample(const VideoFlickerSample(
-          cumulativeLateFrames: 5,
-          windowMs: 1000,
-          playing: true,
-        )),
+        d.addSample(
+          const VideoFlickerSample(
+            cumulativeLateFrames: 5,
+            windowMs: 1000,
+            playing: true,
+          ),
+        ),
         isFalse,
       );
       expect(d.consecutiveBadWindows, 0);
     });
 
     test('windowMs 非法（<=0）只重定基线不判定', () {
-      final VideoBlackFlickerDetector d =
-          VideoBlackFlickerDetector(sustainedBadWindows: 1);
+      final VideoBlackFlickerDetector d = VideoBlackFlickerDetector(
+        sustainedBadWindows: 1,
+      );
       expect(
-        d.addSample(const VideoFlickerSample(
-          cumulativeLateFrames: 0,
-          windowMs: 0,
-          playing: true,
-        )),
+        d.addSample(
+          const VideoFlickerSample(
+            cumulativeLateFrames: 0,
+            windowMs: 0,
+            playing: true,
+          ),
+        ),
         isFalse,
       );
       expect(
-        d.addSample(const VideoFlickerSample(
-          cumulativeLateFrames: 100,
-          windowMs: 0,
-          playing: true,
-        )),
+        d.addSample(
+          const VideoFlickerSample(
+            cumulativeLateFrames: 100,
+            windowMs: 0,
+            playing: true,
+          ),
+        ),
         isFalse,
       );
       expect(d.hasFired, isFalse);

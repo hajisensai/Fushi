@@ -303,8 +303,8 @@ class AsrModelCatalog {
 /// 既有选择一条不丢。
 String asrChoiceKey(AsrLanguage language, AsrAudioProfile profile) =>
     profile == AsrAudioProfile.cleanSpeech
-        ? language.tag
-        : '${language.tag}@${profile.name}';
+    ? language.tag
+    : '${language.tag}@${profile.name}';
 
 /// [asrChoiceKey] 的逆：拆出语言标签与素材；认不出的素材名返回 null（忽略该条）。
 ({String tag, AsrAudioProfile profile})? _parseChoiceKey(String key) {
@@ -338,8 +338,9 @@ AsrModelRegistry buildAsrModelRegistry(AsrModelCatalog catalog) {
   // 3) 每条选择生成一份只声明那一种语言、那一种素材的窄包置顶。
   final List<AsrModelPack> narrowed = <AsrModelPack>[];
   for (final MapEntry<String, String> entry in catalog.choices.entries) {
-    final ({String tag, AsrAudioProfile profile})? key =
-        _parseChoiceKey(entry.key);
+    final ({String tag, AsrAudioProfile profile})? key = _parseChoiceKey(
+      entry.key,
+    );
     if (key == null) continue;
     final AsrModelPack? pack = _packById(ordered, entry.value);
     if (pack == null) continue;

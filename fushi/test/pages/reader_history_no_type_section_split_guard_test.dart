@@ -31,8 +31,11 @@ void main() {
     const String end = 'Widget buildPlaceholder(';
     final int startIdx = source.indexOf(start);
     final int endIdx = source.indexOf(end);
-    expect(startIdx, greaterThanOrEqualTo(0),
-        reason: '_buildBodyWithSrtBooks 应存在');
+    expect(
+      startIdx,
+      greaterThanOrEqualTo(0),
+      reason: '_buildBodyWithSrtBooks 应存在',
+    );
     expect(endIdx, greaterThan(startIdx), reason: 'buildPlaceholder 应在其后');
     return source.substring(startIdx, endIdx);
   }

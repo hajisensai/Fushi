@@ -28,8 +28,10 @@ class FushiFrequency {
 }
 
 class FushiFrequencyEntry {
-  const FushiFrequencyEntry(
-      {required this.dictName, required this.frequencies});
+  const FushiFrequencyEntry({
+    required this.dictName,
+    required this.frequencies,
+  });
   final String dictName;
   final List<FushiFrequency> frequencies;
 }
@@ -151,7 +153,8 @@ class FushiKanjiResult {
       radical: map['radical'] as String? ?? '',
       strokes: (map['strokes'] as num?)?.toInt() ?? 0,
       meanings: List<String>.from(map['meanings'] as List? ?? const <String>[]),
-      stats: (map['stats'] as Map?)?.map(
+      stats:
+          (map['stats'] as Map?)?.map(
             (Object? k, Object? v) =>
                 MapEntry(k.toString(), v?.toString() ?? ''),
           ) ??
@@ -173,15 +176,15 @@ class FushiKanjiResult {
   final String dictName;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
-        'character': character,
-        'onyomi': onyomi,
-        'kunyomi': kunyomi,
-        'radical': radical,
-        'strokes': strokes,
-        'meanings': meanings,
-        'stats': stats,
-        'dictName': dictName,
-      };
+    'character': character,
+    'onyomi': onyomi,
+    'kunyomi': kunyomi,
+    'radical': radical,
+    'strokes': strokes,
+    'meanings': meanings,
+    'stats': stats,
+    'dictName': dictName,
+  };
 }
 
 /// `fushidicts_zstd_decompress_file` 返回的非零错误码。

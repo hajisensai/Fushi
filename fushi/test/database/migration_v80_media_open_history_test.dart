@@ -36,18 +36,22 @@ CREATE TABLE media_items (
   imported_at INTEGER NOT NULL DEFAULT 0
 )
 ''');
-          rawDb.execute('INSERT INTO media_items (media_identifier, title, '
-              'media_type_identifier, media_source_identifier, unique_key, '
-              'base64_image, image_url, author, position, duration, '
-              'can_delete, can_edit, imported_at) '
-              "VALUES ('https://ex.com/m', '在线漫画', 'viewer', 'mangasrc', "
-              "'mangasrc/https://ex.com/m', 'AAAA', 'https://ex.com/c.jpg', "
-              "'作者', 42, 100, 1, 0, 1700000000000)");
-          rawDb.execute('INSERT INTO media_items (media_identifier, title, '
-              'media_type_identifier, media_source_identifier, unique_key, '
-              'position, duration, can_delete, can_edit, imported_at) '
-              "VALUES ('fushi://book/Bk', 'Bk', 'reader', 'hibiki', "
-              "'hibiki/fushi://book/Bk', 760, 1000, 1, 0, 1700000000001)");
+          rawDb.execute(
+            'INSERT INTO media_items (media_identifier, title, '
+            'media_type_identifier, media_source_identifier, unique_key, '
+            'base64_image, image_url, author, position, duration, '
+            'can_delete, can_edit, imported_at) '
+            "VALUES ('https://ex.com/m', '在线漫画', 'viewer', 'mangasrc', "
+            "'mangasrc/https://ex.com/m', 'AAAA', 'https://ex.com/c.jpg', "
+            "'作者', 42, 100, 1, 0, 1700000000000)",
+          );
+          rawDb.execute(
+            'INSERT INTO media_items (media_identifier, title, '
+            'media_type_identifier, media_source_identifier, unique_key, '
+            'position, duration, can_delete, can_edit, imported_at) '
+            "VALUES ('fushi://book/Bk', 'Bk', 'reader', 'hibiki', "
+            "'hibiki/fushi://book/Bk', 760, 1000, 1, 0, 1700000000001)",
+          );
           rawDb.execute('PRAGMA user_version = 79');
         },
       ),
@@ -67,8 +71,9 @@ CREATE TABLE media_items (
     expect(rows, hasLength(2), reason: '迁移零丢行');
     expect(rows.first.mediaId, 'fushi://book/Bk', reason: 'openedAt 倒序，较新者在前');
 
-    final MediaOpenHistoryRow online =
-        rows.singleWhere((r) => r.mediaSource == 'mangasrc');
+    final MediaOpenHistoryRow online = rows.singleWhere(
+      (r) => r.mediaSource == 'mangasrc',
+    );
     expect(online.mediaType, 'viewer');
     expect(online.openedAt, 1700000000000, reason: 'imported_at 平移');
     expect(online.position, 42);
@@ -80,16 +85,22 @@ CREATE TABLE media_items (
     expect(snap['author'], '作者');
     expect(snap['base64Image'], 'AAAA', reason: '遗留 base64 原样平移不丢');
 
-    final MediaOpenHistoryRow book =
-        rows.singleWhere((r) => r.mediaSource == 'hibiki');
+    final MediaOpenHistoryRow book = rows.singleWhere(
+      (r) => r.mediaSource == 'hibiki',
+    );
     final Map<String, dynamic> bookSnap =
         jsonDecode(book.snapshotJson) as Map<String, dynamic>;
-    expect(bookSnap.containsKey('imageUrl'), isFalse,
-        reason: 'NULL 字段不进 snapshot（不存哨兵）');
+    expect(
+      bookSnap.containsKey('imageUrl'),
+      isFalse,
+      reason: 'NULL 字段不进 snapshot（不存哨兵）',
+    );
 
     final legacy = await db
-        .customSelect("SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name='media_items'")
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type='table' "
+          "AND name='media_items'",
+        )
         .get();
     expect(legacy, isEmpty, reason: '旧表已 DROP');
   });

@@ -54,15 +54,23 @@ void main() {
     return tester.widget<FushiIconButton>(f);
   }
 
-  testWidgets('不传 historyNav：顶栏没有 ← →（没跳过就不占顶栏，与 Hoshi 默认一致）',
-      (WidgetTester tester) async {
+  testWidgets('不传 historyNav：顶栏没有 ← →（没跳过就不占顶栏，与 Hoshi 默认一致）', (
+    WidgetTester tester,
+  ) async {
     await pumpLayer(tester);
     expect(
-        find.byKey(const ValueKey<String>('popup_history_back')), findsNothing);
-    expect(find.byKey(const ValueKey<String>('popup_history_forward')),
-        findsNothing);
-    expect(find.byIcon(Icons.text_decrease), findsOneWidget,
-        reason: 'A−/A+ 与关闭照旧');
+      find.byKey(const ValueKey<String>('popup_history_back')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('popup_history_forward')),
+      findsNothing,
+    );
+    expect(
+      find.byIcon(Icons.text_decrease),
+      findsOneWidget,
+      reason: 'A−/A+ 与关闭照旧',
+    );
     expect(find.byIcon(Icons.close), findsOneWidget);
   });
 
@@ -92,8 +100,9 @@ void main() {
     final double forwardX = tester
         .getRect(find.byKey(const ValueKey<String>('popup_history_forward')))
         .left;
-    final double zoomOutX =
-        tester.getRect(find.byIcon(Icons.text_decrease)).left;
+    final double zoomOutX = tester
+        .getRect(find.byIcon(Icons.text_decrease))
+        .left;
     final double closeX = tester.getRect(find.byIcon(Icons.close)).left;
     expect(backX, lessThan(forwardX));
     expect(forwardX, lessThan(zoomOutX));
@@ -102,8 +111,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('popup_history_back')));
     await tester.pump();
     expect(backs, 1);
-    await tester
-        .tap(find.byKey(const ValueKey<String>('popup_history_forward')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('popup_history_forward')),
+    );
     await tester.pump();
     expect(forwards, 0, reason: '置灰的方向点了不触发');
   });
@@ -123,21 +133,27 @@ void main() {
       };
       hosts.forEach((String name, String path) {
         final String src = read(path);
-        final RegExp linkClick =
-            RegExp(r'onLinkClick:\s*\(query, localRect\)\s*=>\s*[\s\S]{0,120}?'
-                r'navigat\w*InPlace\(');
-        expect(linkClick.hasMatch(src), isTrue,
-            reason: '$name 的 onLinkClick 必须原地跳转（不再 push 子层）');
+        final RegExp linkClick = RegExp(
+          r'onLinkClick:\s*\(query, localRect\)\s*=>\s*[\s\S]{0,120}?'
+          r'navigat\w*InPlace\(',
+        );
         expect(
-            src.contains('historyNav: entry.hasNavigationHistory') ||
-                src.contains('historyNav: item.hasNavigationHistory'),
-            isTrue,
-            reason: '$name 必须按 hasNavigationHistory 把 ← → 传进层');
+          linkClick.hasMatch(src),
+          isTrue,
+          reason: '$name 的 onLinkClick 必须原地跳转（不再 push 子层）',
+        );
         expect(
-            src.contains('restoreScrollTop: entry.restoreScrollTop') ||
-                src.contains('restoreScrollTop: item.restoreScrollTop'),
-            isTrue,
-            reason: '$name 必须把待恢复滚动位透传进层');
+          src.contains('historyNav: entry.hasNavigationHistory') ||
+              src.contains('historyNav: item.hasNavigationHistory'),
+          isTrue,
+          reason: '$name 必须按 hasNavigationHistory 把 ← → 传进层',
+        );
+        expect(
+          src.contains('restoreScrollTop: entry.restoreScrollTop') ||
+              src.contains('restoreScrollTop: item.restoreScrollTop'),
+          isTrue,
+          reason: '$name 必须把待恢复滚动位透传进层',
+        );
       });
     });
 
@@ -152,14 +168,20 @@ void main() {
         final int end = src.indexOf('\n  }\n', start);
         final String fn = src.substring(start, end);
         expect(
-            fn.contains(
-                'result.entries.isEmpty && result.kanjiResults.isEmpty'),
-            isTrue,
-            reason: '$path：空结果不跳（Hoshi：count > 0 才 redirect）');
-        expect(fn.contains('searchTerm != termAtStart'), isTrue,
-            reason: '$path：往返期间本层已换词的迟到结果必须丢弃');
-        expect(fn.contains('currentScrollTop()'), isTrue,
-            reason: '$path：离开当前页前必须记滚动位');
+          fn.contains('result.entries.isEmpty && result.kanjiResults.isEmpty'),
+          isTrue,
+          reason: '$path：空结果不跳（Hoshi：count > 0 才 redirect）',
+        );
+        expect(
+          fn.contains('searchTerm != termAtStart'),
+          isTrue,
+          reason: '$path：往返期间本层已换词的迟到结果必须丢弃',
+        );
+        expect(
+          fn.contains('currentScrollTop()'),
+          isTrue,
+          reason: '$path：离开当前页前必须记滚动位',
+        );
         expect(fn.contains('.navigateInPlace('), isTrue);
       }
     });
@@ -168,15 +190,22 @@ void main() {
       final String base = read('lib/src/pages/base_source_page.dart');
       final int s1 = base.indexOf('Future<void> loadMoreForLayer(');
       final String f1 = base.substring(s1, base.indexOf('\n  }\n', s1));
-      expect(f1.contains('entry.searchTerm != term'), isTrue,
-          reason: 'base_source_page.loadMoreForLayer 必须核对词未变');
+      expect(
+        f1.contains('entry.searchTerm != term'),
+        isTrue,
+        reason: 'base_source_page.loadMoreForLayer 必须核对词未变',
+      );
 
-      final String mixin =
-          read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+      final String mixin = read(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      );
       final int s2 = mixin.indexOf('Future<void> loadMoreForEntry(');
       final String f2 = mixin.substring(s2, mixin.indexOf('\n  }\n', s2));
-      expect(f2.contains('entry.searchTerm == term'), isTrue,
-          reason: 'mixin.loadMoreForEntry 必须核对词未变');
+      expect(
+        f2.contains('entry.searchTerm == term'),
+        isTrue,
+        reason: 'mixin.loadMoreForEntry 必须核对词未变',
+      );
     });
   });
 
@@ -192,35 +221,52 @@ void main() {
       final int pending = fn.indexOf('window.__fushiPendingScrollTop =');
       final int reset = fn.indexOf('window.__fushiResetPopupScroll();');
       expect(incremental, isNonNegative);
-      expect(pending, greaterThan(reset),
-          reason: '先归零再写 pending，pending 才是渲染后的最终落点');
-      expect(pending, greaterThan(incremental),
-          reason: 'pending 只在全量渲染分支（增量追加保持当前滚动位）');
+      expect(
+        pending,
+        greaterThan(reset),
+        reason: '先归零再写 pending，pending 才是渲染后的最终落点',
+      );
+      expect(
+        pending,
+        greaterThan(incremental),
+        reason: 'pending 只在全量渲染分支（增量追加保持当前滚动位）',
+      );
     });
 
     test('popup.js：首发 / 尾批切片 / 尾批完成三处应用 pending，三份镜像一致', () {
       String readJs(String path) =>
           File(path).readAsStringSync().replaceAll('\r\n', '\n');
       final String js = readJs('assets/popup/popup.js');
-      expect(js.contains('function __fushiApplyPendingScrollTop(isFinal)'),
-          isTrue);
+      expect(
+        js.contains('function __fushiApplyPendingScrollTop(isFinal)'),
+        isTrue,
+      );
       final int fire = js.indexOf('function _firePopupRendered(');
       final String fireFn = js.substring(fire, js.indexOf('\n}\n', fire));
-      expect(fireFn.contains('__fushiApplyPendingScrollTop(!stillRendering)'),
-          isTrue,
-          reason: '首发（仍在渲染 → 够高才滚）与尾批完成（final → 兜底必滚）');
-      final int tail =
-          js.indexOf('scheduleRenderTail(renderNextDictionaryBlock);');
+      expect(
+        fireFn.contains('__fushiApplyPendingScrollTop(!stillRendering)'),
+        isTrue,
+        reason: '首发（仍在渲染 → 够高才滚）与尾批完成（final → 兜底必滚）',
+      );
+      final int tail = js.indexOf(
+        'scheduleRenderTail(renderNextDictionaryBlock);',
+      );
       final String beforeTail = js.substring(tail - 200, tail);
-      expect(beforeTail.contains('__fushiApplyPendingScrollTop(false)'), isTrue,
-          reason: '每个尾批切片后试一次：内容一够高就恢复，不等全部渲完');
+      expect(
+        beforeTail.contains('__fushiApplyPendingScrollTop(false)'),
+        isTrue,
+        reason: '每个尾批切片后试一次：内容一够高就恢复，不等全部渲完',
+      );
 
       for (final String mirror in <String>[
         'assets/browser_extension/vendor/popup.js',
         '../tools/browser-extension/vendor/popup.js',
       ]) {
-        expect(readJs(mirror), js,
-            reason: '$mirror 必须与 assets/popup/popup.js 逐字节一致');
+        expect(
+          readJs(mirror),
+          js,
+          reason: '$mirror 必须与 assets/popup/popup.js 逐字节一致',
+        );
       }
     });
   });

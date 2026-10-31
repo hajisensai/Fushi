@@ -59,8 +59,9 @@ mixin WebDavPathBackendMixin on SyncBackend, SyncFolderCache {
     final Uint8List? coverData = await readCoverData?.call();
     if (coverData != null) {
       try {
-        final ({String mimeType, String extension}) format =
-            detectCoverFormat(coverData);
+        final ({String mimeType, String extension}) format = detectCoverFormat(
+          coverData,
+        );
         final String coverPath = '${path}cover_1_6.${format.extension}';
         final bool existing = await davOps.headFile(coverPath);
         if (!existing) {

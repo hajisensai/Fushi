@@ -82,7 +82,7 @@ bool isFontDownloadTransportFailure(DioError e) {
 /// 页面与浏览器扩展端点共用同一份，落地文件的命名规则只有这一处。
 class FontDownloadService {
   FontDownloadService({required this.fontsDir, Dio Function()? dioFactory})
-      : _dioFactory = dioFactory ?? _createDefaultDio;
+    : _dioFactory = dioFactory ?? _createDefaultDio;
 
   /// 字体落地目录（`<appDirectory>/custom_fonts`）。不存在时按需创建。
   final Directory fontsDir;
@@ -92,17 +92,17 @@ class FontDownloadService {
   // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
   // 都不读）。改经统一装配点，三级 URL 回退逻辑不变。
   static Dio _createDefaultDio() => createAppDio(
-        options: BaseOptions(
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(minutes: 10),
-          followRedirects: true,
-          maxRedirects: 10,
-          headers: <String, String>{
-            'User-Agent': fushiUserAgent('custom-fonts'),
-            'Accept': '*/*',
-          },
-        ),
-      );
+    options: BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(minutes: 10),
+      followRedirects: true,
+      maxRedirects: 10,
+      headers: <String, String>{
+        'User-Agent': fushiUserAgent('custom-fonts'),
+        'Accept': '*/*',
+      },
+    ),
+  );
 
   /// 按扩展名判断是不是字体文件名（zip 内条目名 / 用户选的文件名都走这个）。
   static bool isFontFileName(String path) =>
@@ -148,8 +148,11 @@ class FontDownloadService {
         await raf.close();
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('FontDownloadService.detectFontExt', e, stack);
+      ErrorLogService.instance.log(
+        'FontDownloadService.detectFontExt',
+        e,
+        stack,
+      );
       return null;
     }
   }
@@ -172,8 +175,11 @@ class FontDownloadService {
         await raf.close();
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('FontDownloadService.isZipArchive', e, stack);
+      ErrorLogService.instance.log(
+        'FontDownloadService.isZipArchive',
+        e,
+        stack,
+      );
       return false;
     }
   }
@@ -226,8 +232,12 @@ class FontDownloadService {
       throw FormatException('Not a font file or zip archive', fileName);
     }
     return <ImportedFontFile>[
-      await _copySingleFont(src, fileName, detected,
-          overrideName: overrideName),
+      await _copySingleFont(
+        src,
+        fileName,
+        detected,
+        overrideName: overrideName,
+      ),
     ];
   }
 
@@ -237,7 +247,8 @@ class FontDownloadService {
     String ext, {
     String? overrideName,
   }) async {
-    final String name = overrideName ??
+    final String name =
+        overrideName ??
         importedFontDisplayName(
           src.path,
           fallback: p.basenameWithoutExtension(fileName),
@@ -274,13 +285,15 @@ class FontDownloadService {
     final Archive archive = ZipDecoder().decodeBytes(bytes);
     final List<ArchiveFile> fontEntries = archive.files
         .where(
-            (ArchiveFile entry) => entry.isFile && isFontFileName(entry.name))
+          (ArchiveFile entry) => entry.isFile && isFontFileName(entry.name),
+        )
         .toList();
     final Directory dir = _ensureFontsDir();
     if (overrideName != null && fontEntries.isNotEmpty) {
       final ArchiveFile entry = fontEntries.firstWhere((ArchiveFile entry) {
-        final String base =
-            p.basenameWithoutExtension(entry.name).toLowerCase();
+        final String base = p
+            .basenameWithoutExtension(entry.name)
+            .toLowerCase();
         return base.contains('regular') || base.contains('[wght]');
       }, orElse: () => fontEntries.first);
       final String ext = p.extension(entry.name);
@@ -303,10 +316,12 @@ class FontDownloadService {
       File(destPath).writeAsBytesSync(entry.content as List<int>);
       // 家族包（Google Fonts 的 zip 里 Regular + SemiBold …）按真实家族名落成同名
       // 条目，自动合成一个多字重家族。
-      imported.add(ImportedFontFile(
-        name: importedFontDisplayName(destPath, fallback: baseName),
-        path: destPath,
-      ));
+      imported.add(
+        ImportedFontFile(
+          name: importedFontDisplayName(destPath, fallback: baseName),
+          path: destPath,
+        ),
+      );
     }
     return imported;
   }

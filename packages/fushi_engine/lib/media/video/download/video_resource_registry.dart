@@ -33,7 +33,7 @@ bool isBtSiteProviderId(String providerId) =>
 /// 不持有任何站点的知识。没有用户站点也没配 Torznab 时 [providers] 为空。
 class VideoResourceRegistry {
   VideoResourceRegistry(Iterable<VideoResourceProvider> providers)
-      : providers = List<VideoResourceProvider>.unmodifiable(providers);
+    : providers = List<VideoResourceProvider>.unmodifiable(providers);
 
   final List<VideoResourceProvider> providers;
 
@@ -85,34 +85,33 @@ class VideoResourceRegistry {
     VideoResourceSearchRequest request,
   ) async {
     final VideoDiscoveryCategory? category = request.media?.discoveryCategory;
-    final List<VideoResourceProvider> applicable = providers
-        .where(
-          (VideoResourceProvider provider) =>
-              videoResourceProviderApplies(provider, category),
-        )
-        .toList()
-      ..sort(
-        (VideoResourceProvider a, VideoResourceProvider b) =>
-            a.priority.compareTo(b.priority),
-      );
+    final List<VideoResourceProvider> applicable =
+        providers
+            .where(
+              (VideoResourceProvider provider) =>
+                  videoResourceProviderApplies(provider, category),
+            )
+            .toList()
+          ..sort(
+            (VideoResourceProvider a, VideoResourceProvider b) =>
+                a.priority.compareTo(b.priority),
+          );
     final List<ProviderBatchResult<VideoResourceCandidate>> results =
         await Future.wait(
-      applicable.map(
-        (VideoResourceProvider provider) async {
-          try {
-            return await provider.search(request);
-          } on Object catch (error) {
-            return ProviderBatchResult<VideoResourceCandidate>.failure(
-              ExternalProviderFailure.fromException(
-                providerId: provider.id,
-                operation: 'search',
-                error: error,
-              ),
-            );
-          }
-        },
-      ),
-    );
+          applicable.map((VideoResourceProvider provider) async {
+            try {
+              return await provider.search(request);
+            } on Object catch (error) {
+              return ProviderBatchResult<VideoResourceCandidate>.failure(
+                ExternalProviderFailure.fromException(
+                  providerId: provider.id,
+                  operation: 'search',
+                  error: error,
+                ),
+              );
+            }
+          }),
+        );
     final ProviderBatchResult<VideoResourceCandidate> merged =
         ProviderBatchResult.merge(results);
     return VideoResourceSearchResult(
@@ -122,13 +121,10 @@ class VideoResourceRegistry {
             providerId: applicable[index].id,
             result: results[index],
             fallbackQuery: request.effectiveQuery,
-          ).withDisplayName(
-            switch (applicable[index]) {
-              final LabeledVideoResourceProvider labeled =>
-                labeled.displayName,
-              _ => null,
-            },
-          ),
+          ).withDisplayName(switch (applicable[index]) {
+            final LabeledVideoResourceProvider labeled => labeled.displayName,
+            _ => null,
+          }),
       ],
       // 先去重（identityKey + providerPriority），再按季号/标题贴合度重排。
       // Nyaa 只做模糊词匹配，不重排的话搜 "xxx 2" 会被做种更多的 S1/S3 压在前面。
@@ -160,8 +156,8 @@ class VideoResourceRegistry {
       final String expected = isBtSiteProviderId(selection.providerId)
           ? provider.id
           : selection.providerId;
-      final ProviderBatchResult<VideoResourceCandidate> result =
-          await provider.search(request);
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(request);
       for (final VideoResourceCandidate candidate in result.items) {
         if (candidate.remoteId == selection.remoteId &&
             (candidate.providerId == expected ||

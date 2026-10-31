@@ -16,9 +16,11 @@ enum FrequencyAggregate {
   /// 取最小：任一词典认为常见就按常见算。
   min;
 
-  static FrequencyAggregate fromName(String? name) => FrequencyAggregate.values
-      .firstWhere((FrequencyAggregate v) => v.name == name,
-          orElse: () => FrequencyAggregate.harmonic);
+  static FrequencyAggregate fromName(String? name) =>
+      FrequencyAggregate.values.firstWhere(
+        (FrequencyAggregate v) => v.name == name,
+        orElse: () => FrequencyAggregate.harmonic,
+      );
 }
 
 /// 一条词频值对应的排序 rank。
@@ -56,8 +58,10 @@ int? aggregateFrequencyRanks(List<int> ranks, FrequencyAggregate mode) {
     case FrequencyAggregate.min:
       return ranks.reduce((int a, int b) => a < b ? a : b);
     case FrequencyAggregate.harmonic:
-      final double reciprocalSum =
-          ranks.fold<double>(0, (double sum, int v) => sum + 1 / v);
+      final double reciprocalSum = ranks.fold<double>(
+        0,
+        (double sum, int v) => sum + 1 / v,
+      );
       final double mean = ranks.length / reciprocalSum;
       // 同一个浮点误差在多本时同样存在（[10,15] 真值 12，裸 floor 给 11）。
       // 落在整数的 1e-9 邻域内就吸附回去，再向下取整。

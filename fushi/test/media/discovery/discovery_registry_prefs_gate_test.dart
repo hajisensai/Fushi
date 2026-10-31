@@ -37,12 +37,14 @@ void main() {
 
   test('偏好未就绪时取发现源注册表不抛，且不含任何 OPDS 源', () {
     final AppModel appModel = AppModel(testPlatformServices());
-    expect(appModel.isPreferencesReady, isFalse,
-        reason: '这条测试的前提就是偏好还没接上');
+    expect(appModel.isPreferencesReady, isFalse, reason: '这条测试的前提就是偏好还没接上');
 
     late MediaDiscoveryService service;
-    expect(() => service = appModel.mediaDiscoveryService, returnsNormally,
-        reason: '偏好就绪前取注册表不得解引用 prefsRepo');
+    expect(
+      () => service = appModel.mediaDiscoveryService,
+      returnsNormally,
+      reason: '偏好就绪前取注册表不得解引用 prefsRepo',
+    );
 
     expect(
       service.sources.whereType<OpdsDiscoverySource>(),
@@ -59,8 +61,9 @@ void main() {
     );
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory dir =
-        Directory.systemTemp.createTempSync('discovery_prefs_gate');
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'discovery_prefs_gate',
+    );
     final AppModel appModel = AppModel(testPlatformServices());
 
     // 偏好就绪前先取一次：这一步把「缺 OPDS 的注册表」种进缓存。
@@ -80,8 +83,8 @@ void main() {
     final MediaDiscoveryService warm = appModel.mediaDiscoveryService;
     expect(
       warm.sources.whereType<OpdsDiscoverySource>().map(
-            (MediaDiscoverySource s) => s.id,
-          ),
+        (MediaDiscoverySource s) => s.id,
+      ),
       <String>[opdsSourceIdFor('lib1')],
       reason: '偏好缺席时建的那份快照必须被重建，否则用户配的服务器永远不出现',
     );

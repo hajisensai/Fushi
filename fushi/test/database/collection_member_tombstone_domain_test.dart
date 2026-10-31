@@ -24,37 +24,45 @@ void main() {
 
   test('移出 uid 键 epub 成员 → 墓碑落 bookKey 域；重新加入按同域清除', () async {
     const String bookKey = 'my book';
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: 'My Book',
-      epubPath: '/x/my-book.epub',
-      extractDir: '/x/my-book',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1000,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'My Book',
+        epubPath: '/x/my-book.epub',
+        extractDir: '/x/my-book',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+      ),
+    );
     final String uid = (await db.resolveEpubBookUid(bookKey))!;
     final int cid = await db.createMediaCollection('C');
     await db.addToCollection(cid, MediaKind.epub, uid);
 
     await db.removeFromCollection(cid, MediaKind.epub, uid);
 
-    final List<CollectionMemberTombstoneRow> tombs =
-        await db.getAllCollectionMemberTombstones();
-    final CollectionMemberTombstoneRow memberTomb = tombs
-        .singleWhere((CollectionMemberTombstoneRow t) => t.entryKey.isNotEmpty);
-    expect(memberTomb.entryKey, bookKey,
-        reason: '墓碑必须落 bookKey 域（wire 可比），不得泄漏本机 uid');
+    final List<CollectionMemberTombstoneRow> tombs = await db
+        .getAllCollectionMemberTombstones();
+    final CollectionMemberTombstoneRow memberTomb = tombs.singleWhere(
+      (CollectionMemberTombstoneRow t) => t.entryKey.isNotEmpty,
+    );
+    expect(
+      memberTomb.entryKey,
+      bookKey,
+      reason: '墓碑必须落 bookKey 域（wire 可比），不得泄漏本机 uid',
+    );
     expect(memberTomb.entryKey, isNot(uid));
 
     // 重新加入（uid 键）→ 同域归一清墓碑，防「加回来了墓碑还在」误删。
     final int cid2 = await db.createMediaCollection('C');
     await db.addToCollection(cid2, MediaKind.epub, uid);
-    final List<CollectionMemberTombstoneRow> after =
-        await db.getAllCollectionMemberTombstones();
+    final List<CollectionMemberTombstoneRow> after = await db
+        .getAllCollectionMemberTombstones();
     expect(
-      after.where((CollectionMemberTombstoneRow t) =>
-          t.entryKey == bookKey && t.collectionName == 'C'),
+      after.where(
+        (CollectionMemberTombstoneRow t) =>
+            t.entryKey == bookKey && t.collectionName == 'C',
+      ),
       isEmpty,
       reason: '重新加入必须按 bookKey 域清掉墓碑',
     );
@@ -64,11 +72,13 @@ void main() {
     final int cid = await db.createMediaCollection('D');
     // 透传行：对端 bookKey,本地无 epub 行。
     await db.addToCollection(cid, MediaKind.epub, 'remote only book');
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/v1'),
-      title: const Value('V1'),
-      videoPath: const Value('/v/v1.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/v1'),
+        title: const Value('V1'),
+        videoPath: const Value('/v/v1.mkv'),
+      ),
+    );
     await db.addToCollection(cid, MediaKind.video, 'video/v1');
 
     await db.removeFromCollection(cid, MediaKind.epub, 'remote only book');
@@ -77,7 +87,10 @@ void main() {
     final Set<String> keys = (await db.getAllCollectionMemberTombstones())
         .map((CollectionMemberTombstoneRow t) => t.entryKey)
         .toSet();
-    expect(keys, containsAll(<String>{'remote only book', 'video/v1'}),
-        reason: '透传 epub 键与 video 键都原样落墓碑（反查不上/非 epub 不换算）');
+    expect(
+      keys,
+      containsAll(<String>{'remote only book', 'video/v1'}),
+      reason: '透传 epub 键与 video 键都原样落墓碑（反查不上/非 epub 不换算）',
+    );
   });
 }

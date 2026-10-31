@@ -22,11 +22,20 @@ void main() {
       b.addEntry(parentName: 'Book A', name: 'cover_1_6.jpg', id: 'c1');
       b.addEntry(parentName: 'Book A', name: 'tags.json', id: 't1');
       b.addEntry(
-          parentName: 'Book A', name: 'audioBook_1_6_1000_12.0.json', id: 'a1');
+        parentName: 'Book A',
+        name: 'audioBook_1_6_1000_12.0.json',
+        id: 'a1',
+      );
       b.addEntry(
-          parentName: 'Book A', name: 'statistics_1_6_1000.json', id: 's1');
+        parentName: 'Book A',
+        name: 'statistics_1_6_1000.json',
+        id: 's1',
+      );
       b.addEntry(
-          parentName: 'Book A', name: 'progress_1_6_1000_0.5.json', id: 'p1');
+        parentName: 'Book A',
+        name: 'progress_1_6_1000_0.5.json',
+        id: 'p1',
+      );
 
       final SyncFileTrio trio = b.build().trioFor('Book A');
       expect(trio.progress?.id, 'p1');
@@ -72,7 +81,10 @@ void main() {
       final RemoteListingBuilder b = RemoteListingBuilder();
       b.addFolder('Book A');
       b.addEntry(
-          parentName: '', name: 'progress_1_6_9999_0.9.json', id: 'spill');
+        parentName: '',
+        name: 'progress_1_6_9999_0.9.json',
+        id: 'spill',
+      );
       final RemoteListingSnapshot s = b.build();
 
       expect(s.trioFor('Book A').progress, isNull);
@@ -91,12 +103,16 @@ void main() {
       final RemoteListingBuilder b = RemoteListingBuilder();
       b.addFolder('__collections__');
       b.addEntry(
-          parentName: '__collections__',
-          name: 'collections-devA.json',
-          id: 'c');
+        parentName: '__collections__',
+        name: 'collections-devA.json',
+        id: 'c',
+      );
       b.addFolder('Book A');
       b.addEntry(
-          parentName: 'Book A', name: 'progress_1_6_1_0.1.json', id: 'p');
+        parentName: 'Book A',
+        name: 'progress_1_6_1_0.1.json',
+        id: 'p',
+      );
 
       final RemoteListingSnapshot s = b.build();
       final List<AssetEntry> ns = s.entriesOf('__collections__');
@@ -121,9 +137,15 @@ void main() {
     test('同一文件夹下多个同前缀文件时取最新——与 findSyncFileByPrefix 同律', () {
       final RemoteListingBuilder b = RemoteListingBuilder();
       b.addEntry(
-          parentName: 'Book A', name: 'progress_1_6_200_0.2.json', id: 'newer');
+        parentName: 'Book A',
+        name: 'progress_1_6_200_0.2.json',
+        id: 'newer',
+      );
       b.addEntry(
-          parentName: 'Book A', name: 'progress_1_6_100_0.1.json', id: 'older');
+        parentName: 'Book A',
+        name: 'progress_1_6_100_0.1.json',
+        id: 'older',
+      );
       final RemoteListingSnapshot s = b.build();
       expect(s.trioFor('Book A').progress?.id, 'newer');
       final List<SyncFileRef> files = <SyncFileRef>[

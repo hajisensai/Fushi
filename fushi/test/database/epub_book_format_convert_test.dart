@@ -52,8 +52,11 @@ void main() {
     final EpubBookRow? row = await db.getEpubBook(key);
     expect(row, isNotNull);
     expect(row!.format, 'manga');
-    expect(row.epubPath, 'manga.json',
-        reason: '漫画阅读器按 extractDir/epubPath 找 manga.json');
+    expect(
+      row.epubPath,
+      'manga.json',
+      reason: '漫画阅读器按 extractDir/epubPath 找 manga.json',
+    );
     expect(row.chapterCount, 180, reason: '漫画的 chapterCount 是页数');
     expect(row.chaptersJson, '[]');
     expect(row.coverPath, 'images/page_0001.png');
@@ -90,10 +93,16 @@ void main() {
     final EpubBookRow row = (await db.getEpubBook(key))!;
     expect(row.format, 'epub');
     expect(row.epubPath, 'scan.epub');
-    expect(row.mangaReadingMode, isNull,
-        reason: '仅 format=manga 的行有意义，转回书必须清掉');
-    expect(row.chaptersJson, '["c1","c2"]',
-        reason: '转漫画时被覆盖成 []，转回来必须由重新解析原文件得到——所以反向也是重建');
+    expect(
+      row.mangaReadingMode,
+      isNull,
+      reason: '仅 format=manga 的行有意义，转回书必须清掉',
+    );
+    expect(
+      row.chaptersJson,
+      '["c1","c2"]',
+      reason: '转漫画时被覆盖成 []，转回来必须由重新解析原文件得到——所以反向也是重建',
+    );
   });
 
   test('转化后合集成员仍指向这本书（身份不变 → 零悬挂引用）', () async {
@@ -113,13 +122,20 @@ void main() {
       coverPath: 'images/page_0001.png',
     );
 
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     expect(items, hasLength(1));
-    expect(items.single.entryKey, uid,
-        reason: 'v83 成员键 = uid，转化前后不变（bookKey 已不是成员键域）');
-    expect(items.single.mediaType, MediaKind.epub.dbValue,
-        reason: '漫画在合集值域里就是 epub——MediaKind 里根本没有 manga');
+    expect(
+      items.single.entryKey,
+      uid,
+      reason: 'v83 成员键 = uid，转化前后不变（bookKey 已不是成员键域）',
+    );
+    expect(
+      items.single.mediaType,
+      MediaKind.epub.dbValue,
+      reason: '漫画在合集值域里就是 epub——MediaKind 里根本没有 manga',
+    );
   });
 
   test('转化后阅读进度与完成标记仍在（进度单位换轨是另一回事，行不能丢）', () async {
@@ -167,8 +183,11 @@ void main() {
     );
 
     final EpubBookRow row = (await db.getEpubBook(key))!;
-    expect(row.coverPath, 'cover.jpg',
-        reason: '省略 coverPath 必须保留原封面——写成 Value(coverPath) 会在此变成 null');
+    expect(
+      row.coverPath,
+      'cover.jpg',
+      reason: '省略 coverPath 必须保留原封面——写成 Value(coverPath) 会在此变成 null',
+    );
     expect(row.format, 'manga', reason: '其余列照常写穿');
   });
 

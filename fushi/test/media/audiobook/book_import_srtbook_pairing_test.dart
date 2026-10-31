@@ -37,8 +37,11 @@ void main() {
 
     test('补写后 getSrtBookByBookKey 命中，字段映射正确，uid 稳定派生', () async {
       const String bookKey = 'Adachi to Shimamura';
-      expect(await db.getSrtBookByBookKey(bookKey), isNull,
-          reason: '前置：尚无配对 SrtBook');
+      expect(
+        await db.getSrtBookByBookKey(bookKey),
+        isNull,
+        reason: '前置：尚无配对 SrtBook',
+      );
 
       await writeEpubBackedSrtBook(
         repo: repo,
@@ -54,20 +57,23 @@ void main() {
 
       final SrtBookRow? row = await db.getSrtBookByBookKey(bookKey);
       expect(row, isNotNull, reason: '补写后必须能按 bookKey 查到配对 SrtBook');
-      expect(row!.uid, 'srtbook_epub_$bookKey',
-          reason: 'uid 必须稳定派生（禁 DateTime.now()）');
+      expect(
+        row!.uid,
+        'srtbook_epub_$bookKey',
+        reason: 'uid 必须稳定派生（禁 DateTime.now()）',
+      );
       expect(row.bookKey, bookKey);
       expect(row.title, '安達としまむら');
       expect(row.author, '入間人間');
-      expect(row.srtPath, '/abs/persist/$bookKey/aligned.srt',
-          reason: 'srtPath 必须等于 audiobook.alignmentPath（同批落盘文件）');
       expect(
-        (jsonDecode(row.audioPathsJson!) as List).cast<String>(),
-        <String>[
-          '/abs/persist/$bookKey/disc1.mp3',
-          '/abs/persist/$bookKey/disc2.mp3',
-        ],
+        row.srtPath,
+        '/abs/persist/$bookKey/aligned.srt',
+        reason: 'srtPath 必须等于 audiobook.alignmentPath（同批落盘文件）',
       );
+      expect((jsonDecode(row.audioPathsJson!) as List).cast<String>(), <String>[
+        '/abs/persist/$bookKey/disc1.mp3',
+        '/abs/persist/$bookKey/disc2.mp3',
+      ]);
       // 必改4：cover_path 两路径都留空（export 不依赖 srtBook.coverPath）。
       expect(row.coverPath, isNull, reason: 'EPUB-backed 配对行 cover_path 留空');
     });
@@ -111,8 +117,9 @@ void main() {
       );
 
       final List<SrtBookRow> all = await db.getAllSrtBooks();
-      final Iterable<SrtBookRow> forKey =
-          all.where((SrtBookRow r) => r.bookKey == bookKey);
+      final Iterable<SrtBookRow> forKey = all.where(
+        (SrtBookRow r) => r.bookKey == bookKey,
+      );
       expect(forKey, hasLength(1), reason: '幂等：同 bookKey 不得新增第二行');
       expect(forKey.single.uid, first.uid, reason: 'uid 必须稳定不变');
       expect(forKey.single.uid, 'srtbook_epub_$bookKey');
@@ -147,10 +154,16 @@ void main() {
 
       final SrtBook after = (await repo.findByUid('srtbook_epub_$bookKey'))!;
       expect(after.srtPath, '/abs/persist/$bookKey/new.srt', reason: '字幕确实换了');
-      expect(after.audioPaths, equals(<String>['/abs/persist/$bookKey/a.mp3']),
-          reason: '换字幕不得清空配对行的音频（BUG-1678）');
-      expect(after.coverPath, '/abs/persist/$bookKey/cover.jpg',
-          reason: '本次没碰的列不该被整行覆盖清掉');
+      expect(
+        after.audioPaths,
+        equals(<String>['/abs/persist/$bookKey/a.mp3']),
+        reason: '换字幕不得清空配对行的音频（BUG-1678）',
+      );
+      expect(
+        after.coverPath,
+        '/abs/persist/$bookKey/cover.jpg',
+        reason: '本次没碰的列不该被整行覆盖清掉',
+      );
     });
   });
 }

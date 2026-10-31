@@ -34,8 +34,10 @@ void main() {
     });
 
     test('token 能被与键盘路径同一个 resolve 反解回按钮号', () {
-      final String? token =
-          dictionaryPopupPointerToken(buttons: kBackMouseButton, spec: spec);
+      final String? token = dictionaryPopupPointerToken(
+        buttons: kBackMouseButton,
+        spec: spec,
+      );
       expect(MouseBinding.deserialize(token!)?.button, 3);
     });
 
@@ -78,8 +80,10 @@ void main() {
     );
 
     test('宿主拥有指针时，脚本既不装鼠标监听、表也是空的', () {
-      final String js =
-          dictionaryPopupInputBridgeScript(spec, hostOwnsPointer: true);
+      final String js = dictionaryPopupInputBridgeScript(
+        spec,
+        hostOwnsPointer: true,
+      );
       expect(js.contains("addEventListener('mousedown'"), isFalse);
       expect(js.contains("addEventListener('auxclick'"), isFalse);
       // 键表照常下发（键盘那条路不受指针所有权影响）。
@@ -90,11 +94,15 @@ void main() {
     });
 
     test('WebView 拥有指针时，鼠标监听与按钮表都在', () {
-      final String js =
-          dictionaryPopupInputBridgeScript(spec, hostOwnsPointer: false);
+      final String js = dictionaryPopupInputBridgeScript(
+        spec,
+        hostOwnsPointer: false,
+      );
       expect(js.contains("addEventListener('mousedown'"), isTrue);
-      expect(RegExp(r'Buttons_hostInputToken.\] = \[2, 3\];').hasMatch(js),
-          isTrue);
+      expect(
+        RegExp(r'Buttons_hostInputToken.\] = \[2, 3\];').hasMatch(js),
+        isTrue,
+      );
     });
 
     test('空 spec 仍生成清表脚本，不触发断言', () {
@@ -113,8 +121,9 @@ void main() {
       WidgetTester tester, {
       required bool hostOwnsPointer,
       required int buttons,
-      DictionaryPopupInputSpec spec =
-          const DictionaryPopupInputSpec(mouseButtons: <int>[3]),
+      DictionaryPopupInputSpec spec = const DictionaryPopupInputSpec(
+        mouseButtons: <int>[3],
+      ),
     }) async {
       final List<String> tokens = <String>[];
       await tester.pumpWidget(
@@ -253,11 +262,12 @@ void main() {
     /// 到不了宿主那层 Focus。这里用「页面 Focus 在浮层子树**之外**」+「焦点在浮层
     /// 子树内的节点上」精确重建这个拓扑。
     Future<({List<String> tokens, List<LogicalKeyboardKey> pageKeys})>
-        pumpAndKey(
+    pumpAndKey(
       WidgetTester tester, {
       required LogicalKeyboardKey key,
-      DictionaryPopupInputSpec spec =
-          const DictionaryPopupInputSpec(keyTokens: <String>['Escape']),
+      DictionaryPopupInputSpec spec = const DictionaryPopupInputSpec(
+        keyTokens: <String>['Escape'],
+      ),
     }) async {
       final List<String> tokens = <String>[];
       final List<LogicalKeyboardKey> pageKeys = <LogicalKeyboardKey>[];
@@ -306,8 +316,11 @@ void main() {
 
       insidePopup.requestFocus();
       await tester.pump();
-      expect(insidePopup.hasPrimaryFocus, isTrue,
-          reason: '前提：焦点必须真的落在浮层子树里，否则这条守卫测的不是断链场景');
+      expect(
+        insidePopup.hasPrimaryFocus,
+        isTrue,
+        reason: '前提：焦点必须真的落在浮层子树里，否则这条守卫测的不是断链场景',
+      );
 
       await tester.sendKeyEvent(key);
       await tester.pump();

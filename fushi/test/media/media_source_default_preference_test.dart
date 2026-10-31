@@ -8,15 +8,15 @@ import 'package:fushi_core/fushi_core.dart';
 
 class _TestMediaSource extends MediaSource {
   _TestMediaSource()
-      : super(
-          uniqueKey: 'test_source',
-          sourceName: 'Test Source',
-          description: 'Test source',
-          mediaType: ReaderMediaType.instance,
-          icon: Icons.article,
-          implementsSearch: false,
-          implementsHistory: false,
-        );
+    : super(
+        uniqueKey: 'test_source',
+        sourceName: 'Test Source',
+        description: 'Test source',
+        mediaType: ReaderMediaType.instance,
+        icon: Icons.article,
+        implementsSearch: false,
+        implementsHistory: false,
+      );
 
   @override
   double get aspectRatio => 1;
@@ -47,32 +47,35 @@ class _TestPageState extends BasePageState {
 }
 
 void main() {
-  test('reading a missing default preference does not write through to DB',
-      () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    MediaSource.setDatabase(db);
-    final _TestMediaSource source = _TestMediaSource();
-    await source.initialise();
+  test(
+    'reading a missing default preference does not write through to DB',
+    () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      final _TestMediaSource source = _TestMediaSource();
+      await source.initialise();
 
-    expect(
-      source.getPreference<int>(key: 'example_default', defaultValue: 7),
-      7,
-    );
+      expect(
+        source.getPreference<int>(key: 'example_default', defaultValue: 7),
+        7,
+      );
 
-    final Map<String, String> prefs = await db.getAllPrefs();
-    expect(
-      prefs.containsKey('src:test_source:example_default'),
-      isFalse,
-      reason: 'a synchronous preference read must not start an unawaitable '
-          'database write that can race with source shutdown or test cleanup',
-    );
-  });
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(
+        prefs.containsKey('src:test_source:example_default'),
+        isFalse,
+        reason:
+            'a synchronous preference read must not start an unawaitable '
+            'database write that can race with source shutdown or test cleanup',
+      );
+    },
+  );
 
   test('setPreference still writes explicit user changes to DB', () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     MediaSource.setDatabase(db);
     final _TestMediaSource source = _TestMediaSource();

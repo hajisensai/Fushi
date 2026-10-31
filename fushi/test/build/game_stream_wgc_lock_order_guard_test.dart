@@ -32,7 +32,10 @@ void main() {
   const String frameLock = 'std::lock_guard<std::mutex> lock(frame_mutex_);';
 
   test('① 设备开启多线程保护并保存 ID3D11Multithread', () {
-    final String setup = methodBody(capture, 'std::string SetupCaptureLocked() {');
+    final String setup = methodBody(
+      capture,
+      'std::string SetupCaptureLocked() {',
+    );
     expect(setup.contains('d3d_.As(&multithread_)'), isTrue);
     expect(
       setup.contains('multithread_->SetMultithreadProtected(TRUE);'),
@@ -99,7 +102,10 @@ void main() {
   });
 
   test('③ StartCapture 在 frame_mutex_ 之外调用', () {
-    final String setup = methodBody(capture, 'std::string SetupCaptureLocked() {');
+    final String setup = methodBody(
+      capture,
+      'std::string SetupCaptureLocked() {',
+    );
     expect(
       setup.contains('StartCapture()'),
       isFalse,

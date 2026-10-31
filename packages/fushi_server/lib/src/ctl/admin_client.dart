@@ -44,9 +44,9 @@ class AdminClient {
     required this.token,
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 30),
-  })  : interconnect = false,
-        _authorization = 'Bearer $token',
-        _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
+  }) : interconnect = false,
+       _authorization = 'Bearer $token',
+       _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
   // 每个请求都带 admin_token：回环 / 明文目标恒直连，绝不交给环境代理
   // （见 credential_http_proxy.dart）。
 
@@ -57,10 +57,10 @@ class AdminClient {
     required String password,
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 60),
-  })  : interconnect = true,
-        token = password,
-        _authorization = 'Basic ${base64Encode(utf8.encode('fushi:$password'))}',
-        _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
+  }) : interconnect = true,
+       token = password,
+       _authorization = 'Basic ${base64Encode(utf8.encode('fushi:$password'))}',
+       _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
 
   /// 连 [url] 上的互联 host。
   ///
@@ -68,22 +68,39 @@ class AdminClient {
   /// 这一个显式指定的 host:port** 放行证书校验失败（用户在命令行上点名了它，
   /// 等价于互联 client 首次连接时的 TOFU）。其它主机名 / 端口的坏证书照样拒绝。
   /// 走不可信网络时请用 `--fingerprint` 钉死（host 的「互联」设置页 / 配对时可见）。
-  static AdminClient forInterconnect({required String url, required String password, String? fingerprint}) {
+  static AdminClient forInterconnect({
+    required String url,
+    required String password,
+    String? fingerprint,
+  }) {
     final Uri baseUri = Uri.parse(url.trim());
-    if (!baseUri.hasScheme || baseUri.host.isEmpty || !<String>{'http', 'https'}.contains(baseUri.scheme)) {
-      throw AdminApiException(0, '无效的 --interconnect: $url（要写成 http(s)://host:port）');
+    if (!baseUri.hasScheme ||
+        baseUri.host.isEmpty ||
+        !<String>{'http', 'https'}.contains(baseUri.scheme)) {
+      throw AdminApiException(
+        0,
+        '无效的 --interconnect: $url（要写成 http(s)://host:port）',
+      );
     }
     if (password.isEmpty) {
-      throw const AdminApiException(0, '缺 host 密码：用 --password 或环境变量 FUSHI_HOST_PASSWORD');
+      throw const AdminApiException(
+        0,
+        '缺 host 密码：用 --password 或环境变量 FUSHI_HOST_PASSWORD',
+      );
     }
     final HttpClient http = HttpClient();
     if (baseUri.scheme == 'https') {
       final String? pin = _nonEmpty(fingerprint);
-      http.badCertificateCallback = (X509Certificate cert, String host, int port) => pin != null
+      http.badCertificateCallback =
+          (X509Certificate cert, String host, int port) => pin != null
           ? certificateMatchesFingerprint(cert, pin)
           : host == baseUri.host && port == baseUri.port;
     }
-    return AdminClient.interconnect(baseUri: baseUri, password: password, httpClient: http);
+    return AdminClient.interconnect(
+      baseUri: baseUri,
+      password: password,
+      httpClient: http,
+    );
   }
 
   /// 由服务端配置推出地址与凭据。
@@ -94,10 +111,19 @@ class AdminClient {
   /// * [fingerprint] 覆盖 TLS 钉扎指纹；缺省读数据目录里服务端自己的证书。
   ///
   /// 配置缺凭据 / admin 端口被关 / TLS 证书读不到时抛 [AdminApiException]（status 0）。
-  static Future<AdminClient> fromConfig(ServerConfig config, {String? url, String? token, String? fingerprint}) async {
-    final String? resolvedToken = _nonEmpty(token) ?? _nonEmpty(config.adminToken);
+  static Future<AdminClient> fromConfig(
+    ServerConfig config, {
+    String? url,
+    String? token,
+    String? fingerprint,
+  }) async {
+    final String? resolvedToken =
+        _nonEmpty(token) ?? _nonEmpty(config.adminToken);
     if (resolvedToken == null) {
-      throw const AdminApiException(0, '配置里没有 admin_token；先跑 fushi_server admin reset-token');
+      throw const AdminApiException(
+        0,
+        '配置里没有 admin_token；先跑 fushi_server admin reset-token',
+      );
     }
     final Uri baseUri;
     if (_nonEmpty(url) != null) {
@@ -107,7 +133,10 @@ class AdminClient {
       }
     } else {
       if (config.adminPort <= 0) {
-        throw const AdminApiException(0, '配置里 admin_port 为 0（WebUI / admin API 已关闭），ctl 无处可连');
+        throw const AdminApiException(
+          0,
+          '配置里 admin_port 为 0（WebUI / admin API 已关闭），ctl 无处可连',
+        );
       }
       baseUri = Uri(
         scheme: config.tls ? 'https' : 'http',
@@ -117,11 +146,17 @@ class AdminClient {
     }
     final HttpClient http = HttpClient();
     if (baseUri.scheme == 'https') {
-      final String pin = _nonEmpty(fingerprint) ?? await _localFingerprint(config);
-      http.badCertificateCallback = (X509Certificate cert, String host, int port) =>
-          certificateMatchesFingerprint(cert, pin);
+      final String pin =
+          _nonEmpty(fingerprint) ?? await _localFingerprint(config);
+      http.badCertificateCallback =
+          (X509Certificate cert, String host, int port) =>
+              certificateMatchesFingerprint(cert, pin);
     }
-    return AdminClient(baseUri: baseUri, token: resolvedToken, httpClient: http);
+    return AdminClient(
+      baseUri: baseUri,
+      token: resolvedToken,
+      httpClient: http,
+    );
   }
 
   final Uri baseUri;
@@ -135,20 +170,31 @@ class AdminClient {
   final String _authorization;
   final HttpClient _http;
 
-  Future<Object?> get(String path, {Map<String, String>? query}) => send('GET', path, query: query);
+  Future<Object?> get(String path, {Map<String, String>? query}) =>
+      send('GET', path, query: query);
 
-  Future<Object?> post(String path, {Object? body, Map<String, String>? query}) =>
-      send('POST', path, body: body, query: query);
+  Future<Object?> post(
+    String path, {
+    Object? body,
+    Map<String, String>? query,
+  }) => send('POST', path, body: body, query: query);
 
-  Future<Object?> put(String path, {Object? body}) => send('PUT', path, body: body);
+  Future<Object?> put(String path, {Object? body}) =>
+      send('PUT', path, body: body);
 
-  Future<Object?> delete(String path, {Map<String, String>? query}) => send('DELETE', path, query: query);
+  Future<Object?> delete(String path, {Map<String, String>? query}) =>
+      send('DELETE', path, query: query);
 
   /// 发一个请求，返回解析后的 JSON（空响应体返回 null）。
   ///
   /// [path] 是 `/api/admin/...` 形式的绝对路径；路径里的 id 由调用方用
   /// [adminPathSegment] 编码。非 2xx 抛 [AdminApiException]。
-  Future<Object?> send(String method, String path, {Object? body, Map<String, String>? query}) => _send(
+  Future<Object?> send(
+    String method,
+    String path, {
+    Object? body,
+    Map<String, String>? query,
+  }) => _send(
     method,
     path,
     query: query,
@@ -205,13 +251,18 @@ class AdminClient {
     Map<String, String>? query,
   }) async {
     final Uri uri = baseUri.replace(
-      path: _joinPath(baseUri.path, interconnect ? interconnectPathFor(path) : path),
+      path: _joinPath(
+        baseUri.path,
+        interconnect ? interconnectPathFor(path) : path,
+      ),
       queryParameters: query == null || query.isEmpty ? null : query,
     );
     final HttpClientResponse response;
     final String text;
     try {
-      final HttpClientRequest request = await _http.openUrl(method, uri).timeout(timeout);
+      final HttpClientRequest request = await _http
+          .openUrl(method, uri)
+          .timeout(timeout);
       request.headers.set(HttpHeaders.authorizationHeader, _authorization);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       await write(request);
@@ -261,7 +312,8 @@ const int kCtlUsageErrorStatus = -64;
 String interconnectPathFor(String adminPath) {
   const String host = '/api/admin/host/';
   const String downloads = '/api/admin/downloads';
-  if (adminPath.startsWith(host)) return '/api/${adminPath.substring(host.length)}';
+  if (adminPath.startsWith(host))
+    return '/api/${adminPath.substring(host.length)}';
   if (adminPath == downloads || adminPath.startsWith('$downloads/')) {
     return '/api/downloads${adminPath.substring(downloads.length)}';
   }
@@ -277,15 +329,26 @@ String adminPathSegment(String value) => Uri.encodeComponent(value);
 
 Future<String> _localFingerprint(ServerConfig config) async {
   // 只读、不生成：证书不存在说明服务端从没以 tls 起过，生成一张新的只会钉错。
-  final File cert = File(p.join(ServerPaths(config.dataDir).syncData.path, 'sync-tls', 'identity-cert.pem'));
+  final File cert = File(
+    p.join(
+      ServerPaths(config.dataDir).syncData.path,
+      'sync-tls',
+      'identity-cert.pem',
+    ),
+  );
   if (!await cert.exists()) {
-    throw AdminApiException(0, '找不到服务端 TLS 证书 ${cert.path}；先启动一次 serve，或用 --fingerprint 指定');
+    throw AdminApiException(
+      0,
+      '找不到服务端 TLS 证书 ${cert.path}；先启动一次 serve，或用 --fingerprint 指定',
+    );
   }
   return FushiTlsIdentityStore.fingerprintOf(await cert.readAsString());
 }
 
 String _joinPath(String base, String path) {
-  final String left = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+  final String left = base.endsWith('/')
+      ? base.substring(0, base.length - 1)
+      : base;
   final String right = path.startsWith('/') ? path : '/$path';
   return '$left$right';
 }

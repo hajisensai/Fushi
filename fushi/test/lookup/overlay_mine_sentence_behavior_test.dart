@@ -50,24 +50,23 @@ class _CapturingAnkiRepo extends BaseAnkiRepository {
 }
 
 AppModel _desktopModel(_CapturingAnkiRepo repo) => AppModel(
-      PlatformServices(
-        directory: DesktopDirectoryService(),
-        lifecycle: DesktopLifecycleService(),
-        clipboard: DesktopClipboardService(),
-        permission: DesktopPermissionService(),
-        deviceInfo: DesktopDeviceInfoService(),
-        createAnkiRepository: ({AnkiSettingsStore? settingsStore}) => repo,
-      ),
-    );
+  PlatformServices(
+    directory: DesktopDirectoryService(),
+    lifecycle: DesktopLifecycleService(),
+    clipboard: DesktopClipboardService(),
+    permission: DesktopPermissionService(),
+    deviceInfo: DesktopDeviceInfoService(),
+    createAnkiRepository: ({AnkiSettingsStore? settingsStore}) => repo,
+  ),
+);
 
 Map<String, Object?> _mineMessage(
   Map<String, Object?> fields, {
   int bridgeId = 7,
-}) =>
-    <String, Object?>{
-      '__bridgeId': bridgeId,
-      'args': <Object?>[fields],
-    };
+}) => <String, Object?>{
+  '__bridgeId': bridgeId,
+  'args': <Object?>[fields],
+};
 
 Future<void> _pumpUntil(bool Function() done) async {
   for (int i = 0; i < 100 && !done(); i++) {
@@ -78,8 +77,7 @@ Future<void> _pumpUntil(bool Function() done) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('clipboard sentence context reaches AnkiMiningContext.sentence',
-      () async {
+  test('clipboard sentence context reaches AnkiMiningContext.sentence', () async {
     final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
     const String clipboard = '今日は真剣勝負だ、負けられない。';
     int? repliedId;
@@ -102,8 +100,11 @@ void main() {
     await _pumpUntil(() => repo.captured != null);
 
     expect(repo.captured, isNotNull, reason: '制卡桥必须真的调到 repo.mineEntry');
-    expect(repo.captured!.sentence, clipboard,
-        reason: 'BUG-730：剪贴板整句必须落到卡片 {sentence}（过去恒空）');
+    expect(
+      repo.captured!.sentence,
+      clipboard,
+      reason: 'BUG-730：剪贴板整句必须落到卡片 {sentence}（过去恒空）',
+    );
     expect(repo.captured!.source, AnkiMiningSource.book);
     expect(repliedId, 7, reason: '制卡结果必须经 resolveBridge 回传（➕ 不挂）');
   });
@@ -124,8 +125,11 @@ void main() {
     );
 
     await _pumpUntil(() => repo.captured != null);
-    expect(repo.captured!.sentence, 'JS が明示的に送った文',
-        reason: 'JS 非空 sentence 优先，context 只是兜底（future-proof）');
+    expect(
+      repo.captured!.sentence,
+      'JS が明示的に送った文',
+      reason: 'JS 非空 sentence 优先，context 只是兜底（future-proof）',
+    );
   });
 
   test('empty context + no JS sentence -> empty (never crashes)', () async {
@@ -161,24 +165,25 @@ void main() {
       }),
       resolveBridge: (int id, Object? value) async => reply = value,
       sentenceContext: '浮窗中的完整台词',
-      miningHandler: ({
-        required Map<String, String> fields,
-        int? updateNoteId,
-      }) async {
-        delegatedFields = fields;
-        expect(updateNoteId, isNull);
-        return const <String, Object?>{
-          'ankiConnect': false,
-          'noteId': null,
-        };
-      },
+      miningHandler:
+          ({required Map<String, String> fields, int? updateNoteId}) async {
+            delegatedFields = fields;
+            expect(updateNoteId, isNull);
+            return const <String, Object?>{
+              'ankiConnect': false,
+              'noteId': null,
+            };
+          },
     );
 
     expect(handled, isTrue);
     await _pumpUntil(() => delegatedFields != null && reply != null);
     expect(delegatedFields?['expression'], '化け物');
-    expect(repo.captured, isNull,
-        reason: 'the generic clipboard mining path must be bypassed');
+    expect(
+      repo.captured,
+      isNull,
+      reason: 'the generic clipboard mining path must be bypassed',
+    );
     expect(reply, isA<Map<String, Object?>>());
   });
 
@@ -203,16 +208,14 @@ void main() {
         ],
       },
       resolveBridge: (int id, Object? value) async => replied = true,
-      miningHandler: ({
-        required Map<String, String> fields,
-        int? updateNoteId,
-      }) async {
-        delegatedNoteId = updateNoteId;
-        return const <String, Object?>{
-          'ankiConnect': false,
-          'noteId': null,
-        };
-      },
+      miningHandler:
+          ({required Map<String, String> fields, int? updateNoteId}) async {
+            delegatedNoteId = updateNoteId;
+            return const <String, Object?>{
+              'ankiConnect': false,
+              'noteId': null,
+            };
+          },
     );
 
     await _pumpUntil(() => delegatedNoteId != null && replied);

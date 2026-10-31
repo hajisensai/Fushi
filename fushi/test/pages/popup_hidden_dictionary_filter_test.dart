@@ -24,7 +24,8 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
@@ -37,16 +38,15 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'popup hidden-dictionary filter JS behavior test failed.\n'
+        reason:
+            'popup hidden-dictionary filter JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -64,20 +64,30 @@ void main() {
     // names list and skip those dictionaries (mirror of how createGlossarySection
     // consumes collapsedDictionaryNames).
     final int wrapper = js.indexOf('function createGlossarySectionWrapper(');
-    expect(wrapper, greaterThanOrEqualTo(0),
-        reason: 'createGlossarySectionWrapper must exist');
+    expect(
+      wrapper,
+      greaterThanOrEqualTo(0),
+      reason: 'createGlossarySectionWrapper must exist',
+    );
 
     final int hiddenRead = js.indexOf('window.hiddenDictionaryNames', wrapper);
-    expect(hiddenRead, greaterThanOrEqualTo(0),
-        reason: 'the grouping point must read window.hiddenDictionaryNames');
+    expect(
+      hiddenRead,
+      greaterThanOrEqualTo(0),
+      reason: 'the grouping point must read window.hiddenDictionaryNames',
+    );
 
     final int forEach = js.indexOf('entry.glossaries.forEach(', wrapper);
     final int skip = js.indexOf(
-        'hiddenDictionaryNames.includes(g.dictionary)) return;', wrapper);
+      'hiddenDictionaryNames.includes(g.dictionary)) return;',
+      wrapper,
+    );
     expect(forEach, greaterThanOrEqualTo(0));
-    expect(skip, greaterThan(forEach),
-        reason:
-            'hidden dictionaries must be skipped inside the glossary forEach');
+    expect(
+      skip,
+      greaterThan(forEach),
+      reason: 'hidden dictionaries must be skipped inside the glossary forEach',
+    );
   });
 
   test('host injects hiddenDictionaryNames from isHidden on word inject', () {
@@ -90,39 +100,52 @@ void main() {
     // The host must compute the hidden set from Dictionary.isHidden(targetLanguage)
     // — the exact same predicate the management switch toggles — and inject it as
     // window.hiddenDictionaryNames, right next to collapsedDictionaryNames.
-    final int collapsedInject =
-        dart.indexOf('window.collapsedDictionaryNames =');
+    final int collapsedInject = dart.indexOf(
+      'window.collapsedDictionaryNames =',
+    );
     expect(collapsedInject, greaterThanOrEqualTo(0));
 
     final int hiddenInject = dart.indexOf('window.hiddenDictionaryNames =');
-    expect(hiddenInject, greaterThan(collapsedInject),
-        reason: 'hiddenDictionaryNames injection must sit next to '
-            'collapsedDictionaryNames');
+    expect(
+      hiddenInject,
+      greaterThan(collapsedInject),
+      reason:
+          'hiddenDictionaryNames injection must sit next to '
+          'collapsedDictionaryNames',
+    );
 
     // 注入侧消费真相源 getter，而不是自己抄一份 where/map 表达式。
     // 断言字面量：'appModel.hiddenDictionaryNames'
     expect(
       dart.contains('appModel.hiddenDictionaryNames'),
       isTrue,
-      reason: 'the injection host must consume AppModel.hiddenDictionaryNames '
+      reason:
+          'the injection host must consume AppModel.hiddenDictionaryNames '
           'instead of re-deriving the hidden set locally',
     );
 
     // 真相源本身仍必须由 isHidden(targetLanguage) 推导——与管理页显示/隐藏开关
     // 拨的是同一个判据。断言字面量：'d.isHidden(JapaneseLanguage.instance)'
-    final String appModelSrc =
-        File('lib/src/models/app_model.dart').readAsStringSync();
-    final int getterAt =
-        appModelSrc.indexOf('Set<String> get hiddenDictionaryNames');
-    expect(getterAt, greaterThanOrEqualTo(0),
-        reason: 'AppModel must expose hiddenDictionaryNames as the single '
-            'source of truth for the hidden dictionary set');
+    final String appModelSrc = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    final int getterAt = appModelSrc.indexOf(
+      'Set<String> get hiddenDictionaryNames',
+    );
+    expect(
+      getterAt,
+      greaterThanOrEqualTo(0),
+      reason:
+          'AppModel must expose hiddenDictionaryNames as the single '
+          'source of truth for the hidden dictionary set',
+    );
     expect(
       appModelSrc
           .substring(getterAt, getterAt + 400)
           .contains('d.isHidden(JapaneseLanguage.instance)'),
       isTrue,
-      reason: 'the hidden set must be derived from isHidden(targetLanguage), '
+      reason:
+          'the hidden set must be derived from isHidden(targetLanguage), '
           'the same predicate the management show/hide switch toggles',
     );
   });
@@ -142,7 +165,8 @@ void main() {
     expect(
       lang.contains('required Set<String> hiddenDictionaries'),
       isTrue,
-      reason: 'buildPopupJsonFromLookup must take the hidden set as a REQUIRED '
+      reason:
+          'buildPopupJsonFromLookup must take the hidden set as a REQUIRED '
           'parameter so no host can silently skip the filter',
     );
 
@@ -155,31 +179,47 @@ void main() {
       r'for \(final g\s+in\s+[^)]*r\.term\.glossaries[^{]*\{',
       dotAll: true,
     ).firstMatch(lang.substring(builderAt));
-    expect(loopMatch, isNotNull,
-        reason: 'buildPopupJsonFromLookup 里必须有遍历 r.term.glossaries 的循环');
+    expect(
+      loopMatch,
+      isNotNull,
+      reason: 'buildPopupJsonFromLookup 里必须有遍历 r.term.glossaries 的循环',
+    );
     final int glossaryLoop = builderAt + loopMatch!.end;
 
     // 断言字面量：'if (hiddenDictionaries.contains(g.dictName)) continue;'
     // 必须 continue 整个 glossary 迭代，而不是只跳 groupGlossaries.add——
     // 只有隐藏词典释义的词头不该撑起空卡片，也不该占 maximumTerms 词头预算。
     final int skipAt = lang.indexOf(
-        'if (hiddenDictionaries.contains(g.dictName)) continue;', glossaryLoop);
-    expect(skipAt, greaterThan(glossaryLoop),
-        reason: 'hidden dictionaries must be skipped at the top of the '
-            'glossary loop inside buildPopupJsonFromLookup');
+      'if (hiddenDictionaries.contains(g.dictName)) continue;',
+      glossaryLoop,
+    );
+    expect(
+      skipAt,
+      greaterThan(glossaryLoop),
+      reason:
+          'hidden dictionaries must be skipped at the top of the '
+          'glossary loop inside buildPopupJsonFromLookup',
+    );
 
-    final int groupCreate =
-        lang.indexOf('if (!groupExpression.containsKey(key)) {', glossaryLoop);
-    expect(groupCreate, greaterThan(skipAt),
-        reason: 'the skip must precede group creation, otherwise a headword '
-            'whose only glossaries are hidden still renders an empty card');
+    final int groupCreate = lang.indexOf(
+      'if (!groupExpression.containsKey(key)) {',
+      glossaryLoop,
+    );
+    expect(
+      groupCreate,
+      greaterThan(skipAt),
+      reason:
+          'the skip must precede group creation, otherwise a headword '
+          'whose only glossaries are hidden still renders an empty card',
+    );
   });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

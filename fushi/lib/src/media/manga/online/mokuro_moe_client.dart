@@ -99,10 +99,12 @@ class MokuroMoeSeries {
       cover: json['cover'] is String ? json['cover']! as String : '',
       volumes: rawVolumes is List
           ? rawVolumes
-              .whereType<Map<dynamic, dynamic>>()
-              .map((Map<dynamic, dynamic> v) =>
-                  MokuroMoeVolume.fromJson(v.cast<String, Object?>()))
-              .toList()
+                .whereType<Map<dynamic, dynamic>>()
+                .map(
+                  (Map<dynamic, dynamic> v) =>
+                      MokuroMoeVolume.fromJson(v.cast<String, Object?>()),
+                )
+                .toList()
           : const <MokuroMoeVolume>[],
     );
   }
@@ -120,8 +122,8 @@ class MokuroMoeClient {
   MokuroMoeClient({
     String baseUrl = kMokuroMoeDefaultBaseUrl,
     HttpClient Function()? createClient,
-  })  : baseUrl = normalizeMokuroMoeBaseUrl(baseUrl),
-        _createClient = createClient ?? _defaultClient;
+  }) : baseUrl = normalizeMokuroMoeBaseUrl(baseUrl),
+       _createClient = createClient ?? _defaultClient;
 
   /// 已归一（无尾斜杠、非空）的站点根。
   final String baseUrl;
@@ -141,15 +143,18 @@ class MokuroMoeClient {
     if (rawSeries is! List) return const <MokuroMoeSeries>[];
     return rawSeries
         .whereType<Map<dynamic, dynamic>>()
-        .map((Map<dynamic, dynamic> s) =>
-            MokuroMoeSeries.fromJson(s.cast<String, Object?>()))
+        .map(
+          (Map<dynamic, dynamic> s) =>
+              MokuroMoeSeries.fromJson(s.cast<String, Object?>()),
+        )
         .toList();
   }
 
   /// 拉单系列详情（与 library 条目同构）。
   Future<MokuroMoeSeries> fetchSeries(String name) async {
     final Object? root = await _getJson(
-        '$baseUrl/catalog/api/series?name=${Uri.encodeComponent(name)}');
+      '$baseUrl/catalog/api/series?name=${Uri.encodeComponent(name)}',
+    );
     if (root is! Map) {
       throw const FormatException('mokuro.moe series: not a JSON object');
     }
@@ -178,10 +183,7 @@ class MokuroMoeClient {
       final HttpClientResponse response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
-        throw MokuroMoeHttpException(
-          response.statusCode,
-          uri: Uri.parse(url),
-        );
+        throw MokuroMoeHttpException(response.statusCode, uri: Uri.parse(url));
       }
       final String body = await utf8.decodeStream(response);
       return jsonDecode(body);

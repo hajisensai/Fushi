@@ -19,7 +19,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 
 /// 最小合法 mpv 用户着色器（MAIN 直通，能被 mpv 解析/编译）。
-const String _kPassthroughShader = '//!HOOK MAIN\n'
+const String _kPassthroughShader =
+    '//!HOOK MAIN\n'
     '//!BIND HOOKED\n'
     'vec4 hook() { return HOOKED_tex(HOOKED_pos); }\n';
 
@@ -31,8 +32,9 @@ void main() {
     (WidgetTester tester) async {
       MediaKit.ensureInitialized();
 
-      final Directory dir =
-          Directory.systemTemp.createTempSync('shader_readback_');
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'shader_readback_',
+      );
       final File a = File(p.join(dir.path, 'A_Restore.glsl'))
         ..writeAsStringSync(_kPassthroughShader);
       final File b = File(p.join(dir.path, 'B_Upscale.glsl'))
@@ -49,14 +51,24 @@ void main() {
         final String afterFix =
             await native.getProperty('glsl-shaders') as String;
         debugPrint('[shader-readback] after change-list apply: "$afterFix"');
-        expect(afterFix.contains('A_Restore.glsl'), isTrue,
-            reason: 'change-list append 后 glsl-shaders 必须含第一个着色器路径');
-        expect(afterFix.contains('B_Upscale.glsl'), isTrue,
-            reason: 'change-list append 后 glsl-shaders 必须含第二个着色器路径');
+        expect(
+          afterFix.contains('A_Restore.glsl'),
+          isTrue,
+          reason: 'change-list append 后 glsl-shaders 必须含第一个着色器路径',
+        );
+        expect(
+          afterFix.contains('B_Upscale.glsl'),
+          isTrue,
+          reason: 'change-list append 后 glsl-shaders 必须含第二个着色器路径',
+        );
 
         // ── ② 对照被证伪的旧法：clr 后用 glsl-shaders-append property → 回读空 ──
-        await native
-            .command(<String>['change-list', 'glsl-shaders', 'clr', '']);
+        await native.command(<String>[
+          'change-list',
+          'glsl-shaders',
+          'clr',
+          '',
+        ]);
         for (final String path in paths) {
           // 这正是 BUG-759 的旧写法：作为 property 名非法，mpv 返回
           // PROPERTY_NOT_FOUND，media_kit 丢弃返回码、静默失败。
@@ -65,9 +77,13 @@ void main() {
         final String afterOld =
             await native.getProperty('glsl-shaders') as String;
         debugPrint(
-            '[shader-readback] after legacy append property: "$afterOld"');
-        expect(afterOld.trim(), isEmpty,
-            reason: 'glsl-shaders-append 作为 property 空下发——复现 BUG-759 根因');
+          '[shader-readback] after legacy append property: "$afterOld"',
+        );
+        expect(
+          afterOld.trim(),
+          isEmpty,
+          reason: 'glsl-shaders-append 作为 property 空下发——复现 BUG-759 根因',
+        );
       } finally {
         await player.dispose();
         try {

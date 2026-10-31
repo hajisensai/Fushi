@@ -26,8 +26,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_discovery_settings_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_discovery_settings_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -65,56 +66,58 @@ void main() {
   });
 
   Widget harness() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((Ref ref) => appModel),
-        ],
-        child: MaterialApp(
-          theme: ThemeData(useMaterial3: true),
-          home: Scaffold(
-            body: SizedBox(
-              width: 560,
-              child: SingleChildScrollView(
-                child: const DiscoverySourceSettingsSection(),
-              ),
-            ),
+    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+    child: MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: Scaffold(
+        body: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: const DiscoverySourceSettingsSection(),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('lists every registered built-in discovery source, all on by default',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'lists every registered built-in discovery source, all on by default',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(harness());
-    await tester.pumpAndSettle();
-
-    // 遍历运行期注册表，不抄第二份 id 清单：新加一个 adapter 自动出现在这里。
-    final List<MediaDiscoverySource> sources =
-        appModel.mediaDiscoveryService.sources;
-    expect(sources, isNotEmpty);
-    // Fushi 不内置任何 BT 站：注册表里不该再有旧的 nyaa / sukebei 内置源。
-    expect(
-      sources.map((MediaDiscoverySource s) => s.id),
-      isNot(anyOf(contains('nyaa'), contains('sukebei'))),
-    );
-    for (final MediaDiscoverySource source in sources) {
-      final Finder row =
-          find.byKey(ValueKey<String>('discovery-source-${source.id}'));
-      expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
-      await tester.ensureVisible(row);
+      await tester.pumpWidget(harness());
       await tester.pumpAndSettle();
-      expect(
-        tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
-        isTrue,
-        reason: '${source.id} default',
-      );
-    }
-  });
 
-  testWidgets('用户自配的 OPDS 服务器不进这一区（它自己带 enabled，两套开关会两头对不上）',
-      (WidgetTester tester) async {
+      // 遍历运行期注册表，不抄第二份 id 清单：新加一个 adapter 自动出现在这里。
+      final List<MediaDiscoverySource> sources =
+          appModel.mediaDiscoveryService.sources;
+      expect(sources, isNotEmpty);
+      // Fushi 不内置任何 BT 站：注册表里不该再有旧的 nyaa / sukebei 内置源。
+      expect(
+        sources.map((MediaDiscoverySource s) => s.id),
+        isNot(anyOf(contains('nyaa'), contains('sukebei'))),
+      );
+      for (final MediaDiscoverySource source in sources) {
+        final Finder row = find.byKey(
+          ValueKey<String>('discovery-source-${source.id}'),
+        );
+        expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
+          isTrue,
+          reason: '${source.id} default',
+        );
+      }
+    },
+  );
+
+  testWidgets('用户自配的 OPDS 服务器不进这一区（它自己带 enabled，两套开关会两头对不上）', (
+    WidgetTester tester,
+  ) async {
     // 在这里关掉只影响聚合扇出：OPDS 配置区仍显示「启用」、单选仍能用；
     // 反过来在配置区关掉，源直接离开注册表，停用清单里那条 id 就成了
     // 再没有 UI 能清的垃圾。分界同视频域的自配 Torznab。
@@ -134,8 +137,9 @@ void main() {
 
     // 前提：这台服务器确实已经在运行期注册表里（否则这条断言是空转）。
     expect(
-      appModel.mediaDiscoveryService.sources
-          .where((MediaDiscoverySource s) => s.isUserConfigured),
+      appModel.mediaDiscoveryService.sources.where(
+        (MediaDiscoverySource s) => s.isUserConfigured,
+      ),
       hasLength(1),
     );
     expect(
@@ -151,17 +155,14 @@ void main() {
     );
   });
 
-  testWidgets('用户添加的 BT 站不进这一区（启停在 BT 站设置区那条记录上）',
-      (WidgetTester tester) async {
+  testWidgets('用户添加的 BT 站不进这一区（启停在 BT 站设置区那条记录上）', (WidgetTester tester) async {
     await prefs.setBtSites(<BtSiteConfig>[
       BtSiteConfig(
         id: 'site1',
         baseUrl: Uri.parse('https://bt.example.com'),
         format: BtSiteFormat.nyaa,
         domains: const <BtSiteDomain>{BtSiteDomain.manga},
-        nyaaCategories: const <BtSiteDomain, String>{
-          BtSiteDomain.manga: '3_1',
-        },
+        nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.manga: '3_1'},
       ),
     ]);
     tester.view.physicalSize = const Size(800, 2400);
@@ -185,8 +186,9 @@ void main() {
     );
   });
 
-  testWidgets('toggling a source writes through to the shared preference',
-      (WidgetTester tester) async {
+  testWidgets('toggling a source writes through to the shared preference', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -197,8 +199,9 @@ void main() {
     final String sourceId = appModel.mediaDiscoveryService.sources
         .firstWhere((MediaDiscoverySource s) => !s.isUserConfigured)
         .id;
-    final Finder row =
-        find.byKey(ValueKey<String>('discovery-source-$sourceId'));
+    final Finder row = find.byKey(
+      ValueKey<String>('discovery-source-$sourceId'),
+    );
     await tester.ensureVisible(row);
     await tester.pumpAndSettle();
     await tester.tap(row);
@@ -207,11 +210,17 @@ void main() {
     // 停用清单是**唯一**状态：开关写的就是发现页聚合读的那个偏好。
     expect(appModel.discoveryDisabledSourceIds, contains(sourceId));
     expect(prefs.discoveryDisabledSources.split(','), contains(sourceId));
-    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value, isFalse);
+    expect(
+      tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
+      isFalse,
+    );
 
     await tester.tap(row);
     await tester.pumpAndSettle();
     expect(appModel.discoveryDisabledSourceIds, isNot(contains(sourceId)));
-    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value, isTrue);
+    expect(
+      tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
+      isTrue,
+    );
   });
 }

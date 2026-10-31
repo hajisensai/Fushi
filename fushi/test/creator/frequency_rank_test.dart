@@ -35,18 +35,21 @@ void main() {
     test('调和平均 = floor(n / Σ1/v)，与 Yomitan 一致', () {
       // 2 / (1/100 + 1/300) = 150
       expect(
-          aggregateFrequencyRanks(<int>[100, 300], FrequencyAggregate.harmonic),
-          150);
+        aggregateFrequencyRanks(<int>[100, 300], FrequencyAggregate.harmonic),
+        150,
+      );
       // 3 / (1/10 + 1/20 + 1/40) = 17.14 → 17
       expect(
-          aggregateFrequencyRanks(
-              <int>[10, 20, 40], FrequencyAggregate.harmonic),
-          17);
+        aggregateFrequencyRanks(<int>[10, 20, 40], FrequencyAggregate.harmonic),
+        17,
+      );
     });
 
     test('取最小', () {
-      expect(aggregateFrequencyRanks(<int>[100, 300], FrequencyAggregate.min),
-          100);
+      expect(
+        aggregateFrequencyRanks(<int>[100, 300], FrequencyAggregate.min),
+        100,
+      );
     });
 
     test('只有一本时两种模式都退化成该值；空表为 null', () {
@@ -56,8 +59,11 @@ void main() {
         // 浮点往返后被 floor 算成 n-1。这些才是真判据。
         expect(aggregateFrequencyRanks(<int>[250], m), 250);
         for (final int n in <int>[93, 99, 105, 117, 123, 186, 198, 211]) {
-          expect(aggregateFrequencyRanks(<int>[n], m), n,
-              reason: '单本必须原样返回，不许被浮点往返算小 1');
+          expect(
+            aggregateFrequencyRanks(<int>[n], m),
+            n,
+            reason: '单本必须原样返回，不许被浮点往返算小 1',
+          );
         }
         expect(aggregateFrequencyRanks(<int>[], m), isNull);
       }
@@ -65,16 +71,20 @@ void main() {
 
     test('多本时的浮点误差同样要吸附回整数（排序键不许算小 1）', () {
       // 2 / (1/10 + 1/15) = 12 整；裸 floor 会给 11。
-      expect(aggregateFrequencyRanks(<int>[10, 15], FrequencyAggregate.harmonic),
-          12);
+      expect(
+        aggregateFrequencyRanks(<int>[10, 15], FrequencyAggregate.harmonic),
+        12,
+      );
       // 2 / (1/20 + 1/30) = 24 整；裸 floor 会给 23。
-      expect(aggregateFrequencyRanks(<int>[20, 30], FrequencyAggregate.harmonic),
-          24);
+      expect(
+        aggregateFrequencyRanks(<int>[20, 30], FrequencyAggregate.harmonic),
+        24,
+      );
       // 真的不是整数时仍然向下取整，不许乱吸附。
       expect(
-          aggregateFrequencyRanks(
-              <int>[10, 20, 40], FrequencyAggregate.harmonic),
-          17);
+        aggregateFrequencyRanks(<int>[10, 20, 40], FrequencyAggregate.harmonic),
+        17,
+      );
     });
 
     test('fromName 认名字，未知回落调和平均', () {

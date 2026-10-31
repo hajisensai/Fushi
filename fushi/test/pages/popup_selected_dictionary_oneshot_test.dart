@@ -24,7 +24,8 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
@@ -37,16 +38,15 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'popup dictionary one-shot JS behavior test failed.\n'
+        reason:
+            'popup dictionary one-shot JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -77,10 +77,15 @@ void main() {
     // (so the mined card still carried the pick) and BEFORE the post-mine
     // anki refresh closure — i.e. inside the success path.
     final int mineCall = js.indexOf('const reply = await mineEntry(');
-    expect(mineCall, greaterThanOrEqualTo(0),
-        reason: 'mine-success call missing');
-    final int perEntryClear =
-        js.indexOf('window.resetSelectedDictionariesForEntry(idx);', mineCall);
+    expect(
+      mineCall,
+      greaterThanOrEqualTo(0),
+      reason: 'mine-success call missing',
+    );
+    final int perEntryClear = js.indexOf(
+      'window.resetSelectedDictionariesForEntry(idx);',
+      mineCall,
+    );
     expect(
       perEntryClear,
       greaterThan(mineCall),
@@ -109,22 +114,26 @@ void main() {
 
     // It must sit right next to the existing sentence-context mirror reset and
     // before renderPopup() (the same reused-warm-slot reason).
-    final int sentenceReset =
-        dart.indexOf('window.resetSentenceContextMirror();');
+    final int sentenceReset = dart.indexOf(
+      'window.resetSentenceContextMirror();',
+    );
     final int dictReset = dart.indexOf('window.resetSelectedDictionaries();');
     final int render = dart.indexOf('window.renderPopup();', sentenceReset);
     expect(sentenceReset, greaterThanOrEqualTo(0));
     expect(dictReset, greaterThan(sentenceReset));
-    expect(render, greaterThan(dictReset),
-        reason:
-            'dictionary reset must run before renderPopup rebuilds the DOM');
+    expect(
+      render,
+      greaterThan(dictReset),
+      reason: 'dictionary reset must run before renderPopup rebuilds the DOM',
+    );
   });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

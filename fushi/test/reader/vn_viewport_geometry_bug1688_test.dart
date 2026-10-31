@@ -31,7 +31,8 @@ void main() {
       expect(
         shell.contains(ReaderPaginationScripts.sharedInitViewportJs),
         isTrue,
-        reason: 'VN shell must inline the SAME viewport-meta rewrite the '
+        reason:
+            'VN shell must inline the SAME viewport-meta rewrite the '
             'paginated/continuous shells run in their initialize()',
       );
       expect(
@@ -42,15 +43,21 @@ void main() {
       // 必须排在写几何变量之前：meta 改的是 CSS 像素空间本身。
       final int metaAt = shell.indexOf('this.applyViewportMeta();');
       final int varsAt = shell.indexOf('this.applyViewportVars();');
-      expect(metaAt, greaterThan(-1),
-          reason: 'initialize must call applyViewportMeta');
-      expect(metaAt, lessThan(varsAt),
-          reason: 'the viewport meta defines the CSS pixel space, so it must '
-              'land before any px-valued geometry var is written');
+      expect(
+        metaAt,
+        greaterThan(-1),
+        reason: 'initialize must call applyViewportMeta',
+      );
+      expect(
+        metaAt,
+        lessThan(varsAt),
+        reason:
+            'the viewport meta defines the CSS pixel space, so it must '
+            'land before any px-valued geometry var is written',
+      );
     });
 
-    test('VN initialize applies the chrome insets + page box from the config',
-        () {
+    test('VN initialize applies the chrome insets + page box from the config', () {
       expect(
         shell.contains('applyViewportVars: function()'),
         isTrue,
@@ -63,7 +70,8 @@ void main() {
         expect(
           shell.contains(pair),
           isTrue,
-          reason: 'VN must push the Dart-side chrome insets into the document '
+          reason:
+              'VN must push the Dart-side chrome insets into the document '
               '($pair missing) — otherwise the stage lays out over the chrome',
         );
       }
@@ -81,28 +89,38 @@ void main() {
       final int applyAt = shell.indexOf('this.applyViewportVars();');
       final int stageAt = shell.indexOf('this.ensureStage();');
       final int buildAt = shell.indexOf('this.buildScreens();');
-      expect(applyAt, greaterThan(-1),
-          reason: 'initialize must call applyViewportVars');
-      expect(applyAt, lessThan(stageAt),
-          reason: 'viewport vars must land before the stage is built');
-      expect(applyAt, lessThan(buildAt),
-          reason: 'viewport vars must land before screens are split');
+      expect(
+        applyAt,
+        greaterThan(-1),
+        reason: 'initialize must call applyViewportVars',
+      );
+      expect(
+        applyAt,
+        lessThan(stageAt),
+        reason: 'viewport vars must land before the stage is built',
+      );
+      expect(
+        applyAt,
+        lessThan(buildAt),
+        reason: 'viewport vars must land before screens are split',
+      );
     });
 
-    test('setChromeInsets is a real implementation, not the old no-op stub',
-        () {
+    test('setChromeInsets is a real implementation, not the old no-op stub', () {
       expect(
         shell.contains(
           'vn.setChromeInsets = function(topPx, bottomPx) { return null; };',
         ),
         isFalse,
-        reason: 'the no-op setChromeInsets stub dropped every inset update '
+        reason:
+            'the no-op setChromeInsets stub dropped every inset update '
             'Dart pushed (chrome.part.dart _applyChromeInsets) — VN then laid '
             'out under the top/bottom chrome',
       );
       expect(
-        shell
-            .contains("setProperty('--chrome-top-inset', (Number(topPx) || 0)"),
+        shell.contains(
+          "setProperty('--chrome-top-inset', (Number(topPx) || 0)",
+        ),
         isTrue,
         reason: 'setChromeInsets must write the top inset variable',
       );
@@ -116,7 +134,8 @@ void main() {
       expect(
         shell.contains('this.refitScreensToCurrentViewport();'),
         isTrue,
-        reason: 'an inset change resizes the usable box, so the screens must '
+        reason:
+            'an inset change resizes the usable box, so the screens must '
             'be re-split — padding alone leaves the old overflowing screen',
       );
     });
@@ -130,7 +149,8 @@ void main() {
       expect(
         shell.contains('var w = Math.round(Number(width) || 0);'),
         isTrue,
-        reason: 'updatePageSize must read its width argument (it used to '
+        reason:
+            'updatePageSize must read its width argument (it used to '
             'ignore both, leaving --page-width unset forever)',
       );
       expect(
@@ -146,22 +166,27 @@ void main() {
       // 写入（行为级覆盖见 vn_measure_box_restore_progress_behavior_test）。
       expect(
         shell.contains(
-            "root.style.setProperty('width', screenBox.width + 'px', 'important');"),
+          "root.style.setProperty('width', screenBox.width + 'px', 'important');",
+        ),
         isTrue,
-        reason: 'the measurement probe must be sized from the live screen rect '
+        reason:
+            'the measurement probe must be sized from the live screen rect '
             'with !important priority',
       );
       expect(
         shell.contains(
-            "root.style.setProperty('height', screenBox.height + 'px', 'important');"),
+          "root.style.setProperty('height', screenBox.height + 'px', 'important');",
+        ),
         isTrue,
-        reason: 'the measurement probe must be sized from the live screen rect '
+        reason:
+            'the measurement probe must be sized from the live screen rect '
             'with !important priority',
       );
       // 兜底分支保留（首屏极早期还没有屏盒），但不能是唯一路径。
       expect(
         shell.contains(
-            "root.style.setProperty('width', 'var(--page-width, 100vw)', 'important');"),
+          "root.style.setProperty('width', 'var(--page-width, 100vw)', 'important');",
+        ),
         isTrue,
         reason: 'the pre-layout fallback sizing must stay as a fallback',
       );

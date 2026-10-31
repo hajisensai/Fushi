@@ -6,17 +6,22 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
-const Key videoVolumePopoverFrameKey =
-    ValueKey<String>('video-volume-popover-frame');
-const Key videoVolumePopoverSliderKey =
-    ValueKey<String>('video-volume-popover-slider');
+const Key videoVolumePopoverFrameKey = ValueKey<String>(
+  'video-volume-popover-frame',
+);
+const Key videoVolumePopoverSliderKey = ValueKey<String>(
+  'video-volume-popover-slider',
+);
 const Key videoVolumeHudFrameKey = ValueKey<String>('video-volume-hud-frame');
-const Key videoVolumeHudProgressKey =
-    ValueKey<String>('video-volume-hud-progress');
-const Key videoBrightnessHudFrameKey =
-    ValueKey<String>('video-brightness-hud-frame');
-const Key videoBrightnessHudProgressKey =
-    ValueKey<String>('video-brightness-hud-progress');
+const Key videoVolumeHudProgressKey = ValueKey<String>(
+  'video-volume-hud-progress',
+);
+const Key videoBrightnessHudFrameKey = ValueKey<String>(
+  'video-brightness-hud-frame',
+);
+const Key videoBrightnessHudProgressKey = ValueKey<String>(
+  'video-brightness-hud-progress',
+);
 
 class VideoVolumePopoverCard extends StatelessWidget {
   const VideoVolumePopoverCard({
@@ -192,9 +197,7 @@ class VideoLevelHudCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: surfaceColor,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: textColor.withValues(alpha: 0.12),
-            ),
+            border: Border.all(color: textColor.withValues(alpha: 0.12)),
             boxShadow: <BoxShadow>[
               BoxShadow(
                 color: shadowColor.withValues(alpha: 0.22),
@@ -220,11 +223,7 @@ class VideoLevelHudCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        FushiIcon(
-                          icon,
-                          color: textColor,
-                          size: 20 * scale,
-                        ),
+                        FushiIcon(icon, color: textColor, size: 20 * scale),
                         SizedBox(width: 8 * scale),
                         Expanded(
                           child: DefaultTextStyle.merge(

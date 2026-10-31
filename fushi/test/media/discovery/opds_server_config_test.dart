@@ -15,16 +15,15 @@ OpdsServerConfig _config({
   String password = 'pw',
   bool enabled = true,
   bool allowInsecureHttp = false,
-}) =>
-    OpdsServerConfig(
-      id: id,
-      name: name,
-      catalogUrl: Uri.parse(url),
-      username: username,
-      password: password,
-      enabled: enabled,
-      allowInsecureHttp: allowInsecureHttp,
-    );
+}) => OpdsServerConfig(
+  id: id,
+  name: name,
+  catalogUrl: Uri.parse(url),
+  username: username,
+  password: password,
+  enabled: enabled,
+  allowInsecureHttp: allowInsecureHttp,
+);
 
 void main() {
   group('校验', () {
@@ -42,11 +41,15 @@ void main() {
     test('明文 HTTP 需要显式放行；loopback 例外', () {
       // 自建 OPDS 常年跑在局域网 http://192.168.x.x:8080——不给放行开关等于
       // 把最主流的自建场景挡在门外；但放行必须是用户勾的。
-      expect(() => _config(url: 'http://192.168.1.10:8080/opds'),
-          throwsArgumentError);
+      expect(
+        () => _config(url: 'http://192.168.1.10:8080/opds'),
+        throwsArgumentError,
+      );
       expect(
         () => _config(
-            url: 'http://192.168.1.10:8080/opds', allowInsecureHttp: true),
+          url: 'http://192.168.1.10:8080/opds',
+          allowInsecureHttp: true,
+        ),
         returnsNormally,
       );
       expect(() => _config(url: 'http://127.0.0.1:8080/opds'), returnsNormally);
@@ -55,15 +58,19 @@ void main() {
 
   group('认证头', () {
     test('有用户名 → Basic；无用户名 → null（匿名目录不该发认证头）', () {
-      final String? header =
-          _config(username: 'u', password: 'p').authorizationHeader;
+      final String? header = _config(
+        username: 'u',
+        password: 'p',
+      ).authorizationHeader;
       expect(header, 'Basic ${base64Encode(utf8.encode('u:p'))}');
       expect(_config(username: '', password: 'p').authorizationHeader, isNull);
     });
 
     test('非 ASCII 密码按 UTF-8 编码（不是 latin1）', () {
-      final String? header =
-          _config(username: 'u', password: '密码').authorizationHeader;
+      final String? header = _config(
+        username: 'u',
+        password: '密码',
+      ).authorizationHeader;
       expect(header, 'Basic ${base64Encode(utf8.encode('u:密码'))}');
     });
   });
@@ -87,8 +94,9 @@ void main() {
           allowInsecureHttp: true,
         ),
       ];
-      final List<OpdsServerConfig> decoded =
-          decodeOpdsServerConfigs(encodeOpdsServerConfigs(original));
+      final List<OpdsServerConfig> decoded = decodeOpdsServerConfigs(
+        encodeOpdsServerConfigs(original),
+      );
       expect(decoded, hasLength(2));
       expect(decoded[0].password, 'pw');
       expect(decoded[0].username, 'reader');
@@ -100,8 +108,9 @@ void main() {
     test('密码不以明文出现在序列化结果里', () {
       // base64 是遮蔽不是加密（见 toJson 的注释），但至少不该在偏好表里
       // 一眼可读。
-      final String raw = encodeOpdsServerConfigs(
-          <OpdsServerConfig>[_config(password: 'hunter2')]);
+      final String raw = encodeOpdsServerConfigs(<OpdsServerConfig>[
+        _config(password: 'hunter2'),
+      ]);
       expect(raw.contains('hunter2'), isFalse);
       expect(decodeOpdsServerConfigs(raw).single.password, 'hunter2');
     });
@@ -116,10 +125,10 @@ void main() {
         <String, Object?>{'id': 'good2', 'url': 'https://h2/opds'},
       ]);
       final List<OpdsServerConfig> decoded = decodeOpdsServerConfigs(raw);
-      expect(
-        decoded.map((OpdsServerConfig c) => c.id),
-        <String>['good', 'good2'],
-      );
+      expect(decoded.map((OpdsServerConfig c) => c.id), <String>[
+        'good',
+        'good2',
+      ]);
     });
 
     test('id 撞车时丢弃后来者', () {

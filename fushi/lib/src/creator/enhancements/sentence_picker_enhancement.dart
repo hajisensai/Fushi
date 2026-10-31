@@ -9,12 +9,12 @@ import 'package:fushi/utils.dart';
 class SentencePickerEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   SentencePickerEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Sentence Picker',
-          description: 'Pick sentences delimited by punctuation and spacing.',
-          icon: Icons.colorize_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Sentence Picker',
+        description: 'Pick sentences delimited by punctuation and spacing.',
+        icon: Icons.colorize_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

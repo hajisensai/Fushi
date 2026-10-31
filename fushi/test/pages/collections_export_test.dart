@@ -25,8 +25,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_collections_export_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_collections_export_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -67,110 +68,117 @@ void main() {
     String? bookKey,
   }) {
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
-    return repo.add(FavoriteSentence(
-      text: text,
-      bookTitle: bookTitle,
-      createdAt: DateTime.now(),
-      source: source,
-      bookKey: bookKey,
-    ));
+    return repo.add(
+      FavoriteSentence(
+        text: text,
+        bookTitle: bookTitle,
+        createdAt: DateTime.now(),
+        source: source,
+        bookKey: bookKey,
+      ),
+    );
   }
 
   Widget buildPage() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(home: CollectionsPage()),
-        ),
-      );
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: const MaterialApp(home: CollectionsPage()),
+    ),
+  );
 
   // 巡检 PR-3：分享图标从 iOS 专属 ios_share_outlined 统一为 Material share_outlined。
-  Finder exportButton() => find.widgetWithIcon(
-        FushiIconButton,
-        FushiIcons.share,
-      );
+  Finder exportButton() =>
+      find.widgetWithIcon(FushiIconButton, FushiIcons.share);
 
-  testWidgets('export button hidden when there are no favorite sentences',
-      (WidgetTester tester) async {
+  testWidgets('export button hidden when there are no favorite sentences', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(buildPage());
     await tester.pumpAndSettle();
     expect(exportButton(), findsNothing);
   });
 
   testWidgets(
-      'export button shows; focus-driven open reveals books, video-source '
-      'book title (non-empty) and format chips', (WidgetTester tester) async {
-    await seedSentence(
-      text: '吾輩は猫である。',
-      bookTitle: '吾輩は猫である',
-      source: kFavoriteSentenceSourceBook,
-      bookKey: 'book-1',
-    );
-    // video 来源收藏句：bookTitle 必须非空、非占位地出现在面板里。
-    await seedSentence(
-      text: '走れメロス。',
-      bookTitle: 'メロス映画',
-      source: kFavoriteSentenceSourceVideo,
-      bookKey: 'video-uid-1',
-    );
+    'export button shows; focus-driven open reveals books, video-source '
+    'book title (non-empty) and format chips',
+    (WidgetTester tester) async {
+      await seedSentence(
+        text: '吾輩は猫である。',
+        bookTitle: '吾輩は猫である',
+        source: kFavoriteSentenceSourceBook,
+        bookKey: 'book-1',
+      );
+      // video 来源收藏句：bookTitle 必须非空、非占位地出现在面板里。
+      await seedSentence(
+        text: '走れメロス。',
+        bookTitle: 'メロス映画',
+        source: kFavoriteSentenceSourceVideo,
+        bookKey: 'video-uid-1',
+      );
 
-    await tester.pumpWidget(buildPage());
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
 
-    expect(exportButton(), findsOneWidget);
+      expect(exportButton(), findsOneWidget);
 
-    // 焦点驱动：Tab 遍历直到导出按钮的 InkWell 持焦，再 Enter 激活打开面板。
-    // （CollectionsPage 测试树外无 FushiFocusRoot，FushiIconButton 退化为可聚焦
-    //  InkWell，标准焦点遍历可达。）
-    final Finder buttonInkWell = find.descendant(
-      of: exportButton(),
-      matching: find.byType(InkWell),
-    );
-    final Element inkWellEl = buttonInkWell.evaluate().single;
-    bool opened = false;
-    for (int i = 0; i < 40 && !opened; i++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pump();
-      final BuildContext? focusCtx =
-          FocusManager.instance.primaryFocus?.context;
-      bool onButton = false;
-      if (focusCtx is Element) {
-        focusCtx.visitAncestorElements((Element e) {
-          if (e == inkWellEl) {
-            onButton = true;
-            return false;
-          }
-          return true;
-        });
-        // 焦点节点本身可能就是 InkWell 的 Focus（在其上方），也算命中。
-        if (!onButton) {
-          inkWellEl.visitAncestorElements((Element e) {
-            if (e == focusCtx) {
+      // 焦点驱动：Tab 遍历直到导出按钮的 InkWell 持焦，再 Enter 激活打开面板。
+      // （CollectionsPage 测试树外无 FushiFocusRoot，FushiIconButton 退化为可聚焦
+      //  InkWell，标准焦点遍历可达。）
+      final Finder buttonInkWell = find.descendant(
+        of: exportButton(),
+        matching: find.byType(InkWell),
+      );
+      final Element inkWellEl = buttonInkWell.evaluate().single;
+      bool opened = false;
+      for (int i = 0; i < 40 && !opened; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        final BuildContext? focusCtx =
+            FocusManager.instance.primaryFocus?.context;
+        bool onButton = false;
+        if (focusCtx is Element) {
+          focusCtx.visitAncestorElements((Element e) {
+            if (e == inkWellEl) {
               onButton = true;
               return false;
             }
             return true;
           });
+          // 焦点节点本身可能就是 InkWell 的 Focus（在其上方），也算命中。
+          if (!onButton) {
+            inkWellEl.visitAncestorElements((Element e) {
+              if (e == focusCtx) {
+                onButton = true;
+                return false;
+              }
+              return true;
+            });
+          }
+        }
+        if (onButton) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+          opened = find
+              .text(t.collection_export_all_words)
+              .evaluate()
+              .isNotEmpty;
         }
       }
-      if (onButton) {
-        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-        await tester.pumpAndSettle();
-        opened = find.text(t.collection_export_all_words).evaluate().isNotEmpty;
-      }
-    }
-    expect(opened, isTrue,
-        reason: 'Tab/Enter focus-driven open of export sheet failed');
+      expect(
+        opened,
+        isTrue,
+        reason: 'Tab/Enter focus-driven open of export sheet failed',
+      );
 
-    // 面板渲染：两本书的标题（含 video 来源书名，非空非占位）+「全部收藏词」+ 格式。
-    expect(find.text('吾輩は猫である'), findsWidgets);
-    expect(find.text('メロス映画'), findsWidgets);
-    expect(find.text(t.collection_export_all_words), findsOneWidget);
-    expect(find.text('Markdown'), findsOneWidget);
-    expect(find.text('CSV'), findsOneWidget);
-    expect(find.text('JSON'), findsOneWidget);
-  });
+      // 面板渲染：两本书的标题（含 video 来源书名，非空非占位）+「全部收藏词」+ 格式。
+      expect(find.text('吾輩は猫である'), findsWidgets);
+      expect(find.text('メロス映画'), findsWidgets);
+      expect(find.text(t.collection_export_all_words), findsOneWidget);
+      expect(find.text('Markdown'), findsOneWidget);
+      expect(find.text('CSV'), findsOneWidget);
+      expect(find.text('JSON'), findsOneWidget);
+    },
+  );
 
   Future<void> seedMined({
     required String expression,
@@ -189,8 +197,7 @@ void main() {
     );
   }
 
-  testWidgets(
-      'gating: export button shows when only mined sentences exist '
+  testWidgets('gating: export button shows when only mined sentences exist '
       '(no favorite sentences)', (WidgetTester tester) async {
     await seedMined(
       expression: '猫',
@@ -207,48 +214,54 @@ void main() {
   });
 
   testWidgets(
-      'all-mined export path: getAllMinedSentences non-empty yields non-empty '
-      'export content', (WidgetTester tester) async {
-    await seedMined(
-      expression: '猫',
-      sentence: '吾輩は猫である。',
-      source: 'book',
-      documentTitle: '吾輩は猫である',
-    );
-    await seedMined(
-      expression: 'メロス',
-      sentence: '走れメロス。',
-      source: 'video',
-      documentTitle: null,
-    );
+    'all-mined export path: getAllMinedSentences non-empty yields non-empty '
+    'export content',
+    (WidgetTester tester) async {
+      await seedMined(
+        expression: '猫',
+        sentence: '吾輩は猫である。',
+        source: 'book',
+        documentTitle: '吾輩は猫である',
+      );
+      await seedMined(
+        expression: 'メロス',
+        sentence: '走れメロス。',
+        source: 'video',
+        documentTitle: null,
+      );
 
-    await tester.pumpWidget(buildPage());
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
 
-    // 数据源非空 → 导出管线产出非空内容（buildMinedExport 走真实纯函数）。
-    final List<MinedSentenceRow> rows = await db.getAllMinedSentences();
-    expect(rows, hasLength(2));
-    final List<ExportMinedSentence> items = rows
-        .map((MinedSentenceRow r) => ExportMinedSentence(
+      // 数据源非空 → 导出管线产出非空内容（buildMinedExport 走真实纯函数）。
+      final List<MinedSentenceRow> rows = await db.getAllMinedSentences();
+      expect(rows, hasLength(2));
+      final List<ExportMinedSentence> items = rows
+          .map(
+            (MinedSentenceRow r) => ExportMinedSentence(
               sentence: r.sentence,
               expression: r.expression,
               reading: r.reading,
               glossary: r.glossary,
               bookTitle:
                   (r.documentTitle != null && r.documentTitle!.isNotEmpty)
-                      ? r.documentTitle!
-                      : t.collection_export_mined_title,
+                  ? r.documentTitle!
+                  : t.collection_export_mined_title,
               source: r.source,
               createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
-            ))
-        .toList();
-    final String content =
-        buildMinedExport(items, format: ExportFormat.markdown);
-    expect(content, isNotEmpty);
-    expect(content, contains('吾輩は猫である。'));
-    // documentTitle 为空的视频条回退到占位标题。
-    expect(content, contains(t.collection_export_mined_title));
-  });
+            ),
+          )
+          .toList();
+      final String content = buildMinedExport(
+        items,
+        format: ExportFormat.markdown,
+      );
+      expect(content, isNotEmpty);
+      expect(content, contains('吾輩は猫である。'));
+      // documentTitle 为空的视频条回退到占位标题。
+      expect(content, contains(t.collection_export_mined_title));
+    },
+  );
 
   // 焦点驱动打开导出面板（Tab 遍历到导出按钮 InkWell → Enter），失败返回 false。
   Future<bool> openExportSheet(WidgetTester tester) async {
@@ -293,130 +306,176 @@ void main() {
   }
 
   testWidgets(
-      'TODO-914 export sheet defaults: mined + favorites checked, dedupe on; '
-      'unchecking all disables export', (WidgetTester tester) async {
-    await seedSentence(
-      text: '吾輩は猫である。',
-      bookTitle: '吾輩は猫である',
-      source: kFavoriteSentenceSourceBook,
-      bookKey: 'book-1',
-    );
-    await seedMined(
-      expression: '猫',
-      sentence: '吾輩は猫である。',
-      source: 'book',
-      documentTitle: '吾輩は猫である',
-    );
-
-    await tester.pumpWidget(buildPage());
-    await tester.pumpAndSettle();
-    expect(await openExportSheet(tester), isTrue,
-        reason: 'focus-driven open failed');
-
-    // 默认：制卡句 + 收藏句两个 Checkbox 都勾，去重 Switch 开。
-    // TODO-936：复选/开关行已迁到共享 FushiListItem + 裸 Checkbox/Switch，故按裸
-    // 控件类型断言（行为等价：value/onChanged 不变）。
-    final List<Checkbox> checkboxes =
-        tester.widgetList<Checkbox>(glassUnwrapAll<Checkbox>(find.byType(Checkbox))).toList();
-    // 至少有 制卡句/收藏句/收藏词 三个；前两个默认 true，收藏词默认 false。
-    expect(checkboxes.length, greaterThanOrEqualTo(3));
-    final int checkedCount =
-        checkboxes.where((Checkbox c) => c.value == true).length;
-    expect(checkedCount, 2, reason: '默认勾制卡句 + 收藏句（收藏词不默认勾）');
-
-    final Switch dedupeSwitch = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch)));
-    expect(dedupeSwitch.value, isTrue, reason: '去重开关默认开');
-
-    // 导出按钮默认可用（有勾选）。
-    final Finder exportFab = find.widgetWithText(FilledButton, t.dialog_export);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNotNull);
-
-    // 焦点驱动取消两个范围勾选：找到仍勾选的范围 Checkbox（其 value==true）翻转。
-    // 简化：直接断言 onChanged 回调把状态清空后按钮 disabled——通过逐个翻转。
-    for (final ExportScope _ in <ExportScope>[
-      ExportScope.mined,
-      ExportScope.favorites,
-    ]) {
-      // 找到当前仍勾选的范围 Checkbox（排除收藏词，它默认 false）。
-      final Finder checkedBox = find.byWidgetPredicate(
-        (Widget w) => w is Checkbox && w.value == true,
+    'TODO-914 export sheet defaults: mined + favorites checked, dedupe on; '
+    'unchecking all disables export',
+    (WidgetTester tester) async {
+      await seedSentence(
+        text: '吾輩は猫である。',
+        bookTitle: '吾輩は猫である',
+        source: kFavoriteSentenceSourceBook,
+        bookKey: 'book-1',
       );
-      expect(checkedBox, findsWidgets);
-      final Checkbox box = tester.widget<Checkbox>(glassUnwrap<Checkbox>(checkedBox.first));
-      box.onChanged!(false);
-      await tester.pumpAndSettle();
-    }
+      await seedMined(
+        expression: '猫',
+        sentence: '吾輩は猫である。',
+        source: 'book',
+        documentTitle: '吾輩は猫である',
+      );
 
-    // 全部取消勾选后导出按钮 disabled（onPressed == null）。
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNull,
-        reason: '勾选集为空且未勾收藏词 → 导出按钮 disabled');
-  });
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(
+        await openExportSheet(tester),
+        isTrue,
+        reason: 'focus-driven open failed',
+      );
+
+      // 默认：制卡句 + 收藏句两个 Checkbox 都勾，去重 Switch 开。
+      // TODO-936：复选/开关行已迁到共享 FushiListItem + 裸 Checkbox/Switch，故按裸
+      // 控件类型断言（行为等价：value/onChanged 不变）。
+      final List<Checkbox> checkboxes = tester
+          .widgetList<Checkbox>(glassUnwrapAll<Checkbox>(find.byType(Checkbox)))
+          .toList();
+      // 至少有 制卡句/收藏句/收藏词 三个；前两个默认 true，收藏词默认 false。
+      expect(checkboxes.length, greaterThanOrEqualTo(3));
+      final int checkedCount = checkboxes
+          .where((Checkbox c) => c.value == true)
+          .length;
+      expect(checkedCount, 2, reason: '默认勾制卡句 + 收藏句（收藏词不默认勾）');
+
+      final Switch dedupeSwitch = tester.widget<Switch>(
+        glassUnwrap<Switch>(find.byType(Switch)),
+      );
+      expect(dedupeSwitch.value, isTrue, reason: '去重开关默认开');
+
+      // 导出按钮默认可用（有勾选）。
+      final Finder exportFab = find.widgetWithText(
+        FilledButton,
+        t.dialog_export,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(exportFab))
+            .onPressed,
+        isNotNull,
+      );
+
+      // 焦点驱动取消两个范围勾选：找到仍勾选的范围 Checkbox（其 value==true）翻转。
+      // 简化：直接断言 onChanged 回调把状态清空后按钮 disabled——通过逐个翻转。
+      for (final ExportScope _ in <ExportScope>[
+        ExportScope.mined,
+        ExportScope.favorites,
+      ]) {
+        // 找到当前仍勾选的范围 Checkbox（排除收藏词，它默认 false）。
+        final Finder checkedBox = find.byWidgetPredicate(
+          (Widget w) => w is Checkbox && w.value == true,
+        );
+        expect(checkedBox, findsWidgets);
+        final Checkbox box = tester.widget<Checkbox>(
+          glassUnwrap<Checkbox>(checkedBox.first),
+        );
+        box.onChanged!(false);
+        await tester.pumpAndSettle();
+      }
+
+      // 全部取消勾选后导出按钮 disabled（onPressed == null）。
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(exportFab))
+            .onPressed,
+        isNull,
+        reason: '勾选集为空且未勾收藏词 → 导出按钮 disabled',
+      );
+    },
+  );
 
   testWidgets(
-      'TODO-914 focus-driven uncheck: Tab to a checked scope checkbox, Enter '
-      'flips it (no tap, no bare space)', (WidgetTester tester) async {
-    await seedSentence(
-      text: '吾輩は猫である。',
-      bookTitle: '吾輩は猫である',
-      source: kFavoriteSentenceSourceBook,
-      bookKey: 'book-1',
-    );
-    await seedMined(
-      expression: '猫',
-      sentence: '吾輩は猫である。',
-      source: 'book',
-      documentTitle: '吾輩は猫である',
-    );
+    'TODO-914 focus-driven uncheck: Tab to a checked scope checkbox, Enter '
+    'flips it (no tap, no bare space)',
+    (WidgetTester tester) async {
+      await seedSentence(
+        text: '吾輩は猫である。',
+        bookTitle: '吾輩は猫である',
+        source: kFavoriteSentenceSourceBook,
+        bookKey: 'book-1',
+      );
+      await seedMined(
+        expression: '猫',
+        sentence: '吾輩は猫である。',
+        source: 'book',
+        documentTitle: '吾輩は猫である',
+      );
 
-    await tester.pumpWidget(buildPage());
-    await tester.pumpAndSettle();
-    expect(await openExportSheet(tester), isTrue,
-        reason: 'focus-driven open failed');
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(
+        await openExportSheet(tester),
+        isTrue,
+        reason: 'focus-driven open failed',
+      );
 
-    // 默认两个范围勾选 → 导出按钮可用。
-    final Finder exportFab = find.widgetWithText(FilledButton, t.dialog_export);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNotNull);
+      // 默认两个范围勾选 → 导出按钮可用。
+      final Finder exportFab = find.widgetWithText(
+        FilledButton,
+        t.dialog_export,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(exportFab))
+            .onPressed,
+        isNotNull,
+      );
 
-    int checkedScopeCount() => tester
-        .widgetList<Checkbox>(glassUnwrapAll<Checkbox>(find.byWidgetPredicate(
-          (Widget w) => w is Checkbox && w.value == true,
-        )))
-        .length;
-    expect(checkedScopeCount(), 2, reason: '初始勾制卡句 + 收藏句');
+      int checkedScopeCount() => tester
+          .widgetList<Checkbox>(
+            glassUnwrapAll<Checkbox>(
+              find.byWidgetPredicate(
+                (Widget w) => w is Checkbox && w.value == true,
+              ),
+            ),
+          )
+          .length;
+      expect(checkedScopeCount(), 2, reason: '初始勾制卡句 + 收藏句');
 
-    // 焦点驱动：Tab 遍历，当 primaryFocus 落在某个 value==true 的 Checkbox 子树上
-    // 时按 Enter 翻转它（禁 tester.tap、禁裸空格）。TODO-936 迁移后复选项是共享
-    // FushiListItem 内的裸 Checkbox（自身可聚焦），重复直到两项都取消。
-    bool focusOnCheckedCheckbox() {
-      final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
-      if (ctx is! Element) return false;
-      bool hit = false;
-      ctx.visitAncestorElements((Element e) {
-        final Widget w = e.widget;
-        if (w is Checkbox && w.value == true) {
-          hit = true;
-          return false;
-        }
-        return true;
-      });
-      return hit;
-    }
-
-    int flips = 0;
-    for (int i = 0; i < 80 && checkedScopeCount() > 0; i++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pump();
-      if (focusOnCheckedCheckbox()) {
-        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-        await tester.pumpAndSettle();
-        flips++;
+      // 焦点驱动：Tab 遍历，当 primaryFocus 落在某个 value==true 的 Checkbox 子树上
+      // 时按 Enter 翻转它（禁 tester.tap、禁裸空格）。TODO-936 迁移后复选项是共享
+      // FushiListItem 内的裸 Checkbox（自身可聚焦），重复直到两项都取消。
+      bool focusOnCheckedCheckbox() {
+        final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+        if (ctx is! Element) return false;
+        bool hit = false;
+        ctx.visitAncestorElements((Element e) {
+          final Widget w = e.widget;
+          if (w is Checkbox && w.value == true) {
+            hit = true;
+            return false;
+          }
+          return true;
+        });
+        return hit;
       }
-    }
-    expect(flips, greaterThanOrEqualTo(2), reason: 'Tab→Enter 应翻转两个已勾范围');
-    expect(checkedScopeCount(), 0, reason: '两个范围均经 Enter 取消');
 
-    // 全部范围取消且未勾收藏词 → 导出按钮 disabled。
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNull,
-        reason: '焦点驱动取消所有范围后导出按钮 disabled');
-  });
+      int flips = 0;
+      for (int i = 0; i < 80 && checkedScopeCount() > 0; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        if (focusOnCheckedCheckbox()) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+          flips++;
+        }
+      }
+      expect(flips, greaterThanOrEqualTo(2), reason: 'Tab→Enter 应翻转两个已勾范围');
+      expect(checkedScopeCount(), 0, reason: '两个范围均经 Enter 取消');
+
+      // 全部范围取消且未勾收藏词 → 导出按钮 disabled。
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(exportFab))
+            .onPressed,
+        isNull,
+        reason: '焦点驱动取消所有范围后导出按钮 disabled',
+      );
+    },
+  );
 }

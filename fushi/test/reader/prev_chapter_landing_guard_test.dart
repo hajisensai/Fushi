@@ -36,32 +36,37 @@ void main() {
   group('TODO-1349 backward-turn lands at chapter end (not cover)', () {
     test('continuous scrollToChapterEnd exists and aligns to content end', () {
       final String s = src();
-      expect(s.contains('scrollToChapterEnd: function'), isTrue,
-          reason: '连续模式必须有章末落点 helper scrollToChapterEnd');
+      expect(
+        s.contains('scrollToChapterEnd: function'),
+        isTrue,
+        reason: '连续模式必须有章末落点 helper scrollToChapterEnd',
+      );
       // 必须把内容对齐到轴末端（block:'end'），而非只走文本节点。
       final int idx = s.indexOf('scrollToChapterEnd: function');
       final String body = s.substring(idx, idx + 700);
       expect(
-          body.contains("block: 'end'") || body.contains('block:"end"'), isTrue,
-          reason:
-              'scrollToChapterEnd 必须 scrollIntoView(block:end) 落到内容末端（含尾部插图）');
+        body.contains("block: 'end'") || body.contains('block:"end"'),
+        isTrue,
+        reason: 'scrollToChapterEnd 必须 scrollIntoView(block:end) 落到内容末端（含尾部插图）',
+      );
       expect(body.contains('scrollIntoView'), isTrue);
     });
 
     test(
-        'continuous restoreProgress routes progress>=0.99 to scrollToChapterEnd',
-        () {
-      final String continuous = ReaderPaginationScripts.continuousShellSource();
-      final String n = norm(continuous);
-      // 连续 restoreProgress 里 progress>=0.99 分支必须走 scrollToChapterEnd。
-      expect(
-        n.contains('progress >= 0.99') &&
-            n.contains('this.scrollToChapterEnd()'),
-        isTrue,
-        reason:
-            '连续 restoreProgress 必须把 progress>=0.99（章尾）路由到 scrollToChapterEnd',
-      );
-    });
-
+      'continuous restoreProgress routes progress>=0.99 to scrollToChapterEnd',
+      () {
+        final String continuous =
+            ReaderPaginationScripts.continuousShellSource();
+        final String n = norm(continuous);
+        // 连续 restoreProgress 里 progress>=0.99 分支必须走 scrollToChapterEnd。
+        expect(
+          n.contains('progress >= 0.99') &&
+              n.contains('this.scrollToChapterEnd()'),
+          isTrue,
+          reason:
+              '连续 restoreProgress 必须把 progress>=0.99（章尾）路由到 scrollToChapterEnd',
+        );
+      },
+    );
   });
 }

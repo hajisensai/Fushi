@@ -108,19 +108,20 @@ class StartupSplashMark extends StatelessWidget {
                     height: kStartupSplashIconCanvas,
                     filterQuality: FilterQuality.medium,
                     // 解码是异步的：首帧只有底色圆，兔子随后淡入，不会硬闪。
-                    frameBuilder: (
-                      BuildContext context,
-                      Widget child,
-                      int? frame,
-                      bool wasSynchronouslyLoaded,
-                    ) {
-                      if (wasSynchronouslyLoaded) return child;
-                      return AnimatedOpacity(
-                        opacity: frame == null ? 0 : 1,
-                        duration: const Duration(milliseconds: 150),
-                        child: child,
-                      );
-                    },
+                    frameBuilder:
+                        (
+                          BuildContext context,
+                          Widget child,
+                          int? frame,
+                          bool wasSynchronouslyLoaded,
+                        ) {
+                          if (wasSynchronouslyLoaded) return child;
+                          return AnimatedOpacity(
+                            opacity: frame == null ? 0 : 1,
+                            duration: const Duration(milliseconds: 150),
+                            child: child,
+                          );
+                        },
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),

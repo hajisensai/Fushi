@@ -15,9 +15,9 @@ String _between(String source, String start, String end) {
 }
 
 void main() {
-  final String source =
-      File('lib/src/settings/master_detail_settings_sheet.dart')
-          .readAsStringSync();
+  final String source = File(
+    'lib/src/settings/master_detail_settings_sheet.dart',
+  ).readAsStringSync();
 
   test('shared sheet exposes both extracted widgets', () {
     expect(source, contains('class FushiSettingsSubPageHeader'));
@@ -26,8 +26,9 @@ void main() {
 
   test('master-detail shell owns the modal sheet chrome skeleton', () {
     // FushiMasterDetailSettingsSheet 是文件最后一个类，切到文件末尾。
-    final int shellStart =
-        source.indexOf('class FushiMasterDetailSettingsSheet');
+    final int shellStart = source.indexOf(
+      'class FushiMasterDetailSettingsSheet',
+    );
     expect(shellStart, isNonNegative);
     final String shell = source.substring(shellStart);
 
@@ -39,10 +40,14 @@ void main() {
     expect(shell, contains('scrollable: false'));
     expect(shell, contains('LayoutBuilder('));
     // 确定性几何判据：宽且高都 >= 共享阈值常量才进宽窗（与书籍/视频原判据等价）。
-    expect(shell,
-        contains('constraints.maxWidth >= kFushiSettingsWideThreshold'));
-    expect(shell,
-        contains('constraints.maxHeight >= kFushiSettingsWideMinHeight'));
+    expect(
+      shell,
+      contains('constraints.maxWidth >= kFushiSettingsWideThreshold'),
+    );
+    expect(
+      shell,
+      contains('constraints.maxHeight >= kFushiSettingsWideMinHeight'),
+    );
     // 宽/窄分发：宽窗交给调用方 wideBuilder（两边发散），窄窗在外壳包
     // SingleChildScrollView + FushiAnimatedSize（FushiMotion.short / topCenter）。
     expect(shell, contains('return wideBuilder(context, constraints);'));

@@ -188,51 +188,56 @@ void main() {
     },
   );
 
-  testWidgets(
-    'SubDL subpage saves key and switch to their own store targets',
-    (WidgetTester tester) async {
-      final _FakeStore store = _FakeStore(
-        const VideoExternalSettingsSnapshot(subdlApiKey: 'old-key'),
-      );
-      await tester.pumpWidget(
-        _harness(
-          store,
-          scopes: const <VideoExternalProviderScope>[
-            VideoExternalProviderScope.subdl,
-          ],
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey<String>('video-jimaku-api-key')),
-        findsNothing,
-      );
-      expect(
-        find.byWidgetPredicate(
-          (Widget w) =>
-              w is SettingsSearchTarget && w.id == 'services.subdl.api_key',
-        ),
-        findsOneWidget,
-      );
-      final Finder keyField = _textField(
-        const ValueKey<String>('video-subdl-api-key'),
-      );
-      expect(tester.widget<TextField>(glassUnwrap<TextField>(keyField)).obscureText, isTrue);
-      await tester.enterText(keyField, 'subdl-key');
-      await _settleAutosave(tester);
-      expect(store.subdlKeyWrites.last, 'subdl-key');
-      expect(store.jimakuKeyWrites, isEmpty);
-      final Finder toggle = find.byKey(
-        const ValueKey<String>('video-subdl-enabled'),
-      );
-      expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(toggle)).value, isTrue);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      expect(store.subdlEnabledWrites, <bool>[false]);
-      expect(store.jimakuEnabledWrites, isEmpty);
-      expect(store.ajattEnabledWrites, isEmpty);
-    },
-  );
+  testWidgets('SubDL subpage saves key and switch to their own store targets', (
+    WidgetTester tester,
+  ) async {
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(subdlApiKey: 'old-key'),
+    );
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.subdl,
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+      findsNothing,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is SettingsSearchTarget && w.id == 'services.subdl.api_key',
+      ),
+      findsOneWidget,
+    );
+    final Finder keyField = _textField(
+      const ValueKey<String>('video-subdl-api-key'),
+    );
+    expect(
+      tester.widget<TextField>(glassUnwrap<TextField>(keyField)).obscureText,
+      isTrue,
+    );
+    await tester.enterText(keyField, 'subdl-key');
+    await _settleAutosave(tester);
+    expect(store.subdlKeyWrites.last, 'subdl-key');
+    expect(store.jimakuKeyWrites, isEmpty);
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('video-subdl-enabled'),
+    );
+    expect(
+      tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(toggle)).value,
+      isTrue,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(store.subdlEnabledWrites, <bool>[false]);
+    expect(store.jimakuEnabledWrites, isEmpty);
+    expect(store.ajattEnabledWrites, isEmpty);
+  });
 
   testWidgets('OpenSubtitles subpage search resolves the actual secret field', (
     WidgetTester tester,
@@ -276,8 +281,7 @@ void main() {
   /// [OpenSubtitlesConfig] 的构造默认相反。用户在本页改任意一个字段都会触发 debounce
   /// 保存，于是这个没人选过的 false 被落盘，内置应用密钥从此失效，而设置列表还照样
   /// 显示「已内置」。
-  testWidgets('BUG-2429：未配置时启用开关默认打开，且不会把关闭态写回',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2429：未配置时启用开关默认打开，且不会把关闭态写回', (WidgetTester tester) async {
     final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
     await tester.pumpWidget(_wideHarness(store));
     await tester.pumpAndSettle();
@@ -406,9 +410,21 @@ void main() {
     await tester.pumpWidget(_harness(store));
     await tester.pumpAndSettle();
 
-    final TextField torznabSecret = tester.widget<TextField>(glassUnwrap<TextField>(_textField(const ValueKey<String>('video-torznab-0-api-key'))),);
-    final TextField subtitleSecret = tester.widget<TextField>(glassUnwrap<TextField>(_textField(const ValueKey<String>('video-opensubtitles-api-key'))),);
-    final TextField password = tester.widget<TextField>(glassUnwrap<TextField>(_textField(const ValueKey<String>('video-opensubtitles-password'))),);
+    final TextField torznabSecret = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        _textField(const ValueKey<String>('video-torznab-0-api-key')),
+      ),
+    );
+    final TextField subtitleSecret = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        _textField(const ValueKey<String>('video-opensubtitles-api-key')),
+      ),
+    );
+    final TextField password = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        _textField(const ValueKey<String>('video-opensubtitles-password')),
+      ),
+    );
     expect(torznabSecret.obscureText, isTrue);
     expect(subtitleSecret.obscureText, isTrue);
     expect(password.obscureText, isTrue);
@@ -606,7 +622,9 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester.widget<TextField>(glassUnwrap<TextField>(_textField(jimakuKeyId))).obscureText,
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(_textField(jimakuKeyId)))
+          .obscureText,
       isTrue,
     );
 
@@ -763,7 +781,12 @@ void main() {
         const ValueKey<String>('video-jimaku-enabled'),
       );
       await _show(tester, jimaku);
-      expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(jimaku)).value, isTrue);
+      expect(
+        tester
+            .widget<SwitchListTile>(glassUnwrap<SwitchListTile>(jimaku))
+            .value,
+        isTrue,
+      );
       // 与 OpenSubtitles 并列同形：两家都在同一节里各有一个启用开关。
       expect(
         find.byKey(const ValueKey<String>('video-opensubtitles-enabled')),

@@ -80,8 +80,7 @@ class _FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      remoteBooks[bookTitle]?.folderId ?? 'folder-$bookTitle';
+  }) async => remoteBooks[bookTitle]?.folderId ?? 'folder-$bookTitle';
 
   @override
   Future<String> ensureNamespace(String name) async => name;
@@ -106,8 +105,10 @@ class _FakeSyncBackend implements SyncBackend {
   }
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     _cachedRoot = rootFolderId;
     if (titleToFolderId != null) _cachedFolders.addAll(titleToFolderId);
   }
@@ -144,34 +145,31 @@ class _FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
       throw UnimplementedError();
@@ -182,13 +180,18 @@ class _FakeSyncBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -200,11 +203,7 @@ class _FakeSyncBackend implements SyncBackend {
 /// Remote book fixture: a folder + an optional progress file (name encodes
 /// timestamp/fraction) and the payload `getProgressFile` returns.
 class _RemoteBook {
-  _RemoteBook({
-    required this.folderId,
-    this.progressFile,
-    this.payload,
-  });
+  _RemoteBook({required this.folderId, this.progressFile, this.payload});
 
   final String folderId;
   final SyncFileRef? progressFile;
@@ -233,15 +232,17 @@ class _RemoteBook {
 }
 
 Future<EpubBookRow> _seedBook(FushiDatabase db, String title) async {
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: title,
-    title: title,
-    epubPath: '/fake/$title.epub',
-    extractDir: '/fake/$title',
-    chapterCount: 1,
-    chaptersJson: _chaptersJson,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-  ));
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: title,
+      title: title,
+      epubPath: '/fake/$title.epub',
+      extractDir: '/fake/$title',
+      chapterCount: 1,
+      chaptersJson: _chaptersJson,
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
   return (await db.getAllEpubBooks()).firstWhere((b) => b.title == title);
 }
 
@@ -252,12 +253,14 @@ Future<void> _seedPosition(
   required double fraction,
 }) async {
   final int normOffset = (fraction * 10000).round();
-  await db.upsertReaderPosition(ReaderPositionsCompanion(
-    bookUid: Value(bookUid),
-    sectionIndex: const Value(0),
-    normCharOffset: Value(normOffset),
-    updatedAt: Value(updatedAt),
-  ));
+  await db.upsertReaderPosition(
+    ReaderPositionsCompanion(
+      bookUid: Value(bookUid),
+      sectionIndex: const Value(0),
+      normCharOffset: Value(normOffset),
+      updatedAt: Value(updatedAt),
+    ),
+  );
 }
 
 void main() {
@@ -293,8 +296,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('single-sided change is not a conflict (local == base)',
-      (WidgetTester tester) async {
+  testWidgets('single-sided change is not a conflict (local == base)', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
@@ -319,8 +323,9 @@ void main() {
     expect(find.text(t.sync_compare_conflicts), findsNothing);
   });
 
-  testWidgets('both sides diverged from base is a conflict',
-      (WidgetTester tester) async {
+  testWidgets('both sides diverged from base is a conflict', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
@@ -344,8 +349,9 @@ void main() {
     expect(find.text('BookA'), findsOneWidget);
   });
 
-  testWidgets('conflictsOnly hides non-conflict books and dictionaries',
-      (WidgetTester tester) async {
+  testWidgets('conflictsOnly hides non-conflict books and dictionaries', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
@@ -353,7 +359,10 @@ void main() {
     final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
     await _seedPosition(db, conflictBook.uid, updatedAt: 120, fraction: 0.6);
     await db.setSyncBaseline(
-        sanitizeTtuFilename('ConflictBook'), 'progress', 50);
+      sanitizeTtuFilename('ConflictBook'),
+      'progress',
+      50,
+    );
 
     // Calm book: single-sided (local == base), resolves automatically.
     final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
@@ -381,59 +390,68 @@ void main() {
   });
 
   testWidgets(
-      'conflictsOnly Apply only syncs conflict books, not hidden non-conflict ones',
-      (WidgetTester tester) async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
+    'conflictsOnly Apply only syncs conflict books, not hidden non-conflict ones',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
 
-    // Conflict book: both sides off base → manual choice required.
-    final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
-    await _seedPosition(db, conflictBook.uid, updatedAt: 120, fraction: 0.6);
-    await db.setSyncBaseline(
-        sanitizeTtuFilename('ConflictBook'), 'progress', 50);
+      // Conflict book: both sides off base → manual choice required.
+      final EpubBookRow conflictBook = await _seedBook(db, 'ConflictBook');
+      await _seedPosition(db, conflictBook.uid, updatedAt: 120, fraction: 0.6);
+      await db.setSyncBaseline(
+        sanitizeTtuFilename('ConflictBook'),
+        'progress',
+        50,
+      );
 
-    // Calm book: single-sided local change (remote == base) → auto-export
-    // direction, seeded as useLocal. It is HIDDEN in conflictsOnly mode, so
-    // Apply must NOT touch its remote folder. This is the [Important] guard.
-    final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
-    await _seedPosition(db, calmBook.uid, updatedAt: 200, fraction: 0.7);
-    await db.setSyncBaseline(sanitizeTtuFilename('CalmBook'), 'progress', 100);
+      // Calm book: single-sided local change (remote == base) → auto-export
+      // direction, seeded as useLocal. It is HIDDEN in conflictsOnly mode, so
+      // Apply must NOT touch its remote folder. This is the [Important] guard.
+      final EpubBookRow calmBook = await _seedBook(db, 'CalmBook');
+      await _seedPosition(db, calmBook.uid, updatedAt: 200, fraction: 0.7);
+      await db.setSyncBaseline(
+        sanitizeTtuFilename('CalmBook'),
+        'progress',
+        100,
+      );
 
-    final _FakeSyncBackend fake = _FakeSyncBackend(
-      remoteBooks: <String, _RemoteBook>{
-        'ConflictBook': _RemoteBook.withProgress(
-          folderId: 'folderC',
-          timestampMs: 100,
-          fraction: 0.4,
-        ),
-        'CalmBook': _RemoteBook.withProgress(
-          folderId: 'folderK',
-          timestampMs: 100, // remote == base → single-sided, not a conflict.
-          fraction: 0.5,
-        ),
-      },
-    );
-    await pumpDialog(tester, db, fake, conflictsOnly: true);
+      final _FakeSyncBackend fake = _FakeSyncBackend(
+        remoteBooks: <String, _RemoteBook>{
+          'ConflictBook': _RemoteBook.withProgress(
+            folderId: 'folderC',
+            timestampMs: 100,
+            fraction: 0.4,
+          ),
+          'CalmBook': _RemoteBook.withProgress(
+            folderId: 'folderK',
+            timestampMs: 100, // remote == base → single-sided, not a conflict.
+            fraction: 0.5,
+          ),
+        },
+      );
+      await pumpDialog(tester, db, fake, conflictsOnly: true);
 
-    // Only the conflict book is visible; Apply count reflects the single
-    // conflict, not the hidden calm book.
-    expect(find.text('ConflictBook'), findsOneWidget);
-    expect(find.text('CalmBook'), findsNothing);
+      // Only the conflict book is visible; Apply count reflects the single
+      // conflict, not the hidden calm book.
+      expect(find.text('ConflictBook'), findsOneWidget);
+      expect(find.text('CalmBook'), findsNothing);
 
-    // Resolve the conflict to export (use local), then Apply.
-    await tester.tap(find.text(t.sync_compare_use_local).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
-    await tester.pumpAndSettle();
+      // Resolve the conflict to export (use local), then Apply.
+      await tester.tap(find.text(t.sync_compare_use_local).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+      await tester.pumpAndSettle();
 
-    // Fake backend recorded an export ONLY for the conflict folder; the hidden
-    // calm book's folder was never synced.
-    expect(fake.exportedByFolder.keys, contains('folderC'));
-    expect(fake.exportedByFolder.keys, isNot(contains('folderK')));
-  });
+      // Fake backend recorded an export ONLY for the conflict folder; the hidden
+      // calm book's folder was never synced.
+      expect(fake.exportedByFolder.keys, contains('folderC'));
+      expect(fake.exportedByFolder.keys, isNot(contains('folderK')));
+    },
+  );
 
-  testWidgets('conflictsOnly with zero conflicts shows the empty state',
-      (WidgetTester tester) async {
+  testWidgets('conflictsOnly with zero conflicts shows the empty state', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
@@ -458,8 +476,9 @@ void main() {
     expect(find.text('CalmBook'), findsNothing);
   });
 
-  testWidgets('resolving a conflict via Apply writes the baseline',
-      (WidgetTester tester) async {
+  testWidgets('resolving a conflict via Apply writes the baseline', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
@@ -489,7 +508,9 @@ void main() {
     // Manual export ran (folder progress written) and the baseline advanced to
     // the local version — so the divergence no longer reads as a conflict.
     expect(fake.exportedByFolder['folderA']?.lastBookmarkModified, 120);
-    expect(await db.getSyncBaseline(sanitizeTtuFilename('BookA'), 'progress'),
-        120);
+    expect(
+      await db.getSyncBaseline(sanitizeTtuFilename('BookA'), 'progress'),
+      120,
+    );
   });
 }

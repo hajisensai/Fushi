@@ -47,8 +47,9 @@ void main() {
   }
 
   final EmbeddedTorrentEngine? engine = tryOpen();
-  final String? skip =
-      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = engine == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -68,32 +69,44 @@ void main() {
     'download completes with unchoke slots pinned to 0 (upload disabled)',
     () async {
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: engine!, workDir: tempDir, contentBytes: 2 * 1024 * 1024);
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: 2 * 1024 * 1024,
+      );
       addTearDown(rig.dispose);
 
-      final EmbeddedTorrentSession? leecher =
-          EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+      final EmbeddedTorrentSession? leecher = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
       expect(leecher, isNotNull);
       addTearDown(leecher!.close);
 
-      expect(leecher.supportsUploadControl, isTrue,
-          reason: '新构建的 DLL 必须带上传策略原语');
+      expect(
+        leecher.supportsUploadControl,
+        isTrue,
+        reason: '新构建的 DLL 必须带上传策略原语',
+      );
       // 关上传（BUG-1293 的正确原语）：**下载开始前**就钉死 0 槽位。
       expect(leecher.setUnchokeSlots(0), isTrue);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
-      final FtAddResult added =
-          leecher.addMagnet(rig.magnetUri, savePath: dlDir.path);
+      final FtAddResult added = leecher.addMagnet(
+        rig.magnetUri,
+        savePath: dlDir.path,
+      );
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
-      expect(leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
-          isTrue);
+      expect(
+        leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+        isTrue,
+      );
 
       // 旧语义（upload_mode 置位）下这里永远等不到：leecher 不再发 piece
       // 请求。新语义（unchoke=0）只停上传 payload，下载照常完成。
       await _pollUntil(
-        () => leecher
-            .listTorrents()
-            .any((FtTorrentStatus t) => t.id == rig.infoHash && t.isFinished),
+        () => leecher.listTorrents().any(
+          (FtTorrentStatus t) => t.id == rig.infoHash && t.isFinished,
+        ),
         timeout: const Duration(seconds: 60),
         what: 'download completion with upload disabled',
         onTick: () =>

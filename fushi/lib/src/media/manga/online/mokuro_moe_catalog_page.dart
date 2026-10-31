@@ -15,11 +15,7 @@ import 'package:fushi/utils.dart';
 /// 下载不在本页阻塞：选卷后入队 app 级共享队列，切走视图或切走 tab 都继续跑，
 /// 落库完成后书架视图自动刷新（书架监听队列的 importedCount 增量）。
 class MokuroMoeCatalogPage extends ConsumerStatefulWidget {
-  const MokuroMoeCatalogPage({
-    super.key,
-    this.db,
-    this.navigation,
-  });
+  const MokuroMoeCatalogPage({super.key, this.db, this.navigation});
 
   /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
   /// null = 取 [AppModel.database]——本页自己取而不是让库页壳传，是为了让漫画库页
@@ -57,39 +53,41 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
           if (!isCupertinoPlatform(context))
             ValueListenableBuilder<MokuroMoeCatalogSnapshot>(
               valueListenable: _snapshot,
-              builder: (
-                BuildContext context,
-                MokuroMoeCatalogSnapshot snapshot,
-                Widget? child,
-              ) {
-                final Widget? navigation = widget.navigation;
-                if (navigation != null) {
-                  final String? seriesName = snapshot.seriesName;
-                  return FushiPageHeader.customTitle(
-                    title: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        navigation,
-                        if (seriesName != null && seriesName.trim().isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              seriesName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                }
-                return FushiPageHeader(
-                  title: t.manga_online_catalog_title,
-                  subtitle: snapshot.seriesName,
-                );
-              },
+              builder:
+                  (
+                    BuildContext context,
+                    MokuroMoeCatalogSnapshot snapshot,
+                    Widget? child,
+                  ) {
+                    final Widget? navigation = widget.navigation;
+                    if (navigation != null) {
+                      final String? seriesName = snapshot.seriesName;
+                      return FushiPageHeader.customTitle(
+                        title: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            navigation,
+                            if (seriesName != null &&
+                                seriesName.trim().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  seriesName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }
+                    return FushiPageHeader(
+                      title: t.manga_online_catalog_title,
+                      subtitle: snapshot.seriesName,
+                    );
+                  },
             ),
           Expanded(
             // 正文自带内边距：readerShelf 的 desktopContentPadding 已恒为零

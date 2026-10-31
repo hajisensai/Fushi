@@ -60,8 +60,8 @@ Locale? lookupImeLocaleOf(String? tag) {
 bool lookupImeLanguageMatches(String tag, String candidate) {
   final List<String> wanted = tag.trim().toLowerCase().split(RegExp('[-_]'));
   final List<String> other = candidate.trim().toLowerCase().split(
-        RegExp('[-_]'),
-      );
+    RegExp('[-_]'),
+  );
   if (wanted.first.isEmpty || wanted.first != other.first) return false;
   if (wanted.first != 'zh') return true;
   final int wantedScript = _chineseScript(wanted);

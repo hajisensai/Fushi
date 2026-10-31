@@ -27,8 +27,11 @@ void main() {
         ShortcutAction.audiobookPrevSentence,
       ];
       for (final ShortcutAction action in repeatable) {
-        expect(isRepeatableReaderKeyboardShortcut(action), isTrue,
-            reason: '$action 应可随长按连续触发');
+        expect(
+          isRepeatableReaderKeyboardShortcut(action),
+          isTrue,
+          reason: '$action 应可随长按连续触发',
+        );
       }
     });
 
@@ -43,8 +46,11 @@ void main() {
         ShortcutAction.audiobookPlayPause,
       ];
       for (final ShortcutAction action in discrete) {
-        expect(isRepeatableReaderKeyboardShortcut(action), isFalse,
-            reason: '$action 是离散动作，长按不得连发');
+        expect(
+          isRepeatableReaderKeyboardShortcut(action),
+          isFalse,
+          reason: '$action 是离散动作，长按不得连发',
+        );
       }
     });
 
@@ -67,15 +73,21 @@ void main() {
 
     test('存在 KeyRepeat 分支并落在 KeyDown-only 闸门之前', () {
       final int repeatIdx = reader.indexOf('if (event is KeyRepeatEvent) {');
-      expect(repeatIdx, isNonNegative,
-          reason: '_handleKeyEvent 必须显式处理 KeyRepeatEvent 才能长按连发');
+      expect(
+        repeatIdx,
+        isNonNegative,
+        reason: '_handleKeyEvent 必须显式处理 KeyRepeatEvent 才能长按连发',
+      );
       final int gateIdx = reader.indexOf(
         'if (event is! KeyDownEvent) return KeyEventResult.ignored;',
         repeatIdx,
       );
       expect(gateIdx, isNonNegative);
-      expect(repeatIdx, lessThan(gateIdx),
-          reason: 'KeyRepeat 分支必须在 KeyDown-only 闸门之前，否则闸门先拦掉重复事件');
+      expect(
+        repeatIdx,
+        lessThan(gateIdx),
+        reason: 'KeyRepeat 分支必须在 KeyDown-only 闸门之前，否则闸门先拦掉重复事件',
+      );
     });
 
     test('长按分支经共享解析器 + 白名单谓词执行，且排除手柄键与光标激活态', () {
@@ -86,8 +98,11 @@ void main() {
       );
       final String branch = reader.substring(repeatIdx, nextGate);
       // 白名单谓词把关，只连发可重复动作。
-      expect(branch, contains('isRepeatableReaderKeyboardShortcut('),
-          reason: '长按分支必须用白名单谓词过滤，离散动作不得连发');
+      expect(
+        branch,
+        contains('isRepeatableReaderKeyboardShortcut('),
+        reason: '长按分支必须用白名单谓词过滤，离散动作不得连发',
+      );
       // 共享解析器：KeyDown 与 KeyRepeat 两路解析一致。
       expect(branch, contains('_resolveReaderKeyboardShortcut('));
       // 字符光标激活时它自己的重复分支在上面处理，长按分支让位。
@@ -99,12 +114,18 @@ void main() {
     test('KeyDown 与 KeyRepeat 复用同一解析器 _resolveReaderKeyboardShortcut', () {
       // 解析器被定义一次、且两条路径都调用它（至少两处调用点）。
       expect(
-          reader, contains('ShortcutAction? _resolveReaderKeyboardShortcut('));
-      final int calls =
-          '_resolveReaderKeyboardShortcut('.allMatches(reader).length;
+        reader,
+        contains('ShortcutAction? _resolveReaderKeyboardShortcut('),
+      );
+      final int calls = '_resolveReaderKeyboardShortcut('
+          .allMatches(reader)
+          .length;
       // 1 处定义 + 2 处调用（KeyDown 路径 + KeyRepeat 路径）。
-      expect(calls, greaterThanOrEqualTo(3),
-          reason: 'KeyDown 与 KeyRepeat 必须共用同一解析器，避免两路解析漂移');
+      expect(
+        calls,
+        greaterThanOrEqualTo(3),
+        reason: 'KeyDown 与 KeyRepeat 必须共用同一解析器，避免两路解析漂移',
+      );
     });
   });
 }

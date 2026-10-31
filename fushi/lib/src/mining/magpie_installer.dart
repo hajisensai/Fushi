@@ -77,8 +77,9 @@ const String kMagpieBundledArch = 'x64';
 
 /// 返回缺少的必需根文件名；按 Windows 规则忽略大小写。
 List<String> magpieMissingFiles(Iterable<String> presentFiles) {
-  final Set<String> present =
-      presentFiles.map((String name) => name.toLowerCase()).toSet();
+  final Set<String> present = presentFiles
+      .map((String name) => name.toLowerCase())
+      .toSet();
   return kMagpieRequiredRootFiles
       .where((String name) => !present.contains(name.toLowerCase()))
       .toList(growable: false);
@@ -122,8 +123,9 @@ class MagpiePackageMetadata {
     // FormatException —— 那会被下面的 catch 静默吞成 null，表现为「明明发了元数据却永远
     // 只装不配」。当前 workflow 用 pwsh 7 写出的是无 BOM UTF-8（已实测），但写入端一旦
     // 换成 Windows PowerShell 5.1 就会带 BOM，这里挡住这类静默降级。
-    final String text =
-        content.startsWith('﻿') ? content.substring(1) : content;
+    final String text = content.startsWith('﻿')
+        ? content.substring(1)
+        : content;
     if (text.trim().isEmpty) return null;
     try {
       final Object? decoded = jsonDecode(text);
@@ -215,8 +217,8 @@ String magpieRequireVerifiedSha(String? sha, String arch) {
 /// 可写、免提权）。
 class MagpieInstaller {
   MagpieInstaller({Directory? bundledDirectory, bool? isWindowsOverride})
-      : _bundledDirectoryOverride = bundledDirectory,
-        _isWindows = isWindowsOverride ?? Platform.isWindows;
+    : _bundledDirectoryOverride = bundledDirectory,
+      _isWindows = isWindowsOverride ?? Platform.isWindows;
 
   /// 仅测试注入：主包随附归档目录（生产恒为 `Fushi.exe` 同级的 `magpie_bundle/`）。
   final Directory? _bundledDirectoryOverride;
@@ -251,10 +253,10 @@ class MagpieInstaller {
 
   /// 便携标记文件路径 `<install>\config\config.json`。
   static String portableConfigPath() => p.join(
-        installDirectory().path,
-        kMagpieConfigDirName,
-        kMagpieConfigFileName,
-      );
+    installDirectory().path,
+    kMagpieConfigDirName,
+    kMagpieConfigFileName,
+  );
 
   static File _markerFile() =>
       File(p.join(installDirectory().path, magpieMarkerName()));
@@ -284,7 +286,8 @@ class MagpieInstaller {
     final List<String> missing = <String>[...magpieMissingFiles(rootFiles)];
     for (final String required in kMagpieRequiredDirs) {
       final Directory sub = Directory(p.join(dir.path, required));
-      final bool ok = sub.existsSync() &&
+      final bool ok =
+          sub.existsSync() &&
           sub.listSync(followLinks: false).whereType<File>().isNotEmpty;
       if (!ok) missing.add(required);
     }
@@ -325,8 +328,10 @@ class MagpieInstaller {
     }
     final List<String> missingAfter = missingInstalledEntries();
     if (missingAfter.isNotEmpty) {
-      _log('install finished but incomplete ($targetArch): '
-          'missing ${missingAfter.join(', ')}');
+      _log(
+        'install finished but incomplete ($targetArch): '
+        'missing ${missingAfter.join(', ')}',
+      );
       return MagpieInstallResult.failed;
     }
     return MagpieInstallResult.installed;
@@ -350,8 +355,10 @@ class MagpieInstaller {
       );
     }
 
-    final String sha =
-        magpieRequireVerifiedSha(await sidecar.readAsString(), arch);
+    final String sha = magpieRequireVerifiedSha(
+      await sidecar.readAsString(),
+      arch,
+    );
     final String actual = sha256.convert(await zip.readAsBytes()).toString();
     if (!sha256Matches(sha, actual)) {
       throw MagpieInstallException(
@@ -360,11 +367,7 @@ class MagpieInstaller {
       );
     }
 
-    await _installVerifiedZip(
-      arch: arch,
-      zip: zip,
-      sha: sha,
-    );
+    await _installVerifiedZip(arch: arch, zip: zip, sha: sha);
     return true;
   }
 
@@ -380,8 +383,9 @@ class MagpieInstaller {
     required File zip,
     required String sha,
   }) async {
-    final Directory staging =
-        await Directory.systemTemp.createTemp('fushi_magpie_staging_');
+    final Directory staging = await Directory.systemTemp.createTemp(
+      'fushi_magpie_staging_',
+    );
     try {
       final Set<String> rootFiles = await _extractZip(zip, staging);
       final List<String> missingFromPackage = magpieMissingFiles(rootFiles);
@@ -395,10 +399,12 @@ class MagpieInstaller {
       // 元数据必须在换入**之前**从 staging 读——换入会把 staging 里的文件搬空。
       final MagpiePackageMetadata? metadata = await readStagedMetadata(staging);
 
-      await _serializeInstall(() => galgameHelperSwapInstall(
-            staging: staging,
-            target: installDirectory(),
-          ));
+      await _serializeInstall(
+        () => galgameHelperSwapInstall(
+          staging: staging,
+          target: installDirectory(),
+        ),
+      );
 
       final List<String> missingAfter = missingInstalledEntries();
       if (missingAfter.isNotEmpty) {
@@ -483,8 +489,9 @@ class MagpieInstaller {
     final Set<String> rootFiles = <String>{};
     for (final ArchiveFile entry in archive) {
       if (!entry.isFile) continue;
-      final String relativePath =
-          entry.name.replaceAll('/', p.separator).replaceAll('\\', p.separator);
+      final String relativePath = entry.name
+          .replaceAll('/', p.separator)
+          .replaceAll('\\', p.separator);
       if (relativePath.isEmpty || p.isAbsolute(relativePath)) {
         _log('extract: skipped absolute/empty entry "${entry.name}"');
         continue;

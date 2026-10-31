@@ -84,12 +84,15 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   }
 
   void _resolveProbedImage() {
-    final ImageStream newStream =
-        probedImageOf(widget).resolve(createLocalImageConfiguration(context));
+    final ImageStream newStream = probedImageOf(
+      widget,
+    ).resolve(createLocalImageConfiguration(context));
     if (newStream.key == _stream?.key) return;
     _detachListener();
-    final ImageStreamListener listener =
-        ImageStreamListener(_onImage, onError: _onError);
+    final ImageStreamListener listener = ImageStreamListener(
+      _onImage,
+      onError: _onError,
+    );
     _stream = newStream;
     _listener = listener;
     newStream.addListener(listener);

@@ -30,8 +30,9 @@ enum WindowsExitReason {
 }
 
 class WindowsNativePreExit {
-  static const MethodChannel _channel =
-      MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
+  static const MethodChannel _channel = MethodChannel(
+    'com.pichillilorenzo/flutter_inappwebview_manager',
+  );
 
   /// 每条退出路径独立的一次性守卫。同一路径内重复调用短路，但不同路径互不影响。
   static final Set<WindowsExitReason> _preparedReasons = <WindowsExitReason>{};

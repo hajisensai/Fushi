@@ -21,8 +21,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_collections_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_collections_pp',
+    );
     // AppModel 构造会惰性触碰 DefaultCacheManager → getApplicationSupportDirectory；
     // 不 mock 该 channel 会抛 MissingPluginException 异步泄漏到下一条测试。
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -45,9 +46,7 @@ void main() {
   });
 
   Widget buildApp(Widget child) {
-    return TranslationProvider(
-      child: MaterialApp(home: child),
-    );
+    return TranslationProvider(child: MaterialApp(home: child));
   }
 
   testWidgets('collection delete dialog fits a compact desktop window', (
@@ -134,21 +133,18 @@ void main() {
     }
 
     Widget buildPage() => ProviderScope(
-          overrides: <Override>[
-            appProvider.overrideWith((ref) => appModel),
-          ],
-          child: TranslationProvider(
-            child: const MaterialApp(home: CollectionsPage()),
-          ),
-        );
+      overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+      child: TranslationProvider(
+        child: const MaterialApp(home: CollectionsPage()),
+      ),
+    );
 
-    Finder clearButton() => find.widgetWithIcon(
-          FushiIconButton,
-          FushiIcons.deleteSweep,
-        );
+    Finder clearButton() =>
+        find.widgetWithIcon(FushiIconButton, FushiIcons.deleteSweep);
 
-    testWidgets('shows the clear button when mined sentences exist',
-        (WidgetTester tester) async {
+    testWidgets('shows the clear button when mined sentences exist', (
+      WidgetTester tester,
+    ) async {
       await seedMinedSentence('これはテスト文です。');
 
       await tester.pumpWidget(buildPage());
@@ -160,8 +156,9 @@ void main() {
       expect(clearButton(), findsOneWidget);
     });
 
-    testWidgets('hides the clear button when no mined sentences exist',
-        (WidgetTester tester) async {
+    testWidgets('hides the clear button when no mined sentences exist', (
+      WidgetTester tester,
+    ) async {
       // 不种任何制卡句（空集合）。
       await tester.pumpWidget(buildPage());
       await tester.pumpAndSettle();
@@ -169,8 +166,9 @@ void main() {
       expect(clearButton(), findsNothing);
     });
 
-    testWidgets('tapping clear and confirming clears all mined sentences',
-        (WidgetTester tester) async {
+    testWidgets('tapping clear and confirming clears all mined sentences', (
+      WidgetTester tester,
+    ) async {
       await seedMinedSentence('一つ目の文。');
       await seedMinedSentence('二つ目の文。');
       expect((await db.getAllMinedSentences()).length, 2);
@@ -199,8 +197,9 @@ void main() {
       expect(clearButton(), findsNothing);
     });
 
-    testWidgets('tapping clear and cancelling keeps mined sentences',
-        (WidgetTester tester) async {
+    testWidgets('tapping clear and cancelling keeps mined sentences', (
+      WidgetTester tester,
+    ) async {
       await seedMinedSentence('残す文。');
 
       await tester.pumpWidget(buildPage());

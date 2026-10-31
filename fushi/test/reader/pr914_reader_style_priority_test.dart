@@ -65,15 +65,23 @@ void main() {
       final int aRuleCount = '\na {\n'.allMatches(css).length;
       expect(aRuleCount, 1, reason: '`a { }` 规则应当只有一处（改了就要重新核对本守卫）');
       final int aRuleStart = css.indexOf('\na {\n');
-      final String aRule =
-          css.substring(aRuleStart, css.indexOf('}', aRuleStart));
-      expect(aRule, contains('!important'),
-          reason: '撤掉 !important → 书自带 a{color:#000} 在深色主题下黑底黑字（PR#914 ④）');
+      final String aRule = css.substring(
+        aRuleStart,
+        css.indexOf('}', aRuleStart),
+      );
+      expect(
+        aRule,
+        contains('!important'),
+        reason: '撤掉 !important → 书自带 a{color:#000} 在深色主题下黑底黑字（PR#914 ④）',
+      );
 
       // 反向：整份样式表里不得存在**没有** !important 的裸 `color: <链接色>;` 结尾。
       expect(aRule.trim().endsWith(';'), isTrue);
-      expect(aRule, isNot(matches(RegExp(r'color: [^;!]+;'))),
-          reason: '链接色声明不得以无 !important 的形式出现');
+      expect(
+        aRule,
+        isNot(matches(RegExp(r'color: [^;!]+;'))),
+        reason: '链接色声明不得以无 !important 的形式出现',
+      );
     });
 
     test('开关关着时行为不变（仍是 !important，逐字节同形）', () async {
@@ -98,8 +106,11 @@ void main() {
       expect(maxW, isNotEmpty);
       expect(maxH, isNotEmpty);
       for (final String d in <String>[...maxW, ...maxH]) {
-        expect(d, contains('!important'),
-            reason: '书 CSS 的 !important / id 选择器会夺权把图撑出页面容纳盒：$d');
+        expect(
+          d,
+          contains('!important'),
+          reason: '书 CSS 的 !important / id 选择器会夺权把图撑出页面容纳盒：$d',
+        );
       }
     });
 

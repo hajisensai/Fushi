@@ -27,42 +27,50 @@ void main() {
 
   test('重新导入同 bookKey 的书清除其墓碑', () async {
     await db.writeSyncDeletionTombstone('book', 'BookA', 100);
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'BookA',
-      title: 'BookA',
-      epubPath: '/tmp/a.epub',
-      extractDir: '/tmp/a',
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: 0,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'BookA',
+        title: 'BookA',
+        epubPath: '/tmp/a.epub',
+        extractDir: '/tmp/a',
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ),
+    );
     expect(await db.getSyncDeletionTombstonesOfType('book'), isEmpty);
   });
 
   test('删视频经 repo 写墓碑（仅 syncEverywhere）；重新 upsert 清碑', () async {
     final repo = VideoBookRepository(db);
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/v1',
-      title: 'V1',
-      videoPath: '/tmp/v1.mp4',
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/v1',
+        title: 'V1',
+        videoPath: '/tmp/v1.mp4',
+      ),
+    );
     // keepLocalOnly（默认）不写传播墓碑。
     await repo.deleteVideoBook('video/v1');
     expect(await db.getSyncDeletionTombstonesOfType('video'), isEmpty);
     // syncEverywhere 才写传播墓碑。
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/v1',
-      title: 'V1',
-      videoPath: '/tmp/v1.mp4',
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/v1',
+        title: 'V1',
+        videoPath: '/tmp/v1.mp4',
+      ),
+    );
     await repo.deleteVideoBook('video/v1', scope: DeleteScope.syncEverywhere);
     expect(await db.getSyncDeletionTombstonesOfType('video'), hasLength(1));
     // 重新加入同 uid → 清碑。
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/v1',
-      title: 'V1',
-      videoPath: '/tmp/v1.mp4',
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/v1',
+        title: 'V1',
+        videoPath: '/tmp/v1.mp4',
+      ),
+    );
     expect(await db.getSyncDeletionTombstonesOfType('video'), isEmpty);
   });
 
@@ -83,8 +91,10 @@ void main() {
     expect(removed, 1);
     final favs = await db.getSyncDeletionTombstonesOfType('favoriteword');
     expect(favs, hasLength(1));
-    expect(favs.single.itemKey,
-        FushiDatabase.favoriteWordItemKey('猫', 'ねこ', 'reader'));
+    expect(
+      favs.single.itemKey,
+      FushiDatabase.favoriteWordItemKey('猫', 'ねこ', 'reader'),
+    );
     // 重新收藏 → 清碑。
     await db.addFavoriteWord(
       expression: '猫',
@@ -119,16 +129,15 @@ void main() {
     String? bookKey = 'a',
     int? sectionIndex = 0,
     int? normCharOffset = 5,
-  }) =>
-      FavoriteSentence(
-        id: id,
-        text: text,
-        bookTitle: 'BookA',
-        bookKey: bookKey,
-        sectionIndex: sectionIndex,
-        normCharOffset: normCharOffset,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(100),
-      );
+  }) => FavoriteSentence(
+    id: id,
+    text: text,
+    bookTitle: 'BookA',
+    bookKey: bookKey,
+    sectionIndex: sectionIndex,
+    normCharOffset: normCharOffset,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(100),
+  );
 
   test('取消收藏句 removeById 写 favoritesentence 墓碑；重新收藏清碑', () async {
     final repo = FavoriteSentenceRepository(db);
@@ -141,7 +150,9 @@ void main() {
     // 重新收藏同内容 → 清碑（清的是内容键，与 id 无关）。
     await repo.add(mkSentence(id: 'hl_2'));
     expect(
-        await db.getSyncDeletionTombstonesOfType('favoritesentence'), isEmpty);
+      await db.getSyncDeletionTombstonesOfType('favoritesentence'),
+      isEmpty,
+    );
   });
 
   test('removeByContent 写墓碑；propagateDeletion:false 不写', () async {
@@ -153,11 +164,15 @@ void main() {
       sectionIndex: 0,
       normCharOffset: 5,
     );
-    expect(await db.getSyncDeletionTombstonesOfType('favoritesentence'),
-        hasLength(1));
+    expect(
+      await db.getSyncDeletionTombstonesOfType('favoritesentence'),
+      hasLength(1),
+    );
 
     await db.clearSyncDeletionTombstone(
-        'favoritesentence', FavoriteSentenceRepository.itemKeyOf(mkSentence()));
+      'favoritesentence',
+      FavoriteSentenceRepository.itemKeyOf(mkSentence()),
+    );
     await repo.add(mkSentence(id: 'hl_c2'));
     await repo.removeByContent(
       text: '猫が好き',
@@ -167,7 +182,9 @@ void main() {
       propagateDeletion: false,
     );
     expect(
-        await db.getSyncDeletionTombstonesOfType('favoritesentence'), isEmpty);
+      await db.getSyncDeletionTombstonesOfType('favoritesentence'),
+      isEmpty,
+    );
   });
 
   test('removeByItemKey 删本地 + 写墓碑（接收端确认路径）', () async {
@@ -187,8 +204,10 @@ void main() {
     await repo.add(mkSentence(id: 'hl_b', text: '二', normCharOffset: 2));
     await repo.clear();
     expect(await repo.getAll(), isEmpty);
-    expect(await db.getSyncDeletionTombstonesOfType('favoritesentence'),
-        hasLength(2));
+    expect(
+      await db.getSyncDeletionTombstonesOfType('favoritesentence'),
+      hasLength(2),
+    );
   });
 
   test('发布标记 remotePublishedAt', () async {
@@ -199,10 +218,11 @@ void main() {
     // 重复删（写墓碑）会重置发布状态为 0（新一轮删除需重新发布）。
     await db.writeSyncDeletionTombstone('book', 'BookA', 600);
     expect(
-        (await db.getSyncDeletionTombstonesOfType('book'))
-            .single
-            .remotePublishedAt,
-        0);
+      (await db.getSyncDeletionTombstonesOfType(
+        'book',
+      )).single.remotePublishedAt,
+      0,
+    );
   });
 
   test('clearSyncDeletionTombstone 显式清除', () async {

@@ -15,14 +15,22 @@ import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart'
 void main() {
   group('shinnkuGameLocalization 与 note 同源不分叉', () {
     test('路径前缀规则（与上游 get_game_type 一致）', () {
-      expect(shinnkuGameLocalization('合集系列/xxx/a.7z'),
-          DiscoveryGameLocalization.raw);
-      expect(shinnkuGameLocalization('zd/a.7z'),
-          DiscoveryGameLocalization.translated);
-      expect(shinnkuGameLocalization('0/win/a.7z'),
-          DiscoveryGameLocalization.translated);
-      expect(shinnkuGameLocalization('0/apk/a.apk'),
-          DiscoveryGameLocalization.mobile);
+      expect(
+        shinnkuGameLocalization('合集系列/xxx/a.7z'),
+        DiscoveryGameLocalization.raw,
+      );
+      expect(
+        shinnkuGameLocalization('zd/a.7z'),
+        DiscoveryGameLocalization.translated,
+      );
+      expect(
+        shinnkuGameLocalization('0/win/a.7z'),
+        DiscoveryGameLocalization.translated,
+      );
+      expect(
+        shinnkuGameLocalization('0/apk/a.apk'),
+        DiscoveryGameLocalization.mobile,
+      );
     });
 
     test('中文标注由枚举派生 —— 两种表示永远不会说不同的话', () {
@@ -47,8 +55,10 @@ void main() {
       'lib/src/media/discovery/sources/shinnku_discovery_source.dart',
     ).readAsStringSync();
     expect(
-        source.contains('gameLocalization: shinnkuGameLocalization('), isTrue,
-        reason: '源必须产出带类型的分类，UI 才能按它筛选并出 i18n 标签');
+      source.contains('gameLocalization: shinnkuGameLocalization('),
+      isTrue,
+      reason: '源必须产出带类型的分类，UI 才能按它筛选并出 i18n 标签',
+    );
   });
 
   test('不给分类的源保持 null —— 那是「未标注」，不是「未汉化」', () {
@@ -69,12 +79,19 @@ void main() {
     ).readAsStringSync();
 
     // 「未标注」档：没有它，聚合搜索里一按筛选就把 sukebei / AList 整个滤没了。
-    expect(page.contains('unlabelled'), isTrue,
-        reason: 'sukebei / AList 的条目 gameLocalization 恒为 null，'
-            '必须有一档能看见它们');
+    expect(
+      page.contains('unlabelled'),
+      isTrue,
+      reason:
+          'sukebei / AList 的条目 gameLocalization 恒为 null，'
+          '必须有一档能看见它们',
+    );
     // 目录条目不参与筛选（它们是导航结构，筛掉用户就下不去了）。
-    expect(page.contains('e is! DiscoveryResourceItem ||'), isTrue,
-        reason: '目录条目必须无条件保留');
+    expect(
+      page.contains('e is! DiscoveryResourceItem ||'),
+      isTrue,
+      reason: '目录条目必须无条件保留',
+    );
     // 换筛选不得重新发起请求。
     final int start = page.indexOf('Widget? _buildHeaderLeading()');
     expect(start, greaterThanOrEqualTo(0));
@@ -82,7 +99,10 @@ void main() {
     expect(end, greaterThan(start));
     final String body = page.substring(start, end);
     expect(body.contains('setState(() => _gameTypeFilter = f)'), isTrue);
-    expect(body.contains('_load('), isFalse,
-        reason: '分类是条目自带的可判定属性，换筛选不该再打一次网络');
+    expect(
+      body.contains('_load('),
+      isFalse,
+      reason: '分类是条目自带的可判定属性，换筛选不该再打一次网络',
+    );
   });
 }

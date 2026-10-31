@@ -142,7 +142,8 @@ void main() {
       expect(
         find.text(_kSecondPageText),
         findsNothing,
-        reason: '墨水屏模式下 iOS 丢了侧滑返回：iOS 没有系统返回键，隐藏顶栏的页面'
+        reason:
+            '墨水屏模式下 iOS 丢了侧滑返回：iOS 没有系统返回键，隐藏顶栏的页面'
             '就此永久出不去。返回手势只能来自 pageTransitionsTheme 里 '
             'TargetPlatform.iOS 那一项，直接 `return child` 的 '
             'EinkNoPageTransitionsBuilder 不会装手势检测器',
@@ -169,7 +170,8 @@ void main() {
       expect(
         find.text(_kSecondPageText),
         findsOneWidget,
-        reason: '零转场 builder 不套 _CupertinoBackGestureDetector，拖动应当无效——'
+        reason:
+            '零转场 builder 不套 _CupertinoBackGestureDetector，拖动应当无效——'
             '这条一旦变红说明侧滑返回另有来源，上面那条正向用例就不再有意义',
       );
       expect(find.text(_kFirstPageText), findsNothing);
@@ -189,7 +191,8 @@ void main() {
       expect(
         tester.getTopLeft(find.text(_kSecondPageText)).dx,
         0.0,
-        reason: '喂了 kAlwaysCompleteAnimation，第二页第一帧就该完全落位；若开始逐帧'
+        reason:
+            '喂了 kAlwaysCompleteAnimation，第二页第一帧就该完全落位；若开始逐帧'
             '横移说明墨水屏又变回有动画的转场',
       );
     });

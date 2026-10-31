@@ -33,9 +33,9 @@ void main() {
   /// 集列表里的标题（顶部大图也会渲染「续播集」标题，不限定范围会误判）。
   /// hayase 式集卡的标题带「N. 」前缀，故用 textContaining。
   Finder railText(String title) => find.descendant(
-        of: find.byType(FushiReorderableGrid),
-        matching: find.textContaining(title),
-      );
+    of: find.byType(FushiReorderableGrid),
+    matching: find.textContaining(title),
+  );
 
   Future<void> seed(
     List<(String, String)> rows, {
@@ -43,18 +43,22 @@ void main() {
     Set<String> started = const <String>{},
   }) async {
     for (final (String uid, String title) in rows) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(title),
-        videoPath: Value('/v/$title.mkv'),
-        completedAt: completed.contains(uid)
-            ? Value(DateTime(2026))
-            : const Value<DateTime?>(null),
-        lastPositionMs: Value(started.contains(uid) ? 60000 : 0),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(title),
+          videoPath: Value('/v/$title.mkv'),
+          completedAt: completed.contains(uid)
+              ? Value(DateTime(2026))
+              : const Value<DateTime?>(null),
+          lastPositionMs: Value(started.contains(uid) ? 60000 : 0),
+        ),
+      );
     }
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     for (final (String uid, _) in rows) {
       await db.addToCollection(collectionId, MediaKind.video, uid);
     }
@@ -62,15 +66,16 @@ void main() {
 
   /// 加入顺序故意乱序（S02 在前、PV 夹中间）：tab 仍必须按季升序 + 特典殿后。
   Future<void> seedMultiSeason() => seed(const <(String, String)>[
-        ('video/s2e1', 'Show S02E01'),
-        ('video/s1e1', 'Show S01E01'),
-        ('video/pv', 'Show Fan Disc'),
-        ('video/s1e2', 'Show S01E02'),
-      ]);
+    ('video/s2e1', 'Show S02E01'),
+    ('video/s1e1', 'Show S01E01'),
+    ('video/pv', 'Show Fan Disc'),
+    ('video/s1e2', 'Show S01E02'),
+  ]);
 
   Future<List<VideoBookRow>> loadMembers() async {
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     final List<VideoBookRow> all = await db.allVideoBooks();
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow r in all) r.bookUid: r,
@@ -82,35 +87,36 @@ void main() {
   }
 
   Future<List<String>> persistedOrder() async => <String>[
-        for (final MediaCollectionItemRow it
-            in await db.getCollectionItems(collectionId))
-          '${it.entryKey}@${it.sortIndex}',
-      ];
+    for (final MediaCollectionItemRow it in await db.getCollectionItems(
+      collectionId,
+    ))
+      '${it.entryKey}@${it.sortIndex}',
+  ];
 
   Widget buildApp({VoidCallback? onChanged}) => TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: MediaCollectionRow(
-              origin: 'user',
-              organizeAliases: '',
-              id: collectionId,
-              name: 'Show',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await (loadMembers)())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (VideoBookRow _) {},
-            onChanged: onChanged ?? () {},
-          ),
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Show',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
-      );
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (VideoBookRow _) {},
+        onChanged: onChanged ?? () {},
+      ),
+    ),
+  );
 
   /// 足够高的画布：顶部大图 clamp 到 600，剧集区（含季 tab）随后仍在首屏内，
   /// 从而能真的断言「不滚动、不展开就看得见」。
@@ -121,8 +127,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('多季合集：首屏就能看见季 tab 与默认展开的集列表，tab 按季升序、特典殿后',
-      (WidgetTester tester) async {
+  testWidgets('多季合集：首屏就能看见季 tab 与默认展开的集列表，tab 按季升序、特典殿后', (
+    WidgetTester tester,
+  ) async {
     useTallSurface(tester);
     await seedMultiSeason();
     await tester.pumpWidget(buildApp());
@@ -134,9 +141,9 @@ void main() {
       findsOneWidget,
       reason: '集列表（宽卡网格）必须默认可见，无需任何展开动作',
     );
-    final Finder tabs = find.byKey(const ValueKey<String>(
-      'collection-season-tabs',
-    ));
+    final Finder tabs = find.byKey(
+      const ValueKey<String>('collection-season-tabs'),
+    );
     expect(tabs, findsOneWidget);
     // 真的画在首屏可见区域内（不是只挂在树上）。
     expect(tester.getTopLeft(tabs).dy, lessThan(1400));
@@ -145,12 +152,16 @@ void main() {
         .widgetList<Tab>(find.descendant(of: tabs, matching: find.byType(Tab)))
         .map((Tab tab) => tab.text ?? '')
         .toList();
-    expect(labels, <String>['第 1 季', '第 2 季', 'PV·特典'],
-        reason: '加入顺序乱序，tab 仍按季升序排列、PV/特典殿后');
+    expect(labels, <String>[
+      '第 1 季',
+      '第 2 季',
+      'PV·特典',
+    ], reason: '加入顺序乱序，tab 仍按季升序排列、PV/特典殿后');
   });
 
-  testWidgets('「标题 2 - 集号」命名也出季 tab，两季不再交错（BUG-1543）',
-      (WidgetTester tester) async {
+  testWidgets('「标题 2 - 集号」命名也出季 tab，两季不再交错（BUG-1543）', (
+    WidgetTester tester,
+  ) async {
     useTallSurface(tester);
     // 用户实测命名：第 2 季的季号只体现为标题尾随的「2」。
     await seed(const <(String, String)>[
@@ -162,8 +173,9 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final Finder tabs =
-        find.byKey(const ValueKey<String>('collection-season-tabs'));
+    final Finder tabs = find.byKey(
+      const ValueKey<String>('collection-season-tabs'),
+    );
     expect(tabs, findsOneWidget, reason: '两季必须出 tab，此前全被判成第 1 季');
     final List<String> labels = tester
         .widgetList<Tab>(find.descendant(of: tabs, matching: find.byType(Tab)))
@@ -221,8 +233,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(railText('Show S02E01'), findsOneWidget);
-    expect(railText('Show S01E01'), findsNothing,
-        reason: '初始 tab 必须是续播集所在的季，而不是恒定第 1 季');
+    expect(
+      railText('Show S01E01'),
+      findsNothing,
+      reason: '初始 tab 必须是续播集所在的季，而不是恒定第 1 季',
+    );
   });
 
   testWidgets('单季合集：不出现季 tab（不平白加一层 UI）', (WidgetTester tester) async {
@@ -259,12 +274,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(persistCalls, 0, reason: '只看/只切 tab 不得触发任何落盘');
-    expect(await persistedOrder(), before,
-        reason: '分季只是展示派生：进页面 + 切 tab 都不得改动 sortIndex（更不落分组列）');
+    expect(
+      await persistedOrder(),
+      before,
+      reason: '分季只是展示派生：进页面 + 切 tab 都不得改动 sortIndex（更不落分组列）',
+    );
   });
 
-  testWidgets('「按季排序」动作：季→集重排、PV/特典殿后，真写穿 sortIndex',
-      (WidgetTester tester) async {
+  testWidgets('「按季排序」动作：季→集重排、PV/特典殿后，真写穿 sortIndex', (
+    WidgetTester tester,
+  ) async {
     useTallSurface(tester);
     await seedMultiSeason();
     await tester.pumpWidget(buildApp());
@@ -286,8 +305,9 @@ void main() {
 
     expect(
       <String>[
-        for (final MediaCollectionItemRow it
-            in await db.getCollectionItems(collectionId))
+        for (final MediaCollectionItemRow it in await db.getCollectionItems(
+          collectionId,
+        ))
           it.entryKey,
       ],
       <String>['video/s1e1', 'video/s1e2', 'video/s2e1', 'video/pv'],
@@ -296,8 +316,9 @@ void main() {
   });
 
   test('合集成员表没有任何分组/季列（分组不落库，存量合集零迁移）', () {
-    final FushiDatabase database =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase database = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
     addTearDown(database.close);
     final List<String> columns = database.mediaCollectionItems.$columns
         .map((GeneratedColumn<Object> c) => c.name.toLowerCase())

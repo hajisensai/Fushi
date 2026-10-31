@@ -6,8 +6,12 @@ import 'package:path/path.dart' as p;
 /// 这里固化派生判据与断链检测，确保删源守卫/重新定位入口的前提稳定。
 void main() {
   // 用平台无关的绝对根构造路径，避免 Windows/POSIX 分隔符差异。
-  final String root =
-      p.join(p.rootPrefix(p.current), 'app', 'docs', 'audiobooks');
+  final String root = p.join(
+    p.rootPrefix(p.current),
+    'app',
+    'docs',
+    'audiobooks',
+  );
 
   group('isReferencedPath', () {
     test('复制导入（持久根之内）判为非引用', () {
@@ -19,11 +23,17 @@ void main() {
     });
 
     test('引用导入（持久根之外）判为引用', () {
-      final String referenced =
-          p.join(p.rootPrefix(p.current), 'media', 'audio', '01.m4a');
+      final String referenced = p.join(
+        p.rootPrefix(p.current),
+        'media',
+        'audio',
+        '01.m4a',
+      );
       expect(
         AudiobookStorage.isReferencedPath(
-            filePath: referenced, persistRoot: root),
+          filePath: referenced,
+          persistRoot: root,
+        ),
         isTrue,
       );
     });
@@ -42,7 +52,9 @@ void main() {
       );
       expect(
         AudiobookStorage.isReferencedPath(
-            filePath: p.join(root, 'x.m4a'), persistRoot: ''),
+          filePath: p.join(root, 'x.m4a'),
+          persistRoot: '',
+        ),
         isFalse,
       );
     });
@@ -78,7 +90,9 @@ void main() {
     test('空列表 → false', () {
       expect(
         AudiobookStorage.anyReferenced(
-            paths: const <String>[], persistRoot: root),
+          paths: const <String>[],
+          persistRoot: root,
+        ),
         isFalse,
       );
     });
@@ -94,10 +108,10 @@ void main() {
         '/b/present.m4a',
         '/b/missing.m4a',
       ];
-      expect(
-        AudiobookStorage.missingPaths(paths, exists: fakeExists),
-        <String>['/a/gone.m4a', '/b/missing.m4a'],
-      );
+      expect(AudiobookStorage.missingPaths(paths, exists: fakeExists), <String>[
+        '/a/gone.m4a',
+        '/b/missing.m4a',
+      ]);
       expect(
         AudiobookStorage.hasMissingPaths(paths, exists: fakeExists),
         isTrue,
@@ -108,7 +122,9 @@ void main() {
       final List<String> paths = <String>['/a/present.m4a', '/b/present.m4a'];
       expect(AudiobookStorage.missingPaths(paths, exists: fakeExists), isEmpty);
       expect(
-          AudiobookStorage.hasMissingPaths(paths, exists: fakeExists), isFalse);
+        AudiobookStorage.hasMissingPaths(paths, exists: fakeExists),
+        isFalse,
+      );
     });
 
     test('空列表 → 无断链', () {

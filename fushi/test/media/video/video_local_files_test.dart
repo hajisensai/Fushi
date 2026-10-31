@@ -14,14 +14,14 @@ import 'package:path/path.dart' as p;
 
 /// 把路径里的字母大小写整体翻转，用来构造「同一个文件的另一种写法」。
 String _swapCase(String value) => String.fromCharCodes(<int>[
-      for (final int c in value.codeUnits)
-        if (c >= 0x41 && c <= 0x5A)
-          c + 32
-        else if (c >= 0x61 && c <= 0x7A)
-          c - 32
-        else
-          c,
-    ]);
+  for (final int c in value.codeUnits)
+    if (c >= 0x41 && c <= 0x5A)
+      c + 32
+    else if (c >= 0x61 && c <= 0x7A)
+      c - 32
+    else
+      c,
+]);
 
 void main() {
   group('isLocalVideoFilePath', () {
@@ -175,15 +175,12 @@ void main() {
         expect(report.removed, isEmpty, reason: 'Windows 上大小写不同 = 同一个文件');
         expect(a.existsSync(), isTrue);
       } else {
-        expect(
-          report.removedSet,
-          <String>{a.path},
-          reason: 'Linux/Android 大小写敏感，那真是另一个文件，不该被护栏挡住',
-        );
+        expect(report.removedSet, <String>{
+          a.path,
+        }, reason: 'Linux/Android 大小写敏感，那真是另一个文件，不该被护栏挡住');
         expect(a.existsSync(), isFalse);
       }
     });
-
   });
 
   group('sidecarSubtitlesForDeletedVideo（BUG-2565）', () {

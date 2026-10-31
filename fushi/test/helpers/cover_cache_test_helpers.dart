@@ -34,15 +34,17 @@ Future<void> resolveIntoCache(ImageProvider provider) async {
 
 /// [path] 的裸 FileImage 键是否还在 ImageCache。
 Future<bool> fileImageCached(String path) async {
-  final Object key =
-      await FileImage(File(path)).obtainKey(ImageConfiguration.empty);
+  final Object key = await FileImage(
+    File(path),
+  ).obtainKey(ImageConfiguration.empty);
   return PaintingBinding.instance.imageCache.containsKey(key);
 }
 
 /// [path] 的降采样（ResizeImage）键是否还在 ImageCache。
 Future<bool> resizedImageCached(String path) async {
-  final Object key =
-      await resizedFileImage(File(path)).obtainKey(ImageConfiguration.empty);
+  final Object key = await resizedFileImage(
+    File(path),
+  ).obtainKey(ImageConfiguration.empty);
   return PaintingBinding.instance.imageCache.containsKey(key);
 }
 
@@ -51,14 +53,23 @@ Future<void> populateBothCoverKeys(String path) async {
   await resolveIntoCache(FileImage(File(path)));
   await resolveIntoCache(resizedFileImage(File(path)));
   expect(await fileImageCached(path), isTrue, reason: '前置：裸 FileImage 键已入缓存');
-  expect(await resizedImageCached(path), isTrue,
-      reason: '前置：ResizeImage 键已入缓存');
+  expect(
+    await resizedImageCached(path),
+    isTrue,
+    reason: '前置：ResizeImage 键已入缓存',
+  );
 }
 
 /// 断言 [path] 的两个键都已被驱逐。
 Future<void> expectBothCoverKeysEvicted(String path) async {
-  expect(await fileImageCached(path), isFalse,
-      reason: '覆盖写后裸 FileImage 键必须被驱逐');
-  expect(await resizedImageCached(path), isFalse,
-      reason: '覆盖写后 ResizeImage（降采样）键必须被驱逐——旧缺陷只清 FileImage 键');
+  expect(
+    await fileImageCached(path),
+    isFalse,
+    reason: '覆盖写后裸 FileImage 键必须被驱逐',
+  );
+  expect(
+    await resizedImageCached(path),
+    isFalse,
+    reason: '覆盖写后 ResizeImage（降采样）键必须被驱逐——旧缺陷只清 FileImage 键',
+  );
 }

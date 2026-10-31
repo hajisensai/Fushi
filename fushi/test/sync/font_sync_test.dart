@@ -33,8 +33,7 @@ void main() {
   FontCatalogState stateOf(
     List<FontCatalogEntry> fonts,
     Map<String, List<FontTargetFont>> targets,
-  ) =>
-      FontCatalogState(fonts: fonts, targets: targets);
+  ) => FontCatalogState(fonts: fonts, targets: targets);
 
   test('上传：同一份字体文件只传一次，清单带上各用途的选用', () async {
     final _FakeLocal a = device('a', FontCatalogState.empty());
@@ -104,8 +103,9 @@ void main() {
     expect(report.skippedOversize, <String>['Big']);
     final Map<String, Object?> manifest = store.json(kFontSyncManifestName)!;
     expect(
-      (manifest['fonts']! as List<Object?>)
-          .map((Object? f) => (f! as Map<String, Object?>)['name']),
+      (manifest['fonts']! as List<Object?>).map(
+        (Object? f) => (f! as Map<String, Object?>)['name'],
+      ),
       <String>['Small'],
     );
     expect(
@@ -160,8 +160,10 @@ void main() {
 
     final FontCatalogState applied = b.applied!;
     // 本机原有字体还在，对端字体追加进来（新 id，不撞本机的 font_1）。
-    expect(applied.fonts.map((FontCatalogEntry f) => f.name),
-        <String>['Gothic', 'Mincho']);
+    expect(applied.fonts.map((FontCatalogEntry f) => f.name), <String>[
+      'Gothic',
+      'Mincho',
+    ]);
     final FontCatalogEntry pulled = applied.fonts.last;
     expect(pulled.id, isNot('font_1'));
     expect(p.isWithin(b.fontsRoot, pulled.path!), isTrue);
@@ -272,8 +274,8 @@ class _MemoryStore implements SyncAssetStore {
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       _files[namespaceId]?.containsKey(name) ?? false
-          ? AssetEntry(id: '$namespaceId/$name', name: name)
-          : null;
+      ? AssetEntry(id: '$namespaceId/$name', name: name)
+      : null;
 
   @override
   Future<void> putAsset(

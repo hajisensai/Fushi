@@ -35,63 +35,89 @@ void main() {
 
   /// 磁盘上真实存在的、相对 extractDir 的正斜杠路径集合（大小写原样）。
   Set<String> onDiskEntries() => <String>{
-        for (final FileSystemEntity e in extractDir.listSync(recursive: true))
-          if (e is File)
-            p.relative(e.path, from: extractDir.path).replaceAll('\\', '/'),
-      };
+    for (final FileSystemEntity e in extractDir.listSync(recursive: true))
+      if (e is File)
+        p.relative(e.path, from: extractDir.path).replaceAll('\\', '/'),
+  };
 
   test('章节 href 与磁盘上的实际大小写逐字节一致', () {
-    final EpubBook book =
-        EpubParser.parseSync(_mixedCaseEpub(), extractDir.path);
+    final EpubBook book = EpubParser.parseSync(
+      _mixedCaseEpub(),
+      extractDir.path,
+    );
     final Set<String> onDisk = onDiskEntries();
 
     expect(book.chapters, hasLength(2), reason: '两章都必须进 spine');
     for (final EpubChapter c in book.chapters) {
-      expect(onDisk, contains(c.href),
-          reason: 'href「${c.href}」与磁盘大小写不符 —— 大小写敏感的 '
-              'Android/Linux 上 existsSync 会失败，该章被静默跳过');
+      expect(
+        onDisk,
+        contains(c.href),
+        reason:
+            'href「${c.href}」与磁盘大小写不符 —— 大小写敏感的 '
+            'Android/Linux 上 existsSync 会失败，该章被静默跳过',
+      );
     }
   });
 
   test('资源表的键与 filePath 都保留真实大小写', () {
-    final EpubBook book =
-        EpubParser.parseSync(_mixedCaseEpub(), extractDir.path);
+    final EpubBook book = EpubParser.parseSync(
+      _mixedCaseEpub(),
+      extractDir.path,
+    );
     final Set<String> onDisk = onDiskEntries();
 
     for (final MapEntry<String, EpubResource> e in book.resources.entries) {
-      expect(onDisk, contains(e.key),
-          reason: '资源键「${e.key}」与磁盘大小写不符 —— 拦截器（BUG-1203）按真实 '
-              'href 回查 OPF media-type 时会查不中，静默退回扩展名兜底');
+      expect(
+        onDisk,
+        contains(e.key),
+        reason:
+            '资源键「${e.key}」与磁盘大小写不符 —— 拦截器（BUG-1203）按真实 '
+            'href 回查 OPF media-type 时会查不中，静默退回扩展名兜底',
+      );
       final String rel = p
           .relative(e.value.filePath!, from: extractDir.path)
           .replaceAll('\\', '/');
-      expect(onDisk, contains(rel),
-          reason: '资源 filePath「$rel」与磁盘大小写不符，读不到文件');
+      expect(onDisk, contains(rel), reason: '资源 filePath「$rel」与磁盘大小写不符，读不到文件');
     }
   });
 
   test('封面 href 保留真实大小写', () {
-    final EpubBook book =
-        EpubParser.parseSync(_mixedCaseEpub(), extractDir.path);
+    final EpubBook book = EpubParser.parseSync(
+      _mixedCaseEpub(),
+      extractDir.path,
+    );
     expect(book.coverHref, 'Images/COVER.jpeg');
     expect(onDiskEntries(), contains(book.coverHref));
   });
 
   test('NCX 目录能被找到（路径折成小写会导致 TOC 整个为空）', () {
-    final EpubBook book =
-        EpubParser.parseSync(_mixedCaseEpub(), extractDir.path);
-    expect(book.toc, isNotEmpty,
-        reason: 'NCX 在 `Meta/TOC.ncx`，路径被折成小写就读不到，TOC 静默变空');
-    expect(book.chapterIndexForHref(book.toc.first.href), isNot(-1),
-        reason: 'TOC 条目必须能解析回 spine 章节');
+    final EpubBook book = EpubParser.parseSync(
+      _mixedCaseEpub(),
+      extractDir.path,
+    );
+    expect(
+      book.toc,
+      isNotEmpty,
+      reason: 'NCX 在 `Meta/TOC.ncx`，路径被折成小写就读不到，TOC 静默变空',
+    );
+    expect(
+      book.chapterIndexForHref(book.toc.first.href),
+      isNot(-1),
+      reason: 'TOC 条目必须能解析回 spine 章节',
+    );
   });
 
   test('大小写保留不削弱 zip-slip 防护', () {
-    final EpubBook book =
-        EpubParser.parseSync(_traversalEpub(), extractDir.path);
+    final EpubBook book = EpubParser.parseSync(
+      _traversalEpub(),
+      extractDir.path,
+    );
     for (final EpubChapter c in book.chapters) {
-      expect(c.href.contains('..'), isFalse,
-          reason: '逃逸出 extractDir 的 manifest 条目必须被丢弃');
+      expect(
+        c.href.contains('..'),
+        isFalse,
+        reason: '逃逸出 extractDir 的 manifest 条目必须被丢弃',
+      );
     }
     for (final String key in book.resources.keys) {
       expect(key.contains('..'), isFalse);

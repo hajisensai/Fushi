@@ -35,13 +35,17 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
   String? bookmark,
 }) async {
   final String norm = normalizeSourceRootPath(path, transport: 'local');
-  final List<MediaSourceRow> existing =
-      await db.getMediaSourcesByKind(mediaKind);
-  final bool duplicate = existing
-      .any((MediaSourceRow r) => r.transport == 'local' && r.rootPath == norm);
+  final List<MediaSourceRow> existing = await db.getMediaSourcesByKind(
+    mediaKind,
+  );
+  final bool duplicate = existing.any(
+    (MediaSourceRow r) => r.transport == 'local' && r.rootPath == norm,
+  );
   if (duplicate) {
     return AddLocalFolderResult(
-        outcome: AddLocalFolderOutcome.duplicate, rootPath: norm);
+      outcome: AddLocalFolderOutcome.duplicate,
+      rootPath: norm,
+    );
   }
   final int sortOrder = _nextSortOrder(existing);
   final int newId = await db.insertMediaSource(
@@ -63,15 +67,18 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
     await SourceLibraryScanner(db).scan(fresh);
   }
   return AddLocalFolderResult(
-      outcome: AddLocalFolderOutcome.added, rootPath: norm, sourceId: newId);
+    outcome: AddLocalFolderOutcome.added,
+    rootPath: norm,
+    sourceId: newId,
+  );
 }
 
 int _nextSortOrder(List<MediaSourceRow> existing) => existing.isEmpty
     ? 0
     : existing
-            .map((MediaSourceRow r) => r.sortOrder)
-            .reduce((int a, int b) => a > b ? a : b) +
-        1;
+              .map((MediaSourceRow r) => r.sortOrder)
+              .reduce((int a, int b) => a > b ? a : b) +
+          1;
 
 /// 「导入文件夹（仅此一次）」：与常驻来源共用**同一条**扫描-导入管线，但登记的来源行
 /// 只作为这一次扫描的载体，扫完即删——已导入媒体保留（FK setNull 把 sourceId 归
@@ -96,8 +103,9 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
   void Function(int sourceId)? onScanning,
 }) async {
   final String norm = normalizeSourceRootPath(path, transport: 'local');
-  final int sortOrder =
-      _nextSortOrder(await db.getMediaSourcesByKind(mediaKind));
+  final int sortOrder = _nextSortOrder(
+    await db.getMediaSourcesByKind(mediaKind),
+  );
   final int tempId = await db.insertMediaSource(
     MediaSourcesCompanion(
       label: Value(defaultLabelFromRoot(norm, transport: 'local')),

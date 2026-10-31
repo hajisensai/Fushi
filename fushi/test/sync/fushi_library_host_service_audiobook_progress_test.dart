@@ -10,23 +10,24 @@ import 'package:fushi_core/fushi_core.dart';
 /// host-apply 测试（BUG-471）：互联有声书进度 live 端点必须真读写 host 自己的
 /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（修复根因：互联
 /// 角色非对称，host 从不回灌自己的有声书位置 pref）。与视频 position host-apply 对称。
-LocalLibraryHostService _svc(FushiDatabase db) =>
-    LocalLibraryHostService(
-      db: db,
-      dictionaryResourceRoot: Directory.systemTemp,
-      packages: SyncAssetPackageService(db: db),
-      refreshDictionaryCache: () async {},
-      runExclusive: (Future<void> Function() body) => body(),
-    );
+LocalLibraryHostService _svc(FushiDatabase db) => LocalLibraryHostService(
+  db: db,
+  dictionaryResourceRoot: Directory.systemTemp,
+  packages: SyncAssetPackageService(db: db),
+  refreshDictionaryCache: () async {},
+  runExclusive: (Future<void> Function() body) => body(),
+);
 
 /// host 库需先有该 bookKey 的 Audiobooks 行，putAudiobookPosition 的存在性闸门才
 /// 放行（真实互联场景：syncContent / 有声书包同步先把它推成 host 有声书）。
 Future<void> _seedHostAudiobook(FushiDatabase db, String bookKey) =>
-    db.upsertAudiobook(AudiobooksCompanion.insert(
-      bookKey: bookKey,
-      alignmentFormat: 'srt',
-      alignmentPath: '/tmp/$bookKey.srt',
-    ));
+    db.upsertAudiobook(
+      AudiobooksCompanion.insert(
+        bookKey: bookKey,
+        alignmentFormat: 'srt',
+        alignmentPath: '/tmp/$bookKey.srt',
+      ),
+    );
 
 void main() {
   late FushiDatabase db;
@@ -88,8 +89,8 @@ void main() {
   group('getAudiobookPosition', () {
     test('host 无记录 → (0, 0)', () async {
       final LocalLibraryHostService svc = _svc(db);
-      final ({int positionMs, int updatedAtMs}) p =
-          await svc.getAudiobookPosition('book/x');
+      final ({int positionMs, int updatedAtMs}) p = await svc
+          .getAudiobookPosition('book/x');
       expect(p.positionMs, 0);
       expect(p.updatedAtMs, 0);
     });
@@ -98,8 +99,8 @@ void main() {
       await db.setPrefTyped<int>(audiobookPositionPrefKey('book/a'), 42000);
       await db.setPrefTyped<int>(audiobookPositionAtPrefKey('book/a'), 9999);
       final LocalLibraryHostService svc = _svc(db);
-      final ({int positionMs, int updatedAtMs}) p =
-          await svc.getAudiobookPosition('book/a');
+      final ({int positionMs, int updatedAtMs}) p = await svc
+          .getAudiobookPosition('book/a');
       expect(p.positionMs, 42000);
       expect(p.updatedAtMs, 9999);
     });
@@ -107,8 +108,8 @@ void main() {
     test('旧数据只有位置无时间戳 → 时间戳记 0（降级）', () async {
       await db.setPrefTyped<int>(audiobookPositionPrefKey('book/old'), 12345);
       final LocalLibraryHostService svc = _svc(db);
-      final ({int positionMs, int updatedAtMs}) p =
-          await svc.getAudiobookPosition('book/old');
+      final ({int positionMs, int updatedAtMs}) p = await svc
+          .getAudiobookPosition('book/old');
       expect(p.positionMs, 12345);
       expect(p.updatedAtMs, 0);
     });
@@ -121,14 +122,17 @@ void main() {
       await svc.putAudiobookPosition('book/b', 55000, 3000);
 
       // 直查 prefs：真写（这正是旧路径缺失的——host 从不回灌有声书位置 pref）。
-      expect(await db.getPrefTyped<int>(audiobookPositionPrefKey('book/b'), 0),
-          55000);
       expect(
-          await db.getPrefTyped<int>(audiobookPositionAtPrefKey('book/b'), 0),
-          3000);
+        await db.getPrefTyped<int>(audiobookPositionPrefKey('book/b'), 0),
+        55000,
+      );
+      expect(
+        await db.getPrefTyped<int>(audiobookPositionAtPrefKey('book/b'), 0),
+        3000,
+      );
 
-      final ({int positionMs, int updatedAtMs}) got =
-          await svc.getAudiobookPosition('book/b');
+      final ({int positionMs, int updatedAtMs}) got = await svc
+          .getAudiobookPosition('book/b');
       expect(got.positionMs, 55000);
       expect(got.updatedAtMs, 3000);
     });
@@ -141,11 +145,14 @@ void main() {
 
       await svc.putAudiobookPosition('book/c', 100, 1000); // 更旧
 
-      expect(await db.getPrefTyped<int>(audiobookPositionPrefKey('book/c'), 0),
-          90000);
       expect(
-          await db.getPrefTyped<int>(audiobookPositionAtPrefKey('book/c'), 0),
-          5000);
+        await db.getPrefTyped<int>(audiobookPositionPrefKey('book/c'), 0),
+        90000,
+      );
+      expect(
+        await db.getPrefTyped<int>(audiobookPositionAtPrefKey('book/c'), 0),
+        5000,
+      );
     });
 
     test('上报新时间戳 → 覆盖 host 旧进度', () async {
@@ -156,19 +163,24 @@ void main() {
 
       await svc.putAudiobookPosition('book/d', 66000, 8000); // 更新
 
-      expect(await db.getPrefTyped<int>(audiobookPositionPrefKey('book/d'), 0),
-          66000);
       expect(
-          await db.getPrefTyped<int>(audiobookPositionAtPrefKey('book/d'), 0),
-          8000);
+        await db.getPrefTyped<int>(audiobookPositionPrefKey('book/d'), 0),
+        66000,
+      );
+      expect(
+        await db.getPrefTyped<int>(audiobookPositionAtPrefKey('book/d'), 0),
+        8000,
+      );
     });
 
     test('负位置 clamp 到 0', () async {
       await _seedHostAudiobook(db, 'book/e');
       final LocalLibraryHostService svc = _svc(db);
       await svc.putAudiobookPosition('book/e', -50, 1234);
-      expect(await db.getPrefTyped<int>(audiobookPositionPrefKey('book/e'), -1),
-          0);
+      expect(
+        await db.getPrefTyped<int>(audiobookPositionPrefKey('book/e'), -1),
+        0,
+      );
     });
 
     test('host 库无该有声书 → PUT 被闸门挡掉（不写孤儿 pref）', () async {
@@ -177,16 +189,19 @@ void main() {
 
       // 闸门 no-op：未 seed Audiobooks 行 → 不写 pref（默认 0 表示未写）。
       expect(
-          await db.getPrefTyped<int>(
-              audiobookPositionPrefKey('book/orphan'), 0),
-          0);
+        await db.getPrefTyped<int>(audiobookPositionPrefKey('book/orphan'), 0),
+        0,
+      );
       expect(
-          await db.getPrefTyped<int>(
-              audiobookPositionAtPrefKey('book/orphan'), 0),
-          0);
+        await db.getPrefTyped<int>(
+          audiobookPositionAtPrefKey('book/orphan'),
+          0,
+        ),
+        0,
+      );
 
-      final ({int positionMs, int updatedAtMs}) got =
-          await svc.getAudiobookPosition('book/orphan');
+      final ({int positionMs, int updatedAtMs}) got = await svc
+          .getAudiobookPosition('book/orphan');
       expect(got.positionMs, 0);
     });
   });
@@ -197,11 +212,15 @@ void main() {
     });
     test('时间戳键不被误当成 bookKey', () {
       expect(
-          audiobookKeyFromPositionPrefKey('audiobook_pos_at_book/x'), isNull);
+        audiobookKeyFromPositionPrefKey('audiobook_pos_at_book/x'),
+        isNull,
+      );
     });
     test('无关键返回 null', () {
       expect(
-          audiobookKeyFromPositionPrefKey('video_remote_position_v'), isNull);
+        audiobookKeyFromPositionPrefKey('video_remote_position_v'),
+        isNull,
+      );
     });
   });
 }

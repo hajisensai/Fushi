@@ -31,90 +31,92 @@ class _FakeAniDbProvider implements VideoMetadataProvider {
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
       results
-          .where((VideoMetadataWork work) => work.ids
-              .any((VideoMetadataId id) => id.value == lookup.externalId))
+          .where(
+            (VideoMetadataWork work) => work.ids.any(
+              (VideoMetadataId id) => id.value == lookup.externalId,
+            ),
+          )
           .firstOrNull;
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      const <VideoMetadataSeason>[];
+  ) async => const <VideoMetadataSeason>[];
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      const <VideoMetadataEpisode>[];
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}
 }
 
 VideoMetadataWork _work(String id, String title) => VideoMetadataWork(
-      provider: VideoMetadataProviderKind.anidb,
-      kind: VideoMetadataMediaKind.tv,
-      title: title,
-      ids: <VideoMetadataId>[
-        VideoMetadataId(type: 'anidb', value: id, isDefault: true),
-      ],
-    );
+  provider: VideoMetadataProviderKind.anidb,
+  kind: VideoMetadataMediaKind.tv,
+  title: title,
+  ids: <VideoMetadataId>[
+    VideoMetadataId(type: 'anidb', value: id, isDefault: true),
+  ],
+);
 
 VideoMediaReference _reference({
   VideoDiscoveryCategory category = VideoDiscoveryCategory.anime,
   int? anidbId,
-}) =>
-    VideoMediaReference(
-      providerId: 'anilist',
-      mediaId: '100',
-      mediaKind: VideoMetadataMediaKind.tv,
-      discoveryCategory: category,
-      title: '某番剧中文名',
-      originalTitle: 'ショー',
-      aliases: const <String>['Show Romaji'],
-      anidbId: anidbId,
-    );
+}) => VideoMediaReference(
+  providerId: 'anilist',
+  mediaId: '100',
+  mediaKind: VideoMetadataMediaKind.tv,
+  discoveryCategory: category,
+  title: '某番剧中文名',
+  originalTitle: 'ショー',
+  aliases: const <String>['Show Romaji'],
+  anidbId: anidbId,
+);
 
 void main() {
   VideoMetadataProviderRegistry registryOf(_FakeAniDbProvider provider) =>
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]);
 
   test('已带 anidbId：直接 confirmed，不做任何搜索', () async {
-    final _FakeAniDbProvider provider =
-        _FakeAniDbProvider(<VideoMetadataWork>[_work('42', 'ショー')]);
+    final _FakeAniDbProvider provider = _FakeAniDbProvider(<VideoMetadataWork>[
+      _work('42', 'ショー'),
+    ]);
     final AniDbDiscoveryIdentityResult result =
         await resolveAniDbDiscoveryIdentity(
-      reference: _reference(anidbId: 7),
-      registry: registryOf(provider),
-    );
+          reference: _reference(anidbId: 7),
+          registry: registryOf(provider),
+        );
     expect(result.status, AniDbDiscoveryIdentityStatus.confirmed);
     expect(result.reference.anidbId, 7);
     expect(provider.searchCount, 0);
   });
 
   test('非 anime 条目不适用：AniDB 不收真人影视，不解析不打扰', () async {
-    final _FakeAniDbProvider provider =
-        _FakeAniDbProvider(<VideoMetadataWork>[_work('42', 'ショー')]);
+    final _FakeAniDbProvider provider = _FakeAniDbProvider(<VideoMetadataWork>[
+      _work('42', 'ショー'),
+    ]);
     final AniDbDiscoveryIdentityResult result =
         await resolveAniDbDiscoveryIdentity(
-      reference: _reference(category: VideoDiscoveryCategory.tv),
-      registry: registryOf(provider),
-    );
+          reference: _reference(category: VideoDiscoveryCategory.tv),
+          registry: registryOf(provider),
+        );
     expect(result.status, AniDbDiscoveryIdentityStatus.notApplicable);
     expect(provider.searchCount, 0);
   });
 
-  test(
-      '唯一严格命中：anidbId 与 externalIds 一起写进 reference；'
+  test('唯一严格命中：anidbId 与 externalIds 一起写进 reference；'
       '日文原名优先于本地化显示名', () async {
-    final _FakeAniDbProvider provider =
-        _FakeAniDbProvider(<VideoMetadataWork>[_work('42', 'ショー')]);
+    final _FakeAniDbProvider provider = _FakeAniDbProvider(<VideoMetadataWork>[
+      _work('42', 'ショー'),
+    ]);
     final AniDbDiscoveryIdentityResult result =
         await resolveAniDbDiscoveryIdentity(
-      reference: _reference(),
-      registry: registryOf(provider),
-    );
+          reference: _reference(),
+          registry: registryOf(provider),
+        );
     expect(result.status, AniDbDiscoveryIdentityStatus.confirmed);
     expect(result.reference.anidbId, 42);
     expect(result.reference.externalIds['anidb'], '42');
@@ -129,9 +131,9 @@ void main() {
     ]);
     final AniDbDiscoveryIdentityResult result =
         await resolveAniDbDiscoveryIdentity(
-      reference: _reference(),
-      registry: registryOf(provider),
-    );
+          reference: _reference(),
+          registry: registryOf(provider),
+        );
     expect(result.status, AniDbDiscoveryIdentityStatus.ambiguous);
     expect(
       result.candidates.map((c) => c.lookup.externalId),
@@ -141,13 +143,14 @@ void main() {
   });
 
   test('查无：notFound，reference 原样返回', () async {
-    final _FakeAniDbProvider provider =
-        _FakeAniDbProvider(const <VideoMetadataWork>[]);
+    final _FakeAniDbProvider provider = _FakeAniDbProvider(
+      const <VideoMetadataWork>[],
+    );
     final AniDbDiscoveryIdentityResult result =
         await resolveAniDbDiscoveryIdentity(
-      reference: _reference(),
-      registry: registryOf(provider),
-    );
+          reference: _reference(),
+          registry: registryOf(provider),
+        );
     expect(result.status, AniDbDiscoveryIdentityStatus.notFound);
     expect(result.reference.anidbId, isNull);
   });

@@ -24,24 +24,30 @@ void main() {
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     // 三集：加入顺序（= 初始 sortIndex）故意乱序——Beta, 第10话, 第9话。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/beta'),
-      title: const Value('Beta'),
-      videoPath: const Value('/abs/beta.mp4'),
-      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/a10'),
-      title: const Value('Alpha 第10话'),
-      videoPath: const Value('/abs/a10.mp4'),
-      importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/a9'),
-      title: const Value('Alpha 第9话'),
-      videoPath: const Value('/abs/a9.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/beta'),
+        title: const Value('Beta'),
+        videoPath: const Value('/abs/beta.mp4'),
+        importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/a10'),
+        title: const Value('Alpha 第10话'),
+        videoPath: const Value('/abs/a10.mp4'),
+        importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/a9'),
+        title: const Value('Alpha 第9话'),
+        videoPath: const Value('/abs/a9.mp4'),
+        importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
+      ),
+    );
     collectionId = await db.createMediaCollection(
       '某番剧',
       collectionType: 'playlist',
@@ -54,8 +60,9 @@ void main() {
   tearDown(() => db.close());
 
   Future<List<VideoBookRow>> loadMembers() async {
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     final List<VideoBookRow> all = await db.allVideoBooks();
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow r in all) r.bookUid: r,
@@ -67,10 +74,11 @@ void main() {
   }
 
   Future<List<String>> persistedOrder() async => <String>[
-        for (final MediaCollectionItemRow it
-            in await db.getCollectionItems(collectionId))
-          it.entryKey,
-      ];
+    for (final MediaCollectionItemRow it in await db.getCollectionItems(
+      collectionId,
+    ))
+      it.entryKey,
+  ];
 
   Widget buildApp({ValueChanged<VideoBookRow>? onOpenEpisode}) =>
       TranslationProvider(
@@ -101,7 +109,8 @@ void main() {
   testWidgets('默认展示沉浸式合集信息与展开的集列表，点集卡打开对应集', (WidgetTester tester) async {
     VideoBookRow? opened;
     await tester.pumpWidget(
-        buildApp(onOpenEpisode: (VideoBookRow row) => opened = row));
+      buildApp(onOpenEpisode: (VideoBookRow row) => opened = row),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('某番剧'), findsOneWidget);
@@ -126,8 +135,9 @@ void main() {
     expect(opened?.bookUid, 'video/a10');
   });
 
-  testWidgets('一键「按名称」：natural 序（第9话<第10话）真写穿 sortIndex',
-      (WidgetTester tester) async {
+  testWidgets('一键「按名称」：natural 序（第9话<第10话）真写穿 sortIndex', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -136,11 +146,11 @@ void main() {
     await tester.tap(find.text(t.collection_sort_by_title).last);
     await tester.pumpAndSettle();
 
-    expect(
-      await persistedOrder(),
-      <String>['video/a9', 'video/a10', 'video/beta'],
-      reason: '一键按名称必须 natural 排序并落盘（不是只动内存）',
-    );
+    expect(await persistedOrder(), <String>[
+      'video/a9',
+      'video/a10',
+      'video/beta',
+    ], reason: '一键按名称必须 natural 排序并落盘（不是只动内存）');
   });
 
   testWidgets('一键「按导入时间」：旧→新真写穿 sortIndex', (WidgetTester tester) async {
@@ -152,11 +162,11 @@ void main() {
     await tester.tap(find.text(t.collection_sort_by_imported).last);
     await tester.pumpAndSettle();
 
-    expect(
-      await persistedOrder(),
-      <String>['video/a9', 'video/beta', 'video/a10'],
-      reason: '一键按导入时间：旧→新（= 原始加入时序）并落盘',
-    );
+    expect(await persistedOrder(), <String>[
+      'video/a9',
+      'video/beta',
+      'video/a10',
+    ], reason: '一键按导入时间：旧→新（= 原始加入时序）并落盘');
   });
 
   testWidgets('整行长按拖拽重排：首集拖到末尾真写穿 sortIndex', (WidgetTester tester) async {
@@ -180,9 +190,10 @@ void main() {
           .first,
     );
     await tester.pumpAndSettle();
-    final TestGesture gesture =
-        await tester.startGesture(tester.getCenter(betaRow),
-            kind: PointerDeviceKind.mouse);
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(betaRow),
+      kind: PointerDeviceKind.mouse,
+    );
     await tester.pump();
     // 集卡高 128 + 间距 12：中心要落进第 3 个槽（Δy ≈ 2×140），拖 7×40=280。
     for (int step = 0; step < 7; step++) {
@@ -192,11 +203,11 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(
-      await persistedOrder(),
-      <String>['video/a10', 'video/a9', 'video/beta'],
-      reason: '拖拽后顺序必须落盘 sortIndex（库页行/播放器同源生效）',
-    );
+    expect(await persistedOrder(), <String>[
+      'video/a10',
+      'video/a9',
+      'video/beta',
+    ], reason: '拖拽后顺序必须落盘 sortIndex（库页行/播放器同源生效）');
   });
 
   // ── BUG-1194：混合种类合集 ────────────────────────────────────────────
@@ -226,40 +237,45 @@ void main() {
     /// 全表成员的 `<mediaType>|<entryKey>` 序列（`getCollectionItems` 口径 =
     /// 库页合集行 / 播放器换集 / 网格详情页共读的那一份）。
     Future<List<String>> persistedMembers() async => <String>[
-          for (final MediaCollectionItemRow it
-              in await db.getCollectionItems(collectionId))
-            '${it.mediaType}|${it.entryKey}',
-        ];
+      for (final MediaCollectionItemRow it in await db.getCollectionItems(
+        collectionId,
+      ))
+        '${it.mediaType}|${it.entryKey}',
+    ];
 
     /// 落盘后的 sortIndex 序列；必须是致密 0..n-1，有碰撞即说明有成员没被回写。
     Future<List<int>> persistedSortIndices() async => <int>[
-          for (final MediaCollectionItemRow it
-              in await db.getCollectionItems(collectionId))
-            it.sortIndex,
-        ];
+      for (final MediaCollectionItemRow it in await db.getCollectionItems(
+        collectionId,
+      ))
+        it.sortIndex,
+    ];
 
     /// 三个断言口径一处收口：①成员集合零增减（非 video 成员仍在合集内）；
     /// ②全表 sortIndex 致密无碰撞；③非 video 成员相对 video 的手排位置不被打乱。
     Future<void> expectMixedOrder(List<String> expected) async {
       final List<String> members = await persistedMembers();
       expect(members.length, 5, reason: '排序绝不能增减成员');
-      expect(
-          members.toSet(),
-          <String>{
-            'video|video/beta',
-            'video|video/a10',
-            'video|video/a9',
-            'game|g1',
-            'epub|e1',
-          },
-          reason: '非 video 成员（game/epub）必须仍在合集内');
-      expect(await persistedSortIndices(), <int>[0, 1, 2, 3, 4],
-          reason: 'sortIndex 必须回写成致密 0..n-1；有重复即漏写了不可见成员');
+      expect(members.toSet(), <String>{
+        'video|video/beta',
+        'video|video/a10',
+        'video|video/a9',
+        'game|g1',
+        'epub|e1',
+      }, reason: '非 video 成员（game/epub）必须仍在合集内');
+      expect(await persistedSortIndices(), <int>[
+        0,
+        1,
+        2,
+        3,
+        4,
+      ], reason: 'sortIndex 必须回写成致密 0..n-1；有重复即漏写了不可见成员');
       expect(members, expected, reason: '非 video 成员必须留在其原下标，不被可见 video 序挤走');
     }
 
-    testWidgets('拖拽重排：非 video 成员留在原下标，成员零丢失、sortIndex 无碰撞',
-        (WidgetTester tester) async {
+    testWidgets('拖拽重排：非 video 成员留在原下标，成员零丢失、sortIndex 无碰撞', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
@@ -279,9 +295,10 @@ void main() {
             .first,
       );
       await tester.pumpAndSettle();
-      final TestGesture gesture =
-          await tester.startGesture(tester.getCenter(betaRow),
-              kind: PointerDeviceKind.mouse);
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(betaRow),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pump();
       for (int step = 0; step < 7; step++) {
         await gesture.moveBy(const Offset(0, 40));
@@ -299,8 +316,9 @@ void main() {
       ]);
     });
 
-    testWidgets('一键「按名称」：同样只置换 video 槽，非 video 成员原地不动',
-        (WidgetTester tester) async {
+    testWidgets('一键「按名称」：同样只置换 video 槽，非 video 成员原地不动', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
@@ -319,8 +337,9 @@ void main() {
       ]);
     });
 
-    testWidgets('一键「按导入时间」：同样只置换 video 槽，非 video 成员原地不动',
-        (WidgetTester tester) async {
+    testWidgets('一键「按导入时间」：同样只置换 video 槽，非 video 成员原地不动', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 

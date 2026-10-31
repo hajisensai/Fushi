@@ -78,11 +78,11 @@ MockClient _qb51Server() {
 }
 
 QBittorrentClient _client(http.Client inner) => QBittorrentClient(
-      baseUrl: 'http://qb.local:1236',
-      username: 'admin',
-      password: 'secret',
-      client: inner,
-    );
+  baseUrl: 'http://qb.local:1236',
+  username: 'admin',
+  password: 'secret',
+  client: inner,
+);
 
 void main() {
   group('classifyQbLoginFailure（登录成败判读，两代协议）', () {
@@ -195,11 +195,10 @@ void main() {
       expect(client.lastFailure, isNull);
       expect(await client.fetchVersion(), 'v5.2.3');
       expect(
-        seen['/api/v2/app/version']!
-            .headers
-            .entries
+        seen['/api/v2/app/version']!.headers.entries
             .firstWhere(
-                (MapEntry<String, String> e) => e.key.toLowerCase() == 'cookie')
+              (MapEntry<String, String> e) => e.key.toLowerCase() == 'cookie',
+            )
             .value,
         'SID=v52tok',
       );
@@ -212,27 +211,32 @@ void main() {
       expect(await client.ensureCategory('fushi'), isTrue);
       expect(
         await client.setFilePriority(
-            hash: 'h1', fileIndexes: <int>[0], priority: 7),
+          hash: 'h1',
+          fileIndexes: <int>[0],
+          priority: 7,
+        ),
         isTrue,
       );
-      expect(
-        await client.renameFile(hash: 'h1', oldPath: 'a', newPath: 'b'),
-        (true, null),
-      );
-      expect(
-        await client.setLocation(hash: 'h1', location: 'E:/Anime'),
-        (true, null),
-      );
+      expect(await client.renameFile(hash: 'h1', oldPath: 'a', newPath: 'b'), (
+        true,
+        null,
+      ));
+      expect(await client.setLocation(hash: 'h1', location: 'E:/Anime'), (
+        true,
+        null,
+      ));
       client.close();
     });
 
     test('暂停/恢复：旧端点 404 回退新端点后仍认 204', () async {
-      final QBittorrentClient client = _client(_qb52Server(
-        absentEndpoints: <String>{
-          '/api/v2/torrents/pause',
-          '/api/v2/torrents/resume',
-        },
-      ));
+      final QBittorrentClient client = _client(
+        _qb52Server(
+          absentEndpoints: <String>{
+            '/api/v2/torrents/pause',
+            '/api/v2/torrents/resume',
+          },
+        ),
+      );
       expect(await client.pauseTorrent('h1'), isTrue);
       expect(await client.resumeTorrent('h1'), isTrue);
       client.close();
@@ -254,17 +258,18 @@ void main() {
       expect(await client.ensureCategory('fushi'), isTrue);
       expect(await client.pauseTorrent('h1'), isTrue);
       expect(await client.addTorrents(<String>['magnet:?xt=x']), isTrue);
-      expect(
-        await client.setLocation(hash: 'h1', location: 'E:/Anime'),
-        (true, null),
-      );
+      expect(await client.setLocation(hash: 'h1', location: 'E:/Anime'), (
+        true,
+        null,
+      ));
       client.close();
     });
 
     test('200 Fails. 的错误账密仍被判成登录失败', () async {
       final QBittorrentClient client = _client(
         MockClient(
-            (http.Request request) async => http.Response('Fails.', 200)),
+          (http.Request request) async => http.Response('Fails.', 200),
+        ),
       );
       expect(await client.login(), isFalse);
       expect(client.lastFailure, contains('wrong username/password'));

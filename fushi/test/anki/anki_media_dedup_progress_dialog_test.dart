@@ -23,8 +23,7 @@ class _NullRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -61,12 +60,16 @@ class _StubRunner extends AnkiMediaDedupRunner {
 
 Future<BuildContext> _pumpHost(WidgetTester tester) async {
   late BuildContext host;
-  await tester.pumpWidget(MaterialApp(
-    home: Builder(builder: (BuildContext c) {
-      host = c;
-      return const SizedBox.shrink();
-    }),
-  ));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Builder(
+        builder: (BuildContext c) {
+          host = c;
+          return const SizedBox.shrink();
+        },
+      ),
+    ),
+  );
   return host;
 }
 
@@ -78,49 +81,64 @@ void main() {
     final _StubRunner runner = _StubRunner();
     final BuildContext host = await _pumpHost(tester);
 
-    final Future<AnkiMediaDedupReport?> pending =
-        runAnkiMediaDedupWithProgress(host, runner, dryRun: false);
+    final Future<AnkiMediaDedupReport?> pending = runAnkiMediaDedupWithProgress(
+      host,
+      runner,
+      dryRun: false,
+    );
     await tester.pump();
 
     // 弹窗立现，初始为扫描态。
     expect(find.text(t.anki_dedup_progress_title), findsOneWidget);
 
     // 进度回调驱动 UI：done/total + 当前文件 + 已释放空间。
-    runner.onProgress!(const AnkiMediaDedupProgress(
-      stage: AnkiMediaDedupStage.resolving,
-      done: 3,
-      total: 10,
-      currentFile: 'dupe-abc123.mp3',
-      bytesFreed: 2048,
-    ));
+    runner.onProgress!(
+      const AnkiMediaDedupProgress(
+        stage: AnkiMediaDedupStage.resolving,
+        done: 3,
+        total: 10,
+        currentFile: 'dupe-abc123.mp3',
+        bytesFreed: 2048,
+      ),
+    );
     await tester.pump();
-    expect(find.text(t.anki_dedup_progress_resolving(done: '3', total: '10')),
-        findsOneWidget);
+    expect(
+      find.text(t.anki_dedup_progress_resolving(done: '3', total: '10')),
+      findsOneWidget,
+    );
     expect(find.text('dupe-abc123.mp3'), findsOneWidget);
     expect(
-        find.text(t.anki_dedup_progress_freed(size: '2.0 KB')), findsOneWidget);
+      find.text(t.anki_dedup_progress_freed(size: '2.0 KB')),
+      findsOneWidget,
+    );
 
     // 结束后弹窗关闭，结果原样返回。
-    runner.complete(const AnkiMediaDedupReport(
-      dryRun: false,
-      groupCount: 1,
-      deletions: <MediaDedupDeletion>[],
-      notesRewritten: 0,
-      modelsRewritten: 0,
-      skipped: 0,
-    ));
+    runner.complete(
+      const AnkiMediaDedupReport(
+        dryRun: false,
+        groupCount: 1,
+        deletions: <MediaDedupDeletion>[],
+        notesRewritten: 0,
+        modelsRewritten: 0,
+        skipped: 0,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text(t.anki_dedup_progress_title), findsNothing);
     expect(await pending, isNotNull);
   });
 
-  testWidgets('BUG-1263：取消按钮置真 shouldCancel 并进入「正在取消…」态',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1263：取消按钮置真 shouldCancel 并进入「正在取消…」态', (
+    WidgetTester tester,
+  ) async {
     final _StubRunner runner = _StubRunner();
     final BuildContext host = await _pumpHost(tester);
 
-    final Future<AnkiMediaDedupReport?> pending =
-        runAnkiMediaDedupWithProgress(host, runner, dryRun: true);
+    final Future<AnkiMediaDedupReport?> pending = runAnkiMediaDedupWithProgress(
+      host,
+      runner,
+      dryRun: true,
+    );
     await tester.pump();
 
     expect(runner.shouldCancel!(), isFalse);
@@ -130,15 +148,17 @@ void main() {
     expect(runner.shouldCancel!(), isTrue);
     expect(find.text(t.anki_dedup_cancelling), findsOneWidget);
 
-    runner.complete(const AnkiMediaDedupReport(
-      dryRun: true,
-      groupCount: 0,
-      deletions: <MediaDedupDeletion>[],
-      notesRewritten: 0,
-      modelsRewritten: 0,
-      skipped: 0,
-      cancelled: true,
-    ));
+    runner.complete(
+      const AnkiMediaDedupReport(
+        dryRun: true,
+        groupCount: 0,
+        deletions: <MediaDedupDeletion>[],
+        notesRewritten: 0,
+        modelsRewritten: 0,
+        skipped: 0,
+        cancelled: true,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text(t.anki_dedup_progress_title), findsNothing);
     final AnkiMediaDedupReport? report = await pending;
@@ -151,8 +171,11 @@ void main() {
 
     // 在弹窗 builder 跑起来之前就完成任务：finally 必须等到首帧后仍把它关掉。
     runner.complete(null);
-    final Future<AnkiMediaDedupReport?> pending =
-        runAnkiMediaDedupWithProgress(host, runner, dryRun: true);
+    final Future<AnkiMediaDedupReport?> pending = runAnkiMediaDedupWithProgress(
+      host,
+      runner,
+      dryRun: true,
+    );
     await tester.pumpAndSettle();
 
     expect(await pending, isNull);

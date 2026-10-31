@@ -22,23 +22,29 @@ Future<void> _setReading(
   required int chars,
   required int ms,
   int pages = 0,
-}) =>
-    db.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: title,
-      dateKey: dateKey,
-      charactersRead: chars,
-      readingTimeMs: ms,
-      pagesRead: Value(pages),
-      lastStatisticModified: 1,
-    ));
+}) => db.setReadingStatistic(
+  ReadingStatisticsCompanion.insert(
+    title: title,
+    dateKey: dateKey,
+    charactersRead: chars,
+    readingTimeMs: ms,
+    pagesRead: Value(pages),
+    lastStatisticModified: 1,
+  ),
+);
 
 void main() {
   group('ReadingStatistics table', () {
     test('setReadingStatistic creates a new row', () async {
       final db = await _openDb();
 
-      await _setReading(db,
-          title: '吾輩は猫である', dateKey: '2026-05-16', chars: 100, ms: 60000);
+      await _setReading(
+        db,
+        title: '吾輩は猫である',
+        dateKey: '2026-05-16',
+        chars: 100,
+        ms: 60000,
+      );
 
       final all = await db.getAllReadingStatistics();
       expect(all, hasLength(1));
@@ -50,21 +56,30 @@ void main() {
     test('pagesRead 默认 0，且与字数是两个独立量纲（v60）', () async {
       final db = await _openDb();
       // EPUB：只有字数，不传页数 → 页数恒 0。
-      await _setReading(db,
-          title: 'Novel', dateKey: '2026-07-28', chars: 800, ms: 60000);
+      await _setReading(
+        db,
+        title: 'Novel',
+        dateKey: '2026-07-28',
+        chars: 800,
+        ms: 60000,
+      );
       // 漫画：字数与页数一起落，两个量纲互不顶替。
-      await _setReading(db,
-          title: 'Manga',
-          dateKey: '2026-07-28',
-          chars: 420,
-          ms: 40000,
-          pages: 17);
+      await _setReading(
+        db,
+        title: 'Manga',
+        dateKey: '2026-07-28',
+        chars: 420,
+        ms: 40000,
+        pages: 17,
+      );
 
       final List<ReadingStatisticRow> all = await db.getAllReadingStatistics();
-      final ReadingStatisticRow novel =
-          all.firstWhere((ReadingStatisticRow r) => r.title == 'Novel');
-      final ReadingStatisticRow manga =
-          all.firstWhere((ReadingStatisticRow r) => r.title == 'Manga');
+      final ReadingStatisticRow novel = all.firstWhere(
+        (ReadingStatisticRow r) => r.title == 'Novel',
+      );
+      final ReadingStatisticRow manga = all.firstWhere(
+        (ReadingStatisticRow r) => r.title == 'Manga',
+      );
       expect(novel.pagesRead, 0);
       expect(novel.charactersRead, 800);
       expect(manga.charactersRead, 420);
@@ -74,20 +89,40 @@ void main() {
 
     test('different dates create separate rows', () async {
       final db = await _openDb();
-      await _setReading(db,
-          title: 'Book', dateKey: '2026-05-15', chars: 100, ms: 10000);
-      await _setReading(db,
-          title: 'Book', dateKey: '2026-05-16', chars: 200, ms: 20000);
+      await _setReading(
+        db,
+        title: 'Book',
+        dateKey: '2026-05-15',
+        chars: 100,
+        ms: 10000,
+      );
+      await _setReading(
+        db,
+        title: 'Book',
+        dateKey: '2026-05-16',
+        chars: 200,
+        ms: 20000,
+      );
 
       expect(await db.getAllReadingStatistics(), hasLength(2));
     });
 
     test('different titles create separate rows on same date', () async {
       final db = await _openDb();
-      await _setReading(db,
-          title: 'Book A', dateKey: '2026-05-16', chars: 100, ms: 10000);
-      await _setReading(db,
-          title: 'Book B', dateKey: '2026-05-16', chars: 200, ms: 20000);
+      await _setReading(
+        db,
+        title: 'Book A',
+        dateKey: '2026-05-16',
+        chars: 100,
+        ms: 10000,
+      );
+      await _setReading(
+        db,
+        title: 'Book B',
+        dateKey: '2026-05-16',
+        chars: 200,
+        ms: 20000,
+      );
 
       expect(await db.getAllReadingStatistics(), hasLength(2));
     });
@@ -128,8 +163,9 @@ void main() {
       final logs = await db.getHourlyLogsForDate('2026-05-16');
       expect(logs, hasLength(2));
       final epub = logs.singleWhere((l) => l.format == BookFormat.epub.dbValue);
-      final manga =
-          logs.singleWhere((l) => l.format == BookFormat.manga.dbValue);
+      final manga = logs.singleWhere(
+        (l) => l.format == BookFormat.manga.dbValue,
+      );
       expect(epub.readingTimeMs, 1200000);
       expect(manga.readingTimeMs, 600000);
     });
@@ -153,42 +189,45 @@ void main() {
       expect(logs.single.readingTimeMs, 6000);
     });
 
-    test('setReadingHourlyLog overwrites per (dateKey, hour, format)',
-        () async {
-      final db = await _openDb();
-      // 模拟未来版本 wire 里的新格式值：必须逐字节透传，不折叠进已知枚举。
-      const String futureFormat = 'future_format';
-      await db.setReadingHourlyLog(
-        dateKey: '2026-05-16',
-        hour: 17,
-        readingTimeMs: 9000,
-        format: 'epub',
-      );
-      await db.setReadingHourlyLog(
-        dateKey: '2026-05-16',
-        hour: 17,
-        readingTimeMs: 7000,
-        format: futureFormat,
-      );
-      await db.setReadingHourlyLog(
-        dateKey: '2026-05-16',
-        hour: 17,
-        readingTimeMs: 9500,
-        format: 'epub',
-      );
+    test(
+      'setReadingHourlyLog overwrites per (dateKey, hour, format)',
+      () async {
+        final db = await _openDb();
+        // 模拟未来版本 wire 里的新格式值：必须逐字节透传，不折叠进已知枚举。
+        const String futureFormat = 'future_format';
+        await db.setReadingHourlyLog(
+          dateKey: '2026-05-16',
+          hour: 17,
+          readingTimeMs: 9000,
+          format: 'epub',
+        );
+        await db.setReadingHourlyLog(
+          dateKey: '2026-05-16',
+          hour: 17,
+          readingTimeMs: 7000,
+          format: futureFormat,
+        );
+        await db.setReadingHourlyLog(
+          dateKey: '2026-05-16',
+          hour: 17,
+          readingTimeMs: 9500,
+          format: 'epub',
+        );
 
-      final logs = await db.getHourlyLogsForDate('2026-05-16');
-      expect(logs, hasLength(2));
-      expect(
+        final logs = await db.getHourlyLogsForDate('2026-05-16');
+        expect(logs, hasLength(2));
+        expect(
           logs
               .singleWhere((l) => l.format == BookFormat.epub.dbValue)
               .readingTimeMs,
-          9500);
-      expect(
-        logs.singleWhere((l) => l.format == futureFormat).readingTimeMs,
-        7000,
-      );
-    });
+          9500,
+        );
+        expect(
+          logs.singleWhere((l) => l.format == futureFormat).readingTimeMs,
+          7000,
+        );
+      },
+    );
 
     test('different hours create separate logs', () async {
       final db = await _openDb();

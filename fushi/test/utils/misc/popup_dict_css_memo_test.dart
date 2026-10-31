@@ -38,17 +38,15 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-          nodeExe,
-          <String>[
-            jsTest.path,
-          ],
-          workingDirectory: Directory.current.path);
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'dict CSS memo JS behavior test failed.\n'
+        reason:
+            'dict CSS memo JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -65,14 +63,16 @@ void main() {
     expect(
       js,
       contains('function constructDictCssUncached('),
-      reason: 'the un-memoised implementation must stay separately callable, '
+      reason:
+          'the un-memoised implementation must stay separately callable, '
           'otherwise the recursion would populate the cache with at-block '
           'substrings',
     );
     expect(
       js,
       contains('function constructDictCss('),
-      reason: 'the memoised entry point must keep the original name so every '
+      reason:
+          'the memoised entry point must keep the original name so every '
           'existing call site is cached without being touched',
     );
 
@@ -95,7 +95,8 @@ void main() {
     expect(
       keyExpr,
       contains('scopePrefix'),
-      reason: 'cache key must include scopePrefix — dropping it makes the '
+      reason:
+          'cache key must include scopePrefix — dropping it makes the '
           'scoped and bare variants of the same dictionary collide',
     );
 
@@ -103,7 +104,8 @@ void main() {
     expect(
       js,
       contains('__dictCssCache.get(css)'),
-      reason: 'the outer cache must be keyed by the css string itself so a '
+      reason:
+          'the outer cache must be keyed by the css string itself so a '
           'changed dictionary stylesheet cannot return a stale scoping',
     );
     // 桶数必须封顶，否则换词典集/反复导入会让缓存无界增长。淘汰必须是 LRU 逐桶
@@ -125,7 +127,8 @@ void main() {
     expect(
       js,
       contains('__dictCssCache.delete(css)'),
-      reason: 'a cache hit must move its bucket to the tail, otherwise the '
+      reason:
+          'a cache hit must move its bucket to the tail, otherwise the '
           'eviction order is FIFO and hot buckets get dropped',
     );
     expect(
@@ -139,8 +142,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

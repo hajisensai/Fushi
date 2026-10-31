@@ -32,37 +32,47 @@ void main() {
       ).readAsStringSync();
     });
 
-    test('横排 contentBox 取自亚像素 getComputedStyle().columnWidth（非整数 clientWidth）',
-        () {
-      // getScrollContext 必须解析 cs.columnWidth 并优先用它作横排 contentBox。
-      expect(
-        source
-            .contains('var resolvedColumnWidth = parseFloat(cs.columnWidth);'),
-        isTrue,
-        reason: '横排必须读 getComputedStyle(scrollEl).columnWidth 的亚像素 used 列宽',
-      );
-      expect(
-        source.contains('if (resolvedColumnWidth > 0) {') &&
-            source.contains('contentBox = resolvedColumnWidth;'),
-        isTrue,
-        reason: 'columnWidth 解析成功时横排 contentBox 必须取亚像素列宽（消除 δ）',
-      );
-    });
+    test(
+      '横排 contentBox 取自亚像素 getComputedStyle().columnWidth（非整数 clientWidth）',
+      () {
+        // getScrollContext 必须解析 cs.columnWidth 并优先用它作横排 contentBox。
+        expect(
+          source.contains(
+            'var resolvedColumnWidth = parseFloat(cs.columnWidth);',
+          ),
+          isTrue,
+          reason: '横排必须读 getComputedStyle(scrollEl).columnWidth 的亚像素 used 列宽',
+        );
+        expect(
+          source.contains('if (resolvedColumnWidth > 0) {') &&
+              source.contains('contentBox = resolvedColumnWidth;'),
+          isTrue,
+          reason: 'columnWidth 解析成功时横排 contentBox 必须取亚像素列宽（消除 δ）',
+        );
+      },
+    );
 
     test('整数 clientWidth 仅作 columnWidth 解析失败时的兜底（不是横排默认路径）', () {
       // 只在 else 分支保留旧 clientWidth 兜底，绝不让它当横排主路径回归 bug。
-      final int colWidthIdx = source
-          .indexOf('var resolvedColumnWidth = parseFloat(cs.columnWidth);');
+      final int colWidthIdx = source.indexOf(
+        'var resolvedColumnWidth = parseFloat(cs.columnWidth);',
+      );
       final int fallbackIdx = source.indexOf(
         'contentBox = (scrollEl.clientWidth || this.pageWidth || window.innerWidth) - pl - pr;',
       );
       expect(colWidthIdx, greaterThan(0));
-      expect(fallbackIdx, greaterThan(colWidthIdx),
-          reason: 'clientWidth 兜底必须排在 columnWidth 主路径之后（else 分支）');
+      expect(
+        fallbackIdx,
+        greaterThan(colWidthIdx),
+        reason: 'clientWidth 兜底必须排在 columnWidth 主路径之后（else 分支）',
+      );
       // 兜底必须包在 else 里（columnWidth 不可用才走）。
       final String between = source.substring(colWidthIdx, fallbackIdx);
-      expect(between.contains('} else {'), isTrue,
-          reason: '整数 clientWidth 只能是 columnWidth 失败时的 else 兜底');
+      expect(
+        between.contains('} else {'),
+        isTrue,
+        reason: '整数 clientWidth 只能是 columnWidth 失败时的 else 兜底',
+      );
     });
 
     test('竖排也改读亚像素 columnWidth（TODO-792 与横排统一），injectedV 仅作兜底', () {
@@ -70,28 +80,38 @@ void main() {
       // 「injectedV − 双 parseFloat(padding)」重建，与浏览器单次解析 columnWidth 差
       // 亚像素 δ，经 N×pageStep 绝对网格累积。修复后竖排与横排统一读 used columnWidth，
       // 注入 viewportHeight 路径降级为 columnWidth 解析失败时的 else-if 兜底。
-      final int colWidthIdx = source
-          .indexOf('var resolvedColumnWidth = parseFloat(cs.columnWidth);');
+      final int colWidthIdx = source.indexOf(
+        'var resolvedColumnWidth = parseFloat(cs.columnWidth);',
+      );
       final int vFallbackIdx = source.indexOf(
         'contentBox = (this.viewportHeight || scrollEl.clientHeight || window.innerHeight) - pt - pb;',
       );
       expect(colWidthIdx, greaterThan(0));
-      expect(vFallbackIdx, greaterThan(colWidthIdx),
-          reason: '竖排 injectedV 路径必须排在 columnWidth 主路径之后（降级为兜底）');
+      expect(
+        vFallbackIdx,
+        greaterThan(colWidthIdx),
+        reason: '竖排 injectedV 路径必须排在 columnWidth 主路径之后（降级为兜底）',
+      );
       // injectedV 兜底必须包在 `} else if (vertical) {` 里（columnWidth 不可用才走）。
       final String between = source.substring(colWidthIdx, vFallbackIdx);
-      expect(between.contains('} else if (vertical) {'), isTrue,
-          reason: '注入 viewportHeight 只能是 columnWidth 失败时的竖排 else-if 兜底');
+      expect(
+        between.contains('} else if (vertical) {'),
+        isTrue,
+        reason: '注入 viewportHeight 只能是 columnWidth 失败时的竖排 else-if 兜底',
+      );
     });
 
     test('pageStep/maxScroll 同源亚像素（无新双量纲）', () {
       // pageStep = contentBox + gap；maxScroll = totalSize - pageStep，二者同源。
-      expect(source.contains('var pageStep = columns * (contentBox + gap);'),
-          isTrue);
       expect(
-          source.contains('var maxScroll = Math.max(0, totalSize - pageStep);'),
-          isTrue,
-          reason: 'maxScroll 必须用同一亚像素 pageStep，避免量纲分裂');
+        source.contains('var pageStep = columns * (contentBox + gap);'),
+        isTrue,
+      );
+      expect(
+        source.contains('var maxScroll = Math.max(0, totalSize - pageStep);'),
+        isTrue,
+        reason: 'maxScroll 必须用同一亚像素 pageStep，避免量纲分裂',
+      );
     });
   });
 
@@ -109,11 +129,13 @@ void main() {
     setUpAll(() {
       // 真源在 tool/reader_pitch_headless/：harness 正文 + 它 import 的 CDP 客户端。
       // test/reader/ 下那份只是一行 import 的薄入口（见下面的「不得再内联副本」）。
-      harnessSource = File(
+      harnessSource =
+          File(
             '../tool/reader_pitch_headless/horizontal_pitch_harness.mjs',
           ).readAsStringSync() +
-          File('../tool/reader_pitch_headless/cdp_client.mjs')
-              .readAsStringSync();
+          File(
+            '../tool/reader_pitch_headless/cdp_client.mjs',
+          ).readAsStringSync();
       invariantSource = File(
         'test/reader/reader_horizontal_pitch_invariant_test.dart',
       ).readAsStringSync();
@@ -121,28 +143,43 @@ void main() {
 
     test('harness 有整体墙钟看门狗，超时软跳过 exit 4（不让 Dart 30s 抢先杀）', () {
       expect(
-          harnessSource.contains('const HARNESS_DEADLINE_MS = 22000;'), isTrue,
-          reason: 'harness 必须有整体墙钟看门狗常量，且 < Dart 隔离 30s');
+        harnessSource.contains('const HARNESS_DEADLINE_MS = 22000;'),
+        isTrue,
+        reason: 'harness 必须有整体墙钟看门狗常量，且 < Dart 隔离 30s',
+      );
       final int wdIdx = harnessSource.indexOf('const watchdog = setTimeout(');
-      expect(wdIdx, greaterThan(0),
-          reason: '看门狗必须是 setTimeout；超时后 process.exit(4) 软跳过');
+      expect(
+        wdIdx,
+        greaterThan(0),
+        reason: '看门狗必须是 setTimeout；超时后 process.exit(4) 软跳过',
+      );
       final String wdBody = harnessSource.substring(wdIdx, wdIdx + 400);
-      expect(wdBody.contains('process.exit(4)'), isTrue,
-          reason: '看门狗超时必须走 exit 4 软跳过契约（测试端已 markTestSkipped）');
+      expect(
+        wdBody.contains('process.exit(4)'),
+        isTrue,
+        reason: '看门狗超时必须走 exit 4 软跳过契约（测试端已 markTestSkipped）',
+      );
     });
 
     test('每条 CDP 命令有超时，绝不无限挂起', () {
-      expect(harnessSource.contains('CDP command timed out: '), isTrue,
-          reason: 'CdpSocket.send 必须对每条命令设超时，防响应帧丢失导致 node 永挂');
       expect(
-          harnessSource.contains(
-              'send(method, params = {}, timeoutMs = CDP_COMMAND_HANG_GUARD_MS)'),
-          isTrue,
-          reason: 'send 必须带 timeoutMs 形参并默认有限值');
+        harnessSource.contains('CDP command timed out: '),
+        isTrue,
+        reason: 'CdpSocket.send 必须对每条命令设超时，防响应帧丢失导致 node 永挂',
+      );
+      expect(
+        harnessSource.contains(
+          'send(method, params = {}, timeoutMs = CDP_COMMAND_HANG_GUARD_MS)',
+        ),
+        isTrue,
+        reason: 'send 必须带 timeoutMs 形参并默认有限值',
+      );
       // BUG-2803：挂死护栏按外层 90s 预算定尺，不按「正常延迟」猜；仍须有限。
-      expect(harnessSource.contains('const CDP_COMMAND_HANG_GUARD_MS = 30000;'),
-          isTrue,
-          reason: 'CDP 单命令挂死护栏必须是有限常量');
+      expect(
+        harnessSource.contains('const CDP_COMMAND_HANG_GUARD_MS = 30000;'),
+        isTrue,
+        reason: 'CDP 单命令挂死护栏必须是有限常量',
+      );
     });
 
     test('BUG-2803 Chrome 冷启动等真实就绪信号，崩溃立刻带 stderr 失败', () {
@@ -151,17 +188,31 @@ void main() {
       for (final String source in <String>[
         File('../tool/reader_pitch_headless/cdp_client.mjs').readAsStringSync(),
       ]) {
-        expect(source.contains('DevTools listening on ws:'), isTrue,
-            reason: '就绪信号必须是 Chrome stderr 的 DevTools listening 行');
-        expect(source.contains("stdio: ['ignore', 'ignore', 'pipe']"), isTrue,
-            reason: 'Chrome stderr 必须接管（信号 + 失败诊断）');
-        expect(source.contains("proc.once('exit', onExit)"), isTrue,
-            reason: '进程提前退出（含被信号杀）必须立刻失败');
-        expect(source.contains('readDevToolsPort'), isFalse,
-            reason: '不得回退到固定截止的 DevToolsActivePort 轮询');
-        expect(source.contains('const CHROME_ATTACH_HANG_GUARD_MS = 60000;'),
-            isTrue,
-            reason: '冷启动整段一个挂死护栏，按外层预算定尺');
+        expect(
+          source.contains('DevTools listening on ws:'),
+          isTrue,
+          reason: '就绪信号必须是 Chrome stderr 的 DevTools listening 行',
+        );
+        expect(
+          source.contains("stdio: ['ignore', 'ignore', 'pipe']"),
+          isTrue,
+          reason: 'Chrome stderr 必须接管（信号 + 失败诊断）',
+        );
+        expect(
+          source.contains("proc.once('exit', onExit)"),
+          isTrue,
+          reason: '进程提前退出（含被信号杀）必须立刻失败',
+        );
+        expect(
+          source.contains('readDevToolsPort'),
+          isFalse,
+          reason: '不得回退到固定截止的 DevToolsActivePort 轮询',
+        );
+        expect(
+          source.contains('const CHROME_ATTACH_HANG_GUARD_MS = 60000;'),
+          isTrue,
+          reason: '冷启动整段一个挂死护栏，按外层预算定尺',
+        );
       }
     });
 
@@ -172,83 +223,99 @@ void main() {
         'test/reader/reader_horizontal_pitch_harness.mjs',
       ).readAsStringSync();
       expect(
-          entry.contains("import '../../../tool/reader_pitch_headless/"
-              "horizontal_pitch_harness.mjs';"),
-          isTrue);
-      expect(entry.contains('class CdpSocket'), isFalse,
-          reason: '薄入口里不得再出现 CDP 客户端实现（又内联回去了）');
+        entry.contains(
+          "import '../../../tool/reader_pitch_headless/"
+          "horizontal_pitch_harness.mjs';",
+        ),
+        isTrue,
+      );
+      expect(
+        entry.contains('class CdpSocket'),
+        isFalse,
+        reason: '薄入口里不得再出现 CDP 客户端实现（又内联回去了）',
+      );
     });
 
     test('Dart 侧 headless 测试显式放宽超时到 > harness 看门狗', () {
       // 默认 30s 隔离超时是 flake 直接触发点：会在 harness 打印退出码契约前先杀进程。
       expect(
-          invariantSource
-              .contains('timeout: const Timeout(Duration(seconds: 90))'),
-          isTrue,
-          reason: 'headless 几何测试必须显式 90s 超时（> 22s 看门狗 + 进程余量），'
-              '让 harness 自己的 exit 2/4 软跳过契约落地而非被 30s 隔离超时抢先');
+        invariantSource.contains(
+          'timeout: const Timeout(Duration(seconds: 90))',
+        ),
+        isTrue,
+        reason:
+            'headless 几何测试必须显式 90s 超时（> 22s 看门狗 + 进程余量），'
+            '让 harness 自己的 exit 2/4 软跳过契约落地而非被 30s 隔离超时抢先',
+      );
     });
   });
 
   group('TODO-753 横排残差 headless 几何守卫（真实 multicol getClientRects）', () {
-    test('旧整数 pageStep 残差随页数线性发散；新亚像素 pageStep 残差恒 0', () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped('node 不在 PATH；跳过 headless 几何复测');
-        return;
-      }
-      final File harness = File(
-        'test/reader/reader_horizontal_pitch_harness.mjs',
-      );
-      expect(harness.existsSync(), isTrue,
-          reason: 'headless harness ${harness.path} 必须存在');
+    test(
+      '旧整数 pageStep 残差随页数线性发散；新亚像素 pageStep 残差恒 0',
+      () async {
+        final String? nodeExe = _resolveNode();
+        if (nodeExe == null) {
+          markTestSkipped('node 不在 PATH；跳过 headless 几何复测');
+          return;
+        }
+        final File harness = File(
+          'test/reader/reader_horizontal_pitch_harness.mjs',
+        );
+        expect(
+          harness.existsSync(),
+          isTrue,
+          reason: 'headless harness ${harness.path} 必须存在',
+        );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[harness.path],
-        workingDirectory: Directory.current.path,
-      );
+        final ProcessResult result = await Process.run(nodeExe, <String>[
+          harness.path,
+        ], workingDirectory: Directory.current.path);
 
-      // 退出码 2 = 本机无 Chrome（headless 复测条件不满足），优雅跳过。
-      if (result.exitCode == 2) {
-        markTestSkipped('本机无 Chrome；跳过 headless 几何复测（源码守卫仍生效）');
-        return;
-      }
-      // 退出码 4 = Chrome 在但 getClientRects 逐字形测量不可用（CI ubuntu headless
-      // 的已知环境局限）。代数几何守卫（OLD 残差发散 / NEW 残差 0 / 亚像素 columnWidth /
-      // NEW pageStep == 真实列周期）已在 harness 内硬性通过，只有 glyph 测量这一项降级，
-      // 故软跳过而非判红（本机有 Chrome 时仍会跑满 exit 0 含 glyph 比对）。
-      if (result.exitCode == 4) {
-        markTestSkipped(
-            'Chrome 在但 getClientRects 字形测量不可用（headless 环境）；代数几何守卫仍硬性生效');
-        return;
-      }
+        // 退出码 2 = 本机无 Chrome（headless 复测条件不满足），优雅跳过。
+        if (result.exitCode == 2) {
+          markTestSkipped('本机无 Chrome；跳过 headless 几何复测（源码守卫仍生效）');
+          return;
+        }
+        // 退出码 4 = Chrome 在但 getClientRects 逐字形测量不可用（CI ubuntu headless
+        // 的已知环境局限）。代数几何守卫（OLD 残差发散 / NEW 残差 0 / 亚像素 columnWidth /
+        // NEW pageStep == 真实列周期）已在 harness 内硬性通过，只有 glyph 测量这一项降级，
+        // 故软跳过而非判红（本机有 Chrome 时仍会跑满 exit 0 含 glyph 比对）。
+        if (result.exitCode == 4) {
+          markTestSkipped(
+            'Chrome 在但 getClientRects 字形测量不可用（headless 环境）；代数几何守卫仍硬性生效',
+          );
+          return;
+        }
 
-      expect(
-        result.exitCode,
-        0,
-        reason: '横排 pitch harness 失败。\n'
-            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-      );
-      expect(
-        result.stdout.toString(),
-        contains('[HARNESS] all assertions passed'),
-        reason: 'harness 必须达到成功标记（旧残差发散 + 新残差 0 + 测得列周期==亚像素 pageStep）',
-      );
-    },
-        // 显式放宽到 90s：node harness 自带 22s 墙钟看门狗（超时确定性软跳过 exit 4），
-        // 加进程 spawn/teardown 余量仍远小于此。默认 30s 隔离超时会在 harness 打印
-        // 自己的退出码契约前先杀掉进程，把「runner 太慢」误判成 TimeoutException 红门，
-        // 是本 flake 的直接触发点，故这里给足 Dart 侧等待窗口，让 harness 自己的
-        // exit 2/4 软跳过契约落地而非被隔离超时抢先。
-        timeout: const Timeout(Duration(seconds: 90)));
+        expect(
+          result.exitCode,
+          0,
+          reason:
+              '横排 pitch harness 失败。\n'
+              'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+        );
+        expect(
+          result.stdout.toString(),
+          contains('[HARNESS] all assertions passed'),
+          reason: 'harness 必须达到成功标记（旧残差发散 + 新残差 0 + 测得列周期==亚像素 pageStep）',
+        );
+      },
+      // 显式放宽到 90s：node harness 自带 22s 墙钟看门狗（超时确定性软跳过 exit 4），
+      // 加进程 spawn/teardown 余量仍远小于此。默认 30s 隔离超时会在 harness 打印
+      // 自己的退出码契约前先杀掉进程，把「runner 太慢」误判成 TimeoutException 红门，
+      // 是本 flake 的直接触发点，故这里给足 Dart 侧等待窗口，让 harness 自己的
+      // exit 2/4 软跳过契约落地而非被隔离超时抢先。
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
   });
 }
 
 /// 解析可用的 `node` 可执行文件，找不到返回 null。
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

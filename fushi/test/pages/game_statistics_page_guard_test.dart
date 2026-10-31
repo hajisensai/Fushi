@@ -11,8 +11,11 @@ void main() {
       'lib/src/pages/implementations/home_game_page.dart',
     ]) {
       final String source = File(path).readAsStringSync();
-      expect(source, isNot(contains('statistics_center_page.dart')),
-          reason: path);
+      expect(
+        source,
+        isNot(contains('statistics_center_page.dart')),
+        reason: path,
+      );
       expect(source, isNot(contains('StatisticsCenterPage(')), reason: path);
     }
   });

@@ -28,56 +28,71 @@ void main() {
     expect(config.toJson()['apiKey'], '');
     expect(config.toJson().toString(), isNot(contains('app-test-key')));
     expect(
-        OpenSubtitlesConfig(apiKey: ' user-key ').effectiveApiKey, 'user-key');
+      OpenSubtitlesConfig(apiKey: ' user-key ').effectiveApiKey,
+      'user-key',
+    );
     expect(OpenSubtitlesConfig.fromJson(config.toJson()).apiKey, '');
-    expect(OpenSubtitlesConfig(apiKey: '', userAgent: 'Hibiki v1').userAgent,
-        'FushiPlayer v1');
-    expect(OpenSubtitlesConfig(apiKey: '', userAgent: 'Custom v2').userAgent,
-        'Custom v2');
+    expect(
+      OpenSubtitlesConfig(apiKey: '', userAgent: 'Hibiki v1').userAgent,
+      'FushiPlayer v1',
+    );
+    expect(
+      OpenSubtitlesConfig(apiKey: '', userAgent: 'Custom v2').userAgent,
+      'Custom v2',
+    );
   });
 
-  test('enabled client sends app key but disabled client sends no requests',
-      () async {
-    OpenSubtitlesConfig.embeddedApiKey = 'app-test-key';
-    int requests = 0;
-    final MockClient transport = MockClient((http.Request request) async {
-      requests++;
-      expect(request.headers['api-key'], 'app-test-key');
-      expect(request.headers['user-agent'], 'FushiPlayer v1');
-      return http.Response('{"data":[]}', 200);
-    });
-    final OpenSubtitlesClient enabled = OpenSubtitlesClient(
-        config: OpenSubtitlesConfig(apiKey: ''), client: transport);
-    await enabled.search(VideoSubtitleSearchRequest(query: 'Test'));
-    expect(requests, greaterThan(0));
-    final int beforeDisabled = requests;
-    final OpenSubtitlesClient disabled = OpenSubtitlesClient(
+  test(
+    'enabled client sends app key but disabled client sends no requests',
+    () async {
+      OpenSubtitlesConfig.embeddedApiKey = 'app-test-key';
+      int requests = 0;
+      final MockClient transport = MockClient((http.Request request) async {
+        requests++;
+        expect(request.headers['api-key'], 'app-test-key');
+        expect(request.headers['user-agent'], 'FushiPlayer v1');
+        return http.Response('{"data":[]}', 200);
+      });
+      final OpenSubtitlesClient enabled = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(apiKey: ''),
+        client: transport,
+      );
+      await enabled.search(VideoSubtitleSearchRequest(query: 'Test'));
+      expect(requests, greaterThan(0));
+      final int beforeDisabled = requests;
+      final OpenSubtitlesClient disabled = OpenSubtitlesClient(
         config: OpenSubtitlesConfig(apiKey: '', enabled: false),
-        client: transport);
-    await disabled.search(VideoSubtitleSearchRequest(query: 'Test'));
-    expect(requests, beforeDisabled);
-  });
+        client: transport,
+      );
+      await disabled.search(VideoSubtitleSearchRequest(query: 'Test'));
+      expect(requests, beforeDisabled);
+    },
+  );
 
   test('bundled application key never goes to a custom API endpoint', () async {
     OpenSubtitlesConfig.embeddedApiKey = 'app-test-key';
     int requests = 0;
     final OpenSubtitlesConfig config = OpenSubtitlesConfig(
-        apiKey: '', baseUrl: Uri.parse('https://custom.example/api/v1'));
+      apiKey: '',
+      baseUrl: Uri.parse('https://custom.example/api/v1'),
+    );
     final OpenSubtitlesClient client = OpenSubtitlesClient(
-        config: config,
-        client: MockClient((request) async {
-          requests++;
-          return http.Response('{"data":[]}', 200);
-        }));
+      config: config,
+      client: MockClient((request) async {
+        requests++;
+        return http.Response('{"data":[]}', 200);
+      }),
+    );
     expect(config.effectiveApiKey, isEmpty);
     await client.search(VideoSubtitleSearchRequest(query: 'Test'));
     expect(requests, 0);
     expect(
-        OpenSubtitlesConfig(
-                apiKey: 'custom-key',
-                baseUrl: Uri.parse('https://custom.example/api/v1'))
-            .effectiveApiKey,
-        'custom-key');
+      OpenSubtitlesConfig(
+        apiKey: 'custom-key',
+        baseUrl: Uri.parse('https://custom.example/api/v1'),
+      ).effectiveApiKey,
+      'custom-key',
+    );
   });
 
   test('config codec persists credentials but toString redacts them', () {
@@ -116,8 +131,11 @@ void main() {
         expect(request.url.queryParameters['episode_number'], '2');
         expect(request.url.queryParameters['parent_tmdb_id'], '123');
         expect(request.url.queryParameters['tmdb_id'], isNull);
-        expect(request.url.queryParameters['query'], isNull,
-            reason: 'ID lookup must not be mixed with a title lookup');
+        expect(
+          request.url.queryParameters['query'],
+          isNull,
+          reason: 'ID lookup must not be mixed with a title lookup',
+        );
         return http.Response(jsonEncode(_searchResponse), 200);
       }
       if (request.url.path.endsWith('/download')) {
@@ -150,28 +168,29 @@ void main() {
       closesClient: false,
     );
 
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(
-      VideoSubtitleSearchRequest(
-        media: VideoMediaReference(
-          providerId: 'tmdb',
-          mediaId: '123',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.tv,
-          title: 'Test Show',
-          season: 1,
-          episode: 2,
-          tmdbId: 123,
-        ),
-        languages: <String>['ja'],
-      ),
-    );
+    final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+        .search(
+          VideoSubtitleSearchRequest(
+            media: VideoMediaReference(
+              providerId: 'tmdb',
+              mediaId: '123',
+              mediaKind: VideoMetadataMediaKind.tv,
+              discoveryCategory: VideoDiscoveryCategory.tv,
+              title: 'Test Show',
+              season: 1,
+              episode: 2,
+              tmdbId: 123,
+            ),
+            languages: <String>['ja'],
+          ),
+        );
 
     expect(result.failures, isEmpty);
     expect(result.items, hasLength(1));
     expect(loginCalls, 1);
-    final VideoSubtitleDownload download =
-        await client.download(result.items.single);
+    final VideoSubtitleDownload download = await client.download(
+      result.items.single,
+    );
     expect(download.fileName, 'downloaded.ja.srt');
     expect(utf8.decode(download.bytes), contains('hello'));
     expect(client.quotaRemaining, 4);
@@ -193,21 +212,27 @@ void main() {
       closesClient: false,
     );
 
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(VideoSubtitleSearchRequest(query: 'Test'));
+    final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+        .search(VideoSubtitleSearchRequest(query: 'Test'));
 
     expect(
-        result.failures.single.kind, ExternalProviderFailureKind.quotaExceeded);
+      result.failures.single.kind,
+      ExternalProviderFailureKind.quotaExceeded,
+    );
     expect(result.failures.single.retryAfter, const Duration(seconds: 60));
     expect(
-        result.failures.single.toString(), isNot(contains('response-secret')));
+      result.failures.single.toString(),
+      isNot(contains('response-secret')),
+    );
   });
 
-  test('temporary file follows a safe redirect without forwarding API auth',
-      () async {
-    int temporaryRequests = 0;
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
+  test(
+    'temporary file follows a safe redirect without forwarding API auth',
+    () async {
+      int temporaryRequests = 0;
+      final _RoutingStreamClient httpClient = _RoutingStreamClient((
+        http.BaseRequest request,
+      ) async {
         if (request.url.path.endsWith('/subtitles')) {
           return _jsonStreamedResponse(_searchResponse);
         }
@@ -234,31 +259,34 @@ void main() {
           Stream<List<int>>.value(utf8.encode('subtitle')),
           200,
         );
-      },
-    );
-    final OpenSubtitlesClient client = OpenSubtitlesClient(
-      config: OpenSubtitlesConfig(
-        apiKey: 'api-secret',
-        baseUrl: Uri.parse('http://localhost/api/v1'),
-      ),
-      client: httpClient,
-      closesClient: false,
-    );
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(VideoSubtitleSearchRequest(query: 'Test'));
+      });
+      final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(
+          apiKey: 'api-secret',
+          baseUrl: Uri.parse('http://localhost/api/v1'),
+        ),
+        client: httpClient,
+        closesClient: false,
+      );
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+          .search(VideoSubtitleSearchRequest(query: 'Test'));
 
-    final VideoSubtitleDownload download =
-        await client.download(result.items.single);
+      final VideoSubtitleDownload download = await client.download(
+        result.items.single,
+      );
 
-    expect(utf8.decode(download.bytes), 'subtitle');
-    expect(temporaryRequests, 2);
-  });
+      expect(utf8.decode(download.bytes), 'subtitle');
+      expect(temporaryRequests, 2);
+    },
+  );
 
-  test('temporary file rejects an unsafe redirect without leaking its query',
-      () async {
-    int evilRequests = 0;
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
+  test(
+    'temporary file rejects an unsafe redirect without leaking its query',
+    () async {
+      int evilRequests = 0;
+      final _RoutingStreamClient httpClient = _RoutingStreamClient((
+        http.BaseRequest request,
+      ) async {
         if (request.url.path.endsWith('/subtitles')) {
           return _jsonStreamedResponse(_searchResponse);
         }
@@ -278,57 +306,57 @@ void main() {
             'location': 'http://evil.example/file?sig=redirect-secret',
           },
         );
-      },
-    );
-    final OpenSubtitlesClient client = OpenSubtitlesClient(
-      config: OpenSubtitlesConfig(
-        apiKey: 'api-secret',
-        baseUrl: Uri.parse('http://localhost/api/v1'),
-      ),
-      client: httpClient,
-      closesClient: false,
-    );
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(VideoSubtitleSearchRequest(query: 'Test'));
+      });
+      final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(
+          apiKey: 'api-secret',
+          baseUrl: Uri.parse('http://localhost/api/v1'),
+        ),
+        client: httpClient,
+        closesClient: false,
+      );
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+          .search(VideoSubtitleSearchRequest(query: 'Test'));
 
-    Object? failure;
-    try {
-      await client.download(result.items.single);
-      fail('the unsafe redirect must fail');
-    } on Object catch (error) {
-      failure = error;
-    }
+      Object? failure;
+      try {
+        await client.download(result.items.single);
+        fail('the unsafe redirect must fail');
+      } on Object catch (error) {
+        failure = error;
+      }
 
-    expect(evilRequests, 0);
-    expect(failure, isA<ExternalProviderFailure>());
-    expect(failure.toString(), isNot(contains('temporary-secret')));
-    expect(failure.toString(), isNot(contains('redirect-secret')));
-  });
+      expect(evilRequests, 0);
+      expect(failure, isA<ExternalProviderFailure>());
+      expect(failure.toString(), isNot(contains('temporary-secret')));
+      expect(failure.toString(), isNot(contains('redirect-secret')));
+    },
+  );
 
   test('temporary file stops a redirect loop after revisiting a URL', () async {
     int temporaryRequests = 0;
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
-        if (request.url.path.endsWith('/subtitles')) {
-          return _jsonStreamedResponse(_searchResponse);
-        }
-        if (request.url.path.endsWith('/download')) {
-          return _jsonStreamedResponse(<String, Object?>{
-            'link': 'https://download.example/a',
-          });
-        }
-        temporaryRequests++;
-        return http.StreamedResponse(
-          const Stream<List<int>>.empty(),
-          302,
-          headers: <String, String>{
-            'location': request.url.path == '/a'
-                ? 'https://download.example/b'
-                : 'https://download.example/a',
-          },
-        );
-      },
-    );
+    final _RoutingStreamClient httpClient = _RoutingStreamClient((
+      http.BaseRequest request,
+    ) async {
+      if (request.url.path.endsWith('/subtitles')) {
+        return _jsonStreamedResponse(_searchResponse);
+      }
+      if (request.url.path.endsWith('/download')) {
+        return _jsonStreamedResponse(<String, Object?>{
+          'link': 'https://download.example/a',
+        });
+      }
+      temporaryRequests++;
+      return http.StreamedResponse(
+        const Stream<List<int>>.empty(),
+        302,
+        headers: <String, String>{
+          'location': request.url.path == '/a'
+              ? 'https://download.example/b'
+              : 'https://download.example/a',
+        },
+      );
+    });
     final OpenSubtitlesClient client = OpenSubtitlesClient(
       config: OpenSubtitlesConfig(
         apiKey: 'api-secret',
@@ -337,8 +365,8 @@ void main() {
       client: httpClient,
       closesClient: false,
     );
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(VideoSubtitleSearchRequest(query: 'Test'));
+    final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+        .search(VideoSubtitleSearchRequest(query: 'Test'));
 
     await expectLater(
       client.download(result.items.single),
@@ -353,12 +381,14 @@ void main() {
     expect(temporaryRequests, 2);
   });
 
-  test('temporary file is capped while streaming and cancels immediately',
-      () async {
-    int emittedChunks = 0;
-    final Uint8List chunk = Uint8List(1024 * 1024);
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
+  test(
+    'temporary file is capped while streaming and cancels immediately',
+    () async {
+      int emittedChunks = 0;
+      final Uint8List chunk = Uint8List(1024 * 1024);
+      final _RoutingStreamClient httpClient = _RoutingStreamClient((
+        http.BaseRequest request,
+      ) async {
         if (request.url.path.endsWith('/subtitles')) {
           return _jsonStreamedResponse(_searchResponse);
         }
@@ -367,59 +397,71 @@ void main() {
             'link': 'https://download.example/subtitle',
           });
         }
-        final Stream<List<int>> stream = Stream<List<int>>.fromIterable(
-          List<List<int>>.filled(66, chunk),
-        ).map((List<int> value) {
-          emittedChunks++;
-          return value;
-        });
+        final Stream<List<int>> stream =
+            Stream<List<int>>.fromIterable(
+              List<List<int>>.filled(66, chunk),
+            ).map((List<int> value) {
+              emittedChunks++;
+              return value;
+            });
         return http.StreamedResponse(stream, 200);
-      },
-    );
-    final OpenSubtitlesClient client = OpenSubtitlesClient(
-      config: OpenSubtitlesConfig(
-        apiKey: 'api-secret',
-        baseUrl: Uri.parse('http://localhost/api/v1'),
-      ),
-      client: httpClient,
-      closesClient: false,
-    );
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(VideoSubtitleSearchRequest(query: 'Test'));
-
-    await expectLater(
-      client.download(result.items.single),
-      throwsA(
-        isA<ExternalProviderFailure>().having(
-          (ExternalProviderFailure failure) => failure.kind,
-          'kind',
-          ExternalProviderFailureKind.invalidResponse,
+      });
+      final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(
+          apiKey: 'api-secret',
+          baseUrl: Uri.parse('http://localhost/api/v1'),
         ),
-      ),
-    );
-    expect(emittedChunks, 65,
-        reason: 'the 65th MiB crosses the cap; chunk 66 stays unread');
-  });
+        client: httpClient,
+        closesClient: false,
+      );
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+          .search(VideoSubtitleSearchRequest(query: 'Test'));
+
+      await expectLater(
+        client.download(result.items.single),
+        throwsA(
+          isA<ExternalProviderFailure>().having(
+            (ExternalProviderFailure failure) => failure.kind,
+            'kind',
+            ExternalProviderFailureKind.invalidResponse,
+          ),
+        ),
+      );
+      expect(
+        emittedChunks,
+        65,
+        reason: 'the 65th MiB crosses the cap; chunk 66 stays unread',
+      );
+    },
+  );
 
   group('语言码归一（BUG-1846）', () {
     test('大类 zh 展开成 OpenSubtitles 真有的地区码', () {
       // 官方语言表（/infos/languages，105 个码）里没有裸 zh，只有 zh-cn/zh-tw/zh-ca：
       // 原样发过去中文字幕恒定搜不到。
-      expect(normalizeOpenSubtitlesLanguages(<String>['zh']),
-          <String>['zh-cn', 'zh-tw']);
-      expect(normalizeOpenSubtitlesLanguages(<String>['pt']),
-          <String>['pt-br', 'pt-pt']);
+      expect(normalizeOpenSubtitlesLanguages(<String>['zh']), <String>[
+        'zh-cn',
+        'zh-tw',
+      ]);
+      expect(normalizeOpenSubtitlesLanguages(<String>['pt']), <String>[
+        'pt-br',
+        'pt-pt',
+      ]);
     });
 
     test('本来就有裸码的语言原样透传', () {
       expect(normalizeOpenSubtitlesLanguages(<String>['ja']), <String>['ja']);
-      expect(normalizeOpenSubtitlesLanguages(<String>['en', 'ko']),
-          <String>['en', 'ko']);
+      expect(normalizeOpenSubtitlesLanguages(<String>['en', 'ko']), <String>[
+        'en',
+        'ko',
+      ]);
     });
 
     test('未登记的码交给服务端裁决，不在客户端丢弃', () {
-      expect(normalizeOpenSubtitlesLanguages(<String>['sv', 'zz-qq']),
-          <String>['sv', 'zz-qq']);
+      expect(normalizeOpenSubtitlesLanguages(<String>['sv', 'zz-qq']), <String>[
+        'sv',
+        'zz-qq',
+      ]);
     });
 
     test('去重、去空、小写化，并排序', () {
@@ -440,7 +482,9 @@ void main() {
         client: MockClient((http.Request request) async {
           queries.add(request.url.queryParameters);
           return http.Response(
-              jsonEncode(<String, Object?>{'data': <Object?>[]}), 200);
+            jsonEncode(<String, Object?>{'data': <Object?>[]}),
+            200,
+          );
         }),
         closesClient: false,
       );
@@ -449,143 +493,149 @@ void main() {
         VideoSubtitleSearchRequest(query: '最愛', languages: <String>['zh']),
       );
 
-      expect(queries.single['languages'], 'zh-cn,zh-tw',
-          reason: '裸 zh 发过去等于放弃全部中文字幕');
+      expect(
+        queries.single['languages'],
+        'zh-cn,zh-tw',
+        reason: '裸 zh 发过去等于放弃全部中文字幕',
+      );
     });
   });
 
-  test('does not issue an unbounded search with only language filters',
-      () async {
-    final OpenSubtitlesClient client = OpenSubtitlesClient(
-      config: OpenSubtitlesConfig(
-        apiKey: 'api-secret',
-        baseUrl: Uri.parse('http://localhost/api/v1'),
-      ),
-      client: MockClient((http.Request request) async {
-        fail('network must not be called for an unbounded search');
-      }),
-      closesClient: false,
-    );
-
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(
-      VideoSubtitleSearchRequest(languages: <String>['ja']),
-    );
-
-    expect(
-      result.failures.single.kind,
-      ExternalProviderFailureKind.unsupported,
-    );
-  });
-
-  test('falls back in separate hash, IMDb, TMDB, then title requests',
-      () async {
-    final List<Map<String, String>> queries = <Map<String, String>>[];
-    final OpenSubtitlesClient client = OpenSubtitlesClient(
-      config: OpenSubtitlesConfig(
-        apiKey: 'api-secret',
-        baseUrl: Uri.parse('http://localhost/api/v1'),
-      ),
-      client: MockClient((http.Request request) async {
-        queries.add(Map<String, String>.of(request.url.queryParameters));
-        return http.Response(
-          jsonEncode(queries.length == 4 ? _searchResponse : _emptySearch),
-          200,
-        );
-      }),
-      closesClient: false,
-    );
-
-    final ProviderBatchResult<VideoSubtitleCandidate> result =
-        await client.search(
-      VideoSubtitleSearchRequest(
-        media: VideoMediaReference(
-          providerId: 'tmdb',
-          mediaId: '123',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.tv,
-          title: 'Test Show',
-          year: 2024,
-          season: 1,
-          episode: 2,
-          imdbId: 'tt7654321',
-          tmdbId: 123,
+  test(
+    'does not issue an unbounded search with only language filters',
+    () async {
+      final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(
+          apiKey: 'api-secret',
+          baseUrl: Uri.parse('http://localhost/api/v1'),
         ),
-        languages: <String>['ja', 'zh'],
-        page: 3,
-        fingerprint: const LocalVideoFingerprint(
-          fileSize: 987654321,
-          openSubtitlesMovieHash: 'abcdef0123456789',
+        client: MockClient((http.Request request) async {
+          fail('network must not be called for an unbounded search');
+        }),
+        closesClient: false,
+      );
+
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+          .search(VideoSubtitleSearchRequest(languages: <String>['ja']));
+
+      expect(
+        result.failures.single.kind,
+        ExternalProviderFailureKind.unsupported,
+      );
+    },
+  );
+
+  test(
+    'falls back in separate hash, IMDb, TMDB, then title requests',
+    () async {
+      final List<Map<String, String>> queries = <Map<String, String>>[];
+      final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(
+          apiKey: 'api-secret',
+          baseUrl: Uri.parse('http://localhost/api/v1'),
         ),
-      ),
-    );
+        client: MockClient((http.Request request) async {
+          queries.add(Map<String, String>.of(request.url.queryParameters));
+          return http.Response(
+            jsonEncode(queries.length == 4 ? _searchResponse : _emptySearch),
+            200,
+          );
+        }),
+        closesClient: false,
+      );
 
-    expect(result.failures, isEmpty);
-    expect(result.items, hasLength(1));
-    expect(queries, hasLength(4));
-    expect(
-      queries[0],
-      containsPair('moviehash', 'abcdef0123456789'),
-    );
-    expect(queries[0], containsPair('moviebytesize', '987654321'));
-    expect(queries[0], isNot(contains('parent_imdb_id')));
-    expect(queries[0], isNot(contains('parent_tmdb_id')));
-    expect(queries[0], isNot(contains('query')));
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+          .search(
+            VideoSubtitleSearchRequest(
+              media: VideoMediaReference(
+                providerId: 'tmdb',
+                mediaId: '123',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.tv,
+                title: 'Test Show',
+                year: 2024,
+                season: 1,
+                episode: 2,
+                imdbId: 'tt7654321',
+                tmdbId: 123,
+              ),
+              languages: <String>['ja', 'zh'],
+              page: 3,
+              fingerprint: const LocalVideoFingerprint(
+                fileSize: 987654321,
+                openSubtitlesMovieHash: 'abcdef0123456789',
+              ),
+            ),
+          );
 
-    expect(queries[1], containsPair('parent_imdb_id', '7654321'));
-    expect(queries[1], containsPair('season_number', '1'));
-    expect(queries[1], containsPair('episode_number', '2'));
-    expect(queries[1], isNot(contains('parent_tmdb_id')));
-    expect(queries[1], isNot(contains('query')));
+      expect(result.failures, isEmpty);
+      expect(result.items, hasLength(1));
+      expect(queries, hasLength(4));
+      expect(queries[0], containsPair('moviehash', 'abcdef0123456789'));
+      expect(queries[0], containsPair('moviebytesize', '987654321'));
+      expect(queries[0], isNot(contains('parent_imdb_id')));
+      expect(queries[0], isNot(contains('parent_tmdb_id')));
+      expect(queries[0], isNot(contains('query')));
 
-    expect(queries[2], containsPair('parent_tmdb_id', '123'));
-    expect(queries[2], isNot(contains('parent_imdb_id')));
-    expect(queries[2], isNot(contains('query')));
+      expect(queries[1], containsPair('parent_imdb_id', '7654321'));
+      expect(queries[1], containsPair('season_number', '1'));
+      expect(queries[1], containsPair('episode_number', '2'));
+      expect(queries[1], isNot(contains('parent_tmdb_id')));
+      expect(queries[1], isNot(contains('query')));
 
-    expect(queries[3], containsPair('query', 'Test Show'));
-    expect(queries[3], containsPair('year', '2024'));
-    expect(queries[3], containsPair('season_number', '1'));
-    expect(queries[3], containsPair('episode_number', '2'));
-    expect(queries[3], isNot(contains('parent_imdb_id')));
-    expect(queries[3], isNot(contains('parent_tmdb_id')));
-    for (final Map<String, String> query in queries) {
-      expect(query['page'], '3');
-      // BUG-1846：入参仍是 Fushi 的大类码 ja/zh，但发出去必须是 OpenSubtitles
-      // 认得的 BCP-47——它的语言表里没有裸 zh。旧断言锁的正是那个缺陷行为。
-      expect(query['languages'], 'ja,zh-cn,zh-tw');
-    }
-  });
+      expect(queries[2], containsPair('parent_tmdb_id', '123'));
+      expect(queries[2], isNot(contains('parent_imdb_id')));
+      expect(queries[2], isNot(contains('query')));
+
+      expect(queries[3], containsPair('query', 'Test Show'));
+      expect(queries[3], containsPair('year', '2024'));
+      expect(queries[3], containsPair('season_number', '1'));
+      expect(queries[3], containsPair('episode_number', '2'));
+      expect(queries[3], isNot(contains('parent_imdb_id')));
+      expect(queries[3], isNot(contains('parent_tmdb_id')));
+      for (final Map<String, String> query in queries) {
+        expect(query['page'], '3');
+        // BUG-1846：入参仍是 Fushi 的大类码 ja/zh，但发出去必须是 OpenSubtitles
+        // 认得的 BCP-47——它的语言表里没有裸 zh。旧断言锁的正是那个缺陷行为。
+        expect(query['languages'], 'ja,zh-cn,zh-tw');
+      }
+    },
+  );
 
   for (final ({
-    String name,
-    int status,
-    String body,
-    ExternalProviderFailureKind kind,
-  }) testCase in <({
-    String name,
-    int status,
-    String body,
-    ExternalProviderFailureKind kind,
-  })>[
-    (
-      name: 'authentication',
-      status: 401,
-      body: '{}',
-      kind: ExternalProviderFailureKind.unauthorized,
-    ),
-    (
-      name: 'rate limit',
-      status: 429,
-      body: '{"remaining":5}',
-      kind: ExternalProviderFailureKind.rateLimited,
-    ),
-    (
-      name: 'quota',
-      status: 429,
-      body: '{"remaining":0}',
-      kind: ExternalProviderFailureKind.quotaExceeded,
-    ),
-  ]) {
+        String name,
+        int status,
+        String body,
+        ExternalProviderFailureKind kind,
+      })
+      testCase
+      in <
+        ({
+          String name,
+          int status,
+          String body,
+          ExternalProviderFailureKind kind,
+        })
+      >[
+        (
+          name: 'authentication',
+          status: 401,
+          body: '{}',
+          kind: ExternalProviderFailureKind.unauthorized,
+        ),
+        (
+          name: 'rate limit',
+          status: 429,
+          body: '{"remaining":5}',
+          kind: ExternalProviderFailureKind.rateLimited,
+        ),
+        (
+          name: 'quota',
+          status: 429,
+          body: '{"remaining":0}',
+          kind: ExternalProviderFailureKind.quotaExceeded,
+        ),
+      ]) {
     test('${testCase.name} failure stops precise-to-broad fallback', () async {
       int searchCalls = 0;
       final OpenSubtitlesClient client = OpenSubtitlesClient(
@@ -600,25 +650,25 @@ void main() {
         closesClient: false,
       );
 
-      final ProviderBatchResult<VideoSubtitleCandidate> result =
-          await client.search(
-        VideoSubtitleSearchRequest(
-          media: VideoMediaReference(
-            providerId: 'tmdb',
-            mediaId: '123',
-            mediaKind: VideoMetadataMediaKind.movie,
-            discoveryCategory: VideoDiscoveryCategory.movie,
-            title: 'Test Movie',
-            year: 2024,
-            imdbId: 'tt7654321',
-            tmdbId: 123,
-          ),
-          fingerprint: const LocalVideoFingerprint(
-            fileSize: 1234,
-            openSubtitlesMovieHash: 'abcdef0123456789',
-          ),
-        ),
-      );
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await client
+          .search(
+            VideoSubtitleSearchRequest(
+              media: VideoMediaReference(
+                providerId: 'tmdb',
+                mediaId: '123',
+                mediaKind: VideoMetadataMediaKind.movie,
+                discoveryCategory: VideoDiscoveryCategory.movie,
+                title: 'Test Movie',
+                year: 2024,
+                imdbId: 'tt7654321',
+                tmdbId: 123,
+              ),
+              fingerprint: const LocalVideoFingerprint(
+                fileSize: 1234,
+                openSubtitlesMovieHash: 'abcdef0123456789',
+              ),
+            ),
+          );
 
       expect(searchCalls, 1);
       expect(result.items, isEmpty);
@@ -628,21 +678,23 @@ void main() {
 
   test('B1：解析 upload_date / ai_translated / from_trusted（版本卡信号）', () {
     final List<OpenSubtitlesSearchRecord> records =
-        parseOpenSubtitlesSearchResponse(jsonEncode(<String, Object?>{
-      'data': <Object?>[
-        <String, Object?>{
-          'attributes': <String, Object?>{
-            'language': 'en',
-            'upload_date': '2026-08-02T03:04:05Z',
-            'ai_translated': true,
-            'from_trusted': true,
-            'files': <Object?>[
-              <String, Object?>{'file_id': 1, 'file_name': 'a.srt'},
+        parseOpenSubtitlesSearchResponse(
+          jsonEncode(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{
+                'attributes': <String, Object?>{
+                  'language': 'en',
+                  'upload_date': '2026-08-02T03:04:05Z',
+                  'ai_translated': true,
+                  'from_trusted': true,
+                  'files': <Object?>[
+                    <String, Object?>{'file_id': 1, 'file_name': 'a.srt'},
+                  ],
+                },
+              },
             ],
-          },
-        },
-      ],
-    }));
+          }),
+        );
     final OpenSubtitlesSearchRecord record = records.single;
     expect(
       record.uploadedAtMs,
@@ -700,7 +752,7 @@ class _RoutingStreamClient extends http.BaseClient {
   _RoutingStreamClient(this.handler);
 
   final Future<http.StreamedResponse> Function(http.BaseRequest request)
-      handler;
+  handler;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) =>

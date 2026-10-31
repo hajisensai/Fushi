@@ -36,48 +36,66 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File jsTest =
-          File('test/lookup/nested_latin_lookup_bug1645_test.js');
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
-
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
+      final File jsTest = File(
+        'test/lookup/nested_latin_lookup_bug1645_test.js',
       );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
+
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'BUG-1645 nested Latin lookup behavior test failed.\n'
+        reason:
+            'BUG-1645 nested Latin lookup behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
     },
   );
 
-  test(
-      'selection.js stops the cross-node scan at a render boundary '
+  test('selection.js stops the cross-node scan at a render boundary '
       '(source guard, all three mirrors)', () {
     for (final String path in selectionCopies) {
       final File file = File(path);
       expect(file.existsSync(), isTrue, reason: '$path must exist');
       final String source = file.readAsStringSync();
       // 断言字面量写进注释，变异测试时能定位（见 fast-workflow 的守卫纪律）。
-      expect(source, contains('crossesRenderBoundary('),
-          reason: '$path must define the render-boundary check');
-      expect(source, contains('this.crossesRenderBoundary(scanNode, nextNode)'),
-          reason: '$path must consult it before gluing the next text node');
-      expect(source, contains('isInlineBox('),
-          reason: '$path must classify boxes by computed display');
-      expect(source, contains("hasGeneratedContent(el, '::after')"),
-          reason: '$path must treat ::after separators as boundaries');
+      expect(
+        source,
+        contains('crossesRenderBoundary('),
+        reason: '$path must define the render-boundary check',
+      );
+      expect(
+        source,
+        contains('this.crossesRenderBoundary(scanNode, nextNode)'),
+        reason: '$path must consult it before gluing the next text node',
+      );
+      expect(
+        source,
+        contains('isInlineBox('),
+        reason: '$path must classify boxes by computed display',
+      );
+      expect(
+        source,
+        contains("hasGeneratedContent(el, '::after')"),
+        reason: '$path must treat ::after separators as boundaries',
+      );
     }
   });
 }

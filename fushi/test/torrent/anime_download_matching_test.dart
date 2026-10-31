@@ -72,16 +72,14 @@ void main() {
       );
       expect(
         index.byEpisode[1]!.map((JimakuFile f) => f.name).toList(),
-        <String>[
-          'Frieren - 01.zh.srt',
-          'Frieren - 01.ja.srt',
-        ],
+        <String>['Frieren - 01.zh.srt', 'Frieren - 01.ja.srt'],
       );
     });
 
     test('空输入 → 空索引', () {
-      final JimakuEpisodeIndex index =
-          JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
+      final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
+        const <JimakuFile>[],
+      );
       expect(index.isEmpty, isTrue);
       expect(index.totalFiles, 0);
       expect(index.byEpisode, isEmpty);
@@ -90,12 +88,10 @@ void main() {
   });
 
   group('jimakuCoverageFor', () {
-    final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
-      <JimakuFile>[
-        _file('Show - 01.ja.srt'),
-        _file('Show - 03.ja.srt'),
-      ],
-    );
+    final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(<JimakuFile>[
+      _file('Show - 01.ja.srt'),
+      _file('Show - 03.ja.srt'),
+    ]);
 
     test('单集种子：该集有候选 → 1/1', () {
       final NyaaTorrent t = _torrent('[Grp] Show - 03 (1080p)');
@@ -107,8 +103,10 @@ void main() {
     });
 
     test('单集种子：该集无候选 → 0/1', () {
-      final ({int covered, int? total}) c =
-          jimakuCoverageFor(_torrent('[Grp] Show - 02 (1080p)'), index);
+      final ({int covered, int? total}) c = jimakuCoverageFor(
+        _torrent('[Grp] Show - 02 (1080p)'),
+        index,
+      );
       expect(c.covered, 0);
       expect(c.total, 1);
     });
@@ -167,13 +165,12 @@ void main() {
   group('chooseSubtitlesFor', () {
     test('单集：取该集首选 1 条并记录集号', () {
       final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
-        <JimakuFile>[
-          _file('Show - 05.en.srt'),
-          _file('Show - 05.ja.srt'),
-        ],
+        <JimakuFile>[_file('Show - 05.en.srt'), _file('Show - 05.ja.srt')],
       );
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(_torrent('[Grp] Show - 05 (1080p)'), index);
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        _torrent('[Grp] Show - 05 (1080p)'),
+        index,
+      );
       expect(chosen, hasLength(1));
       expect(chosen.single.$1, 5);
       expect(chosen.single.$2.name, 'Show - 05.ja.srt'); // ja 优先
@@ -190,34 +187,33 @@ void main() {
     });
 
     test('batch：区间内每集首选各 1 条，缺集跳过', () {
-      final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
-        <JimakuFile>[
-          _file('Show - 01.en.srt'),
-          _file('Show - 01.ja.srt'),
-          _file('Show - 03.ja.srt'),
-        ],
+      final JimakuEpisodeIndex index =
+          JimakuEpisodeIndex.fromFiles(<JimakuFile>[
+            _file('Show - 01.en.srt'),
+            _file('Show - 01.ja.srt'),
+            _file('Show - 03.ja.srt'),
+          ]);
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        _torrent('[Grp] Show 01-03 (1080p)'),
+        index,
       );
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(_torrent('[Grp] Show 01-03 (1080p)'), index);
       expect(
         chosen.map(((int?, JimakuFile) e) => (e.$1, e.$2.name)).toList(),
-        <(int?, String)>[
-          (1, 'Show - 01.ja.srt'),
-          (3, 'Show - 03.ja.srt'),
-        ],
+        <(int?, String)>[(1, 'Show - 01.ja.srt'), (3, 'Show - 03.ja.srt')],
       );
     });
 
     test('无集数：有 unnumbered → 给其首选，episode null', () {
-      final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
-        <JimakuFile>[
-          _file('Show - 01.ja.srt'),
-          _file('Great Movie.en.srt'),
-          _file('Great Movie.ja.srt'),
-        ],
+      final JimakuEpisodeIndex index =
+          JimakuEpisodeIndex.fromFiles(<JimakuFile>[
+            _file('Show - 01.ja.srt'),
+            _file('Great Movie.en.srt'),
+            _file('Great Movie.ja.srt'),
+          ]);
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        _torrent('[Grp] Great Movie Film'),
+        index,
       );
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(_torrent('[Grp] Great Movie Film'), index);
       expect(chosen, hasLength(1));
       expect(chosen.single.$1, isNull);
       expect(chosen.single.$2.name, 'Great Movie.ja.srt');
@@ -227,8 +223,10 @@ void main() {
       final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
         <JimakuFile>[_file('Show - 01.ja.srt')],
       );
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(_torrent('[Grp] Great Movie Film'), index);
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        _torrent('[Grp] Great Movie Film'),
+        index,
+      );
       expect(chosen, hasLength(1));
       expect(chosen.single.$1, isNull);
       expect(chosen.single.$2.name, 'Show - 01.ja.srt');
@@ -236,10 +234,7 @@ void main() {
 
     test('无集数：无 unnumbered 且多条带集号文件 → 不猜，返回空', () {
       final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
-        <JimakuFile>[
-          _file('Show - 01.ja.srt'),
-          _file('Show - 02.ja.srt'),
-        ],
+        <JimakuFile>[_file('Show - 01.ja.srt'), _file('Show - 02.ja.srt')],
       );
       expect(
         chooseSubtitlesFor(_torrent('[Grp] Great Movie Film'), index),
@@ -250,15 +245,17 @@ void main() {
 
   group('torrentEpisodeScope', () {
     test('集号区间 → range（区间优先于末位被误读的单集号）', () {
-      final TorrentEpisodeScope scope =
-          torrentEpisodeScope(_torrent('[Grp] Show 01-13 (1080p)'));
+      final TorrentEpisodeScope scope = torrentEpisodeScope(
+        _torrent('[Grp] Show 01-13 (1080p)'),
+      );
       expect(scope.kind, TorrentEpisodeScopeKind.range);
       expect(scope.range, (1, 13));
     });
 
     test('单集 → single', () {
-      final TorrentEpisodeScope scope =
-          torrentEpisodeScope(_torrent('[Grp] Show - 05 (1080p)'));
+      final TorrentEpisodeScope scope = torrentEpisodeScope(
+        _torrent('[Grp] Show - 05 (1080p)'),
+      );
       expect(scope.kind, TorrentEpisodeScopeKind.single);
       expect(scope.episode, 5);
     });
@@ -300,17 +297,20 @@ void main() {
 
   group('整季包字幕匹配（BUG-1189）', () {
     /// 取自 Jimaku 条目 10365 的真实文件名（多字幕组 + Netflix `S01E01` 命名）。
-    JimakuEpisodeIndex seasonIndex() => JimakuEpisodeIndex.fromFiles(
-          <JimakuFile>[
-            for (int ep = 1; ep <= 13; ep++) ...<JimakuFile>[
-              _file('[Erai-raws] Watashi wo Tabetai Hitodenashi - '
-                  '${ep.toString().padLeft(2, '0')} '
-                  '[1080p CR WEB-DL AVC AAC][MultiSub].ass'),
-              _file('私を喰べたい、ひとでなし.S01E${ep.toString().padLeft(2, '0')}'
-                  '.WEBRip.Netflix.ja[cc].srt'),
-            ],
+    JimakuEpisodeIndex seasonIndex() =>
+        JimakuEpisodeIndex.fromFiles(<JimakuFile>[
+          for (int ep = 1; ep <= 13; ep++) ...<JimakuFile>[
+            _file(
+              '[Erai-raws] Watashi wo Tabetai Hitodenashi - '
+              '${ep.toString().padLeft(2, '0')} '
+              '[1080p CR WEB-DL AVC AAC][MultiSub].ass',
+            ),
+            _file(
+              '私を喰べたい、ひとでなし.S01E${ep.toString().padLeft(2, '0')}'
+              '.WEBRip.Netflix.ja[cc].srt',
+            ),
           ],
-        );
+        ]);
 
     final NyaaTorrent seasonPack = _torrent(
       '[7³ACG] Watashi wo Tabetai, Hitodenashi 私を喰べたい、ひとでなし '
@@ -318,14 +318,14 @@ void main() {
     );
 
     test('整季包 → 索引里每集各给 1 条（此前一条都不给）', () {
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(seasonPack, seasonIndex());
-      expect(chosen, hasLength(13));
-      expect(
-        chosen.map(((int?, JimakuFile) e) => e.$1).toList(),
-        <int>[for (int ep = 1; ep <= 13; ep++) ep],
-        reason: '按集号升序',
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        seasonPack,
+        seasonIndex(),
       );
+      expect(chosen, hasLength(13));
+      expect(chosen.map(((int?, JimakuFile) e) => e.$1).toList(), <int>[
+        for (int ep = 1; ep <= 13; ep++) ep,
+      ], reason: '按集号升序');
       // 每集取语言权重最优的候选：Netflix 那条的 `.ja[cc]` 标签归一成 ja，
       // 优先于无语言标记的 Erai-raws 版。
       expect(chosen.first.$2.name, contains('Netflix'));
@@ -335,8 +335,10 @@ void main() {
       final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
         <JimakuFile>[_file('Watashi wo Tabetai Hitodenashi Season 1.ja.srt')],
       );
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(seasonPack, index);
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        seasonPack,
+        index,
+      );
       expect(chosen, hasLength(1));
       expect(chosen.single.$1, isNull);
     });
@@ -353,8 +355,10 @@ void main() {
 
     test('覆盖度与实际给出的条数一致（徽标不能说有、详情说无）', () {
       final JimakuEpisodeIndex index = seasonIndex();
-      final ({int covered, int? total}) coverage =
-          jimakuCoverageFor(seasonPack, index);
+      final ({int covered, int? total}) coverage = jimakuCoverageFor(
+        seasonPack,
+        index,
+      );
       expect(coverage.covered, 13);
       expect(coverage.total, isNull, reason: '整季包应有集数未知');
       expect(coverage.covered, chooseSubtitlesFor(seasonPack, index).length);
@@ -381,23 +385,22 @@ void main() {
   // 集号严格相等），纯耗带宽和磁盘。按自述上界收敛条数。
   group('整季包字幕条数收敛', () {
     /// 24 集的 Jimaku 条目（两季合并编号的典型形态）。
-    JimakuEpisodeIndex index24() => JimakuEpisodeIndex.fromFiles(
-          <JimakuFile>[
-            for (int ep = 1; ep <= 24; ep++)
-              _file('Show - ${ep.toString().padLeft(2, '0')}.ja.srt'),
-          ],
-        );
+    JimakuEpisodeIndex index24() => JimakuEpisodeIndex.fromFiles(<JimakuFile>[
+      for (int ep = 1; ep <= 24; ep++)
+        _file('Show - ${ep.toString().padLeft(2, '0')}.ja.srt'),
+    ]);
 
     test('标题自报 `全12話` → 只取 12 条（升序取最前 12 集）', () {
       final NyaaTorrent pack = _torrent('[Grp] Show S1 全12話 [BDRip 1080p]');
       expect(torrentEpisodeScope(pack).seasonEpisodeCount, 12);
-      final List<(int?, JimakuFile)> chosen =
-          chooseSubtitlesFor(pack, index24());
-      expect(chosen, hasLength(12));
-      expect(
-        chosen.map(((int?, JimakuFile) e) => e.$1).toList(),
-        <int>[for (int ep = 1; ep <= 12; ep++) ep],
+      final List<(int?, JimakuFile)> chosen = chooseSubtitlesFor(
+        pack,
+        index24(),
       );
+      expect(chosen, hasLength(12));
+      expect(chosen.map(((int?, JimakuFile) e) => e.$1).toList(), <int>[
+        for (int ep = 1; ep <= 12; ep++) ep,
+      ]);
       // 徽标必须跟着收敛，否则「列表说 24、点进去 12」。
       expect(jimakuCoverageFor(pack, index24()).covered, 12);
     });
@@ -450,8 +453,11 @@ void main() {
   // BUG-1206：落位阶段按包内真实视频文件名反查（根治层）
   // ==========================================================================
   group('BUG-1206 matchJimakuFilesToVideoNames', () {
-    List<JimakuFile> jimakuEpisodes(Iterable<int> episodes,
-        {String series = 'Test Anime', String lang = 'ja'}) {
+    List<JimakuFile> jimakuEpisodes(
+      Iterable<int> episodes, {
+      String series = 'Test Anime',
+      String lang = 'ja',
+    }) {
       return <JimakuFile>[
         for (final int ep in episodes)
           JimakuFile(
@@ -461,8 +467,11 @@ void main() {
       ];
     }
 
-    List<String> packVideos(Iterable<int> episodes,
-        {String group = 'Grp', String series = 'Test Anime'}) {
+    List<String> packVideos(
+      Iterable<int> episodes, {
+      String group = 'Grp',
+      String series = 'Test Anime',
+    }) {
       return <String>[
         for (final int ep in episodes)
           '[$group] $series - ${ep.toString().padLeft(2, '0')} [1080p].mkv',
@@ -506,8 +515,10 @@ void main() {
         packVideos(<int>[for (int e = 1; e <= 12; e++) e]),
         jimakuEpisodes(<int>[3, 5, 7]),
       );
-      expect(matches.map((ResolvedSubtitleMatch m) => m.episode).toList(),
-          <int>[3, 5, 7]);
+      expect(
+        matches.map((ResolvedSubtitleMatch m) => m.episode).toList(),
+        <int>[3, 5, 7],
+      );
       expect(matches.first.videoFileName, '[Grp] Test Anime - 03 [1080p].mkv');
     });
 
@@ -539,23 +550,27 @@ void main() {
     test('同集多语言按偏好取首选（未指定时 ja 优先）', () {
       final List<JimakuFile> mixed = <JimakuFile>[
         const JimakuFile(
-            name: 'Test Anime - 05.zh.srt', url: 'https://jimaku.cc/f/5zh.srt'),
+          name: 'Test Anime - 05.zh.srt',
+          url: 'https://jimaku.cc/f/5zh.srt',
+        ),
         const JimakuFile(
-            name: 'Test Anime - 05.ja.srt', url: 'https://jimaku.cc/f/5ja.srt'),
+          name: 'Test Anime - 05.ja.srt',
+          url: 'https://jimaku.cc/f/5ja.srt',
+        ),
       ];
       expect(
-        matchJimakuFilesToVideoNames(packVideos(<int>[5]), mixed)
-            .single
-            .file
-            .name,
+        matchJimakuFilesToVideoNames(
+          packVideos(<int>[5]),
+          mixed,
+        ).single.file.name,
         'Test Anime - 05.ja.srt',
       );
       expect(
-        matchJimakuFilesToVideoNames(packVideos(<int>[5]), mixed,
-                preferredLanguage: 'zh')
-            .single
-            .file
-            .name,
+        matchJimakuFilesToVideoNames(
+          packVideos(<int>[5]),
+          mixed,
+          preferredLanguage: 'zh',
+        ).single.file.name,
         'Test Anime - 05.zh.srt',
       );
     });
@@ -596,38 +611,44 @@ void main() {
 
     test('非文本字幕（.zip/.mkv）被 JimakuEpisodeIndex 丢弃，不会被反查选中', () {
       expect(
-        matchJimakuFilesToVideoNames(
-          packVideos(<int>[1]),
-          const <JimakuFile>[
-            JimakuFile(name: 'Test Anime - 01.zip', url: 'https://x/1.zip'),
-          ],
-        ),
+        matchJimakuFilesToVideoNames(packVideos(<int>[1]), const <JimakuFile>[
+          JimakuFile(name: 'Test Anime - 01.zip', url: 'https://x/1.zip'),
+        ]),
         isEmpty,
       );
     });
 
     test('空输入不炸', () {
       expect(
-          matchJimakuFilesToVideoNames(const <String>[], const <JimakuFile>[]),
-          isEmpty);
+        matchJimakuFilesToVideoNames(const <String>[], const <JimakuFile>[]),
+        isEmpty,
+      );
       expect(
-          matchJimakuFilesToVideoNames(
-              packVideos(<int>[1]), const <JimakuFile>[]),
-          isEmpty);
+        matchJimakuFilesToVideoNames(
+          packVideos(<int>[1]),
+          const <JimakuFile>[],
+        ),
+        isEmpty,
+      );
     });
   });
 
   group('条目自动选中的季号校验（resolveJimakuEntry）', () {
-    const JimakuEntry s1 =
-        JimakuEntry(id: 11, name: 'Sousou no Frieren'); // 不写季号 = 第一季
-    const JimakuEntry s2 =
-        JimakuEntry(id: 22, name: 'Sousou no Frieren 2nd Season');
+    const JimakuEntry s1 = JimakuEntry(
+      id: 11,
+      name: 'Sousou no Frieren',
+    ); // 不写季号 = 第一季
+    const JimakuEntry s2 = JimakuEntry(
+      id: 22,
+      name: 'Sousou no Frieren 2nd Season',
+    );
 
     test('S1 条目遇上 S2 包：不自动选（本轮根因）', () {
       // 这正是落位层（matchJimakuFilesToVideoNames）拦不住的形状：条目按 1-12
       // 编号、包也是 01-12，集号严格相等照样能配上，配的却是错季字幕。
-      final NyaaTorrent pack =
-          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      final NyaaTorrent pack = _torrent(
+        '[Group] Sousou no Frieren S2 [01-12][1080p]',
+      );
       expect(pack.season, 2, reason: '前提：种子标题解析得出季号');
       expect(
         resolveJimakuEntry(
@@ -640,8 +661,9 @@ void main() {
     });
 
     test('候选里有对得上的季 → 自动选那一条，而不是首条', () {
-      final NyaaTorrent pack =
-          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      final NyaaTorrent pack = _torrent(
+        '[Group] Sousou no Frieren S2 [01-12][1080p]',
+      );
       expect(
         resolveJimakuEntry(
           const <JimakuEntry>[s1, s2],
@@ -678,8 +700,9 @@ void main() {
     });
 
     test('用户手选的条目不被拦：季号明显不符也原样沿用', () {
-      final NyaaTorrent pack =
-          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      final NyaaTorrent pack = _torrent(
+        '[Group] Sousou no Frieren S2 [01-12][1080p]',
+      );
       // 同一份输入，不带 userPickedEntryId 时被拦成 null（对照组，证明拦截确实生效）。
       expect(
         resolveJimakuEntry(
@@ -702,8 +725,9 @@ void main() {
     });
 
     test('手选的条目已不在新结果里 → 回退自动选，且自动选仍受季号校验', () {
-      final NyaaTorrent pack =
-          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      final NyaaTorrent pack = _torrent(
+        '[Group] Sousou no Frieren S2 [01-12][1080p]',
+      );
       expect(
         resolveJimakuEntry(
           const <JimakuEntry>[s1],
@@ -716,8 +740,9 @@ void main() {
     });
 
     test('条目挂的 anilist_id 命中所选番 → 一律放行（AniList 按季拆条目，id 即权威）', () {
-      final NyaaTorrent pack =
-          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      final NyaaTorrent pack = _torrent(
+        '[Group] Sousou no Frieren S2 [01-12][1080p]',
+      );
       expect(
         resolveJimakuEntry(
           const <JimakuEntry>[
@@ -755,8 +780,9 @@ void main() {
     });
 
     test('同季不算冲突：条目与包都写 S2', () {
-      final NyaaTorrent pack =
-          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      final NyaaTorrent pack = _torrent(
+        '[Group] Sousou no Frieren S2 [01-12][1080p]',
+      );
       expect(
         jimakuEntrySeasonConflicts(
           entry: s2,

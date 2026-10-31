@@ -30,8 +30,9 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// [dispatchGamepadButtonIntent] / [gamepadMoveFocusInDirection]，service 的
 /// 分发决策树按 gamepad_service._dispatchButton 逐分支镜像（私有，无法直接调用）。
 void main() {
-  testWidgets('修前形态复现：裸全屏路由内 A/D-pad 静默 no-op、仅 B 兜底返回可用',
-      (WidgetTester tester) async {
+  testWidgets('修前形态复现：裸全屏路由内 A/D-pad 静默 no-op、仅 B 兜底返回可用', (
+    WidgetTester tester,
+  ) async {
     final _Rig rig = _Rig();
     await rig.pump(tester);
 
@@ -42,31 +43,50 @@ void main() {
     // 进全屏（修前形状：裸路由，不包手柄输入层）。
     rig.state.enterFullscreen(wrapped: false);
     await tester.pumpAndSettle();
-    expect(rig.videoNode.hasPrimaryFocus, isTrue,
-        reason: '进全屏后共享焦点节点应被全屏侧持有（页面 post-frame 焦点回收同构）');
+    expect(
+      rig.videoNode.hasPrimaryFocus,
+      isTrue,
+      reason: '进全屏后共享焦点节点应被全屏侧持有（页面 post-frame 焦点回收同构）',
+    );
 
     // A：GamepadButtonIntent 无人消费 → ActivateIntent 兜底也无语义 → 静默 no-op。
-    expect(rig.dispatchLikeService(GamepadButton.a), isFalse,
-        reason: '裸全屏子树没有 GamepadButtonIntent 处理器，A 必须落空（BUG-697 复现）');
-    expect(rig.counts[ShortcutAction.videoTogglePlayPause], 1,
-        reason: '播放/暂停不得被触发——这正是用户看到的「A 键死了」');
+    expect(
+      rig.dispatchLikeService(GamepadButton.a),
+      isFalse,
+      reason: '裸全屏子树没有 GamepadButtonIntent 处理器，A 必须落空（BUG-697 复现）',
+    );
+    expect(
+      rig.counts[ShortcutAction.videoTogglePlayPause],
+      1,
+      reason: '播放/暂停不得被触发——这正是用户看到的「A 键死了」',
+    );
 
     // D-pad：焦点遍历兜底在无可聚焦兄弟的子树里也是 no-op。
     expect(rig.dispatchLikeService(GamepadButton.dpadRight), isFalse);
-    expect(rig.counts[ShortcutAction.videoSeekForward], 0,
-        reason: 'D-pad 快进不得被触发（BUG-697 复现）');
+    expect(
+      rig.counts[ShortcutAction.videoSeekForward],
+      0,
+      reason: 'D-pad 快进不得被触发（BUG-697 复现）',
+    );
     expect(rig.videoNode.hasPrimaryFocus, isTrue, reason: '焦点遍历兜底应原地不动（无处可去）');
 
     // B：navigatorKey.maybePop 兜底与焦点树无关 → 唯一活着的键，退出全屏。
-    expect(rig.dispatchLikeService(GamepadButton.b), isFalse,
-        reason: 'B 未被页面消费（返回 false），但兜底 maybePop 已生效');
+    expect(
+      rig.dispatchLikeService(GamepadButton.b),
+      isFalse,
+      reason: 'B 未被页面消费（返回 false），但兜底 maybePop 已生效',
+    );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('windowed-controls')), findsOneWidget,
-        reason: 'B 的全局返回兜底必须始终可用（修前唯一退出手段）');
+    expect(
+      find.byKey(const Key('windowed-controls')),
+      findsOneWidget,
+      reason: 'B 的全局返回兜底必须始终可用（修前唯一退出手段）',
+    );
   });
 
-  testWidgets('修后形态：全屏路由包同一手柄输入层 → A/D-pad 恢复窗口模式语义、B 走 globalBack',
-      (WidgetTester tester) async {
+  testWidgets('修后形态：全屏路由包同一手柄输入层 → A/D-pad 恢复窗口模式语义、B 走 globalBack', (
+    WidgetTester tester,
+  ) async {
     final _Rig rig = _Rig();
     await rig.pump(tester);
 
@@ -76,8 +96,11 @@ void main() {
     expect(rig.videoNode.hasPrimaryFocus, isTrue);
 
     // A = 播放/暂停（与窗口模式同一注册表解析、同一执行体）。
-    expect(rig.dispatchLikeService(GamepadButton.a), isTrue,
-        reason: '全屏子树现在有 GamepadButtonIntent 处理器，A 必须被消费');
+    expect(
+      rig.dispatchLikeService(GamepadButton.a),
+      isTrue,
+      reason: '全屏子树现在有 GamepadButtonIntent 处理器，A 必须被消费',
+    );
     expect(rig.counts[ShortcutAction.videoTogglePlayPause], 1);
 
     // D-pad 左右 = 快退/快进，上下 = 音量（video scope 默认映射，TODO-1342 键位表）。
@@ -92,12 +115,18 @@ void main() {
 
     // B = globalBack「返回上一级」（页面消费，逐级退出；harness 的 escape 同构
     // _exitVideoFullscreen：关全屏路由）。B 返回依旧可用，且升级为页面语义。
-    expect(rig.dispatchLikeService(GamepadButton.b), isTrue,
-        reason: 'B 现在被页面 globalBack 消费（不再依赖裸 maybePop 兜底）');
+    expect(
+      rig.dispatchLikeService(GamepadButton.b),
+      isTrue,
+      reason: 'B 现在被页面 globalBack 消费（不再依赖裸 maybePop 兜底）',
+    );
     expect(rig.counts[ShortcutAction.globalBack], 1);
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('windowed-controls')), findsOneWidget,
-        reason: 'globalBack 在全屏态必须退出全屏（B 返回始终可用）');
+    expect(
+      find.byKey(const Key('windowed-controls')),
+      findsOneWidget,
+      reason: 'globalBack 在全屏态必须退出全屏（B 返回始终可用）',
+    );
   });
 }
 
@@ -105,8 +134,7 @@ void main() {
 /// 真实 intent 派发；[counts] 记录每个被触发的 video 动作次数。
 class _Rig {
   _Rig()
-      : registry = FushiShortcutRegistry()
-          ..loadDefaults(TargetPlatform.windows);
+    : registry = FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
 
   final FushiShortcutRegistry registry;
   final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -141,7 +169,7 @@ class _Rig {
     // universal（「返回上一级」，默认手柄 B）。
     final ShortcutAction? action =
         registry.resolveGamepad(button, scope: ShortcutScope.video) ??
-            registry.resolveGamepad(button, scope: ShortcutScope.universal);
+        registry.resolveGamepad(button, scope: ShortcutScope.universal);
     if (action == null) return false;
     final VoidCallback? callback = videoActionCallbacks(_actions())[action];
     if (callback == null) return false;
@@ -255,11 +283,7 @@ class _Rig {
           onInvoke: (GamepadButtonIntent intent) => handleButton(intent.button),
         ),
       },
-      child: Focus(
-        canRequestFocus: false,
-        skipTraversal: true,
-        child: child,
-      ),
+      child: Focus(canRequestFocus: false, skipTraversal: true, child: child),
     );
   }
 }
@@ -300,20 +324,20 @@ class _HarnessState extends State<_Harness> {
     );
     Navigator.of(context, rootNavigator: true)
         .push<void>(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, __, ___) =>
-            wrapped ? widget.rig.wrapGamepad(content) : content,
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    )
+          PageRouteBuilder<void>(
+            pageBuilder: (_, __, ___) =>
+                wrapped ? widget.rig.wrapGamepad(content) : content,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        )
         .whenComplete(() {
-      if (!mounted) return;
-      setState(() => fullscreenActive = false);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.rig.videoNode.requestFocus();
-      });
-    });
+          if (!mounted) return;
+          setState(() => fullscreenActive = false);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.rig.videoNode.requestFocus();
+          });
+        });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.rig.videoNode.requestFocus();
     });

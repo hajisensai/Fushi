@@ -136,8 +136,9 @@ class CuesToEpub {
     required int totalChapters,
     required List<AudioCue> cues,
   }) {
-    final String chapterLabel =
-        totalChapters > 1 ? 'Chapter ${chapterIndex + 1}' : bookTitle;
+    final String chapterLabel = totalChapters > 1
+        ? 'Chapter ${chapterIndex + 1}'
+        : bookTitle;
 
     final List<List<AudioCue>> paragraphs = _groupParagraphs(cues);
     final StringBuffer body = StringBuffer();

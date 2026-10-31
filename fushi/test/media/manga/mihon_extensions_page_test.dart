@@ -69,24 +69,24 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           theme: ThemeData.light(useMaterial3: true),
-          home: Scaffold(
-            body: MihonExtensionsPage(manager: manager),
-          ),
+          home: Scaffold(body: MihonExtensionsPage(manager: manager)),
         ),
       ),
     );
     await tester.pump();
   }
 
-  testWidgets('search filters extensions by normalized name and package',
-      (WidgetTester tester) async {
+  testWidgets('search filters extensions by normalized name and package', (
+    WidgetTester tester,
+  ) async {
     await pumpStandalone(tester);
 
     expect(find.text('フェイト Extension'), findsOneWidget);
     expect(find.text('Unrelated extension'), findsOneWidget);
 
-    final Finder search =
-        find.byKey(const ValueKey<String>('mihon_extension_search_field'));
+    final Finder search = find.byKey(
+      const ValueKey<String>('mihon_extension_search_field'),
+    );
     await tester.enterText(search, 'ふぇいと');
     await tester.pump();
 
@@ -101,76 +101,117 @@ void main() {
   });
 
   testWidgets(
-      'preview and install are mutually disabled while preparation runs',
-      (WidgetTester tester) async {
-    manager.dispose();
-    final _BlockingActionManager blocking = _BlockingActionManager(
-      database: database,
-      rootDirectory: root,
-      runtime: _PageRuntime(),
-    );
-    manager = blocking;
-    await manager.reload();
-    manager.available = <MihonAvailableExtension>[
-      _extension(
-        name: 'Slow extension',
-        packageName: 'org.example.slow',
-        sourceName: 'Slow source',
-      ),
-    ];
-    await pumpStandalone(tester);
+    'preview and install are mutually disabled while preparation runs',
+    (WidgetTester tester) async {
+      manager.dispose();
+      final _BlockingActionManager blocking = _BlockingActionManager(
+        database: database,
+        rootDirectory: root,
+        runtime: _PageRuntime(),
+      );
+      manager = blocking;
+      await manager.reload();
+      manager.available = <MihonAvailableExtension>[
+        _extension(
+          name: 'Slow extension',
+          packageName: 'org.example.slow',
+          sourceName: 'Slow source',
+        ),
+      ];
+      await pumpStandalone(tester);
 
-    final Finder preview =
-        find.widgetWithText(TextButton, t.mihon_extension_preview);
-    // M3E：安装是 filled 主操作（预览仍是文字按钮）。
-    final Finder install =
-        find.widgetWithText(FilledButton, t.mihon_extension_install);
-    final VoidCallback previewAction =
-        tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed!;
-    previewAction();
-    previewAction();
-    await tester.pump();
+      final Finder preview = find.widgetWithText(
+        TextButton,
+        t.mihon_extension_preview,
+      );
+      // M3E：安装是 filled 主操作（预览仍是文字按钮）。
+      final Finder install = find.widgetWithText(
+        FilledButton,
+        t.mihon_extension_install,
+      );
+      final VoidCallback previewAction = tester
+          .widget<TextButton>(glassUnwrap<TextButton>(preview))
+          .onPressed!;
+      previewAction();
+      previewAction();
+      await tester.pump();
 
-    expect(blocking.prepareCalls, 1);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed == null, isTrue);
-    // 准备中的那一行在卡片底部展开一条波浪进度（扩展行的 busy 槽）。
-    expect(
-      find.byKey(const ValueKey<String>('extension_tile_busy_progress')),
-      findsOneWidget,
-    );
+      expect(blocking.prepareCalls, 1);
+      expect(
+        tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed ==
+            null,
+        isTrue,
+      );
+      expect(
+        tester
+                .widget<FilledButton>(glassUnwrap<FilledButton>(install))
+                .onPressed ==
+            null,
+        isTrue,
+      );
+      // 准备中的那一行在卡片底部展开一条波浪进度（扩展行的 busy 槽）。
+      expect(
+        find.byKey(const ValueKey<String>('extension_tile_busy_progress')),
+        findsOneWidget,
+      );
 
-    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
-    await pumpStandalone(tester);
-    expect(blocking.prepareCalls, 1);
-    expect(
-      tester
-          .widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(TextButton, t.mihon_extension_preview)),)
-          .onPressed,
-      equals(null),
-      reason: 'manager-level ownership must survive leaving and re-entering',
-    );
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await pumpStandalone(tester);
+      expect(blocking.prepareCalls, 1);
+      expect(
+        tester
+            .widget<TextButton>(
+              glassUnwrap<TextButton>(
+                find.widgetWithText(TextButton, t.mihon_extension_preview),
+              ),
+            )
+            .onPressed,
+        equals(null),
+        reason: 'manager-level ownership must survive leaving and re-entering',
+      );
 
-    blocking.failPending();
-    await tester.pump();
-    await tester.pump();
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed != null, isTrue);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed != null, isTrue);
+      blocking.failPending();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed !=
+            null,
+        isTrue,
+      );
+      expect(
+        tester
+                .widget<FilledButton>(glassUnwrap<FilledButton>(install))
+                .onPressed !=
+            null,
+        isTrue,
+      );
 
-    blocking.resetPending();
-    final VoidCallback installAction =
-        tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed!;
-    installAction();
-    installAction();
-    await tester.pump();
+      blocking.resetPending();
+      final VoidCallback installAction = tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(install))
+          .onPressed!;
+      installAction();
+      installAction();
+      await tester.pump();
 
-    expect(blocking.prepareCalls, 2);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed == null, isTrue);
-    blocking.failPending();
-    await tester.pump();
-    await tester.pump();
-  });
+      expect(blocking.prepareCalls, 2);
+      expect(
+        tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed ==
+            null,
+        isTrue,
+      );
+      expect(
+        tester
+                .widget<FilledButton>(glassUnwrap<FilledButton>(install))
+                .onPressed ==
+            null,
+        isTrue,
+      );
+      blocking.failPending();
+      await tester.pump();
+      await tester.pump();
+    },
+  );
 
   // BUG-1441（其一）：可搜字段里混进了**仓库级**的 `storeUrl`。同一个仓库的每个
   // 扩展 storeUrl 完全一样，于是任何命中该 URL 的查询都会「命中全部」——用户搜
@@ -239,8 +280,9 @@ void main() {
 
     // M3E：语言筛选是一排 choice chip（key 沿用旧下拉项的
     // `mihon_extension_language_<code>`），直接点 JA。
-    final Finder languageChip =
-        find.byKey(const ValueKey<String>('mihon_extension_language_ja'));
+    final Finder languageChip = find.byKey(
+      const ValueKey<String>('mihon_extension_language_ja'),
+    );
     await tester.ensureVisible(languageChip);
     await tester.pumpAndSettle();
     await tester.tap(languageChip);
@@ -256,8 +298,9 @@ void main() {
   // 一个都不能丢。
   //
   // BUG-1441：宿主现在是 CustomScrollView，内嵌节返回 sliver。
-  testWidgets('embedded 模式可直接塞进「来源」视图的 CustomScrollView：无 chrome、无自带滚动、动作齐全',
-      (WidgetTester tester) async {
+  testWidgets('embedded 模式可直接塞进「来源」视图的 CustomScrollView：无 chrome、无自带滚动、动作齐全', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -329,10 +372,13 @@ void main() {
 
     // 300 个扩展超过 kMihonStoreAutoCollapseThreshold，仓库分组默认收起，
     // 先展开才能验证「展开后仍然是懒建的」——这才是本守卫真正要咬的东西。
-    await tester.tap(find.byKey(
-      const ValueKey<String>(
-          'mihon-store-group-https://repo.example/index.json'),
-    ));
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'mihon-store-group-https://repo.example/index.json',
+        ),
+      ),
+    );
     await tester.pump();
 
     expect(find.text('Extension 0'), findsOneWidget);
@@ -382,27 +428,26 @@ MihonAvailableExtension _extension({
   required String sourceName,
   String storeUrl = 'https://repo.example/index.json',
   String language = 'ja',
-}) =>
-    MihonAvailableExtension(
-      storeUrl: storeUrl,
-      name: name,
-      packageName: packageName,
-      apkUrl: 'https://repo.example/$packageName.apk',
-      iconUrl: '',
-      libVersion: '1.6',
-      extensionVersionCode: 1,
-      versionName: '1.6.1',
+}) => MihonAvailableExtension(
+  storeUrl: storeUrl,
+  name: name,
+  packageName: packageName,
+  apkUrl: 'https://repo.example/$packageName.apk',
+  iconUrl: '',
+  libVersion: '1.6',
+  extensionVersionCode: 1,
+  versionName: '1.6.1',
+  language: language,
+  contentWarning: 0,
+  sources: <MihonAvailableSource>[
+    MihonAvailableSource(
+      id: packageName,
+      name: sourceName,
       language: language,
-      contentWarning: 0,
-      sources: <MihonAvailableSource>[
-        MihonAvailableSource(
-          id: packageName,
-          name: sourceName,
-          language: language,
-          baseUrl: 'https://source.example/$packageName',
-        ),
-      ],
-    );
+      baseUrl: 'https://source.example/$packageName',
+    ),
+  ],
+);
 
 class _PageRuntime extends Fake implements MihonRuntime {
   @override

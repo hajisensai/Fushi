@@ -45,10 +45,14 @@ import 'test_helpers.dart';
 const String _epubPath = String.fromEnvironment('FUSHI_PROBE_EPUB');
 const String _needle = String.fromEnvironment('FUSHI_PROBE_NEEDLE');
 const String _outDir = String.fromEnvironment('FUSHI_PROBE_OUT');
-const String _fontSize =
-    String.fromEnvironment('FUSHI_PROBE_FONT_SIZE', defaultValue: '42');
-const String _margin =
-    String.fromEnvironment('FUSHI_PROBE_MARGIN', defaultValue: '5');
+const String _fontSize = String.fromEnvironment(
+  'FUSHI_PROBE_FONT_SIZE',
+  defaultValue: '42',
+);
+const String _margin = String.fromEnvironment(
+  'FUSHI_PROBE_MARGIN',
+  defaultValue: '5',
+);
 
 const Key _kWebViewKey = ValueKey<String>('fushi_webview');
 const Key _kContentReadyKey = ValueKey<String>('fushi_content_ready');
@@ -70,8 +74,10 @@ Future<void> _waitFor(
     await tester.pump(step);
     if (ready()) return;
   }
-  fail('$label did not become ready within '
-      '${maxPolls * step.inMilliseconds}ms');
+  fail(
+    '$label did not become ready within '
+    '${maxPolls * step.inMilliseconds}ms',
+  );
 }
 
 Future<void> _pumpForPref(WidgetTester tester) async {
@@ -84,16 +90,21 @@ Future<void> _openBook(WidgetTester tester, String bookKey) async {
   await openBookViaProductionPath(tester, bookKey);
   await _waitFor(tester, _webViewShown, 'reader WebView');
   await _waitFor(tester, _contentReady, 'reader content', maxPolls: 240);
-  await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-      maxPolls: 20);
+  await _waitFor(
+    tester,
+    readerWebViewReady,
+    'reader debug hooks',
+    maxPolls: 20,
+  );
   // 恢复落页、字体与度量在首帧之后还会动一两次；给版面几秒稳定下来。
   await tester.pump(const Duration(seconds: 3));
 }
 
 Future<void> _closeReader(WidgetTester tester) async {
   if (_readerPageGone()) return;
-  final NavigatorState nav =
-      Navigator.of(tester.element(find.byType(ReaderFushiPage)));
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(ReaderFushiPage)),
+  );
   nav.pop();
   await _waitFor(tester, _readerPageGone, 'reader closed', maxPolls: 40);
   await tester.pump(const Duration(seconds: 1));
@@ -121,7 +132,8 @@ Future<void> _pinChapterEnd(AppModel appModel, String bookUid, int section) =>
     );
 
 /// 当前页 / 视口：文字是否越出正文内容框（行内方向），分页时还量页网格对齐。
-String _measureJs({required bool paged}) => '(function (paged) {'
+String _measureJs({required bool paged}) =>
+    '(function (paged) {'
     r'''
   var r = window.fushiReader;
   var b = document.body;
@@ -175,8 +187,10 @@ String _measureJs({required bool paged}) => '(function (paged) {'
 
 Future<void> _saveShot(String name) async {
   final ObserveShot shot = await captureReaderWebView(name);
-  debugPrint('[end-page] shot $name saved=${shot.saved} '
-      'nonBlank=${shot.nonBlank} path=${shot.path}');
+  debugPrint(
+    '[end-page] shot $name saved=${shot.saved} '
+    'nonBlank=${shot.nonBlank} path=${shot.path}',
+  );
   if (_outDir.isEmpty || !shot.saved) return;
   try {
     Directory(_outDir).createSync(recursive: true);
@@ -194,8 +208,11 @@ void main() {
     'grid and no text is clipped, across paginated / continuous / VN',
     timeout: const Timeout(Duration(minutes: 30)),
     (WidgetTester tester) async {
-      expect(_epubPath, isNotEmpty,
-          reason: 'pass --dart-define=FUSHI_PROBE_EPUB=<path to epub>');
+      expect(
+        _epubPath,
+        isNotEmpty,
+        reason: 'pass --dart-define=FUSHI_PROBE_EPUB=<path to epub>',
+      );
       final File epub = File(_epubPath);
       expect(epub.existsSync(), isTrue, reason: 'epub not found: $_epubPath');
 
@@ -203,8 +220,11 @@ void main() {
         label: 'end-page',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
           final AppModel appModel = await readyAppModel(tester);
 
@@ -234,8 +254,9 @@ void main() {
               bytes: epub.readAsBytesSync(),
               fileName: epub.uri.pathSegments.last,
             );
-            final EpubBookRow? row =
-                await appModel.database.getEpubBook(bookKey);
+            final EpubBookRow? row = await appModel.database.getEpubBook(
+              bookKey,
+            );
             expect(row, isNotNull);
             final List<dynamic> chapters =
                 jsonDecode(row!.chaptersJson) as List<dynamic>;
@@ -243,16 +264,20 @@ void main() {
             for (int i = 0; i < chapters.length && section < 0; i++) {
               final String href =
                   (chapters[i] as Map<String, dynamic>)['href'] as String;
-              final File f =
-                  File('${row.extractDir}${Platform.pathSeparator}$href');
+              final File f = File(
+                '${row.extractDir}${Platform.pathSeparator}$href',
+              );
               if (f.existsSync() &&
                   _needle.isNotEmpty &&
                   f.readAsStringSync().contains(_needle)) {
                 section = i;
               }
             }
-            expect(section, greaterThanOrEqualTo(0),
-                reason: 'no section contains FUSHI_PROBE_NEEDLE');
+            expect(
+              section,
+              greaterThanOrEqualTo(0),
+              reason: 'no section contains FUSHI_PROBE_NEEDLE',
+            );
             debugPrint('[end-page] section=$section');
 
             for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
@@ -266,8 +291,9 @@ void main() {
                 await _pumpForPref(tester);
                 await _pinChapterEnd(appModel, row.uid, section);
                 await _openBook(tester, bookKey);
-                final Map<String, dynamic> r =
-                    await _eval(_measureJs(paged: mode == 'paginated'));
+                final Map<String, dynamic> r = await _eval(
+                  _measureJs(paged: mode == 'paginated'),
+                );
                 final String label = '${wm == 'vertical-rl' ? 'v' : 'h'}-$mode';
                 final String line = '[end-page] $label ${jsonEncode(r)}';
                 debugPrint(line);
@@ -279,16 +305,20 @@ void main() {
                   failures.add('$label ${r['clipped']} text runs clipped');
                 }
                 if (mode == 'paginated' && (r['offGrid'] as num) > 1) {
-                  failures.add('$label last page off the grid by '
-                      '${r['offGrid']}px');
+                  failures.add(
+                    '$label last page off the grid by '
+                    '${r['offGrid']}px',
+                  );
                 }
                 await _saveShot('end-page-$label');
                 await _closeReader(tester);
               }
             }
             debugPrint('[end-page] SUMMARY\n${summary.join('\n')}');
-            debugPrint('[end-page] FAILURES ${failures.length}\n'
-                '${failures.join('\n')}');
+            debugPrint(
+              '[end-page] FAILURES ${failures.length}\n'
+              '${failures.join('\n')}',
+            );
             expect(summary, isNotEmpty, reason: 'probe measured nothing');
             expect(failures, isEmpty);
           } finally {

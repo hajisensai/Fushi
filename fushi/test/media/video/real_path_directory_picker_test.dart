@@ -29,15 +29,19 @@ void main() {
       expect(
         src.contains('pickRealDirectoryPath('),
         isTrue,
-        reason: '视频导入文件夹必须走统一真实路径入口，'
+        reason:
+            '视频导入文件夹必须走统一真实路径入口，'
             '而非直接 FilePicker.getDirectoryPath()（安卓返回不可用 SAF 串）',
       );
       // 直接的 getDirectoryPath 不该再出现在来源主入口里。
       // TODO-817 M1c 把来源管理抽成共享内容体后，_addLocalFolder 改为公开的
       // addLocalFolder（「导入」视图快速导入区也直接调它）。
       final int idx = src.indexOf('Future<void> addLocalFolder()');
-      expect(idx, isNonNegative,
-          reason: '来源视图必须保留 addLocalFolder 入口（选目录 → 落库 → 扫描）');
+      expect(
+        idx,
+        isNonNegative,
+        reason: '来源视图必须保留 addLocalFolder 入口（选目录 → 落库 → 扫描）',
+      );
       final int end = src.indexOf('Future<', idx + 10);
       expect(end, isNonNegative, reason: 'addLocalFolder 之后必须还有下一个方法声明作切片终点');
       final String body = src.substring(idx, end);
@@ -54,12 +58,18 @@ void main() {
         reason: 'addLocalFolder 不得再直接调 getDirectoryPath',
       );
       final int pickIdx = src.indexOf(
-          'Future<({String path, String? bookmark})?> _pickSourceFolder(');
-      expect(pickIdx, isNonNegative,
-          reason: '来源视图必须保留 _pickSourceFolder（选目录的唯一出口）');
+        'Future<({String path, String? bookmark})?> _pickSourceFolder(',
+      );
+      expect(
+        pickIdx,
+        isNonNegative,
+        reason: '来源视图必须保留 _pickSourceFolder（选目录的唯一出口）',
+      );
       final int pickEnd = src.indexOf('Future<', pickIdx + 10);
-      final String pickBody =
-          src.substring(pickIdx, pickEnd < 0 ? src.length : pickEnd);
+      final String pickBody = src.substring(
+        pickIdx,
+        pickEnd < 0 ? src.length : pickEnd,
+      );
       expect(
         pickBody.contains('pickRealDirectoryPath('),
         isTrue,
@@ -72,8 +82,7 @@ void main() {
       );
     });
 
-    test('video addSource offers local/network chooser (network = no FTP)',
-        () {
+    test('video addSource offers local/network chooser (network = no FTP)', () {
       // 网络来源三域开放后，视频不再短路直选文件夹：与书/漫画共用同一个
       // 本地/网络选择对话框；本地文件夹入口仍在对话框内可达。
       final String src = File(
@@ -83,14 +92,17 @@ void main() {
       expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
       expect(body, contains('showAppDialog<_AddSourceChoice>'));
       expect(body, contains('await addLocalFolder()'));
-      expect(src, contains("const <String>['sftp', 'webdav', 'alist']"),
-          reason: '视频网络 transport 必须收窄到可原地流播的 SFTP/WebDAV/AList');
+      expect(
+        src,
+        contains("const <String>['sftp', 'webdav', 'alist']"),
+        reason: '视频网络 transport 必须收窄到可原地流播的 SFTP/WebDAV/AList',
+      );
     });
 
     test('android branch uses native SAF channel, no custom browser', () {
-      final String src =
-          File('lib/src/media/import/real_path_directory_picker.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/media/import/real_path_directory_picker.dart',
+      ).readAsStringSync();
       // 安卓改走原生 SAF：必须调 SAF channel 的两个真实路径方法。
       expect(
         src.contains("'pickRealDirectory'"),
@@ -127,9 +139,9 @@ void main() {
     });
 
     test('helper branches on Android + permission before picking', () {
-      final String src =
-          File('lib/src/media/import/real_path_directory_picker.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/media/import/real_path_directory_picker.dart',
+      ).readAsStringSync();
       // 非安卓维持 getDirectoryPath（桌面/iOS 真实路径）。
       expect(
         src.contains('TargetPlatform.android') &&
@@ -148,19 +160,22 @@ void main() {
 
     // board 1112：视频本体导入走真实路径（绝对路径不复制到 cache）。
     // board 1360：字幕导入回退系统文件选择器（导入即消费、不长期引用绝对路径）。
-    test(
-        'video _pickVideo keeps real-path picker, '
+    test('video _pickVideo keeps real-path picker, '
         '_pickSubtitle reverts to system picker', () {
-      final String src = File('lib/src/media/video/video_import_dialog.dart')
-          .readAsStringSync();
+      final String src = File(
+        'lib/src/media/video/video_import_dialog.dart',
+      ).readAsStringSync();
       final String pickVideo = _methodBody(src, 'Future<void> _pickVideo()');
-      final String pickSubtitle =
-          _methodBody(src, 'Future<void> _pickSubtitle()');
+      final String pickSubtitle = _methodBody(
+        src,
+        'Future<void> _pickSubtitle()',
+      );
 
       expect(
         pickVideo.contains('pickRealFilePath('),
         isTrue,
-        reason: '单文件视频选择必须走真实路径入口，'
+        reason:
+            '单文件视频选择必须走真实路径入口，'
             '而非直接 FilePicker.pickFiles（安卓会复制到 cache、清缓存即失效）',
       );
       expect(
@@ -183,25 +198,32 @@ void main() {
     });
 
     test('audiobook audio/subtitle rows use file picker helper', () {
-      final String audiobook =
-          File('lib/src/media/audiobook/audiobook_import_dialog.dart')
-              .readAsStringSync();
-      final String book =
-          File('lib/src/media/audiobook/book_import_dialog.dart')
-              .readAsStringSync();
+      final String audiobook = File(
+        'lib/src/media/audiobook/audiobook_import_dialog.dart',
+      ).readAsStringSync();
+      final String book = File(
+        'lib/src/media/audiobook/book_import_dialog.dart',
+      ).readAsStringSync();
 
-      final String audiobookAudio =
-          _methodBody(audiobook, 'Future<void> _pickAudioFiles()');
+      final String audiobookAudio = _methodBody(
+        audiobook,
+        'Future<void> _pickAudioFiles()',
+      );
       final String bookAudio = _methodBody(book, 'Future<void> _pickAudio()');
-      final String audiobookAlignment =
-          _methodBody(audiobook, 'Future<void> _pickAlignment()');
-      final String bookSubtitle =
-          _methodBody(book, 'Future<void> _pickSubtitle()');
+      final String audiobookAlignment = _methodBody(
+        audiobook,
+        'Future<void> _pickAlignment()',
+      );
+      final String bookSubtitle = _methodBody(
+        book,
+        'Future<void> _pickSubtitle()',
+      );
 
       expect(
         audiobookAudio.contains('pickRealFilePaths('),
         isTrue,
-        reason: '有声书补音频必须走文件选择 helper；iOS 的 FileType.audio '
+        reason:
+            '有声书补音频必须走文件选择 helper；iOS 的 FileType.audio '
             '会打开 MPMediaPickerController 资料库入口',
       );
       expect(
@@ -210,16 +232,23 @@ void main() {
         reason: '书籍导入附带音频必须走文件选择 helper；不得打开 iOS 资料库',
       );
       for (final String body in <String>[audiobookAudio, bookAudio]) {
-        expect(body.contains('FileType.audio'), isFalse,
-            reason: 'iOS FileType.audio 会走媒体资料库，不是 Files 文件选择');
-        expect(body.contains('FilePicker.platform.pickFiles'), isFalse,
-            reason: '音频选择应集中到 helper，避免各入口重新踩 iOS 分流');
+        expect(
+          body.contains('FileType.audio'),
+          isFalse,
+          reason: 'iOS FileType.audio 会走媒体资料库，不是 Files 文件选择',
+        );
+        expect(
+          body.contains('FilePicker.platform.pickFiles'),
+          isFalse,
+          reason: '音频选择应集中到 helper，避免各入口重新踩 iOS 分流',
+        );
       }
 
       expect(
         audiobookAlignment.contains('pickSystemFilePath('),
         isTrue,
-        reason: '有声书对齐字幕/SMIL/JSON 导入即被消费，维持系统文件选择器（board 1360）；'
+        reason:
+            '有声书对齐字幕/SMIL/JSON 导入即被消费，维持系统文件选择器（board 1360）；'
             'iOS .srt UTI 过滤问题由 helper 内部处理',
       );
       for (final String entry in kRealPathFileEntries) {
@@ -243,41 +272,55 @@ void main() {
       }
     });
 
-    test('production code never opens iOS media library via FileType.audio',
-        () {
-      final Directory libDir = Directory('lib');
-      final List<String> offenders = <String>[];
-      int scanned = 0;
-      for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
-        if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        scanned++;
-        final String src = entity.readAsStringSync();
-        if (src.contains('FileType.audio')) offenders.add(entity.path);
-      }
+    test(
+      'production code never opens iOS media library via FileType.audio',
+      () {
+        final Directory libDir = Directory('lib');
+        final List<String> offenders = <String>[];
+        int scanned = 0;
+        for (final FileSystemEntity entity in libDir.listSync(
+          recursive: true,
+        )) {
+          if (entity is! File || !entity.path.endsWith('.dart')) continue;
+          scanned++;
+          final String src = entity.readAsStringSync();
+          if (src.contains('FileType.audio')) offenders.add(entity.path);
+        }
 
-      // 这条判据是「命中数为 0」：扫描一旦塌成空集，它 100% 假绿，
-      // 是全清单里最需要哨兵的形态之一。
-      expectScanScale(scanned,
-          what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        // 这条判据是「命中数为 0」：扫描一旦塌成空集，它 100% 假绿，
+        // 是全清单里最需要哨兵的形态之一。
+        expectScanScale(
+          scanned,
+          what: 'lib/ 下的 .dart',
+          atLeast: 750,
+          measured: 939,
+        );
 
-      expect(
-        offenders,
-        isEmpty,
-        reason: 'iOS FileType.audio opens MPMediaPickerController / media '
-            'library. Audio-file imports must use pickRealFilePath(s) so the '
-            'user stays in Files and .srt/audio sidecars share one path.',
-      );
-    });
+        expect(
+          offenders,
+          isEmpty,
+          reason:
+              'iOS FileType.audio opens MPMediaPickerController / media '
+              'library. Audio-file imports must use pickRealFilePath(s) so the '
+              'user stays in Files and .srt/audio sidecars share one path.',
+        );
+      },
+    );
 
     test('pickRealFilePath falls back to file_picker without full access', () {
-      final String src =
-          File('lib/src/media/import/real_path_directory_picker.dart')
-              .readAsStringSync();
-      final String fileEntry =
-          _methodBody(src, 'Future<String?> pickRealFilePath(');
+      final String src = File(
+        'lib/src/media/import/real_path_directory_picker.dart',
+      ).readAsStringSync();
+      final String fileEntry = _methodBody(
+        src,
+        'Future<String?> pickRealFilePath(',
+      );
       // 文件入口存在，且无全文件访问权限时回退（不静默返回 null / 不硬性要求授权）。
-      expect(fileEntry.isNotEmpty, isTrue,
-          reason: '必须存在 pickRealFilePath 文件入口');
+      expect(
+        fileEntry.isNotEmpty,
+        isTrue,
+        reason: '必须存在 pickRealFilePath 文件入口',
+      );
       // BUG-1667：平台分流 + 回退逃生口下沉到带路径出处的 pickRealFilePathDetailed，
       // pickRealFilePath 退化成丢掉出处的薄封装。断言意图不变——逃生口必须还在，
       // 只是改到它现在真正所在的那个函数里查。
@@ -286,27 +329,34 @@ void main() {
         isTrue,
         reason: 'pickRealFilePath 必须委托给带出处的 pickRealFilePathDetailed',
       );
-      final String detailed =
-          _methodBody(src, 'Future<PickedFilePath?> pickRealFilePathDetailed(');
-      expect(detailed.isNotEmpty, isTrue,
-          reason: '必须存在带路径出处的 pickRealFilePathDetailed 入口');
+      final String detailed = _methodBody(
+        src,
+        'Future<PickedFilePath?> pickRealFilePathDetailed(',
+      );
+      expect(
+        detailed.isNotEmpty,
+        isTrue,
+        reason: '必须存在带路径出处的 pickRealFilePathDetailed 入口',
+      );
       expect(
         detailed.contains('_detailedFallback('),
         isTrue,
         reason: '桌面/iOS 及安卓无全文件访问必须回退 file_picker（逃生口）',
       );
       expect(
-        _methodBody(src, 'Future<PickedFilePath?> _detailedFallback(')
-            .contains('_fallbackPickRaw('),
+        _methodBody(
+          src,
+          'Future<PickedFilePath?> _detailedFallback(',
+        ).contains('_fallbackPickRaw('),
         isTrue,
         reason: '逃生口最终必须落到 file_picker',
       );
     });
 
     test('iOS filtered files are validated after picking public items', () {
-      final String src =
-          File('lib/src/media/import/real_path_directory_picker.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/media/import/real_path_directory_picker.dart',
+      ).readAsStringSync();
       expect(
         src.contains('Future<List<String>> pickRealFilePaths('),
         isTrue,
@@ -317,7 +367,8 @@ void main() {
             src.contains('FileType.any') &&
             src.contains('_filterPickedFilesByExtension'),
         isTrue,
-        reason: 'iOS .srt 等扩展可能解析成 dyn.* UTI，被 custom 过滤器隐藏；'
+        reason:
+            'iOS .srt 等扩展可能解析成 dyn.* UTI，被 custom 过滤器隐藏；'
             '应先用 public.item 打开 Files，再按扩展名校验',
       );
     });

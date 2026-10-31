@@ -100,9 +100,11 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                 _detailShown ? FushiIcons.expandLess : FushiIcons.expandMore,
                 size: 18,
               ),
-              label: Text(_detailShown
-                  ? t.scrape_failure_detail_hide
-                  : t.scrape_failure_detail_show),
+              label: Text(
+                _detailShown
+                    ? t.scrape_failure_detail_hide
+                    : t.scrape_failure_detail_show,
+              ),
               onPressed: () => setState(() => _detailShown = !_detailShown),
             ),
           ],

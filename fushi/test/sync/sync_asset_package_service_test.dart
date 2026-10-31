@@ -44,10 +44,10 @@ File _rewriteManifest(
 
 /// [root] 下（递归）所有文件名为 [name] 的文件。
 List<String> _filesNamed(Directory root, String name) => <String>[
-      if (root.existsSync())
-        for (final FileSystemEntity e in root.listSync(recursive: true))
-          if (e is File && p.basename(e.path) == name) e.path,
-    ];
+  if (root.existsSync())
+    for (final FileSystemEntity e in root.listSync(recursive: true))
+      if (e is File && p.basename(e.path) == name) e.path,
+];
 
 void main() {
   group('Dictionary sync packages', () {
@@ -61,43 +61,53 @@ void main() {
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
-      final Directory sourceResources =
-          Directory(p.join(temp.path, 'source-dictionaries'));
-      final Directory targetResources =
-          Directory(p.join(temp.path, 'target-dictionaries'));
-      await Directory(p.join(sourceResources.path, 'JMdict', 'media'))
-          .create(recursive: true);
-      await File(p.join(sourceResources.path, 'JMdict', 'blobs.bin'))
-          .writeAsString('dictionary index');
-      await File(p.join(sourceResources.path, 'JMdict', 'media', 'pitch.png'))
-          .writeAsString('image bytes');
+      final Directory sourceResources = Directory(
+        p.join(temp.path, 'source-dictionaries'),
+      );
+      final Directory targetResources = Directory(
+        p.join(temp.path, 'target-dictionaries'),
+      );
+      await Directory(
+        p.join(sourceResources.path, 'JMdict', 'media'),
+      ).create(recursive: true);
+      await File(
+        p.join(sourceResources.path, 'JMdict', 'blobs.bin'),
+      ).writeAsString('dictionary index');
+      await File(
+        p.join(sourceResources.path, 'JMdict', 'media', 'pitch.png'),
+      ).writeAsString('image bytes');
 
-      await sourceDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-        name: 'JMdict',
-        formatKey: 'yomichan',
-        order: 7,
-        type: const Value('term'),
-        metadataJson: const Value('{"version":"2026"}'),
-        hiddenLanguagesJson: const Value('["en"]'),
-        collapsedLanguagesJson: const Value('["ja"]'),
-      ));
+      await sourceDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'JMdict',
+          formatKey: 'yomichan',
+          order: 7,
+          type: const Value('term'),
+          metadataJson: const Value('{"version":"2026"}'),
+          hiddenLanguagesJson: const Value('["en"]'),
+          collapsedLanguagesJson: const Value('["ja"]'),
+        ),
+      );
 
-      final SyncAssetPackageService service =
-          SyncAssetPackageService(db: sourceDb);
+      final SyncAssetPackageService service = SyncAssetPackageService(
+        db: sourceDb,
+      );
       final File package = await service.exportDictionaryPackage(
         dictionaryName: 'JMdict',
         dictionaryResourceRoot: sourceResources,
         outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
       );
 
-      final Archive archive =
-          ZipDecoder().decodeBytes(await package.readAsBytes());
+      final Archive archive = ZipDecoder().decodeBytes(
+        await package.readAsBytes(),
+      );
       expect(archive.findFile('manifest.json'), isNotNull);
       expect(archive.findFile('resources/blobs.bin'), isNotNull);
       expect(archive.findFile('resources/media/pitch.png'), isNotNull);
 
-      final SyncAssetPackageService targetService =
-          SyncAssetPackageService(db: targetDb);
+      final SyncAssetPackageService targetService = SyncAssetPackageService(
+        db: targetDb,
+      );
       await targetService.importDictionaryPackage(
         packageFile: package,
         dictionaryResourceRoot: targetResources,
@@ -113,13 +123,15 @@ void main() {
       expect(imported.hiddenLanguagesJson, '["en"]');
       expect(imported.collapsedLanguagesJson, '["ja"]');
       expect(
-        await File(p.join(targetResources.path, 'JMdict', 'blobs.bin'))
-            .readAsString(),
+        await File(
+          p.join(targetResources.path, 'JMdict', 'blobs.bin'),
+        ).readAsString(),
         'dictionary index',
       );
       expect(
-        await File(p.join(targetResources.path, 'JMdict', 'media', 'pitch.png'))
-            .readAsString(),
+        await File(
+          p.join(targetResources.path, 'JMdict', 'media', 'pitch.png'),
+        ).readAsString(),
         'image bytes',
       );
     });
@@ -142,37 +154,44 @@ void main() {
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
-      final Directory sourceResources =
-          Directory(p.join(temp.path, 'source-dictionaries'));
-      final Directory targetResources =
-          Directory(p.join(temp.path, 'target-dictionaries'));
-      await Directory(p.join(sourceResources.path, 'JMdict')).create(
-        recursive: true,
+      final Directory sourceResources = Directory(
+        p.join(temp.path, 'source-dictionaries'),
       );
-      await File(p.join(sourceResources.path, 'JMdict', 'blobs.bin'))
-          .writeAsString('dictionary index');
+      final Directory targetResources = Directory(
+        p.join(temp.path, 'target-dictionaries'),
+      );
+      await Directory(
+        p.join(sourceResources.path, 'JMdict'),
+      ).create(recursive: true);
+      await File(
+        p.join(sourceResources.path, 'JMdict', 'blobs.bin'),
+      ).writeAsString('dictionary index');
 
       // 导出端：一本没改过名的词典。
-      await sourceDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-        name: 'JMdict',
-        formatKey: 'yomichan',
-        order: 1,
-      ));
+      await sourceDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'JMdict',
+          formatKey: 'yomichan',
+          order: 1,
+        ),
+      );
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportDictionaryPackage(
-        dictionaryName: 'JMdict',
-        dictionaryResourceRoot: sourceResources,
-        outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
-      );
+            dictionaryName: 'JMdict',
+            dictionaryResourceRoot: sourceResources,
+            outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
+          );
 
       // 本机：同名词典已经在，且用户改过名、指定过内容语言。
-      await targetDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-        name: 'JMdict',
-        formatKey: 'yomichan',
-        order: 3,
-        displayName: const Value<String?>('日汉大辞典'),
-        languageOverride: const Value<String?>('ja'),
-      ));
+      await targetDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'JMdict',
+          formatKey: 'yomichan',
+          order: 3,
+          displayName: const Value<String?>('日汉大辞典'),
+          languageOverride: const Value<String?>('ja'),
+        ),
+      );
 
       await SyncAssetPackageService(db: targetDb).importDictionaryPackage(
         packageFile: package,
@@ -181,16 +200,8 @@ void main() {
 
       final DictionaryMetaRow row =
           (await targetDb.getAllDictionaryMetadata()).single;
-      expect(
-        row.displayName,
-        '日汉大辞典',
-        reason: '用户的改名属于本机设置，重新导入不能把它冲掉',
-      );
-      expect(
-        row.languageOverride,
-        'ja',
-        reason: '手动指定的内容语言同理',
-      );
+      expect(row.displayName, '日汉大辞典', reason: '用户的改名属于本机设置，重新导入不能把它冲掉');
+      expect(row.languageOverride, 'ja', reason: '手动指定的内容语言同理');
       // 包里带的那几列照常被更新（这才是导入的意义）。
       expect(row.order, 1);
     });
@@ -205,29 +216,34 @@ void main() {
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
-      final Directory sourceResources =
-          Directory(p.join(temp.path, 'source-dictionaries'));
-      await Directory(p.join(sourceResources.path, 'JMdict')).create(
-        recursive: true,
+      final Directory sourceResources = Directory(
+        p.join(temp.path, 'source-dictionaries'),
       );
-      await File(p.join(sourceResources.path, 'JMdict', 'blobs.bin'))
-          .writeAsString('x');
-      await sourceDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-        name: 'JMdict',
-        formatKey: 'yomichan',
-        order: 1,
-      ));
+      await Directory(
+        p.join(sourceResources.path, 'JMdict'),
+      ).create(recursive: true);
+      await File(
+        p.join(sourceResources.path, 'JMdict', 'blobs.bin'),
+      ).writeAsString('x');
+      await sourceDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'JMdict',
+          formatKey: 'yomichan',
+          order: 1,
+        ),
+      );
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportDictionaryPackage(
-        dictionaryName: 'JMdict',
-        dictionaryResourceRoot: sourceResources,
-        outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
-      );
+            dictionaryName: 'JMdict',
+            dictionaryResourceRoot: sourceResources,
+            outputFile: File(p.join(temp.path, 'jmdict.hibiki-dictionary.zip')),
+          );
 
       await SyncAssetPackageService(db: targetDb).importDictionaryPackage(
         packageFile: package,
-        dictionaryResourceRoot:
-            Directory(p.join(temp.path, 'target-dictionaries')),
+        dictionaryResourceRoot: Directory(
+          p.join(temp.path, 'target-dictionaries'),
+        ),
       );
 
       final DictionaryMetaRow row =
@@ -245,7 +261,8 @@ void main() {
       addTearDown(db.close);
 
       final Archive archive = Archive()
-        ..addFile(_textFile(
+        ..addFile(
+          _textFile(
             'manifest.json',
             jsonEncode(<String, Object?>{
               'schemaVersion': 1,
@@ -259,7 +276,9 @@ void main() {
                 'hiddenLanguagesJson': '[]',
                 'collapsedLanguagesJson': '[]',
               },
-            })))
+            }),
+          ),
+        )
         ..addFile(_textFile('resources/../evil.txt', 'owned'));
       final File package = File(p.join(temp.path, 'bad.zip'))
         ..writeAsBytesSync(ZipEncoder().encode(archive)!);
@@ -283,49 +302,56 @@ void main() {
       '/abs',
       r'C:\abs',
     ]) {
-      test('rejects dictionary name "$evilName" that escapes the root',
-          () async {
-        final Directory temp = await Directory.systemTemp.createTemp(
-          'fushi-dict-package-name-',
-        );
-        addTearDown(() => temp.delete(recursive: true));
-        final FushiDatabase db = _testDb();
-        addTearDown(db.close);
+      test(
+        'rejects dictionary name "$evilName" that escapes the root',
+        () async {
+          final Directory temp = await Directory.systemTemp.createTemp(
+            'fushi-dict-package-name-',
+          );
+          addTearDown(() => temp.delete(recursive: true));
+          final FushiDatabase db = _testDb();
+          addTearDown(db.close);
 
-        final Archive archive = Archive()
-          ..addFile(_textFile(
-              'manifest.json',
-              jsonEncode(<String, Object?>{
-                'schemaVersion': 1,
-                'kind': 'dictionary',
-                'dictionary': <String, Object?>{
-                  'name': evilName,
-                  'formatKey': 'yomichan',
-                  'order': 0,
-                  'type': 'term',
-                  'metadataJson': '{}',
-                  'hiddenLanguagesJson': '[]',
-                  'collapsedLanguagesJson': '[]',
-                },
-              })))
-          ..addFile(_textFile('resources/payload.txt', 'owned'));
-        final File package = File(p.join(temp.path, 'bad-name.zip'))
-          ..writeAsBytesSync(ZipEncoder().encode(archive)!);
-        final Directory root = Directory(p.join(temp.path, 'dicts', 'inner'));
+          final Archive archive = Archive()
+            ..addFile(
+              _textFile(
+                'manifest.json',
+                jsonEncode(<String, Object?>{
+                  'schemaVersion': 1,
+                  'kind': 'dictionary',
+                  'dictionary': <String, Object?>{
+                    'name': evilName,
+                    'formatKey': 'yomichan',
+                    'order': 0,
+                    'type': 'term',
+                    'metadataJson': '{}',
+                    'hiddenLanguagesJson': '[]',
+                    'collapsedLanguagesJson': '[]',
+                  },
+                }),
+              ),
+            )
+            ..addFile(_textFile('resources/payload.txt', 'owned'));
+          final File package = File(p.join(temp.path, 'bad-name.zip'))
+            ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+          final Directory root = Directory(p.join(temp.path, 'dicts', 'inner'));
 
-        await expectLater(
-          SyncAssetPackageService(db: db).importDictionaryPackage(
-            packageFile: package,
-            dictionaryResourceRoot: root,
-          ),
-          throwsA(isA<FormatException>()),
-        );
-        expect(
-            File(p.join(temp.path, 'dicts', 'escaped', 'payload.txt'))
-                .existsSync(),
-            isFalse);
-        expect(await db.getAllDictionaryMetadata(), isEmpty);
-      });
+          await expectLater(
+            SyncAssetPackageService(db: db).importDictionaryPackage(
+              packageFile: package,
+              dictionaryResourceRoot: root,
+            ),
+            throwsA(isA<FormatException>()),
+          );
+          expect(
+            File(
+              p.join(temp.path, 'dicts', 'escaped', 'payload.txt'),
+            ).existsSync(),
+            isFalse,
+          );
+          expect(await db.getAllDictionaryMetadata(), isEmpty);
+        },
+      );
     }
   });
 
@@ -340,8 +366,9 @@ void main() {
       addTearDown(sourceDb.close);
       addTearDown(targetDb.close);
 
-      final Directory sourceAudio =
-          Directory(p.join(temp.path, 'source-audio'));
+      final Directory sourceAudio = Directory(
+        p.join(temp.path, 'source-audio'),
+      );
       await sourceAudio.create(recursive: true);
       final File track = File(p.join(sourceAudio.path, 'track01.m4b'))
         ..writeAsStringSync('audio bytes');
@@ -350,29 +377,33 @@ void main() {
       final File cover = File(p.join(sourceAudio.path, 'cover.jpg'))
         ..writeAsStringSync('cover bytes');
 
-      await sourceDb.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: 'ttu-42',
-        audioRoot: Value(sourceAudio.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        alignmentFormat: 'srt',
-        alignmentPath: alignment.path,
-        healthKindRaw: const Value('healthy'),
-        matchRatePct: const Value(98),
-        healthMeasuredAt: Value(DateTime.utc(2026, 6)),
-        healthReason: const Value('ok'),
-        followAudio: const Value(true),
-      ));
-      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-42',
-        title: 'Standalone',
-        author: const Value('Author'),
-        audioRoot: Value(sourceAudio.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        srtPath: alignment.path,
-        coverPath: Value(cover.path),
-        importedAt: 1234,
-        bookKey: const Value('ttu-42'),
-      ));
+      await sourceDb.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'ttu-42',
+          audioRoot: Value(sourceAudio.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          alignmentFormat: 'srt',
+          alignmentPath: alignment.path,
+          healthKindRaw: const Value('healthy'),
+          matchRatePct: const Value(98),
+          healthMeasuredAt: Value(DateTime.utc(2026, 6)),
+          healthReason: const Value('ok'),
+          followAudio: const Value(true),
+        ),
+      );
+      await sourceDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-42',
+          title: 'Standalone',
+          author: const Value('Author'),
+          audioRoot: Value(sourceAudio.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          srtPath: alignment.path,
+          coverPath: Value(cover.path),
+          importedAt: 1234,
+          bookKey: const Value('ttu-42'),
+        ),
+      );
       await sourceDb.replaceCuesForBook('ttu-42', <AudioCuesCompanion>[
         AudioCuesCompanion.insert(
           bookKey: 'ttu-42',
@@ -388,32 +419,40 @@ void main() {
 
       final File package = await SyncAssetPackageService(db: sourceDb)
           .exportAudioDatabasePackage(
-        bookKey: 'ttu-42',
-        srtBookUid: 'srt-42',
-        outputFile: File(p.join(temp.path, 'audio.hibiki-audio-db.zip')),
-      );
+            bookKey: 'ttu-42',
+            srtBookUid: 'srt-42',
+            outputFile: File(p.join(temp.path, 'audio.hibiki-audio-db.zip')),
+          );
 
-      final Directory targetAudio =
-          Directory(p.join(temp.path, 'target-audio'));
+      final Directory targetAudio = Directory(
+        p.join(temp.path, 'target-audio'),
+      );
       await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
         packageFile: package,
         audioDatabaseRoot: targetAudio,
       );
 
-      final AudiobookRow audiobook =
-          (await targetDb.getAudiobookByBookKey('ttu-42'))!;
-      expect(audiobook.alignmentPath,
-          p.join(targetAudio.path, 'ttu-42', 'align.srt'));
+      final AudiobookRow audiobook = (await targetDb.getAudiobookByBookKey(
+        'ttu-42',
+      ))!;
+      expect(
+        audiobook.alignmentPath,
+        p.join(targetAudio.path, 'ttu-42', 'align.srt'),
+      );
       expect(audiobook.audioRoot, p.join(targetAudio.path, 'ttu-42'));
       expect(jsonDecode(audiobook.audioPathsJson!) as List<dynamic>, <String>[
         p.join(targetAudio.path, 'ttu-42', 'track01.m4b'),
       ]);
-      expect(await File(audiobook.alignmentPath).readAsString(),
-          contains('hello'));
       expect(
-          await File(p.join(targetAudio.path, 'ttu-42', 'track01.m4b'))
-              .readAsString(),
-          'audio bytes');
+        await File(audiobook.alignmentPath).readAsString(),
+        contains('hello'),
+      );
+      expect(
+        await File(
+          p.join(targetAudio.path, 'ttu-42', 'track01.m4b'),
+        ).readAsString(),
+        'audio bytes',
+      );
 
       final List<AudioCueRow> cues = await targetDb.getCuesForBook('ttu-42');
       expect(cues, hasLength(1));
@@ -425,375 +464,428 @@ void main() {
       expect(srt.coverPath, p.join(targetAudio.path, 'ttu-42', 'cover.jpg'));
     });
 
-    test('standalone (pure SRT) audiobook round trips without an Audiobooks row',
-        () async {
-      // 纯 SRT（standalone）有声书：SrtBooks 行 bookKey 为空、无 Audiobooks 行，
-      // 身份=uid、cue 走 uid 命名空间。导出无 audiobook 段、导入不造孤儿 Audiobooks 行。
-      final Directory temp =
-          await Directory.systemTemp.createTemp('fushi-audio-standalone-');
-      addTearDown(() => temp.delete(recursive: true));
-      final FushiDatabase sourceDb = _testDb();
-      final FushiDatabase targetDb = _testDb();
-      addTearDown(sourceDb.close);
-      addTearDown(targetDb.close);
+    test(
+      'standalone (pure SRT) audiobook round trips without an Audiobooks row',
+      () async {
+        // 纯 SRT（standalone）有声书：SrtBooks 行 bookKey 为空、无 Audiobooks 行，
+        // 身份=uid、cue 走 uid 命名空间。导出无 audiobook 段、导入不造孤儿 Audiobooks 行。
+        final Directory temp = await Directory.systemTemp.createTemp(
+          'fushi-audio-standalone-',
+        );
+        addTearDown(() => temp.delete(recursive: true));
+        final FushiDatabase sourceDb = _testDb();
+        final FushiDatabase targetDb = _testDb();
+        addTearDown(sourceDb.close);
+        addTearDown(targetDb.close);
 
-      final Directory sourceAudio =
-          Directory(p.join(temp.path, 'source-audio'));
-      await sourceAudio.create(recursive: true);
-      final File track = File(p.join(sourceAudio.path, 'voice.mp3'))
-        ..writeAsStringSync('standalone audio bytes');
-      final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
-        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nこんにちは\n');
-      final File cover = File(p.join(sourceAudio.path, 'cover.png'))
-        ..writeAsStringSync('cover bytes');
+        final Directory sourceAudio = Directory(
+          p.join(temp.path, 'source-audio'),
+        );
+        await sourceAudio.create(recursive: true);
+        final File track = File(p.join(sourceAudio.path, 'voice.mp3'))
+          ..writeAsStringSync('standalone audio bytes');
+        final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nこんにちは\n');
+        final File cover = File(p.join(sourceAudio.path, 'cover.png'))
+          ..writeAsStringSync('cover bytes');
 
-      // 无 Audiobooks 行；SrtBooks 行 bookKey 空。
-      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-standalone-1',
-        title: 'Standalone SRT',
-        author: const Value('Voice Author'),
-        audioRoot: Value(sourceAudio.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        srtPath: subs.path,
-        coverPath: Value(cover.path),
-        importedAt: 4242,
-        bookKey: const Value(''),
-      ));
-      // cue 走 uid 命名空间（SrtBook cue 键）。
-      await sourceDb.replaceCuesForBook(
-          'srt-standalone-1', <AudioCuesCompanion>[
-        AudioCuesCompanion.insert(
-          bookKey: 'srt-standalone-1',
-          chapterHref: 'srt',
-          sentenceIndex: 0,
-          textFragmentId: 'frag-0',
-          cueText: 'こんにちは',
-          startMs: 0,
-          endMs: 1000,
-          audioFileIndex: 0,
-        ),
-      ]);
+        // 无 Audiobooks 行；SrtBooks 行 bookKey 空。
+        await sourceDb.upsertSrtBook(
+          SrtBooksCompanion.insert(
+            uid: 'srt-standalone-1',
+            title: 'Standalone SRT',
+            author: const Value('Voice Author'),
+            audioRoot: Value(sourceAudio.path),
+            audioPathsJson: Value(jsonEncode(<String>[track.path])),
+            srtPath: subs.path,
+            coverPath: Value(cover.path),
+            importedAt: 4242,
+            bookKey: const Value(''),
+          ),
+        );
+        // cue 走 uid 命名空间（SrtBook cue 键）。
+        await sourceDb
+            .replaceCuesForBook('srt-standalone-1', <AudioCuesCompanion>[
+              AudioCuesCompanion.insert(
+                bookKey: 'srt-standalone-1',
+                chapterHref: 'srt',
+                sentenceIndex: 0,
+                textFragmentId: 'frag-0',
+                cueText: 'こんにちは',
+                startMs: 0,
+                endMs: 1000,
+                audioFileIndex: 0,
+              ),
+            ]);
 
-      // 不传 bookKey：从 SrtBook 派生（空）→ 纯 SRT 分支。
-      final File package = await SyncAssetPackageService(db: sourceDb)
-          .exportAudioDatabasePackage(
-        srtBookUid: 'srt-standalone-1',
-        outputFile: File(p.join(temp.path, 'standalone.fushiaudio')),
-      );
+        // 不传 bookKey：从 SrtBook 派生（空）→ 纯 SRT 分支。
+        final File package = await SyncAssetPackageService(db: sourceDb)
+            .exportAudioDatabasePackage(
+              srtBookUid: 'srt-standalone-1',
+              outputFile: File(p.join(temp.path, 'standalone.fushiaudio')),
+            );
 
-      // manifest 的 audiobook 段必须为 null（无 Audiobooks 行）。
-      final Archive archive =
-          ZipDecoder().decodeBytes(package.readAsBytesSync());
-      final ArchiveFile manifestFile = archive.findFile('manifest.json')!;
-      final Map<String, Object?> manifest =
-          (jsonDecode(utf8.decode(manifestFile.content as List<int>))
-              as Map<String, Object?>);
-      expect(manifest['audiobook'], isNull,
-          reason: '纯 SRT 包不带 audiobook 段');
+        // manifest 的 audiobook 段必须为 null（无 Audiobooks 行）。
+        final Archive archive = ZipDecoder().decodeBytes(
+          package.readAsBytesSync(),
+        );
+        final ArchiveFile manifestFile = archive.findFile('manifest.json')!;
+        final Map<String, Object?> manifest =
+            (jsonDecode(utf8.decode(manifestFile.content as List<int>))
+                as Map<String, Object?>);
+        expect(manifest['audiobook'], isNull, reason: '纯 SRT 包不带 audiobook 段');
 
-      final Directory targetAudio =
-          Directory(p.join(temp.path, 'target-audio'));
-      // 即便传 bookKeyOverride，纯 SRT 分支也必须忽略它（bookKey 恒空）。
-      await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
-        packageFile: package,
-        audioDatabaseRoot: targetAudio,
-        bookKeyOverride: 'should-be-ignored',
-      );
+        final Directory targetAudio = Directory(
+          p.join(temp.path, 'target-audio'),
+        );
+        // 即便传 bookKeyOverride，纯 SRT 分支也必须忽略它（bookKey 恒空）。
+        await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+          packageFile: package,
+          audioDatabaseRoot: targetAudio,
+          bookKeyOverride: 'should-be-ignored',
+        );
 
-      // 关键：不得造出任何 Audiobooks 行。
-      expect(await targetDb.getAllAudiobooks(), isEmpty,
-          reason: '纯 SRT 导入不得造孤儿 Audiobooks 行');
+        // 关键：不得造出任何 Audiobooks 行。
+        expect(
+          await targetDb.getAllAudiobooks(),
+          isEmpty,
+          reason: '纯 SRT 导入不得造孤儿 Audiobooks 行',
+        );
 
-      final SrtBookRow srt =
-          (await targetDb.getSrtBookByUid('srt-standalone-1'))!;
-      expect(srt.bookKey, '', reason: 'standalone bookKey 恒空（忽略 override）');
-      expect(srt.title, 'Standalone SRT');
-      // 持久目录键 = uid。
-      expect(srt.srtPath,
-          p.join(targetAudio.path, 'srt-standalone-1', 'subs.srt'));
-      expect(srt.coverPath,
-          p.join(targetAudio.path, 'srt-standalone-1', 'cover.png'));
-      expect(jsonDecode(srt.audioPathsJson!) as List<dynamic>, <String>[
-        p.join(targetAudio.path, 'srt-standalone-1', 'voice.mp3'),
-      ]);
-      expect(
-          await File(p.join(targetAudio.path, 'srt-standalone-1', 'voice.mp3'))
-              .readAsString(),
-          'standalone audio bytes');
+        final SrtBookRow srt = (await targetDb.getSrtBookByUid(
+          'srt-standalone-1',
+        ))!;
+        expect(srt.bookKey, '', reason: 'standalone bookKey 恒空（忽略 override）');
+        expect(srt.title, 'Standalone SRT');
+        // 持久目录键 = uid。
+        expect(
+          srt.srtPath,
+          p.join(targetAudio.path, 'srt-standalone-1', 'subs.srt'),
+        );
+        expect(
+          srt.coverPath,
+          p.join(targetAudio.path, 'srt-standalone-1', 'cover.png'),
+        );
+        expect(jsonDecode(srt.audioPathsJson!) as List<dynamic>, <String>[
+          p.join(targetAudio.path, 'srt-standalone-1', 'voice.mp3'),
+        ]);
+        expect(
+          await File(
+            p.join(targetAudio.path, 'srt-standalone-1', 'voice.mp3'),
+          ).readAsString(),
+          'standalone audio bytes',
+        );
 
-      // cue 落在 uid 命名空间。
-      final List<AudioCueRow> cues =
-          await targetDb.getCuesForBook('srt-standalone-1');
-      expect(cues, hasLength(1));
-      expect(cues.single.cueText, 'こんにちは');
-    });
+        // cue 落在 uid 命名空间。
+        final List<AudioCueRow> cues = await targetDb.getCuesForBook(
+          'srt-standalone-1',
+        );
+        expect(cues, hasLength(1));
+        expect(cues.single.cueText, 'こんにちは');
+      },
+    );
 
-    test('large audio file survives STORE export + streaming import intact',
-        () async {
-      // 行为级证明 STORE 导出 + rawContent 流式导入对大文件往返字节一致。
-      // 用 >2MB（3MB）的伪随机内容，走过 archive 的分块 CRC / writeInputStream
-      // 流式路径（小文件走不到），断言导入后磁盘字节与源完全一致。
-      final Directory temp = await Directory.systemTemp.createTemp(
-        'fushi-audio-large-',
-      );
-      addTearDown(() => temp.delete(recursive: true));
-      final FushiDatabase sourceDb = _testDb();
-      final FushiDatabase targetDb = _testDb();
-      addTearDown(sourceDb.close);
-      addTearDown(targetDb.close);
+    test(
+      'large audio file survives STORE export + streaming import intact',
+      () async {
+        // 行为级证明 STORE 导出 + rawContent 流式导入对大文件往返字节一致。
+        // 用 >2MB（3MB）的伪随机内容，走过 archive 的分块 CRC / writeInputStream
+        // 流式路径（小文件走不到），断言导入后磁盘字节与源完全一致。
+        final Directory temp = await Directory.systemTemp.createTemp(
+          'fushi-audio-large-',
+        );
+        addTearDown(() => temp.delete(recursive: true));
+        final FushiDatabase sourceDb = _testDb();
+        final FushiDatabase targetDb = _testDb();
+        addTearDown(sourceDb.close);
+        addTearDown(targetDb.close);
 
-      final Directory sourceAudio =
-          Directory(p.join(temp.path, 'source-audio'));
-      await sourceAudio.create(recursive: true);
+        final Directory sourceAudio = Directory(
+          p.join(temp.path, 'source-audio'),
+        );
+        await sourceAudio.create(recursive: true);
 
-      // 3 MB 伪随机字节（可重复种子），覆盖 0..255 全字节值。
-      const int sizeBytes = 3 * 1024 * 1024;
-      final Uint8List big = Uint8List(sizeBytes);
-      int state = 0x1234567;
-      for (int i = 0; i < sizeBytes; i++) {
-        state = (state * 1103515245 + 12345) & 0x7fffffff;
-        big[i] = state & 0xff;
-      }
-      final File track = File(p.join(sourceAudio.path, 'big.m4b'))
-        ..writeAsBytesSync(big);
-      final File alignment = File(p.join(sourceAudio.path, 'align.srt'))
-        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello\n');
+        // 3 MB 伪随机字节（可重复种子），覆盖 0..255 全字节值。
+        const int sizeBytes = 3 * 1024 * 1024;
+        final Uint8List big = Uint8List(sizeBytes);
+        int state = 0x1234567;
+        for (int i = 0; i < sizeBytes; i++) {
+          state = (state * 1103515245 + 12345) & 0x7fffffff;
+          big[i] = state & 0xff;
+        }
+        final File track = File(p.join(sourceAudio.path, 'big.m4b'))
+          ..writeAsBytesSync(big);
+        final File alignment = File(p.join(sourceAudio.path, 'align.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello\n');
 
-      await sourceDb.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: 'ttu-big',
-        audioRoot: Value(sourceAudio.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        alignmentFormat: 'srt',
-        alignmentPath: alignment.path,
-      ));
-      await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-big',
-        title: 'Big',
-        audioRoot: Value(sourceAudio.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        srtPath: alignment.path,
-        importedAt: 1,
-        bookKey: const Value('ttu-big'),
-      ));
-      await sourceDb.replaceCuesForBook('ttu-big', <AudioCuesCompanion>[
-        AudioCuesCompanion.insert(
-          bookKey: 'ttu-big',
-          chapterHref: 'chapter.xhtml',
-          sentenceIndex: 0,
-          textFragmentId: 'frag-0',
-          cueText: 'hello',
-          startMs: 0,
-          endMs: 1000,
-          audioFileIndex: 0,
-        ),
-      ]);
+        await sourceDb.upsertAudiobook(
+          AudiobooksCompanion.insert(
+            bookKey: 'ttu-big',
+            audioRoot: Value(sourceAudio.path),
+            audioPathsJson: Value(jsonEncode(<String>[track.path])),
+            alignmentFormat: 'srt',
+            alignmentPath: alignment.path,
+          ),
+        );
+        await sourceDb.upsertSrtBook(
+          SrtBooksCompanion.insert(
+            uid: 'srt-big',
+            title: 'Big',
+            audioRoot: Value(sourceAudio.path),
+            audioPathsJson: Value(jsonEncode(<String>[track.path])),
+            srtPath: alignment.path,
+            importedAt: 1,
+            bookKey: const Value('ttu-big'),
+          ),
+        );
+        await sourceDb.replaceCuesForBook('ttu-big', <AudioCuesCompanion>[
+          AudioCuesCompanion.insert(
+            bookKey: 'ttu-big',
+            chapterHref: 'chapter.xhtml',
+            sentenceIndex: 0,
+            textFragmentId: 'frag-0',
+            cueText: 'hello',
+            startMs: 0,
+            endMs: 1000,
+            audioFileIndex: 0,
+          ),
+        ]);
 
-      final File package = await SyncAssetPackageService(db: sourceDb)
-          .exportAudioDatabasePackage(
-        bookKey: 'ttu-big',
-        srtBookUid: 'srt-big',
-        outputFile: File(p.join(temp.path, 'big.hibiki-audio-db.zip')),
-      );
+        final File package = await SyncAssetPackageService(db: sourceDb)
+            .exportAudioDatabasePackage(
+              bookKey: 'ttu-big',
+              srtBookUid: 'srt-big',
+              outputFile: File(p.join(temp.path, 'big.hibiki-audio-db.zip')),
+            );
 
-      final Directory targetAudio =
-          Directory(p.join(temp.path, 'target-audio'));
-      await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
-        packageFile: package,
-        audioDatabaseRoot: targetAudio,
-      );
+        final Directory targetAudio = Directory(
+          p.join(temp.path, 'target-audio'),
+        );
+        await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+          packageFile: package,
+          audioDatabaseRoot: targetAudio,
+        );
 
-      final File restored =
-          File(p.join(targetAudio.path, 'ttu-big', 'big.m4b'));
-      expect(restored.existsSync(), isTrue);
-      final Uint8List restoredBytes = restored.readAsBytesSync();
-      expect(restoredBytes.length, sizeBytes);
-      expect(_sha256Hex(restoredBytes), _sha256Hex(big),
-          reason: '大文件 STORE 往返后字节哈希必须一致');
-    });
+        final File restored = File(
+          p.join(targetAudio.path, 'ttu-big', 'big.m4b'),
+        );
+        expect(restored.existsSync(), isTrue);
+        final Uint8List restoredBytes = restored.readAsBytesSync();
+        expect(restoredBytes.length, sizeBytes);
+        expect(
+          _sha256Hex(restoredBytes),
+          _sha256Hex(big),
+          reason: '大文件 STORE 往返后字节哈希必须一致',
+        );
+      },
+    );
 
     // PR#2490 审查：有声书包的持久目录名（standalone 的 uid / srt-backed 的
     // bookKey）只过 safeWindowsFileName、不拒 `..`——对端把它写成 `..` 能把整包
     // 解压到数据根的上一级，`...` 在 Windows 上剥掉段尾点后就是数据根本身。
     for (final String evil in <String>['..', '...', '. .', '.', '']) {
-      test('standalone package rejects uid "$evil" escaping the data root',
-          () async {
-        final Directory temp =
-            await Directory.systemTemp.createTemp('fushi-audio-evil-uid-');
-        addTearDown(() => temp.delete(recursive: true));
-        final FushiDatabase sourceDb = _testDb();
-        final FushiDatabase targetDb = _testDb();
-        addTearDown(sourceDb.close);
-        addTearDown(targetDb.close);
+      test(
+        'standalone package rejects uid "$evil" escaping the data root',
+        () async {
+          final Directory temp = await Directory.systemTemp.createTemp(
+            'fushi-audio-evil-uid-',
+          );
+          addTearDown(() => temp.delete(recursive: true));
+          final FushiDatabase sourceDb = _testDb();
+          final FushiDatabase targetDb = _testDb();
+          addTearDown(sourceDb.close);
+          addTearDown(targetDb.close);
 
-        final Directory sourceAudio = Directory(p.join(temp.path, 'src'));
-        await sourceAudio.create(recursive: true);
-        final File track = File(p.join(sourceAudio.path, 'voice.mp3'))
-          ..writeAsStringSync('audio');
-        final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
-          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
-        await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-          uid: 'srt-ok',
-          title: 'T',
-          audioRoot: Value(sourceAudio.path),
-          audioPathsJson: Value(jsonEncode(<String>[track.path])),
-          srtPath: subs.path,
-          importedAt: 1,
-          bookKey: const Value(''),
-        ));
-        final File clean = await SyncAssetPackageService(db: sourceDb)
-            .exportAudioDatabasePackage(
-          srtBookUid: 'srt-ok',
-          outputFile: File(p.join(temp.path, 'clean.zip')),
-        );
-        final File evilPackage = _rewriteManifest(
-          clean,
-          File(p.join(temp.path, 'evil.zip')),
-          (Map<String, Object?> m) =>
-              (m['srtBook']! as Map<String, Object?>)['uid'] = evil,
-        );
+          final Directory sourceAudio = Directory(p.join(temp.path, 'src'));
+          await sourceAudio.create(recursive: true);
+          final File track = File(p.join(sourceAudio.path, 'voice.mp3'))
+            ..writeAsStringSync('audio');
+          final File subs = File(p.join(sourceAudio.path, 'subs.srt'))
+            ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+          await sourceDb.upsertSrtBook(
+            SrtBooksCompanion.insert(
+              uid: 'srt-ok',
+              title: 'T',
+              audioRoot: Value(sourceAudio.path),
+              audioPathsJson: Value(jsonEncode(<String>[track.path])),
+              srtPath: subs.path,
+              importedAt: 1,
+              bookKey: const Value(''),
+            ),
+          );
+          final File clean = await SyncAssetPackageService(db: sourceDb)
+              .exportAudioDatabasePackage(
+                srtBookUid: 'srt-ok',
+                outputFile: File(p.join(temp.path, 'clean.zip')),
+              );
+          final File evilPackage = _rewriteManifest(
+            clean,
+            File(p.join(temp.path, 'evil.zip')),
+            (Map<String, Object?> m) =>
+                (m['srtBook']! as Map<String, Object?>)['uid'] = evil,
+          );
 
-        final Directory dataRoot = Directory(p.join(temp.path, 'data'));
-        final Directory audioRoot = Directory(p.join(dataRoot.path, 'audio'));
-        await expectLater(
-          SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
-            packageFile: evilPackage,
-            audioDatabaseRoot: audioRoot,
-          ),
-          throwsA(isA<FormatException>()),
-        );
-        expect(_filesNamed(dataRoot, 'voice.mp3'), isEmpty);
-        expect(await targetDb.getSrtBookByUid(evil), isNull);
-      });
+          final Directory dataRoot = Directory(p.join(temp.path, 'data'));
+          final Directory audioRoot = Directory(p.join(dataRoot.path, 'audio'));
+          await expectLater(
+            SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+              packageFile: evilPackage,
+              audioDatabaseRoot: audioRoot,
+            ),
+            throwsA(isA<FormatException>()),
+          );
+          expect(_filesNamed(dataRoot, 'voice.mp3'), isEmpty);
+          expect(await targetDb.getSrtBookByUid(evil), isNull);
+        },
+      );
 
-      test('srt-backed package rejects bookKey "$evil" escaping the data root',
-          () async {
-        final Directory temp =
-            await Directory.systemTemp.createTemp('fushi-audio-evil-key-');
-        addTearDown(() => temp.delete(recursive: true));
-        final FushiDatabase sourceDb = _testDb();
-        final FushiDatabase targetDb = _testDb();
-        addTearDown(sourceDb.close);
-        addTearDown(targetDb.close);
+      test(
+        'srt-backed package rejects bookKey "$evil" escaping the data root',
+        () async {
+          final Directory temp = await Directory.systemTemp.createTemp(
+            'fushi-audio-evil-key-',
+          );
+          addTearDown(() => temp.delete(recursive: true));
+          final FushiDatabase sourceDb = _testDb();
+          final FushiDatabase targetDb = _testDb();
+          addTearDown(sourceDb.close);
+          addTearDown(targetDb.close);
 
-        final Directory sourceAudio = Directory(p.join(temp.path, 'src'));
-        await sourceAudio.create(recursive: true);
-        final File track = File(p.join(sourceAudio.path, 'track01.m4b'))
-          ..writeAsStringSync('audio');
-        final File alignment = File(p.join(sourceAudio.path, 'align.srt'))
-          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
-        await sourceDb.upsertAudiobook(AudiobooksCompanion.insert(
-          bookKey: 'key-ok',
-          audioRoot: Value(sourceAudio.path),
-          audioPathsJson: Value(jsonEncode(<String>[track.path])),
-          alignmentFormat: 'srt',
-          alignmentPath: alignment.path,
-        ));
-        await sourceDb.upsertSrtBook(SrtBooksCompanion.insert(
-          uid: 'srt-key-ok',
-          title: 'T',
-          audioRoot: Value(sourceAudio.path),
-          audioPathsJson: Value(jsonEncode(<String>[track.path])),
-          srtPath: alignment.path,
-          importedAt: 1,
-          bookKey: const Value('key-ok'),
-        ));
-        final File clean = await SyncAssetPackageService(db: sourceDb)
-            .exportAudioDatabasePackage(
-          bookKey: 'key-ok',
-          srtBookUid: 'srt-key-ok',
-          outputFile: File(p.join(temp.path, 'clean.zip')),
-        );
-        final File evilPackage = _rewriteManifest(
-          clean,
-          File(p.join(temp.path, 'evil.zip')),
-          (Map<String, Object?> m) {
-            (m['audiobook']! as Map<String, Object?>)['bookKey'] = evil;
-            (m['srtBook']! as Map<String, Object?>)['bookKey'] = evil;
-          },
-        );
+          final Directory sourceAudio = Directory(p.join(temp.path, 'src'));
+          await sourceAudio.create(recursive: true);
+          final File track = File(p.join(sourceAudio.path, 'track01.m4b'))
+            ..writeAsStringSync('audio');
+          final File alignment = File(p.join(sourceAudio.path, 'align.srt'))
+            ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+          await sourceDb.upsertAudiobook(
+            AudiobooksCompanion.insert(
+              bookKey: 'key-ok',
+              audioRoot: Value(sourceAudio.path),
+              audioPathsJson: Value(jsonEncode(<String>[track.path])),
+              alignmentFormat: 'srt',
+              alignmentPath: alignment.path,
+            ),
+          );
+          await sourceDb.upsertSrtBook(
+            SrtBooksCompanion.insert(
+              uid: 'srt-key-ok',
+              title: 'T',
+              audioRoot: Value(sourceAudio.path),
+              audioPathsJson: Value(jsonEncode(<String>[track.path])),
+              srtPath: alignment.path,
+              importedAt: 1,
+              bookKey: const Value('key-ok'),
+            ),
+          );
+          final File clean = await SyncAssetPackageService(db: sourceDb)
+              .exportAudioDatabasePackage(
+                bookKey: 'key-ok',
+                srtBookUid: 'srt-key-ok',
+                outputFile: File(p.join(temp.path, 'clean.zip')),
+              );
+          final File evilPackage = _rewriteManifest(
+            clean,
+            File(p.join(temp.path, 'evil.zip')),
+            (Map<String, Object?> m) {
+              (m['audiobook']! as Map<String, Object?>)['bookKey'] = evil;
+              (m['srtBook']! as Map<String, Object?>)['bookKey'] = evil;
+            },
+          );
 
-        final Directory dataRoot = Directory(p.join(temp.path, 'data'));
-        final Directory audioRoot = Directory(p.join(dataRoot.path, 'audio'));
-        await expectLater(
-          SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
-            packageFile: evilPackage,
-            audioDatabaseRoot: audioRoot,
-          ),
-          throwsA(isA<FormatException>()),
-        );
-        expect(_filesNamed(dataRoot, 'track01.m4b'), isEmpty);
-        expect(await targetDb.getAllAudiobooks(), isEmpty);
-      });
+          final Directory dataRoot = Directory(p.join(temp.path, 'data'));
+          final Directory audioRoot = Directory(p.join(dataRoot.path, 'audio'));
+          await expectLater(
+            SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+              packageFile: evilPackage,
+              audioDatabaseRoot: audioRoot,
+            ),
+            throwsA(isA<FormatException>()),
+          );
+          expect(_filesNamed(dataRoot, 'track01.m4b'), isEmpty);
+          expect(await targetDb.getAllAudiobooks(), isEmpty);
+        },
+      );
     }
   });
 
   group('Local audio sync packages', () {
-    test('round trip carries config and restores db bytes (>2MB STORE)',
-        () async {
-      final Directory temp = await Directory.systemTemp.createTemp(
-        'fushi-local-audio-package-',
-      );
-      addTearDown(() => temp.delete(recursive: true));
-      final FushiDatabase sourceDb = _testDb();
-      final FushiDatabase targetDb = _testDb();
-      addTearDown(sourceDb.close);
-      addTearDown(targetDb.close);
+    test(
+      'round trip carries config and restores db bytes (>2MB STORE)',
+      () async {
+        final Directory temp = await Directory.systemTemp.createTemp(
+          'fushi-local-audio-package-',
+        );
+        addTearDown(() => temp.delete(recursive: true));
+        final FushiDatabase sourceDb = _testDb();
+        final FushiDatabase targetDb = _testDb();
+        addTearDown(sourceDb.close);
+        addTearDown(targetDb.close);
 
-      // 3 MB 伪随机 .db（覆盖全字节值），确保走 STORE 流式分块路径而非整入内存。
-      const int sizeBytes = 3 * 1024 * 1024;
-      final Uint8List big = Uint8List(sizeBytes);
-      int state = 0x0abcdef;
-      for (int i = 0; i < sizeBytes; i++) {
-        state = (state * 1103515245 + 12345) & 0x7fffffff;
-        big[i] = state & 0xff;
-      }
-      final File dbFile = File(p.join(temp.path, 'local_audio_42.db'))
-        ..writeAsBytesSync(big);
+        // 3 MB 伪随机 .db（覆盖全字节值），确保走 STORE 流式分块路径而非整入内存。
+        const int sizeBytes = 3 * 1024 * 1024;
+        final Uint8List big = Uint8List(sizeBytes);
+        int state = 0x0abcdef;
+        for (int i = 0; i < sizeBytes; i++) {
+          state = (state * 1103515245 + 12345) & 0x7fffffff;
+          big[i] = state & 0xff;
+        }
+        final File dbFile = File(p.join(temp.path, 'local_audio_42.db'))
+          ..writeAsBytesSync(big);
 
-      final SyncAssetPackageService service =
-          SyncAssetPackageService(db: sourceDb);
-      final File package = await service.exportLocalAudioPackage(
-        displayName: 'NHK Audio',
-        enabled: true,
-        sources: const <LocalAudioSourcePref>[
-          LocalAudioSourcePref(name: 'nhk16', enabled: true),
-          LocalAudioSourcePref(name: 'forvo', enabled: false),
-        ],
-        dbFile: dbFile,
-        outputFile: File(p.join(temp.path, 'nhk.fushiaudiolib')),
-      );
+        final SyncAssetPackageService service = SyncAssetPackageService(
+          db: sourceDb,
+        );
+        final File package = await service.exportLocalAudioPackage(
+          displayName: 'NHK Audio',
+          enabled: true,
+          sources: const <LocalAudioSourcePref>[
+            LocalAudioSourcePref(name: 'nhk16', enabled: true),
+            LocalAudioSourcePref(name: 'forvo', enabled: false),
+          ],
+          dbFile: dbFile,
+          outputFile: File(p.join(temp.path, 'nhk.fushiaudiolib')),
+        );
 
-      // STORE 验证：包内资源条目压缩方式必须是 STORE（compressionType==0）。
-      final Archive archive =
-          ZipDecoder().decodeBytes(await package.readAsBytes());
-      final ArchiveFile? resource =
-          archive.findFile('resources/local_audio_42.db');
-      expect(resource, isNotNull);
-      expect(resource!.compressionType, ArchiveFile.STORE,
-          reason: '大 DB 必须 STORE，不能 deflate（会整文件入内存 OOM）');
+        // STORE 验证：包内资源条目压缩方式必须是 STORE（compressionType==0）。
+        final Archive archive = ZipDecoder().decodeBytes(
+          await package.readAsBytes(),
+        );
+        final ArchiveFile? resource = archive.findFile(
+          'resources/local_audio_42.db',
+        );
+        expect(resource, isNotNull);
+        expect(
+          resource!.compressionType,
+          ArchiveFile.STORE,
+          reason: '大 DB 必须 STORE，不能 deflate（会整文件入内存 OOM）',
+        );
 
-      final Directory staging = Directory(p.join(temp.path, 'staging'))
-        ..createSync();
-      final LocalAudioPackageContents contents =
-          await SyncAssetPackageService(db: targetDb).importLocalAudioPackage(
-        packageFile: package,
-        stagingDir: staging,
-      );
+        final Directory staging = Directory(p.join(temp.path, 'staging'))
+          ..createSync();
+        final LocalAudioPackageContents contents =
+            await SyncAssetPackageService(db: targetDb).importLocalAudioPackage(
+              packageFile: package,
+              stagingDir: staging,
+            );
 
-      expect(contents.displayName, 'NHK Audio');
-      expect(contents.enabled, isTrue);
-      expect(contents.sources.length, 2);
-      expect(contents.sources[0].name, 'nhk16');
-      expect(contents.sources[0].enabled, isTrue);
-      expect(contents.sources[1].name, 'forvo');
-      expect(contents.sources[1].enabled, isFalse);
+        expect(contents.displayName, 'NHK Audio');
+        expect(contents.enabled, isTrue);
+        expect(contents.sources.length, 2);
+        expect(contents.sources[0].name, 'nhk16');
+        expect(contents.sources[0].enabled, isTrue);
+        expect(contents.sources[1].name, 'forvo');
+        expect(contents.sources[1].enabled, isFalse);
 
-      expect(contents.dbFile.existsSync(), isTrue);
-      final Uint8List restored = contents.dbFile.readAsBytesSync();
-      expect(restored.length, sizeBytes);
-      expect(_sha256Hex(restored), _sha256Hex(big),
-          reason: '大 DB STORE 往返后字节哈希必须一致');
-    });
+        expect(contents.dbFile.existsSync(), isTrue);
+        final Uint8List restored = contents.dbFile.readAsBytesSync();
+        expect(restored.length, sizeBytes);
+        expect(
+          _sha256Hex(restored),
+          _sha256Hex(big),
+          reason: '大 DB STORE 往返后字节哈希必须一致',
+        );
+      },
+    );
 
     // BUG-3748：dbFileName 来自对端 manifest，`../x.db` 会让导入方把暂存目录外的
     // 任意文件当成音频库接管。
@@ -806,7 +898,8 @@ void main() {
       addTearDown(db.close);
 
       final Archive archive = Archive()
-        ..addFile(_textFile(
+        ..addFile(
+          _textFile(
             'manifest.json',
             jsonEncode(<String, Object?>{
               'schemaVersion': 1,
@@ -817,7 +910,9 @@ void main() {
                 'dbFileName': '../outside.db',
                 'sources': <Object?>[],
               },
-            })))
+            }),
+          ),
+        )
         ..addFile(_textFile('resources/local_audio_1.db', 'db'));
       final File package = File(p.join(temp.path, 'evil.fushiaudiolib'))
         ..writeAsBytesSync(ZipEncoder().encode(archive)!);
@@ -825,10 +920,9 @@ void main() {
         ..createSync();
 
       await expectLater(
-        SyncAssetPackageService(db: db).importLocalAudioPackage(
-          packageFile: package,
-          stagingDir: staging,
-        ),
+        SyncAssetPackageService(
+          db: db,
+        ).importLocalAudioPackage(packageFile: package, stagingDir: staging),
         throwsA(isA<FormatException>()),
       );
     });

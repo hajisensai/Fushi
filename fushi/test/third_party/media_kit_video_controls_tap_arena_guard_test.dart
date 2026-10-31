@@ -20,42 +20,66 @@ void main() {
 
   late String src;
   setUpAll(() {
-    expect(mobile.existsSync(), isTrue,
-        reason: 'vendored media_kit material.dart 必须存在');
+    expect(
+      mobile.existsSync(),
+      isTrue,
+      reason: 'vendored media_kit material.dart 必须存在',
+    );
     src = mobile.readAsStringSync().replaceAll('\r\n', '\n');
   });
 
   test('显示控制条不再走 Listener.onPointerDown / _handlePointerDown', () {
     // 不得再有把 onPointerDown 接到 toggle 的裸 Listener。
     expect(
-      RegExp(r'onPointerDown:\s*\(event\)\s*=>\s*_handlePointerDown')
-          .hasMatch(src),
+      RegExp(
+        r'onPointerDown:\s*\(event\)\s*=>\s*_handlePointerDown',
+      ).hasMatch(src),
       isFalse,
       reason: 'TODO-916：toggle 必须脱离 Listener.onPointerDown（不等竞技场裁决）',
     );
     // 死方法 _handlePointerDown 应已删除（否则 unused_element 且回归风险）。
-    expect(src.contains('_handlePointerDown'), isFalse,
-        reason: 'TODO-916：_handlePointerDown 应随接线一起删除');
+    expect(
+      src.contains('_handlePointerDown'),
+      isFalse,
+      reason: 'TODO-916：_handlePointerDown 应随接线一起删除',
+    );
   });
 
   test('显示控制条改由中央 GestureDetector.onTap 承载', () {
     // 中央手势栈的 GestureDetector 必须有 onTap: onTap。
-    expect(src.contains('onTap: _handleSurfaceTap'), isTrue,
-        reason: 'TODO-916：控制条 toggle 必须迁到竞技场裁决后的 onTap');
+    expect(
+      src.contains('onTap: _handleSurfaceTap'),
+      isTrue,
+      reason: 'TODO-916：控制条 toggle 必须迁到竞技场裁决后的 onTap',
+    );
     // BUG-3517：_handleSurfaceTap 只在按下落在控件区时续命，其余照常委托 onTap()。
     final int surfaceTap = src.indexOf('void _handleSurfaceTap()');
     expect(surfaceTap, greaterThanOrEqualTo(0));
-    final String surfaceTapBody =
-        src.substring(surfaceTap, src.indexOf('\n  }\n', surfaceTap));
-    expect(surfaceTapBody.contains('onTap();'), isTrue,
-        reason: '点画面仍须走 onTap() 切换控制条');
-    expect(surfaceTapBody.contains('_tapDownOnChrome'), isTrue,
-        reason: '按下落在控件区（VideoControlsChromeRegion）时不得切换控制条');
+    final String surfaceTapBody = src.substring(
+      surfaceTap,
+      src.indexOf('\n  }\n', surfaceTap),
+    );
+    expect(
+      surfaceTapBody.contains('onTap();'),
+      isTrue,
+      reason: '点画面仍须走 onTap() 切换控制条',
+    );
+    expect(
+      surfaceTapBody.contains('_tapDownOnChrome'),
+      isTrue,
+      reason: '按下落在控件区（VideoControlsChromeRegion）时不得切换控制条',
+    );
     // onTap 实现仍在（toggle visible + publish + shiftSubtitle）。
-    expect(RegExp(r'void onTap\(\)\s*\{').hasMatch(src), isTrue,
-        reason: 'onTap 实现必须保留');
+    expect(
+      RegExp(r'void onTap\(\)\s*\{').hasMatch(src),
+      isTrue,
+      reason: 'onTap 实现必须保留',
+    );
     // 双击 seek 用的 _tapPosition 仍被赋值（不得误删）。
-    expect(src.contains('_tapPosition = details.localPosition;'), isTrue,
-        reason: '双击 seek 的 _tapPosition 赋值不得误删');
+    expect(
+      src.contains('_tapPosition = details.localPosition;'),
+      isTrue,
+      reason: '双击 seek 的 _tapPosition 赋值不得误删',
+    );
   });
 }

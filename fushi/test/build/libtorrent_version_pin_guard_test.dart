@@ -40,8 +40,9 @@ String _stripComments(String text) {
 /// 全文里 `pull_request` 还会出现在 `if: github.event_name == 'pull_request'`、
 /// `cancel-in-progress` 表达式和步骤名里，那些都不是触发器。
 bool hasPullRequestTrigger(String workflowText) {
-  final List<String> lines =
-      const LineSplitter().convert(_stripComments(workflowText));
+  final List<String> lines = const LineSplitter().convert(
+    _stripComments(workflowText),
+  );
   bool inOnBlock = false;
   for (final String line in lines) {
     if (line.trim().isEmpty) continue;
@@ -69,32 +70,53 @@ void main() {
 
   test('vcpkg.json 把 libtorrent 钉在 2.0.x（overrides + builtin-baseline）', () {
     final File manifest = File('$nativeDir/vcpkg.json');
-    expect(manifest.existsSync(), isTrue,
-        reason: 'native/fushi_torrent/vcpkg.json 是版本钉定的唯一真相源，删掉它'
-            '就退回「装到哪版看 runner 心情」的不可重现构建');
+    expect(
+      manifest.existsSync(),
+      isTrue,
+      reason:
+          'native/fushi_torrent/vcpkg.json 是版本钉定的唯一真相源，删掉它'
+          '就退回「装到哪版看 runner 心情」的不可重现构建',
+    );
 
     final Map<String, dynamic> json =
         jsonDecode(manifest.readAsStringSync()) as Map<String, dynamic>;
 
     final Object? baseline = json['builtin-baseline'];
-    expect(baseline, isA<String>(),
-        reason: 'overrides 只有在 versioning 生效时才被考虑，而 builtin-baseline '
-            '是启用 versioning 的必填项；缺了它 overrides 会被静默忽略');
-    expect((baseline! as String).length, 40,
-        reason: 'builtin-baseline 必须是完整 40 位 commit sha');
+    expect(
+      baseline,
+      isA<String>(),
+      reason:
+          'overrides 只有在 versioning 生效时才被考虑，而 builtin-baseline '
+          '是启用 versioning 的必填项；缺了它 overrides 会被静默忽略',
+    );
+    expect(
+      (baseline! as String).length,
+      40,
+      reason: 'builtin-baseline 必须是完整 40 位 commit sha',
+    );
 
     final List<dynamic> overrides =
         (json['overrides'] as List<dynamic>?) ?? <dynamic>[];
     final Map<String, dynamic> pin = overrides
         .cast<Map<String, dynamic>>()
-        .firstWhere((Map<String, dynamic> o) => o['name'] == 'libtorrent',
-            orElse: () => <String, dynamic>{});
-    expect(pin['version'], isNotNull,
-        reason: 'libtorrent 必须显式钉版；注意字段名是 version（2.0.11 的 port 用的是 '
-            'relaxed scheme），写成 version-string / version-semver 会被 vcpkg 拒掉');
-    expect((pin['version']! as String).startsWith('2.0.'), isTrue,
-        reason: 'bridge 用的是 2.0 API；要升 2.1 得先改 fushi_torrent_ffi.cpp '
-            '那五处调用，不能只动这里');
+        .firstWhere(
+          (Map<String, dynamic> o) => o['name'] == 'libtorrent',
+          orElse: () => <String, dynamic>{},
+        );
+    expect(
+      pin['version'],
+      isNotNull,
+      reason:
+          'libtorrent 必须显式钉版；注意字段名是 version（2.0.11 的 port 用的是 '
+          'relaxed scheme），写成 version-string / version-semver 会被 vcpkg 拒掉',
+    );
+    expect(
+      (pin['version']! as String).startsWith('2.0.'),
+      isTrue,
+      reason:
+          'bridge 用的是 2.0 API；要升 2.1 得先改 fushi_torrent_ffi.cpp '
+          '那五处调用，不能只动这里',
+    );
   });
 
   test('CI 不得退回 classic vcpkg install（版本会重新随 runner 镜像漂）', () {
@@ -109,34 +131,46 @@ void main() {
       for (final String line in const LineSplitter().convert(text)) {
         final String bare = line.trim();
         if (bare.startsWith('#')) continue;
-        expect(bare.contains('install libtorrent'), isFalse,
-            reason: '$name 又出现 classic `vcpkg install libtorrent`：manifest 模式'
-                '下依赖由 cmake 工具链按 vcpkg.json 装，classic 装的是 ports 当下'
-                '的版本，会把 2.0 的钉定绕过去（BUG-1772）');
+        expect(
+          bare.contains('install libtorrent'),
+          isFalse,
+          reason:
+              '$name 又出现 classic `vcpkg install libtorrent`：manifest 模式'
+              '下依赖由 cmake 工具链按 vcpkg.json 装，classic 装的是 ports 当下'
+              '的版本，会把 2.0 的钉定绕过去（BUG-1772）',
+        );
       }
     }
   });
 
-  test('Android / Linux 构建脚本把 overlay triplets 传给 cmake（否则静默降到 API 28 / 非 -fPIC）', () {
-    for (final String name in <String>[
-      'build_android_so.sh',
-      'build_android_so.ps1',
-      // Linux 静态链：overlay 不参与就退回 vcpkg 自带 x64-linux（静态库不保证
-      // -fPIC），链进 .so 时 relocation R_X86_64_32 直接失败——同一类静默降级。
-      'build_linux_so.sh',
-    ]) {
-      final String text = File('$nativeDir/$name').readAsStringSync();
-      expect(text.contains('VCPKG_OVERLAY_TRIPLETS'), isTrue,
-          reason: '$name 必须给 cmake 传 -DVCPKG_OVERLAY_TRIPLETS：manifest 模式下'
+  test(
+    'Android / Linux 构建脚本把 overlay triplets 传给 cmake（否则静默降到 API 28 / 非 -fPIC）',
+    () {
+      for (final String name in <String>[
+        'build_android_so.sh',
+        'build_android_so.ps1',
+        // Linux 静态链：overlay 不参与就退回 vcpkg 自带 x64-linux（静态库不保证
+        // -fPIC），链进 .so 时 relocation R_X86_64_32 直接失败——同一类静默降级。
+        'build_linux_so.sh',
+      ]) {
+        final String text = File('$nativeDir/$name').readAsStringSync();
+        expect(
+          text.contains('VCPKG_OVERLAY_TRIPLETS'),
+          isTrue,
+          reason:
+              '$name 必须给 cmake 传 -DVCPKG_OVERLAY_TRIPLETS：manifest 模式下'
               '装依赖的是 vcpkg 工具链而不是命令行，overlay 不参与就会退回 vcpkg '
               '自带的 arm64-android（钉 API 28），boost.asio 会引用 API 28 才有的 '
-              'aligned_alloc，bridge 按 minSdk 24 链接直接 undefined symbol');
-    }
-  });
+              'aligned_alloc，bridge 按 minSdk 24 链接直接 undefined symbol',
+        );
+      }
+    },
+  );
 
   test('bridge 仍在用 2.0-only API —— 钉版和源码必须同进退', () {
-    final String cpp =
-        File('$nativeDir/fushi_torrent_ffi.cpp').readAsStringSync();
+    final String cpp = File(
+      '$nativeDir/fushi_torrent_ffi.cpp',
+    ).readAsStringSync();
     // 这几处是 2.1 移除/改名的：只要还在，vcpkg.json 就必须钉 2.0.x（上一条测试保证）。
     // 真迁到 2.1 后它们会一起消失，这条断言自然失效 —— 那时才允许动 overrides。
     final List<String> markers = <String>[
@@ -144,12 +178,17 @@ void main() {
       'lt::from_span',
       'pi.ip',
     ];
-    final List<String> present =
-        markers.where((String m) => cpp.contains(m)).toList();
-    expect(present, isNotEmpty,
-        reason: 'fushi_torrent_ffi.cpp 已经不含任何 2.0-only 调用了？如果 bridge 真的'
-            '迁到了 2.1 API，请同时把 vcpkg.json 的 libtorrent overrides 一起改掉，'
-            '并删掉这条断言 —— 否则钉定和源码会各说各话（BUG-1772）');
+    final List<String> present = markers
+        .where((String m) => cpp.contains(m))
+        .toList();
+    expect(
+      present,
+      isNotEmpty,
+      reason:
+          'fushi_torrent_ffi.cpp 已经不含任何 2.0-only 调用了？如果 bridge 真的'
+          '迁到了 2.1 API，请同时把 vcpkg.json 的 libtorrent overrides 一起改掉，'
+          '并删掉这条断言 —— 否则钉定和源码会各说各话（BUG-1772）',
+    );
   });
 
   // ── BUG-2021：构建链必须在 PR 上有门 ───────────────────────────────────────
@@ -165,14 +204,16 @@ void main() {
     final List<File> workflows = dir
         .listSync()
         .whereType<File>()
-        .where((File f) =>
-            f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
+        .where((File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
         .toList();
 
     // 扫描规模哨兵：枚举塌了的话下面的 firstWhere 会变成「没找到 = 没门」的假红，
     // 或者反过来在别的断言里变成空转。实测 develop 上是 13 个 workflow。
-    expect(workflows.length, greaterThanOrEqualTo(10),
-        reason: '只枚举到 ${workflows.length} 个 workflow 文件，扫描面塌了');
+    expect(
+      workflows.length,
+      greaterThanOrEqualTo(10),
+      reason: '只枚举到 ${workflows.length} 个 workflow 文件，扫描面塌了',
+    );
 
     const String script = 'native/fushi_torrent/build_android_so.sh';
     final List<String> gates = <String>[];
@@ -192,16 +233,23 @@ void main() {
             hasPullRequestTrigger(wf.readAsStringSync()))
           wf.uri.pathSegments.last,
     ];
-    expect(linuxGates, isNotEmpty,
-        reason: '没有任何带 pull_request 触发的 workflow 跑 $linuxScript');
+    expect(
+      linuxGates,
+      isNotEmpty,
+      reason: '没有任何带 pull_request 触发的 workflow 跑 $linuxScript',
+    );
 
-    expect(gates, isNotEmpty,
-        reason: '没有任何带 pull_request 触发的 workflow 跑 $script。'
-            '这正是 BUG-2021 的原状：Android 侧的 vcpkg 交叉编译只在 release.yml '
-            '里跑，而它是发布路径（无 PR 触发，push 的 paths 里也没有 native/**）——'
-            '改 C ABI bridge 或 overlay 的 PR 合并前一次都没编过。'
-            '新的门在 .github/workflows/native-torrent-gate.yml，别把它删了或把它的 '
-            'pull_request 触发去掉。');
+    expect(
+      gates,
+      isNotEmpty,
+      reason:
+          '没有任何带 pull_request 触发的 workflow 跑 $script。'
+          '这正是 BUG-2021 的原状：Android 侧的 vcpkg 交叉编译只在 release.yml '
+          '里跑，而它是发布路径（无 PR 触发，push 的 paths 里也没有 native/**）——'
+          '改 C ABI bridge 或 overlay 的 PR 合并前一次都没编过。'
+          '新的门在 .github/workflows/native-torrent-gate.yml，别把它删了或把它的 '
+          'pull_request 触发去掉。',
+    );
   });
 
   test('overlay ports 存在时，三个构建脚本都必须把它传给 cmake', () {
@@ -218,18 +266,22 @@ void main() {
       'build_windows_dll.ps1',
     ]) {
       final String text = File('$nativeDir/$name').readAsStringSync();
-      expect(text.contains('VCPKG_OVERLAY_PORTS'), isTrue,
-          reason: '$nativeDir/vcpkg-ports 里有 overlay port，但 $name 没给 cmake 传 '
-              '-DVCPKG_OVERLAY_PORTS。与 OVERLAY_TRIPLETS 同一个坑：manifest 模式下'
-              '装依赖的是 cmake 工具链，overlay 不传就静默装上游未打补丁的 port，'
-              '而三个入口里恰恰是 CI 消费的 .sh 版最容易漏。');
+      expect(
+        text.contains('VCPKG_OVERLAY_PORTS'),
+        isTrue,
+        reason:
+            '$nativeDir/vcpkg-ports 里有 overlay port，但 $name 没给 cmake 传 '
+            '-DVCPKG_OVERLAY_PORTS。与 OVERLAY_TRIPLETS 同一个坑：manifest 模式下'
+            '装依赖的是 cmake 工具链，overlay 不传就静默装上游未打补丁的 port，'
+            '而三个入口里恰恰是 CI 消费的 .sh 版最容易漏。',
+      );
     }
   });
 
   test('libtorrent overlay 的补丁都挂在 PATCHES 上，且关键 hunk 没被改丢', () {
-    final String portfile =
-        File('$nativeDir/vcpkg-ports/libtorrent/portfile.cmake')
-            .readAsStringSync();
+    final String portfile = File(
+      '$nativeDir/vcpkg-ports/libtorrent/portfile.cmake',
+    ).readAsStringSync();
     // 只认 arvidn/libtorrent 那个 vcpkg_from_github 调用里的 PATCHES：同一
     // portfile 里还有 try_signal / libsimulator 等几个 vcpkg_from_github。
     final int repo = portfile.indexOf('REPO arvidn/libtorrent\n');
@@ -254,8 +306,11 @@ void main() {
       'dht-follows-peer-proxy-exemption.patch': <String>[],
     };
     for (final MapEntry<String, List<String>> e in hunks.entries) {
-      expect(call, contains(e.key),
-          reason: '${e.key} 不在 libtorrent 的 PATCHES 里 = 编出来的库没有这个修复');
+      expect(
+        call,
+        contains(e.key),
+        reason: '${e.key} 不在 libtorrent 的 PATCHES 里 = 编出来的库没有这个修复',
+      );
       final File patch = File('$nativeDir/vcpkg-ports/libtorrent/${e.key}');
       expect(patch.existsSync(), isTrue, reason: '${e.key} 被 PATCHES 引用却不存在');
       final String text = patch.readAsStringSync();
@@ -265,43 +320,56 @@ void main() {
     }
     // 旧判据一处都不能漏改：漏一处，那一段照旧在 access_denied 上直接放弃。
     final String listen = File(
-            '$nativeDir/vcpkg-ports/libtorrent/listen-bind-access-denied-fallback.patch')
-        .readAsStringSync();
+      '$nativeDir/vcpkg-ports/libtorrent/listen-bind-access-denied-fallback.patch',
+    ).readAsStringSync();
     expect(
-      RegExp(r'^-.*ec == error_code\(error::address_in_use\)', multiLine: true)
-          .allMatches(listen)
-          .length,
+      RegExp(
+        r'^-.*ec == error_code\(error::address_in_use\)',
+        multiLine: true,
+      ).allMatches(listen).length,
       4,
     );
   });
 
   test('native-torrent-gate 只读、不发布、不得 continue-on-error', () {
     final File gate = File('$workflowDir/native-torrent-gate.yml');
-    expect(gate.existsSync(), isTrue,
-        reason: 'BUG-2021 的门文件不见了');
+    expect(gate.existsSync(), isTrue, reason: 'BUG-2021 的门文件不见了');
     final String text = gate.readAsStringSync();
     final String body = _stripComments(text);
 
-    expect(body.contains('contents: read'), isTrue,
-        reason: '门必须只读（permissions: contents: read）');
-    expect(body.contains('continue-on-error'), isFalse,
-        reason: 'continue-on-error 会让失败不打红，门就不是门了');
+    expect(
+      body.contains('contents: read'),
+      isTrue,
+      reason: '门必须只读（permissions: contents: read）',
+    );
+    expect(
+      body.contains('continue-on-error'),
+      isFalse,
+      reason: 'continue-on-error 会让失败不打红，门就不是门了',
+    );
     for (final String publish in <String>[
       'action-gh-release',
       'gh release',
       'softprops',
     ]) {
-      expect(body.contains(publish), isFalse,
-          reason: '门里出现发布动作 $publish：仓库硬规则禁止 push/PR 路径创建或更新 '
-              'release');
+      expect(
+        body.contains(publish),
+        isFalse,
+        reason:
+            '门里出现发布动作 $publish：仓库硬规则禁止 push/PR 路径创建或更新 '
+            'release',
+      );
     }
     for (final String path in <String>[
       'native/fushi_torrent/**',
       'packages/fushi_torrent/**',
       '.github/workflows/native-torrent-gate.yml',
     ]) {
-      expect(body.contains(path), isTrue,
-          reason: '门的 paths 必须覆盖 $path，否则改动它的 PR 触发不了它自己');
+      expect(
+        body.contains(path),
+        isTrue,
+        reason: '门的 paths 必须覆盖 $path，否则改动它的 PR 触发不了它自己',
+      );
     }
   });
 
@@ -345,18 +413,26 @@ jobs:
 ''';
 
     expect(hasPullRequestTrigger(withTrigger), isTrue);
-    expect(hasPullRequestTrigger(pushOnly), isFalse,
-        reason: '注释、job 级 if 表达式和步骤名里的 pull_request 都不是触发器；'
-            '判到 true 说明判据退化成了全文 contains');
+    expect(
+      hasPullRequestTrigger(pushOnly),
+      isFalse,
+      reason:
+          '注释、job 级 if 表达式和步骤名里的 pull_request 都不是触发器；'
+          '判到 true 说明判据退化成了全文 contains',
+    );
     expect(hasPullRequestTrigger(triggerButNoScript), isTrue);
 
     expect(
-        consumesScript(withTrigger, 'native/fushi_torrent/build_android_so.sh'),
-        isTrue);
+      consumesScript(withTrigger, 'native/fushi_torrent/build_android_so.sh'),
+      isTrue,
+    );
     expect(
-        consumesScript(
-            triggerButNoScript, 'native/fushi_torrent/build_android_so.sh'),
-        isFalse,
-        reason: '只在注释里出现不算消费；判到 true 说明没剥注释');
+      consumesScript(
+        triggerButNoScript,
+        'native/fushi_torrent/build_android_so.sh',
+      ),
+      isFalse,
+      reason: '只在注释里出现不算消费；判到 true 说明没剥注释',
+    );
   });
 }

@@ -16,8 +16,10 @@ void main() {
   group('normalizeAniListSearch', () {
     test('strips macron vowels to their base latin letters', () {
       // 用户复制的官方 romaji（带 macron）→ AniList 认得的拼法基础。
-      expect(normalizeAniListSearch('Chūnibyō Demo Koi ga Shitai!'),
-          'Chuunibyou Demo Koi ga Shitai!');
+      expect(
+        normalizeAniListSearch('Chūnibyō Demo Koi ga Shitai!'),
+        'Chuunibyou Demo Koi ga Shitai!',
+      );
       expect(normalizeAniListSearch('Tōkyō Gūru'), 'Toukyou Guuru');
       expect(normalizeAniListSearch('Frieren'), 'Frieren'); // no-op
     });
@@ -39,63 +41,64 @@ void main() {
 
   group('AniList title fallbacks', () {
     test('keeps the full title then retries the leading comma segment', () {
-      expect(
-        aniListSearchQueries('Watashi o Tabetai, Hito de Nashi'),
-        <String>[
-          'Watashi o Tabetai, Hito de Nashi',
-          'Watashi o Tabetai',
-        ],
-      );
+      expect(aniListSearchQueries('Watashi o Tabetai, Hito de Nashi'), <String>[
+        'Watashi o Tabetai, Hito de Nashi',
+        'Watashi o Tabetai',
+      ]);
     });
 
-    test('retries a conservative fallback only after an empty response',
-        () async {
-      final List<String> requested = <String>[];
-      final MockClient mock = MockClient((request) async {
-        final Map<String, dynamic> payload =
-            jsonDecode(request.body) as Map<String, dynamic>;
-        final String query =
-            (payload['variables'] as Map<String, dynamic>)['search'] as String;
-        requested.add(query);
-        if (query != 'Watashi o Tabetai') {
+    test(
+      'retries a conservative fallback only after an empty response',
+      () async {
+        final List<String> requested = <String>[];
+        final MockClient mock = MockClient((request) async {
+          final Map<String, dynamic> payload =
+              jsonDecode(request.body) as Map<String, dynamic>;
+          final String query =
+              (payload['variables'] as Map<String, dynamic>)['search']
+                  as String;
+          requested.add(query);
+          if (query != 'Watashi o Tabetai') {
+            return Response(
+              jsonEncode(<String, dynamic>{
+                'data': <String, dynamic>{
+                  'Page': <String, dynamic>{'media': <dynamic>[]},
+                },
+              }),
+              200,
+            );
+          }
           return Response(
             jsonEncode(<String, dynamic>{
               'data': <String, dynamic>{
-                'Page': <String, dynamic>{'media': <dynamic>[]},
+                'Page': <String, dynamic>{
+                  'media': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'id': 183385,
+                      'title': <String, dynamic>{
+                        'romaji': 'Watashi wo Tabetai, Hitodenashi',
+                      },
+                    },
+                  ],
+                },
               },
             }),
             200,
           );
-        }
-        return Response(
-          jsonEncode(<String, dynamic>{
-            'data': <String, dynamic>{
-              'Page': <String, dynamic>{
-                'media': <Map<String, dynamic>>[
-                  <String, dynamic>{
-                    'id': 183385,
-                    'title': <String, dynamic>{
-                      'romaji': 'Watashi wo Tabetai, Hitodenashi',
-                    },
-                  },
-                ],
-              },
-            },
-          }),
-          200,
+        });
+        final AniListClient client = AniListClient(client: mock);
+        final AniListSearchOutcome outcome = await client.searchAnime(
+          'Watashi o Tabetai, Hito de Nashi',
         );
-      });
-      final AniListClient client = AniListClient(client: mock);
-      final AniListSearchOutcome outcome =
-          await client.searchAnime('Watashi o Tabetai, Hito de Nashi');
-      expect(outcome.media.single.id, 183385);
-      expect(outcome.degraded, isFalse);
-      expect(requested, <String>[
-        'Watashi o Tabetai, Hito de Nashi',
-        'Watashi o Tabetai',
-      ]);
-      client.close();
-    });
+        expect(outcome.media.single.id, 183385);
+        expect(outcome.degraded, isFalse);
+        expect(requested, <String>[
+          'Watashi o Tabetai, Hito de Nashi',
+          'Watashi o Tabetai',
+        ]);
+        client.close();
+      },
+    );
   });
 
   // BUG-1782：「AniList 说没有这部番」与「这次根本没问上」此前共用同一个空列表，
@@ -104,22 +107,23 @@ void main() {
   // 「起了怪了，现在又行了，不知如何触发」。这一组锁住两者不再等价。
   group('AniListSearchOutcome 区分「查无此番」与「没问上」(BUG-1782)', () {
     Response ok(List<Map<String, dynamic>> media) => Response(
-          jsonEncode(<String, dynamic>{
-            'data': <String, dynamic>{
-              'Page': <String, dynamic>{'media': media},
-            },
-          }),
-          200,
-        );
+      jsonEncode(<String, dynamic>{
+        'data': <String, dynamic>{
+          'Page': <String, dynamic>{'media': media},
+        },
+      }),
+      200,
+    );
 
     test('200 空结果 = AniList 明确答了没有，不是降级', () async {
       final AniListClient client = AniListClient(
         client: MockClient((_) async => ok(<Map<String, dynamic>>[])),
       );
-      final AniListSearchOutcome outcome = await client.searchAnime('Yuru Yuri');
+      final AniListSearchOutcome outcome = await client.searchAnime(
+        'Yuru Yuri',
+      );
       expect(outcome.media, isEmpty);
-      expect(outcome.degraded, isFalse,
-          reason: '真的没这部番时不该报降级，否则每次搜不到都在吓唬用户');
+      expect(outcome.degraded, isFalse, reason: '真的没这部番时不该报降级，否则每次搜不到都在吓唬用户');
       client.close();
     });
 
@@ -127,11 +131,17 @@ void main() {
       final AniListClient client = AniListClient(
         client: MockClient((_) async => Response('rate limited', 429)),
       );
-      final AniListSearchOutcome outcome = await client.searchAnime('Yuru Yuri');
+      final AniListSearchOutcome outcome = await client.searchAnime(
+        'Yuru Yuri',
+      );
       expect(outcome.media, isEmpty);
-      expect(outcome.degraded, isTrue,
-          reason: '429 此前被吞成空列表，与「查无此番」无法区分——正是本 bug 的根因；'
-              '放送日历页共用同一个 client 按 perPage:50 翻页，很容易把配额烧掉');
+      expect(
+        outcome.degraded,
+        isTrue,
+        reason:
+            '429 此前被吞成空列表，与「查无此番」无法区分——正是本 bug 的根因；'
+            '放送日历页共用同一个 client 按 perPage:50 翻页，很容易把配额烧掉',
+      );
       expect(outcome.failure, contains('429'));
       client.close();
     });
@@ -140,7 +150,9 @@ void main() {
       final AniListClient client = AniListClient(
         client: MockClient((_) async => throw const SocketException('offline')),
       );
-      final AniListSearchOutcome outcome = await client.searchAnime('Yuru Yuri');
+      final AniListSearchOutcome outcome = await client.searchAnime(
+        'Yuru Yuri',
+      );
       expect(outcome.degraded, isTrue);
       client.close();
     });
@@ -160,8 +172,9 @@ void main() {
           ]);
         }),
       );
-      final AniListSearchOutcome outcome =
-          await client.searchAnime('Yuru Yuri, Nachuyachumi');
+      final AniListSearchOutcome outcome = await client.searchAnime(
+        'Yuru Yuri, Nachuyachumi',
+      );
       expect(outcome.media.single.id, 10495);
       expect(outcome.degraded, isFalse);
       client.close();
@@ -178,8 +191,9 @@ void main() {
           return Response('rate limited', 429);
         }),
       );
-      final AniListSearchOutcome outcome =
-          await client.searchAnime('Yuru Yuri, Nachuyachumi');
+      final AniListSearchOutcome outcome = await client.searchAnime(
+        'Yuru Yuri, Nachuyachumi',
+      );
       expect(calls, greaterThan(1), reason: '这条用例要求真的走到第二个回退查询词');
       expect(outcome.media, isEmpty);
       expect(outcome.degraded, isFalse);

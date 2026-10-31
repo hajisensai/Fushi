@@ -36,14 +36,17 @@ void main() {
   const String magnet = 'magnet:?xt=urn:btih:$hash&dn=novel';
 
   Future<ServerDownloadHost> build(List<(String, List<int>)> files) async {
-    saveRoot = Directory(p.join(tmp.path, 'torrent_save'))..createSync(recursive: true);
+    saveRoot = Directory(p.join(tmp.path, 'torrent_save'))
+      ..createSync(recursive: true);
     final List<TorrentFileEntry> entries = <TorrentFileEntry>[];
     for (int i = 0; i < files.length; i++) {
       final (String rel, List<int> bytes) = files[i];
       File(p.join(saveRoot.path, rel))
         ..parent.createSync(recursive: true)
         ..writeAsBytesSync(bytes);
-      entries.add(TorrentFileEntry(name: rel, size: bytes.length, progress: 1, index: i));
+      entries.add(
+        TorrentFileEntry(name: rel, size: bytes.length, progress: 1, index: i),
+      );
     }
     backend = _CompletedTorrentBackend(
       snapshot: TorrentSnapshot(
@@ -57,7 +60,9 @@ void main() {
       ),
       files: entries,
     );
-    final ServerConfig config = ServerConfig.defaults(dataDir: p.join(tmp.path, 'data'));
+    final ServerConfig config = ServerConfig.defaults(
+      dataDir: p.join(tmp.path, 'data'),
+    );
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     final ServerPrefs prefs = ServerPrefs(db);
@@ -75,7 +80,9 @@ void main() {
         coordinatorFactory: (scrapeConfig) => VideoSourceScrapeCoordinator(
           database: db,
           config: scrapeConfig,
-          registry: VideoMetadataProviderRegistry(const <VideoMetadataProvider>[]),
+          registry: VideoMetadataProviderRegistry(
+            const <VideoMetadataProvider>[],
+          ),
         ),
       ),
       backendOverride: backend,
@@ -85,14 +92,19 @@ void main() {
     return built;
   }
 
-  Future<VideoDownloadJobRow> waitFor(String jobId, bool Function(VideoDownloadJobRow row) done) async {
+  Future<VideoDownloadJobRow> waitFor(
+    String jobId,
+    bool Function(VideoDownloadJobRow row) done,
+  ) async {
     final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
     while (DateTime.now().isBefore(deadline)) {
       final VideoDownloadJobRow? row = await db.getVideoDownloadJob(jobId);
       if (row != null && done(row)) return row;
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
-    throw TimeoutException('job $jobId stuck: ${await db.getVideoDownloadJob(jobId)}');
+    throw TimeoutException(
+      'job $jobId stuck: ${await db.getVideoDownloadJob(jobId)}',
+    );
   }
 
   bool settled(VideoDownloadJobRow row) =>
@@ -116,19 +128,36 @@ void main() {
   });
 
   test('能力位 kinds = video + 服务端真能入库的域；game 投了 400（ArgumentError）', () async {
-    host = await build(<(String, List<int>)>[('Novel/book.txt', 'x'.codeUnits)]);
+    host = await build(<(String, List<int>)>[
+      ('Novel/book.txt', 'x'.codeUnits),
+    ]);
     final Map<String, Object?> cap = await host.capability();
     expect(cap['supported'], isTrue);
     expect(cap['kinds'], <String>['video', 'novel', 'manga', 'audiobook']);
     // 宣告的非视频域必须是协议里的合法值，且不含游戏。
-    expect(kHostDownloadDiscoveryKinds.containsAll(kServerDownloadDiscoveryKinds), isTrue);
+    expect(
+      kHostDownloadDiscoveryKinds.containsAll(kServerDownloadDiscoveryKinds),
+      isTrue,
+    );
     expect(kServerDownloadDiscoveryKinds, isNot(contains('game')));
     await expectLater(
-      host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: 'Game', discoveryKind: 'game')),
+      host.add(
+        HostDownloadAddRequest.magnet(
+          magnetUri: magnet,
+          title: 'Game',
+          discoveryKind: 'game',
+        ),
+      ),
       throwsA(isA<ArgumentError>()),
     );
     await expectLater(
-      host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: 'X', discoveryKind: 'nonsense')),
+      host.add(
+        HostDownloadAddRequest.magnet(
+          magnetUri: magnet,
+          title: 'X',
+          discoveryKind: 'nonsense',
+        ),
+      ),
       throwsA(isA<ArgumentError>()),
     );
     expect(await db.getVideoDownloadJobs(), isEmpty, reason: '被拒的域不能留下任务行');
@@ -136,12 +165,25 @@ void main() {
 
   test('小说（txt）：入队 → 下载完成 → 转 EPUB 落进服务端书库', () async {
     host = await build(<(String, List<int>)>[
-      ('Novel/吾輩は猫である.txt', utf8.encode('吾輩は猫である。名前はまだ無い。\n\nどこで生れたかとんと見当がつかぬ。\n')),
+      (
+        'Novel/吾輩は猫である.txt',
+        utf8.encode('吾輩は猫である。名前はまだ無い。\n\nどこで生れたかとんと見当がつかぬ。\n'),
+      ),
     ]);
 
-    final String jobId = await host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: '吾輩は猫である', discoveryKind: 'novel'));
+    final String jobId = await host.add(
+      HostDownloadAddRequest.magnet(
+        magnetUri: magnet,
+        title: '吾輩は猫である',
+        discoveryKind: 'novel',
+      ),
+    );
     final VideoDownloadJobRow row = await waitFor(jobId, settled);
-    expect(row.lifecycle, VideoDownloadJobLifecycle.completed, reason: '${row.lastError}');
+    expect(
+      row.lifecycle,
+      VideoDownloadJobLifecycle.completed,
+      reason: '${row.lastError}',
+    );
     expect(row.organizationPolicy, 'discovery-novel');
     expect(row.targetSourceId, isNull, reason: '非视频任务不进受管视频来源');
     expect(backend.addCalls, 1);
@@ -151,10 +193,13 @@ void main() {
   });
 
   test('BUG-3437：deleteJob 显式 deleteFiles 按字面执行；缺省（旧客户端）保持连文件一起删', () async {
-    host = await build(<(String, List<int>)>[('Novel/book.txt', 'x'.codeUnits)]);
+    host = await build(<(String, List<int>)>[
+      ('Novel/book.txt', 'x'.codeUnits),
+    ]);
     Future<File> seed(String jobId) async {
       final int now = DateTime.now().millisecondsSinceEpoch;
-      final File file = File(p.join(tmp.path, '$jobId.mkv'))..writeAsStringSync('payload');
+      final File file = File(p.join(tmp.path, '$jobId.mkv'))
+        ..writeAsStringSync('payload');
       await db.upsertVideoDownloadJob(
         VideoDownloadJobsCompanion.insert(
           jobId: jobId,
@@ -202,8 +247,16 @@ void main() {
   });
 
   test('小说包里的 PDF：服务端接不了，任务带 unsupportedOnThisHost 挡下、书库不动', () async {
-    host = await build(<(String, List<int>)>[('Novel/scan.pdf', '%PDF-1.4\n'.codeUnits)]);
-    final String jobId = await host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: 'scan', discoveryKind: 'novel'));
+    host = await build(<(String, List<int>)>[
+      ('Novel/scan.pdf', '%PDF-1.4\n'.codeUnits),
+    ]);
+    final String jobId = await host.add(
+      HostDownloadAddRequest.magnet(
+        magnetUri: magnet,
+        title: 'scan',
+        discoveryKind: 'novel',
+      ),
+    );
     final VideoDownloadJobRow row = await waitFor(jobId, settled);
     expect(row.lifecycle, isNot(VideoDownloadJobLifecycle.completed));
     expect(row.lastError, contains('unsupportedOnThisHost'));
@@ -245,12 +298,17 @@ class _CompletedTorrentBackend implements TorrentBackend {
   Future<String?> probeConnection() async => 'fake';
 
   @override
-  Future<TorrentStorageResult> renameFile(String torrentId, int fileIndex, String newPath) async =>
-      TorrentStorageResult(ok: true, path: newPath);
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async => TorrentStorageResult(ok: true, path: newPath);
 
   @override
-  Future<TorrentStorageResult> moveStorage(String torrentId, String newSavePath) async =>
-      TorrentStorageResult(ok: true, path: newSavePath);
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  ) async => TorrentStorageResult(ok: true, path: newSavePath);
 
   @override
   void close() {}

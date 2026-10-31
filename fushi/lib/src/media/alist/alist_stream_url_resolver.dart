@@ -16,14 +16,14 @@ class AListStreamUrlResolver implements StreamUrlResolver {
     String? username,
     String? password,
     http.Client? client,
-  })  : _baseUrl = normalizeAListBaseUrl(baseUrl),
-        _api = AListApiClient(
-          baseUrl: baseUrl,
-          providerId: 'alist-source',
-          username: username,
-          password: password,
-          client: client,
-        );
+  }) : _baseUrl = normalizeAListBaseUrl(baseUrl),
+       _api = AListApiClient(
+         baseUrl: baseUrl,
+         providerId: 'alist-source',
+         username: username,
+         password: password,
+         client: client,
+       );
 
   final String _baseUrl;
   final AListApiClient _api;

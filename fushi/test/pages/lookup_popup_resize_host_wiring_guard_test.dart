@@ -15,15 +15,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const List<({String path, String name})> hosts =
       <({String path, String name})>[
-    (
-      path: 'lib/src/pages/base_source_page.dart',
-      name: 'reader 家族宿主 (_buildPopupLayer)',
-    ),
-    (
-      path: 'lib/src/pages/implementations/dictionary_page_mixin.dart',
-      name: 'video/首页/texthooker 宿主 (buildNestedPopupLayer)',
-    ),
-  ];
+        (
+          path: 'lib/src/pages/base_source_page.dart',
+          name: 'reader 家族宿主 (_buildPopupLayer)',
+        ),
+        (
+          path: 'lib/src/pages/implementations/dictionary_page_mixin.dart',
+          name: 'video/首页/texthooker 宿主 (buildNestedPopupLayer)',
+        ),
+      ];
 
   // 每个宿主都必须保留的最小接线令牌：开启把手 + 四个回调 + 缩放折算 + 落库真值。
   const List<String> requiredTokens = <String>[
@@ -44,9 +44,13 @@ void main() {
       expect(file.existsSync(), isTrue, reason: '宿主文件应存在：${host.path}');
       final String src = file.readAsStringSync();
       for (final String token in requiredTokens) {
-        expect(src.contains(token), isTrue,
-            reason: '${host.name} 缺少 resize 接线令牌 `$token`——'
-                '把手接线被删/改名会让 app 内弹窗拖拽静默失效');
+        expect(
+          src.contains(token),
+          isTrue,
+          reason:
+              '${host.name} 缺少 resize 接线令牌 `$token`——'
+              '把手接线被删/改名会让 app 内弹窗拖拽静默失效',
+        );
       }
     });
   }

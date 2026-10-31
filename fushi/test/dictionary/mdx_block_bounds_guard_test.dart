@@ -29,35 +29,59 @@ import 'package:path/path.dart' as p;
 void main() {
   final String root = _repoRoot();
   final String mdxCpp = p.join(
-      root, 'native', 'fushidicts', 'fushidicts_src', 'mdx', 'mdx_reader.cpp');
+    root,
+    'native',
+    'fushidicts',
+    'fushidicts_src',
+    'mdx',
+    'mdx_reader.cpp',
+  );
 
-  test('mdx_reader bounds both uncompressed-block copies by decompressed_size',
-      () {
-    final String src = File(mdxCpp).readAsStringSync();
+  test(
+    'mdx_reader bounds both uncompressed-block copies by decompressed_size',
+    () {
+      final String src = File(mdxCpp).readAsStringSync();
 
-    final RegExp keyGuard = RegExp(
-        r'if\s*\(\s*pos\s*\+\s*meta\.decompressed_size\s*>\s*size\s*\)\s*break;');
-    final RegExp recordGuard = RegExp(
-        r'if\s*\(\s*meta\.file_offset\s*\+\s*meta\.decompressed_size\s*>\s*size\s*\)\s*return\s+false;');
+      final RegExp keyGuard = RegExp(
+        r'if\s*\(\s*pos\s*\+\s*meta\.decompressed_size\s*>\s*size\s*\)\s*break;',
+      );
+      final RegExp recordGuard = RegExp(
+        r'if\s*\(\s*meta\.file_offset\s*\+\s*meta\.decompressed_size\s*>\s*size\s*\)\s*return\s+false;',
+      );
 
-    expect(keyGuard.allMatches(src).length, greaterThanOrEqualTo(1),
-        reason: 'the key-block raw copy must bound the source-buffer read by '
-            'decompressed_size before assigning');
-    expect(recordGuard.allMatches(src).length, greaterThanOrEqualTo(1),
-        reason: 'the record-block raw copy must bound the source-buffer read by '
-            'decompressed_size before assigning');
-  });
+      expect(
+        keyGuard.allMatches(src).length,
+        greaterThanOrEqualTo(1),
+        reason:
+            'the key-block raw copy must bound the source-buffer read by '
+            'decompressed_size before assigning',
+      );
+      expect(
+        recordGuard.allMatches(src).length,
+        greaterThanOrEqualTo(1),
+        reason:
+            'the record-block raw copy must bound the source-buffer read by '
+            'decompressed_size before assigning',
+      );
+    },
+  );
 
   test('mdx_reader key-block else copy is guarded before the assign', () {
     final String src = File(mdxCpp).readAsStringSync();
     final int assignIdx = src.indexOf('block_data.assign(data + pos');
-    expect(assignIdx, greaterThanOrEqualTo(0),
-        reason: 'key-block raw copy must still exist');
+    expect(
+      assignIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'key-block raw copy must still exist',
+    );
     final int guardIdx = src
         .substring(0, assignIdx)
         .lastIndexOf(RegExp(r'pos\s*\+\s*meta\.decompressed_size\s*>\s*size'));
-    expect(guardIdx, greaterThanOrEqualTo(0),
-        reason: 'the bound check must precede the block_data.assign copy');
+    expect(
+      guardIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'the bound check must precede the block_data.assign copy',
+    );
   });
 
   test('mdx_reader record-block raw copy is guarded before the assign', () {
@@ -65,34 +89,56 @@ void main() {
     // Streaming record reader: the raw (stored/runt) branch copies straight out
     // of the mapped file, so it needs the decompressed_size bound just as the
     // old all_records concatenation did.
-    final int assignIdx =
-        src.indexOf(RegExp(r'out\.assign\(\s*src\s*,\s*src\s*\+\s*meta\.decompressed_size\s*\)'));
-    expect(assignIdx, greaterThanOrEqualTo(0),
-        reason: 'record-block raw copy must still exist');
-    final int guardIdx = src.substring(0, assignIdx).lastIndexOf(
-        RegExp(r'meta\.file_offset\s*\+\s*meta\.decompressed_size\s*>\s*size'));
-    expect(guardIdx, greaterThanOrEqualTo(0),
-        reason: 'the record-block raw copy must be preceded by a '
-            'file_offset + decompressed_size > size bound check');
+    final int assignIdx = src.indexOf(
+      RegExp(
+        r'out\.assign\(\s*src\s*,\s*src\s*\+\s*meta\.decompressed_size\s*\)',
+      ),
+    );
+    expect(
+      assignIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'record-block raw copy must still exist',
+    );
+    final int guardIdx = src
+        .substring(0, assignIdx)
+        .lastIndexOf(
+          RegExp(
+            r'meta\.file_offset\s*\+\s*meta\.decompressed_size\s*>\s*size',
+          ),
+        );
+    expect(
+      guardIdx,
+      greaterThanOrEqualTo(0),
+      reason:
+          'the record-block raw copy must be preceded by a '
+          'file_offset + decompressed_size > size bound check',
+    );
   });
 
-  test('mdx import no longer materialises the whole decompressed record stream',
-      () {
-    final String src = File(mdxCpp).readAsStringSync();
-    // The eager concatenation is what made a 400 MB dictionary need >1 GB of
-    // heap and got the app jetsam-killed on iOS mid-import. Streaming replaced
-    // it with a sliding window; reintroducing a whole-stream buffer regresses
-    // that, so keep the old shape out of the file.
-    expect(src.contains('all_records'), isFalse,
-        reason: 'record bytes must be streamed a block at a time, not '
-            'concatenated into one whole-dictionary buffer');
-  });
+  test(
+    'mdx import no longer materialises the whole decompressed record stream',
+    () {
+      final String src = File(mdxCpp).readAsStringSync();
+      // The eager concatenation is what made a 400 MB dictionary need >1 GB of
+      // heap and got the app jetsam-killed on iOS mid-import. Streaming replaced
+      // it with a sliding window; reintroducing a whole-stream buffer regresses
+      // that, so keep the old shape out of the file.
+      expect(
+        src.contains('all_records'),
+        isFalse,
+        reason:
+            'record bytes must be streamed a block at a time, not '
+            'concatenated into one whole-dictionary buffer',
+      );
+    },
+  );
 }
 
 String _repoRoot() {
   Directory dir = Directory.current;
-  while (!File(p.join(dir.path, 'native', 'fushidicts', 'CMakeLists.txt'))
-      .existsSync()) {
+  while (!File(
+    p.join(dir.path, 'native', 'fushidicts', 'CMakeLists.txt'),
+  ).existsSync()) {
     final Directory parent = dir.parent;
     if (parent.path == dir.path) {
       fail('could not locate repo root from ${Directory.current.path}');

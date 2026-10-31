@@ -75,25 +75,17 @@ void main() {
         ],
       });
 
-      final cues = JsonAlignmentParser.parseString(
-        content: json,
-        bookKey: 'b',
-      );
+      final cues = JsonAlignmentParser.parseString(content: json, bookKey: 'b');
 
       expect(cues.single.audioFileIndex, 1);
     });
 
     test('missing optional fields default to safe values', () {
       final json = jsonEncode({
-        'cues': [
-          <String, dynamic>{},
-        ],
+        'cues': [<String, dynamic>{}],
       });
 
-      final cues = JsonAlignmentParser.parseString(
-        content: json,
-        bookKey: 'b',
-      );
+      final cues = JsonAlignmentParser.parseString(content: json, bookKey: 'b');
 
       expect(cues, hasLength(1));
       expect(cues[0].chapterHref, '');
@@ -108,23 +100,17 @@ void main() {
     test('empty cues array returns empty list', () {
       final json = jsonEncode({'cues': <dynamic>[]});
 
-      final cues = JsonAlignmentParser.parseString(
-        content: json,
-        bookKey: 'b',
-      );
+      final cues = JsonAlignmentParser.parseString(content: json, bookKey: 'b');
 
       expect(cues, isEmpty);
     });
 
     test('missing cues key returns empty list', () {
       final json = jsonEncode({
-        'audio': ['a.mp3']
+        'audio': ['a.mp3'],
       });
 
-      final cues = JsonAlignmentParser.parseString(
-        content: json,
-        bookKey: 'b',
-      );
+      final cues = JsonAlignmentParser.parseString(content: json, bookKey: 'b');
 
       expect(cues, isEmpty);
     });
@@ -229,46 +215,25 @@ void main() {
     });
 
     test('empty cues returns -1', () {
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: [], positionMs: 0),
-        -1,
-      );
+      expect(JsonAlignmentParser.findCueIndex(cues: [], positionMs: 0), -1);
     });
 
     test('position before first cue returns -1', () {
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 500),
-        -1,
-      );
+      expect(JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 500), -1);
     });
 
     test('position exactly at startMs returns that cue', () {
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 1000),
-        0,
-      );
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 3000),
-        1,
-      );
+      expect(JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 1000), 0);
+      expect(JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 3000), 1);
     });
 
     test('position within cue range returns that cue', () {
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 1500),
-        0,
-      );
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 3500),
-        1,
-      );
+      expect(JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 1500), 0);
+      expect(JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 3500), 1);
     });
 
     test('position at endMs returns that cue', () {
-      expect(
-        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 2000),
-        0,
-      );
+      expect(JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 2000), 0);
     });
 
     test('position in gap between cues returns -1', () {
@@ -292,15 +257,25 @@ void main() {
     test('single cue: before start -1, [start..endMs] returns 0, after -1', () {
       final single = [_cue(1000, 2000)];
       expect(
-          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 500), -1);
+        JsonAlignmentParser.findCueIndex(cues: single, positionMs: 500),
+        -1,
+      );
       expect(
-          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 1000), 0);
+        JsonAlignmentParser.findCueIndex(cues: single, positionMs: 1000),
+        0,
+      );
       expect(
-          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 1500), 0);
+        JsonAlignmentParser.findCueIndex(cues: single, positionMs: 1500),
+        0,
+      );
       expect(
-          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 2000), 0);
+        JsonAlignmentParser.findCueIndex(cues: single, positionMs: 2000),
+        0,
+      );
       expect(
-          JsonAlignmentParser.findCueIndex(cues: single, positionMs: 2500), -1);
+        JsonAlignmentParser.findCueIndex(cues: single, positionMs: 2500),
+        -1,
+      );
     });
 
     // Touching cues (prev.endMs == next.startMs): the later cue owns the seam

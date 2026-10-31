@@ -21,31 +21,47 @@ import 'package:flutter_test/flutter_test.dart';
 ///      Sleep(1) 自旋——那段等待跑在 platform 线程上，默认定时器精度下一次就能
 ///      睡 ~15ms。
 void main() {
-  final String hook =
-      File('windows/runner/low_level_mouse_hook.cpp').readAsStringSync();
+  final String hook = File(
+    'windows/runner/low_level_mouse_hook.cpp',
+  ).readAsStringSync();
 
   test('钩子线程以 TIME_CRITICAL 优先级运行', () {
     expect(
-      hook.contains('SetThreadPriority(GetCurrentThread(),'
-          ' THREAD_PRIORITY_TIME_CRITICAL)'),
+      hook.contains(
+        'SetThreadPriority(GetCurrentThread(),'
+        ' THREAD_PRIORITY_TIME_CRITICAL)',
+      ),
       isTrue,
-      reason: 'BUG-1077：LL 钩子承载线程被普通优先级抢占时全系统鼠标会卡，'
+      reason:
+          'BUG-1077：LL 钩子承载线程被普通优先级抢占时全系统鼠标会卡，'
           '必须提到 TIME_CRITICAL',
     );
   });
 
   test('Disarm 走宽限期延迟真卸，不立卸立装', () {
-    expect(hook.contains('kDisarmGraceMs'), isTrue,
-        reason: '必须有宽限期常量：嵌套查词 Hide→Reveal 间隔内不得真卸钩子');
-    expect(hook.contains('SetTimer(nullptr,'), isTrue,
-        reason: '延迟卸载靠钩子线程自己的线程定时器');
-    expect(hook.contains('KillTimer(nullptr,'), isTrue,
-        reason: '新的 Arm 到来必须取消挂起的延迟卸载');
+    expect(
+      hook.contains('kDisarmGraceMs'),
+      isTrue,
+      reason: '必须有宽限期常量：嵌套查词 Hide→Reveal 间隔内不得真卸钩子',
+    );
+    expect(
+      hook.contains('SetTimer(nullptr,'),
+      isTrue,
+      reason: '延迟卸载靠钩子线程自己的线程定时器',
+    );
+    expect(
+      hook.contains('KillTimer(nullptr,'),
+      isTrue,
+      reason: '新的 Arm 到来必须取消挂起的延迟卸载',
+    );
   });
 
   test('等待钩子线程就绪用事件，不用 Sleep 自旋', () {
-    expect(hook.contains('WaitForSingleObject('), isTrue,
-        reason: '首次 Arm 在 platform 线程上等 id 发布，必须事件等待');
+    expect(
+      hook.contains('WaitForSingleObject('),
+      isTrue,
+      reason: '首次 Arm 在 platform 线程上等 id 发布，必须事件等待',
+    );
     expect(
       hook.contains('Sleep('),
       isFalse,

@@ -107,12 +107,11 @@ Future<VideoTmdbOrderingChoice?> showVideoTmdbOrderingPicker({
   required BuildContext context,
   required List<VideoMetadataEpisodeGroupSummary> groups,
   required String? initial,
-}) =>
-    showAppDialog<VideoTmdbOrderingChoice>(
-      context: context,
-      builder: (BuildContext context) =>
-          _VideoTmdbOrderingDialog(groups: groups, initial: initial),
-    );
+}) => showAppDialog<VideoTmdbOrderingChoice>(
+  context: context,
+  builder: (BuildContext context) =>
+      _VideoTmdbOrderingDialog(groups: groups, initial: initial),
+);
 
 class _VideoTmdbOrderingDialog extends StatefulWidget {
   const _VideoTmdbOrderingDialog({required this.groups, required this.initial});

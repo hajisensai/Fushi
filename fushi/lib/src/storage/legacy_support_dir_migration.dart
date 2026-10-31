@@ -36,8 +36,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 之后立刻调。
 Future<LegacySupportMigrationOutcome> migrateLegacySupportDir({
   @visibleForTesting Map<String, String>? environment,
-  @visibleForTesting String dartDefineRoot =
-      const String.fromEnvironment('FUSHI_TEST_ROOT'),
+  @visibleForTesting
+  String dartDefineRoot = const String.fromEnvironment('FUSHI_TEST_ROOT'),
   @visibleForTesting Future<Directory> Function()? supportDirectoryResolver,
 }) async {
   // Windows known-folder APIs ignore APPDATA/USERPROFILE overrides. An isolated
@@ -55,17 +55,18 @@ Future<LegacySupportMigrationOutcome> migrateLegacySupportDir({
     return LegacySupportMigrationOutcome.notApplicable;
   }
   try {
-    final Directory current = await (
-      supportDirectoryResolver ?? getApplicationSupportDirectory
-    )();
+    final Directory current =
+        await (supportDirectoryResolver ?? getApplicationSupportDirectory)();
     final Directory? legacy = legacySupportDirFor(
       current,
       isMacOS: Platform.isMacOS,
       isLinux: Platform.isLinux,
     );
     if (legacy == null) return LegacySupportMigrationOutcome.notApplicable;
-    final LegacySupportMigrationOutcome outcome =
-        migrateSupportDirTree(legacy: legacy, current: current);
+    final LegacySupportMigrationOutcome outcome = migrateSupportDirTree(
+      legacy: legacy,
+      current: current,
+    );
     if (outcome.movedData) {
       rebaseSupportPathsInPrefsFile(
         prefsFile: File(p.join(current.path, kDesktopPrefsFileName)),
@@ -162,7 +163,8 @@ Directory? legacySupportDirFor(
     // $XDG_DATA_HOME/app.fushi.reader → 同级 com.example.hibiki。
     if (segments.last != kFushiLinuxApplicationId) return null;
     return Directory(
-        ctx.join(ctx.dirname(current.path), kLegacyLinuxApplicationId));
+      ctx.join(ctx.dirname(current.path), kLegacyLinuxApplicationId),
+    );
   }
   // Windows：Roaming\Fushi\Fushi → Roaming\Hibiki\Hibiki。
   final int depth = kFushiWindowsAppDataSegments.length;
@@ -171,10 +173,12 @@ Directory? legacySupportDirFor(
   for (int i = 0; i < depth; i++) {
     if (tail[i] != kFushiWindowsAppDataSegments[i]) return null;
   }
-  final String roaming =
-      ctx.joinAll(segments.sublist(0, segments.length - depth));
+  final String roaming = ctx.joinAll(
+    segments.sublist(0, segments.length - depth),
+  );
   return Directory(
-      ctx.joinAll(<String>[roaming, ...kLegacyWindowsAppDataSegments]));
+    ctx.joinAll(<String>[roaming, ...kLegacyWindowsAppDataSegments]),
+  );
 }
 
 /// 暂存目录后缀。跨卷复制的落点是「新根 + 本后缀」（与新根同父目录，保证最后
@@ -200,8 +204,9 @@ LegacySupportMigrationOutcome migrateSupportDirTree({
   @visibleForTesting bool debugForceCopyFallback = false,
   @visibleForTesting void Function()? debugAfterStagingCopy,
 }) {
-  final Directory staging =
-      Directory(current.path + kSupportMigrationStagingSuffix);
+  final Directory staging = Directory(
+    current.path + kSupportMigrationStagingSuffix,
+  );
   if (!legacy.existsSync()) {
     _deleteQuietly(staging);
     return LegacySupportMigrationOutcome.noLegacy;
@@ -249,8 +254,10 @@ void _deleteQuietly(Directory dir) {
 
 void _copyTreeSync(Directory from, Directory to) {
   to.createSync(recursive: true);
-  for (final FileSystemEntity entity
-      in from.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in from.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     final String rel = p.relative(entity.path, from: from.path);
     final String dest = p.join(to.path, rel);
     if (entity is Directory) {
@@ -409,10 +416,11 @@ Future<int> recoverLegacyMacosPrefs({
 
 Future<String?> _defaultsReadLegacyDomain(String prefixedKey) async {
   try {
-    final ProcessResult result = await Process.run(
-      'defaults',
-      <String>['read', kLegacyMacosBundleId, prefixedKey],
-    );
+    final ProcessResult result = await Process.run('defaults', <String>[
+      'read',
+      kLegacyMacosBundleId,
+      prefixedKey,
+    ]);
     if (result.exitCode != 0) return null; // 旧域 / 旧键不存在。
     final String out = (result.stdout as String).trim();
     return out.isEmpty ? null : out;

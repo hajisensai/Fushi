@@ -28,15 +28,17 @@ void main() {
       final int before = await db.getPref(FushiDatabase.prefsVersionKey) == null
           ? 0
           : int.parse(
-              (await db.getPref(FushiDatabase.prefsVersionKey))!
-                  .replaceFirst('i:', ''),
+              (await db.getPref(
+                FushiDatabase.prefsVersionKey,
+              ))!.replaceFirst('i:', ''),
             );
 
       await db.setPrefs(<String, String>{'k_a': 'b:true', 'k_b': 'b:false'});
 
       final int afterBatch = int.parse(
-        (await db.getPref(FushiDatabase.prefsVersionKey))!
-            .replaceFirst('i:', ''),
+        (await db.getPref(
+          FushiDatabase.prefsVersionKey,
+        ))!.replaceFirst('i:', ''),
       );
       expect(afterBatch, before + 1, reason: '两个 key 属同一个逻辑设置，版本是变更信号、不是每键计数');
 
@@ -44,8 +46,9 @@ void main() {
       await db.setPref('k_a', 'b:false');
       await db.setPref('k_b', 'b:true');
       final int afterSingles = int.parse(
-        (await db.getPref(FushiDatabase.prefsVersionKey))!
-            .replaceFirst('i:', ''),
+        (await db.getPref(
+          FushiDatabase.prefsVersionKey,
+        ))!.replaceFirst('i:', ''),
       );
       expect(afterSingles, afterBatch + 2);
     });
@@ -76,8 +79,9 @@ void main() {
     tearDown(() async => db.close());
 
     test('主字幕：落盘 Future 未 await，getter 已返回完整新三态', () async {
-      final Future<void> pending =
-          repo.setVideoSubtitleObscureMode(VideoSubtitleObscureMode.hide);
+      final Future<void> pending = repo.setVideoSubtitleObscureMode(
+        VideoSubtitleObscureMode.hide,
+      );
 
       // 关键不变式：视频页正是在这个时刻 setState 的。两个 key 必须**一起**已生效——
       // 若只写了 blur 键就让出执行权，这里会读成 blur，画面先闪一下模糊再变隐藏。
@@ -88,23 +92,29 @@ void main() {
     });
 
     test('副字幕：同一不变式', () async {
-      final Future<void> pending = repo
-          .setVideoSecondarySubtitleObscureMode(VideoSubtitleObscureMode.hide);
-      expect(repo.videoSecondarySubtitleObscureMode,
-          VideoSubtitleObscureMode.hide);
+      final Future<void> pending = repo.setVideoSecondarySubtitleObscureMode(
+        VideoSubtitleObscureMode.hide,
+      );
+      expect(
+        repo.videoSecondarySubtitleObscureMode,
+        VideoSubtitleObscureMode.hide,
+      );
       await pending;
     });
 
     test('三态往返仍跨 reload 持久化（落盘没被跳过）', () async {
       await repo.setVideoSubtitleObscureMode(VideoSubtitleObscureMode.hide);
-      await repo
-          .setVideoSecondarySubtitleObscureMode(VideoSubtitleObscureMode.blur);
+      await repo.setVideoSecondarySubtitleObscureMode(
+        VideoSubtitleObscureMode.blur,
+      );
 
       final PreferencesRepository reloaded = PreferencesRepository(db);
       await reloaded.loadFromDb();
       expect(reloaded.videoSubtitleObscureMode, VideoSubtitleObscureMode.hide);
-      expect(reloaded.videoSecondarySubtitleObscureMode,
-          VideoSubtitleObscureMode.blur);
+      expect(
+        reloaded.videoSecondarySubtitleObscureMode,
+        VideoSubtitleObscureMode.blur,
+      );
     });
   });
 
@@ -128,8 +138,11 @@ void main() {
         await repo.setVideoSubtitleObscureMode(mode);
         await repo.setVideoSecondarySubtitleObscureMode(mode);
       }
-      expect(notifications, 0,
-          reason: 'AppModel 把本仓库的通知转成全局广播，会重建每个 watch appProvider 的 widget');
+      expect(
+        notifications,
+        0,
+        reason: 'AppModel 把本仓库的通知转成全局广播，会重建每个 watch appProvider 的 widget',
+      );
     });
 
     test('对照：普通偏好 setter 仍广播（没有把整类行为改掉）', () async {
@@ -142,8 +155,9 @@ void main() {
     String readSrc(String path) => File(path).readAsStringSync();
 
     test('视频页：先 setState 再 await 落盘（两个遮蔽入口都是）', () {
-      final String src =
-          readSrc('lib/src/pages/implementations/video_fushi_page.dart');
+      final String src = readSrc(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      );
       // 压掉全部空白再比对：dart format 按行宽重排（tall style 会把调用链拆成
       // `appModel\n    .setVideoX(mode);`，参数也可能单独成行），任何只对部分位置
       // 放宽空白的正则都会被下一次重排打翻——本守卫就这么红过一次。而且下面的
@@ -178,8 +192,9 @@ void main() {
     });
 
     test('全局设置页路径显式补广播（host 缺席时行为不回归）', () {
-      final String src =
-          readSrc('lib/src/media/video/video_settings_actions.dart');
+      final String src = readSrc(
+        'lib/src/media/video/video_settings_actions.dart',
+      );
       expect(src, contains('context.appModel.notifyPreferencesChanged();'));
     });
   });

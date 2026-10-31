@@ -27,35 +27,49 @@ void main() {
         'FtpSyncBackend(',
         'SftpSyncBackend(',
       ]) {
-        expect(code.contains(ctor), isFalse,
-            reason: '必须经 resolveSyncBackend 获取后端（带解混淆装饰层），不得裸构造 $ctor');
+        expect(
+          code.contains(ctor),
+          isFalse,
+          reason: '必须经 resolveSyncBackend 获取后端（带解混淆装饰层），不得裸构造 $ctor',
+        );
       }
     });
 
-    test('does not double-import (no importRemoteBookFolder / EpubImporter)',
-        () {
-      final String code = src.readAsStringSync();
-      expect(code.contains('importRemoteBookFolder'), isFalse,
-          reason: 'getRemoteBook 只下载不导入，导入由书架页负责');
-      expect(code.contains('EpubImporter'), isFalse,
-          reason: 'getRemoteBook 只下载不导入，导入由书架页负责');
-    });
+    test(
+      'does not double-import (no importRemoteBookFolder / EpubImporter)',
+      () {
+        final String code = src.readAsStringSync();
+        expect(
+          code.contains('importRemoteBookFolder'),
+          isFalse,
+          reason: 'getRemoteBook 只下载不导入，导入由书架页负责',
+        );
+        expect(
+          code.contains('EpubImporter'),
+          isFalse,
+          reason: 'getRemoteBook 只下载不导入，导入由书架页负责',
+        );
+      },
+    );
 
-    test('book shelf wires CloudRemoteBookClient for non-fushiServer backends',
-        () {
-      // 书架与「已从本机移除的远端书」列表共用 resolveShelfRemoteBookClient（#2024
-      // 起抽到 hidden_remote_books.dart），书架只委托它。
-      final String shelf = File(
-        'lib/src/pages/implementations/reader_history/remote.part.dart',
-      ).readAsStringSync();
-      expect(shelf.contains('resolveShelfRemoteBookClient('), isTrue);
-      final String code =
-          File('lib/src/sync/hidden_remote_books.dart').readAsStringSync();
-      // 非 fushiServer 分支经 resolveSyncBackend 并返回 CloudRemoteBookClient。
-      expect(code.contains('resolveSyncBackend('), isTrue);
-      expect(code.contains('CloudRemoteBookClient('), isTrue);
-      // fushiServer 分支仍返回裸 InterconnectSyncBackend（保留 live 库 API）。
-      expect(code.contains('InterconnectSyncBackend.instance'), isTrue);
-    });
+    test(
+      'book shelf wires CloudRemoteBookClient for non-fushiServer backends',
+      () {
+        // 书架与「已从本机移除的远端书」列表共用 resolveShelfRemoteBookClient（#2024
+        // 起抽到 hidden_remote_books.dart），书架只委托它。
+        final String shelf = File(
+          'lib/src/pages/implementations/reader_history/remote.part.dart',
+        ).readAsStringSync();
+        expect(shelf.contains('resolveShelfRemoteBookClient('), isTrue);
+        final String code = File(
+          'lib/src/sync/hidden_remote_books.dart',
+        ).readAsStringSync();
+        // 非 fushiServer 分支经 resolveSyncBackend 并返回 CloudRemoteBookClient。
+        expect(code.contains('resolveSyncBackend('), isTrue);
+        expect(code.contains('CloudRemoteBookClient('), isTrue);
+        // fushiServer 分支仍返回裸 InterconnectSyncBackend（保留 live 库 API）。
+        expect(code.contains('InterconnectSyncBackend.instance'), isTrue);
+      },
+    );
   });
 }

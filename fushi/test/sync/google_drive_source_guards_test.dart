@@ -21,8 +21,11 @@ void main() {
     final File handler = File('lib/src/sync/google_drive_handler.dart');
 
     test('every api.files.list( call passes spaces: _space.spaces', () {
-      expect(handler.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        handler.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       final String src = handler.readAsStringSync();
 
       // Split the source into each files.list( ... ); call block by bracket
@@ -46,44 +49,72 @@ void main() {
         blocks.add(buf.toString());
       }
 
-      expect(blocks.length, 8,
-          reason: 'expected exactly 8 files.list calls in the handler; if this '
-              'changed, audit each new call for spaces: _space.spaces');
+      expect(
+        blocks.length,
+        8,
+        reason:
+            'expected exactly 8 files.list calls in the handler; if this '
+            'changed, audit each new call for spaces: _space.spaces',
+      );
 
       final List<int> missing = <int>[];
       for (int b = 0; b < blocks.length; b++) {
         if (!blocks[b].contains('spaces: _space.spaces')) missing.add(b);
       }
-      expect(missing, isEmpty,
-          reason: 'files.list block(s) at index $missing lack '
-              'spaces: _space.spaces → would either silently query the visible '
-              'Drive in appData mode or hit the wrong space in Hoshi-compat mode '
-              '(TODO-836 / GoogleDriveSyncSpace)');
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'files.list block(s) at index $missing lack '
+            'spaces: _space.spaces → would either silently query the visible '
+            'Drive in appData mode or hit the wrong space in Hoshi-compat mode '
+            '(TODO-836 / GoogleDriveSyncSpace)',
+      );
     });
 
     test('no files.list hardcodes a single space literal', () {
       final String src = handler.readAsStringSync();
       // The migration to a dynamic space is only complete when NO call still
       // pins a literal space — a leftover literal would ignore the toggle.
-      expect(src.contains("spaces: 'appDataFolder'"), isFalse,
-          reason: 'hardcoded appDataFolder ignores the Hoshi-compat toggle; '
-              'use _space.spaces (GoogleDriveSyncSpace)');
-      expect(src.contains("spaces: 'drive'"), isFalse,
-          reason: 'hardcoded drive space ignores appData mode; '
-              'use _space.spaces (GoogleDriveSyncSpace)');
+      expect(
+        src.contains("spaces: 'appDataFolder'"),
+        isFalse,
+        reason:
+            'hardcoded appDataFolder ignores the Hoshi-compat toggle; '
+            'use _space.spaces (GoogleDriveSyncSpace)',
+      );
+      expect(
+        src.contains("spaces: 'drive'"),
+        isFalse,
+        reason:
+            'hardcoded drive space ignores appData mode; '
+            'use _space.spaces (GoogleDriveSyncSpace)',
+      );
     });
 
     test('the sync root is created under the space parent alias', () {
       final String src = handler.readAsStringSync();
-      expect(src.contains('..parents = [_space.rootParent]'), isTrue,
-          reason: 'findOrCreateRootFolder must anchor the root in the current '
-              'space (parents=[_space.rootParent]), not a hardcoded alias');
-      expect(src.contains("..parents = ['appDataFolder']"), isFalse,
-          reason: 'hardcoded appDataFolder parent ignores the Hoshi-compat '
-              'toggle (GoogleDriveSyncSpace)');
-      expect(src.contains('name = _space.rootFolderName'), isTrue,
-          reason: 'the root folder name must come from the space '
-              '(fushi-data vs ttu-reader-data), not a hardcoded literal');
+      expect(
+        src.contains('..parents = [_space.rootParent]'),
+        isTrue,
+        reason:
+            'findOrCreateRootFolder must anchor the root in the current '
+            'space (parents=[_space.rootParent]), not a hardcoded alias',
+      );
+      expect(
+        src.contains("..parents = ['appDataFolder']"),
+        isFalse,
+        reason:
+            'hardcoded appDataFolder parent ignores the Hoshi-compat '
+            'toggle (GoogleDriveSyncSpace)',
+      );
+      expect(
+        src.contains('name = _space.rootFolderName'),
+        isTrue,
+        reason:
+            'the root folder name must come from the space '
+            '(fushi-data vs ttu-reader-data), not a hardcoded literal',
+      );
     });
   });
 
@@ -94,24 +125,36 @@ void main() {
     final File spaceFile = File('lib/src/sync/google_drive_sync_space.dart');
 
     String source() {
-      expect(spaceFile.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        spaceFile.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       return spaceFile.readAsStringSync();
     }
 
     test('declares only the hidden appdata scope（Hoshi 共享空间已移除）', () {
       final String s = source();
       expect(
-          s.contains('https://www.googleapis.com/auth/drive.appdata'), isTrue,
-          reason: 'appData space must keep the hidden drive.appdata scope');
-      expect(s.contains("'https://www.googleapis.com/auth/drive'"), isFalse,
-          reason: '完整 drive 敏感 scope 只为已删除的 Hoshi 共享空间存在，'
-              '不得回潮（触发 Google 重新审核）');
+        s.contains('https://www.googleapis.com/auth/drive.appdata'),
+        isTrue,
+        reason: 'appData space must keep the hidden drive.appdata scope',
+      );
+      expect(
+        s.contains("'https://www.googleapis.com/auth/drive'"),
+        isFalse,
+        reason:
+            '完整 drive 敏感 scope 只为已删除的 Hoshi 共享空间存在，'
+            '不得回潮（触发 Google 重新审核）',
+      );
     });
 
     test('never falls back to the visible drive.file scope', () {
-      expect(source().contains('auth/drive.file'), isFalse,
-          reason: 'drive.file 与隐藏 appdata 空间语义不符，禁用');
+      expect(
+        source().contains('auth/drive.file'),
+        isFalse,
+        reason: 'drive.file 与隐藏 appdata 空间语义不符，禁用',
+      );
     });
   });
 
@@ -121,30 +164,46 @@ void main() {
     final File authFile = File('lib/src/sync/google_drive_auth.dart');
 
     String source() {
-      expect(authFile.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        authFile.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       return authFile.readAsStringSync();
     }
 
     test('no longer requests the visible-Drive drive.file scope', () {
-      expect(source().contains('auth/drive.file'), isFalse,
-          reason: 'drive.file forced the whole-Drive root lookup → 403; and it '
-              'cannot read Hoshi files. Must stay removed (TODO-836)');
+      expect(
+        source().contains('auth/drive.file'),
+        isFalse,
+        reason:
+            'drive.file forced the whole-Drive root lookup → 403; and it '
+            'cannot read Hoshi files. Must stay removed (TODO-836)',
+      );
     });
 
-    test('mobile and desktop both derive the Drive scope from _space.scope',
-        () {
+    test('mobile and desktop both derive the Drive scope from _space.scope', () {
       final String s = source();
       // Mobile: GoogleSignIn(scopes: [_space.scope])
-      expect(RegExp(r'scopes:\s*\[_space\.scope\]').hasMatch(s), isTrue,
-          reason: 'mobile sign-in must request the current space scope');
+      expect(
+        RegExp(r'scopes:\s*\[_space\.scope\]').hasMatch(s),
+        isTrue,
+        reason: 'mobile sign-in must request the current space scope',
+      );
       // Desktop PKCE auth URL passes scope: _space.scope down into the builder.
-      expect(s.contains('scope: _space.scope'), isTrue,
-          reason: 'desktop auth URL must request the current space scope');
+      expect(
+        s.contains('scope: _space.scope'),
+        isTrue,
+        reason: 'desktop auth URL must request the current space scope',
+      );
       // The old single-mode hardcoded scope constant must be gone.
-      expect(s.contains('_driveAppdataScope'), isFalse,
-          reason: 'scope is now sourced from GoogleDriveSyncSpace, not a '
-              'hardcoded _driveAppdataScope constant');
+      expect(
+        s.contains('_driveAppdataScope'),
+        isFalse,
+        reason:
+            'scope is now sourced from GoogleDriveSyncSpace, not a '
+            'hardcoded _driveAppdataScope constant',
+      );
     });
   });
 }

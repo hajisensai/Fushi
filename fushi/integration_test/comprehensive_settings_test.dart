@@ -47,78 +47,91 @@ void main() {
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'comprehensive settings: focus-driven real controls persist real changes',
-      (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint('[comprehensive-settings] ${details.exceptionAsString()}');
-    };
+    'comprehensive settings: focus-driven real controls persist real changes',
+    (WidgetTester tester) async {
+      final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        errors.add(details);
+        debugPrint('[comprehensive-settings] ${details.exceptionAsString()}');
+      };
 
-    try {
-      await launchFushiTestApp();
-      expect(await waitForHome(tester), isTrue);
-      await tester.pump(const Duration(seconds: 2));
+      try {
+        await launchFushiTestApp();
+        expect(await waitForHome(tester), isTrue);
+        await tester.pump(const Duration(seconds: 2));
 
-      final ProviderContainer container = ProviderScope.containerOf(
-        tester.element(find.byType(MaterialApp).first),
-      );
-      final AppModel appModel = container.read(appProvider);
+        final ProviderContainer container = ProviderScope.containerOf(
+          tester.element(find.byType(MaterialApp).first),
+        );
+        final AppModel appModel = container.read(appProvider);
 
-      // 焦点驱动前置：实验焦点导航开关关闭（默认）时 Tab 被全局中和为
-      // DoNothingIntent（TODO-112，global_navigation.dart），_focusDriveSettingsRows
-      // 一步也走不动（iOS 模拟器每个测试文件都是全新容器，rows=0 实锤；macOS
-      // 此前只是碰巧吃到 app_smoke 残留的持久化偏好）。与 app_smoke /
-      // feature_flows 同范式先开开关；放在偏好快照之前，避免开关本身混进
-      // 「控件写穿 DB」的 before/after 差异断言。
-      await appModel.setExperimentalFocusNavigationEnabled(true);
-      for (int i = 0; i < 8; i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
-
-      await appModel.prefsRepo.refreshFromDb();
-      final Map<String, String> before =
-          Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
-
-      await _openReadingSettingsPage(tester);
-
-      final FocusDriver driver = FocusDriver(tester);
-      final int driven =
-          await _focusDriveSettingsRows(tester, driver, target: 3);
-      debugPrint('[comprehensive-settings] focus-driven rows=$driven');
-      expect(driven, greaterThanOrEqualTo(2),
-          reason: 'focus must drive at least two real settings controls '
-              '(Switch/Slider/Stepper/Segmented) on the reading settings page');
-
-      await appModel.prefsRepo.refreshFromDb();
-      final Map<String, String> after =
-          Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);
-      expect(_mapsEqual(before, after), isFalse,
-          reason: 'focus-driven control changes must write through to prefs');
-
-      await _exerciseSyncSettings(tester, appModel);
-
-      // Restore every pref this test changed back to its pre-test value so the
-      // user's real settings are untouched.
-      for (final MapEntry<String, String> e in before.entries) {
-        if (after[e.key] != e.value) {
-          await appModel.database.setPref(e.key, e.value);
+        // 焦点驱动前置：实验焦点导航开关关闭（默认）时 Tab 被全局中和为
+        // DoNothingIntent（TODO-112，global_navigation.dart），_focusDriveSettingsRows
+        // 一步也走不动（iOS 模拟器每个测试文件都是全新容器，rows=0 实锤；macOS
+        // 此前只是碰巧吃到 app_smoke 残留的持久化偏好）。与 app_smoke /
+        // feature_flows 同范式先开开关；放在偏好快照之前，避免开关本身混进
+        // 「控件写穿 DB」的 before/after 差异断言。
+        await appModel.setExperimentalFocusNavigationEnabled(true);
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 250));
         }
-      }
-      for (final String k in after.keys) {
-        if (!before.containsKey(k)) {
-          await appModel.database.deletePref(k);
-        }
-      }
-      await appModel.prefsRepo.refreshFromDb();
 
-      await takeScreenshot(binding, 'comprehensive_settings');
-      assertStrictErrors(errors);
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  });
+        await appModel.prefsRepo.refreshFromDb();
+        final Map<String, String> before = Map<String, String>.from(
+          appModel.prefsRepo.prefsSnapshot,
+        );
+
+        await _openReadingSettingsPage(tester);
+
+        final FocusDriver driver = FocusDriver(tester);
+        final int driven = await _focusDriveSettingsRows(
+          tester,
+          driver,
+          target: 3,
+        );
+        debugPrint('[comprehensive-settings] focus-driven rows=$driven');
+        expect(
+          driven,
+          greaterThanOrEqualTo(2),
+          reason:
+              'focus must drive at least two real settings controls '
+              '(Switch/Slider/Stepper/Segmented) on the reading settings page',
+        );
+
+        await appModel.prefsRepo.refreshFromDb();
+        final Map<String, String> after = Map<String, String>.from(
+          appModel.prefsRepo.prefsSnapshot,
+        );
+        expect(
+          _mapsEqual(before, after),
+          isFalse,
+          reason: 'focus-driven control changes must write through to prefs',
+        );
+
+        await _exerciseSyncSettings(tester, appModel);
+
+        // Restore every pref this test changed back to its pre-test value so the
+        // user's real settings are untouched.
+        for (final MapEntry<String, String> e in before.entries) {
+          if (after[e.key] != e.value) {
+            await appModel.database.setPref(e.key, e.value);
+          }
+        }
+        for (final String k in after.keys) {
+          if (!before.containsKey(k)) {
+            await appModel.database.deletePref(k);
+          }
+        }
+        await appModel.prefsRepo.refreshFromDb();
+
+        await takeScreenshot(binding, 'comprehensive_settings');
+        assertStrictErrors(errors);
+      } finally {
+        FlutterError.onError = oldHandler;
+      }
+    },
+  );
 }
 
 /// Tab through the current page; whenever focus lands on a settings row, drive
@@ -188,25 +201,29 @@ Future<void> _openReadingSettingsPage(WidgetTester tester) async {
   final NavigatorState nav = Navigator.of(
     tester.element(find.byType(Scaffold).first),
   );
-  unawaited(nav.push(
-    MaterialPageRoute<void>(
-      builder: (BuildContext routeCtx) => Consumer(
-        builder: (BuildContext ctx, WidgetRef ref, _) {
-          final SettingsContext sctx = SettingsContext(
-            context: ctx,
-            appModel: ref.read(appProvider),
-            ref: ref,
-            readerSource: ReaderFushiSource.instance,
-            refresh: () {},
-          );
-          final SettingsDestination reading = buildSettingsSchema(sctx)
-              .firstWhere((SettingsDestination d) =>
-                  d.id == SettingsDestinationId.reading);
-          return SettingsDetailPage(destination: reading);
-        },
+  unawaited(
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext routeCtx) => Consumer(
+          builder: (BuildContext ctx, WidgetRef ref, _) {
+            final SettingsContext sctx = SettingsContext(
+              context: ctx,
+              appModel: ref.read(appProvider),
+              ref: ref,
+              readerSource: ReaderFushiSource.instance,
+              refresh: () {},
+            );
+            final SettingsDestination reading = buildSettingsSchema(sctx)
+                .firstWhere(
+                  (SettingsDestination d) =>
+                      d.id == SettingsDestinationId.reading,
+                );
+            return SettingsDetailPage(destination: reading);
+          },
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump(const Duration(seconds: 2));
 }
 
@@ -249,11 +266,13 @@ Future<void> _pushSettingsDestination(
   final NavigatorState nav = Navigator.of(
     tester.element(find.byType(Scaffold).first),
   );
-  unawaited(nav.push(
-    MaterialPageRoute<void>(
-      builder: (_) => SettingsDetailPage(destination: destination),
+  unawaited(
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsDetailPage(destination: destination),
+      ),
     ),
-  ));
+  );
   await tester.pump(const Duration(seconds: 2));
 }
 

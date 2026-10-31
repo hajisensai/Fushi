@@ -35,10 +35,8 @@ Future<AsrModelPack?> showAsrLocalModelDialog({
   required AsrLanguage language,
   Future<String?> Function()? directoryPicker,
 }) {
-  Widget build(BuildContext ctx) => AsrLocalModelDialog(
-        language: language,
-        directoryPicker: directoryPicker,
-      );
+  Widget build(BuildContext ctx) =>
+      AsrLocalModelDialog(language: language, directoryPicker: directoryPicker);
   if (isDesktopPlatform) {
     return showAppDialog<AsrModelPack>(
       context: context,
@@ -108,8 +106,10 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
     final String? dir = picker == null
         ? await pickRealDirectoryPath(
             context: context,
-            appModel: ProviderScope.containerOf(context, listen: false)
-                .read(appProvider),
+            appModel: ProviderScope.containerOf(
+              context,
+              listen: false,
+            ).read(appProvider),
             dialogTitle: t.audiobook_transcribe_model_custom_pick,
           )
         : await picker();
@@ -349,13 +349,13 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
     final FushiCardTone tone = failed
         ? FushiCardTone.error
         : pack != null
-            ? FushiCardTone.tertiary
-            : FushiCardTone.neutral;
+        ? FushiCardTone.tertiary
+        : FushiCardTone.neutral;
     final IconData icon = failed
         ? FushiIcons.error
         : pack != null
-            ? FushiIcons.success
-            : FushiIcons.info;
+        ? FushiIcons.success
+        : FushiIcons.info;
     return AnimatedSwitcher(
       duration: context.fushiMotion.effectsDefault.duration,
       child: FushiCard(

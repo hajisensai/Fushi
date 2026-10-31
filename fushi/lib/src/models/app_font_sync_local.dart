@@ -30,9 +30,9 @@ class AppFontSyncLocal implements FontSyncLocal {
 
   @override
   Future<FontCatalogState> readState() async => readCustomFontCatalogState(
-        database: _appModel.database,
-        settings: await _settings(),
-      );
+    database: _appModel.database,
+    settings: await _settings(),
+  );
 
   @override
   Future<void> applyState(FontCatalogState state) async {
@@ -43,8 +43,9 @@ class AppFontSyncLocal implements FontSyncLocal {
       legacy: <String, List<Map<String, dynamic>>>{
         for (final FontTarget target in FontTarget.values)
           if (state.hasTarget(ReaderSettings.fontKeyForTarget(target)))
-            ReaderSettings.fontKeyForTarget(target): state
-                .fontListForTarget(ReaderSettings.fontKeyForTarget(target)),
+            ReaderSettings.fontKeyForTarget(target): state.fontListForTarget(
+              ReaderSettings.fontKeyForTarget(target),
+            ),
       },
     );
   }

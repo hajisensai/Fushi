@@ -15,8 +15,9 @@ import 'test_helpers.dart';
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets('mobile library toolbar and resource filter sheet',
-      (WidgetTester tester) async {
+  testWidgets('mobile library toolbar and resource filter sheet', (
+    WidgetTester tester,
+  ) async {
     final FlutterExceptionHandler? originalHandler = FlutterError.onError;
     try {
       await launchFushiTestApp();
@@ -28,28 +29,36 @@ void main() {
       for (int i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      final Finder search =
-          find.byKey(const ValueKey<String>('shelf_search_field'));
-      final Finder settings =
-          find.byKey(const ValueKey<String>('library_tag_settings'));
+      final Finder search = find.byKey(
+        const ValueKey<String>('shelf_search_field'),
+      );
+      final Finder settings = find.byKey(
+        const ValueKey<String>('library_tag_settings'),
+      );
       expect(tester.getCenter(search).dy, tester.getCenter(settings).dy);
       final Finder sort = find.widgetWithIcon(IconButton, Icons.sort);
-      final Finder select =
-          find.widgetWithIcon(IconButton, Icons.checklist_outlined);
+      final Finder select = find.widgetWithIcon(
+        IconButton,
+        Icons.checklist_outlined,
+      );
       expect(tester.getCenter(sort).dy, tester.getCenter(select).dy);
       expect(tester.getSize(select).height, greaterThanOrEqualTo(44));
       debugPrint(
-          '[mobile-layout] search=${tester.getRect(search)} settings=${tester.getRect(settings)} sort=${tester.getRect(sort)}');
+        '[mobile-layout] search=${tester.getRect(search)} settings=${tester.getRect(settings)} sort=${tester.getRect(sort)}',
+      );
       final Finder header = find.byType(FushiPageHeader).first;
-      final FushiPageHeader headerWidget =
-          tester.widget<FushiPageHeader>(header);
+      final FushiPageHeader headerWidget = tester.widget<FushiPageHeader>(
+        header,
+      );
       final double safeTop =
           tester.view.padding.top / tester.view.devicePixelRatio;
       final Rect headerBounds = tester.getRect(header);
-      final Rect tabsBounds =
-          tester.getRect(find.byWidget(headerWidget.titleWidget!));
+      final Rect tabsBounds = tester.getRect(
+        find.byWidget(headerWidget.titleWidget!),
+      );
       debugPrint(
-          '[mobile-layout] safeTop=$safeTop header=$headerBounds tabs=$tabsBounds');
+        '[mobile-layout] safeTop=$safeTop header=$headerBounds tabs=$tabsBounds',
+      );
       expect(headerBounds.top, inInclusiveRange(safeTop, safeTop + 8));
       expect(tabsBounds.top - headerBounds.top, lessThanOrEqualTo(4));
       await binding.convertFlutterSurfaceToImage();
@@ -60,41 +69,52 @@ void main() {
       for (int i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      final Finder picker =
-          find.byKey(const ValueKey<String>('downloads-resource-type-picker'));
+      final Finder picker = find.byKey(
+        const ValueKey<String>('downloads-resource-type-picker'),
+      );
       debugPrint(
-          '[mobile-layout] resource picker visible=${picker.evaluate().length}');
+        '[mobile-layout] resource picker visible=${picker.evaluate().length}',
+      );
       // 资源域是 LibrarySectionTabs(secondary)：整排一个焦点停靠点，只认左右方向键。
       final Finder videoSegment = find.ancestor(
         of: find.descendant(of: picker, matching: find.text(t.nav_video)),
         matching: find.byType(Tab),
       );
-      expect(await driver.selectTab(videoSegment), isTrue,
-          reason: 'video resource segment must be selectable by arrow keys');
+      expect(
+        await driver.selectTab(videoSegment),
+        isTrue,
+        reason: 'video resource segment must be selectable by arrow keys',
+      );
       for (int i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      final Finder filters =
-          find.byKey(const ValueKey<String>('video-discovery-open-filters'));
+      final Finder filters = find.byKey(
+        const ValueKey<String>('video-discovery-open-filters'),
+      );
       debugPrint(
-          '[mobile-layout] filters visible=${filters.evaluate().length}');
+        '[mobile-layout] filters visible=${filters.evaluate().length}',
+      );
       expect(filters, findsOneWidget);
       await binding.takeScreenshot('mobile-video-resources');
       expect(await driver.focusWidget(filters), isTrue);
       await driver.activate();
-      expect(find.byKey(const ValueKey<String>('video-discovery-filter-sheet')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('video-discovery-filter-sheet')),
+        findsOneWidget,
+      );
       for (int i = 0; i < 4; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      final Rect sheetBounds = tester.getRect(find.byKey(
-        const ValueKey<String>('video-discovery-filter-sheet'),
-      ));
+      final Rect sheetBounds = tester.getRect(
+        find.byKey(const ValueKey<String>('video-discovery-filter-sheet')),
+      );
       debugPrint('[mobile-layout] filterSheet=$sheetBounds');
       expect(
-          sheetBounds.top,
-          lessThan(
-              tester.view.physicalSize.height / tester.view.devicePixelRatio));
+        sheetBounds.top,
+        lessThan(
+          tester.view.physicalSize.height / tester.view.devicePixelRatio,
+        ),
+      );
       await binding.takeScreenshot('mobile-resource-filters');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 300));

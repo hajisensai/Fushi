@@ -12,10 +12,8 @@ import 'package:path/path.dart' as p;
 base class _DirectIoOverrides extends IOOverrides {}
 
 class _ReadInterceptingFile implements File {
-  _ReadInterceptingFile({
-    required File delegate,
-    required this.afterRead,
-  }) : _delegate = delegate;
+  _ReadInterceptingFile({required File delegate, required this.afterRead})
+    : _delegate = delegate;
 
   final File _delegate;
   final Future<void> Function(File file, Uint8List bytes) afterRead;
@@ -94,10 +92,11 @@ void main() {
       );
     });
 
-    test('x64 uses its own Luna binaries and does not require x86 locale DLLs',
-        () {
-      final List<String> required = galgameHelperRequiredFiles('x64');
-      expect(
+    test(
+      'x64 uses its own Luna binaries and does not require x86 locale DLLs',
+      () {
+        final List<String> required = galgameHelperRequiredFiles('x64');
+        expect(
           required,
           containsAll(<String>[
             'fushi_voice_injector.exe',
@@ -107,10 +106,12 @@ void main() {
             'unity_audio_runtime/fushi_unity_audio_extract.exe',
             'unity_audio_runtime/classdata.tpk',
             'unity_audio_runtime/vgmstream-cli.exe',
-          ]));
-      expect(required, isNot(contains('LoaderDll.dll')));
-      expect(required, isNot(contains('LocaleEmulator.dll')));
-    });
+          ]),
+        );
+        expect(required, isNot(contains('LoaderDll.dll')));
+        expect(required, isNot(contains('LocaleEmulator.dll')));
+      },
+    );
 
     test('missing-file detection is case-insensitive and complete', () {
       final List<String> present =
@@ -118,17 +119,13 @@ void main() {
             ..remove('LocaleEmulator.dll')
             ..remove('LocaleEmulator-LGPL-3.0.txt')
             ..add('localeemulator-lgpl-3.0.TXT');
-      expect(
-        galgameHelperMissingFiles('x86', present),
-        <String>['LocaleEmulator.dll'],
-      );
+      expect(galgameHelperMissingFiles('x86', present), <String>[
+        'LocaleEmulator.dll',
+      ]);
     });
 
     test('unknown architecture is rejected', () {
-      expect(
-        () => galgameHelperRequiredFiles('arm64'),
-        throwsArgumentError,
-      );
+      expect(() => galgameHelperRequiredFiles('arm64'), throwsArgumentError);
     });
   });
 
@@ -154,11 +151,13 @@ void main() {
       for (final String arch in <String>['x86', 'x64']) {
         expect(
           () => galgameHelperRequireVerifiedSha(null, arch),
-          throwsA(isA<GalgameHelperInstallException>().having(
-            (GalgameHelperInstallException e) => e.failure,
-            'failure',
-            GalgameHelperInstallFailure.verificationFailed,
-          )),
+          throwsA(
+            isA<GalgameHelperInstallException>().having(
+              (GalgameHelperInstallException e) => e.failure,
+              'failure',
+              GalgameHelperInstallFailure.verificationFailed,
+            ),
+          ),
           reason: arch,
         );
       }
@@ -217,10 +216,7 @@ void main() {
       bool corruptSha = false,
       Set<String> omittedFiles = const <String>{},
     }) async {
-      final List<int> bytes = bundleBytes(
-        arch,
-        omittedFiles: omittedFiles,
-      );
+      final List<int> bytes = bundleBytes(arch, omittedFiles: omittedFiles);
       final File zip = File(p.join(bundle.path, galgameHelperZipName(arch)));
       await zip.writeAsBytes(bytes, flush: true);
       final String digest = corruptSha
@@ -242,24 +238,22 @@ void main() {
         await file.writeAsString('$contentPrefix:$arch:$name', flush: true);
       }
       if (marker != null) {
-        await File(p.join(installed.path, galgameHelperMarkerName()))
-            .writeAsString(marker, flush: true);
+        await File(
+          p.join(installed.path, galgameHelperMarkerName()),
+        ).writeAsString(marker, flush: true);
       }
     }
 
     GalgameHelperInstaller installer() => GalgameHelperInstaller(
-          bundledDirectory: bundle,
-          installDirectory: (String arch) =>
-              Directory(p.join(installRoot.path, arch)),
-        );
+      bundledDirectory: bundle,
+      installDirectory: (String arch) =>
+          Directory(p.join(installRoot.path, arch)),
+    );
 
     test('主包含 zip + 侧车时零网络完成校验、换入和版本标记', () async {
       await writeBundle('x64');
 
-      expect(
-        await installer().installBundledHelperForTesting('x64'),
-        isTrue,
-      );
+      expect(await installer().installBundledHelperForTesting('x64'), isTrue);
 
       final Directory installed = Directory(p.join(installRoot.path, 'x64'));
       expect(
@@ -268,9 +262,11 @@ void main() {
           installed
               .listSync(recursive: true, followLinks: false)
               .whereType<File>()
-              .map((File file) => p
-                  .relative(file.path, from: installed.path)
-                  .replaceAll('\\', '/')),
+              .map(
+                (File file) => p
+                    .relative(file.path, from: installed.path)
+                    .replaceAll('\\', '/'),
+              ),
         ),
         isEmpty,
       );
@@ -315,11 +311,7 @@ void main() {
       expect(zipReads, 1, reason: '校验和解压不得二次读取可替换的 bundle 路径');
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x86',
-            'fushi_voice_injector.exe',
-          ),
+          p.join(installRoot.path, 'x86', 'fushi_voice_injector.exe'),
         ).readAsStringSync(),
         'fixture:x86:fushi_voice_injector.exe',
         reason: '摘要校验与解压必须消费同一只读快照',
@@ -332,18 +324,10 @@ void main() {
       final String digest = sha256.convert(zip.readAsBytesSync()).toString();
       await writeInstalled('x64', marker: digest);
       final File injector = File(
-        p.join(
-          installRoot.path,
-          'x64',
-          'fushi_voice_injector.exe',
-        ),
+        p.join(installRoot.path, 'x64', 'fushi_voice_injector.exe'),
       );
       final File marker = File(
-        p.join(
-          installRoot.path,
-          'x64',
-          galgameHelperMarkerName(),
-        ),
+        p.join(installRoot.path, 'x64', galgameHelperMarkerName()),
       );
       final DateTime oldTime = DateTime.utc(2001, 2, 3, 4, 5, 6);
       injector.setLastModifiedSync(oldTime);
@@ -369,36 +353,29 @@ void main() {
 
       expect(ensured, isTrue);
       expect(zipReads, 1, reason: 'fast path 仍须核当前随包 zip 摘要');
-      expect(
-        injector.readAsStringSync(),
-        'old:x64:fushi_voice_injector.exe',
-      );
+      expect(injector.readAsStringSync(), 'old:x64:fushi_voice_injector.exe');
       expect(injector.lastModifiedSync(), injectorMtimeBefore);
       expect(marker.lastModifiedSync(), markerMtimeBefore);
     });
 
     test('BUG-1246：完整旧安装的 marker 与随包版本不同时仍原子换入新版', () async {
-      await writeInstalled(
-        'x86',
-        marker: List<String>.filled(64, 'a').join(),
-      );
+      await writeInstalled('x86', marker: List<String>.filled(64, 'a').join());
       await writeBundle('x86');
 
-      expect(
-        await installer().ensureBundledVersionForTesting('x86'),
-        isTrue,
-      );
+      expect(await installer().ensureBundledVersionForTesting('x86'), isTrue);
 
       final Directory installed = Directory(p.join(installRoot.path, 'x86'));
       expect(
-        File(p.join(installed.path, 'fushi_voice_injector.exe'))
-            .readAsStringSync(),
+        File(
+          p.join(installed.path, 'fushi_voice_injector.exe'),
+        ).readAsStringSync(),
         'fixture:x86:fushi_voice_injector.exe',
       );
       final File zip = File(p.join(bundle.path, galgameHelperZipName('x86')));
       expect(
-        File(p.join(installed.path, galgameHelperMarkerName()))
-            .readAsStringSync(),
+        File(
+          p.join(installed.path, galgameHelperMarkerName()),
+        ).readAsStringSync(),
         sha256.convert(zip.readAsBytesSync()).toString(),
       );
     });
@@ -412,29 +389,18 @@ void main() {
         await writeInstalled('x86', marker: markerCase.value);
         await writeBundle('x86');
 
-        expect(
-          await installer().ensureBundledVersionForTesting('x86'),
-          isTrue,
-        );
+        expect(await installer().ensureBundledVersionForTesting('x86'), isTrue);
 
         final File zip = File(p.join(bundle.path, galgameHelperZipName('x86')));
         expect(
           File(
-            p.join(
-              installRoot.path,
-              'x86',
-              'fushi_voice_injector.exe',
-            ),
+            p.join(installRoot.path, 'x86', 'fushi_voice_injector.exe'),
           ).readAsStringSync(),
           'fixture:x86:fushi_voice_injector.exe',
         );
         expect(
           File(
-            p.join(
-              installRoot.path,
-              'x86',
-              galgameHelperMarkerName(),
-            ),
+            p.join(installRoot.path, 'x86', galgameHelperMarkerName()),
           ).readAsStringSync(),
           sha256.convert(zip.readAsBytesSync()).toString(),
         );
@@ -445,27 +411,16 @@ void main() {
       final String oldMarker = List<String>.filled(64, 'b').join();
       await writeInstalled('x64', marker: oldMarker);
 
-      expect(
-        await installer().ensureBundledVersionForTesting('x64'),
-        isTrue,
-      );
+      expect(await installer().ensureBundledVersionForTesting('x64'), isTrue);
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x64',
-            'fushi_voice_injector.exe',
-          ),
+          p.join(installRoot.path, 'x64', 'fushi_voice_injector.exe'),
         ).readAsStringSync(),
         'old:x64:fushi_voice_injector.exe',
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x64',
-            galgameHelperMarkerName(),
-          ),
+          p.join(installRoot.path, 'x64', galgameHelperMarkerName()),
         ).readAsStringSync(),
         oldMarker,
       );
@@ -473,25 +428,15 @@ void main() {
 
     test('没有随包资产且现有安装残缺时拒绝启动并保留现场', () async {
       final File injector = File(
-        p.join(
-          installRoot.path,
-          'x86',
-          'fushi_voice_injector.exe',
-        ),
+        p.join(installRoot.path, 'x86', 'fushi_voice_injector.exe'),
       );
       injector.parent.createSync(recursive: true);
       injector.writeAsStringSync('only-old-injector');
 
-      expect(
-        await installer().ensureBundledVersionForTesting('x86'),
-        isFalse,
-      );
+      expect(await installer().ensureBundledVersionForTesting('x86'), isFalse);
       expect(injector.readAsStringSync(), 'only-old-injector');
       expect(
-        galgameHelperMissingFiles(
-          'x86',
-          <String>['fushi_voice_injector.exe'],
-        ),
+        galgameHelperMissingFiles('x86', <String>['fushi_voice_injector.exe']),
         isNotEmpty,
       );
     });
@@ -521,21 +466,13 @@ void main() {
         );
         expect(
           File(
-            p.join(
-              installRoot.path,
-              'x86',
-              'fushi_voice_injector.exe',
-            ),
+            p.join(installRoot.path, 'x86', 'fushi_voice_injector.exe'),
           ).readAsStringSync(),
           'old:x86:fushi_voice_injector.exe',
         );
         expect(
           File(
-            p.join(
-              installRoot.path,
-              'x86',
-              galgameHelperMarkerName(),
-            ),
+            p.join(installRoot.path, 'x86', galgameHelperMarkerName()),
           ).readAsStringSync(),
           oldMarker,
         );
@@ -543,10 +480,7 @@ void main() {
     }
 
     test('开发/旧包没有随附归档时安装入口明确返回 false', () async {
-      expect(
-        await installer().installBundledHelperForTesting('x86'),
-        isFalse,
-      );
+      expect(await installer().installBundledHelperForTesting('x86'), isFalse);
       expect(installRoot.existsSync(), isFalse);
     });
 
@@ -557,29 +491,23 @@ void main() {
 
       await expectLater(
         installer().ensureBundledVersionForTesting('x86'),
-        throwsA(isA<GalgameHelperInstallException>().having(
-          (GalgameHelperInstallException e) => e.failure,
-          'failure',
-          GalgameHelperInstallFailure.verificationFailed,
-        )),
+        throwsA(
+          isA<GalgameHelperInstallException>().having(
+            (GalgameHelperInstallException e) => e.failure,
+            'failure',
+            GalgameHelperInstallFailure.verificationFailed,
+          ),
+        ),
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x86',
-            'fushi_voice_injector.exe',
-          ),
+          p.join(installRoot.path, 'x86', 'fushi_voice_injector.exe'),
         ).readAsStringSync(),
         'old:x86:fushi_voice_injector.exe',
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x86',
-            galgameHelperMarkerName(),
-          ),
+          p.join(installRoot.path, 'x86', galgameHelperMarkerName()),
         ).readAsStringSync(),
         oldMarker,
       );
@@ -602,21 +530,13 @@ void main() {
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x86',
-            'fushi_voice_injector.exe',
-          ),
+          p.join(installRoot.path, 'x86', 'fushi_voice_injector.exe'),
         ).readAsStringSync(),
         'old:x86:fushi_voice_injector.exe',
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x86',
-            galgameHelperMarkerName(),
-          ),
+          p.join(installRoot.path, 'x86', galgameHelperMarkerName()),
         ).readAsStringSync(),
         sidecarSha,
       );
@@ -625,10 +545,7 @@ void main() {
     test('已验摘要但清单缺失时拒绝换入并保留完整旧目录', () async {
       final String oldMarker = List<String>.filled(64, 'd').join();
       await writeInstalled('x64', marker: oldMarker);
-      await writeBundle(
-        'x64',
-        omittedFiles: <String>{'fushi_voice_hook.dll'},
-      );
+      await writeBundle('x64', omittedFiles: <String>{'fushi_voice_hook.dll'});
 
       await expectLater(
         installer().ensureBundledVersionForTesting('x64'),
@@ -642,21 +559,13 @@ void main() {
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x64',
-            'fushi_voice_injector.exe',
-          ),
+          p.join(installRoot.path, 'x64', 'fushi_voice_injector.exe'),
         ).readAsStringSync(),
         'old:x64:fushi_voice_injector.exe',
       );
       expect(
         File(
-          p.join(
-            installRoot.path,
-            'x64',
-            galgameHelperMarkerName(),
-          ),
+          p.join(installRoot.path, 'x64', galgameHelperMarkerName()),
         ).readAsStringSync(),
         oldMarker,
       );
@@ -673,8 +582,9 @@ void main() {
     final String releaseWorkflow = File(
       '../.github/workflows/release-desktop.yml',
     ).readAsStringSync();
-    final String installer =
-        File('windows/installer/fushi.iss').readAsStringSync();
+    final String installer = File(
+      'windows/installer/fushi.iss',
+    ).readAsStringSync();
 
     test('组包脚本清单与 Dart 安装清单逐文件一致', () {
       for (final String arch in <String>['x64', 'x86']) {
@@ -691,10 +601,7 @@ void main() {
     // 之后只剩一个后果——磁盘上多一份必须与本体保持同步的解压副本，而同步断掉就是
     // BUG-1448。现在改为**构建期**解压成普通文件进 `voice_hook\<arch>\`，两者同源。
     test('debug 与 release 都构建 helper 并在构建期解压进 bundle (BUG-1449)', () {
-      for (final String workflow in <String>[
-        debugWorkflow,
-        releaseWorkflow,
-      ]) {
+      for (final String workflow in <String>[debugWorkflow, releaseWorkflow]) {
         expect(
           workflow,
           contains(

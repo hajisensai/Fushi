@@ -43,28 +43,33 @@ void main() {
   // 测试的工作目录是 `fushi/`。
   final Directory appLib = Directory('lib');
   final Directory packagesDir = Directory(p.join('..', 'packages'));
-  final File decoratorFile =
-      File(p.join('lib', 'src', 'anki', 'delegating_anki_repository.dart'));
-  final File baseFile = File(p.join(
-    '..',
-    'packages',
-    'fushi_anki',
-    'lib',
-    'src',
-    'base_anki_repository.dart',
-  ));
+  final File decoratorFile = File(
+    p.join('lib', 'src', 'anki', 'delegating_anki_repository.dart'),
+  );
+  final File baseFile = File(
+    p.join(
+      '..',
+      'packages',
+      'fushi_anki',
+      'lib',
+      'src',
+      'base_anki_repository.dart',
+    ),
+  );
 
   test('装饰器覆盖了所有被后端实现覆盖过的基类成员', () {
-    expect(decoratorFile.existsSync(), isTrue,
-        reason: '找不到装饰器源码，本守卫失去意义');
+    expect(decoratorFile.existsSync(), isTrue, reason: '找不到装饰器源码，本守卫失去意义');
     expect(baseFile.existsSync(), isTrue, reason: '找不到 BaseAnkiRepository');
 
     final String decoratorSource = decoratorFile.readAsStringSync();
     final Set<String> delegated = _overriddenMembers(decoratorSource);
     // 空壳自检：装饰器至少得覆盖十几个成员，否则说明正则没匹配上，
     // 下面的差集会恒为空、守卫恒绿。
-    expect(delegated.length, greaterThan(15),
-        reason: '只解析出 ${delegated.length} 个委派，正则大概率没匹配上');
+    expect(
+      delegated.length,
+      greaterThan(15),
+      reason: '只解析出 ${delegated.length} 个委派，正则大概率没匹配上',
+    );
 
     // 枚举所有后端实现（含 app 侧的 AnkiMobile / RemoteMining）。
     final List<File> candidates = <File>[
@@ -82,8 +87,11 @@ void main() {
     }
     // 哨兵：本仓至少有 AnkiConnect / AnkiDroid / AnkiMobile / RemoteMining 四个
     // 实现。扫到的数量掉下来，多半是扫描根写错了、而不是真的删了后端。
-    expect(backendCount, greaterThanOrEqualTo(4),
-        reason: '只扫到 $backendCount 个后端实现，扫描根可能不对');
+    expect(
+      backendCount,
+      greaterThanOrEqualTo(4),
+      reason: '只扫到 $backendCount 个后端实现，扫描根可能不对',
+    );
 
     // 只关心基类里真实存在的成员：后端自己的私有辅助方法不算。
     final String baseSource = baseFile.readAsStringSync();
@@ -95,7 +103,8 @@ void main() {
     expect(
       missing,
       isEmpty,
-      reason: '这些成员被某个后端覆盖过，但 DelegatingAnkiRepository 没有委派：'
+      reason:
+          '这些成员被某个后端覆盖过，但 DelegatingAnkiRepository 没有委派：'
           '$missing\n'
           '漏委派不会报错，只会让调用静默掉回基类降级默认。'
           '请在 delegating_anki_repository.dart 里补上纯委派实现。',

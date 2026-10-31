@@ -154,8 +154,8 @@ void main() {
       // 轨迹半径、swipe 判的是净位移，而轨迹半径恒 ≥ 净位移。
       final ({int dist, int fastDist, int fastVelocity}) keenest =
           ReaderSettings.swipePageTurnDistThresholds(
-        ReaderSettings.maxSwipePageTurnSensitivity,
-      );
+            ReaderSettings.maxSwipePageTurnSensitivity,
+          );
       expect(keenest.dist, greaterThan(ReaderSettings.tapSlopPx));
     });
 
@@ -169,8 +169,8 @@ void main() {
       // 调回去，这条会红——「默认手感必须比修复前更灵敏」是这次改动的全部意义。
       final ({int dist, int fastDist, int fastVelocity}) t =
           ReaderSettings.swipePageTurnDistThresholds(
-        ReaderSettings.defaultSwipePageTurnSensitivity,
-      );
+            ReaderSettings.defaultSwipePageTurnSensitivity,
+          );
       expect(t.dist, lessThan(44));
       expect(t.fastDist, lessThan(22));
       expect(t.fastVelocity, lessThan(900));
@@ -195,7 +195,8 @@ void main() {
       expect(
         src.contains("'swipe_page_turn_sensitivity'"),
         isFalse,
-        reason: 'BUG-2563：旧倍数 key 只读不写，且必须经 '
+        reason:
+            'BUG-2563：旧倍数 key 只读不写，且必须经 '
             'ReaderSettings.legacySwipeSensitivityMultiplierKey 引用，'
             '不得在 source 里写裸字面量——两处各写一份必然漂移。',
       );
@@ -207,7 +208,8 @@ void main() {
       expect(
         src.contains('ReaderSettings.legacySwipeSensitivityMultiplierKey'),
         isTrue,
-        reason: 'BUG-2563：回退分支读不到新 key 时必须按倒数换算旧值，'
+        reason:
+            'BUG-2563：回退分支读不到新 key 时必须按倒数换算旧值，'
             '否则 `:popup` 侧读出的手感与阅读器进程相反。',
       );
     });

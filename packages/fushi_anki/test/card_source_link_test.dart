@@ -68,11 +68,8 @@ class _SourceRepository extends BaseAnkiRepository {
     }
   }
 
-  List<String> tags(String userTags) => buildNoteTags(
-        userTags,
-        includeHibiki: false,
-        includeCategory: false,
-      );
+  List<String> tags(String userTags) =>
+      buildNoteTags(userTags, includeHibiki: false, includeCategory: false);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -81,16 +78,16 @@ class _SourceRepository extends BaseAnkiRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   CardSourceLink book() => CardSourceLink(
-        kind: CardSourceKind.book,
-        uid: 'portable-book-uid',
-        sourceId: _sourceId,
-        chapterIndex: 2,
-        charOffset: 1234,
-        charLength: 28,
-        audioFileIndex: 1,
-        startMs: 45000,
-        endMs: 49000,
-      );
+    kind: CardSourceKind.book,
+    uid: 'portable-book-uid',
+    sourceId: _sourceId,
+    chapterIndex: 2,
+    charOffset: 1234,
+    charLength: 28,
+    audioFileIndex: 1,
+    startMs: 45000,
+    endMs: 49000,
+  );
 
   test('all media locators round trip with their original position', () {
     final List<CardSourceLink> links = <CardSourceLink>[
@@ -121,76 +118,88 @@ void main() {
     expect(CardSourceLink.parse(book().toUri().toString()).charOffset, 1234);
   });
 
-  test('Windows shell root-path normalization preserves the complete locator',
-      () {
-    final CardSourceLink source = book();
-    final String shellUrl = source.toUri().replace(path: '/').toString();
-    expect(CardSourceLink.parse(shellUrl).toUri(), source.toUri());
-    final String html =
-        '<a href="${const HtmlEscape(HtmlEscapeMode.attribute).convert(shellUrl)}">Fushi</a>';
-    expect(CardSourceLink.fromHtml(html).single.toUri(), source.toUri());
-    for (final String path in <String>['//', '/path', '/source']) {
-      expect(
-        () =>
-            CardSourceLink.parse(source.toUri().replace(path: path).toString()),
-        throwsFormatException,
-      );
-    }
-  });
+  test(
+    'Windows shell root-path normalization preserves the complete locator',
+    () {
+      final CardSourceLink source = book();
+      final String shellUrl = source.toUri().replace(path: '/').toString();
+      expect(CardSourceLink.parse(shellUrl).toUri(), source.toUri());
+      final String html =
+          '<a href="${const HtmlEscape(HtmlEscapeMode.attribute).convert(shellUrl)}">Fushi</a>';
+      expect(CardSourceLink.fromHtml(html).single.toUri(), source.toUri());
+      for (final String path in <String>['//', '/path', '/source']) {
+        expect(
+          () => CardSourceLink.parse(
+            source.toUri().replace(path: path).toString(),
+          ),
+          throwsFormatException,
+        );
+      }
+    },
+  );
 
   test(
-      'video requires a valid file fingerprint and preserves it across note updates',
-      () {
-    final CardSourceLink video = CardSourceLink(
+    'video requires a valid file fingerprint and preserves it across note updates',
+    () {
+      final CardSourceLink video = CardSourceLink(
         kind: CardSourceKind.video,
         uid: 'video/作品',
         sourceId: _sourceId,
         episodeIndex: 0,
         startMs: 1000,
         endMs: 2000,
-        fingerprint: _fingerprint);
-    expect(CardSourceLink.parse(video.toUri().toString()).fingerprint,
-        _fingerprint);
-    expect(video.withSourceId(CardSourceLink.newSourceId()).fingerprint,
-        _fingerprint);
-    for (final String? invalid in <String?>[
-      null,
-      '',
-      'abc',
-      '${_fingerprint}f'
-    ]) {
+        fingerprint: _fingerprint,
+      );
       expect(
+        CardSourceLink.parse(video.toUri().toString()).fingerprint,
+        _fingerprint,
+      );
+      expect(
+        video.withSourceId(CardSourceLink.newSourceId()).fingerprint,
+        _fingerprint,
+      );
+      for (final String? invalid in <String?>[
+        null,
+        '',
+        'abc',
+        '${_fingerprint}f',
+      ]) {
+        expect(
           () => CardSourceLink(
-              kind: CardSourceKind.video,
-              uid: 'video/作品',
-              sourceId: _sourceId,
-              episodeIndex: 0,
-              startMs: 1000,
-              endMs: 2000,
-              fingerprint: invalid),
-          throwsFormatException);
-    }
-  });
+            kind: CardSourceKind.video,
+            uid: 'video/作品',
+            sourceId: _sourceId,
+            episodeIndex: 0,
+            startMs: 1000,
+            endMs: 2000,
+            fingerprint: invalid,
+          ),
+          throwsFormatException,
+        );
+      }
+    },
+  );
 
-  test(
-      'BUG-3490 online content identities may omit the fingerprint, '
+  test('BUG-3490 online content identities may omit the fingerprint, '
       'file-name identities may not', () {
     CardSourceLink video(String uid, {String? fingerprint}) => CardSourceLink(
-        kind: CardSourceKind.video,
-        uid: uid,
-        sourceId: _sourceId,
-        episodeIndex: 0,
-        startMs: 1000,
-        endMs: 2000,
-        fingerprint: fingerprint);
+      kind: CardSourceKind.video,
+      uid: uid,
+      sourceId: _sourceId,
+      episodeIndex: 0,
+      startMs: 1000,
+      endMs: 2000,
+      fingerprint: fingerprint,
+    );
     for (final String uid in <String>[
       'video/stream/yt:dQw4w9WgXcQ',
       'video/stream/0123456789ab',
       'anime-source:eu.kanade.tachiyomi.animeextension.en.x:42:/ep/5',
     ]) {
       expect(CardSourceLink.isContentAddressedVideoUid(uid), isTrue);
-      final CardSourceLink parsed =
-          CardSourceLink.parse(video(uid).toUri().toString());
+      final CardSourceLink parsed = CardSourceLink.parse(
+        video(uid).toUri().toString(),
+      );
       expect(parsed.uid, uid);
       expect(parsed.fingerprint, isNull);
       // Downloaded online episodes still carry their file fingerprint.
@@ -206,43 +215,48 @@ void main() {
     }
   });
 
-  test('real video namespace and Unicode title identities survive round trip',
-      () {
-    for (final String uid in <String>[
-      'video/夏目友人帳 第1話 (2)',
-      'video/playlist/我的 播放列表 (3)',
-      'video/日本語 ${List<String>.filled(150, '文').join()}',
-    ]) {
-      final CardSourceLink link = CardSourceLink(
+  test(
+    'real video namespace and Unicode title identities survive round trip',
+    () {
+      for (final String uid in <String>[
+        'video/夏目友人帳 第1話 (2)',
+        'video/playlist/我的 播放列表 (3)',
+        'video/日本語 ${List<String>.filled(150, '文').join()}',
+      ]) {
+        final CardSourceLink link = CardSourceLink(
           kind: CardSourceKind.video,
           fingerprint: _fingerprint,
           uid: uid,
           sourceId: _sourceId,
           episodeIndex: 0,
           startMs: 15000,
-          endMs: 16000);
-      expect(CardSourceLink.parse(link.toUri().toString()).uid, uid);
-    }
-    for (final String uid in <String>[
-      '/home/private.mp4',
-      r'C:\private.mp4',
-      'file:///private.mp4',
-      '../private.mp4',
-      'video/../private.mp4',
-      'video/\u0000title'
-    ]) {
-      expect(
+          endMs: 16000,
+        );
+        expect(CardSourceLink.parse(link.toUri().toString()).uid, uid);
+      }
+      for (final String uid in <String>[
+        '/home/private.mp4',
+        r'C:\private.mp4',
+        'file:///private.mp4',
+        '../private.mp4',
+        'video/../private.mp4',
+        'video/\u0000title',
+      ]) {
+        expect(
           () => CardSourceLink(
-              kind: CardSourceKind.video,
-              fingerprint: _fingerprint,
-              uid: uid,
-              sourceId: _sourceId,
-              episodeIndex: 0,
-              startMs: 0,
-              endMs: 1),
-          throwsFormatException);
-    }
-  });
+            kind: CardSourceKind.video,
+            fingerprint: _fingerprint,
+            uid: uid,
+            sourceId: _sourceId,
+            episodeIndex: 0,
+            startMs: 0,
+            endMs: 1,
+          ),
+          throwsFormatException,
+        );
+      }
+    },
+  );
 
   test(
     'AnkiConnect source lookup searches fields by source ID substring',
@@ -366,14 +380,15 @@ void main() {
 
   test('HTML escaping and media replacement preserve the source link', () {
     final CardSourceLink link = book();
-    final AnkiMiningContext copied = AnkiMiningContext(
-      sentence: 'sentence',
-      sourceLink: link,
-      coverPath: '/private/local.png',
-    ).withMediaRefs(
-      coverRef: '<img src="uploaded.png">',
-      sentenceAudioRef: null,
-    );
+    final AnkiMiningContext copied =
+        AnkiMiningContext(
+          sentence: 'sentence',
+          sourceLink: link,
+          coverPath: '/private/local.png',
+        ).withMediaRefs(
+          coverRef: '<img src="uploaded.png">',
+          sentenceAudioRef: null,
+        );
     expect(copied.sourceLink, same(link));
     final String html = AnkiHandlebarRenderer.render(
       '{source-link}',
@@ -479,9 +494,11 @@ void main() {
     expect(book().toHtml(), contains('sourceId=$_sourceId'));
     expect(
       CardSourceLink.validateSourceId(CardSourceLink.newSourceId()),
-      matches(RegExp(
-        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-      )),
+      matches(
+        RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        ),
+      ),
     );
     expect(
       () => CardSourceLink.validateSourceId('12345678123442348234123456789abc'),
@@ -489,90 +506,101 @@ void main() {
     );
   });
 
-  test('source lookup confirms candidates by parsed href, not substring',
-      () async {
-    final _SourceRepository repo = _SourceRepository();
-    final CardSourceLink other = book().withSourceId(
-      '12345678-1234-4234-8234-123456789abd',
-    );
-    repo.matches = <int>[40, 41, 42, 43];
-    repo.candidateFields = <int, Map<String, String>>{
-      // Substring only: the ID is quoted in prose, not in a source href.
-      40: <String, String>{'Sentence': 'see sourceId=$_sourceId'},
-      // A real source link carrying a different ID.
-      41: <String, String>{'MiscInfo': other.toHtml()},
-      // Attribute-escaped href on a legacy note that still has the old tag.
-      42: <String, String>{
-        'MiscInfo': 'Title ${book().toHtml()}',
-        'Tags': 'fushi_source_12345678123442348234123456789abc',
-      },
-      // Deleted between search and read.
-      43: <String, String>{},
-    };
-    final AnkiSourceNote note = (await repo.readSourceNote(_sourceId))!;
-    expect(note.noteId, 42);
-    expect(note.fields['MiscInfo'], startsWith('Title '));
+  test(
+    'source lookup confirms candidates by parsed href, not substring',
+    () async {
+      final _SourceRepository repo = _SourceRepository();
+      final CardSourceLink other = book().withSourceId(
+        '12345678-1234-4234-8234-123456789abd',
+      );
+      repo.matches = <int>[40, 41, 42, 43];
+      repo.candidateFields = <int, Map<String, String>>{
+        // Substring only: the ID is quoted in prose, not in a source href.
+        40: <String, String>{'Sentence': 'see sourceId=$_sourceId'},
+        // A real source link carrying a different ID.
+        41: <String, String>{'MiscInfo': other.toHtml()},
+        // Attribute-escaped href on a legacy note that still has the old tag.
+        42: <String, String>{
+          'MiscInfo': 'Title ${book().toHtml()}',
+          'Tags': 'fushi_source_12345678123442348234123456789abc',
+        },
+        // Deleted between search and read.
+        43: <String, String>{},
+      };
+      final AnkiSourceNote note = (await repo.readSourceNote(_sourceId))!;
+      expect(note.noteId, 42);
+      expect(note.fields['MiscInfo'], startsWith('Title '));
 
-    repo.matches = <int>[40, 41];
-    expect(await repo.readSourceNote(_sourceId), isNull);
+      repo.matches = <int>[40, 41];
+      expect(await repo.readSourceNote(_sourceId), isNull);
 
-    repo.candidateFields[41] = <String, String>{'MiscInfo': book().toHtml()};
-    repo.matches = <int>[41, 42];
-    await expectLater(repo.readSourceNote(_sourceId), throwsStateError);
-  });
+      repo.candidateFields[41] = <String, String>{'MiscInfo': book().toHtml()};
+      repo.matches = <int>[41, 42];
+      await expectLater(repo.readSourceNote(_sourceId), throwsStateError);
+    },
+  );
 
-  test('source lookup propagates backend failure instead of "not found"',
-      () async {
-    final _SourceRepository repo = _SourceRepository();
-    repo.readFailure = const SocketException('AnkiConnect timed out');
-    await expectLater(
-      repo.readSourceNote(_sourceId),
-      throwsA(isA<SocketException>()),
-    );
-  });
+  test(
+    'source lookup propagates backend failure instead of "not found"',
+    () async {
+      final _SourceRepository repo = _SourceRepository();
+      repo.readFailure = const SocketException('AnkiConnect timed out');
+      await expectLater(
+        repo.readSourceNote(_sourceId),
+        throwsA(isA<SocketException>()),
+      );
+    },
+  );
 
-  test('AnkiDroid resolves the source ID and sends only the selected fields',
-      () async {
-    const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
-    final List<MethodCall> calls = <MethodCall>[];
-    final Map<String, String> fields = <String, String>{
-      'Sentence': 'original',
-      'Meaning': 'manual note',
-      'MiscInfo': _bookHtml,
-    };
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      switch (call.method) {
-        case 'requestAnkidroidPermissions':
-          return true;
-        case 'findNotesBySourceId':
-          expect((call.arguments as Map)['sourceId'], _sourceId);
-          return <int>[42];
-        case 'notesInfo':
-          return fields;
-        case 'updateNoteFields':
-          fields.addAll(Map<String, String>.from(
-              (call.arguments as Map)['fieldValues'] as Map));
-          return true;
-        default:
-          throw StateError('Unexpected channel call ${call.method}');
-      }
-    });
-    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-    final AnkiRepository repo = AnkiRepository();
-    final AnkiSourceNote original = (await repo.readSourceNote(_sourceId))!;
-    await repo.patchSourceNote(
+  test(
+    'AnkiDroid resolves the source ID and sends only the selected fields',
+    () async {
+      const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
+      final List<MethodCall> calls = <MethodCall>[];
+      final Map<String, String> fields = <String, String>{
+        'Sentence': 'original',
+        'Meaning': 'manual note',
+        'MiscInfo': _bookHtml,
+      };
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        calls.add(call);
+        switch (call.method) {
+          case 'requestAnkidroidPermissions':
+            return true;
+          case 'findNotesBySourceId':
+            expect((call.arguments as Map)['sourceId'], _sourceId);
+            return <int>[42];
+          case 'notesInfo':
+            return fields;
+          case 'updateNoteFields':
+            fields.addAll(
+              Map<String, String>.from(
+                (call.arguments as Map)['fieldValues'] as Map,
+              ),
+            );
+            return true;
+          default:
+            throw StateError('Unexpected channel call ${call.method}');
+        }
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final AnkiRepository repo = AnkiRepository();
+      final AnkiSourceNote original = (await repo.readSourceNote(_sourceId))!;
+      await repo.patchSourceNote(
         original: original,
-        fields: <String, String>{'Sentence': 'replacement'});
-    final MethodCall write =
-        calls.singleWhere((MethodCall c) => c.method == 'updateNoteFields');
-    expect(write.arguments, <String, Object>{
-      'noteId': 42,
-      'fieldValues': <String, String>{'Sentence': 'replacement'}
-    });
-  });
+        fields: <String, String>{'Sentence': 'replacement'},
+      );
+      final MethodCall write = calls.singleWhere(
+        (MethodCall c) => c.method == 'updateNoteFields',
+      );
+      expect(write.arguments, <String, Object>{
+        'noteId': 42,
+        'fieldValues': <String, String>{'Sentence': 'replacement'},
+      });
+    },
+  );
 
   test(
     'ordinary overwrite keeps original marker identity and new position',
@@ -608,15 +636,17 @@ void main() {
   );
 
   test(
-      'ordinary overwrite without a locator preserves the entire old source link',
-      () async {
-    final _SourceRepository repo = _SourceRepository();
-    repo.saved['MiscInfo'] = 'Original title ${book().toHtml()}';
-    final AnkiMiningContext adjusted = await repo.existingContext(
-        const AnkiMiningContext(sentence: 'dictionary update'));
-    expect(adjusted.sourceLink!.toUri(), book().toUri());
-    expect(adjusted.sentence, 'dictionary update');
-  });
+    'ordinary overwrite without a locator preserves the entire old source link',
+    () async {
+      final _SourceRepository repo = _SourceRepository();
+      repo.saved['MiscInfo'] = 'Original title ${book().toHtml()}';
+      final AnkiMiningContext adjusted = await repo.existingContext(
+        const AnkiMiningContext(sentence: 'dictionary update'),
+      );
+      expect(adjusted.sourceLink!.toUri(), book().toUri());
+      expect(adjusted.sentence, 'dictionary update');
+    },
+  );
 
   test('all exact legacy defaults migrate while custom mappings survive', () {
     for (final String value in <String>[
@@ -680,20 +710,23 @@ void main() {
   });
 
   test(
-      'write-after-read conflict preserves concurrent changes without retry or rollback',
-      () async {
-    final _SourceRepository repo = _SourceRepository();
-    final AnkiSourceNote original = (await repo.readSourceNote(_sourceId))!;
-    repo.concurrentSentenceAfterWrite = 'newer external edit';
-    await expectLater(
+    'write-after-read conflict preserves concurrent changes without retry or rollback',
+    () async {
+      final _SourceRepository repo = _SourceRepository();
+      final AnkiSourceNote original = (await repo.readSourceNote(_sourceId))!;
+      repo.concurrentSentenceAfterWrite = 'newer external edit';
+      await expectLater(
         repo.patchSourceNote(
-            original: original,
-            fields: <String, String>{'Sentence': 'replacement'}),
-        throwsStateError);
-    expect(repo.writeCount, 1);
-    expect(repo.saved['Sentence'], 'newer external edit');
-    expect(original.fields['Sentence'], 'old sentence');
-  });
+          original: original,
+          fields: <String, String>{'Sentence': 'replacement'},
+        ),
+        throwsStateError,
+      );
+      expect(repo.writeCount, 1);
+      expect(repo.saved['Sentence'], 'newer external edit');
+      expect(original.fields['Sentence'], 'old sentence');
+    },
+  );
 
   test(
     'source deletion, duplication or identity change rejects before writing',

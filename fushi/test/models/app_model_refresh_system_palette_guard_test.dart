@@ -24,8 +24,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_refresh_palette_guard');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_refresh_palette_guard',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -41,14 +42,16 @@ void main() {
     }
   });
 
-  test('refreshSystemPalette is safe before themeNotifier initialises',
-      () async {
-    // 没跑 initialise()：themeNotifier 尚未装载，正是崩溃窗口。
-    final AppModel appModel = AppModel(testPlatformServices());
+  test(
+    'refreshSystemPalette is safe before themeNotifier initialises',
+    () async {
+      // 没跑 initialise()：themeNotifier 尚未装载，正是崩溃窗口。
+      final AppModel appModel = AppModel(testPlatformServices());
 
-    await expectLater(
-      Future<void>.sync(appModel.refreshSystemPalette),
-      completes,
-    );
-  });
+      await expectLater(
+        Future<void>.sync(appModel.refreshSystemPalette),
+        completes,
+      );
+    },
+  );
 }

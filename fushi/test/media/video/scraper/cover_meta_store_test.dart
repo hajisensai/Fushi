@@ -185,7 +185,10 @@ void main() {
       ),
     );
 
-    expect(await store.markAutoScrapedCleanupPending('legacy', 'abc123'), isTrue);
+    expect(
+      await store.markAutoScrapedCleanupPending('legacy', 'abc123'),
+      isTrue,
+    );
     CoverMeta meta = (await store.get('legacy'))!;
     expect(meta.origin, CoverOrigin.cleanupPending);
     expect(meta.contentSha256, 'abc123');
@@ -206,10 +209,7 @@ void main() {
       CoverOrigin.cleanupReplacement,
     );
 
-    await store.set(
-      'frame',
-      const CoverMeta(origin: CoverOrigin.autoScraped),
-    );
+    await store.set('frame', const CoverMeta(origin: CoverOrigin.autoScraped));
     expect(await store.allowsAutoFrameWrite('frame'), isTrue);
     expect(
       (await store.get('frame'))!.origin,

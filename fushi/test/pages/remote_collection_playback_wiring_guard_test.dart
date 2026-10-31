@@ -18,40 +18,63 @@ void main() {
   }
 
   test('播放器 _initRemote 合集模式用成员列表建 _episodes', () {
-    final String src =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
-    expect(src.contains('bool get _isRemoteCollection'), true,
-        reason: '应有合集连播模式判据 _isRemoteCollection');
+    final String src = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
+    expect(
+      src.contains('bool get _isRemoteCollection'),
+      true,
+      reason: '应有合集连播模式判据 _isRemoteCollection',
+    );
     // PR #1707（9036953d68b）起在线视频源入库集重开时成员来自 buildAnimeSourceLaunch
     // （_resolvedStreamMembers）；widget 透传的成员仍优先，两者都无才是空列表。
     // 压掉空白比对，format 折行不影响。
     final String flat = src.replaceAll(RegExp(r'\s+'), '');
     expect(
-        flat.contains('_remoteMembers=widget.remoteCollectionMembers??'
-            '_resolvedStreamMembers??const<RemoteVideoInfo>[];'),
-        true,
-        reason: '_initRemote 应优先从 widget 取远端合集成员列表，'
-            '其次在线源入库集重建的成员，都无才为空');
-    expect(src.contains('_resolvedStreamMembers = launch.members;'), true,
-        reason: '_resolvedStreamMembers 只来自在线源入库集的 launch');
+      flat.contains(
+        '_remoteMembers=widget.remoteCollectionMembers??'
+        '_resolvedStreamMembers??const<RemoteVideoInfo>[];',
+      ),
+      true,
+      reason:
+          '_initRemote 应优先从 widget 取远端合集成员列表，'
+          '其次在线源入库集重建的成员，都无才为空',
+    );
+    expect(
+      src.contains('_resolvedStreamMembers = launch.members;'),
+      true,
+      reason: '_resolvedStreamMembers 只来自在线源入库集的 launch',
+    );
     // 合集模式下用成员建 _episodes（每成员一个 _PlaylistEpisodeRef）。
     expect(
-        RegExp(r'for \(final RemoteVideoInfo m in _remoteMembers\)')
-            .hasMatch(src),
-        true,
-        reason: '合集模式应遍历 _remoteMembers 建剧集列表');
+      RegExp(
+        r'for \(final RemoteVideoInfo m in _remoteMembers\)',
+      ).hasMatch(src),
+      true,
+      reason: '合集模式应遍历 _remoteMembers 建剧集列表',
+    );
   });
 
   test('播放器 _loadRemoteEpisode 合集模式换成员 id + 切当前成员指针', () {
-    final String src =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
-    expect(src.contains('_activeRemoteMember = info'), true,
-        reason: '换集时应把当前成员指针切到目标成员');
-    expect(src.contains('streamEpisodeIndex'), true,
-        reason: '合集成员各自单视频，episodeIndex 应恒 0（streamEpisodeIndex）');
+    final String src = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
+    expect(
+      src.contains('_activeRemoteMember = info'),
+      true,
+      reason: '换集时应把当前成员指针切到目标成员',
+    );
+    expect(
+      src.contains('streamEpisodeIndex'),
+      true,
+      reason: '合集成员各自单视频，episodeIndex 应恒 0（streamEpisodeIndex）',
+    );
     // _effectiveRemoteInfo 优先返回可变的当前成员，使断点/字幕/上报跟随成员 id。
-    expect(src.contains('_activeRemoteMember ?? widget.remoteInfo'), true,
-        reason: '_effectiveRemoteInfo 应优先返回当前成员');
+    expect(
+      src.contains('_activeRemoteMember ?? widget.remoteInfo'),
+      true,
+      reason: '_effectiveRemoteInfo 应优先返回当前成员',
+    );
   });
 
   test('首页保留有序远端成员 → 播放器的透传接线（_openRemote）', () {
@@ -59,11 +82,18 @@ void main() {
     // itemBuilder 收集有序远端成员」的调用点随横排行退役；但 _openRemote /
     // _buildRemoteVideoCard 的成员透传参数必须保留（散卡远端播放 + 后续详情页
     // 接入远端成员的既定通道），删参即回退成「远端只认 host 下发 episodes」。
-    final String src =
-        read('lib/src/pages/implementations/home_video_page.dart');
-    expect(src.contains('remoteCollectionMembers:'), true,
-        reason: '_openRemote 应把合集成员透传给 neutralizedRemote');
-    expect(src.contains('List<RemoteVideoInfo>? collectionMembers'), true,
-        reason: '_openRemote/_buildRemoteVideoCard 必须保留有序成员透传参数');
+    final String src = read(
+      'lib/src/pages/implementations/home_video_page.dart',
+    );
+    expect(
+      src.contains('remoteCollectionMembers:'),
+      true,
+      reason: '_openRemote 应把合集成员透传给 neutralizedRemote',
+    );
+    expect(
+      src.contains('List<RemoteVideoInfo>? collectionMembers'),
+      true,
+      reason: '_openRemote/_buildRemoteVideoCard 必须保留有序成员透传参数',
+    );
   });
 }

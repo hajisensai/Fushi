@@ -45,11 +45,17 @@ void main() {
       r'C:\manga\vol03.cbz',
     ]);
 
-    expect(find.text(t.manga_import_selection_batch_hint(n: 3)), findsOneWidget);
+    expect(
+      find.text(t.manga_import_selection_batch_hint(n: 3)),
+      findsOneWidget,
+    );
     expect(find.textContaining('vol01.cbz'), findsOneWidget);
     expect(find.textContaining('vol03.cbz'), findsOneWidget);
-    expect(find.text(t.srt_import_title_hint), findsNothing,
-        reason: '一个标题套 N 卷只会得到 X / X (2)……，批量模式不显示标题框');
+    expect(
+      find.text(t.srt_import_title_hint),
+      findsNothing,
+      reason: '一个标题套 N 卷只会得到 X / X (2)……，批量模式不显示标题框',
+    );
   });
 
   testWidgets('非漫画路径不计入批量（只剩一卷时按单卷处理）', (WidgetTester tester) async {

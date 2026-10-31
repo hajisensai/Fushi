@@ -13,8 +13,9 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 /// 文件名开头的发布组标签（`[SubsPlease] xxx` → `SubsPlease`）。
 /// 8 位 hex（CRC）、分辨率、纯语言 token 不算组名；认不出返回 null。
 String? subtitleReleaseGroupTag(String fileName) {
-  final RegExpMatch? match =
-      RegExp(r'^\s*[\[【]([^\]】]{2,30})[\]】]').firstMatch(fileName);
+  final RegExpMatch? match = RegExp(
+    r'^\s*[\[【]([^\]】]{2,30})[\]】]',
+  ).firstMatch(fileName);
   if (match == null) return null;
   final String tag = match.group(1)!.trim();
   if (tag.isEmpty) return null;
@@ -64,21 +65,20 @@ class SubtitleVersionGroup {
       subtitleReleaseGroupTag(members.first.fileName);
   bool get hearingImpaired => members.first.hearingImpaired;
   bool get aiTranslated => members.first.aiTranslated;
-  bool get fromTrusted => members.any(
-        (VideoSubtitleCandidate candidate) => candidate.fromTrusted,
-      );
+  bool get fromTrusted =>
+      members.any((VideoSubtitleCandidate candidate) => candidate.fromTrusted);
 
   /// 第二级标签的组成部分（UI 逐段拼、缺段跳过）：容器名大写、语言母语名、组名。
   List<String> get variantParts => <String>[
-        if (container.isNotEmpty) container.toUpperCase(),
-        if (language.isNotEmpty) jimakuLanguageLabel(language),
-        if (releaseGroupTag != null) releaseGroupTag!,
-      ];
+    if (container.isNotEmpty) container.toUpperCase(),
+    if (language.isNotEmpty) jimakuLanguageLabel(language),
+    if (releaseGroupTag != null) releaseGroupTag!,
+  ];
 
   Set<int> get episodes => <int>{
-        for (final VideoSubtitleCandidate candidate in members)
-          if (candidate.episode != null) candidate.episode!,
-      };
+    for (final VideoSubtitleCandidate candidate in members)
+      if (candidate.episode != null) candidate.episode!,
+  };
 
   int get unnumberedCount => members
       .where((VideoSubtitleCandidate candidate) => candidate.episode == null)
@@ -113,21 +113,21 @@ class SubtitleVersionGroup {
   }
 
   int get totalDownloadCount => members.fold(
-        0,
-        (int sum, VideoSubtitleCandidate candidate) =>
-            sum + candidate.downloadCount,
-      );
+    0,
+    (int sum, VideoSubtitleCandidate candidate) =>
+        sum + candidate.downloadCount,
+  );
 }
 
 String _groupKeyOf(VideoSubtitleCandidate candidate) => <String>[
-      candidate.providerId,
-      candidate.collectionId ?? '',
-      subtitleFormatOf(candidate.fileName),
-      candidate.language,
-      subtitleReleaseGroupTag(candidate.fileName) ?? '',
-      candidate.hearingImpaired ? 'hi' : '',
-      candidate.aiTranslated ? 'ai' : '',
-    ].join('\u001f');
+  candidate.providerId,
+  candidate.collectionId ?? '',
+  subtitleFormatOf(candidate.fileName),
+  candidate.language,
+  subtitleReleaseGroupTag(candidate.fileName) ?? '',
+  candidate.hearingImpaired ? 'hi' : '',
+  candidate.aiTranslated ? 'ai' : '',
+].join('\u001f');
 
 int _compareMembers(VideoSubtitleCandidate a, VideoSubtitleCandidate b) {
   final int byEpisode = (a.episode ?? 1 << 30).compareTo(b.episode ?? 1 << 30);
@@ -160,20 +160,24 @@ List<SubtitleVersionGroup> buildSubtitleVersionGroups(
       ),
   ];
   groups.sort((SubtitleVersionGroup a, SubtitleVersionGroup b) {
-    final int byLanguage = jimakuLanguageRank(
-      a.language.isEmpty ? null : a.language,
-      preferred: preferredLanguage,
-    ).compareTo(jimakuLanguageRank(
-      b.language.isEmpty ? null : b.language,
-      preferred: preferredLanguage,
-    ));
+    final int byLanguage =
+        jimakuLanguageRank(
+          a.language.isEmpty ? null : a.language,
+          preferred: preferredLanguage,
+        ).compareTo(
+          jimakuLanguageRank(
+            b.language.isEmpty ? null : b.language,
+            preferred: preferredLanguage,
+          ),
+        );
     if (byLanguage != 0) return byLanguage;
     if (a.aiTranslated != b.aiTranslated) return a.aiTranslated ? 1 : -1;
     final int aAt = a.latestUploadedAtMs ?? -1;
     final int bAt = b.latestUploadedAtMs ?? -1;
     if (aAt != bAt) return bAt.compareTo(aAt);
-    final int byDownloads =
-        b.totalDownloadCount.compareTo(a.totalDownloadCount);
+    final int byDownloads = b.totalDownloadCount.compareTo(
+      a.totalDownloadCount,
+    );
     return byDownloads != 0 ? byDownloads : a.key.compareTo(b.key);
   });
   return List<SubtitleVersionGroup>.unmodifiable(groups);

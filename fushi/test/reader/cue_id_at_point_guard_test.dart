@@ -7,8 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// cueWrappers / [data-cue-id]) rather than re-deriving normChar offsets.
 void main() {
   test('shared reader JS exposes cueIdAtPoint reverse-lookup primitive', () {
-    final src = File('lib/src/reader/reader_pagination_scripts.dart')
-        .readAsStringSync();
+    final src = File(
+      'lib/src/reader/reader_pagination_scripts.dart',
+    ).readAsStringSync();
     expect(src.contains('cueIdAtPoint:'), isTrue);
     expect(src.contains('cueRangesMap'), isTrue);
     expect(src.contains('cueWrappers'), isTrue);

@@ -14,8 +14,8 @@ class MangaVolumeKeyPagingController {
     this.throttle = const Duration(milliseconds: 180),
     DateTime Function()? now,
     VolumeKeyChannel? channel,
-  })  : _now = now ?? DateTime.now,
-        _channel = channel ?? VolumeKeyChannel.instance;
+  }) : _now = now ?? DateTime.now,
+       _channel = channel ?? VolumeKeyChannel.instance;
 
   final void Function() onPrevious;
   final void Function() onNext;

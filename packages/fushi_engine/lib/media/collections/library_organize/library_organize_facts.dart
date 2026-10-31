@@ -28,9 +28,10 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
 }) async {
   final CollectionBookIdentityIndex identities =
       await CollectionBookIdentityIndex.load(db);
-  final List<MediaCollectionRow> allCollections =
-      await db.getAllMediaCollections();
-  final List<MediaCollectionItemRow> allItems = await db.getAllCollectionItems();
+  final List<MediaCollectionRow> allCollections = await db
+      .getAllMediaCollections();
+  final List<MediaCollectionItemRow> allItems = await db
+      .getAllCollectionItems();
   final Map<int, MediaCollectionRow> collectionById = <int, MediaCollectionRow>{
     for (final MediaCollectionRow c in allCollections) c.id: c,
   };
@@ -39,14 +40,15 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
   final Map<int, List<MediaCollectionItemRow>> itemsByCollection =
       <int, List<MediaCollectionItemRow>>{};
   for (final MediaCollectionItemRow i in allItems) {
-    (collectionsOfMember['${i.mediaType}\u0000${i.entryKey}'] ??= <int>[])
-        .add(i.collectionId);
+    (collectionsOfMember['${i.mediaType}\u0000${i.entryKey}'] ??= <int>[]).add(
+      i.collectionId,
+    );
     (itemsByCollection[i.collectionId] ??= <MediaCollectionItemRow>[]).add(i);
   }
 
   final List<_Candidate> candidates = await switch (domain) {
-    CollectionShelfDomain.books || CollectionShelfDomain.manga =>
-      _bookCandidates(db, identities, domain),
+    CollectionShelfDomain.books ||
+    CollectionShelfDomain.manga => _bookCandidates(db, identities, domain),
     CollectionShelfDomain.video => _videoCandidates(db, collectionsOfMember),
     CollectionShelfDomain.games => _gameCandidates(db),
   };
@@ -56,8 +58,7 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
 
   // 本域合集 = 至少一个成员是本域候选条目的合集。
   final Set<int> domainCollectionIds = <int>{
-    for (final _Candidate c in candidates)
-      ...?collectionsOfMember[c.memberKey],
+    for (final _Candidate c in candidates) ...?collectionsOfMember[c.memberKey],
   };
   final List<OrganizeCollectionFact> collections = <OrganizeCollectionFact>[
     for (final int id in domainCollectionIds.toList()..sort())
@@ -71,12 +72,14 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
           organizeAliases: decodeOrganizeAliases(row.organizeAliases),
           memberKeys: <String>{
             for (final MediaCollectionItemRow i
-                in itemsByCollection[row.id] ?? const <MediaCollectionItemRow>[])
+                in itemsByCollection[row.id] ??
+                    const <MediaCollectionItemRow>[])
               '${i.mediaType}\u0000${i.entryKey}',
           },
           sampleTitles: <String>[
             for (final MediaCollectionItemRow i
-                in (itemsByCollection[row.id] ?? const <MediaCollectionItemRow>[])
+                in (itemsByCollection[row.id] ??
+                        const <MediaCollectionItemRow>[])
                     .take(5))
               if (candidateByMember['${i.mediaType}\u0000${i.entryKey}']
                   case final _Candidate c)
@@ -84,9 +87,10 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
           ],
         ),
   ];
-  final Map<int, OrganizeCollectionFact> factById = <int, OrganizeCollectionFact>{
-    for (final OrganizeCollectionFact c in collections) c.id: c,
-  };
+  final Map<int, OrganizeCollectionFact> factById =
+      <int, OrganizeCollectionFact>{
+        for (final OrganizeCollectionFact c in collections) c.id: c,
+      };
 
   final List<OrganizeEntry> entries = <OrganizeEntry>[];
   for (final _Candidate c in candidates) {
@@ -102,30 +106,32 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
     if (onlyEntryKeys != null && !onlyEntryKeys.contains(c.memberKey)) {
       continue;
     }
-    entries.add(OrganizeEntry(
-      mediaType: c.mediaType,
-      entryKey: c.entryKey,
-      tombstoneKey: c.tombstoneKey,
-      companions: c.companions,
-      externalWorkKey: c.externalWorkKey,
-      managedCollectionId: managed,
-      item: AiOrganizeItem(
-        title: c.item.title,
-        creator: c.item.creator,
-        year: c.item.year,
-        folder: c.item.folder,
-        season: c.item.season,
-        episode: c.item.episode,
+    entries.add(
+      OrganizeEntry(
+        mediaType: c.mediaType,
+        entryKey: c.entryKey,
+        tombstoneKey: c.tombstoneKey,
+        companions: c.companions,
+        externalWorkKey: c.externalWorkKey,
+        managedCollectionId: managed,
+        item: AiOrganizeItem(
+          title: c.item.title,
+          creator: c.item.creator,
+          year: c.item.year,
+          folder: c.item.folder,
+          season: c.item.season,
+          episode: c.item.episode,
+        ),
+        groupTitle: c.groupTitle,
       ),
-      groupTitle: c.groupTitle,
-    ));
+    );
   }
 
   // 拒绝表（减掉本机放行的）与已占用的名字（活合集 + 删除墓碑；值是占着它的分组键
   // 集合，空集 = 被不带键的合集占着）。
-  final Map<String, String> rejectedNames =
-      Map<String, String>.of(await db.getRejectedOrganizeGroups())
-        ..removeWhere((String k, String _) => allowedKeys.contains(k));
+  final Map<String, String> rejectedNames = Map<String, String>.of(
+    await db.getRejectedOrganizeGroups(),
+  )..removeWhere((String k, String _) => allowedKeys.contains(k));
   final Map<String, Set<String>> taken = <String, Set<String>>{
     for (final MediaCollectionRow c in allCollections)
       '${c.name}\u0000${c.collectionType}': <String>{
@@ -204,18 +210,22 @@ Future<List<_Candidate>> _bookCandidates(
       entryKey: srt.uid,
       tombstoneKey: '${MediaKind.srt.dbValue}\u0000${srt.uid}',
     );
-    final _Candidate? paired = srt.bookKey.isEmpty ? null : byBookKey[srt.bookKey];
+    final _Candidate? paired = srt.bookKey.isEmpty
+        ? null
+        : byBookKey[srt.bookKey];
     if (paired != null) {
       paired.companions.add(row);
       continue;
     }
     if (manga) continue; // 独立 SRT 书住书架。
-    out.add(_Candidate(
-      mediaType: row.mediaType,
-      entryKey: row.entryKey,
-      tombstoneKey: row.tombstoneKey,
-      item: AiOrganizeItem(title: srt.title, creator: srt.author),
-    ));
+    out.add(
+      _Candidate(
+        mediaType: row.mediaType,
+        entryKey: row.entryKey,
+        tombstoneKey: row.tombstoneKey,
+        item: AiOrganizeItem(title: srt.title, creator: srt.author),
+      ),
+    );
   }
   return out;
 }
@@ -229,12 +239,14 @@ Future<List<_Candidate>> _videoCandidates(
       <String, ({String title, int? year, String? key})>{};
   final Map<int, ({String title, int? year, String? key})> workByCollection =
       <int, ({String title, int? year, String? key})>{};
-  final List<QueryRow> rows = await db.customSelect(
-    'SELECT w.id, w.book_uid, w.collection_id, w.title, w.year, w.media_type, '
-    'i.provider, i.external_id '
-    'FROM video_metadata_works w '
-    'LEFT JOIN video_metadata_provider_identities i ON i.work_id = w.id',
-  ).get();
+  final List<QueryRow> rows = await db
+      .customSelect(
+        'SELECT w.id, w.book_uid, w.collection_id, w.title, w.year, w.media_type, '
+        'i.provider, i.external_id '
+        'FROM video_metadata_works w '
+        'LEFT JOIN video_metadata_provider_identities i ON i.work_id = w.id',
+      )
+      .get();
   final Map<int, Map<String, String>> idsByWork = <int, Map<String, String>>{};
   final Map<int, QueryRow> workRow = <int, QueryRow>{};
   for (final QueryRow r in rows) {
@@ -252,10 +264,10 @@ Future<List<_Candidate>> _videoCandidates(
     final String? key = ids['anilist'] != null
         ? 'anilist:${ids['anilist']}'
         : ids['tmdb'] != null
-            ? 'tmdb:$mediaType:${ids['tmdb']}'
-            : ids['anidb'] != null
-                ? 'anidb:${ids['anidb']}'
-                : null;
+        ? 'tmdb:$mediaType:${ids['tmdb']}'
+        : ids['anidb'] != null
+        ? 'anidb:${ids['anidb']}'
+        : null;
     final ({String title, int? year, String? key}) work = (
       title: r.read<String>('title'),
       year: r.readNullable<int>('year'),
@@ -277,27 +289,31 @@ Future<List<_Candidate>> _videoCandidates(
         if (work != null) break;
       }
     }
-    final bool remote = v.videoPath.startsWith('http://') ||
-        v.videoPath.startsWith('https://');
-    final String fileName = remote ? v.title : p.basenameWithoutExtension(v.videoPath);
+    final bool remote =
+        v.videoPath.startsWith('http://') || v.videoPath.startsWith('https://');
+    final String fileName = remote
+        ? v.title
+        : p.basenameWithoutExtension(v.videoPath);
     final VideoNameInfo info = parseVideoFilename(fileName);
     final String folder = remote ? '' : p.basename(p.dirname(v.videoPath));
-    out.add(_Candidate(
-      mediaType: MediaKind.video.dbValue,
-      entryKey: v.bookUid,
-      tombstoneKey: memberKey,
-      externalWorkKey: work?.key,
-      groupTitle: work?.title,
-      item: AiOrganizeItem(
-        title: work != null && work.title.isNotEmpty
-            ? '${work.title} — ${v.title}'
-            : v.title,
-        year: work?.year,
-        folder: folder == '.' ? null : folder,
-        season: info.season,
-        episode: info.episode,
+    out.add(
+      _Candidate(
+        mediaType: MediaKind.video.dbValue,
+        entryKey: v.bookUid,
+        tombstoneKey: memberKey,
+        externalWorkKey: work?.key,
+        groupTitle: work?.title,
+        item: AiOrganizeItem(
+          title: work != null && work.title.isNotEmpty
+              ? '${work.title} — ${v.title}'
+              : v.title,
+          year: work?.year,
+          folder: folder == '.' ? null : folder,
+          season: info.season,
+          episode: info.episode,
+        ),
       ),
-    ));
+    );
   }
   return out;
 }
@@ -322,16 +338,18 @@ Future<List<_Candidate>> _gameCandidates(FushiDatabase db) async {
       final String n = (custom['name'] as String).trim();
       if (n.isNotEmpty) title = n;
     }
-    out.add(_Candidate(
-      mediaType: MediaKind.game.dbValue,
-      entryKey: g.id,
-      tombstoneKey: '${MediaKind.game.dbValue}\u0000${g.id}',
-      item: AiOrganizeItem(
-        title: title,
-        creator: developer,
-        year: int.tryParse((g.releaseDate ?? '').split('-').first),
+    out.add(
+      _Candidate(
+        mediaType: MediaKind.game.dbValue,
+        entryKey: g.id,
+        tombstoneKey: '${MediaKind.game.dbValue}\u0000${g.id}',
+        item: AiOrganizeItem(
+          title: title,
+          creator: developer,
+          year: int.tryParse((g.releaseDate ?? '').split('-').first),
+        ),
       ),
-    ));
+    );
   }
   return out;
 }
@@ -348,42 +366,46 @@ Future<Set<String>> organizeEntryKeysAddedSince(
   final String epub = MediaKind.epub.dbValue;
   final List<(String, String)> queries = switch (domain) {
     CollectionShelfDomain.books => <(String, String)>[
-        (
-          epub,
-          "SELECT uid AS k FROM epub_books WHERE uid != '' "
-              "AND format != 'manga' AND local_added_at > ?",
-        ),
-        (
-          MediaKind.srt.dbValue,
-          "SELECT uid AS k FROM srt_books WHERE book_key = '' "
-              'AND local_added_at > ?',
-        ),
-      ],
+      (
+        epub,
+        "SELECT uid AS k FROM epub_books WHERE uid != '' "
+            "AND format != 'manga' AND local_added_at > ?",
+      ),
+      (
+        MediaKind.srt.dbValue,
+        "SELECT uid AS k FROM srt_books WHERE book_key = '' "
+            'AND local_added_at > ?',
+      ),
+    ],
     CollectionShelfDomain.manga => <(String, String)>[
-        (
-          epub,
-          "SELECT uid AS k FROM epub_books WHERE uid != '' "
-              "AND format = 'manga' AND local_added_at > ?",
-        ),
-      ],
+      (
+        epub,
+        "SELECT uid AS k FROM epub_books WHERE uid != '' "
+            "AND format = 'manga' AND local_added_at > ?",
+      ),
+    ],
     CollectionShelfDomain.video => <(String, String)>[
-        (
-          MediaKind.video.dbValue,
-          'SELECT book_uid AS k FROM video_books WHERE local_added_at > ?',
-        ),
-      ],
+      (
+        MediaKind.video.dbValue,
+        'SELECT book_uid AS k FROM video_books WHERE local_added_at > ?',
+      ),
+    ],
     CollectionShelfDomain.games => <(String, String)>[
-        (
-          MediaKind.game.dbValue,
-          'SELECT id AS k FROM galgames WHERE added_at > ?',
-        ),
-      ],
+      (
+        MediaKind.game.dbValue,
+        'SELECT id AS k FROM galgames WHERE added_at > ?',
+      ),
+    ],
   };
   final Set<String> out = <String>{};
   for (final (String mediaType, String sql) in queries) {
-    for (final QueryRow r in await db
-        .customSelect(sql, variables: <Variable<Object>>[Variable<int>(sinceMs)])
-        .get()) {
+    for (final QueryRow r
+        in await db
+            .customSelect(
+              sql,
+              variables: <Variable<Object>>[Variable<int>(sinceMs)],
+            )
+            .get()) {
       out.add('$mediaType\u0000${r.read<String>('k')}');
     }
   }

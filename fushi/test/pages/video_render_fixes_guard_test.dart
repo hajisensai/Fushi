@@ -36,16 +36,22 @@ void main() {
     ];
     for (final String path in pushSites) {
       final String s = File(path).readAsStringSync();
-      expect(s, contains('VideoFushiPage.neutralized('),
-          reason: '$path 必须经 VideoFushiPage.neutralized 打开视频页');
+      expect(
+        s,
+        contains('VideoFushiPage.neutralized('),
+        reason: '$path 必须经 VideoFushiPage.neutralized 打开视频页',
+      );
       // 这里必须 allowNamedConstructor: false —— 契约是「只禁裸构造，命名构造器
       // （.neutralized / .remote / .neutralizedRemote）才是唯一合法入口」。默认
       // 吃命名构造器的匹配会把上一行正向要求的写法判成违规。
       // 换匹配器的收益是补上前边界：将来出现任何 `_XxxVideoFushiPage(` 这类以该名
       // 结尾的更长标识符时不会假红。
       expect(
-        containsIdentifierCall(s, 'VideoFushiPage',
-            allowNamedConstructor: false),
+        containsIdentifierCall(
+          s,
+          'VideoFushiPage',
+          allowNamedConstructor: false,
+        ),
         isFalse,
         reason: '$path 不得裸用 VideoFushiPage( 构造（会漏掉缩放中和→无画面）',
       );
@@ -65,10 +71,12 @@ void main() {
     // BUG-121 强化：仅 !mounted 不够——deactivate（未 unmount）期 mounted 仍为 true，
     // 但同帧 layout 阶段 LayoutBuilder 重建仍会做失效祖先查找。守卫并入 _overlayInert。
     expect(
-        src,
-        contains(
-            'if (!mounted || _overlayInert) return const SizedBox.shrink();'),
-        reason: 'State 失效/销毁期根 Overlay 重建浮层不得触碰失效 context/appModel');
+      src,
+      contains(
+        'if (!mounted || _overlayInert) return const SizedBox.shrink();',
+      ),
+      reason: 'State 失效/销毁期根 Overlay 重建浮层不得触碰失效 context/appModel',
+    );
     // Theme 读 entry 自身的 overlayContext，而非更短命的 State context。
     expect(src, contains('Theme.of(overlayContext)'));
 
@@ -76,7 +84,10 @@ void main() {
     final int entryRemoveIdx = src.indexOf('_popupOverlayEntry = null;');
     final int clearIdx = src.indexOf('_popup.clear();');
     expect(entryRemoveIdx, greaterThanOrEqualTo(0));
-    expect(clearIdx, greaterThan(entryRemoveIdx),
-        reason: 'dispose 必须先摘除根 Overlay entry，再 clear 浮层栈');
+    expect(
+      clearIdx,
+      greaterThan(entryRemoveIdx),
+      reason: 'dispose 必须先摘除根 Overlay entry，再 clear 浮层栈',
+    );
   });
 }

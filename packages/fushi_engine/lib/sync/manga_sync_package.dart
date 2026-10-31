@@ -111,8 +111,9 @@ Future<String> importMangaPackageFile({
 /// 解压（单页图级别的内存峰值），失败清临时目录后 rethrow。调用方用后负责删除
 /// 返回的目录。
 Future<Directory> extractMangaPackage(File zipFile) async {
-  final Directory out =
-      await Directory.systemTemp.createTemp('fushi_manga_pkg');
+  final Directory out = await Directory.systemTemp.createTemp(
+    'fushi_manga_pkg',
+  );
   InputFileStream? input;
   try {
     input = InputFileStream(zipFile.path);

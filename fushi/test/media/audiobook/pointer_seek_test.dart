@@ -22,7 +22,9 @@ void main() {
 
   test('frag payload resolves by textFragmentId', () {
     final cue = cueForPointerPayload(
-        '{"type":"frag","id":"fushi-cue://s=0&ns=5&ne=9"}', cues);
+      '{"type":"frag","id":"fushi-cue://s=0&ns=5&ne=9"}',
+      cues,
+    );
     expect(cue?.sentenceIndex, 1);
   });
 
@@ -52,17 +54,19 @@ void main() {
       expect(isSeekToClickedSentenceButton(reg, -1), isFalse);
     });
 
-    test('cueForLyricsPointer returns cue only for bound button + in-range idx',
-        () {
-      final reg = registry();
-      expect(cueForLyricsPointer(reg, 1, 1, cues)?.sentenceIndex, 1);
-      // Unbound button → no seek.
-      expect(cueForLyricsPointer(reg, 2, 0, cues), isNull);
-      // Out-of-range index → no seek (negative and past-end).
-      expect(cueForLyricsPointer(reg, 1, -1, cues), isNull);
-      expect(cueForLyricsPointer(reg, 1, cues.length, cues), isNull);
-      // Empty cue list → no crash, no seek.
-      expect(cueForLyricsPointer(reg, 1, 0, const <AudioCue>[]), isNull);
-    });
+    test(
+      'cueForLyricsPointer returns cue only for bound button + in-range idx',
+      () {
+        final reg = registry();
+        expect(cueForLyricsPointer(reg, 1, 1, cues)?.sentenceIndex, 1);
+        // Unbound button → no seek.
+        expect(cueForLyricsPointer(reg, 2, 0, cues), isNull);
+        // Out-of-range index → no seek (negative and past-end).
+        expect(cueForLyricsPointer(reg, 1, -1, cues), isNull);
+        expect(cueForLyricsPointer(reg, 1, cues.length, cues), isNull);
+        // Empty cue list → no crash, no seek.
+        expect(cueForLyricsPointer(reg, 1, 0, const <AudioCue>[]), isNull);
+      },
+    );
   });
 }

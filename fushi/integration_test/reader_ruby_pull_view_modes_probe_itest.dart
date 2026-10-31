@@ -54,8 +54,10 @@ const String _epubPath = String.fromEnvironment('FUSHI_PROBE_EPUB');
 const String _fontPath = String.fromEnvironment('FUSHI_PROBE_FONT');
 const String _needle = String.fromEnvironment('FUSHI_PROBE_NEEDLE');
 const String _outDir = String.fromEnvironment('FUSHI_PROBE_OUT');
-const String _fontSize =
-    String.fromEnvironment('FUSHI_PROBE_FONT_SIZE', defaultValue: '42');
+const String _fontSize = String.fromEnvironment(
+  'FUSHI_PROBE_FONT_SIZE',
+  defaultValue: '42',
+);
 
 const String _kFontName = 'Probe Ruby Font';
 const Key _kWebViewKey = ValueKey<String>('fushi_webview');
@@ -78,8 +80,10 @@ Future<void> _waitFor(
     await tester.pump(step);
     if (ready()) return;
   }
-  fail('$label did not become ready within '
-      '${maxPolls * step.inMilliseconds}ms');
+  fail(
+    '$label did not become ready within '
+    '${maxPolls * step.inMilliseconds}ms',
+  );
 }
 
 Future<void> _pumpForPref(WidgetTester tester) async {
@@ -92,16 +96,21 @@ Future<void> _openBook(WidgetTester tester, String bookKey) async {
   await openBookViaProductionPath(tester, bookKey);
   await _waitFor(tester, _webViewShown, 'reader WebView');
   await _waitFor(tester, _contentReady, 'reader content', maxPolls: 240);
-  await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-      maxPolls: 20);
+  await _waitFor(
+    tester,
+    readerWebViewReady,
+    'reader debug hooks',
+    maxPolls: 20,
+  );
   // 度量脚本在 rAF / 字体就绪后写变量；给它和版面几秒稳定下来。
   await tester.pump(const Duration(seconds: 3));
 }
 
 Future<void> _closeReader(WidgetTester tester) async {
   if (_readerPageGone()) return;
-  final NavigatorState nav =
-      Navigator.of(tester.element(find.byType(ReaderFushiPage)));
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(ReaderFushiPage)),
+  );
   nav.pop();
   await _waitFor(tester, _readerPageGone, 'reader closed', maxPolls: 40);
   await tester.pump(const Duration(seconds: 1));
@@ -129,7 +138,8 @@ Future<void> _pinSection(AppModel appModel, String bookUid, int section) =>
     );
 
 /// 翻到含 needle 的段落：VN 逐屏找、分页按栏周期落页、滚动 scrollIntoView。
-String _gotoNeedleJs(String needle) => '''
+String _gotoNeedleJs(String needle) =>
+    '''
 (function () {
   var needle = ${jsonEncode(needle)};
   var r = window.fushiReader;
@@ -227,8 +237,10 @@ const String _measureJs = r'''
 
 Future<void> _saveShot(String name) async {
   final ObserveShot shot = await captureReaderWebView(name);
-  debugPrint('[ruby-pull] shot $name saved=${shot.saved} '
-      'nonBlank=${shot.nonBlank} path=${shot.path}');
+  debugPrint(
+    '[ruby-pull] shot $name saved=${shot.saved} '
+    'nonBlank=${shot.nonBlank} path=${shot.path}',
+  );
   if (_outDir.isEmpty || !shot.saved) return;
   try {
     Directory(_outDir).createSync(recursive: true);
@@ -246,8 +258,11 @@ void main() {
     'stay outside their base across paginated / continuous / VN',
     timeout: const Timeout(Duration(minutes: 30)),
     (WidgetTester tester) async {
-      expect(_epubPath, isNotEmpty,
-          reason: 'pass --dart-define=FUSHI_PROBE_EPUB=<path to epub>');
+      expect(
+        _epubPath,
+        isNotEmpty,
+        reason: 'pass --dart-define=FUSHI_PROBE_EPUB=<path to epub>',
+      );
       final File epub = File(_epubPath);
       expect(epub.existsSync(), isTrue, reason: 'epub not found: $_epubPath');
 
@@ -255,8 +270,11 @@ void main() {
         label: 'ruby-pull',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
           final AppModel appModel = await readyAppModel(tester);
 
@@ -291,11 +309,12 @@ void main() {
 
           try {
             if (_fontPath.isNotEmpty) {
-              final Directory fontDir =
-                  Directory('${appModel.appDirectory.path}/custom_fonts')
-                    ..createSync(recursive: true);
-              final File font = File(_fontPath)
-                  .copySync('${fontDir.path}/probe-ruby-font.ttf');
+              final Directory fontDir = Directory(
+                '${appModel.appDirectory.path}/custom_fonts',
+              )..createSync(recursive: true);
+              final File font = File(
+                _fontPath,
+              ).copySync('${fontDir.path}/probe-ruby-font.ttf');
               await source.setCustomFonts(<Map<String, dynamic>>[
                 <String, dynamic>{
                   'name': _kFontName,
@@ -316,8 +335,9 @@ void main() {
               bytes: epub.readAsBytesSync(),
               fileName: epub.uri.pathSegments.last,
             );
-            final EpubBookRow? row =
-                await appModel.database.getEpubBook(bookKey);
+            final EpubBookRow? row = await appModel.database.getEpubBook(
+              bookKey,
+            );
             expect(row, isNotNull);
             final List<dynamic> chapters =
                 jsonDecode(row!.chaptersJson) as List<dynamic>;
@@ -326,8 +346,9 @@ void main() {
             for (int i = 0; i < chapters.length; i++) {
               final String href =
                   (chapters[i] as Map<String, dynamic>)['href'] as String;
-              final File f =
-                  File('${row.extractDir}${Platform.pathSeparator}$href');
+              final File f = File(
+                '${row.extractDir}${Platform.pathSeparator}$href',
+              );
               if (!f.existsSync()) continue;
               final String html = f.readAsStringSync();
               if ('<rt'.allMatches(html).length >= 5) rubySections.add(i);
@@ -335,8 +356,10 @@ void main() {
                 needleSection = i;
               }
             }
-            debugPrint('[ruby-pull] ruby sections=$rubySections '
-                'needle section=$needleSection');
+            debugPrint(
+              '[ruby-pull] ruby sections=$rubySections '
+              'needle section=$needleSection',
+            );
 
             // 2. 分页逐章：每章写出的拉力。
             await source.setReaderViewMode('paginated');
@@ -345,7 +368,8 @@ void main() {
               await _pinSection(appModel, row.uid, section);
               await _openBook(tester, bookKey);
               final Map<String, dynamic> r = await _eval(_measureJs);
-              final String line = '[ruby-pull] sweep section=$section '
+              final String line =
+                  '[ruby-pull] sweep section=$section '
                   'pull=${r['pull']} laidOut=${r['laidOut']} '
                   'split=${r['split']} inside=${r['inside']} far=${r['far']} '
                   'off=${r['offMin']}/${r['offMed']}/${r['offMax']}';
@@ -366,11 +390,13 @@ void main() {
                 await _pumpForPref(tester);
                 await _pinSection(appModel, row.uid, needleSection);
                 await _openBook(tester, bookKey);
-                final Map<String, dynamic> go =
-                    await _eval(_gotoNeedleJs(_needle));
+                final Map<String, dynamic> go = await _eval(
+                  _gotoNeedleJs(_needle),
+                );
                 await tester.pump(const Duration(seconds: 2));
                 final Map<String, dynamic> r = await _eval(_measureJs);
-                final String line = '[ruby-pull] mode=$mode goto=$go '
+                final String line =
+                    '[ruby-pull] mode=$mode goto=$go '
                     'pull=${r['pull']} snap=${r['snap']} '
                     'laidOut=${r['laidOut']} split=${r['split']} '
                     'inside=${r['inside']} far=${r['far']} '
@@ -386,8 +412,10 @@ void main() {
               }
             }
             debugPrint('[ruby-pull] SUMMARY\n${summary.join('\n')}');
-            debugPrint('[ruby-pull] FAILURES ${failures.length}\n'
-                '${failures.join('\n')}');
+            debugPrint(
+              '[ruby-pull] FAILURES ${failures.length}\n'
+              '${failures.join('\n')}',
+            );
             expect(summary, isNotEmpty, reason: 'probe measured nothing');
             expect(failures, isEmpty);
           } finally {

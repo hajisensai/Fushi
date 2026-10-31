@@ -84,10 +84,14 @@ LookupSize resolveDraggedLookupSize({
   double maxHeight = kLookupPopupMaxHeight,
 }) {
   final double scale = uiScale > 0 ? uiScale : 1.0;
-  final double width =
-      (currentBaseWidth + deltaWidthPx / scale).clamp(minWidth, maxWidth);
-  final double height =
-      (currentBaseHeight + deltaHeightPx / scale).clamp(minHeight, maxHeight);
+  final double width = (currentBaseWidth + deltaWidthPx / scale).clamp(
+    minWidth,
+    maxWidth,
+  );
+  final double height = (currentBaseHeight + deltaHeightPx / scale).clamp(
+    minHeight,
+    maxHeight,
+  );
   return LookupSize(width, height);
 }
 
@@ -120,10 +124,14 @@ LookupSize resolveOverlayResizeFromDelta({
 }) {
   final double d = dpr > 0 ? dpr : 1.0;
   final double s = uiScale > 0 ? uiScale : 1.0;
-  final double width =
-      (currentWidth + deltaPhysWidth / d / s).clamp(minWidth, maxWidth);
-  final double height =
-      (currentHeight + deltaPhysHeight / d / s).clamp(minHeight, maxHeight);
+  final double width = (currentWidth + deltaPhysWidth / d / s).clamp(
+    minWidth,
+    maxWidth,
+  );
+  final double height = (currentHeight + deltaPhysHeight / d / s).clamp(
+    minHeight,
+    maxHeight,
+  );
   return LookupSize(width, height);
 }
 

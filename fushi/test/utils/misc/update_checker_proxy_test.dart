@@ -202,8 +202,9 @@ void main() {
       final (Map<String, String> env1, bool pac1) = parseScutilProxy('');
       expect(env1, isEmpty);
       expect(pac1, isFalse);
-      final (Map<String, String> env2, bool pac2) =
-          parseScutilProxy('garbage no colon here\n}{][');
+      final (Map<String, String> env2, bool pac2) = parseScutilProxy(
+        'garbage no colon here\n}{][',
+      );
       expect(env2, isEmpty);
       expect(pac2, isFalse);
     });
@@ -344,23 +345,31 @@ void main() {
     });
 
     test('带 http:// 前缀 → 剥前缀', () {
-      expect(normalizeUserProxyHostPort('http://127.0.0.1:7890'),
-          '127.0.0.1:7890');
+      expect(
+        normalizeUserProxyHostPort('http://127.0.0.1:7890'),
+        '127.0.0.1:7890',
+      );
     });
 
     test('带 https:// 前缀 → 剥前缀', () {
-      expect(normalizeUserProxyHostPort('https://127.0.0.1:7890'),
-          '127.0.0.1:7890');
+      expect(
+        normalizeUserProxyHostPort('https://127.0.0.1:7890'),
+        '127.0.0.1:7890',
+      );
     });
 
     test('前后空格 → trim 后合法', () {
       expect(
-          normalizeUserProxyHostPort('  127.0.0.1:7890  '), '127.0.0.1:7890');
+        normalizeUserProxyHostPort('  127.0.0.1:7890  '),
+        '127.0.0.1:7890',
+      );
     });
 
     test('主机名 host:port → 合法', () {
       expect(
-          normalizeUserProxyHostPort('proxy.local:1080'), 'proxy.local:1080');
+        normalizeUserProxyHostPort('proxy.local:1080'),
+        'proxy.local:1080',
+      );
     });
 
     test('端口边界 1 / 65535 合法', () {

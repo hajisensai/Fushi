@@ -31,14 +31,14 @@ void main() {
   }
 
   http.Response sessionOk({required bool pinRequired}) => http.Response(
-        jsonEncode(<String, dynamic>{
-          'sessionId': 'sid',
-          'pinRequired': pinRequired,
-          'hostNonce': 'hn',
-        }),
-        200,
-        headers: <String, String>{'Content-Type': 'application/json'},
-      );
+    jsonEncode(<String, dynamic>{
+      'sessionId': 'sid',
+      'pinRequired': pinRequired,
+      'hostNonce': 'hn',
+    }),
+    200,
+    headers: <String, String>{'Content-Type': 'application/json'},
+  );
 
   test('confirm 的 429 解析成 rate_limited（不再退化成 error）', () async {
     final MockClient client = MockClient((http.Request req) async {

@@ -56,9 +56,9 @@ const Set<String> kSubdlTextSubtitleExtensions = kTextSubtitleExtensions;
 /// 其余原样大写透传，交给服务端裁决。
 const Map<String, List<String>> kSubdlLanguageExpansions =
     <String, List<String>>{
-  'zh': <String>['ZH', 'ZH_BG'],
-  'pt': <String>['PT', 'BR_PT'],
-};
+      'zh': <String>['ZH', 'ZH_BG'],
+      'pt': <String>['PT', 'BR_PT'],
+    };
 
 /// 把语言偏好归一成 SubDL 的查询值域：展开 + 大写 + 去重 + 排序。纯函数，便于单测。
 List<String> normalizeSubdlLanguages(Iterable<String> languages) {
@@ -118,16 +118,16 @@ class SubdlWorkRecord {
 
   /// 本页字幕所属作品的身份自述（BUG-3068），供调用方核对是不是目标作品。
   SubtitleWorkClaim get claim => SubtitleWorkClaim(
-        titles: <String>[name],
-        year: year,
-        kind: switch (type?.toLowerCase()) {
-          'movie' => VideoMetadataMediaKind.movie,
-          'tv' => VideoMetadataMediaKind.tv,
-          _ => null,
-        },
-        tmdbId: tmdbId,
-        imdbId: imdbId,
-      );
+    titles: <String>[name],
+    year: year,
+    kind: switch (type?.toLowerCase()) {
+      'movie' => VideoMetadataMediaKind.movie,
+      'tv' => VideoMetadataMediaKind.tv,
+      _ => null,
+    },
+    tmdbId: tmdbId,
+    imdbId: imdbId,
+  );
 }
 
 class SubdlSubtitleRecord {
@@ -218,7 +218,8 @@ SubdlSearchPage parseSubdlSearchResponse(String body) {
     throw const FormatException('SubDL response must be an object');
   }
   if (decoded['status'] != true) {
-    final String error = _string(decoded['error']) ??
+    final String error =
+        _string(decoded['error']) ??
         _string(decoded['message']) ??
         'request failed';
     throw SubdlApiException(error, statusCode: _int(decoded['statusCode']));
@@ -285,20 +286,18 @@ typedef SubdlExtractedSubtitle = ArchivedSubtitle;
 List<SubdlExtractedSubtitle> extractSubdlSubtitles(
   Uint8List bytes, {
   required String fallbackFileName,
-}) =>
-    extractArchivedSubtitles(
-      bytes,
-      fallbackFileName: fallbackFileName,
-      providerId: kSubdlSubtitleProviderId,
-    );
+}) => extractArchivedSubtitles(
+  bytes,
+  fallbackFileName: fallbackFileName,
+  providerId: kSubdlSubtitleProviderId,
+);
 
 /// 多文件包里挑出要用的那一个：SubDL 的包已由服务端按集号区间圈过，匹配不到
 /// 退回第一个（[pickArchivedSubtitle] 的 `fallbackToFirst` 档）。
 SubdlExtractedSubtitle? pickSubdlSubtitle(
   List<SubdlExtractedSubtitle> files, {
   int? episode,
-}) =>
-    pickArchivedSubtitle(files, episode: episode);
+}) => pickArchivedSubtitle(files, episode: episode);
 
 class SubdlClient implements VideoSubtitleProvider {
   SubdlClient({
@@ -309,11 +308,11 @@ class SubdlClient implements VideoSubtitleProvider {
     this.priority = 250,
     this.requestTimeout = const Duration(seconds: 20),
     bool closesClient = true,
-  })  : _apiKey = apiKey.trim(),
-        _baseUrl = baseUrl ?? kSubdlApiBaseUrl,
-        _downloadBaseUrl = downloadBaseUrl ?? kSubdlDownloadBaseUrl,
-        _client = client ?? createAppHttpIoClient(),
-        _closesClient = client == null || closesClient;
+  }) : _apiKey = apiKey.trim(),
+       _baseUrl = baseUrl ?? kSubdlApiBaseUrl,
+       _downloadBaseUrl = downloadBaseUrl ?? kSubdlDownloadBaseUrl,
+       _client = client ?? createAppHttpIoClient(),
+       _closesClient = client == null || closesClient;
 
   final String _apiKey;
   final Uri _baseUrl;
@@ -348,8 +347,9 @@ class SubdlClient implements VideoSubtitleProvider {
       );
     }
     try {
-      final List<Map<String, String>> queries =
-          buildSubdlSearchQueries(request);
+      final List<Map<String, String>> queries = buildSubdlSearchQueries(
+        request,
+      );
       if (queries.isEmpty) {
         throw const ExternalProviderFailure(
           providerId: kSubdlSubtitleProviderId,
@@ -484,8 +484,9 @@ class SubdlClient implements VideoSubtitleProvider {
       ..headers['User-Agent'] = fushiUserAgent('subdl')
       ..followRedirects = true
       ..maxRedirects = 5;
-    final http.StreamedResponse response =
-        await _client.send(request).timeout(requestTimeout);
+    final http.StreamedResponse response = await _client
+        .send(request)
+        .timeout(requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await _cancelStream(response.stream);
       _requireSuccess(
@@ -504,8 +505,9 @@ class SubdlClient implements VideoSubtitleProvider {
     }
     final BytesBuilder body = BytesBuilder(copy: false);
     int length = 0;
-    await for (final List<int> chunk
-        in response.stream.timeout(requestTimeout)) {
+    await for (final List<int> chunk in response.stream.timeout(
+      requestTimeout,
+    )) {
       length += chunk.length;
       if (length > kMaximumSubtitleDownloadBytes) {
         throw const ExternalProviderFailure(
@@ -529,16 +531,17 @@ class SubdlClient implements VideoSubtitleProvider {
   }
 
   Map<String, String> _headers() => <String, String>{
-        'User-Agent': fushiUserAgent('subdl'),
-        'Accept': 'application/json',
-      };
+    'User-Agent': fushiUserAgent('subdl'),
+    'Accept': 'application/json',
+  };
 
   void _requireSuccess(String operation, http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     final int status = response.statusCode;
     final String? error = _errorCode(response.body);
     // 429 的 `error` 区分「今日额度用完」与「请求太密」（Bazarr 观察值）。
-    final bool quota = error == 'daily_limit' ||
+    final bool quota =
+        error == 'daily_limit' ||
         error == 'api_download_limit_exceeded' ||
         error == 'quota_exceeded';
     throw ExternalProviderFailure(
@@ -649,23 +652,23 @@ class _SubdlCandidate extends VideoSubtitleCandidate {
     required this.wantedEpisode,
     required int providerPriority,
   }) : super(
-          providerId: kSubdlSubtitleProviderId,
-          remoteId: record.url,
-          // 真实文件名要解包后才知道；这里给 release 名 + 站点最常见的扩展名，
-          // 下游落盘时以 [VideoSubtitleDownload.fileName] 为准。
-          fileName: '${record.releaseName}.srt',
-          language: record.language,
-          providerPriority: providerPriority,
-          releaseName: record.releaseName,
-          season: season,
-          episode: record.episode,
-          hearingImpaired: record.hearingImpaired,
-          fps: record.fps,
-          collectionId: work == null ? null : '${work.sdId}',
-          collectionLabel: work?.name,
-          aiTranslated: record.aiTranslated,
-          work: work?.claim,
-        );
+         providerId: kSubdlSubtitleProviderId,
+         remoteId: record.url,
+         // 真实文件名要解包后才知道；这里给 release 名 + 站点最常见的扩展名，
+         // 下游落盘时以 [VideoSubtitleDownload.fileName] 为准。
+         fileName: '${record.releaseName}.srt',
+         language: record.language,
+         providerPriority: providerPriority,
+         releaseName: record.releaseName,
+         season: season,
+         episode: record.episode,
+         hearingImpaired: record.hearingImpaired,
+         fps: record.fps,
+         collectionId: work == null ? null : '${work.sdId}',
+         collectionLabel: work?.name,
+         aiTranslated: record.aiTranslated,
+         work: work?.claim,
+       );
 
   final SubdlSubtitleRecord record;
 
@@ -704,8 +707,8 @@ String? _string(Object? value) => value is String ? value : null;
 int? _int(Object? value) => value is int
     ? value
     : value is num
-        ? value.toInt()
-        : int.tryParse(value?.toString() ?? '');
+    ? value.toInt()
+    : int.tryParse(value?.toString() ?? '');
 
 /// 集号 / 季号：服务端用 0 表示「没有」，与 null 同义。
 int? _positive(Object? value) {

@@ -30,11 +30,13 @@ Future<void> _pump(WidgetTester tester, List<AudioCue> cues) async {
   c.setCues(cues);
   c.debugSetPositionForTesting(500);
   c.debugUpdateCueForPosition(500);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+      ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -50,24 +52,35 @@ void main() {
     expect(assOutlineStrokeWidth(-1), 0);
   });
 
-  testWidgets('Outline=2：stroke 层 strokeWidth = 2×(2×显示高/PlayResY)（半径×2）',
-      (WidgetTester tester) async {
+  testWidgets('Outline=2：stroke 层 strokeWidth = 2×(2×显示高/PlayResY)（半径×2）', (
+    WidgetTester tester,
+  ) async {
     await _pump(
-        tester, _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,Bord2,,0,0,0,,あ'));
+      tester,
+      _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,Bord2,,0,0,0,,あ'),
+    );
     final Iterable<Text> strokes = _strokeTexts(tester, 'あ');
     expect(strokes, isNotEmpty, reason: 'Outline=2 必须有描边层');
     // 测试面 600 高、无视频分辨率 → assFontScale = 600/1080；半径 = 2×600/1080，
     // 可见宽须与 mpv 同 = 半径 → 居中 strokeWidth = 半径×2。
     const double expected = (2 * 600 / 1080) * 2;
     expect(
-        strokes.first.style!.foreground!.strokeWidth, closeTo(expected, 0.01));
+      strokes.first.style!.foreground!.strokeWidth,
+      closeTo(expected, 0.01),
+    );
   });
 
-  testWidgets('Outline=0：不画描边层（不被 clamp 下限强制成 0.5px 细边）',
-      (WidgetTester tester) async {
+  testWidgets('Outline=0：不画描边层（不被 clamp 下限强制成 0.5px 细边）', (
+    WidgetTester tester,
+  ) async {
     await _pump(
-        tester, _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,Bord0,,0,0,0,,あ'));
-    expect(_strokeTexts(tester, 'あ'), isEmpty,
-        reason: 'Outline:0 明示无描边，mpv/libass 完全不画');
+      tester,
+      _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,Bord0,,0,0,0,,あ'),
+    );
+    expect(
+      _strokeTexts(tester, 'あ'),
+      isEmpty,
+      reason: 'Outline:0 明示无描边，mpv/libass 完全不画',
+    );
   });
 }

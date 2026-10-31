@@ -52,8 +52,8 @@ class AnidbEpisodeXref {
 /// `CrossRef_File_Episode` 一文件多集）：成员 `bookUid` → 额外卡片 (季, 集) →
 /// 那一集的 AniDB 身份。主集仍由 [localEpisodeKeyFor] 决定；这里的键只多绑、
 /// 不改主键，sidecar / 旧投影只跟主集。
-typedef AnidbAdditionalEpisodeBindings
-    = Map<String, Map<(int, int), AnidbEpisodeXref>>;
+typedef AnidbAdditionalEpisodeBindings =
+    Map<String, Map<(int, int), AnidbEpisodeXref>>;
 
 class PersistedVideoMetadata {
   const PersistedVideoMetadata({
@@ -83,8 +83,7 @@ class VideoMetadataDatabaseStore {
   /// identity must never be promoted merely because the old primary retired.
   Future<List<VideoMetadataLookup>> lookupsForWork(
     VideoSourceScrapeWork localWork,
-  ) =>
-      _lookupsForWork(localWork, primaryOnly: false);
+  ) => _lookupsForWork(localWork, primaryOnly: false);
 
   /// 仅返回被标为 `isPrimary` 的作品身份；没有主身份（例如只由本地 NFO 索引
   /// 出交叉引用、尚未被任何主源识别过的作品）返回 null。调用方据此区分「旧主源
@@ -92,8 +91,7 @@ class VideoMetadataDatabaseStore {
   /// 当成退役主源而把提示一起丢掉。
   Future<VideoMetadataLookup?> primaryLookupForWork(
     VideoSourceScrapeWork localWork,
-  ) async =>
-      (await _lookupsForWork(localWork, primaryOnly: true)).firstOrNull;
+  ) async => (await _lookupsForWork(localWork, primaryOnly: true)).firstOrNull;
 
   Future<List<VideoMetadataLookup>> _lookupsForWork(
     VideoSourceScrapeWork localWork, {
@@ -107,38 +105,41 @@ class VideoMetadataDatabaseStore {
             localWork.collection!.id,
           );
     if (row == null) return const <VideoMetadataLookup>[];
-    final VideoMetadataMediaKind? kind =
-        VideoMetadataMediaKind.values.asNameMap()[row.mediaType];
+    final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
+        .asNameMap()[row.mediaType];
     if (kind == null) return const <VideoMetadataLookup>[];
-    final List<VideoMetadataProviderIdentityRow> identities =
-        await database.getVideoMetadataProviderIdentities(workId: row.id);
+    final List<VideoMetadataProviderIdentityRow> identities = await database
+        .getVideoMetadataProviderIdentities(workId: row.id);
     final List<VideoMetadataProviderIdentityRow> ordered =
         <VideoMetadataProviderIdentityRow>[
-      ...identities.where(
-        (VideoMetadataProviderIdentityRow value) => value.isPrimary,
-      ),
-      if (!primaryOnly)
-        ...identities.where(
-          (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
-        ),
-    ];
+          ...identities.where(
+            (VideoMetadataProviderIdentityRow value) => value.isPrimary,
+          ),
+          if (!primaryOnly)
+            ...identities.where(
+              (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
+            ),
+        ];
     final List<VideoMetadataLookup> result = <VideoMetadataLookup>[];
     for (final VideoMetadataProviderIdentityRow identity in ordered) {
-      final VideoMetadataProviderKind? provider =
-          VideoMetadataProviderKind.values.asNameMap()[identity.provider];
+      final VideoMetadataProviderKind? provider = VideoMetadataProviderKind
+          .values
+          .asNameMap()[identity.provider];
       if (provider == null ||
           provider == VideoMetadataProviderKind.local ||
           provider == VideoMetadataProviderKind.fanart) {
         continue;
       }
-      result.add(VideoMetadataLookup(
-        provider: provider,
-        externalId: identity.externalId,
-        mediaKind: kind,
-        episodeGroupId: provider == VideoMetadataProviderKind.tmdb
-            ? row.episodeGroupId
-            : null,
-      ));
+      result.add(
+        VideoMetadataLookup(
+          provider: provider,
+          externalId: identity.externalId,
+          mediaKind: kind,
+          episodeGroupId: provider == VideoMetadataProviderKind.tmdb
+              ? row.episodeGroupId
+              : null,
+        ),
+      );
     }
     return result;
   }
@@ -147,22 +148,24 @@ class VideoMetadataDatabaseStore {
     VideoSourceScrapeWork localWork,
   ) async {
     final VideoMetadataWorkRow? row = localWork.collection == null
-        ? await database
-            .getVideoMetadataWorkByBook(localWork.members.single.bookUid)
-        : await database
-            .getVideoMetadataWorkByCollection(localWork.collection!.id);
+        ? await database.getVideoMetadataWorkByBook(
+            localWork.members.single.bookUid,
+          )
+        : await database.getVideoMetadataWorkByCollection(
+            localWork.collection!.id,
+          );
     if (row == null) return null;
-    final List<VideoMetadataProviderIdentityRow> identities =
-        await database.getVideoMetadataProviderIdentities(workId: row.id);
+    final List<VideoMetadataProviderIdentityRow> identities = await database
+        .getVideoMetadataProviderIdentities(workId: row.id);
     if (identities.isEmpty) return null;
     final VideoMetadataProviderIdentityRow? identity = identities
         .where((VideoMetadataProviderIdentityRow value) => value.isPrimary)
         .firstOrNull;
     if (identity == null) return null;
-    final VideoMetadataProviderKind? provider =
-        VideoMetadataProviderKind.values.asNameMap()[identity.provider];
-    final VideoMetadataMediaKind? kind =
-        VideoMetadataMediaKind.values.asNameMap()[row.mediaType];
+    final VideoMetadataProviderKind? provider = VideoMetadataProviderKind.values
+        .asNameMap()[identity.provider];
+    final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
+        .asNameMap()[row.mediaType];
     if (provider == null ||
         provider == VideoMetadataProviderKind.fanart ||
         kind == null) {
@@ -205,12 +208,15 @@ class VideoMetadataDatabaseStore {
       // `_removeBookOwnedWorksForCollection` 之前读——那一步只删「成员自己拥有的
       // 作品行」，但把读放在最前面才不用去推理它到底删了谁。
       final VideoMetadataWorkRow? existingWork = localWork.collection == null
-          ? await database
-              .getVideoMetadataWorkByBook(localWork.members.single.bookUid)
-          : await database
-              .getVideoMetadataWorkByCollection(localWork.collection!.id);
-      final Set<VideoMetadataLockableField> locked =
-          parseLockedFields(existingWork?.lockedFields);
+          ? await database.getVideoMetadataWorkByBook(
+              localWork.members.single.bookUid,
+            )
+          : await database.getVideoMetadataWorkByCollection(
+              localWork.collection!.id,
+            );
+      final Set<VideoMetadataLockableField> locked = parseLockedFields(
+        existingWork?.lockedFields,
+      );
       bool isLocked(VideoMetadataLockableField field) =>
           existingWork != null && locked.contains(field);
 
@@ -220,9 +226,11 @@ class VideoMetadataDatabaseStore {
       workId = await database.upsertVideoMetadataWork(
         VideoMetadataWorksCompanion.insert(
           collectionId: Value<int?>(localWork.collection?.id),
-          bookUid: Value<String?>(localWork.collection == null
-              ? localWork.members.single.bookUid
-              : null),
+          bookUid: Value<String?>(
+            localWork.collection == null
+                ? localWork.members.single.bookUid
+                : null,
+          ),
           mediaType: metadata.kind.name,
           title: isLocked(VideoMetadataLockableField.title)
               ? existingWork!.title
@@ -275,9 +283,9 @@ class VideoMetadataDatabaseStore {
       // 锁住的整组词（genres / studios）保留旧集合；其余种类照常整体替换。
       final Map<String, List<String>> lockedTerms =
           isLocked(VideoMetadataLockableField.genres) ||
-                  isLocked(VideoMetadataLockableField.studios)
-              ? await _termsByKind(workId)
-              : const <String, List<String>>{};
+              isLocked(VideoMetadataLockableField.studios)
+          ? await _termsByKind(workId)
+          : const <String, List<String>>{};
       await _replaceTerms(
         workId,
         metadata,
@@ -290,7 +298,8 @@ class VideoMetadataDatabaseStore {
       );
       // 来源本轮人物表残缺（MAL characters / staff 端点抖动）而库里已有上一轮
       // 的表：只补不覆盖，否则一次 504 就把整张声优表清空（BUG-2612）。
-      final bool keepExistingCredits = hasIncompleteMalCredits(metadata) &&
+      final bool keepExistingCredits =
+          hasIncompleteMalCredits(metadata) &&
           (await database.getVideoMetadataCredits(workId: workId)).isNotEmpty;
       await _replaceCredits(
         workId: workId,
@@ -337,50 +346,50 @@ class VideoMetadataDatabaseStore {
 
       final Map<int, VideoMetadataSeasonRow> existingSeasons =
           <int, VideoMetadataSeasonRow>{
-        for (final VideoMetadataSeasonRow row
-            in await database.getVideoMetadataSeasons(workId))
-          row.seasonNumber: row,
-      };
+            for (final VideoMetadataSeasonRow row
+                in await database.getVideoMetadataSeasons(workId))
+              row.seasonNumber: row,
+          };
       final List<VideoMetadataSeasonsCompanion> seasonRows =
           <VideoMetadataSeasonsCompanion>[
-        for (final VideoMetadataSeason season in metadata.seasons)
-          VideoMetadataSeasonsCompanion.insert(
-            workId: workId,
-            seasonNumber: season.seasonNumber,
-            title: Value<String?>(season.title),
-            overview: Value<String?>(
-              season.plot ??
-                  (!seasonEpisodesAuthoritative
-                      ? existingSeasons[season.seasonNumber]?.overview
-                      : null),
-            ),
-            premiereDate: Value<String?>(
-              season.airDate ??
-                  (!seasonEpisodesAuthoritative
-                      ? existingSeasons[season.seasonNumber]?.premiereDate
-                      : null),
-            ),
-            year: Value<int?>(
-              season.year ??
-                  (!seasonEpisodesAuthoritative
-                      ? existingSeasons[season.seasonNumber]?.year
-                      : null),
-            ),
-            episodeCount: Value<int?>(
-              season.episodeCount ??
-                  (!seasonEpisodesAuthoritative
-                      ? existingSeasons[season.seasonNumber]?.episodeCount
-                      : null),
-            ),
-            rating: Value<double?>(
-              season.rating ??
-                  (!seasonEpisodesAuthoritative
-                      ? existingSeasons[season.seasonNumber]?.rating
-                      : null),
-            ),
-            updatedAt: now,
-          ),
-      ];
+            for (final VideoMetadataSeason season in metadata.seasons)
+              VideoMetadataSeasonsCompanion.insert(
+                workId: workId,
+                seasonNumber: season.seasonNumber,
+                title: Value<String?>(season.title),
+                overview: Value<String?>(
+                  season.plot ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingSeasons[season.seasonNumber]?.overview
+                          : null),
+                ),
+                premiereDate: Value<String?>(
+                  season.airDate ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingSeasons[season.seasonNumber]?.premiereDate
+                          : null),
+                ),
+                year: Value<int?>(
+                  season.year ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingSeasons[season.seasonNumber]?.year
+                          : null),
+                ),
+                episodeCount: Value<int?>(
+                  season.episodeCount ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingSeasons[season.seasonNumber]?.episodeCount
+                          : null),
+                ),
+                rating: Value<double?>(
+                  season.rating ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingSeasons[season.seasonNumber]?.rating
+                          : null),
+                ),
+                updatedAt: now,
+              ),
+          ];
       if (seasonEpisodesAuthoritative) {
         await database.replaceVideoMetadataSeasons(workId, seasonRows);
       } else {
@@ -395,8 +404,11 @@ class VideoMetadataDatabaseStore {
 
       final Map<(int, int), VideoBookRow> localEpisodeBooks =
           _localEpisodeBooks(
-              localWork.members, episodeOverrides, additionalEpisodeBindings,
-              userVerifiedBooks: userVerifiedBooks);
+            localWork.members,
+            episodeOverrides,
+            additionalEpisodeBindings,
+            userVerifiedBooks: userVerifiedBooks,
+          );
       await _clearReassignedEpisodeBooks(
         localEpisodeBooks: localEpisodeBooks,
         seasons: metadata.seasons,
@@ -421,18 +433,19 @@ class VideoMetadataDatabaseStore {
         }
         final Map<int, VideoMetadataEpisodeRow> existingEpisodes =
             <int, VideoMetadataEpisodeRow>{
-          for (final VideoMetadataEpisodeRow row
-              in await database.getVideoMetadataEpisodes(seasonId))
-            row.episodeNumber: row,
-        };
-        final List<VideoMetadataEpisodesCompanion> episodeRows =
-            <VideoMetadataEpisodesCompanion>[
+              for (final VideoMetadataEpisodeRow row
+                  in await database.getVideoMetadataEpisodes(seasonId))
+                row.episodeNumber: row,
+            };
+        final List<VideoMetadataEpisodesCompanion>
+        episodeRows = <VideoMetadataEpisodesCompanion>[
           for (final VideoMetadataEpisode episode in season.episodes)
             () {
-              final String? bookUid = localEpisodeBooks[(
-                    episode.seasonNumber,
-                    episode.episodeNumber,
-                  )]
+              final String? bookUid =
+                  localEpisodeBooks[(
+                        episode.seasonNumber,
+                        episode.episodeNumber,
+                      )]
                       ?.bookUid ??
                   existingEpisodes[episode.episodeNumber]?.bookUid;
               // AniDB 集身份跟着绑定的文件走：这一轮有身份就写，没有身份但书还
@@ -441,73 +454,80 @@ class VideoMetadataDatabaseStore {
               final AnidbEpisodeXref? xref = bookUid == null
                   ? null
                   : additionalEpisodeBindings[bookUid]?[(
-                        episode.seasonNumber,
-                        episode.episodeNumber,
-                      )] ??
-                      anidbEpisodeXrefs[bookUid];
+                          episode.seasonNumber,
+                          episode.episodeNumber,
+                        )] ??
+                        anidbEpisodeXrefs[bookUid];
               final VideoMetadataEpisodeRow? existing =
                   existingEpisodes[episode.episodeNumber];
-              final bool keepExisting = xref == null &&
+              final bool keepExisting =
+                  xref == null &&
                   existing != null &&
                   existing.bookUid != null &&
                   existing.bookUid == bookUid;
               return VideoMetadataEpisodesCompanion.insert(
-              seasonId: seasonId,
-              bookUid: Value<String?>(bookUid),
-              anidbEpisodeId: Value<int?>(
-                  xref?.episodeId ?? (keepExisting ? existing.anidbEpisodeId : null)),
-              anidbEpisodeNumber: Value<String?>(xref?.episodeNumber ??
-                  (keepExisting ? existing.anidbEpisodeNumber : null)),
-              anidbMatchRating: Value<String?>(xref?.matchRating ??
-                  (keepExisting ? existing.anidbMatchRating : null)),
-              episodeNumber: episode.episodeNumber,
-              absoluteNumber: Value<int?>(
-                episode.absoluteNumber ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]
-                            ?.absoluteNumber
-                        : null),
-              ),
-              title: Value<String?>(episode.title),
-              overview: Value<String?>(
-                episode.plot ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]?.overview
-                        : null),
-              ),
-              airDate: Value<String?>(
-                episode.airDate ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]?.airDate
-                        : null),
-              ),
-              year: Value<int?>(
-                episode.year ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]?.year
-                        : null),
-              ),
-              rating: Value<double?>(
-                episode.rating ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]?.rating
-                        : null),
-              ),
-              ratingCount: Value<int?>(
-                episode.ratingVotes ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]?.ratingCount
-                        : null),
-              ),
-              runtimeMinutes: Value<int?>(
-                episode.runtimeMinutes ??
-                    (!seasonEpisodesAuthoritative
-                        ? existingEpisodes[episode.episodeNumber]
-                            ?.runtimeMinutes
-                        : null),
-              ),
-              updatedAt: now,
-            );
+                seasonId: seasonId,
+                bookUid: Value<String?>(bookUid),
+                anidbEpisodeId: Value<int?>(
+                  xref?.episodeId ??
+                      (keepExisting ? existing.anidbEpisodeId : null),
+                ),
+                anidbEpisodeNumber: Value<String?>(
+                  xref?.episodeNumber ??
+                      (keepExisting ? existing.anidbEpisodeNumber : null),
+                ),
+                anidbMatchRating: Value<String?>(
+                  xref?.matchRating ??
+                      (keepExisting ? existing.anidbMatchRating : null),
+                ),
+                episodeNumber: episode.episodeNumber,
+                absoluteNumber: Value<int?>(
+                  episode.absoluteNumber ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]
+                                ?.absoluteNumber
+                          : null),
+                ),
+                title: Value<String?>(episode.title),
+                overview: Value<String?>(
+                  episode.plot ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]?.overview
+                          : null),
+                ),
+                airDate: Value<String?>(
+                  episode.airDate ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]?.airDate
+                          : null),
+                ),
+                year: Value<int?>(
+                  episode.year ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]?.year
+                          : null),
+                ),
+                rating: Value<double?>(
+                  episode.rating ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]?.rating
+                          : null),
+                ),
+                ratingCount: Value<int?>(
+                  episode.ratingVotes ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]?.ratingCount
+                          : null),
+                ),
+                runtimeMinutes: Value<int?>(
+                  episode.runtimeMinutes ??
+                      (!seasonEpisodesAuthoritative
+                          ? existingEpisodes[episode.episodeNumber]
+                                ?.runtimeMinutes
+                          : null),
+                ),
+                updatedAt: now,
+              );
             }(),
         ];
         if (seasonEpisodesAuthoritative) {
@@ -567,8 +587,9 @@ class VideoMetadataDatabaseStore {
       workId: workId,
       seasonIds: Map<int, int>.unmodifiable(seasonIds),
       episodeIds: Map<(int, int), int>.unmodifiable(episodeIds),
-      episodesByBookUid:
-          Map<String, VideoMetadataEpisode>.unmodifiable(episodesByBookUid),
+      episodesByBookUid: Map<String, VideoMetadataEpisode>.unmodifiable(
+        episodesByBookUid,
+      ),
     );
   }
 
@@ -576,9 +597,9 @@ class VideoMetadataDatabaseStore {
   /// 的那一行是残留——否则合集详情页会继续展示旧身份）。与
   /// [_removeBookOwnedWorksForCollection] 对称；季 / 集 / 身份 / 图随 FK 级联。
   Future<void> removeCollectionOwnedWork(int collectionId) async {
-    await (database.delete(database.videoMetadataWorks)
-          ..where((table) => table.collectionId.equals(collectionId)))
-        .go();
+    await (database.delete(
+      database.videoMetadataWorks,
+    )..where((table) => table.collectionId.equals(collectionId))).go();
   }
 
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {
@@ -588,9 +609,9 @@ class VideoMetadataDatabaseStore {
             .map((MediaCollectionItemRow row) => row.entryKey)
             .toSet();
     if (memberBookUids.isEmpty) return;
-    await (database.delete(database.videoMetadataWorks)
-          ..where((table) => table.bookUid.isIn(memberBookUids)))
-        .go();
+    await (database.delete(
+      database.videoMetadataWorks,
+    )..where((table) => table.bookUid.isIn(memberBookUids))).go();
   }
 
   Future<void> _clearReassignedEpisodeBooks({
@@ -600,19 +621,16 @@ class VideoMetadataDatabaseStore {
     final Set<String> reassignedBookUids = <String>{
       for (final VideoMetadataSeason season in seasons)
         for (final VideoMetadataEpisode episode in season.episodes)
-          if (localEpisodeBooks[(
-            episode.seasonNumber,
-            episode.episodeNumber,
-          )]
+          if (localEpisodeBooks[(episode.seasonNumber, episode.episodeNumber)]
               case final VideoBookRow book)
             book.bookUid,
     };
     if (reassignedBookUids.isEmpty) return;
-    await (database.update(database.videoMetadataEpisodes)
-          ..where((table) => table.bookUid.isIn(reassignedBookUids)))
-        .write(const VideoMetadataEpisodesCompanion(
-      bookUid: Value<String?>(null),
-    ));
+    await (database.update(
+      database.videoMetadataEpisodes,
+    )..where((table) => table.bookUid.isIn(reassignedBookUids))).write(
+      const VideoMetadataEpisodesCompanion(bookUid: Value<String?>(null)),
+    );
   }
 
   Future<void> updateCanonicalImagePaths({
@@ -623,10 +641,11 @@ class VideoMetadataDatabaseStore {
     final int now = DateTime.now().millisecondsSinceEpoch;
     // 下载落盘后这一趟会整体重写作品级图行；锁住的图种必须在这里也守住，否则
     // apply() 保住的旧封面会被同一次刮削的第二步又换掉。
-    final VideoMetadataWorkRow? workRow =
-        await database.getVideoMetadataWorkById(persisted.workId);
-    final Set<VideoMetadataLockableField> locked =
-        parseLockedFields(workRow?.lockedFields);
+    final VideoMetadataWorkRow? workRow = await database
+        .getVideoMetadataWorkById(persisted.workId);
+    final Set<VideoMetadataLockableField> locked = parseLockedFields(
+      workRow?.lockedFields,
+    );
     await _replaceImages(
       workId: persisted.workId,
       images: metadata.images,
@@ -673,8 +692,8 @@ class VideoMetadataDatabaseStore {
     final String owner = workId != null
         ? 'work:$workId'
         : seasonId != null
-            ? 'season:$seasonId'
-            : 'episode:$episodeId';
+        ? 'season:$seasonId'
+        : 'episode:$episodeId';
     await database.replaceVideoMetadataProviderIdentities(
       workId: workId,
       seasonId: seasonId,
@@ -704,11 +723,13 @@ class VideoMetadataDatabaseStore {
   ) async {
     final Map<String, Object?>? payload = metadata.rawPayload;
     if (payload == null) return;
-    final List<VideoMetadataProviderIdentityRow> identities =
-        await database.getVideoMetadataProviderIdentities(workId: workId);
+    final List<VideoMetadataProviderIdentityRow> identities = await database
+        .getVideoMetadataProviderIdentities(workId: workId);
     final VideoMetadataProviderIdentityRow? primary = identities
-        .where((VideoMetadataProviderIdentityRow row) =>
-            row.provider == metadata.provider.name)
+        .where(
+          (VideoMetadataProviderIdentityRow row) =>
+              row.provider == metadata.provider.name,
+        )
         .firstOrNull;
     if (primary == null) return;
     await database.replaceVideoMetadataRawSnapshots(
@@ -757,17 +778,21 @@ class VideoMetadataDatabaseStore {
       final String normalized = TitleNormalizer.normalize(name);
       if (normalized.isEmpty || !seen.add('$kind:$normalized')) continue;
       final String key = '$kind:${_digest(normalized)}';
-      terms.add(VideoMetadataTermsCompanion.insert(
-        termKey: key,
-        kind: kind,
-        name: name,
-        normalizedName: normalized,
-      ));
-      mappings.add(VideoMetadataWorkTermsCompanion.insert(
-        workId: workId,
-        termKey: key,
-        sortOrder: Value<int>(mappings.length),
-      ));
+      terms.add(
+        VideoMetadataTermsCompanion.insert(
+          termKey: key,
+          kind: kind,
+          name: name,
+          normalizedName: normalized,
+        ),
+      );
+      mappings.add(
+        VideoMetadataWorkTermsCompanion.insert(
+          workId: workId,
+          termKey: key,
+          sortOrder: Value<int>(mappings.length),
+        ),
+      );
     }
     await database.replaceVideoMetadataTermsForWork(
       workId: workId,
@@ -799,45 +824,52 @@ class VideoMetadataDatabaseStore {
         credit.roleName ?? credit.character?.name ?? '',
       ].join('\u0000');
       if (!seenCredits.add(creditKey)) continue;
-      people.add(VideoMetadataPeopleCompanion.insert(
-        personKey: personKey,
-        name: credit.person.name,
-        originalName: Value<String?>(credit.person.originalName),
-        biography: Value<String?>(credit.person.biography),
-        birthday: Value<String?>(credit.person.birthday),
-        deathday: Value<String?>(credit.person.deathday),
-        gender: Value<int?>(credit.person.gender),
-        placeOfBirth: Value<String?>(credit.person.placeOfBirth),
-        profileUrl: Value<String?>(credit.person.profileUrl),
-        updatedAt: now,
-      ));
+      people.add(
+        VideoMetadataPeopleCompanion.insert(
+          personKey: personKey,
+          name: credit.person.name,
+          originalName: Value<String?>(credit.person.originalName),
+          biography: Value<String?>(credit.person.biography),
+          birthday: Value<String?>(credit.person.birthday),
+          deathday: Value<String?>(credit.person.deathday),
+          gender: Value<int?>(credit.person.gender),
+          placeOfBirth: Value<String?>(credit.person.placeOfBirth),
+          profileUrl: Value<String?>(credit.person.profileUrl),
+          updatedAt: now,
+        ),
+      );
       String? characterKey;
       if (credit.character case final VideoMetadataCharacter character) {
         characterKey = _characterKey(character);
-        characters.add(VideoMetadataCharactersCompanion.insert(
-          characterKey: characterKey,
-          name: character.name,
-          originalName: Value<String?>(character.originalName),
-          description: Value<String?>(character.description),
-          imageUrl: Value<String?>(character.imageUrl),
-          updatedAt: now,
-        ));
+        characters.add(
+          VideoMetadataCharactersCompanion.insert(
+            characterKey: characterKey,
+            name: character.name,
+            originalName: Value<String?>(character.originalName),
+            description: Value<String?>(character.description),
+            imageUrl: Value<String?>(character.imageUrl),
+            updatedAt: now,
+          ),
+        );
       }
-      rows.add(VideoMetadataCreditsCompanion.insert(
-        workId: Value<int?>(workId),
-        seasonId: Value<int?>(seasonId),
-        episodeId: Value<int?>(episodeId),
-        personKey: personKey,
-        characterKey: Value<String?>(characterKey),
-        creditKind: _creditKind(credit.kind),
-        roleName:
-            Value<String>(credit.roleName ?? credit.character?.name ?? ''),
-        department: Value<String?>(credit.department),
-        job: Value<String?>(credit.job),
-        language: Value<String?>(credit.language),
-        providerCreditId: Value<String?>(credit.providerCreditId),
-        sortOrder: Value<int>(credit.order),
-      ));
+      rows.add(
+        VideoMetadataCreditsCompanion.insert(
+          workId: Value<int?>(workId),
+          seasonId: Value<int?>(seasonId),
+          episodeId: Value<int?>(episodeId),
+          personKey: personKey,
+          characterKey: Value<String?>(characterKey),
+          creditKind: _creditKind(credit.kind),
+          roleName: Value<String>(
+            credit.roleName ?? credit.character?.name ?? '',
+          ),
+          department: Value<String?>(credit.department),
+          job: Value<String?>(credit.job),
+          language: Value<String?>(credit.language),
+          providerCreditId: Value<String?>(credit.providerCreditId),
+          sortOrder: Value<int>(credit.order),
+        ),
+      );
     }
     await database.upsertVideoMetadataPeople(people);
     await database.upsertVideoMetadataCharacters(characters);
@@ -871,11 +903,11 @@ class VideoMetadataDatabaseStore {
     required int now,
   }) async {
     if (ids.isEmpty) return;
-    final List<VideoMetadataProviderIdentityRow> existing =
-        await database.getVideoMetadataProviderIdentities(
-      personKey: personKey,
-      characterKey: characterKey,
-    );
+    final List<VideoMetadataProviderIdentityRow> existing = await database
+        .getVideoMetadataProviderIdentities(
+          personKey: personKey,
+          characterKey: characterKey,
+        );
     final Map<String, VideoMetadataId> merged = <String, VideoMetadataId>{
       for (final VideoMetadataProviderIdentityRow row in existing)
         row.provider: VideoMetadataId(
@@ -885,8 +917,9 @@ class VideoMetadataDatabaseStore {
         ),
       for (final VideoMetadataId id in ids) id.type.toLowerCase(): id,
     };
-    final String owner =
-        personKey == null ? 'character:$characterKey' : 'person:$personKey';
+    final String owner = personKey == null
+        ? 'character:$characterKey'
+        : 'person:$personKey';
     await database.replaceVideoMetadataProviderIdentities(
       personKey: personKey,
       characterKey: characterKey,
@@ -917,41 +950,44 @@ class VideoMetadataDatabaseStore {
     Map<String, String> localPathByRemoteUrl = const <String, String>{},
     Set<VideoMetadataImageKind> lockedKinds = const <VideoMetadataImageKind>{},
   }) async {
-    final List<VideoMetadataImageRow> existing =
-        await database.getVideoMetadataImages(
-      workId: workId,
-      seasonId: seasonId,
-      episodeId: episodeId,
-    );
+    final List<VideoMetadataImageRow> existing = await database
+        .getVideoMetadataImages(
+          workId: workId,
+          seasonId: seasonId,
+          episodeId: episodeId,
+        );
     final Set<String> lockedKindNames = <String>{
       for (final VideoMetadataImageKind kind in lockedKinds) kind.name,
     };
     final Map<(String, String, String), String> existingLocalPaths =
         <(String, String, String), String>{
-      for (final VideoMetadataImageRow row in existing)
-        if (row.localPath case final String localPath when localPath.isNotEmpty)
-          (row.provider, row.kind, row.remoteUrl): localPath,
-    };
+          for (final VideoMetadataImageRow row in existing)
+            if (row.localPath case final String localPath
+                when localPath.isNotEmpty)
+              (row.provider, row.kind, row.remoteUrl): localPath,
+        };
     final Map<VideoMetadataImageKind, int> positions =
         <VideoMetadataImageKind, int>{};
     final List<VideoMetadataImagesCompanion> rows =
         <VideoMetadataImagesCompanion>[];
     for (final VideoMetadataImageRow row in existing) {
       if (!lockedKindNames.contains(row.kind)) continue;
-      rows.add(VideoMetadataImagesCompanion.insert(
-        workId: Value<int?>(workId),
-        seasonId: Value<int?>(seasonId),
-        episodeId: Value<int?>(episodeId),
-        provider: row.provider,
-        kind: row.kind,
-        position: Value<int>(row.position),
-        language: Value<String?>(row.language),
-        remoteUrl: row.remoteUrl,
-        localPath: Value<String?>(row.localPath),
-        rating: Value<double?>(row.rating),
-        voteCount: Value<int?>(row.voteCount),
-        updatedAt: row.updatedAt,
-      ));
+      rows.add(
+        VideoMetadataImagesCompanion.insert(
+          workId: Value<int?>(workId),
+          seasonId: Value<int?>(seasonId),
+          episodeId: Value<int?>(episodeId),
+          provider: row.provider,
+          kind: row.kind,
+          position: Value<int>(row.position),
+          language: Value<String?>(row.language),
+          remoteUrl: row.remoteUrl,
+          localPath: Value<String?>(row.localPath),
+          rating: Value<double?>(row.rating),
+          voteCount: Value<int?>(row.voteCount),
+          updatedAt: row.updatedAt,
+        ),
+      );
     }
     for (final VideoMetadataImage image in images) {
       if (lockedKindNames.contains(image.kind.name)) continue;
@@ -960,27 +996,29 @@ class VideoMetadataDatabaseStore {
         (int value) => value + 1,
         ifAbsent: () => 0,
       );
-      rows.add(VideoMetadataImagesCompanion.insert(
-        workId: Value<int?>(workId),
-        seasonId: Value<int?>(seasonId),
-        episodeId: Value<int?>(episodeId),
-        provider: image.provider.name,
-        kind: image.kind.name,
-        position: Value<int>(position),
-        language: Value<String?>(image.language),
-        remoteUrl: image.url,
-        localPath: Value<String?>(
-          localPathByRemoteUrl[image.url] ??
-              existingLocalPaths[(
-                image.provider.name,
-                image.kind.name,
-                image.url,
-              )],
+      rows.add(
+        VideoMetadataImagesCompanion.insert(
+          workId: Value<int?>(workId),
+          seasonId: Value<int?>(seasonId),
+          episodeId: Value<int?>(episodeId),
+          provider: image.provider.name,
+          kind: image.kind.name,
+          position: Value<int>(position),
+          language: Value<String?>(image.language),
+          remoteUrl: image.url,
+          localPath: Value<String?>(
+            localPathByRemoteUrl[image.url] ??
+                existingLocalPaths[(
+                  image.provider.name,
+                  image.kind.name,
+                  image.url,
+                )],
+          ),
+          rating: Value<double?>(image.voteAverage),
+          voteCount: Value<int?>(image.voteCount),
+          updatedAt: now,
         ),
-        rating: Value<double?>(image.voteAverage),
-        voteCount: Value<int?>(image.voteCount),
-        updatedAt: now,
-      ));
+      );
     }
     await database.replaceVideoMetadataImages(
       workId: workId,
@@ -1031,13 +1069,15 @@ class VideoMetadataDatabaseStore {
       for (final VideoBookRow book in localWork.members) {
         final VideoMetadataEpisode? episode = episodeByBook[book.bookUid];
         if (episode == null) continue;
-        final VideoScrapeMetaRow? previous =
-            await database.getVideoScrapeMeta(book.bookUid);
+        final VideoScrapeMetaRow? previous = await database.getVideoScrapeMeta(
+          book.bookUid,
+        );
         await database.upsertVideoScrapeMeta(
           VideoScrapeMetaCompanion.insert(
             bookUid: book.bookUid,
             source: source,
-            subjectId: _primaryIdFrom(
+            subjectId:
+                _primaryIdFrom(
                   episode.ids,
                   preferred: metadata.provider.name,
                 )?.value ??
@@ -1136,9 +1176,9 @@ class VideoMetadataDatabaseStore {
   }
 
   static String _creditKind(VideoMetadataCreditKind kind) => switch (kind) {
-        VideoMetadataCreditKind.voiceActor => 'voice_actor',
-        _ => kind.name,
-      };
+    VideoMetadataCreditKind.voiceActor => 'voice_actor',
+    _ => kind.name,
+  };
 
   /// 人物行主键（`person:<provider>:<id>` / 按名字摘要），与 apply 写
   /// `video_metadata_people` 时用的同一把键——人物照片落地要按它回写 `profilePath`。
@@ -1216,16 +1256,17 @@ class VideoMetadataDatabaseStore {
 
   static String _extraKey(VideoMetadataExtra extra) {
     final String provider = extra.provider?.name ?? 'online';
-    final String value = extra.providerVideoId ??
+    final String value =
+        extra.providerVideoId ??
         sha1.convert(utf8.encode(extra.remoteUrl ?? extra.title)).toString();
     return '$provider:$value';
   }
 
   static String _extraKind(VideoMetadataExtraKind kind) => switch (kind) {
-        VideoMetadataExtraKind.behindTheScenes => 'behind_the_scenes',
-        VideoMetadataExtraKind.deletedScene => 'deleted_scene',
-        _ => kind.name,
-      };
+    VideoMetadataExtraKind.behindTheScenes => 'behind_the_scenes',
+    VideoMetadataExtraKind.deletedScene => 'deleted_scene',
+    _ => kind.name,
+  };
 
   static String _digest(String value) =>
       sha1.convert(utf8.encode(value)).toString();

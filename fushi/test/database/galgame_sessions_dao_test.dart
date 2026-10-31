@@ -10,21 +10,20 @@ import 'package:fushi_core/fushi_core.dart';
 /// 全部统计 UI 的正确性，必须钉死。
 void main() {
   Future<FushiDatabase> openDb() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
 
   Future<void> addGame(FushiDatabase db, String id) => db.upsertGalgame(
-        GalgamesCompanion.insert(
-          id: id,
-          name: id,
-          exePath: '/games/$id/$id.exe',
-          workdir: '/games/$id',
-          addedAt: 0,
-        ),
-      );
+    GalgamesCompanion.insert(
+      id: id,
+      name: id,
+      exePath: '/games/$id/$id.exe',
+      workdir: '/games/$id',
+      addedAt: 0,
+    ),
+  );
 
   Future<void> addSession(
     FushiDatabase db,
@@ -33,16 +32,15 @@ void main() {
     required int endMs,
     required int durationSeconds,
     required String dateKey,
-  }) =>
-      db.insertGalgameSession(
-        GalgameSessionsCompanion.insert(
-          gameId: gameId,
-          startMs: startMs,
-          endMs: endMs,
-          durationSeconds: durationSeconds,
-          dateKey: dateKey,
-        ),
-      );
+  }) => db.insertGalgameSession(
+    GalgameSessionsCompanion.insert(
+      gameId: gameId,
+      startMs: startMs,
+      endMs: endMs,
+      durationSeconds: durationSeconds,
+      dateKey: dateKey,
+    ),
+  );
 
   test('getGalgamePlayTotals：按游戏聚合总时长/次数/最后游玩', () async {
     final FushiDatabase db = await openDb();
@@ -50,21 +48,30 @@ void main() {
     await addGame(db, 'b');
     await addGame(db, 'c'); // 一次都没玩过
 
-    await addSession(db, 'a',
-        startMs: 1000,
-        endMs: 601000,
-        durationSeconds: 600,
-        dateKey: '2026-07-20');
-    await addSession(db, 'a',
-        startMs: 700000,
-        endMs: 1000000,
-        durationSeconds: 300,
-        dateKey: '2026-07-21');
-    await addSession(db, 'b',
-        startMs: 5000,
-        endMs: 65000,
-        durationSeconds: 60,
-        dateKey: '2026-07-21');
+    await addSession(
+      db,
+      'a',
+      startMs: 1000,
+      endMs: 601000,
+      durationSeconds: 600,
+      dateKey: '2026-07-20',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 700000,
+      endMs: 1000000,
+      durationSeconds: 300,
+      dateKey: '2026-07-21',
+    );
+    await addSession(
+      db,
+      'b',
+      startMs: 5000,
+      endMs: 65000,
+      durationSeconds: 60,
+      dateKey: '2026-07-21',
+    );
 
     final Map<String, (int, int, int)> totals = await db.getGalgamePlayTotals();
 
@@ -91,18 +98,48 @@ void main() {
     await addGame(db, 'b');
 
     // 同一天两段，应合并。
-    await addSession(db, 'a',
-        startMs: 1, endMs: 2, durationSeconds: 100, dateKey: '2026-07-20');
-    await addSession(db, 'a',
-        startMs: 3, endMs: 4, durationSeconds: 200, dateKey: '2026-07-20');
-    await addSession(db, 'a',
-        startMs: 5, endMs: 6, durationSeconds: 50, dateKey: '2026-07-22');
+    await addSession(
+      db,
+      'a',
+      startMs: 1,
+      endMs: 2,
+      durationSeconds: 100,
+      dateKey: '2026-07-20',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 3,
+      endMs: 4,
+      durationSeconds: 200,
+      dateKey: '2026-07-20',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 5,
+      endMs: 6,
+      durationSeconds: 50,
+      dateKey: '2026-07-22',
+    );
     // 区间外。
-    await addSession(db, 'a',
-        startMs: 7, endMs: 8, durationSeconds: 999, dateKey: '2026-07-25');
+    await addSession(
+      db,
+      'a',
+      startMs: 7,
+      endMs: 8,
+      durationSeconds: 999,
+      dateKey: '2026-07-25',
+    );
     // 别的游戏，不该混进来。
-    await addSession(db, 'b',
-        startMs: 9, endMs: 10, durationSeconds: 777, dateKey: '2026-07-20');
+    await addSession(
+      db,
+      'b',
+      startMs: 9,
+      endMs: 10,
+      durationSeconds: 777,
+      dateKey: '2026-07-20',
+    );
 
     final Map<String, int> daily = await db.getGalgameDailySeconds(
       'a',
@@ -118,10 +155,22 @@ void main() {
   test('getGalgameDailySeconds：边界日包含在闭区间内', () async {
     final FushiDatabase db = await openDb();
     await addGame(db, 'a');
-    await addSession(db, 'a',
-        startMs: 1, endMs: 2, durationSeconds: 10, dateKey: '2026-07-01');
-    await addSession(db, 'a',
-        startMs: 3, endMs: 4, durationSeconds: 20, dateKey: '2026-07-31');
+    await addSession(
+      db,
+      'a',
+      startMs: 1,
+      endMs: 2,
+      durationSeconds: 10,
+      dateKey: '2026-07-01',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 3,
+      endMs: 4,
+      durationSeconds: 20,
+      dateKey: '2026-07-31',
+    );
 
     final Map<String, int> daily = await db.getGalgameDailySeconds(
       'a',
@@ -136,12 +185,30 @@ void main() {
     await addGame(db, 'a');
     await addGame(db, 'b');
 
-    await addSession(db, 'a',
-        startMs: 1, endMs: 2, durationSeconds: 100, dateKey: '2026-07-24');
-    await addSession(db, 'b',
-        startMs: 3, endMs: 4, durationSeconds: 250, dateKey: '2026-07-24');
-    await addSession(db, 'a',
-        startMs: 5, endMs: 6, durationSeconds: 999, dateKey: '2026-07-23');
+    await addSession(
+      db,
+      'a',
+      startMs: 1,
+      endMs: 2,
+      durationSeconds: 100,
+      dateKey: '2026-07-24',
+    );
+    await addSession(
+      db,
+      'b',
+      startMs: 3,
+      endMs: 4,
+      durationSeconds: 250,
+      dateKey: '2026-07-24',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 5,
+      endMs: 6,
+      durationSeconds: 999,
+      dateKey: '2026-07-23',
+    );
 
     expect(await db.getGalgameSecondsForDay('2026-07-24'), 350);
     expect(await db.getGalgameSecondsForDay('2026-07-23'), 999);
@@ -154,12 +221,30 @@ void main() {
     await addGame(db, 'a');
     await addGame(db, 'b');
 
-    await addSession(db, 'a',
-        startMs: 1, endMs: 2, durationSeconds: 100, dateKey: '2026-07-24');
-    await addSession(db, 'b',
-        startMs: 3, endMs: 4, durationSeconds: 250, dateKey: '2026-07-24');
-    await addSession(db, 'a',
-        startMs: 5, endMs: 6, durationSeconds: 999, dateKey: '2026-07-23');
+    await addSession(
+      db,
+      'a',
+      startMs: 1,
+      endMs: 2,
+      durationSeconds: 100,
+      dateKey: '2026-07-24',
+    );
+    await addSession(
+      db,
+      'b',
+      startMs: 3,
+      endMs: 4,
+      durationSeconds: 250,
+      dateKey: '2026-07-24',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 5,
+      endMs: 6,
+      durationSeconds: 999,
+      dateKey: '2026-07-23',
+    );
 
     final Map<String, (int, int)> totals = await db.getAllGalgameDailyTotals();
     expect(totals['2026-07-24'], (350, 2));
@@ -170,38 +255,54 @@ void main() {
     final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     for (int i = 0; i < 5; i++) {
-      await addSession(db, 'a',
-          startMs: i * 1000,
-          endMs: i * 1000 + 500,
-          durationSeconds: 60 + i,
-          dateKey: '2026-07-2$i');
+      await addSession(
+        db,
+        'a',
+        startMs: i * 1000,
+        endMs: i * 1000 + 500,
+        durationSeconds: 60 + i,
+        dateKey: '2026-07-2$i',
+      );
     }
 
-    final List<GalgameSessionRow> firstPage =
-        await db.getGalgameSessions('a', limit: 2);
+    final List<GalgameSessionRow> firstPage = await db.getGalgameSessions(
+      'a',
+      limit: 2,
+    );
     expect(firstPage, hasLength(2));
     expect(firstPage[0].startMs, 4000); // 倒序：最新在前
     expect(firstPage[1].startMs, 3000);
 
-    final List<GalgameSessionRow> secondPage =
-        await db.getGalgameSessions('a', limit: 2, offset: 2);
-    expect(
-        secondPage.map((GalgameSessionRow r) => r.startMs), <int>[2000, 1000]);
+    final List<GalgameSessionRow> secondPage = await db.getGalgameSessions(
+      'a',
+      limit: 2,
+      offset: 2,
+    );
+    expect(secondPage.map((GalgameSessionRow r) => r.startMs), <int>[
+      2000,
+      1000,
+    ]);
   });
 
   test('deleteGalgameSession：删单条后聚合值同步变化（无投影表可失配）', () async {
     final FushiDatabase db = await openDb();
     await addGame(db, 'a');
-    await addSession(db, 'a',
-        startMs: 1000,
-        endMs: 2000,
-        durationSeconds: 600,
-        dateKey: '2026-07-20');
-    await addSession(db, 'a',
-        startMs: 3000,
-        endMs: 4000,
-        durationSeconds: 300,
-        dateKey: '2026-07-20');
+    await addSession(
+      db,
+      'a',
+      startMs: 1000,
+      endMs: 2000,
+      durationSeconds: 600,
+      dateKey: '2026-07-20',
+    );
+    await addSession(
+      db,
+      'a',
+      startMs: 3000,
+      endMs: 4000,
+      durationSeconds: 300,
+      dateKey: '2026-07-20',
+    );
 
     expect((await db.getGalgamePlayTotals())['a']?.$1, 900);
 
@@ -244,8 +345,8 @@ void main() {
     expect(await db.getGalgameSessions('a'), isEmpty);
     expect(await db.getAllGalgameDailyTotals(), isEmpty);
     expect(await db.getGalgame('a'), isNotNull);
-    final List<ActivityEventRow> activities =
-        await db.getRecentActivityEvents();
+    final List<ActivityEventRow> activities = await db
+        .getRecentActivityEvents();
     expect(activities, hasLength(1));
     expect(activities.single.eventType, kActivityGame);
   });
@@ -282,8 +383,9 @@ void main() {
 
     final List<GalgameSourceRow> sources = await db.getGalgameSources('a');
     expect(sources, hasLength(2));
-    final GalgameSourceRow bgm =
-        sources.firstWhere((GalgameSourceRow r) => r.source == 'bgm');
+    final GalgameSourceRow bgm = sources.firstWhere(
+      (GalgameSourceRow r) => r.source == 'bgm',
+    );
     expect(bgm.dataJson, '{"name":"new"}');
     expect(bgm.fetchedAt, 2);
 
@@ -295,15 +397,33 @@ void main() {
     final FushiDatabase db = await openDb();
     await addGame(db, 'a');
     await addGame(db, 'b');
-    await db.upsertGalgameSource(GalgameSourcesCompanion.insert(
-        gameId: 'a', source: 'bgm', dataJson: '{}', fetchedAt: 1));
-    await db.upsertGalgameSource(GalgameSourcesCompanion.insert(
-        gameId: 'a', source: 'vndb', dataJson: '{}', fetchedAt: 1));
-    await db.upsertGalgameSource(GalgameSourcesCompanion.insert(
-        gameId: 'b', source: 'bgm', dataJson: '{}', fetchedAt: 1));
+    await db.upsertGalgameSource(
+      GalgameSourcesCompanion.insert(
+        gameId: 'a',
+        source: 'bgm',
+        dataJson: '{}',
+        fetchedAt: 1,
+      ),
+    );
+    await db.upsertGalgameSource(
+      GalgameSourcesCompanion.insert(
+        gameId: 'a',
+        source: 'vndb',
+        dataJson: '{}',
+        fetchedAt: 1,
+      ),
+    );
+    await db.upsertGalgameSource(
+      GalgameSourcesCompanion.insert(
+        gameId: 'b',
+        source: 'bgm',
+        dataJson: '{}',
+        fetchedAt: 1,
+      ),
+    );
 
-    final Map<String, List<GalgameSourceRow>> grouped =
-        await db.getAllGalgameSources();
+    final Map<String, List<GalgameSourceRow>> grouped = await db
+        .getAllGalgameSources();
     expect(grouped['a'], hasLength(2));
     expect(grouped['b'], hasLength(1));
   });
@@ -315,8 +435,11 @@ void main() {
     await db.setGalgamePlayStatus('a', 3); // 在玩
     await db.setGalgameCustomData('a', '{"userRating":8.5}');
     await db.setGalgameCoverPath('a', '/covers/a.png');
-    await db.setGalgameScrapeResult('a',
-        primarySource: 'bgm', releaseDate: '2020-01-31');
+    await db.setGalgameScrapeResult(
+      'a',
+      primarySource: 'bgm',
+      releaseDate: '2020-01-31',
+    );
 
     final GalgameRow? row = await db.getGalgame('a');
     expect(row, isNotNull);

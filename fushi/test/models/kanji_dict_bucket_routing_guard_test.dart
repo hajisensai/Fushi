@@ -155,26 +155,30 @@ void main() {
       ).readAsStringSync();
     });
 
-    test('searchDictionary asks for the kanji bucket only for a single kanji',
-        () {
-      // `_searchRemoteDictionary` is the method immediately after
-      // `searchDictionary` (+ its local helper), bounding its source region.
-      final String body = regionBetween(
-        appModel,
-        'Future<DictionarySearchResult> searchDictionary(',
-        'Future<DictionarySearchResult?> _searchRemoteDictionary(',
-      );
-      expect(
-        body.contains('includeKanji: isSingleKanji(searchTerm),'),
-        isTrue,
-        reason:
-            'must gate the kanji query on isSingleKanji so multi-char '
-            'terms and kana/latin singletons skip it',
-      );
-    });
+    test(
+      'searchDictionary asks for the kanji bucket only for a single kanji',
+      () {
+        // `_searchRemoteDictionary` is the method immediately after
+        // `searchDictionary` (+ its local helper), bounding its source region.
+        final String body = regionBetween(
+          appModel,
+          'Future<DictionarySearchResult> searchDictionary(',
+          'Future<DictionarySearchResult?> _searchRemoteDictionary(',
+        );
+        expect(
+          body.contains('includeKanji: isSingleKanji(searchTerm),'),
+          isTrue,
+          reason:
+              'must gate the kanji query on isSingleKanji so multi-char '
+              'terms and kana/latin singletons skip it',
+        );
+      },
+    );
 
     test('the background lookup queries the kanji bucket and attaches it', () {
-      final int start = worker.indexOf('FushiLookupOutcome _computeLookupOutcome(');
+      final int start = worker.indexOf(
+        'FushiLookupOutcome _computeLookupOutcome(',
+      );
       expect(start, greaterThanOrEqualTo(0));
       final String body = worker.substring(start);
       expect(

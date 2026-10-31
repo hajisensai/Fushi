@@ -9,15 +9,15 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     InterconnectSyncBackend backend,
     SyncAssetDirection direction,
   ) async {
-    final List<DictionaryMetaRow> localDicts =
-        await _db.getAllDictionaryMetadata();
-    final List<RemoteDictionaryInfo> remoteDicts =
-        await backend.listRemoteDictionaries();
+    final List<DictionaryMetaRow> localDicts = await _db
+        .getAllDictionaryMetadata();
+    final List<RemoteDictionaryInfo> remoteDicts = await backend
+        .listRemoteDictionaries();
 
     final SyncKeyDiff diff = computeKeyUnionDiff(
       localKeys: <String>{for (final DictionaryMetaRow d in localDicts) d.name},
       remoteKeys: <String>{
-        for (final RemoteDictionaryInfo d in remoteDicts) d.name
+        for (final RemoteDictionaryInfo d in remoteDicts) d.name,
       },
     );
 
@@ -29,18 +29,27 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     int index = 0;
 
     for (final String name in pulls) {
-      _emit(SyncPhase.dictionaries,
-          itemIndex: index, itemTotal: total, title: name);
+      _emit(
+        SyncPhase.dictionaries,
+        itemIndex: index,
+        itemTotal: total,
+        title: name,
+      );
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
-        await backend.getRemoteDictionary(name, tmp,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
-                itemIndex: index,
-                itemTotal: total,
-                title: name,
-                fileFraction: f,
-                fileBytes: b));
+        await backend.getRemoteDictionary(
+          name,
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.dictionaries,
+            itemIndex: index,
+            itemTotal: total,
+            title: name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
         await _packages.importDictionaryPackage(
           packageFile: tmp,
           dictionaryResourceRoot: _dictionaryResourceRoot,
@@ -55,8 +64,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     }
 
     for (final String name in pushes) {
-      _emit(SyncPhase.dictionaries,
-          itemIndex: index, itemTotal: total, title: name);
+      _emit(
+        SyncPhase.dictionaries,
+        itemIndex: index,
+        itemTotal: total,
+        title: name,
+      );
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
@@ -65,13 +78,18 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
           dictionaryResourceRoot: _dictionaryResourceRoot,
           outputFile: tmp,
         );
-        await backend.putRemoteDictionary(name, tmp,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
-                itemIndex: index,
-                itemTotal: total,
-                title: name,
-                fileFraction: f,
-                fileBytes: b));
+        await backend.putRemoteDictionary(
+          name,
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.dictionaries,
+            itemIndex: index,
+            itemTotal: total,
+            title: name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
         report.dictionariesExported++;
       } catch (e) {
         report.noteError('push dictionary "$name"', e);
@@ -88,8 +106,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     SyncAssetDirection direction,
   ) async {
     final String ns = await _backend.ensureNamespace(kSyncDictionaryNamespace);
-    final List<DictionaryMetaRow> localDicts =
-        await _db.getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> localDicts = await _db
+        .getAllDictionaryMetadata();
     final List<AssetEntry> remote = await _backend.listChildren(ns);
 
     final Set<String> remoteNames = <String>{
@@ -120,8 +138,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
 
     // Push local-only dictionaries.
     for (final DictionaryMetaRow d in toPush) {
-      _emit(SyncPhase.dictionaries,
-          itemIndex: index, itemTotal: total, title: d.name);
+      _emit(
+        SyncPhase.dictionaries,
+        itemIndex: index,
+        itemTotal: total,
+        title: d.name,
+      );
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
@@ -130,13 +152,19 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
           dictionaryResourceRoot: _dictionaryResourceRoot,
           outputFile: tmp,
         );
-        await _backend.putAsset(ns, '${d.name}$_dictionaryAssetSuffix', tmp,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
-                itemIndex: index,
-                itemTotal: total,
-                title: d.name,
-                fileFraction: f,
-                fileBytes: b));
+        await _backend.putAsset(
+          ns,
+          '${d.name}$_dictionaryAssetSuffix',
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.dictionaries,
+            itemIndex: index,
+            itemTotal: total,
+            title: d.name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
         report.dictionariesExported++;
       } catch (e) {
         report.noteError('export dictionary "${d.name}"', e);
@@ -153,18 +181,27 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       // `.fushidict`）suffix, which otherwise surfaces as a "weird" entry in
       // the progress list.
       final String displayName = _stripDictionaryAssetSuffix(e.name);
-      _emit(SyncPhase.dictionaries,
-          itemIndex: index, itemTotal: total, title: displayName);
+      _emit(
+        SyncPhase.dictionaries,
+        itemIndex: index,
+        itemTotal: total,
+        title: displayName,
+      );
       File? tmp;
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
-        await _backend.getAsset(e.id, tmp,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
-                itemIndex: index,
-                itemTotal: total,
-                title: displayName,
-                fileFraction: f,
-                fileBytes: b));
+        await _backend.getAsset(
+          e.id,
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.dictionaries,
+            itemIndex: index,
+            itemTotal: total,
+            title: displayName,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
         await _packages.importDictionaryPackage(
           packageFile: tmp,
           dictionaryResourceRoot: _dictionaryResourceRoot,

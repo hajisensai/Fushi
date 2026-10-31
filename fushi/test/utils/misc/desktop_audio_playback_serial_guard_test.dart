@@ -46,8 +46,11 @@ void main() {
       final Future<void> c = queue.run<void>(() => op('C', 20));
       await Future.wait(<Future<void>>[a, b, c]);
 
-      expect(maxConcurrent, 1,
-          reason: 'activation-changing operations must run strictly serially');
+      expect(
+        maxConcurrent,
+        1,
+        reason: 'activation-changing operations must run strictly serially',
+      );
       expect(
         events,
         <String>[
@@ -55,30 +58,33 @@ void main() {
           'B:start', 'B:end', //
           'C:start', 'C:end', //
         ],
-        reason: 'each operation must fully settle before the next one starts, '
+        reason:
+            'each operation must fully settle before the next one starts, '
             'in submission order',
       );
     });
 
-    test('a failing operation does not stall the chain for later callers',
-        () async {
-      final AudioActivationQueue queue = AudioActivationQueue();
-      final List<String> events = <String>[];
+    test(
+      'a failing operation does not stall the chain for later callers',
+      () async {
+        final AudioActivationQueue queue = AudioActivationQueue();
+        final List<String> events = <String>[];
 
-      final Future<void> failing = queue.run<void>(() async {
-        events.add('first:start');
-        throw StateError('boom');
-      });
-      final Future<int> next = queue.run<int>(() async {
-        events.add('second:start');
-        return 42;
-      });
+        final Future<void> failing = queue.run<void>(() async {
+          events.add('first:start');
+          throw StateError('boom');
+        });
+        final Future<int> next = queue.run<int>(() async {
+          events.add('second:start');
+          return 42;
+        });
 
-      await expectLater(failing, throwsStateError);
-      // The second operation must still run and return its own value.
-      expect(await next, 42);
-      expect(events, <String>['first:start', 'second:start']);
-    });
+        await expectLater(failing, throwsStateError);
+        // The second operation must still run and return its own value.
+        expect(await next, 42);
+        expect(events, <String>['first:start', 'second:start']);
+      },
+    );
 
     test('the caller observes its own operation result/error', () async {
       final AudioActivationQueue queue = AudioActivationQueue();
@@ -99,105 +105,125 @@ void main() {
   // interleave (proving the hazard is real), then assert that awaiting the
   // activation work INSIDE the body removes it.
   group('AudioActivationQueue play()-escape race', () {
-    test('un-awaited activation work escapes the serial boundary (the bug)',
-        () async {
-      final AudioActivationQueue queue = AudioActivationQueue();
-      bool activationInFlight = false;
-      bool sawOverlap = false;
+    test(
+      'un-awaited activation work escapes the serial boundary (the bug)',
+      () async {
+        final AudioActivationQueue queue = AudioActivationQueue();
+        bool activationInFlight = false;
+        bool sawOverlap = false;
 
-      // Cycle A: a body that fires activation work WITHOUT awaiting it (the
-      // first-round mistake: unawaited(_player.play())).
-      Future<void> badPlay() async {
-        // stop/load portion (awaited, fine).
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-        // Activation toggle escapes the body: it keeps running after the body
-        // returns, mirroring unawaited(play()).
-        activationInFlight = true;
-        Future<void>(() async {
+        // Cycle A: a body that fires activation work WITHOUT awaiting it (the
+        // first-round mistake: unawaited(_player.play())).
+        Future<void> badPlay() async {
+          // stop/load portion (awaited, fine).
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+          // Activation toggle escapes the body: it keeps running after the body
+          // returns, mirroring unawaited(play()).
+          activationInFlight = true;
+          Future<void>(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            activationInFlight = false;
+          });
+          // Body returns while activation is still in flight.
+        }
+
+        // Cycle B: its stop/load runs and observes A's activation still in
+        // flight — i.e. they interleave on the shared id.
+        Future<void> nextCycleStopLoad() async {
+          if (activationInFlight) sawOverlap = true;
+        }
+
+        await queue.run<void>(badPlay);
+        await queue.run<void>(nextCycleStopLoad);
+        // Let the escaped activation finish.
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        expect(
+          sawOverlap,
+          isTrue,
+          reason:
+              'un-awaited (escaped) activation overlaps the next cycle — '
+              'this is the leak path the rework must close',
+        );
+      },
+    );
+
+    test(
+      'awaiting activation INSIDE the body keeps it within the boundary',
+      () async {
+        final AudioActivationQueue queue = AudioActivationQueue();
+        bool activationInFlight = false;
+        bool sawOverlap = false;
+
+        // Cycle A: same activation work, but AWAITED inside the body (the fix:
+        // await _player.play()).
+        Future<void> goodPlay() async {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+          activationInFlight = true;
+          // Awaited: the body does not settle until activation is stable. Models
+          // play() returning once playCompleter resolves (native play accepted),
+          // NOT when the clip ends.
           await Future<void>.delayed(const Duration(milliseconds: 20));
           activationInFlight = false;
-        });
-        // Body returns while activation is still in flight.
-      }
+        }
 
-      // Cycle B: its stop/load runs and observes A's activation still in
-      // flight — i.e. they interleave on the shared id.
-      Future<void> nextCycleStopLoad() async {
-        if (activationInFlight) sawOverlap = true;
-      }
+        Future<void> nextCycleStopLoad() async {
+          if (activationInFlight) sawOverlap = true;
+        }
 
-      await queue.run<void>(badPlay);
-      await queue.run<void>(nextCycleStopLoad);
-      // Let the escaped activation finish.
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+        await queue.run<void>(goodPlay);
+        await queue.run<void>(nextCycleStopLoad);
 
-      expect(sawOverlap, isTrue,
-          reason: 'un-awaited (escaped) activation overlaps the next cycle — '
-              'this is the leak path the rework must close');
-    });
-
-    test('awaiting activation INSIDE the body keeps it within the boundary',
-        () async {
-      final AudioActivationQueue queue = AudioActivationQueue();
-      bool activationInFlight = false;
-      bool sawOverlap = false;
-
-      // Cycle A: same activation work, but AWAITED inside the body (the fix:
-      // await _player.play()).
-      Future<void> goodPlay() async {
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-        activationInFlight = true;
-        // Awaited: the body does not settle until activation is stable. Models
-        // play() returning once playCompleter resolves (native play accepted),
-        // NOT when the clip ends.
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        activationInFlight = false;
-      }
-
-      Future<void> nextCycleStopLoad() async {
-        if (activationInFlight) sawOverlap = true;
-      }
-
-      await queue.run<void>(goodPlay);
-      await queue.run<void>(nextCycleStopLoad);
-
-      expect(sawOverlap, isFalse,
+        expect(
+          sawOverlap,
+          isFalse,
           reason:
               'awaiting activation inside the run body keeps stop→load→play '
-              'strictly serial — no interleaving on the shared player id');
-    });
+              'strictly serial — no interleaving on the shared player id',
+        );
+      },
+    );
   });
 
   // stop() must be able to supersede an in-flight/queued playback cycle so a
   // future dismiss-stop does not fight an incoming activation (and so a queued
   // play does not start a fresh activation just to be torn down).
   group('AudioActivationQueue stop preemption', () {
-    test('preempt() bumps the generation so a queued playback can detect it',
-        () async {
-      final AudioActivationQueue queue = AudioActivationQueue();
-      final int before = queue.generation;
-      bool bailedOut = false;
+    test(
+      'preempt() bumps the generation so a queued playback can detect it',
+      () async {
+        final AudioActivationQueue queue = AudioActivationQueue();
+        final int before = queue.generation;
+        bool bailedOut = false;
 
-      // A playback body captures the generation at submission, yields, then
-      // re-checks before its activation step.
-      final int submitted = queue.generation;
-      final Future<void> playback = queue.run<void>(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        if (queue.generation != submitted) {
-          bailedOut = true; // superseded by a stop — do not activate.
-        }
-      });
+        // A playback body captures the generation at submission, yields, then
+        // re-checks before its activation step.
+        final int submitted = queue.generation;
+        final Future<void> playback = queue.run<void>(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          if (queue.generation != submitted) {
+            bailedOut = true; // superseded by a stop — do not activate.
+          }
+        });
 
-      // A dismiss-stop arrives while the playback is still queued/yielding.
-      queue.preempt();
+        // A dismiss-stop arrives while the playback is still queued/yielding.
+        queue.preempt();
 
-      await playback;
-      expect(queue.generation, greaterThan(before),
-          reason: 'preempt() must advance the generation');
-      expect(bailedOut, isTrue,
-          reason: 'a playback superseded by a stop must detect it and bail '
-              'before starting a new activation');
-    });
+        await playback;
+        expect(
+          queue.generation,
+          greaterThan(before),
+          reason: 'preempt() must advance the generation',
+        );
+        expect(
+          bailedOut,
+          isTrue,
+          reason:
+              'a playback superseded by a stop must detect it and bail '
+              'before starting a new activation',
+        );
+      },
+    );
 
     test('without a preempt, a playback body keeps its activation', () async {
       final AudioActivationQueue queue = AudioActivationQueue();
@@ -207,14 +233,18 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 5));
         if (queue.generation != submitted) bailedOut = true;
       });
-      expect(bailedOut, isFalse,
-          reason: 'no stop arrived, so the playback must proceed normally');
+      expect(
+        bailedOut,
+        isFalse,
+        reason: 'no stop arrived, so the playback must proceed normally',
+      );
     });
   });
 
   group('DesktopAudioPlayback wiring guard', () {
-    final String source =
-        _read('lib/src/utils/misc/desktop_audio_playback.dart');
+    final String source = _read(
+      'lib/src/utils/misc/desktop_audio_playback.dart',
+    );
     // Collapse whitespace so dart format line-wrapping cannot break the guard.
     final String flat = source.replaceAll(RegExp(r'\s+'), ' ');
 
@@ -223,10 +253,16 @@ void main() {
       // operation through the serial queue, or overlapping cycles can leak the
       // player id again (BUG-342).
       expect(source, contains('AudioActivationQueue _activation'));
-      expect(flat, contains('_activation.run<bool>('),
-          reason: 'preview playback must be serialized');
-      expect(flat, contains('_activation.run<void>('),
-          reason: 'stop must share the same serial queue as playback');
+      expect(
+        flat,
+        contains('_activation.run<bool>('),
+        reason: 'preview playback must be serialized',
+      );
+      expect(
+        flat,
+        contains('_activation.run<void>('),
+        reason: 'stop must share the same serial queue as playback',
+      );
     });
 
     test('play() is awaited INSIDE the serial body, not fire-and-forget', () {
@@ -241,27 +277,38 @@ void main() {
       // desktop_audio_playback_native_play_future_test.dart.
       expect(flat, contains('final Future<void> play = _player.play();'));
       expect(
-          RegExp(r'if \(_playFutureSpansPlayback\) \{[\s\S]*?\} else \{ '
-                  r'await play; \}')
-              .hasMatch(flat),
-          isTrue,
-          reason: 'play() must be awaited inside the serial run body on the '
-              'media_kit backend so its _setPlatformActive(true) stays within '
-              'the activation boundary');
-      expect(flat, isNot(contains('unawaited(_player.play())')),
-          reason: 'fire-and-forget play() re-opens the interleaving leak path');
+        RegExp(
+          r'if \(_playFutureSpansPlayback\) \{[\s\S]*?\} else \{ '
+          r'await play; \}',
+        ).hasMatch(flat),
+        isTrue,
+        reason:
+            'play() must be awaited inside the serial run body on the '
+            'media_kit backend so its _setPlatformActive(true) stays within '
+            'the activation boundary',
+      );
+      expect(
+        flat,
+        isNot(contains('unawaited(_player.play())')),
+        reason: 'fire-and-forget play() re-opens the interleaving leak path',
+      );
     });
 
     test('stop() preempts so it can supersede an in-flight playback cycle', () {
       // Robust against dart format wrapping: just require both the preempt call
       // and a generation re-check guarding activation exist.
-      expect(flat, contains('_activation.preempt()'),
-          reason: 'stop must signal preemption so queued playback can bail');
       expect(
-        RegExp(r'_activation\.generation\s*!=\s*submittedGeneration')
-            .hasMatch(flat),
+        flat,
+        contains('_activation.preempt()'),
+        reason: 'stop must signal preemption so queued playback can bail',
+      );
+      expect(
+        RegExp(
+          r'_activation\.generation\s*!=\s*submittedGeneration',
+        ).hasMatch(flat),
         isTrue,
-        reason: 'a playback body must re-check the generation before starting '
+        reason:
+            'a playback body must re-check the generation before starting '
             'a fresh activation, so a dismiss-stop can supersede it',
       );
     });

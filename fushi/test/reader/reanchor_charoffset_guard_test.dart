@@ -30,19 +30,32 @@ void main() {
 
   group('样式专用两阶段重锚入口（TODO-736 B-1，取代旧 reanchorAfterStyleChange）', () {
     test('旧单函数 reanchorAfterStyleChange 已删（死代码，零调用者）', () {
-      expect(src, isNot(contains('reanchorAfterStyleChange = function')),
-          reason: '旧 rAF-finally 自驱重锚已被 begin/commit 两阶段编排取代并删除；'
-              '若它复活说明有人退回了非 settle-aware 的旧路径（翻页改字号跳章首根因）。');
+      expect(
+        src,
+        isNot(contains('reanchorAfterStyleChange = function')),
+        reason:
+            '旧 rAF-finally 自驱重锚已被 begin/commit 两阶段编排取代并删除；'
+            '若它复活说明有人退回了非 settle-aware 的旧路径（翻页改字号跳章首根因）。',
+      );
     });
 
-    test('_sharedJs 定义 beginStyleReanchor / commitStyleReanchor（两 shell 共用）',
-        () {
-      expect(src, contains('beginStyleReanchor: function'),
-          reason: 'beginStyleReanchor 必须在 _sharedJs 定义（分页/连续两 shell 共用，'
-              'getFirstVisibleCharOffset/scrollToCharOffset 经 this 解析各自版本）。');
-      expect(src, contains('commitStyleReanchor: function'),
-          reason: 'commitStyleReanchor 必须在 _sharedJs 定义（settle 后滚回 + 清旗）。');
-    });
+    test(
+      '_sharedJs 定义 beginStyleReanchor / commitStyleReanchor（两 shell 共用）',
+      () {
+        expect(
+          src,
+          contains('beginStyleReanchor: function'),
+          reason:
+              'beginStyleReanchor 必须在 _sharedJs 定义（分页/连续两 shell 共用，'
+              'getFirstVisibleCharOffset/scrollToCharOffset 经 this 解析各自版本）。',
+        );
+        expect(
+          src,
+          contains('commitStyleReanchor: function'),
+          reason: 'commitStyleReanchor 必须在 _sharedJs 定义（settle 后滚回 + 清旗）。',
+        );
+      },
+    );
 
     test('beginStyleReanchor 同步换 CSS + 采精确锚 + 置旗，不自驱 rAF', () {
       const String marker = 'beginStyleReanchor: function';
@@ -52,24 +65,46 @@ void main() {
       final int end = src.indexOf('commitStyleReanchor: function', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
-      expect(body, contains('getFirstVisibleCharOffset'),
-          reason: 'beginStyleReanchor 必须同步采精确锚（BUG-109 / TODO-736 B-2）。');
-      expect(body, isNot(contains('scrollToProgressPaged(')),
-          reason: '不得退回粗粒度分页分数（BUG-109）。');
-      expect(body, isNot(contains('scrollToProgressContinuous(')),
-          reason: '不得退回粗粒度连续分数（TODO-736 B-2）。');
-      expect(body, isNot(contains('calculateProgress(')),
-          reason: 'calculateProgress 返回粗粒度比例，重排后映射到不同页（BUG-109）。');
-      expect(body, contains('getPagePosition'),
-          reason: 'reflow 前须记 getPagePosition 作 scrollToCharOffset 的 hintScroll'
-              '（分页 ±1 列保持原页；连续 mode 经 typeof 守卫自然 undefined）。');
+      expect(
+        body,
+        contains('getFirstVisibleCharOffset'),
+        reason: 'beginStyleReanchor 必须同步采精确锚（BUG-109 / TODO-736 B-2）。',
+      );
+      expect(
+        body,
+        isNot(contains('scrollToProgressPaged(')),
+        reason: '不得退回粗粒度分页分数（BUG-109）。',
+      );
+      expect(
+        body,
+        isNot(contains('scrollToProgressContinuous(')),
+        reason: '不得退回粗粒度连续分数（TODO-736 B-2）。',
+      );
+      expect(
+        body,
+        isNot(contains('calculateProgress(')),
+        reason: 'calculateProgress 返回粗粒度比例，重排后映射到不同页（BUG-109）。',
+      );
+      expect(
+        body,
+        contains('getPagePosition'),
+        reason:
+            'reflow 前须记 getPagePosition 作 scrollToCharOffset 的 hintScroll'
+            '（分页 ±1 列保持原页；连续 mode 经 typeof 守卫自然 undefined）。',
+      );
       // BUG-493：置旗改走清旗单点 setter（_setReanchorPending，见
       // progress_reanchor_retry_guard_test），语义不变。
-      expect(body, contains('_setReanchorPending(true)'),
-          reason:
-              'beginStyleReanchor 必须置 _reanchorPending（挡住 reflow 归零 scroll 污染落库）。');
-      expect(body, isNot(contains('requestAnimationFrame')),
-          reason: 'beginStyleReanchor 不得自驱 rAF——清旗/滚回推迟到 Dart 编排的 commit。');
+      expect(
+        body,
+        contains('_setReanchorPending(true)'),
+        reason:
+            'beginStyleReanchor 必须置 _reanchorPending（挡住 reflow 归零 scroll 污染落库）。',
+      );
+      expect(
+        body,
+        isNot(contains('requestAnimationFrame')),
+        reason: 'beginStyleReanchor 不得自驱 rAF——清旗/滚回推迟到 Dart 编排的 commit。',
+      );
     });
 
     test('commitStyleReanchor 用 scrollToCharOffset 滚回 + finally 只清自身旗', () {
@@ -79,19 +114,33 @@ void main() {
       final int end = src.indexOf('\n  }', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
-      expect(body, contains('_styleReanchorOffset'),
-          reason:
-              'commitStyleReanchor 必须读 beginStyleReanchor 暂存的 _styleReanchorOffset。');
-      expect(body, contains('scrollToCharOffset'),
-          reason:
-              'commitStyleReanchor 必须用 scrollToCharOffset 滚回（精确锚，BUG-109）。');
-      expect(body, isNot(contains('scrollToProgressContinuous(')),
-          reason: '不得退回粗粒度连续分数（TODO-736 B-2）。');
-      expect(body, isNot(contains('scrollToProgressPaged(')),
-          reason: '不得退回粗粒度分页分数（BUG-109）。');
+      expect(
+        body,
+        contains('_styleReanchorOffset'),
+        reason:
+            'commitStyleReanchor 必须读 beginStyleReanchor 暂存的 _styleReanchorOffset。',
+      );
+      expect(
+        body,
+        contains('scrollToCharOffset'),
+        reason: 'commitStyleReanchor 必须用 scrollToCharOffset 滚回（精确锚，BUG-109）。',
+      );
+      expect(
+        body,
+        isNot(contains('scrollToProgressContinuous(')),
+        reason: '不得退回粗粒度连续分数（TODO-736 B-2）。',
+      );
+      expect(
+        body,
+        isNot(contains('scrollToProgressPaged(')),
+        reason: '不得退回粗粒度分页分数（BUG-109）。',
+      );
       // BUG-493：清旗改走单点 setter（true→false 转换经 onReanchorSettled 通知 Dart）。
-      expect(body, contains('_setReanchorPending(false)'),
-          reason: 'commitStyleReanchor 必须在 finally 清 _reanchorPending。');
+      expect(
+        body,
+        contains('_setReanchorPending(false)'),
+        reason: 'commitStyleReanchor 必须在 finally 清 _reanchorPending。',
+      );
     });
   });
 }

@@ -22,14 +22,14 @@ import 'package:fushi/src/updates/update_feed_service.dart';
 
 /// 书架里的在线漫画条目（本地导入的 mokuro 漫画没有 `sourceMetadata`，天然被
 /// [OnlineMangaLibraryEntry.tryParse] 排除）。
-List<({EpubBookRow book, OnlineMangaLibraryEntry entry})> onlineMangaLibraryRows(
-  Iterable<EpubBookRow> books,
-) {
+List<({EpubBookRow book, OnlineMangaLibraryEntry entry})>
+onlineMangaLibraryRows(Iterable<EpubBookRow> books) {
   final List<({EpubBookRow book, OnlineMangaLibraryEntry entry})> out =
       <({EpubBookRow book, OnlineMangaLibraryEntry entry})>[];
   for (final EpubBookRow book in books) {
-    final OnlineMangaLibraryEntry? entry =
-        OnlineMangaLibraryEntry.tryParse(book.sourceMetadata);
+    final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
+      book.sourceMetadata,
+    );
     if (entry != null) out.add((book: book, entry: entry));
   }
   return out;
@@ -38,10 +38,11 @@ List<({EpubBookRow book, OnlineMangaLibraryEntry entry})> onlineMangaLibraryRows
 /// 订阅自动下载的入队口：`entry.autoDownload` 为真的条目刷新出新章时调用，
 /// [chapters] 按章序（旧 → 新）。生产是 `MangaDownloadService.enqueueChapters`；
 /// 测试注入记录器。
-typedef OnlineMangaAutoDownload = Future<void> Function(
-  OnlineMangaLibraryEntry entry,
-  List<OnlineMangaChapter> chapters,
-);
+typedef OnlineMangaAutoDownload =
+    Future<void> Function(
+      OnlineMangaLibraryEntry entry,
+      List<OnlineMangaChapter> chapters,
+    );
 
 /// 在线漫画库检查：逐条联网刷新，新章提醒由
 /// `OnlineMangaLibraryService.refresh` 自己投递（那里是唯一的提醒 diff 点）。
@@ -57,7 +58,8 @@ typedef OnlineMangaAutoDownload = Future<void> Function(
 /// 条目的源出问题，不该让后面几十条都查不成。
 Future<int> runOnlineMangaUpdateProbe({
   required FushiDatabase database,
-  required OnlineMangaLibraryService Function(OnlineMangaRuntimeKind) serviceFor,
+  required OnlineMangaLibraryService Function(OnlineMangaRuntimeKind)
+  serviceFor,
   OnlineMangaAutoDownload? autoDownload,
   void Function(Object error, String bookKey)? onError,
 }) async {
@@ -66,11 +68,9 @@ Future<int> runOnlineMangaUpdateProbe({
   for (final ({EpubBookRow book, OnlineMangaLibraryEntry entry}) row
       in onlineMangaLibraryRows(books)) {
     try {
-      final OnlineMangaLibraryEntry updated =
-          await serviceFor(row.entry.runtime).refreshFromSource(
-        bookKey: row.book.bookKey,
-        entry: row.entry,
-      );
+      final OnlineMangaLibraryEntry updated = await serviceFor(
+        row.entry.runtime,
+      ).refreshFromSource(bookKey: row.book.bookKey, entry: row.entry);
       refreshed++;
       if (autoDownload != null && row.entry.autoDownload) {
         final List<OnlineMangaChapter> fresh = newlyAppearedChapters(

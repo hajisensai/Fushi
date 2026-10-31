@@ -24,15 +24,19 @@ void main() {
     test('链里必须含 ANDROID，且顺序为 visionos → androidVr → android → ios → tv', () {
       // ANDROID 缺席正是原始 bug：只有它能给 D8uACXBAqkE 出流。
       // BUG-2526：VISIONOS 必须在链首——ANDROID 的 DASH 流无 PO token 只放前 60 秒。
-      expect(
-        kYoutubeManifestClientFallback.map(_clientName).toList(),
-        <String>['VISIONOS', 'ANDROID_VR', 'ANDROID', 'IOS', 'TVHTML5'],
-      );
+      expect(kYoutubeManifestClientFallback.map(_clientName).toList(), <String>[
+        'VISIONOS',
+        'ANDROID_VR',
+        'ANDROID',
+        'IOS',
+        'TVHTML5',
+      ]);
     });
 
     test('链内无重复 client（重复 = 白白多等一轮超时）', () {
-      final List<String> names =
-          kYoutubeManifestClientFallback.map(_clientName).toList();
+      final List<String> names = kYoutubeManifestClientFallback
+          .map(_clientName)
+          .toList();
       expect(names.toSet().length, names.length);
     });
   });
@@ -44,7 +48,8 @@ void main() {
     // 60 秒窗口（本地与 CI 全绿、只有真机播到 60s 才断）。
     Map<String, dynamic> clientContext() =>
         (kYoutubeVisionOsClient.payload['context']
-            as Map<String, dynamic>)['client'] as Map<String, dynamic>;
+                as Map<String, dynamic>)['client']
+            as Map<String, dynamic>;
 
     test('innertube context 与 yt-dlp 2026.08.19 逐字一致', () {
       expect(clientContext(), <String, dynamic>{
@@ -83,13 +88,16 @@ void main() {
 
   group('BUG-2526 字幕链', () {
     test('字幕链 = 取流链去掉 visionos（裸 innertube 请求被判 bot，轨表恒空，纯空转）', () {
-      expect(
-        kYoutubeCaptionClientFallback.map(_clientName).toList(),
-        <String>['ANDROID_VR', 'ANDROID', 'IOS', 'TVHTML5'],
-      );
+      expect(kYoutubeCaptionClientFallback.map(_clientName).toList(), <String>[
+        'ANDROID_VR',
+        'ANDROID',
+        'IOS',
+        'TVHTML5',
+      ]);
       expect(
         kYoutubeCaptionClientFallback.any(
-            (yt.YoutubeApiClient c) => identical(c, kYoutubeVisionOsClient)),
+          (yt.YoutubeApiClient c) => identical(c, kYoutubeVisionOsClient),
+        ),
         isFalse,
       );
     });
@@ -97,7 +105,8 @@ void main() {
     test('字幕链由取流链派生（取流链其余成员一个不少、顺序一致）', () {
       final List<String> expected = kYoutubeManifestClientFallback
           .where(
-              (yt.YoutubeApiClient c) => !identical(c, kYoutubeVisionOsClient))
+            (yt.YoutubeApiClient c) => !identical(c, kYoutubeVisionOsClient),
+          )
           .map(_clientName)
           .toList();
       expect(kYoutubeCaptionClientFallback.map(_clientName).toList(), expected);
@@ -107,12 +116,14 @@ void main() {
   group('BUG-1832 超时预算不变式', () {
     test('外层总超时 ≥ 每 client 上限 × 链长（增删 client 时自动跟随）', () {
       // 旧代码把这个关系写在注释里靠人肉维护，加第 4 个 client 时必然失配。
-      final Duration needed = kYoutubePerClientManifestTimeout *
+      final Duration needed =
+          kYoutubePerClientManifestTimeout *
           kYoutubeManifestClientFallback.length;
       expect(
         kYoutubeResolveTimeout,
         greaterThanOrEqualTo(needed),
-        reason: '总预算 ${kYoutubeResolveTimeout.inSeconds}s 容不下 '
+        reason:
+            '总预算 ${kYoutubeResolveTimeout.inSeconds}s 容不下 '
             '${kYoutubeManifestClientFallback.length} 个 client × '
             '${kYoutubePerClientManifestTimeout.inSeconds}s',
       );
@@ -148,8 +159,9 @@ void main() {
         },
       );
       expect(got, <int>[7]);
-      expect(called, <String>['VISIONOS'],
-          reason: '首个非空后仍调用后续 client = 每次解析都多打 4 次无谓请求');
+      expect(called, <String>[
+        'VISIONOS',
+      ], reason: '首个非空后仍调用后续 client = 每次解析都多打 4 次无谓请求');
     });
 
     test('全部 client 都空时返回空表（不抛，字幕是 best-effort）', () async {

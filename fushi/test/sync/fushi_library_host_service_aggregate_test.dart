@@ -11,14 +11,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// service 层 getAggregateSnapshot / applyAggregateSnapshot 必须复用云后端 phase B
 /// 的 AggregateSyncService（materialize/apply），保证 MAX / 并集 / 幂等语义在互联
 /// 通道与云通道完全一致（不是第二套实现）。
-LocalLibraryHostService _svc(FushiDatabase db) =>
-    LocalLibraryHostService(
-      db: db,
-      dictionaryResourceRoot: Directory.systemTemp,
-      packages: SyncAssetPackageService(db: db),
-      refreshDictionaryCache: () async {},
-      runExclusive: (Future<void> Function() body) => body(),
-    );
+LocalLibraryHostService _svc(FushiDatabase db) => LocalLibraryHostService(
+  db: db,
+  dictionaryResourceRoot: Directory.systemTemp,
+  packages: SyncAssetPackageService(db: db),
+  refreshDictionaryCache: () async {},
+  runExclusive: (Future<void> Function() body) => body(),
+);
 
 void main() {
   late FushiDatabase db;
@@ -38,15 +37,20 @@ void main() {
     });
 
     test('有统计 + 挖掘 + 收藏词 → 快照带回真实字段', () async {
-      await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
-        title: 'Book A',
-        dateKey: '2026-06-01',
-        charactersRead: 120,
-        readingTimeMs: 60000,
-        lastStatisticModified: 10,
-      ));
+      await db.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'Book A',
+          dateKey: '2026-06-01',
+          charactersRead: 120,
+          readingTimeMs: 60000,
+          lastStatisticModified: 10,
+        ),
+      );
       await db.setMiningCount(
-          sourceType: 'book', dateKey: '2026-06-01', count: 5);
+        sourceType: 'book',
+        dateKey: '2026-06-01',
+        count: 5,
+      );
       await db.addFavoriteWord(
         expression: 'w1',
         reading: 'r1',
@@ -98,25 +102,29 @@ void main() {
     });
 
     test('host 已有更大统计 → apply 更小值不缩小（MAX 语义）', () async {
-      await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
-        title: 'Book A',
-        dateKey: '2026-06-01',
-        charactersRead: 500,
-        readingTimeMs: 9000,
-        lastStatisticModified: 20,
-      ));
+      await db.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'Book A',
+          dateKey: '2026-06-01',
+          charactersRead: 500,
+          readingTimeMs: 9000,
+          lastStatisticModified: 20,
+        ),
+      );
       final LocalLibraryHostService svc = _svc(db);
-      await svc.applyAggregateSnapshot(AggregateSnapshot(
-        readingStats: const <ReadingStatRecord>[
-          ReadingStatRecord(
-            title: 'Book A',
-            dateKey: '2026-06-01',
-            charactersRead: 100, // 更小
-            readingTimeMs: 1000, // 更小
-            lastStatisticModified: 5,
-          ),
-        ],
-      ));
+      await svc.applyAggregateSnapshot(
+        AggregateSnapshot(
+          readingStats: const <ReadingStatRecord>[
+            ReadingStatRecord(
+              title: 'Book A',
+              dateKey: '2026-06-01',
+              charactersRead: 100, // 更小
+              readingTimeMs: 1000, // 更小
+              lastStatisticModified: 5,
+            ),
+          ],
+        ),
+      );
       final ReadingStatisticRow row =
           (await db.getAllReadingStatistics()).single;
       expect(row.charactersRead, 500); // MAX 保留大值
@@ -144,18 +152,20 @@ void main() {
         dateKey: '2026-06-01',
       );
       final LocalLibraryHostService svc = _svc(db);
-      await svc.applyAggregateSnapshot(AggregateSnapshot(
-        favoriteWords: const <FavoriteWordRecord>[
-          FavoriteWordRecord(
-            expression: 'wPeer',
-            reading: 'r',
-            glossary: 'g',
-            sourceType: 'book',
-            dateKey: '2026-06-01',
-            createdAt: 222,
-          ),
-        ],
-      ));
+      await svc.applyAggregateSnapshot(
+        AggregateSnapshot(
+          favoriteWords: const <FavoriteWordRecord>[
+            FavoriteWordRecord(
+              expression: 'wPeer',
+              reading: 'r',
+              glossary: 'g',
+              sourceType: 'book',
+              dateKey: '2026-06-01',
+              createdAt: 222,
+            ),
+          ],
+        ),
+      );
       final Set<String> got = (await db.getAllFavoriteWords())
           .map((FavoriteWordRow w) => w.expression)
           .toSet();

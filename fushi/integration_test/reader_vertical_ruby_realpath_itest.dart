@@ -154,8 +154,11 @@ void main() {
         label: 'vruby',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
 
           final AppModel appModel = await readyAppModel(tester);
@@ -179,10 +182,16 @@ void main() {
             await tester.pump(const Duration(milliseconds: 500));
             if (bookEntries.evaluate().isNotEmpty) break;
           }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          expect(await driver.focusWidget(bookEntries.first), isTrue,
-              reason: 'book card must be reachable by focus');
+          expect(
+            bookEntries,
+            findsWidgets,
+            reason: 'seeded book must appear on the shelf',
+          );
+          expect(
+            await driver.focusWidget(bookEntries.first),
+            isTrue,
+            reason: 'book card must be reachable by focus',
+          );
           await driver.activate();
           await tester.pump(const Duration(seconds: 3));
 
@@ -202,13 +211,20 @@ void main() {
 
           final Future<dynamic> Function(String source)? runJs =
               ReaderFushiPage.debugEvaluateJavascript;
-          expect(runJs, isNotNull,
-              reason: 'reader must expose debugEvaluateJavascript hook');
+          expect(
+            runJs,
+            isNotNull,
+            reason: 'reader must expose debugEvaluateJavascript hook',
+          );
 
-          final Object? verticalRaw =
-              await runJs!('window.fushiReader.isVertical();');
-          expect(verticalRaw == true || verticalRaw == 'true', isTrue,
-              reason: 'reader must be vertical-rl for TODO-1308');
+          final Object? verticalRaw = await runJs!(
+            'window.fushiReader.isVertical();',
+          );
+          expect(
+            verticalRaw == true || verticalRaw == 'true',
+            isTrue,
+            reason: 'reader must be vertical-rl for TODO-1308',
+          );
 
           Future<Map<String, dynamic>> probe(String label) async {
             await runJs('void document.body.offsetHeight;');
@@ -217,17 +233,21 @@ void main() {
             final Map<String, dynamic> m =
                 jsonDecode(raw.toString()) as Map<String, dynamic>;
             debugPrint('[vruby] === $label ===');
-            debugPrint('[vruby] writingMode=${m['writingMode']} '
-                'bodyLineHeight=${m['bodyLineHeight']} rtCss=${m['rtCss']}');
+            debugPrint(
+              '[vruby] writingMode=${m['writingMode']} '
+              'bodyLineHeight=${m['bodyLineHeight']} rtCss=${m['rtCss']}',
+            );
             debugPrint('[vruby] bodyFont=${m['bodyFont']}');
             for (final dynamic p in (m['pairs'] as List<dynamic>)) {
               final Map<String, dynamic> pr = p as Map<String, dynamic>;
               final Map<String, dynamic>? base =
                   pr['base'] as Map<String, dynamic>?;
               final Map<String, dynamic> rt = pr['rt'] as Map<String, dynamic>;
-              debugPrint('[vruby] ${pr['tag']} base="${base?['text']}" '
-                  'rt="${rt['text']}" dx=${_f(pr['dx'])} dy=${_f(pr['dy'])} '
-                  'dyRatio=${_f(pr['dyRatio'])} rtRight=${pr['rtRightOfBase']}');
+              debugPrint(
+                '[vruby] ${pr['tag']} base="${base?['text']}" '
+                'rt="${rt['text']}" dx=${_f(pr['dx'])} dy=${_f(pr['dy'])} '
+                'dyRatio=${_f(pr['dyRatio'])} rtRight=${pr['rtRightOfBase']}',
+              );
             }
             return m;
           }
@@ -267,23 +287,33 @@ void main() {
             if (dyRatio == null) continue;
             final Map<String, dynamic>? base =
                 pr['base'] as Map<String, dynamic>?;
-            final String rtText =
-                (pr['rt'] as Map<String, dynamic>)['text'].toString();
+            final String rtText = (pr['rt'] as Map<String, dynamic>)['text']
+                .toString();
             if (pr['rtRightOfBase'] != true) {
-              failures.add('${pr['tag']} rt="$rtText" not right of base '
-                  '(dx=${_f(pr['dx'])})');
+              failures.add(
+                '${pr['tag']} rt="$rtText" not right of base '
+                '(dx=${_f(pr['dx'])})',
+              );
             }
             if (dyRatio.abs() >= 0.35) {
-              failures.add('${pr['tag']} base="${base?['text']}" rt="$rtText" '
-                  'shifted along column dyRatio=${_f(dyRatio)}');
+              failures.add(
+                '${pr['tag']} base="${base?['text']}" rt="$rtText" '
+                'shifted along column dyRatio=${_f(dyRatio)}',
+              );
             }
           }
-          debugPrint('[vruby] BEFORE pairs=${(before['pairs'] as List).length} '
-              'AFTER pairs=${(after['pairs'] as List).length}');
+          debugPrint(
+            '[vruby] BEFORE pairs=${(before['pairs'] as List).length} '
+            'AFTER pairs=${(after['pairs'] as List).length}',
+          );
           debugPrint('[vruby] failures=${failures.length}: $failures');
-          expect(failures, isEmpty,
-              reason: 'vertical-rl furigana misaligned through the real reader '
-                  'path: ${failures.join("; ")}');
+          expect(
+            failures,
+            isEmpty,
+            reason:
+                'vertical-rl furigana misaligned through the real reader '
+                'path: ${failures.join("; ")}',
+          );
         },
       );
     },

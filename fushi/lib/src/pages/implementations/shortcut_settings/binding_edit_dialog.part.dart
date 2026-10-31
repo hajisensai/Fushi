@@ -233,10 +233,14 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       setState(() => _conflictWarning = t.shortcut_wheel_needs_modifier);
       return;
     }
-    unawaited(_addWheel(WheelBinding(
-      dy > 0 ? WheelDirection.down : WheelDirection.up,
-      modifiers: modifiers,
-    )));
+    unawaited(
+      _addWheel(
+        WheelBinding(
+          dy > 0 ? WheelDirection.down : WheelDirection.up,
+          modifiers: modifiers,
+        ),
+      ),
+    );
   }
 
   /// 与 [_addMouse] 同形的三段式：草稿内重复 → 同组冲突 → 确认后重分配。
@@ -260,8 +264,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         _wheelCapturing = false;
         _conflictWarning = t.shortcut_conflict(s: conflict.label);
       });
-      final _ConflictResolution? choice =
-          await _showConflictReassignmentDialog(conflict);
+      final _ConflictResolution? choice = await _showConflictReassignmentDialog(
+        conflict,
+      );
       if (choice == null || !mounted) return;
       if (_wheel.contains(binding)) return;
       setState(() {
@@ -339,8 +344,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         _mouseCapturing = false;
         _conflictWarning = t.shortcut_conflict(s: conflict.label);
       });
-      final _ConflictResolution? choice =
-          await _showConflictReassignmentDialog(conflict);
+      final _ConflictResolution? choice = await _showConflictReassignmentDialog(
+        conflict,
+      );
       if (choice == null || !mounted) return;
       if (_mouse.contains(binding)) return;
       setState(() {
@@ -474,8 +480,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       _capturing = false;
       _conflictWarning = t.shortcut_conflict(s: conflict.label);
     });
-    final _ConflictResolution? choice =
-        await _showConflictReassignmentDialog(conflict);
+    final _ConflictResolution? choice = await _showConflictReassignmentDialog(
+      conflict,
+    );
     if (choice == null || !mounted) return;
     if (_keyboard.contains(binding)) return;
     setState(() {
@@ -572,11 +579,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(
-                  t.shortcut_conflict_replace_confirm(
-                    s: conflict.label,
-                  ),
-                ),
+                Text(t.shortcut_conflict_replace_confirm(s: conflict.label)),
                 // 提示文案说的是「由作用域先后仲裁」——同 scope 时没有这回事，
                 // 连提示带按钮一起收起来，别给用户一个造不出正确结果的选项。
                 if (keepBothResolvable) ...<Widget>[
@@ -672,8 +675,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       setState(() {
         _conflictWarning = t.shortcut_conflict(s: conflict.label);
       });
-      final _ConflictResolution? choice =
-          await _showConflictReassignmentDialog(conflict);
+      final _ConflictResolution? choice = await _showConflictReassignmentDialog(
+        conflict,
+      );
       if (choice == null || !mounted) return;
       if (_gamepad.contains(binding)) return;
       setState(() {
@@ -720,7 +724,8 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     final bool canAddKeyboard = channels.contains(ShortcutChannel.keyboard);
     final bool canAddGamepad = channels.contains(ShortcutChannel.gamepad);
     // 鼠标额外要求平台真有非主键鼠标（移动端只读不加，TODO-1088 既有契约）。
-    final bool canAddMouse = channels.contains(ShortcutChannel.mouse) &&
+    final bool canAddMouse =
+        channels.contains(ShortcutChannel.mouse) &&
         _mouseBindingSupported(defaultTargetPlatform);
     final bool canAddWheel = channels.contains(ShortcutChannel.wheel);
 
@@ -750,10 +755,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
           children: <Widget>[
             // Keyboard section
             if (showKeyboard) ...<Widget>[
-              Text(
-                t.shortcut_keyboard,
-                style: themeData.textTheme.labelLarge,
-              ),
+              Text(t.shortcut_keyboard, style: themeData.textTheme.labelLarge),
               SizedBox(height: tokens.spacing.gap / 2),
               Wrap(
                 spacing: tokens.spacing.gap / 2,
@@ -812,10 +814,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             // Gamepad section
             if (showGamepad) ...<Widget>[
               if (showKeyboard) const FushiDividerControl(height: 24),
-              Text(
-                t.shortcut_gamepad,
-                style: themeData.textTheme.labelLarge,
-              ),
+              Text(t.shortcut_gamepad, style: themeData.textTheme.labelLarge),
               SizedBox(height: tokens.spacing.gap / 2),
               Wrap(
                 spacing: tokens.spacing.gap / 2,
@@ -842,11 +841,11 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       actions: <Type, Action<Intent>>{
                         GamepadButtonIntent:
                             CallbackAction<GamepadButtonIntent>(
-                          onInvoke: (GamepadButtonIntent intent) {
-                            _recordCapturedGamepadButton(intent.button);
-                            return true;
-                          },
-                        ),
+                              onInvoke: (GamepadButtonIntent intent) {
+                                _recordCapturedGamepadButton(intent.button);
+                                return true;
+                              },
+                            ),
                       },
                       child: Focus(
                         focusNode: _gamepadCaptureFocusNode,
@@ -937,7 +936,8 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             // hidden and only inherited bindings (if any) show read-only — Never
             // break userspace: nothing captured, nothing lost.
             if (_mouse.isNotEmpty || canAddMouse) ...<Widget>[
-              if (showKeyboard || showGamepad) const FushiDividerControl(height: 24),
+              if (showKeyboard || showGamepad)
+                const FushiDividerControl(height: 24),
               Text(
                 t.shortcut_mouse_button,
                 style: themeData.textTheme.labelLarge,
@@ -1009,10 +1009,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   _mouse.isNotEmpty ||
                   channels.contains(ShortcutChannel.mouse))
                 const FushiDividerControl(height: 24),
-              Text(
-                t.shortcut_wheel,
-                style: themeData.textTheme.labelLarge,
-              ),
+              Text(t.shortcut_wheel, style: themeData.textTheme.labelLarge),
               SizedBox(height: tokens.spacing.gap / 2),
               Wrap(
                 spacing: tokens.spacing.gap / 2,
@@ -1099,21 +1096,27 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 context,
                 ShortcutBindingEditResult(
                   bindings: ShortcutBindingSet(
-                    keyboardBindings:
-                        List<InputBinding>.unmodifiable(_keyboard),
-                    gamepadBindings:
-                        List<GamepadBinding>.unmodifiable(_gamepad),
+                    keyboardBindings: List<InputBinding>.unmodifiable(
+                      _keyboard,
+                    ),
+                    gamepadBindings: List<GamepadBinding>.unmodifiable(
+                      _gamepad,
+                    ),
                     mouseBindings: List<MouseBinding>.unmodifiable(_mouse),
                     wheelBindings: List<WheelBinding>.unmodifiable(_wheel),
                   ),
-                  keyboardReassignments:
-                      List<InputBinding>.unmodifiable(_keyboardReassignments),
-                  gamepadReassignments:
-                      List<GamepadBinding>.unmodifiable(_gamepadReassignments),
-                  mouseReassignments:
-                      List<MouseBinding>.unmodifiable(_mouseReassignments),
-                  wheelReassignments:
-                      List<WheelBinding>.unmodifiable(_wheelReassignments),
+                  keyboardReassignments: List<InputBinding>.unmodifiable(
+                    _keyboardReassignments,
+                  ),
+                  gamepadReassignments: List<GamepadBinding>.unmodifiable(
+                    _gamepadReassignments,
+                  ),
+                  mouseReassignments: List<MouseBinding>.unmodifiable(
+                    _mouseReassignments,
+                  ),
+                  wheelReassignments: List<WheelBinding>.unmodifiable(
+                    _wheelReassignments,
+                  ),
                 ),
               ),
             ),

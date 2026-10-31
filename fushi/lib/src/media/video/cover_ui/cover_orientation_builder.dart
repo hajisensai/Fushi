@@ -24,7 +24,7 @@ class CoverOrientationBuilder extends StatelessWidget {
 
   /// 以当前朝向重建子树。
   final Widget Function(BuildContext context, VideoCardOrientation orientation)
-      builder;
+  builder;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +41,7 @@ class _CoverOrientationProbe extends StatefulWidget {
 
   final ImageProvider image;
   final Widget Function(BuildContext context, VideoCardOrientation orientation)
-      builder;
+  builder;
 
   @override
   State<_CoverOrientationProbe> createState() => _CoverOrientationProbeState();

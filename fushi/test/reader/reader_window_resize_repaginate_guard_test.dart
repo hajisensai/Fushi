@@ -22,83 +22,137 @@ void main() {
       src = readReaderPageSource();
     });
 
-    test('build 在 reader 树外层包透明 LayoutBuilder 并调 _onReaderConstraintsChanged',
-        () {
-      // LayoutBuilder 必须在 build 里包住 reader 子树（return Actions 前），builder
-      // 第一件事就是把 constraints 交给 resize 通道（零几何变换，原样返回子树）。
-      //
-      // 全屏收窄之后 build 的返回树根是零布局的 [WindowFullscreenHost]（小说页据此
-      // 声明自己是窗口全屏的合法宿主，见 lib/src/shortcuts/window_fullscreen_hosts.dart），
-      // LayoutBuilder 落在它的独生子上、改由局部变量承接。resize 通道的不变式一条没
-      // 变，变的只是它不再是字面上的 `return`——所以锚点跟着挪，并**补一条**断言钉住
-      // 「LayoutBuilder 就是那棵被包起来的 reader 子树」，免得日后有人在中间塞进一层
-      // 真的会改几何的 widget。
-      final int idxBuild = src.indexOf('Widget build(BuildContext context) {');
-      expect(idxBuild, greaterThan(0), reason: 'build 方法必须存在');
-      final int idxLayoutBuilder =
-          src.indexOf('final Widget page = LayoutBuilder(', idxBuild);
-      expect(idxLayoutBuilder, greaterThan(idxBuild),
-          reason: 'build 必须用透明 LayoutBuilder 包裹 reader 子树（TODO-690 resize 通道）');
-      final int idxConstraintsCall = src.indexOf(
-          '_onReaderConstraintsChanged(constraints)', idxLayoutBuilder);
-      final int idxReturnActions =
-          src.indexOf('return Actions(', idxLayoutBuilder);
-      expect(idxConstraintsCall, greaterThan(idxLayoutBuilder),
+    test(
+      'build 在 reader 树外层包透明 LayoutBuilder 并调 _onReaderConstraintsChanged',
+      () {
+        // LayoutBuilder 必须在 build 里包住 reader 子树（return Actions 前），builder
+        // 第一件事就是把 constraints 交给 resize 通道（零几何变换，原样返回子树）。
+        //
+        // 全屏收窄之后 build 的返回树根是零布局的 [WindowFullscreenHost]（小说页据此
+        // 声明自己是窗口全屏的合法宿主，见 lib/src/shortcuts/window_fullscreen_hosts.dart），
+        // LayoutBuilder 落在它的独生子上、改由局部变量承接。resize 通道的不变式一条没
+        // 变，变的只是它不再是字面上的 `return`——所以锚点跟着挪，并**补一条**断言钉住
+        // 「LayoutBuilder 就是那棵被包起来的 reader 子树」，免得日后有人在中间塞进一层
+        // 真的会改几何的 widget。
+        final int idxBuild = src.indexOf(
+          'Widget build(BuildContext context) {',
+        );
+        expect(idxBuild, greaterThan(0), reason: 'build 方法必须存在');
+        final int idxLayoutBuilder = src.indexOf(
+          'final Widget page = LayoutBuilder(',
+          idxBuild,
+        );
+        expect(
+          idxLayoutBuilder,
+          greaterThan(idxBuild),
+          reason: 'build 必须用透明 LayoutBuilder 包裹 reader 子树（TODO-690 resize 通道）',
+        );
+        final int idxConstraintsCall = src.indexOf(
+          '_onReaderConstraintsChanged(constraints)',
+          idxLayoutBuilder,
+        );
+        final int idxReturnActions = src.indexOf(
+          'return Actions(',
+          idxLayoutBuilder,
+        );
+        expect(
+          idxConstraintsCall,
+          greaterThan(idxLayoutBuilder),
           reason:
-              'LayoutBuilder.builder 必须把 constraints 交给 _onReaderConstraintsChanged');
-      expect(idxReturnActions, greaterThan(idxConstraintsCall),
+              'LayoutBuilder.builder 必须把 constraints 交给 _onReaderConstraintsChanged',
+        );
+        expect(
+          idxReturnActions,
+          greaterThan(idxConstraintsCall),
           reason:
-              'builder 必须先调 _onReaderConstraintsChanged 再返回原 reader 子树（零几何变换）');
-      expect(
-        src.indexOf(
-            'return WindowFullscreenHost(child: page);', idxReturnActions),
-        greaterThan(idxReturnActions),
-        reason: 'build 的返回树根只允许是零布局的 WindowFullscreenHost，'
-            '它的独生子必须就是上面那棵 LayoutBuilder（resize 通道不得被隔开）',
-      );
-    });
-
-    test('_onReaderConstraintsChanged 用纯谓词判定 + 共享 50ms 尾沿防抖调 _syncPageSize',
-        () {
-      final int idx = src.indexOf(
-          'void _onReaderConstraintsChanged(BoxConstraints constraints) {');
-      expect(idx, greaterThan(0), reason: '_onReaderConstraintsChanged 必须存在');
-      final String body = src.substring(idx, idx + 1200);
-      // 判定复用纯谓词，不另写阈值（保 BUG-210 的 1px 容差/lastWidth>0 门控）。
-      expect(body.contains('readerLayoutResizeNeedsRepaginate('), isTrue,
+              'builder 必须先调 _onReaderConstraintsChanged 再返回原 reader 子树（零几何变换）',
+        );
+        expect(
+          src.indexOf(
+            'return WindowFullscreenHost(child: page);',
+            idxReturnActions,
+          ),
+          greaterThan(idxReturnActions),
           reason:
-              '必须用纯谓词 readerLayoutResizeNeedsRepaginate 判定（复用 1px 容差，不另写阈值）');
-      // 尾沿防抖收敛到共享武装点（与 didChangeMetrics 逐字重复的两份 dedup）。
-      expect(body.contains('_armResizeRepaginateDebounce()'), isTrue,
-          reason: '超阈值必须经共享武装点 _armResizeRepaginateDebounce 去抖');
-    });
+              'build 的返回树根只允许是零布局的 WindowFullscreenHost，'
+              '它的独生子必须就是上面那棵 LayoutBuilder（resize 通道不得被隔开）',
+        );
+      },
+    );
 
     test(
-        '_armResizeRepaginateDebounce 先取消旧 timer 再起 50ms Timer 调 _syncPageSize',
-        () {
-      final int idx = src.indexOf('void _armResizeRepaginateDebounce() {');
-      expect(idx, greaterThan(0),
-          reason: '共享防抖武装点 _armResizeRepaginateDebounce 必须存在'
-              '（didChangeMetrics 与 _onReaderConstraintsChanged 共用）');
-      final String body = src.substring(idx, idx + 400);
-      // 尾沿防抖：先取消旧 timer 再起新的。
-      final int idxCancel = body.indexOf('_resizeRepaginateDebounce?.cancel()');
-      final int idxNewTimer =
-          body.indexOf('_resizeRepaginateDebounce = Timer(');
-      expect(idxCancel, greaterThanOrEqualTo(0),
-          reason: '起新 timer 前必须取消旧 timer（尾沿防抖，拖拽期不堆积）');
-      expect(idxNewTimer, greaterThan(idxCancel),
-          reason: '取消旧 timer 后才起新的 Timer');
-      expect(body.contains('Duration(milliseconds: 50)'), isTrue,
-          reason: '尾沿防抖窗口为 ~50ms（拖拽停手后最终尺寸落一次重排）');
-      // timer 回调直接调 _syncPageSize（含 readerViewportNeedsRepaginate 判定与基线去重）。
-      expect(body.contains('if (mounted) _syncPageSize()'), isTrue,
+      '_onReaderConstraintsChanged 用纯谓词判定 + 共享 50ms 尾沿防抖调 _syncPageSize',
+      () {
+        final int idx = src.indexOf(
+          'void _onReaderConstraintsChanged(BoxConstraints constraints) {',
+        );
+        expect(idx, greaterThan(0), reason: '_onReaderConstraintsChanged 必须存在');
+        final String body = src.substring(idx, idx + 1200);
+        // 判定复用纯谓词，不另写阈值（保 BUG-210 的 1px 容差/lastWidth>0 门控）。
+        expect(
+          body.contains('readerLayoutResizeNeedsRepaginate('),
+          isTrue,
           reason:
-              'timer 回调必须 mounted 守卫后调 _syncPageSize（不另起 updatePageSize 调用）');
-      // 绝不 Future.delayed（会泄漏/重入）——用可取消的 Timer 字段。
-      expect(body.contains('Future.delayed'), isFalse,
-          reason: '禁止 Future.delayed（会泄漏 timer/重入）；尾沿防抖必须用可取消的 Timer 字段');
-    });
+              '必须用纯谓词 readerLayoutResizeNeedsRepaginate 判定（复用 1px 容差，不另写阈值）',
+        );
+        // 尾沿防抖收敛到共享武装点（与 didChangeMetrics 逐字重复的两份 dedup）。
+        expect(
+          body.contains('_armResizeRepaginateDebounce()'),
+          isTrue,
+          reason: '超阈值必须经共享武装点 _armResizeRepaginateDebounce 去抖',
+        );
+      },
+    );
+
+    test(
+      '_armResizeRepaginateDebounce 先取消旧 timer 再起 50ms Timer 调 _syncPageSize',
+      () {
+        final int idx = src.indexOf('void _armResizeRepaginateDebounce() {');
+        expect(
+          idx,
+          greaterThan(0),
+          reason:
+              '共享防抖武装点 _armResizeRepaginateDebounce 必须存在'
+              '（didChangeMetrics 与 _onReaderConstraintsChanged 共用）',
+        );
+        final String body = src.substring(idx, idx + 400);
+        // 尾沿防抖：先取消旧 timer 再起新的。
+        final int idxCancel = body.indexOf(
+          '_resizeRepaginateDebounce?.cancel()',
+        );
+        final int idxNewTimer = body.indexOf(
+          '_resizeRepaginateDebounce = Timer(',
+        );
+        expect(
+          idxCancel,
+          greaterThanOrEqualTo(0),
+          reason: '起新 timer 前必须取消旧 timer（尾沿防抖，拖拽期不堆积）',
+        );
+        expect(
+          idxNewTimer,
+          greaterThan(idxCancel),
+          reason: '取消旧 timer 后才起新的 Timer',
+        );
+        expect(
+          body.contains('Duration(milliseconds: 50)'),
+          isTrue,
+          reason: '尾沿防抖窗口为 ~50ms（拖拽停手后最终尺寸落一次重排）',
+        );
+        // timer 回调直接调 _syncPageSize（含 readerViewportNeedsRepaginate 判定与基线去重）。
+        expect(
+          body.contains('if (mounted) _syncPageSize()'),
+          isTrue,
+          reason:
+              'timer 回调必须 mounted 守卫后调 _syncPageSize（不另起 updatePageSize 调用）',
+        );
+        // 绝不 Future.delayed（会泄漏/重入）——用可取消的 Timer 字段。
+        expect(
+          body.contains('Future.delayed'),
+          isFalse,
+          reason: '禁止 Future.delayed（会泄漏 timer/重入）；尾沿防抖必须用可取消的 Timer 字段',
+        );
+      },
+    );
 
     test('防抖 timer 在 dispose 取消（不泄漏）', () {
       final int idxDispose = src.indexOf('void dispose() {');
@@ -106,8 +160,11 @@ void main() {
       final int idxSuperDispose = src.indexOf('super.dispose()', idxDispose);
       expect(idxSuperDispose, greaterThan(idxDispose));
       final String body = src.substring(idxDispose, idxSuperDispose);
-      expect(body.contains('_resizeRepaginateDebounce?.cancel()'), isTrue,
-          reason: 'dispose 必须取消 _resizeRepaginateDebounce，否则 timer 在页面销毁后回调泄漏');
+      expect(
+        body.contains('_resizeRepaginateDebounce?.cancel()'),
+        isTrue,
+        reason: 'dispose 必须取消 _resizeRepaginateDebounce，否则 timer 在页面销毁后回调泄漏',
+      );
     });
   });
 }

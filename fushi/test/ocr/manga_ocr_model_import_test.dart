@@ -47,8 +47,7 @@ void main() {
     return file;
   }
 
-  MangaOcrModelImporter importer() =>
-      MangaOcrModelImporter(manifest: manifest);
+  MangaOcrModelImporter importer() => MangaOcrModelImporter(manifest: manifest);
 
   test('逐个选文件：命中清单且长度正确的落盘转正，清单齐全后 allReady', () async {
     final File detector = writeSource('detector.onnx', 8);
@@ -85,12 +84,17 @@ void main() {
     );
 
     expect(result.imported, isEmpty);
-    expect(result.rejected.single.reason,
-        MangaOcrModelImportRejectReason.sizeMismatch);
+    expect(
+      result.rejected.single.reason,
+      MangaOcrModelImportRejectReason.sizeMismatch,
+    );
     expect(result.rejected.single.actualBytes, 5);
     expect(result.rejected.single.expectedBytes, 8);
-    expect(File(p.join(targetDir.path, 'detector.onnx')).existsSync(), isFalse,
-        reason: '被截断的档一旦转正，错误会推迟到推理时才爆');
+    expect(
+      File(p.join(targetDir.path, 'detector.onnx')).existsSync(),
+      isFalse,
+      reason: '被截断的档一旦转正，错误会推迟到推理时才爆',
+    );
     expect(result.stillMissing, containsAll(<String>['detector.onnx']));
   });
 
@@ -105,18 +109,22 @@ void main() {
     );
 
     expect(result.imported, <String>['vocab.txt']);
-    expect(result.rejected.single.reason,
-        MangaOcrModelImportRejectReason.unknownFile);
+    expect(
+      result.rejected.single.reason,
+      MangaOcrModelImportRejectReason.unknownFile,
+    );
     expect(result.matchedNothing, isFalse);
   });
 
   test('选文件夹：递归命中，无关文件不进拒绝列表（否则刷一屏噪音）', () async {
     final Directory nested = Directory(p.join(sourceDir.path, 'nested'))
       ..createSync();
-    File(p.join(nested.path, 'detector.onnx'))
-        .writeAsBytesSync(List<int>.filled(8, 1));
-    File(p.join(nested.path, 'page_001.jpg'))
-        .writeAsBytesSync(List<int>.filled(999, 2));
+    File(
+      p.join(nested.path, 'detector.onnx'),
+    ).writeAsBytesSync(List<int>.filled(8, 1));
+    File(
+      p.join(nested.path, 'page_001.jpg'),
+    ).writeAsBytesSync(List<int>.filled(999, 2));
 
     final MangaOcrModelImportResult result = await importer().import(
       sourcePaths: <String>[sourceDir.path],
@@ -124,8 +132,7 @@ void main() {
     );
 
     expect(result.imported, <String>['detector.onnx']);
-    expect(result.rejected, isEmpty,
-        reason: '目录里的无关文件是常态，不该逐个报错');
+    expect(result.rejected, isEmpty, reason: '目录里的无关文件是常态，不该逐个报错');
   });
 
   test('zip 包：只解出清单命中的 entry，其余整包忽略', () async {
@@ -133,10 +140,12 @@ void main() {
     final ZipFileEncoder encoder = ZipFileEncoder();
     encoder.create(zipPath);
     encoder.addArchiveFile(
-        ArchiveFile('detector.onnx', 8, List<int>.filled(8, 7)));
+      ArchiveFile('detector.onnx', 8, List<int>.filled(8, 7)),
+    );
     encoder.addArchiveFile(ArchiveFile('vocab.txt', 4, List<int>.filled(4, 9)));
     encoder.addArchiveFile(
-        ArchiveFile('readme.txt', 3, List<int>.filled(3, 1)));
+      ArchiveFile('readme.txt', 3, List<int>.filled(3, 1)),
+    );
     encoder.closeSync();
 
     final MangaOcrModelImportResult result = await importer().import(
@@ -144,7 +153,10 @@ void main() {
       targetDir: targetDir,
     );
 
-    expect(result.imported, containsAll(<String>['detector.onnx', 'vocab.txt']));
+    expect(
+      result.imported,
+      containsAll(<String>['detector.onnx', 'vocab.txt']),
+    );
     expect(result.allReady, isTrue);
     expect(File(p.join(targetDir.path, 'detector.onnx')).lengthSync(), 8);
     expect(File(p.join(targetDir.path, 'readme.txt')).existsSync(), isFalse);
@@ -155,7 +167,8 @@ void main() {
     final ZipFileEncoder encoder = ZipFileEncoder();
     encoder.create(zipPath);
     encoder.addArchiveFile(
-        ArchiveFile('detector.onnx', 3, List<int>.filled(3, 7)));
+      ArchiveFile('detector.onnx', 3, List<int>.filled(3, 7)),
+    );
     encoder.addArchiveFile(ArchiveFile('vocab.txt', 4, List<int>.filled(4, 9)));
     encoder.closeSync();
 
@@ -165,17 +178,21 @@ void main() {
     );
 
     expect(result.imported, <String>['vocab.txt']);
-    expect(result.rejected.single.reason,
-        MangaOcrModelImportRejectReason.sizeMismatch);
+    expect(
+      result.rejected.single.reason,
+      MangaOcrModelImportRejectReason.sizeMismatch,
+    );
     expect(result.stillMissing, <String>['detector.onnx']);
   });
 
   test('已有好档：跳过不覆盖；已有坏档：被正确的档顶掉', () async {
-    File(p.join(targetDir.path, 'vocab.txt'))
-        .writeAsBytesSync(List<int>.filled(4, 0));
+    File(
+      p.join(targetDir.path, 'vocab.txt'),
+    ).writeAsBytesSync(List<int>.filled(4, 0));
     // 坏档：存在但长度不符，宽松的「就绪」判定会放它过去，必须被覆盖。
-    File(p.join(targetDir.path, 'detector.onnx'))
-        .writeAsBytesSync(List<int>.filled(2, 0));
+    File(
+      p.join(targetDir.path, 'detector.onnx'),
+    ).writeAsBytesSync(List<int>.filled(2, 0));
 
     writeSource('vocab.txt', 4);
     writeSource('detector.onnx', 8);
@@ -187,13 +204,17 @@ void main() {
 
     expect(result.skipped, <String>['vocab.txt']);
     expect(result.imported, <String>['detector.onnx']);
-    expect(File(p.join(targetDir.path, 'detector.onnx')).lengthSync(), 8,
-        reason: '长度不符的坏档必须能被顶掉，否则用户永远导不进正确的文件');
+    expect(
+      File(p.join(targetDir.path, 'detector.onnx')).lengthSync(),
+      8,
+      reason: '长度不符的坏档必须能被顶掉，否则用户永远导不进正确的文件',
+    );
   });
 
   test('导入成功要清掉同名 .part：那几百 MB 残留既没用也占磁盘', () async {
-    File(p.join(targetDir.path, 'detector.onnx.part'))
-        .writeAsBytesSync(List<int>.filled(3, 0));
+    File(
+      p.join(targetDir.path, 'detector.onnx.part'),
+    ).writeAsBytesSync(List<int>.filled(3, 0));
     writeSource('detector.onnx', 8);
 
     await importer().import(
@@ -201,8 +222,10 @@ void main() {
       targetDir: targetDir,
     );
 
-    expect(File(p.join(targetDir.path, 'detector.onnx.part')).existsSync(),
-        isFalse);
+    expect(
+      File(p.join(targetDir.path, 'detector.onnx.part')).existsSync(),
+      isFalse,
+    );
   });
 
   test('什么都没认出来：matchedNothing 为真，让 UI 能单独提示选错了', () async {
@@ -245,8 +268,11 @@ void main() {
       ),
     ];
     expect(
-      matchMangaOcrModelFile('inference.onnx', manifest, sizeBytes: 200)
-          ?.fileName,
+      matchMangaOcrModelFile(
+        'inference.onnx',
+        manifest,
+        sizeBytes: 200,
+      )?.fileName,
       'ppocrv6_small_rec.onnx',
     );
     // 尺寸不唯一：不猜。
@@ -256,8 +282,10 @@ void main() {
   });
 
   test('basename 匹配大小写不敏感', () {
-    expect(matchMangaOcrModelFile('DETECTOR.ONNX', manifest)?.fileName,
-        'detector.onnx');
+    expect(
+      matchMangaOcrModelFile('DETECTOR.ONNX', manifest)?.fileName,
+      'detector.onnx',
+    );
     expect(matchMangaOcrModelFile('nope.onnx', manifest), isNull);
   });
 }

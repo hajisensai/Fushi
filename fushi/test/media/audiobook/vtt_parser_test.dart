@@ -124,12 +124,15 @@ WEBVTT
     });
 
     test('strips ASS override tags leaked into VTT (BUG-105)', () {
-      const String vtt = 'WEBVTT\n\n'
+      const String vtt =
+          'WEBVTT\n\n'
           '00:00:01.000 --> 00:00:04.000\n'
           r'{\i1}hello{\i0}'
           '\n';
-      final List<AudioCue> cues =
-          VttParser.parseString(content: vtt, bookKey: 'b');
+      final List<AudioCue> cues = VttParser.parseString(
+        content: vtt,
+        bookKey: 'b',
+      );
       expect(cues.single.text, 'hello');
       expect(cues.single.markup?.spans.single.italic, isTrue);
     });

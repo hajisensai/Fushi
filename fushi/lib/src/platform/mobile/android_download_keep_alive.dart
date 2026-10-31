@@ -208,11 +208,11 @@ class ChannelDownloadKeepAlive implements DownloadKeepAlive {
     MethodChannel? channel,
     DateTime Function()? now,
     Duration minInterval = kDownloadKeepAliveMinInterval,
-  })  : _channel = channel ?? FushiChannels.downloadKeepAlive,
-        _throttle = DownloadKeepAliveThrottle(
-          now: now,
-          minInterval: minInterval,
-        );
+  }) : _channel = channel ?? FushiChannels.downloadKeepAlive,
+       _throttle = DownloadKeepAliveThrottle(
+         now: now,
+         minInterval: minInterval,
+       );
 
   static const String _methodUpdate = 'update';
   static const String _methodStop = 'stop';

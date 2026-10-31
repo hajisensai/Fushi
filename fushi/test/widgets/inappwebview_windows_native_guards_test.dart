@@ -12,10 +12,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// 仓库根或 fushi/ 运行。本机无 MSVC 不能编译该 native fork，由 CI 编译验证；
 /// 源码扫描守卫保证逻辑不回退。
 String _read(List<String> candidates, String name) {
-  final File? file = candidates.map(File.new).cast<File?>().firstWhere(
-        (File? f) => f != null && f.existsSync(),
-        orElse: () => null,
-      );
+  final File? file = candidates
+      .map(File.new)
+      .cast<File?>()
+      .firstWhere((File? f) => f != null && f.existsSync(), orElse: () => null);
   expect(file, isNotNull, reason: '$name not found');
   return file!.readAsStringSync();
 }
@@ -24,19 +24,26 @@ String _body(String src, String signature, String nextMarker) {
   final int start = src.indexOf(signature);
   expect(start, greaterThanOrEqualTo(0), reason: '$signature not found');
   final int end = src.indexOf(nextMarker, start + signature.length);
-  expect(end, greaterThan(start),
-      reason: '$signature must be bounded by $nextMarker');
+  expect(
+    end,
+    greaterThan(start),
+    reason: '$signature must be bounded by $nextMarker',
+  );
   return src.substring(start, end);
 }
 
 String _readTextureBridgeSource() {
-  final File? file = <String>[
-    'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
-    '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
-  ].map(File.new).cast<File?>().firstWhere(
-        (File? f) => f != null && f.existsSync(),
-        orElse: () => null,
-      );
+  final File? file =
+      <String>[
+            'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+            '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+          ]
+          .map(File.new)
+          .cast<File?>()
+          .firstWhere(
+            (File? f) => f != null && f.existsSync(),
+            orElse: () => null,
+          );
   expect(file, isNotNull, reason: 'texture_bridge.cc not found');
   return file!.readAsStringSync();
 }
@@ -45,8 +52,11 @@ String _methodBody(String src, String signature, String nextMarker) {
   final int start = src.indexOf(signature);
   expect(start, greaterThanOrEqualTo(0), reason: '$signature not found');
   final int end = src.indexOf(nextMarker, start + signature.length);
-  expect(end, greaterThan(start),
-      reason: '$signature must be bounded by $nextMarker');
+  expect(
+    end,
+    greaterThan(start),
+    reason: '$signature must be bounded by $nextMarker',
+  );
   return src.substring(start, end);
 }
 
@@ -110,8 +120,9 @@ bool _isValidWgcLifecycleLog(String log) {
     }
     final String key = '$pool#$generation';
     closures
-        .putIfAbsent(key, () => _PoolClosure(pool, generation))
-        .eventIndexes[event] = i;
+            .putIfAbsent(key, () => _PoolClosure(pool, generation))
+            .eventIndexes[event] =
+        i;
   }
 
   if (closures.isEmpty) {
@@ -143,78 +154,110 @@ void main() {
   ///      teardown 之前置位）。
   group('process exit gate (TODO-618 fix3)', () {
     test(
-        'TODO-618 fix3: native process-exit master gate short-circuits frame reports',
-        () {
-      final String header = _read(<String>[
-        'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
-        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
-      ], 'texture_bridge.h');
-      final String bridge = _read(<String>[
-        'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
-        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
-      ], 'texture_bridge.cc');
-      final String manager = _read(<String>[
-        'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
-        '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
-      ], 'in_app_webview_manager.cpp');
+      'TODO-618 fix3: native process-exit master gate short-circuits frame reports',
+      () {
+        final String header = _read(<String>[
+          'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
+          '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.h',
+        ], 'texture_bridge.h');
+        final String bridge = _read(<String>[
+          'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+          '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
+        ], 'texture_bridge.cc');
+        final String manager = _read(<String>[
+          'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+          '../packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp',
+        ], 'in_app_webview_manager.cpp');
 
-      // 1) 头文件跨 TU 声明（external linkage）。
-      expect(header.contains('void SetProcessExiting() noexcept'), isTrue,
-          reason: 'process-exit master gate setter must be declared in header');
-      expect(header.contains('bool IsProcessExiting() noexcept'), isTrue,
-          reason: 'process-exit master gate getter must be declared in header');
+        // 1) 头文件跨 TU 声明（external linkage）。
+        expect(
+          header.contains('void SetProcessExiting() noexcept'),
+          isTrue,
+          reason: 'process-exit master gate setter must be declared in header',
+        );
+        expect(
+          header.contains('bool IsProcessExiting() noexcept'),
+          isTrue,
+          reason: 'process-exit master gate getter must be declared in header',
+        );
 
-      // 2) cc 定义进程级 atomic 总闸。
-      expect(bridge.contains('std::atomic<bool> g_process_exiting'), isTrue,
-          reason: 'process-exit master gate must be a std::atomic<bool>');
-      expect(bridge.contains('void SetProcessExiting() noexcept'), isTrue,
-          reason: 'SetProcessExiting must be defined in texture_bridge.cc');
-      expect(bridge.contains('bool IsProcessExiting() noexcept'), isTrue,
-          reason: 'IsProcessExiting must be defined in texture_bridge.cc');
+        // 2) cc 定义进程级 atomic 总闸。
+        expect(
+          bridge.contains('std::atomic<bool> g_process_exiting'),
+          isTrue,
+          reason: 'process-exit master gate must be a std::atomic<bool>',
+        );
+        expect(
+          bridge.contains('void SetProcessExiting() noexcept'),
+          isTrue,
+          reason: 'SetProcessExiting must be defined in texture_bridge.cc',
+        );
+        expect(
+          bridge.contains('bool IsProcessExiting() noexcept'),
+          isTrue,
+          reason: 'IsProcessExiting must be defined in texture_bridge.cc',
+        );
 
-      // 3) 帧上报短路：PumpFrameLocked 内 IsProcessExiting() 早返回必须在
-      //    frame_available_() 之前（退出态一律不再向引擎推帧），且既有
-      //    frame_available_() 调用未被删除（不回退）。
-      final String pumpBody = _body(
-        bridge,
-        'void TextureBridge::PumpFrameLocked(',
-        'bool TextureBridge::ShouldDropFrame()',
-      );
-      final int exitGate = pumpBody.indexOf('if (IsProcessExiting())');
-      final int frameReport = pumpBody.indexOf('frame_available_()');
-      expect(exitGate, greaterThanOrEqualTo(0),
-          reason: 'PumpFrameLocked must short-circuit when process is exiting');
-      expect(frameReport, greaterThan(exitGate),
+        // 3) 帧上报短路：PumpFrameLocked 内 IsProcessExiting() 早返回必须在
+        //    frame_available_() 之前（退出态一律不再向引擎推帧），且既有
+        //    frame_available_() 调用未被删除（不回退）。
+        final String pumpBody = _body(
+          bridge,
+          'void TextureBridge::PumpFrameLocked(',
+          'bool TextureBridge::ShouldDropFrame()',
+        );
+        final int exitGate = pumpBody.indexOf('if (IsProcessExiting())');
+        final int frameReport = pumpBody.indexOf('frame_available_()');
+        expect(
+          exitGate,
+          greaterThanOrEqualTo(0),
+          reason: 'PumpFrameLocked must short-circuit when process is exiting',
+        );
+        expect(
+          frameReport,
+          greaterThan(exitGate),
           reason:
-              'IsProcessExiting() early-return must guard the frame_available_() call');
-      // 短路使用早返回，不得退化成只记日志后继续推帧。
-      final String afterGate = pumpBody.substring(exitGate, frameReport);
-      expect(afterGate.contains('return;'), isTrue,
-          reason:
-              'exit gate must return early, not fall through to frame report');
-
-      // 4) prepareForProcessExit 入口在 webViews.clear() 之前置位总闸。
-      final String prepareBody = _body(
-        manager,
-        'void InAppWebViewManager::prepareForProcessExit()',
-        'bool InAppWebViewManager::isGraphicsCaptureSessionSupported()',
-      );
-      final int setExit = prepareBody.indexOf('SetProcessExiting()');
-      final int clearWebViews = prepareBody.indexOf('webViews.clear()');
-      expect(setExit, greaterThanOrEqualTo(0),
-          reason: 'prepareForProcessExit must arm the master gate');
-      expect(clearWebViews, greaterThan(setExit),
-          reason:
-              'SetProcessExiting() must run before webViews.clear() / any teardown');
-
-      // manager.cpp 必须 include texture_bridge.h 才能看到 SetProcessExiting 声明。
-      expect(
-          manager
-              .contains('#include "../custom_platform_view/texture_bridge.h"'),
+              'IsProcessExiting() early-return must guard the frame_available_() call',
+        );
+        // 短路使用早返回，不得退化成只记日志后继续推帧。
+        final String afterGate = pumpBody.substring(exitGate, frameReport);
+        expect(
+          afterGate.contains('return;'),
           isTrue,
           reason:
-              'manager must include texture_bridge.h for SetProcessExiting');
-    });
+              'exit gate must return early, not fall through to frame report',
+        );
+
+        // 4) prepareForProcessExit 入口在 webViews.clear() 之前置位总闸。
+        final String prepareBody = _body(
+          manager,
+          'void InAppWebViewManager::prepareForProcessExit()',
+          'bool InAppWebViewManager::isGraphicsCaptureSessionSupported()',
+        );
+        final int setExit = prepareBody.indexOf('SetProcessExiting()');
+        final int clearWebViews = prepareBody.indexOf('webViews.clear()');
+        expect(
+          setExit,
+          greaterThanOrEqualTo(0),
+          reason: 'prepareForProcessExit must arm the master gate',
+        );
+        expect(
+          clearWebViews,
+          greaterThan(setExit),
+          reason:
+              'SetProcessExiting() must run before webViews.clear() / any teardown',
+        );
+
+        // manager.cpp 必须 include texture_bridge.h 才能看到 SetProcessExiting 声明。
+        expect(
+          manager.contains(
+            '#include "../custom_platform_view/texture_bridge.h"',
+          ),
+          isTrue,
+          reason: 'manager must include texture_bridge.h for SetProcessExiting',
+        );
+      },
+    );
   });
 
   /// TODO-648 / BUG-361 源码守卫：vendored fork `flutter_inappwebview_windows`
@@ -231,8 +274,7 @@ void main() {
   /// 窗口注册 drop target，desktop_drop 主 HWND 注册全程不被抢占。本守卫扫源码钉死这条，
   /// 防回归把它退回 WebView2 的默认 TRUE。
   group('WebView2 AllowExternalDrop (TODO-648 / BUG-361)', () {
-    test(
-        'TODO-648/BUG-361: fork WebView2 controller init disables AllowExternalDrop '
+    test('TODO-648/BUG-361: fork WebView2 controller init disables AllowExternalDrop '
         'so desktop_drop keeps the host HWND drop registration', () {
       final List<String> sourceCandidates = <String>[
         'packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp',
@@ -241,38 +283,60 @@ void main() {
       final File? sourceFile = sourceCandidates
           .map(File.new)
           .cast<File?>()
-          .firstWhere((File? f) => f != null && f.existsSync(),
-              orElse: () => null);
+          .firstWhere(
+            (File? f) => f != null && f.existsSync(),
+            orElse: () => null,
+          );
       expect(sourceFile, isNotNull, reason: 'in_app_webview.cpp 未找到');
 
       final String src = sourceFile!.readAsStringSync();
 
       // 修复说明注释必须保留 BUG-361 / TODO-648 标识，钉住根因与修复契约。
-      expect(src.contains('BUG-361'), isTrue,
-          reason: '修复说明注释应保留 BUG-361，标识 WebView2 抢占主窗口 drop 注册根因');
+      expect(
+        src.contains('BUG-361'),
+        isTrue,
+        reason: '修复说明注释应保留 BUG-361，标识 WebView2 抢占主窗口 drop 注册根因',
+      );
 
       // 必须显式关闭 AllowExternalDrop（默认 TRUE 是根因，不关就回归）。
-      expect(src.contains('put_AllowExternalDrop(FALSE)'), isTrue,
-          reason: 'WebView2 控制器初始化必须显式 put_AllowExternalDrop(FALSE)，否则默认 TRUE '
-              '会在宿主主窗口注册 IDropTarget，关闭后留主 HWND 无有效 drop target -> 禁止光标');
+      expect(
+        src.contains('put_AllowExternalDrop(FALSE)'),
+        isTrue,
+        reason:
+            'WebView2 控制器初始化必须显式 put_AllowExternalDrop(FALSE)，否则默认 TRUE '
+            '会在宿主主窗口注册 IDropTarget，关闭后留主 HWND 无有效 drop target -> 禁止光标',
+      );
 
       // AllowExternalDrop 在 ICoreWebView2Controller4，必须经 QueryInterface 拿到再调，
       // 老 Runtime 无该接口时 QI 失败应静默跳过（不崩）。
-      expect(src.contains('ICoreWebView2Controller4'), isTrue,
-          reason:
-              'put_AllowExternalDrop 在 ICoreWebView2Controller4，必须 QI 拿到该接口');
+      expect(
+        src.contains('ICoreWebView2Controller4'),
+        isTrue,
+        reason: 'put_AllowExternalDrop 在 ICoreWebView2Controller4，必须 QI 拿到该接口',
+      );
 
       // 守卫调用位置：必须落在控制器初始化路径（prepare），且 QI 成功才调（容错）。
       final int prepareIdx = src.indexOf('void InAppWebView::prepare(');
-      expect(prepareIdx, greaterThanOrEqualTo(0),
-          reason: 'AllowExternalDrop 必须在 InAppWebView::prepare 控制器初始化路径设置');
-      final int qiIdx =
-          src.indexOf('IID_PPV_ARGS(&webViewController4)', prepareIdx);
-      expect(qiIdx, greaterThan(prepareIdx),
-          reason: 'prepare 内必须 QueryInterface 拿 ICoreWebView2Controller4');
+      expect(
+        prepareIdx,
+        greaterThanOrEqualTo(0),
+        reason: 'AllowExternalDrop 必须在 InAppWebView::prepare 控制器初始化路径设置',
+      );
+      final int qiIdx = src.indexOf(
+        'IID_PPV_ARGS(&webViewController4)',
+        prepareIdx,
+      );
+      expect(
+        qiIdx,
+        greaterThan(prepareIdx),
+        reason: 'prepare 内必须 QueryInterface 拿 ICoreWebView2Controller4',
+      );
       final int dropIdx = src.indexOf('put_AllowExternalDrop(FALSE)', qiIdx);
-      expect(dropIdx, greaterThan(qiIdx),
-          reason: 'put_AllowExternalDrop(FALSE) 必须在 QueryInterface 成功之后调用');
+      expect(
+        dropIdx,
+        greaterThan(qiIdx),
+        reason: 'put_AllowExternalDrop(FALSE) 必须在 QueryInterface 成功之后调用',
+      );
     });
   });
 
@@ -282,102 +346,140 @@ void main() {
   /// 接受 per-pool 成功闭包序列）。
   group('WGC capture lifecycle log (TODO-506)', () {
     test(
-        'TODO-506 active WGC pool logs carry enough attribution to explain skips',
-        () {
-      final String src = _readTextureBridgeSource();
+      'TODO-506 active WGC pool logs carry enough attribution to explain skips',
+      () {
+        final String src = _readTextureBridgeSource();
 
-      for (final String event in <String>[
-        'start-skip-running',
-        'surface-size-changed',
-        'frame-first-success',
-        'frame-needs-update',
-        'frame-noop',
-        'pump-start',
-        'pump-stop-start',
-        'pump-remove-tick-done',
-        'pump-stop-done',
-        'recreate-skip-fits',
-      ]) {
-        expect(src.contains('WgcLog::Write("$event"'), isTrue,
-            reason: 'TODO-506 must make $event visible in WGC.captureLog');
-      }
+        for (final String event in <String>[
+          'start-skip-running',
+          'surface-size-changed',
+          'frame-first-success',
+          'frame-needs-update',
+          'frame-noop',
+          'pump-start',
+          'pump-stop-start',
+          'pump-remove-tick-done',
+          'pump-stop-done',
+          'recreate-skip-fits',
+        ]) {
+          expect(
+            src.contains('WgcLog::Write("$event"'),
+            isTrue,
+            reason: 'TODO-506 must make $event visible in WGC.captureLog',
+          );
+        }
 
-      final String startBody = _methodBody(
-        src,
-        'bool TextureBridge::Start()',
-        'bool TextureBridge::CreateAndStartFramePoolLocked()',
-      );
-      expect(startBody.contains('BridgeStateDetail'), isTrue,
+        final String startBody = _methodBody(
+          src,
+          'bool TextureBridge::Start()',
+          'bool TextureBridge::CreateAndStartFramePoolLocked()',
+        );
+        expect(
+          startBody.contains('BridgeStateDetail'),
+          isTrue,
           reason:
-              'start/start-skip-running must use the shared attribution detail builder');
-      for (final String field in <String>[
-        'GenerationDetail',
-        'pool_size',
-        'capture_item_size',
-        'needs_update',
-        'bridge',
-      ]) {
-        expect(src.contains(field), isTrue,
-            reason: 'start/start-skip-running log must include $field');
-      }
+              'start/start-skip-running must use the shared attribution detail builder',
+        );
+        for (final String field in <String>[
+          'GenerationDetail',
+          'pool_size',
+          'capture_item_size',
+          'needs_update',
+          'bridge',
+        ]) {
+          expect(
+            src.contains(field),
+            isTrue,
+            reason: 'start/start-skip-running log must include $field',
+          );
+        }
 
-      final String recreateBody = _methodBody(
-        src,
-        'bool TextureBridge::RecreateFramePoolLocked()',
-        'void TextureBridge::Stop()',
-      );
-      expect(recreateBody.contains('current_size'), isTrue,
-          reason: 'recreate-skip-fits must log current capture item size');
-      expect(recreateBody.contains('lifetime_size'), isTrue,
+        final String recreateBody = _methodBody(
+          src,
+          'bool TextureBridge::RecreateFramePoolLocked()',
+          'void TextureBridge::Stop()',
+        );
+        expect(
+          recreateBody.contains('current_size'),
+          isTrue,
+          reason: 'recreate-skip-fits must log current capture item size',
+        );
+        expect(
+          recreateBody.contains('lifetime_size'),
+          isTrue,
           reason:
-              'recreate-skip-fits must log existing frame-pool lifetime size');
+              'recreate-skip-fits must log existing frame-pool lifetime size',
+        );
 
-      final String frameBody = src.substring(
-        src.indexOf('void TextureBridge::PumpFrameLocked('),
-        src.indexOf('bool TextureBridge::ShouldDropFrame()'),
-      );
-      expect(frameBody.contains('FrameHandlerDetail'), isTrue,
+        final String frameBody = src.substring(
+          src.indexOf('void TextureBridge::PumpFrameLocked('),
+          src.indexOf('bool TextureBridge::ShouldDropFrame()'),
+        );
+        expect(
+          frameBody.contains('FrameHandlerDetail'),
+          isTrue,
           reason:
-              'PumpFrameLocked must use the shared frame attribution detail builder');
-      for (final String field in <String>[
-        'GenerationDetail',
-        'in_handler',
-        'retiring',
-        'has_frame',
-        'needs_update',
-      ]) {
-        expect(src.contains(field), isTrue,
-            reason: 'PumpFrameLocked low-frequency logs must include $field');
-      }
-    });
+              'PumpFrameLocked must use the shared frame attribution detail builder',
+        );
+        for (final String field in <String>[
+          'GenerationDetail',
+          'in_handler',
+          'retiring',
+          'has_frame',
+          'needs_update',
+        ]) {
+          expect(
+            src.contains(field),
+            isTrue,
+            reason: 'PumpFrameLocked low-frequency logs must include $field',
+          );
+        }
+      },
+    );
 
-    test('timer-pump WGC retire removes Tick before closing capture resources',
-        () {
-      final String src = _readTextureBridgeSource();
-      final String retireBody = _methodBody(
-        src,
-        'void TextureBridge::RetireFramePoolLocked(',
-        'void FinalizeFramePoolLifetime(',
-      );
+    test(
+      'timer-pump WGC retire removes Tick before closing capture resources',
+      () {
+        final String src = _readTextureBridgeSource();
+        final String retireBody = _methodBody(
+          src,
+          'void TextureBridge::RetireFramePoolLocked(',
+          'void FinalizeFramePoolLifetime(',
+        );
 
-      expect(retireBody.contains('StopPumpLocked(lifetime, reason)'), isTrue,
-          reason: 'retire must stop/remove the timer pump before finalizing');
-      expect(retireBody.contains('TryEnqueue'), isFalse,
+        expect(
+          retireBody.contains('StopPumpLocked(lifetime, reason)'),
+          isTrue,
+          reason: 'retire must stop/remove the timer pump before finalizing',
+        );
+        expect(
+          retireBody.contains('TryEnqueue'),
+          isFalse,
           reason:
-              'FrameArrived handler-stack defer is not part of the default timer pump path');
-      expect(src.contains('add_FrameArrived'), isFalse,
-          reason: 'default WGC path must not subscribe to FrameArrived');
-      expect(src.contains('WgcLog::Write("retire-defer-fail"'), isFalse,
-          reason:
-              'retire-defer-fail belongs to the removed handler-stack path');
-      expect(src.contains('defer_enqueue=0'), isFalse,
-          reason:
-              'timer pump path must not use handler-stack enqueue fallback');
-    });
+              'FrameArrived handler-stack defer is not part of the default timer pump path',
+        );
+        expect(
+          src.contains('add_FrameArrived'),
+          isFalse,
+          reason: 'default WGC path must not subscribe to FrameArrived',
+        );
+        expect(
+          src.contains('WgcLog::Write("retire-defer-fail"'),
+          isFalse,
+          reason: 'retire-defer-fail belongs to the removed handler-stack path',
+        );
+        expect(
+          src.contains('defer_enqueue=0'),
+          isFalse,
+          reason: 'timer pump path must not use handler-stack enqueue fallback',
+        );
+      },
+    );
 
-    test('WGC lifecycle log fixture rejects old event-driven negative events',
-        () {
-      const String userFailureLog = '''
+    test(
+      'WGC lifecycle log fixture rejects old event-driven negative events',
+      () {
+        const String userFailureLog = '''
 2026-06-17T11:00:00.000Z tid=42 evt=create-pool pool=0xABC generation=9
 2026-06-17T11:00:00.100Z tid=42 evt=retire pool=0xABC reason=recreate
 2026-06-17T11:00:00.101Z tid=42 evt=remove-before-close-start pool=0xABC generation=9
@@ -387,8 +489,9 @@ void main() {
 2026-06-17T11:00:00.106Z tid=42 evt=retire-register-done pool=0xABC generation=9
 ''';
 
-      expect(_isValidWgcLifecycleLog(userFailureLog), isFalse);
-    });
+        expect(_isValidWgcLifecycleLog(userFailureLog), isFalse);
+      },
+    );
 
     test('WGC lifecycle log fixture accepts per-pool successful closure', () {
       const String successLog = '''

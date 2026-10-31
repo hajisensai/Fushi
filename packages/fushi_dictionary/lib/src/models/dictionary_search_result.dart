@@ -16,8 +16,10 @@ class DictionarySearchResult {
       scrollPosition: map['scrollPosition'] as int? ?? 0,
       entries: entriesJson.map(DictionaryEntry.fromJson).toList(),
       kanjiResults: kanjiJson
-          .map((dynamic e) =>
-              FushiKanjiResult.fromMap(Map<String, dynamic>.from(e as Map)))
+          .map(
+            (dynamic e) =>
+                FushiKanjiResult.fromMap(Map<String, dynamic>.from(e as Map)),
+          )
           .toList(),
     );
   }

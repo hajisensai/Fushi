@@ -26,7 +26,8 @@ class _FakeBangumi implements BangumiTrackingApi {
   @override
   Future<BangumiUser> getMe() async {
     calls.add('getMe:$token');
-    if (token != 'good') throw const BangumiApiException(statusCode: 401, message: 'bad token');
+    if (token != 'good')
+      throw const BangumiApiException(statusCode: 401, message: 'bad token');
     return const BangumiUser(username: 'neko', nickname: '猫');
   }
 
@@ -34,7 +35,8 @@ class _FakeBangumi implements BangumiTrackingApi {
   void close() {}
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
 }
 
 void main() {
@@ -60,7 +62,11 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  Future<int> tracking(List<String> args, {bool enabled = true, Map<String, String> env = const <String, String>{}}) {
+  Future<int> tracking(
+    List<String> args, {
+    bool enabled = true,
+    Map<String, String> env = const <String, String>{},
+  }) {
     final TrackingModule module = TrackingModule(
       out: out,
       err: err,
@@ -80,7 +86,14 @@ void main() {
   test('生产现状：下线闸关着 = 69，且不打开数据目录、不发请求', () async {
     expect(kMediaTrackingEnabled, isFalse, reason: '闸打开后这条测试与模块文档都要改');
     expect(const TrackingModule().enabled, kMediaTrackingEnabled);
-    expect(await tracking(<String>['sync'], enabled: false, env: <String, String>{kBangumiTokenEnv: 'good'}), 69);
+    expect(
+      await tracking(
+        <String>['sync'],
+        enabled: false,
+        env: <String, String>{kBangumiTokenEnv: 'good'},
+      ),
+      69,
+    );
     expect(err.toString(), contains('kMediaTrackingEnabled'));
     expect(calls, isEmpty);
     expect(Directory(paths.dataDir).existsSync(), isFalse);
@@ -88,7 +101,10 @@ void main() {
 
   test('环境变量令牌：connect 校验后落盘，空 outbox 同步成功', () async {
     expect(
-      await tracking(<String>['sync', '--json'], env: <String, String>{kBangumiTokenEnv: 'good'}),
+      await tracking(
+        <String>['sync', '--json'],
+        env: <String, String>{kBangumiTokenEnv: 'good'},
+      ),
       0,
       reason: err.toString(),
     );
@@ -100,20 +116,33 @@ void main() {
       'unauthorized': false,
     });
     final FushiDatabase db = FushiDatabase(paths.support.path);
-    expect(PrefCodec.decodeUntyped((await db.getPref(kBangumiAccessTokenPref))!), 'good');
-    expect(PrefCodec.decodeUntyped((await db.getPref(kBangumiAccountNamePref))!), '猫');
+    expect(
+      PrefCodec.decodeUntyped((await db.getPref(kBangumiAccessTokenPref))!),
+      'good',
+    );
+    expect(
+      PrefCodec.decodeUntyped((await db.getPref(kBangumiAccountNamePref))!),
+      '猫',
+    );
     await db.close();
 
     out.clear();
     expect(await tracking(<String>['status', '--json']), 0);
-    final Map<String, Object?> status = jsonDecode(out.toString()) as Map<String, Object?>;
+    final Map<String, Object?> status =
+        jsonDecode(out.toString()) as Map<String, Object?>;
     expect(status['configured'], true);
     expect(status['account'], '猫');
     expect(status['pending'], 0);
   });
 
   test('令牌被拒 = 69，不落盘', () async {
-    expect(await tracking(<String>['sync'], env: <String, String>{kBangumiTokenEnv: 'bad'}), 69);
+    expect(
+      await tracking(
+        <String>['sync'],
+        env: <String, String>{kBangumiTokenEnv: 'bad'},
+      ),
+      69,
+    );
     final FushiDatabase db = FushiDatabase(paths.support.path);
     expect(await db.getPref(kBangumiAccessTokenPref), isNull);
     await db.close();
@@ -125,10 +154,27 @@ void main() {
   });
 
   test('退出码映射', () {
-    expect(trackingSyncExitCode(const MediaTrackingSyncResult(succeeded: 2, failed: 0, pending: 0)), 0);
-    expect(trackingSyncExitCode(const MediaTrackingSyncResult(succeeded: 1, failed: 1, pending: 1)), 1);
     expect(
-      trackingSyncExitCode(const MediaTrackingSyncResult(succeeded: 0, failed: 1, pending: 1, unauthorized: true)),
+      trackingSyncExitCode(
+        const MediaTrackingSyncResult(succeeded: 2, failed: 0, pending: 0),
+      ),
+      0,
+    );
+    expect(
+      trackingSyncExitCode(
+        const MediaTrackingSyncResult(succeeded: 1, failed: 1, pending: 1),
+      ),
+      1,
+    );
+    expect(
+      trackingSyncExitCode(
+        const MediaTrackingSyncResult(
+          succeeded: 0,
+          failed: 1,
+          pending: 1,
+          unauthorized: true,
+        ),
+      ),
       69,
     );
   });

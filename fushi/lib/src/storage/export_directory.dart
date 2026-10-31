@@ -26,8 +26,9 @@ Directory prepareExportDirectoryAt(
   final String directoryPath = p.join(appDirectoryPath, kExportDirectoryName);
   final Directory exportDirectory = Directory(directoryPath);
   if (!exportDirectory.existsSync()) {
-    final Directory legacy =
-        Directory(p.join(appDirectoryPath, kLegacyExportDirectoryName));
+    final Directory legacy = Directory(
+      p.join(appDirectoryPath, kLegacyExportDirectoryName),
+    );
     if (legacy.existsSync()) {
       try {
         legacy.renameSync(directoryPath);

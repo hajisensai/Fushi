@@ -14,7 +14,11 @@ import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Widget host({required bool visible, required FocusNode inner, FocusNode? outer}) {
+  Widget host({
+    required bool visible,
+    required FocusNode inner,
+    FocusNode? outer,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: Column(
@@ -48,8 +52,11 @@ void main() {
 
     inner.requestFocus();
     await tester.pump();
-    expect(inner.hasFocus, isFalse,
-        reason: '隐藏 chrome 内的控件绝不能拿到焦点（BUG-1301 根因）');
+    expect(
+      inner.hasFocus,
+      isFalse,
+      reason: '隐藏 chrome 内的控件绝不能拿到焦点（BUG-1301 根因）',
+    );
   });
 
   testWidgets('可见→隐藏：已持焦子孙被自动撤离，焦点回到门外', (WidgetTester tester) async {
@@ -70,29 +77,33 @@ void main() {
     // 面板关闭（visible 翻 false）：焦点必须立刻撤离隐形子树。
     await tester.pumpWidget(host(visible: false, inner: inner, outer: outer));
     await tester.pump();
-    expect(inner.hasFocus, isFalse,
-        reason: '隐藏瞬间焦点必须撤离，否则焦点环画在隐形控件上（用户截图的空框）');
-    expect(outer.hasFocus, isTrue,
-        reason: 'Flutter unfocus(previouslyFocusedChild) 应把焦点还给门外上一个持焦者');
+    expect(inner.hasFocus, isFalse, reason: '隐藏瞬间焦点必须撤离，否则焦点环画在隐形控件上（用户截图的空框）');
+    expect(
+      outer.hasFocus,
+      isTrue,
+      reason: 'Flutter unfocus(previouslyFocusedChild) 应把焦点还给门外上一个持焦者',
+    );
   });
 
   testWidgets('隐藏态：指针穿透（点不到门内按钮）', (WidgetTester tester) async {
     final FocusNode inner = FocusNode(debugLabel: 'inner');
     addTearDown(inner.dispose);
     int taps = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: FadingChromeGate(
-          visible: false,
-          duration: const Duration(milliseconds: 200),
-          child: TextButton(
-            focusNode: inner,
-            onPressed: () => taps++,
-            child: const Text('inside'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FadingChromeGate(
+            visible: false,
+            duration: const Duration(milliseconds: 200),
+            child: TextButton(
+              focusNode: inner,
+              onPressed: () => taps++,
+              child: const Text('inside'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('inside'), warnIfMissed: false);
     expect(taps, 0, reason: '隐藏态 IgnorePointer 语义保持（与旧行为一致）');
@@ -111,23 +122,36 @@ void main() {
       'lib/src/pages/implementations/video_fushi/layout.part.dart',
     ).readAsStringSync();
 
-    expect(RegExp(r'FadingChromeGate\(').allMatches(episode).length,
-        greaterThanOrEqualTo(1),
-        reason: '剧集横轨隐藏态必须经 FadingChromeGate（不可见⇒不可聚焦）');
-    expect(RegExp(r'FadingChromeGate\(').allMatches(layout).length,
-        greaterThanOrEqualTo(1),
-        reason: '沉浸态侧栏（含锁按钮）必须经 FadingChromeGate');
+    expect(
+      RegExp(r'FadingChromeGate\(').allMatches(episode).length,
+      greaterThanOrEqualTo(1),
+      reason: '剧集横轨隐藏态必须经 FadingChromeGate（不可见⇒不可聚焦）',
+    );
+    expect(
+      RegExp(r'FadingChromeGate\(').allMatches(layout).length,
+      greaterThanOrEqualTo(1),
+      reason: '沉浸态侧栏（含锁按钮）必须经 FadingChromeGate',
+    );
     final int wrap = layout.indexOf(
       'Widget _withImmersiveLockAutoHide({required Widget child})',
     );
     expect(wrap, greaterThanOrEqualTo(0));
-    expect(layout.indexOf('FadingChromeGate(', wrap), greaterThan(wrap),
-        reason: '沉浸态侧栏的淡出层 _withImmersiveLockAutoHide 必须走 FadingChromeGate');
+    expect(
+      layout.indexOf('FadingChromeGate(', wrap),
+      greaterThan(wrap),
+      reason: '沉浸态侧栏的淡出层 _withImmersiveLockAutoHide 必须走 FadingChromeGate',
+    );
     // 旧病灶写法：IgnorePointer(ignoring: !visible…) 直接包淡出 chrome。
     final RegExp bare = RegExp(r'IgnorePointer\(\s*ignoring:\s*!\s*visible');
-    expect(bare.hasMatch(episode), isFalse,
-        reason: '剧集横轨不得回退成裸 IgnorePointer(ignoring: !visible)');
-    expect(bare.hasMatch(layout), isFalse,
-        reason: 'layout 淡出 chrome 不得回退成裸 IgnorePointer(ignoring: !visible)');
+    expect(
+      bare.hasMatch(episode),
+      isFalse,
+      reason: '剧集横轨不得回退成裸 IgnorePointer(ignoring: !visible)',
+    );
+    expect(
+      bare.hasMatch(layout),
+      isFalse,
+      reason: 'layout 淡出 chrome 不得回退成裸 IgnorePointer(ignoring: !visible)',
+    );
   });
 }

@@ -29,8 +29,11 @@ void main() {
       final ReaderPageTurnQueue queue = ReaderPageTurnQueue();
       queue.push(ReaderNavigationDirection.forward);
       expect(queue.consume(), ReaderNavigationDirection.forward);
-      expect(queue.consume(), isNull,
-          reason: '一次 push 只能换来一次 consume —— 这就是「跳两章」不可能再发生的原因');
+      expect(
+        queue.consume(),
+        isNull,
+        reason: '一次 push 只能换来一次 consume —— 这就是「跳两章」不可能再发生的原因',
+      );
     });
 
     test('N 次输入 = N 次重放（用户一口气拨多格就跨多章，不吞输入）', () {
@@ -142,16 +145,16 @@ void main() {
     // 切片的两个锚都必须是**代码**：语料已剥注释（注释被等长掩成空白），拿
     // `// ── Image Viewer` 这类注释横幅当 end marker 会直接找不到。
     String paginateBody() => _slice(
-          source,
-          '  Future<void> _paginate(',
-          '  File? _readerImageFileForUrl(',
-        );
+      source,
+      '  Future<void> _paginate(',
+      '  File? _readerImageFileForUrl(',
+    );
 
     String boundarySwipeHandler() => _slice(
-          source,
-          "handlerName: 'onBoundarySwipe'",
-          "handlerName: 'onImageDetected'",
-        );
+      source,
+      "handlerName: 'onBoundarySwipe'",
+      "handlerName: 'onImageDetected'",
+    );
 
     test('_paginate 的在飞路径必须排队，不得再退回丢弃', () {
       final String paginate = paginateBody();
@@ -161,16 +164,22 @@ void main() {
         inFlightIdx,
         paginate.indexOf('}', inFlightIdx),
       );
-      expect(branch, contains('_pageTurnQueue.push(direction);'),
-          reason: '换章加载期到达的输入必须入队；直接 return 就是 BUG-2424 的原状');
+      expect(
+        branch,
+        contains('_pageTurnQueue.push(direction);'),
+        reason: '换章加载期到达的输入必须入队；直接 return 就是 BUG-2424 的原状',
+      );
     });
 
     test('onBoundarySwipe 的在飞路径必须排队，不得再退回丢弃', () {
       final String handler = boundarySwipeHandler();
       final int inFlightIdx = handler.indexOf('if (_paginationInFlight) {');
       expect(inFlightIdx, isNonNegative);
-      expect(handler, contains('_pageTurnQueue.push('),
-          reason: '跨章通道在飞时同样必须入队');
+      expect(
+        handler,
+        contains('_pageTurnQueue.push('),
+        reason: '跨章通道在飞时同样必须入队',
+      );
     });
 
     test('跨章冷却窗那一整套不得复活', () {
@@ -183,10 +192,14 @@ void main() {
         '_kChapterTurnCooldown ',
         '_inertiaChapterTurnPending',
       ]) {
-        expect(source.contains(symbol), isFalse,
-            reason: '「距上次跨章多久」是错误的判据维度，且锚在加载完成上会让等待随加载'
-                '时长膨胀（BUG-2424）。要拦的不变式是「一次输入最多一次跨章」，'
-                '由 ReaderPageTurnQueue 的 1:1 消费保证；符号 $symbol 不得回归');
+        expect(
+          source.contains(symbol),
+          isFalse,
+          reason:
+              '「距上次跨章多久」是错误的判据维度，且锚在加载完成上会让等待随加载'
+              '时长膨胀（BUG-2424）。要拦的不变式是「一次输入最多一次跨章」，'
+              '由 ReaderPageTurnQueue 的 1:1 消费保证；符号 $symbol 不得回归',
+        );
       }
     });
 
@@ -195,8 +208,11 @@ void main() {
       // 补一道，用户配的「滚轮翻页间隔」就只管得着分页模式。
       final String handler = boundarySwipeHandler();
       expect(handler, contains('wheelPageTurnInterval'));
-      expect(handler, contains('_lastPaginateTime'),
-          reason: '跨章与章内翻页受同一个用户设置管，两种模式一视同仁');
+      expect(
+        handler,
+        contains('_lastPaginateTime'),
+        reason: '跨章与章内翻页受同一个用户设置管，两种模式一视同仁',
+      );
     });
 
     test('两处闸门顺序一致：先节流、再 stamp、最后才是在飞排队', () {
@@ -204,30 +220,39 @@ void main() {
       // 输入就会绕过限速直接入队，落定后一次性连翻——用户配的速率对跨章等于不生效。
       for (final String body in <String>[
         paginateBody(),
-        boundarySwipeHandler()
+        boundarySwipeHandler(),
       ]) {
         final int throttleIdx = body.indexOf('elapsedMs < throttleMs');
-        final int stampIdx =
-            body.indexOf('_lastPaginateTime = DateTime.now();');
+        final int stampIdx = body.indexOf(
+          '_lastPaginateTime = DateTime.now();',
+        );
         final int queueIdx = body.indexOf('_pageTurnQueue.push(');
         expect(throttleIdx, isNonNegative);
         expect(stampIdx, isNonNegative);
         expect(queueIdx, isNonNegative);
         expect(throttleIdx, lessThan(stampIdx), reason: '先查节流再 stamp');
-        expect(stampIdx, lessThan(queueIdx),
-            reason: '过了节流 = 这一次输入被接受、占掉一个翻页配额，'
-                '所以即使接着要入队也必须先 stamp；'
-                '不然加载期内每一个 tick 都会被接受入队');
+        expect(
+          stampIdx,
+          lessThan(queueIdx),
+          reason:
+              '过了节流 = 这一次输入被接受、占掉一个翻页配额，'
+              '所以即使接着要入队也必须先 stamp；'
+              '不然加载期内每一个 tick 都会被接受入队',
+        );
       }
     });
 
     test('触摸板惯性仍由跨文档 gate 聚合（JS 侧手势窗随换文档归零，拦不住）', () {
       final String handler = boundarySwipeHandler();
       expect(handler, contains("pointerKind == 'trackpad'"));
-      expect(handler, contains('_pagedWheelGestureGate.shouldStartNewGesture('),
-          reason: '跨章会 loadUrl 换文档，JS 的 _continuousWheelLastTickAt 随之归零，'
-              '新章第一个残余惯性 tick 会被 JS 误判成新手势 → 二次跨章。'
-              '必须由活在 reader State、跨文档持续存在的 gate 兜住');
+      expect(
+        handler,
+        contains('_pagedWheelGestureGate.shouldStartNewGesture('),
+        reason:
+            '跨章会 loadUrl 换文档，JS 的 _continuousWheelLastTickAt 随之归零，'
+            '新章第一个残余惯性 tick 会被 JS 误判成新手势 → 二次跨章。'
+            '必须由活在 reader State、跨文档持续存在的 gate 兜住',
+      );
     });
 
     test('鼠标滚轮不被手势 gate 聚合（一格一次跨章）', () {
@@ -236,9 +261,13 @@ void main() {
       expect(gateIdx, isNonNegative);
       final int kindIdx = handler.indexOf("pointerKind == 'trackpad'");
       expect(kindIdx, isNonNegative);
-      expect(kindIdx, lessThan(gateIdx),
-          reason: 'gate 必须被 trackpad 判据门控；无条件套在鼠标上就回到了'
-              '「拨一格没反应」的老问题');
+      expect(
+        kindIdx,
+        lessThan(gateIdx),
+        reason:
+            'gate 必须被 trackpad 判据门控；无条件套在鼠标上就回到了'
+            '「拨一格没反应」的老问题',
+      );
     });
 
     test('每个 content-ready 完成点都重放积压意图', () {
@@ -259,13 +288,19 @@ void main() {
           // unawaited(...) 里时带分号的形态就不存在了（钉写法 = 加个包装就假红）。
           source.indexOf('_replayPendingPageTurn()', settleIdx);
       expect(replayIdx, isNonNegative);
-      final int prefetchIdx =
-          source.indexOf('_prefetchAdjacentChapterImages(', settleIdx);
+      final int prefetchIdx = source.indexOf(
+        '_prefetchAdjacentChapterImages(',
+        settleIdx,
+      );
       expect(prefetchIdx, isNonNegative);
-      expect(prefetchIdx, lessThan(replayIdx),
-          reason: '重放必须排在收尾块最后：遮罩先撤、新章可见、fushiReader 已就绪，'
-              '页边界判定才是在真实状态上做的（原始「跳两章」正是在飞时 '
-              'evaluateJavascript 返 null 被 _didScroll 误读成边界）');
+      expect(
+        prefetchIdx,
+        lessThan(replayIdx),
+        reason:
+            '重放必须排在收尾块最后：遮罩先撤、新章可见、fushiReader 已就绪，'
+            '页边界判定才是在真实状态上做的（原始「跳两章」正是在飞时 '
+            'evaluateJavascript 返 null 被 _didScroll 误读成边界）',
+      );
     });
 
     test('重放必须消费到「队空」或「又进入在飞」，不能只消费一个', () {
@@ -274,26 +309,45 @@ void main() {
         'Future<void> _replayPendingPageTurn() async {',
         'Future<void> _paginate(',
       );
-      expect(replay, contains('while ('),
-          reason: '重放只消费一个意图是错的：若那一次只是**章内翻页**'
-              '（新章还有下一页），就不会再有 content-ready 把我们叫醒，'
-              '剩下的意图会一直压到下一次跨章才突然连翻');
-      expect(replay, contains('!_paginationInFlight'),
-          reason: '循环必须在重新进入在飞（重放导致跨章）时退出，'
-              '剩余意图交给那次导航的 content-ready 继续消费');
-      expect(replay, contains('await _paginate(next);'),
-          reason: '必须 await：不等就无法得知这一次到底是章内翻页还是跨章');
-      expect(replay, contains('_replayingPageTurns'),
-          reason: '重入闸必须在：await 期间可能被另一个 content-ready '
-              '完成点再次调用，两个循环同时消费同一队列会让意图乱序落到不同章上');
+      expect(
+        replay,
+        contains('while ('),
+        reason:
+            '重放只消费一个意图是错的：若那一次只是**章内翻页**'
+            '（新章还有下一页），就不会再有 content-ready 把我们叫醒，'
+            '剩下的意图会一直压到下一次跨章才突然连翻',
+      );
+      expect(
+        replay,
+        contains('!_paginationInFlight'),
+        reason:
+            '循环必须在重新进入在飞（重放导致跨章）时退出，'
+            '剩余意图交给那次导航的 content-ready 继续消费',
+      );
+      expect(
+        replay,
+        contains('await _paginate(next);'),
+        reason: '必须 await：不等就无法得知这一次到底是章内翻页还是跨章',
+      );
+      expect(
+        replay,
+        contains('_replayingPageTurns'),
+        reason:
+            '重入闸必须在：await 期间可能被另一个 content-ready '
+            '完成点再次调用，两个循环同时消费同一队列会让意图乱序落到不同章上',
+      );
     });
 
     test('非翻页导航作废积压意图，翻页导航保留', () {
       expect(source, contains('if (!_navigationFromPageTurn) {'));
       expect(source, contains('_pageTurnQueue.clear();'));
-      expect(source, contains('_navigationFromPageTurn = true;'),
-          reason: '_handlePageTurnLimit 必须置位，否则翻页跨章会把排队中的意图清掉'
-              '——那等于又把用户的输入丢了');
+      expect(
+        source,
+        contains('_navigationFromPageTurn = true;'),
+        reason:
+            '_handlePageTurnLimit 必须置位，否则翻页跨章会把排队中的意图清掉'
+            '——那等于又把用户的输入丢了',
+      );
     });
   });
 }

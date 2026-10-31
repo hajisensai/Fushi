@@ -28,8 +28,9 @@ void main() {
   /// 仓库根：`flutter test` 的 cwd 是 `fushi/`，也允许从仓库根跑。
   Directory repoRoot() {
     for (final String candidate in <String>['..', '.']) {
-      final Directory native =
-          Directory(p.join(candidate, 'native', 'galgame_hook', 'include'));
+      final Directory native = Directory(
+        p.join(candidate, 'native', 'galgame_hook', 'include'),
+      );
       if (native.existsSync()) return Directory(p.normalize(candidate));
     }
     fail('定位不到仓库根（native/galgame_hook/include 不存在），别让空集假绿');
@@ -47,43 +48,80 @@ void main() {
 
   group('IPC 契约单一真相源守卫', () {
     test('native 真相源确实定义契约（守卫自身的锚点不能是空的）', () {
-      final File truth = File(p.join(repoRoot().path, 'native', 'galgame_hook',
-          'include', 'voice_hook_ipc.h'));
-      expect(truth.existsSync(), isTrue,
-          reason: '真相源 native/galgame_hook/include/voice_hook_ipc.h 不见了');
+      final File truth = File(
+        p.join(
+          repoRoot().path,
+          'native',
+          'galgame_hook',
+          'include',
+          'voice_hook_ipc.h',
+        ),
+      );
+      expect(
+        truth.existsSync(),
+        isTrue,
+        reason: '真相源 native/galgame_hook/include/voice_hook_ipc.h 不见了',
+      );
       final String masked = maskComments(truth.readAsStringSync());
       expect(
-          masked, matches(RegExp('constexpr\\s+uint32_t\\s+$kVersionConstant')),
-          reason: '真相源必须定义 $kVersionConstant，否则下面两条守卫在守一个空契约');
-      expect(masked, matches(RegExp('struct\\s+$kHeaderStruct')),
-          reason: '真相源必须定义 $kHeaderStruct 布局');
+        masked,
+        matches(RegExp('constexpr\\s+uint32_t\\s+$kVersionConstant')),
+        reason: '真相源必须定义 $kVersionConstant，否则下面两条守卫在守一个空契约',
+      );
+      expect(
+        masked,
+        matches(RegExp('struct\\s+$kHeaderStruct')),
+        reason: '真相源必须定义 $kHeaderStruct 布局',
+      );
     });
 
     test('host 读侧 include 的必须是 native 真相源本身，不是任何本地副本', () {
       final Directory root = repoRoot();
-      final File reader = File(p.join(
-          root.path, 'fushi', 'windows', 'runner', 'voice_hook_reader.cpp'));
+      final File reader = File(
+        p.join(
+          root.path,
+          'fushi',
+          'windows',
+          'runner',
+          'voice_hook_reader.cpp',
+        ),
+      );
       expect(reader.existsSync(), isTrue, reason: '读侧实现不见了，扫描范围是空的');
       // 注释里的 include 不算数（旧副本的注释里就写着这个路径）。
       final String masked = maskComments(reader.readAsStringSync());
-      final RegExpMatch? include =
-          RegExp(r'#include\s+"([^"]*voice_hook_ipc\.h)"').firstMatch(masked);
-      expect(include, isNotNull,
-          reason: '读侧必须 include 契约头，才谈得上「include 的是哪一份」');
+      final RegExpMatch? include = RegExp(
+        r'#include\s+"([^"]*voice_hook_ipc\.h)"',
+      ).firstMatch(masked);
+      expect(
+        include,
+        isNotNull,
+        reason: '读侧必须 include 契约头，才谈得上「include 的是哪一份」',
+      );
       final String includePath = include!.group(1)!;
       final String resolved = p.normalize(
-          p.join(root.path, 'fushi', 'windows', 'runner', includePath));
+        p.join(root.path, 'fushi', 'windows', 'runner', includePath),
+      );
       // 判据是**解析后的真实文件**落在真相源目录，不是「路径串长得像」：
       // 任何本地副本（含同名文件）都解析不到 native/galgame_hook/include 去。
       expect(
-          p.equals(
-              resolved,
-              p.join(root.path, 'native', 'galgame_hook', 'include',
-                  'voice_hook_ipc.h')),
-          isTrue,
-          reason: '读侧 include 解析到 $resolved，不是 native 真相源');
-      expect(File(resolved).existsSync(), isTrue,
-          reason: 'include 的路径不存在，这份改动根本编不过');
+        p.equals(
+          resolved,
+          p.join(
+            root.path,
+            'native',
+            'galgame_hook',
+            'include',
+            'voice_hook_ipc.h',
+          ),
+        ),
+        isTrue,
+        reason: '读侧 include 解析到 $resolved，不是 native 真相源',
+      );
+      expect(
+        File(resolved).existsSync(),
+        isTrue,
+        reason: 'include 的路径不存在，这份改动根本编不过',
+      );
     });
 
     test('fushi/windows 下不得有第二处契约定义（常量或结构）', () {
@@ -91,43 +129,70 @@ void main() {
       final List<File> sources = tree
           .listSync(recursive: true, followLinks: false)
           .whereType<File>()
-          .where((File f) => const <String>['.h', '.hpp', '.cc', '.cpp']
-              .contains(p.extension(f.path).toLowerCase()))
+          .where(
+            (File f) => const <String>[
+              '.h',
+              '.hpp',
+              '.cc',
+              '.cpp',
+            ].contains(p.extension(f.path).toLowerCase()),
+          )
           .toList();
       expect(sources, isNotEmpty, reason: '一个 C++ 源文件都没扫到，空集假绿');
       final List<String> offenders = <String>[];
       for (final File source in sources) {
         final String masked = maskComments(source.readAsStringSync());
-        final bool definesConstant =
-            RegExp('constexpr\\s+uint32_t\\s+$kVersionConstant')
-                .hasMatch(masked);
-        final bool definesLayout =
-            RegExp('struct\\s+$kHeaderStruct\\s*\\{').hasMatch(masked);
+        final bool definesConstant = RegExp(
+          'constexpr\\s+uint32_t\\s+$kVersionConstant',
+        ).hasMatch(masked);
+        final bool definesLayout = RegExp(
+          'struct\\s+$kHeaderStruct\\s*\\{',
+        ).hasMatch(masked);
         if (definesConstant || definesLayout) {
           offenders.add(p.relative(source.path, from: tree.path));
         }
       }
-      expect(offenders, isEmpty,
-          reason: 'host 侧重新定义了 IPC 契约：${offenders.join(', ')}。'
-              '契约只能有 native/galgame_hook/include/voice_hook_ipc.h 一份；'
-              '手抄副本会让本体和内置 helper 各编各的版本，漂开后用户看到的是'
-              '「捕获组件版本不一致」这种指向不存在动作的处置。');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'host 侧重新定义了 IPC 契约：${offenders.join(', ')}。'
+            '契约只能有 native/galgame_hook/include/voice_hook_ipc.h 一份；'
+            '手抄副本会让本体和内置 helper 各编各的版本，漂开后用户看到的是'
+            '「捕获组件版本不一致」这种指向不存在动作的处置。',
+      );
     });
   });
 
   group('共享语音 reader 不接受游戏特例分类', () {
     test('不按环内任意 clip 标志全局删源，并保留选源隔离窗', () {
-      final File reader = File(p.join(repoRoot().path, 'fushi', 'windows',
-          'runner', 'voice_hook_reader.cpp'));
+      final File reader = File(
+        p.join(
+          repoRoot().path,
+          'fushi',
+          'windows',
+          'runner',
+          'voice_hook_reader.cpp',
+        ),
+      );
       final String source = maskComments(reader.readAsStringSync());
-      expect(source, isNot(contains('kVoiceClipFlagClassified')),
-          reason: '单个 producer 的分类标志不能改变整个共享环的可见源集合');
-      expect(source, isNot(contains('kVoiceClipFlagRoleVoice')),
-          reason: '角色语音正证据属于 engine adapter，不属于通用 PCM reader');
+      expect(
+        source,
+        isNot(contains('kVoiceClipFlagClassified')),
+        reason: '单个 producer 的分类标志不能改变整个共享环的可见源集合',
+      );
+      expect(
+        source,
+        isNot(contains('kVoiceClipFlagRoleVoice')),
+        reason: '角色语音正证据属于 engine adapter，不属于通用 PCM reader',
+      );
       expect(source, contains('d >= -900 && d <= -250'));
       expect(source, contains('d >= -150 && d <= 450'));
-      expect(source, isNot(contains('d >= -250 && d <= 450')),
-          reason: 'SGRE 的提前量不能抹掉所有引擎共享的 100ms 隔离带');
+      expect(
+        source,
+        isNot(contains('d >= -250 && d <= 450')),
+        reason: 'SGRE 的提前量不能抹掉所有引擎共享的 100ms 隔离带',
+      );
     });
   });
 
@@ -136,12 +201,13 @@ void main() {
     /// `gal_helper_no_network_guard_test.dart`），用户手上**没有**「单独更新/重装捕获组件」
     /// 这个动作。文案里再写它，用户只会照做一遍然后发现毫无变化——处置必须是「更新本体」。
     String valueOf(String file, String key) {
-      final File json =
-          File(p.join(repoRoot().path, 'fushi', 'lib', 'i18n', file));
+      final File json = File(
+        p.join(repoRoot().path, 'fushi', 'lib', 'i18n', file),
+      );
       expect(json.existsSync(), isTrue, reason: '$file 不存在，扫描范围是空的');
-      final RegExpMatch? match =
-          RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')
-              .firstMatch(json.readAsStringSync());
+      final RegExpMatch? match = RegExp(
+        '"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"',
+      ).firstMatch(json.readAsStringSync());
       expect(match, isNotNull, reason: '$file 里没有 $key');
       return match!.group(1)!;
     }
@@ -152,14 +218,21 @@ void main() {
       final String en = valueOf('strings.i18n.json', key);
       // ① 没有独立的组件安装包可重装（BUG-1196 起零网络、随主包内置）。
       expect(zh, isNot(contains('重新安装')), reason: '没有独立的捕获组件安装包可重装，这句处置是空头支票');
-      expect(en.toLowerCase(), isNot(contains('reinstall')),
-          reason: 'no standalone capture component exists to reinstall');
+      expect(
+        en.toLowerCase(),
+        isNot(contains('reinstall')),
+        reason: 'no standalone capture component exists to reinstall',
+      );
       // ② 也不能只让用户「更新本体」：本体已是最新时照样能撞上这条——游戏进程里还挂着
       //    上一次注入的旧组件。第一处置必须是重开游戏，这才是那个局面下唯一有效的动作。
       expect(zh, contains('重开'), reason: '本体最新也可能撞上：游戏进程里挂着旧组件，只能重开游戏清掉');
-      expect(en.toLowerCase(), contains('launch it again'),
-          reason: 'restarting the game is the only fix when the game process '
-              'still holds the previous component');
+      expect(
+        en.toLowerCase(),
+        contains('launch it again'),
+        reason:
+            'restarting the game is the only fix when the game process '
+            'still holds the previous component',
+      );
       expect(zh, contains('Fushi'), reason: '要说清组件是内置的，用户没有单独装它这一步');
     });
 
@@ -173,17 +246,31 @@ void main() {
       // /SUPPRESSMSGBOXES 把失败吞了 —— 磁盘上真的留着旧组件，重开游戏一万次也没用。
       // 只写第一种处置，等于让撞上第二种的用户在无效动作上原地打转（用户原话：
       // 「怎么还有这个 bug」）。
-      expect(zh, contains('安装程序'),
-          reason: '磁盘上组件比本体旧时，唯一有效动作是重跑一次 Fushi 安装程序，文案必须说出来');
-      expect(en.toLowerCase(), contains('installer again'),
-          reason: 'the on-disk-stale case is only fixed by running the Fushi '
-              'installer again; the message must say so');
+      expect(
+        zh,
+        contains('安装程序'),
+        reason: '磁盘上组件比本体旧时，唯一有效动作是重跑一次 Fushi 安装程序，文案必须说出来',
+      );
+      expect(
+        en.toLowerCase(),
+        contains('installer again'),
+        reason:
+            'the on-disk-stale case is only fixed by running the Fushi '
+            'installer again; the message must say so',
+      );
       // 且必须点出「上次更新时游戏开着」这个前提，否则用户无从判断自己撞的是哪一种。
-      expect(zh, contains('游戏正开着'),
-          reason: '要让用户能自己分辨撞的是哪一种，必须点出「更新时游戏开着」这个成因');
-      expect(en.toLowerCase(), contains('while a game was running'),
-          reason: 'the user must be able to tell which of the two cases they '
-              'hit; name the cause');
+      expect(
+        zh,
+        contains('游戏正开着'),
+        reason: '要让用户能自己分辨撞的是哪一种，必须点出「更新时游戏开着」这个成因',
+      );
+      expect(
+        en.toLowerCase(),
+        contains('while a game was running'),
+        reason:
+            'the user must be able to tell which of the two cases they '
+            'hit; name the cause',
+      );
     });
   });
 }

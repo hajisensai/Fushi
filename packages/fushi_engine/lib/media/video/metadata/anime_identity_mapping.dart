@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 /// deliberately does not infer episode/season equivalence across services.
 class AnimeIdentityMappingResult {
   AnimeIdentityMappingResult({required this.anidbId, required Set<int> malIds})
-      : malIds = Set<int>.unmodifiable(malIds);
+    : malIds = Set<int>.unmodifiable(malIds);
 
   final int anidbId;
   final Set<int> malIds;
@@ -64,8 +64,8 @@ class AnimeIdentityEntry {
   VideoMetadataMediaKind? get tmdbMediaKind => tmdbId == null
       ? null
       : tmdbIsMovieNamespace
-          ? VideoMetadataMediaKind.movie
-          : VideoMetadataMediaKind.tv;
+      ? VideoMetadataMediaKind.movie
+      : VideoMetadataMediaKind.tv;
 
   /// 按请求的形态给 TMDB id：命名空间对不上（剧场版挂在剧的特典季下）时为
   /// null，调用方据此回退标题补充，而不是把 tv id 当 movie id 用。
@@ -82,9 +82,9 @@ class AnimeIdentityMapping {
     this.cacheTtl = const Duration(hours: 24),
     this.maxResponseBytes = 16 * 1024 * 1024,
     DateTime Function()? now,
-  })  : _http = httpClient ?? VideoMetadataHttpClient(),
-        _ownsHttp = httpClient == null,
-        _now = now ?? DateTime.now;
+  }) : _http = httpClient ?? VideoMetadataHttpClient(),
+       _ownsHttp = httpClient == null,
+       _now = now ?? DateTime.now;
 
   static final Uri sourceUri = Uri.parse(
     'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json',
@@ -263,8 +263,9 @@ class _AnimeIdentityCatalog {
       a.anidbId.compareTo(b.anidbId);
 
   static int _byTmdbOrder(AnimeIdentityEntry a, AnimeIdentityEntry b) {
-    final int offset =
-        (a.tmdbEpisodeOffset ?? 0).compareTo(b.tmdbEpisodeOffset ?? 0);
+    final int offset = (a.tmdbEpisodeOffset ?? 0).compareTo(
+      b.tmdbEpisodeOffset ?? 0,
+    );
     if (offset != 0) return offset;
     final int season = (a.tmdbSeason ?? 0).compareTo(b.tmdbSeason ?? 0);
     if (season != 0) return season;

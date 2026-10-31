@@ -30,8 +30,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_mixed_grid_book_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_mixed_grid_book_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -58,8 +59,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_mixed_grid_book_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_mixed_grid_book_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -71,46 +73,49 @@ void main() {
   });
 
   Widget buildApp(RemoteBookClient client) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) =>
-                Future<List<MediaItem>>.value(const <MediaItem>[]),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => client,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => client,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   testWidgets('远端书混排进主 SliverGrid 且带云角标', (WidgetTester tester) async {
-    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
-      const <RemoteBookInfo>[
-        RemoteBookInfo(title: 'Remote Book', hasContent: true),
-      ],
-    )));
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteBookClient(const <RemoteBookInfo>[
+          RemoteBookInfo(title: 'Remote Book', hasContent: true),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    final Finder card = find
-        .byKey(ValueKey<String>('remote_book_card_${safeKey('Remote Book')}'));
+    final Finder card = find.byKey(
+      ValueKey<String>('remote_book_card_${safeKey('Remote Book')}'),
+    );
     expect(card, findsOneWidget);
     expect(
-      find.byKey(ValueKey<String>(
-          'remote_book_cloud_badge_${safeKey('Remote Book')}')),
+      find.byKey(
+        ValueKey<String>('remote_book_cloud_badge_${safeKey('Remote Book')}'),
+      ),
       findsOneWidget,
     );
     expect(
@@ -122,24 +127,29 @@ void main() {
 
   testWidgets('本地已有同 bookKey 的书不重复渲染远端占位', (WidgetTester tester) async {
     final String key = sanitizeTtuFilename('Dup Book');
-    final Directory extractDir =
-        Directory('${pathProviderDir.path}/dup_extract')..createSync();
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: key,
-      title: 'Dup Book',
-      epubPath: '${extractDir.path}/x.epub',
-      extractDir: extractDir.path,
-      chapterCount: 1,
-      chaptersJson: '["a"]',
-      importedAt: 0,
-    ));
+    final Directory extractDir = Directory(
+      '${pathProviderDir.path}/dup_extract',
+    )..createSync();
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: key,
+        title: 'Dup Book',
+        epubPath: '${extractDir.path}/x.epub',
+        extractDir: extractDir.path,
+        chapterCount: 1,
+        chaptersJson: '["a"]',
+        importedAt: 0,
+      ),
+    );
 
-    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
-      const <RemoteBookInfo>[
-        RemoteBookInfo(title: 'Dup Book', hasContent: true),
-        RemoteBookInfo(title: 'Only Remote Book', hasContent: true),
-      ],
-    )));
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteBookClient(const <RemoteBookInfo>[
+          RemoteBookInfo(title: 'Dup Book', hasContent: true),
+          RemoteBookInfo(title: 'Only Remote Book', hasContent: true),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -149,23 +159,27 @@ void main() {
     );
     expect(
       find.byKey(
-          ValueKey<String>('remote_book_card_${safeKey('Only Remote Book')}')),
+        ValueKey<String>('remote_book_card_${safeKey('Only Remote Book')}'),
+      ),
       findsOneWidget,
     );
   });
 
   testWidgets('「显示远端条目」开关关闭 → 占位卡全部不渲染', (WidgetTester tester) async {
     await prefs.setShowRemoteEntries(false);
-    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
-      const <RemoteBookInfo>[
-        RemoteBookInfo(title: 'Remote Book', hasContent: true),
-      ],
-    )));
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteBookClient(const <RemoteBookInfo>[
+          RemoteBookInfo(title: 'Remote Book', hasContent: true),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(
-          ValueKey<String>('remote_book_card_${safeKey('Remote Book')}')),
+        ValueKey<String>('remote_book_card_${safeKey('Remote Book')}'),
+      ),
       findsNothing,
       reason: '开关关闭时远端占位卡不得渲染',
     );
@@ -177,7 +191,8 @@ void main() {
 
     expect(
       find.byKey(
-          ValueKey<String>('remote_book_card_${safeKey('Remote Book')}')),
+        ValueKey<String>('remote_book_card_${safeKey('Remote Book')}'),
+      ),
       findsNothing,
       reason: '远端目录拉取失败时占位卡不出现',
     );

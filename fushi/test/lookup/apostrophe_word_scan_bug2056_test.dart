@@ -50,8 +50,9 @@ void main() {
   final Map<String, String> sources = <String, String>{
     for (final String path in selectionCopies)
       path: maskJsComments(File(path).readAsStringSync()),
-    'reader_selection_scripts.dart (source())':
-        maskJsComments(ReaderSelectionScripts.source()),
+    'reader_selection_scripts.dart (source())': maskJsComments(
+      ReaderSelectionScripts.source(),
+    ),
   };
 
   test(
@@ -61,21 +62,26 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
       final File jsTest = File(
         'test/lookup/apostrophe_word_scan_bug2056_test.js',
       );
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
 
       // 阅读器注入脚本活在 Dart 的 raw string 里，node 读不到文件。把**真值**
       // （ReaderSelectionScripts.source()，与真机注入的是同一份字符串）落到临时
       // 文件再交给 harness，避免测试对着一份手抄副本自娱自乐。
-      final Directory tmp =
-          Directory.systemTemp.createTempSync('fushi_bug2056_');
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'fushi_bug2056_',
+      );
       final File readerJs = File('${tmp.path}/reader_selection.js');
       readerJs.writeAsStringSync(ReaderSelectionScripts.source());
 
@@ -96,23 +102,29 @@ void main() {
         expect(
           result.exitCode,
           0,
-          reason: 'BUG-2056 intra-word apostrophe behavior test failed.\n'
+          reason:
+              'BUG-2056 intra-word apostrophe behavior test failed.\n'
               'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
         );
         final String stdout = result.stdout.toString();
-        expect(stdout, contains('all assertions passed'),
-            reason: 'behavior harness must reach its success marker');
+        expect(
+          stdout,
+          contains('all assertions passed'),
+          reason: 'behavior harness must reach its success marker',
+        );
         // 阅读器那一套必须真的跑到，否则这个测试只守住了一半实现。
-        expect(stdout, isNot(contains('reader selection script not provided')),
-            reason: '阅读器注入脚本必须被 harness 真执行（真值来自 source()）');
+        expect(
+          stdout,
+          isNot(contains('reader selection script not provided')),
+          reason: '阅读器注入脚本必须被 harness 真执行（真值来自 source()）',
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }
     },
   );
 
-  test(
-      'intra-word apostrophe is bridged before the scan-stop test, and the '
+  test('intra-word apostrophe is bridged before the scan-stop test, and the '
       'word-start back-off stays untouched', () {
     sources.forEach((String label, String code) {
       // `code` 在 sources 构造处已过 maskJsComments：顺序判据必须在**掩掉注释**的
@@ -124,34 +136,50 @@ void main() {
       const String stop = 'if (this.isScanStop(char)) break;';
 
       expect(code.contains(bridge), isTrue, reason: '[$label] 前向扫描必须带词内撇号桥接');
-      expect(code.contains(stop), isTrue,
-          reason: '[$label] 终点判定必须仍在（BUG-1773 的锚点）');
-      expect(code.indexOf(bridge) < code.indexOf(stop), isTrue,
-          reason: '[$label] 撇号桥接必须**先于** isScanStop，否则撇号照旧 break');
+      expect(
+        code.contains(stop),
+        isTrue,
+        reason: '[$label] 终点判定必须仍在（BUG-1773 的锚点）',
+      );
+      expect(
+        code.indexOf(bridge) < code.indexOf(stop),
+        isTrue,
+        reason: '[$label] 撇号桥接必须**先于** isScanStop，否则撇号照旧 break',
+      );
 
       // 判据本身必须是「两侧都是空格分词类字母」，不是无条件跨过——无条件跨过会
       // 把 `‘hello’ world` 的收尾引号也吃掉、把日文里的引号粘进查询串。
-      expect(code.contains('this.isSpaceDelimitedLetter(text[index - 1]) &&'),
-          isTrue,
-          reason: '[$label] 词内判据必须要求撇号**左**侧是空格分词类字母');
-      expect(code.contains('this.isSpaceDelimitedLetter(text[index + 1]);'),
-          isTrue,
-          reason: '[$label] 词内判据必须要求撇号**右**侧是空格分词类字母');
+      expect(
+        code.contains('this.isSpaceDelimitedLetter(text[index - 1]) &&'),
+        isTrue,
+        reason: '[$label] 词内判据必须要求撇号**左**侧是空格分词类字母',
+      );
+      expect(
+        code.contains('this.isSpaceDelimitedLetter(text[index + 1]);'),
+        isTrue,
+        reason: '[$label] 词内判据必须要求撇号**右**侧是空格分词类字母',
+      );
 
       // 词首回退不得加撇号桥接：把桥接加进回退会让 l’homme 点 homme 退回 l’，是净
       // 损失。回退的终点谓词是 isTokenStartBoundary（BUG-3664 在 isScanBoundary 之上
       // 只多停词内连字符），它必须仍以 isScanBoundary 为底——撇号在 scanDelimiters
       // 里，于是照旧是回退终点。行为测试 ⑥⑦ 守行为，这里守写法。
       expect(
-          code.contains('while (startOffset > 0 && '
-              '!this.isTokenStartBoundary(hitContent[startOffset - 1])) {'),
-          isTrue,
-          reason: '[$label] 词首回退必须走 isTokenStartBoundary（不得跨撇号）');
+        code.contains(
+          'while (startOffset > 0 && '
+          '!this.isTokenStartBoundary(hitContent[startOffset - 1])) {',
+        ),
+        isTrue,
+        reason: '[$label] 词首回退必须走 isTokenStartBoundary（不得跨撇号）',
+      );
       expect(
-          code.contains('return this.isScanBoundary(char) || '
-              'this.wordHyphenPattern.test('),
-          isTrue,
-          reason: '[$label] isTokenStartBoundary 必须以 isScanBoundary 为底（撇号仍是终点）');
+        code.contains(
+          'return this.isScanBoundary(char) || '
+          'this.wordHyphenPattern.test(',
+        ),
+        isTrue,
+        reason: '[$label] isTokenStartBoundary 必须以 isScanBoundary 为底（撇号仍是终点）',
+      );
     });
   });
 
@@ -175,41 +203,62 @@ void main() {
     const List<String> apostropheStops = <String>["'", '\u2018', '\u2019'];
 
     sources.forEach((String label, String src) {
-      final RegExpMatch? patternMatch =
-          RegExp(r'intraWordApostrophePattern: /\[(.*?)\]/').firstMatch(src);
-      expect(patternMatch, isNotNull,
-          reason: '[$label] 找不到 intraWordApostrophePattern 字面量');
+      final RegExpMatch? patternMatch = RegExp(
+        r'intraWordApostrophePattern: /\[(.*?)\]/',
+      ).firstMatch(src);
+      expect(
+        patternMatch,
+        isNotNull,
+        reason: '[$label] 找不到 intraWordApostrophePattern 字面量',
+      );
       final String klass = patternMatch!.group(1)!;
 
-      final RegExpMatch? delimiterMatch =
-          RegExp("scanDelimiters: '(.*)',").firstMatch(src);
-      expect(delimiterMatch, isNotNull,
-          reason: '[$label] 找不到 scanDelimiters 字面量');
+      final RegExpMatch? delimiterMatch = RegExp(
+        "scanDelimiters: '(.*)',",
+      ).firstMatch(src);
+      expect(
+        delimiterMatch,
+        isNotNull,
+        reason: '[$label] 找不到 scanDelimiters 字面量',
+      );
       final String delimiters = delimiterMatch!.group(1)!;
 
       apostropheClass.forEach((String ch, String why) {
-        expect(klass.contains(ch), isTrue,
-            reason: '[$label] intraWordApostrophePattern 必须含 $why；'
-                '缺一个就是一整类写法重新被截断（或未来加进 scanDelimiters 时没兜底）');
+        expect(
+          klass.contains(ch),
+          isTrue,
+          reason:
+              '[$label] intraWordApostrophePattern 必须含 $why；'
+              '缺一个就是一整类写法重新被截断（或未来加进 scanDelimiters 时没兜底）',
+        );
       });
 
       for (final String ch in apostropheStops) {
-        expect(delimiters.contains(ch), isTrue,
-            reason: '[$label] ${apostropheClass[ch]} 必须仍在 scanDelimiters 里——'
-                '它不再是扫描终点的话，桥接的行为断言就退化成恒真，得重写测试');
+        expect(
+          delimiters.contains(ch),
+          isTrue,
+          reason:
+              '[$label] ${apostropheClass[ch]} 必须仍在 scanDelimiters 里——'
+              '它不再是扫描终点的话，桥接的行为断言就退化成恒真，得重写测试',
+        );
       }
-      expect(delimiters.contains('\u02BC'), isFalse,
-          reason: '[$label] U+02BC 不得进 scanDelimiters：它本来就不截断，'
-              '加进去会让 `canʼt` 从「天然完整」变成「靠桥接才完整」，而行为层探测'
-              '不到这个变化（实测 ③ 仍绿），只有这条源码守卫拦得住');
+      expect(
+        delimiters.contains('\u02BC'),
+        isFalse,
+        reason:
+            '[$label] U+02BC 不得进 scanDelimiters：它本来就不截断，'
+            '加进去会让 `canʼt` 从「天然完整」变成「靠桥接才完整」，而行为层探测'
+            '不到这个变化（实测 ③ 仍绿），只有这条源码守卫拦得住',
+      );
     });
   });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

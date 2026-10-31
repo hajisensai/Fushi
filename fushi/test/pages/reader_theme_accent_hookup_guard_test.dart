@@ -26,16 +26,22 @@ void main() {
   test('词典弹窗：配色即 app ColorScheme，不 fromSeed(纸色)、不叠纸色梯度', () {
     // 决策住在纯函数 resolveDictionaryPopupTheme 里（BUG-2434 从
     // chrome.part.dart 抽出），断言面因此在 dictionary_popup_theme.dart。
-    expect(popupTheme.contains('ColorScheme.fromSeed('), isFalse,
-        reason: '纸色重造 ColorScheme 会让按钮/高亮/描边与用户主题色脱钩');
+    expect(
+      popupTheme.contains('ColorScheme.fromSeed('),
+      isFalse,
+      reason: '纸色重造 ColorScheme 会让按钮/高亮/描边与用户主题色脱钩',
+    );
     expect(
       RegExp(r'buildColorScheme\(brightness\)').hasMatch(popupTheme),
       isTrue,
       reason: 'app 真实 ColorScheme 必须是基底',
     );
     // 用户 10-09：以外部查词模块为准——书内弹窗不再用纸色覆盖中性梯度。
-    expect(popupTheme.contains('deriveSurfaceRolesFrom('), isFalse,
-        reason: '纸色覆盖会让书内弹窗与外部查词模块配色分叉');
+    expect(
+      popupTheme.contains('deriveSurfaceRolesFrom('),
+      isFalse,
+      reason: '纸色覆盖会让书内弹窗与外部查词模块配色分叉',
+    );
   });
 
   test('词典弹窗：chrome.part 仍然只是把当前取值喂给那个纯函数', () {
@@ -47,8 +53,11 @@ void main() {
       start,
       chrome.indexOf('\n  }\n', start),
     );
-    expect(body.contains('resolveDictionaryPopupTheme('), isTrue,
-        reason: '决策必须仍然经由纯函数，否则上一条守卫就看不见它了');
+    expect(
+      body.contains('resolveDictionaryPopupTheme('),
+      isTrue,
+      reason: '决策必须仍然经由纯函数，否则上一条守卫就看不见它了',
+    );
     expect(body.contains('ColorScheme.fromSeed('), isFalse);
   });
 

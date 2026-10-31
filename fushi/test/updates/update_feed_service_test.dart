@@ -46,34 +46,38 @@ void main() {
   test('重复投递同一事件：不再算新、不复活已读、不刷新发现时刻', () async {
     final UpdateFeedService service = await makeService();
 
-    final UpdateFeedPublishResult first =
-        await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
-      episode('3'),
-    ]);
+    final UpdateFeedPublishResult first = await service.publishBatch(
+      UpdateFeedKind.videoEpisode,
+      <UpdateFeedDraft>[episode('3')],
+    );
     expect(first.newEntries, hasLength(1));
     expect(await service.unseenTotal(), 1);
 
     await service.markAllSeen(kind: UpdateFeedKind.videoEpisode);
-    expect(await service.unseenTotal(), 0,
-        reason: '标记已读后红点必须归零');
+    expect(await service.unseenTotal(), 0, reason: '标记已读后红点必须归零');
 
     // 下一轮检查又看到同一集（订阅检查每小时都会重新扫到已下载的集）。
     clock = clock.add(const Duration(hours: 1));
-    final UpdateFeedPublishResult second =
-        await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
-      episode('3'),
-    ]);
+    final UpdateFeedPublishResult second = await service.publishBatch(
+      UpdateFeedKind.videoEpisode,
+      <UpdateFeedDraft>[episode('3')],
+    );
 
     expect(second.newEntries, isEmpty, reason: '同身份事件只算一次新');
     expect(second.notificationSent, isFalse);
-    expect(await service.unseenTotal(), 0,
-        reason: '已读的条目不能被重复发现拽回未读——否则每轮检查都重新变红');
+    expect(
+      await service.unseenTotal(),
+      0,
+      reason: '已读的条目不能被重复发现拽回未读——否则每轮检查都重新变红',
+    );
 
     final List<UpdateFeedEntryRow> rows = await service.entries();
     expect(rows, hasLength(1));
-    expect(rows.single.discoveredAt,
-        DateTime.utc(2026, 9, 9, 12).millisecondsSinceEpoch,
-        reason: '重复发现不刷新 discoveredAt，否则列表排序会无故跳动');
+    expect(
+      rows.single.discoveredAt,
+      DateTime.utc(2026, 9, 9, 12).millisecondsSinceEpoch,
+      reason: '重复发现不刷新 discoveredAt，否则列表排序会无故跳动',
+    );
   });
 
   test('关掉的域整批丢弃：不投递、不出红点、不通知', () async {
@@ -82,43 +86,47 @@ void main() {
 
     final UpdateFeedPublishResult result = await service
         .publishBatch(UpdateFeedKind.mangaChapter, <UpdateFeedDraft>[
-      const UpdateFeedDraft(
-        kind: UpdateFeedKind.mangaChapter,
-        targetKey: 'uid|ch-12',
-        title: '葬送的芙莉莲',
-        subtitle: '第 12 话',
-      ),
-    ]);
+          const UpdateFeedDraft(
+            kind: UpdateFeedKind.mangaChapter,
+            targetKey: 'uid|ch-12',
+            title: '葬送的芙莉莲',
+            subtitle: '第 12 话',
+          ),
+        ]);
 
     expect(result.hasNew, isFalse);
     expect(notifier.sent, isEmpty);
-    expect(await service.entries(), isEmpty,
-        reason: '关掉的域不该在更新页留下用户明确说过不关心的条目');
+    expect(
+      await service.entries(),
+      isEmpty,
+      reason: '关掉的域不该在更新页留下用户明确说过不关心的条目',
+    );
 
     // 别的域不受影响。
-    await service.publishBatch(
-        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+    ]);
     expect(await service.unseenTotal(), 1);
   });
 
   test('一批多条只发一条汇总通知；系统通知总开关只关通知不关红点', () async {
     final UpdateFeedService service = await makeService();
 
-    await service.publishBatch(
-      UpdateFeedKind.videoEpisode,
-      <UpdateFeedDraft>[episode('1'), episode('2'), episode('3')],
-    );
-    expect(notifier.sent, hasLength(1),
-        reason: '一轮检查落 3 集必须合成一条通知，逐条发等于刷屏');
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+      episode('2'),
+      episode('3'),
+    ]);
+    expect(notifier.sent, hasLength(1), reason: '一轮检查落 3 集必须合成一条通知，逐条发等于刷屏');
     expect(notifier.sent.single.body, contains('+2'));
     expect(await service.unseenTotal(), 3);
 
     await service.disableSystemNotifications();
-    await service.publishBatch(
-        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('4')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('4'),
+    ]);
     expect(notifier.sent, hasLength(1), reason: '总开关关掉后不再发通知');
-    expect(await service.unseenTotal(), 4,
-        reason: '总开关只关系统通知，应用内红点照常');
+    expect(await service.unseenTotal(), 4, reason: '总开关只关系统通知，应用内红点照常');
   });
 
   test('通知权限被拒：照常投递照常红点，只是发不出通知', () async {
@@ -126,8 +134,9 @@ void main() {
     addTearDown(db.close);
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final RecordingUpdateNotifier denied =
-        RecordingUpdateNotifier(ready: false);
+    final RecordingUpdateNotifier denied = RecordingUpdateNotifier(
+      ready: false,
+    );
     final UpdateFeedService service = UpdateFeedService(
       database: db,
       prefs: prefs,
@@ -135,23 +144,24 @@ void main() {
       now: () => DateTime.utc(2026, 9, 9, 12),
     );
 
-    final UpdateFeedPublishResult result = await service
-        .publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
-      episode('5'),
-    ]);
+    final UpdateFeedPublishResult result = await service.publishBatch(
+      UpdateFeedKind.videoEpisode,
+      <UpdateFeedDraft>[episode('5')],
+    );
 
     expect(result.hasNew, isTrue);
     expect(result.notificationSent, isFalse);
     expect(denied.sent, isEmpty);
-    expect(await service.unseenTotal(), 1,
-        reason: '通知发不出去绝不能把事件一起丢掉');
+    expect(await service.unseenTotal(), 1, reason: '通知发不出去绝不能把事件一起丢掉');
   });
 
   test('保留期只清已读，未读的一条不动', () async {
     final UpdateFeedService service = await makeService();
 
-    await service.publishBatch(UpdateFeedKind.videoEpisode,
-        <UpdateFeedDraft>[episode('1'), episode('2')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+      episode('2'),
+    ]);
     final List<UpdateFeedEntryRow> all = await service.entries();
     await service.markSeen(<String>[all.first.entryId]);
 
@@ -161,40 +171,45 @@ void main() {
     expect(pruned, 1);
     final List<UpdateFeedEntryRow> left = await service.entries();
     expect(left, hasLength(1));
-    expect(left.single.seenAt, isNull,
-        reason: '半年没看的订阅，那条未读提醒依然有效，不能因为老就抹掉');
+    expect(left.single.seenAt, isNull, reason: '半年没看的订阅，那条未读提醒依然有效，不能因为老就抹掉');
   });
 
-  test('手动清空：按域删（含未读）、撤该域通知、不碰别的域；仍成立的事件可再投递',
-      () async {
+  test('手动清空：按域删（含未读）、撤该域通知、不碰别的域；仍成立的事件可再投递', () async {
     final UpdateFeedService service = await makeService();
     for (final String v in <String>['2.8.0-debug.15150', '2.8.0-debug.15535']) {
-      await service.publish(UpdateFeedDraft(
-        kind: UpdateFeedKind.appRelease,
-        targetKey: v,
-        title: v,
-      ));
+      await service.publish(
+        UpdateFeedDraft(
+          kind: UpdateFeedKind.appRelease,
+          targetKey: v,
+          title: v,
+        ),
+      );
     }
-    await service.publishBatch(
-        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+    ]);
     await service.markSeen(<String>[
-      (await service.entries(kinds: <UpdateFeedKind>{UpdateFeedKind.appRelease}))
-          .first
-          .entryId,
+      (await service.entries(
+        kinds: <UpdateFeedKind>{UpdateFeedKind.appRelease},
+      )).first.entryId,
     ]);
 
     final int removed = await service.clear(kind: UpdateFeedKind.appRelease);
 
     expect(removed, 2, reason: '已读与未读的版本记录一起清掉');
     expect(
-        await service.entries(kinds: <UpdateFeedKind>{UpdateFeedKind.appRelease}),
-        isEmpty);
-    expect(await service.entries(), hasLength(1),
-        reason: '只清选中的域，番剧新集原样保留');
-    expect(notifier.cancelled,
-        contains(updateNotificationId(UpdateFeedKind.appRelease, null)));
-    expect(notifier.cancelled,
-        isNot(contains(updateNotificationId(UpdateFeedKind.videoEpisode, null))));
+      await service.entries(kinds: <UpdateFeedKind>{UpdateFeedKind.appRelease}),
+      isEmpty,
+    );
+    expect(await service.entries(), hasLength(1), reason: '只清选中的域，番剧新集原样保留');
+    expect(
+      notifier.cancelled,
+      contains(updateNotificationId(UpdateFeedKind.appRelease, null)),
+    );
+    expect(
+      notifier.cancelled,
+      isNot(contains(updateNotificationId(UpdateFeedKind.videoEpisode, null))),
+    );
 
     // 还没装的最新版下一轮检查仍会投递回来——清的是记录，不是事实。
     final UpdateFeedPublishResult again = await service.publish(
@@ -212,8 +227,9 @@ void main() {
 
   test('未读计数按域分组，且域没有未读时键不出现', () async {
     final UpdateFeedService service = await makeService();
-    await service.publishBatch(
-        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+    ]);
     await service.publishBatch(UpdateFeedKind.appRelease, <UpdateFeedDraft>[
       const UpdateFeedDraft(
         kind: UpdateFeedKind.appRelease,
@@ -240,13 +256,13 @@ void main() {
       notifier: notifier,
       notificationText: (UpdateFeedKind kind, List<UpdateFeedDraft> fresh) =>
           UpdateNotificationText(
-        title: fresh.first.title,
-        body: fresh.length == 1
-            ? fresh.first.subtitle ?? ''
-            : '+${fresh.length - 1}',
-        openLabel: 'Play',
-        viewAllLabel: 'View',
-      ),
+            title: fresh.first.title,
+            body: fresh.length == 1
+                ? fresh.first.subtitle ?? ''
+                : '+${fresh.length - 1}',
+            openLabel: 'Play',
+            viewAllLabel: 'View',
+          ),
     );
 
     UpdateFeedDraft grouped(String key, String group, {String? image}) =>
@@ -260,14 +276,11 @@ void main() {
           notificationGroup: 'collection:$group',
         );
 
-    await service.publishBatch(
-      UpdateFeedKind.videoEpisode,
-      <UpdateFeedDraft>[
-        grouped('1', 'A', image: r'C:\covers\a1.jpg'),
-        grouped('2', 'A'),
-        grouped('1', 'B'),
-      ],
-    );
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      grouped('1', 'A', image: r'C:\covers\a1.jpg'),
+      grouped('2', 'A'),
+      grouped('1', 'B'),
+    ]);
     expect(notifier.sent, hasLength(2), reason: '两部作品各占一格，同作品两集合并');
     final UpdateNotification a = notifier.sent[0];
     final UpdateNotification b = notifier.sent[1];
@@ -280,24 +293,31 @@ void main() {
     expect(a.body, '+1');
     expect(a.imagePath, r'C:\covers\a1.jpg', reason: '配图取组内第一条');
     expect(a.timestamp, DateTime.fromMillisecondsSinceEpoch(1700000000000));
-    expect(
-      a.actions.map((UpdateNotificationAction x) => x.id),
-      <String>[kUpdateNotificationActionOpen, kUpdateNotificationActionViewAll],
+    expect(a.actions.map((UpdateNotificationAction x) => x.id), <String>[
+      kUpdateNotificationActionOpen,
+      kUpdateNotificationActionViewAll,
+    ]);
+    expect(a.actions.map((UpdateNotificationAction x) => x.label), <String>[
+      'Play',
+      'View',
+    ]);
+    final UpdateNotificationPayload? payload = UpdateNotificationPayload.decode(
+      a.payload,
     );
-    expect(
-      a.actions.map((UpdateNotificationAction x) => x.label),
-      <String>['Play', 'View'],
-    );
-    final UpdateNotificationPayload? payload =
-        UpdateNotificationPayload.decode(a.payload);
     expect(payload?.kind, UpdateFeedKind.videoEpisode);
-    expect(payload?.entryId, grouped('1', 'A').entryId,
-        reason: '载荷指向组内第一条：点通知就播那一集');
+    expect(
+      payload?.entryId,
+      grouped('1', 'A').entryId,
+      reason: '载荷指向组内第一条：点通知就播那一集',
+    );
     expect(b.imagePath, isNull);
 
     await service.markAllSeen(kind: UpdateFeedKind.videoEpisode);
-    expect(notifier.cancelled, containsAll(<int>[a.id, b.id]),
-        reason: '标已读要撤掉本进程发过的每条分组通知');
+    expect(
+      notifier.cancelled,
+      containsAll(<int>[a.id, b.id]),
+      reason: '标已读要撤掉本进程发过的每条分组通知',
+    );
     expect(
       notifier.cancelled,
       contains(updateNotificationId(UpdateFeedKind.videoEpisode, null)),
@@ -310,8 +330,9 @@ void main() {
     await service.warmUpNotifier();
     await service.warmUpNotifier();
     expect(notifier.ensureReadyCalls, 1, reason: '重复 warm-up 不重复初始化');
-    await service.publishBatch(
-        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+    ]);
     expect(notifier.ensureReadyCalls, 1, reason: '发通知复用启动期的初始化');
 
     final UpdateFeedService cold = await makeService();
@@ -320,14 +341,14 @@ void main() {
     expect(notifier.ensureReadyCalls, 0, reason: '关着总开关时不初始化');
   });
 
-  test('BUG-2498：启动期 warm-up 只查询权限，绝不申请；申请只跟着用户打开开关',
-      () async {
+  test('BUG-2498：启动期 warm-up 只查询权限，绝不申请；申请只跟着用户打开开关', () async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final RecordingUpdateNotifier fresh =
-        RecordingUpdateNotifier(permission: false);
+    final RecordingUpdateNotifier fresh = RecordingUpdateNotifier(
+      permission: false,
+    );
     final UpdateFeedService service = UpdateFeedService(
       database: db,
       prefs: prefs,
@@ -338,16 +359,22 @@ void main() {
     await service.warmUpNotifier();
     expect(fresh.ensureReadyCalls, 1);
     expect(fresh.replayLaunchCalls, 1, reason: '冷启动点击回放只在启动期');
-    expect(fresh.requestPermissionCalls, 0,
-        reason: '退出新手引导那一帧不得弹系统权限框——MIUI 的权限界面会崩并连坐杀掉我们');
+    expect(
+      fresh.requestPermissionCalls,
+      0,
+      reason: '退出新手引导那一帧不得弹系统权限框——MIUI 的权限界面会崩并连坐杀掉我们',
+    );
     expect(service.systemNotificationsEnabled, isTrue, reason: '偏好默认开');
-    expect(service.systemNotificationsActive, isFalse,
-        reason: '系统没授权时开关显示为关，不假装能发');
+    expect(
+      service.systemNotificationsActive,
+      isFalse,
+      reason: '系统没授权时开关显示为关，不假装能发',
+    );
 
-    final UpdateFeedPublishResult result = await service
-        .publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
-      episode('1'),
-    ]);
+    final UpdateFeedPublishResult result = await service.publishBatch(
+      UpdateFeedKind.videoEpisode,
+      <UpdateFeedDraft>[episode('1')],
+    );
     expect(result.hasNew, isTrue);
     expect(result.notificationSent, isFalse);
     expect(fresh.requestPermissionCalls, 0, reason: '发通知也不趁机申请');
@@ -368,21 +395,27 @@ void main() {
 
   test('BUG-2498：用户打开开关且系统放行 → 开关显示开、通知照发', () async {
     final UpdateFeedService service = await makeService();
-    expect(service.systemNotificationsActive, isFalse,
-        reason: '还没 warm-up/申请，权限状态未知，不能显示为开');
+    expect(
+      service.systemNotificationsActive,
+      isFalse,
+      reason: '还没 warm-up/申请，权限状态未知，不能显示为开',
+    );
     expect(await service.enableSystemNotifications(), isTrue);
     expect(notifier.requestPermissionCalls, 1);
     expect(service.systemNotificationsActive, isTrue);
-    await service.publishBatch(
-        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    await service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+    ]);
     expect(notifier.sent, hasLength(1));
   });
 
   test('通知 id：无组回落到域固定值；有组跨进程稳定且不与其它域撞', () {
     expect(updateNotificationId(UpdateFeedKind.videoEpisode, null), 9101);
     expect(updateNotificationId(UpdateFeedKind.appRelease, null), 9104);
-    final int a1 =
-        updateNotificationId(UpdateFeedKind.videoEpisode, 'collection:1');
+    final int a1 = updateNotificationId(
+      UpdateFeedKind.videoEpisode,
+      'collection:1',
+    );
     expect(
       a1,
       updateNotificationId(UpdateFeedKind.videoEpisode, 'collection:1'),
@@ -404,8 +437,9 @@ void main() {
       kind: UpdateFeedKind.mangaChapter,
       entryId: 'manga_chapter:x',
     );
-    final UpdateNotificationPayload? back =
-        UpdateNotificationPayload.decode(payload.encode());
+    final UpdateNotificationPayload? back = UpdateNotificationPayload.decode(
+      payload.encode(),
+    );
     expect(back?.kind, UpdateFeedKind.mangaChapter);
     expect(back?.entryId, 'manga_chapter:x');
     expect(UpdateNotificationPayload.decode('video_episode'), isNull);
@@ -416,17 +450,14 @@ void main() {
   test('混域投递直接抛错（通知按域合并，混进来会算错归属）', () async {
     final UpdateFeedService service = await makeService();
     expect(
-      () => service.publishBatch(
-        UpdateFeedKind.videoEpisode,
-        <UpdateFeedDraft>[
-          episode('1'),
-          const UpdateFeedDraft(
-            kind: UpdateFeedKind.mangaChapter,
-            targetKey: 'uid|ch1',
-            title: '别的域',
-          ),
-        ],
-      ),
+      () => service.publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+        episode('1'),
+        const UpdateFeedDraft(
+          kind: UpdateFeedKind.mangaChapter,
+          targetKey: 'uid|ch1',
+          title: '别的域',
+        ),
+      ]),
       throwsArgumentError,
     );
   });

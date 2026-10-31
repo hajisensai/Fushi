@@ -20,16 +20,18 @@ void main() {
       expect(state.buttons & GamepadFrameBits.a, 0);
     });
 
-    test('multiple held buttons OR together; releasing one keeps the others',
-        () {
-      state.applyButton(gp.GamepadButton.a, 1.0);
-      state.applyButton(gp.GamepadButton.b, 1.0);
-      expect(state.buttons & GamepadFrameBits.a, isNonZero);
-      expect(state.buttons & GamepadFrameBits.b, isNonZero);
-      state.applyButton(gp.GamepadButton.a, 0.0);
-      expect(state.buttons & GamepadFrameBits.a, 0);
-      expect(state.buttons & GamepadFrameBits.b, isNonZero);
-    });
+    test(
+      'multiple held buttons OR together; releasing one keeps the others',
+      () {
+        state.applyButton(gp.GamepadButton.a, 1.0);
+        state.applyButton(gp.GamepadButton.b, 1.0);
+        expect(state.buttons & GamepadFrameBits.a, isNonZero);
+        expect(state.buttons & GamepadFrameBits.b, isNonZero);
+        state.applyButton(gp.GamepadButton.a, 0.0);
+        expect(state.buttons & GamepadFrameBits.a, 0);
+        expect(state.buttons & GamepadFrameBits.b, isNonZero);
+      },
+    );
 
     test('the cross-platform button names map to the right frame bits', () {
       final Map<gp.GamepadButton, int> expected = <gp.GamepadButton, int>{

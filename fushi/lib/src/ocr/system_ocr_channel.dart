@@ -124,12 +124,12 @@ enum SystemOcrModelStatus {
 
   /// 平台回答的线上值（与 Android `SystemOcrChannel.STATUS_*` 一一对应）。
   static SystemOcrModelStatus? fromWire(Object? raw) => switch (raw) {
-        'ready' => ready,
-        'missing' => missing,
-        'play_services_resolvable' => playServicesResolvable,
-        'play_services_unavailable' => playServicesUnavailable,
-        _ => null,
-      };
+    'ready' => ready,
+    'missing' => missing,
+    'play_services_resolvable' => playServicesResolvable,
+    'play_services_unavailable' => playServicesUnavailable,
+    _ => null,
+  };
 }
 
 /// 系统 OCR 模型的查询与下载——识别报 [SystemOcrUnavailableException] 后，带用户
@@ -148,7 +148,7 @@ abstract interface class SystemOcrModelSetup {
 /// 生产实现：走平台通道。
 class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
   const MethodChannelSystemOcr({MethodChannel? channel})
-      : _channel = channel ?? kSystemOcrChannel;
+    : _channel = channel ?? kSystemOcrChannel;
 
   final MethodChannel _channel;
 
@@ -191,12 +191,14 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
       // 而不是让用户去怀疑图片。原生侧用 MODEL_UNAVAILABLE 把它单独标出来。
       if (error.code == 'MODEL_UNAVAILABLE') {
         throw const SystemOcrUnavailableException(
-            kSystemOcrModelUnavailableReason);
+          kSystemOcrModelUnavailableReason,
+        );
       }
       // Windows：该语言的识别器没装（随系统语言包安装），同样不是图片的问题。
       if (error.code == 'LANGUAGE_UNAVAILABLE') {
         throw const SystemOcrUnavailableException(
-            kSystemOcrLanguageUnavailableReason);
+          kSystemOcrLanguageUnavailableReason,
+        );
       }
       rethrow;
     }
@@ -231,10 +233,9 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
   @override
   Future<void> installModel(String language) async {
     try {
-      await _channel.invokeMethod<String>(
-        'installModel',
-        <String, Object?>{'language': language},
-      );
+      await _channel.invokeMethod<String>('installModel', <String, Object?>{
+        'language': language,
+      });
     } on MissingPluginException {
       return;
     }
@@ -251,8 +252,9 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
 }
 
 /// 平台通道。原生侧实现同名方法。
-const MethodChannel kSystemOcrChannel =
-    MethodChannel('app.fushi.reader/system_ocr');
+const MethodChannel kSystemOcrChannel = MethodChannel(
+  'app.fushi.reader/system_ocr',
+);
 
 /// 把平台回传的 Map 解析成 [SystemOcrPageResult]。
 ///
@@ -280,12 +282,16 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
       final Rect rect = Rect.fromLTRB(left, top, right, bottom);
       final Object? vertical = entry['vertical'];
       final Object? tile = entry['tile'];
-      lines.add(SystemOcrTextLine(
-        text: text,
-        rect: rect,
-        isVertical: vertical is bool ? vertical : inferSystemOcrVertical(rect),
-        tile: tile is num ? tile.toInt() : null,
-      ));
+      lines.add(
+        SystemOcrTextLine(
+          text: text,
+          rect: rect,
+          isVertical: vertical is bool
+              ? vertical
+              : inferSystemOcrVertical(rect),
+          tile: tile is num ? tile.toInt() : null,
+        ),
+      );
     }
   }
   return SystemOcrPageResult(

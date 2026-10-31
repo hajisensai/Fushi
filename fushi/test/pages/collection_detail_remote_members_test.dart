@@ -49,8 +49,10 @@ void main() {
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
   });
 
   tearDown(() => db.close());
@@ -65,53 +67,55 @@ void main() {
   }
 
   MediaCollectionRow collectionRow() => MediaCollectionRow(
-        origin: 'user',
-        organizeAliases: '',
-        id: collectionId,
-        name: 'Show',
-        collectionType: 'playlist',
-        coverSource: null,
-        sortOrder: 0,
-        createdAt: 0,
-        orderUpdatedAt: 0,
-      );
+    origin: 'user',
+    organizeAliases: '',
+    id: collectionId,
+    name: 'Show',
+    collectionType: 'playlist',
+    coverSource: null,
+    sortOrder: 0,
+    createdAt: 0,
+    orderUpdatedAt: 0,
+  );
 
   Widget detailPage({
     required List<RemoteVideoInfo> remoteVideos,
     void Function(RemoteVideoInfo, List<RemoteVideoInfo>, int)? onOpenRemote,
     InterconnectDownloadManager? downloads,
     Future<bool> Function(VideoBookRow row)? deleteLocalCopy,
-  }) =>
-      TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: collectionRow(),
-            loadEpisodes: () => loadCollectionEpisodeSlots(
-              repository: repo,
-              collectionId: collectionId,
-              loadRemoteVideos: () async => remoteVideos,
-            ),
-            onOpenEpisode: (VideoBookRow _) {},
-            remote: CollectionRemoteContext(
-              loadRemoteVideos: () async => remoteVideos,
-              openEpisode: onOpenRemote ??
-                  (RemoteVideoInfo _, List<RemoteVideoInfo> __, int ___) {},
-              downloads: downloads,
-              deleteLocalCopy: deleteLocalCopy,
-            ),
-            onChanged: () {},
-          ),
+  }) => TranslationProvider(
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: collectionRow(),
+        loadEpisodes: () => loadCollectionEpisodeSlots(
+          repository: repo,
+          collectionId: collectionId,
+          loadRemoteVideos: () async => remoteVideos,
         ),
-      );
+        onOpenEpisode: (VideoBookRow _) {},
+        remote: CollectionRemoteContext(
+          loadRemoteVideos: () async => remoteVideos,
+          openEpisode:
+              onOpenRemote ??
+              (RemoteVideoInfo _, List<RemoteVideoInfo> __, int ___) {},
+          downloads: downloads,
+          deleteLocalCopy: deleteLocalCopy,
+        ),
+        onChanged: () {},
+      ),
+    ),
+  );
 
   test('只在对端的成员不被丢弃，且保持落盘序', () async {
     // 本地只有第 2 集；第 1、3 集只在 host 上（成员行照样在本地 items 表里）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e2'),
-      title: const Value('Show 02'),
-      videoPath: const Value('/v/Show 02.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e2'),
+        title: const Value('Show 02'),
+        videoPath: const Value('/v/Show 02.mkv'),
+      ),
+    );
     for (final String uid in <String>['video/e1', 'video/e2', 'video/e3']) {
       await db.addToCollection(collectionId, MediaKind.video, uid);
     }
@@ -129,10 +133,11 @@ void main() {
       slots.map((CollectionEpisodeSlot s) => s.entryKey).toList(),
       <String>['video/e1', 'video/e2', 'video/e3'],
     );
-    expect(
-      slots.map((CollectionEpisodeSlot s) => s.isRemote).toList(),
-      <bool>[true, false, true],
-    );
+    expect(slots.map((CollectionEpisodeSlot s) => s.isRemote).toList(), <bool>[
+      true,
+      false,
+      true,
+    ]);
   });
 
   test('没有远端上下文时行为不变：解析不到本地行的成员照旧丢弃', () async {
@@ -147,11 +152,13 @@ void main() {
   });
 
   test('远端清单拉取失败时退化成纯本地视图，不抛', () async {
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e2'),
-      title: const Value('Show 02'),
-      videoPath: const Value('/v/Show 02.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e2'),
+        title: const Value('Show 02'),
+        videoPath: const Value('/v/Show 02.mkv'),
+      ),
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'video/e1');
     await db.addToCollection(collectionId, MediaKind.video, 'video/e2');
 
@@ -161,8 +168,10 @@ void main() {
       loadRemoteVideos: () async => throw Exception('offline'),
     );
 
-    expect(slots.map((CollectionEpisodeSlot s) => s.entryKey).toList(),
-        <String>['video/e2']);
+    expect(
+      slots.map((CollectionEpisodeSlot s) => s.entryKey).toList(),
+      <String>['video/e2'],
+    );
   });
 
   testWidgets('全员只在对端：详情页不显示「合集为空」，而是列出各集', (WidgetTester tester) async {
@@ -171,35 +180,47 @@ void main() {
     }
 
     useTallSurface(tester);
-    await tester.pumpWidget(detailPage(remoteVideos: <RemoteVideoInfo>[
-      remoteEpisode('video/e1', 'Show 01', 0),
-      remoteEpisode('video/e2', 'Show 02', 1),
-    ]));
+    await tester.pumpWidget(
+      detailPage(
+        remoteVideos: <RemoteVideoInfo>[
+          remoteEpisode('video/e1', 'Show 01', 0),
+          remoteEpisode('video/e2', 'Show 02', 1),
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.collection_empty), findsNothing);
     expect(
-        find.byKey(const ValueKey<String>('collection-episode-row-video/e1')),
-        findsOneWidget);
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e1')),
+      findsOneWidget,
+    );
     expect(
-        find.byKey(const ValueKey<String>('collection-episode-row-video/e2')),
-        findsOneWidget);
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e2')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('只在对端的集仍给「下载本集」，不给「打开文件位置」', (WidgetTester tester) async {
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e2'),
-      title: const Value('Show 02'),
-      videoPath: const Value('/v/Show 02.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e2'),
+        title: const Value('Show 02'),
+        videoPath: const Value('/v/Show 02.mkv'),
+      ),
+    );
     for (final String uid in <String>['video/e1', 'video/e2']) {
       await db.addToCollection(collectionId, MediaKind.video, uid);
     }
 
     useTallSurface(tester);
-    await tester.pumpWidget(detailPage(remoteVideos: <RemoteVideoInfo>[
-      remoteEpisode('video/e1', 'Show 01', 0),
-    ]));
+    await tester.pumpWidget(
+      detailPage(
+        remoteVideos: <RemoteVideoInfo>[
+          remoteEpisode('video/e1', 'Show 01', 0),
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
 
     Future<void> openMenu(String uid) async {
@@ -216,8 +237,11 @@ void main() {
     }
 
     await openMenu('video/e1');
-    expect(find.text(t.collection_episode_download), findsOneWidget,
-        reason: '本机没有文件的集才需要下载');
+    expect(
+      find.text(t.collection_episode_download),
+      findsOneWidget,
+      reason: '本机没有文件的集才需要下载',
+    );
     expect(find.text(t.media_file_location_open), findsNothing);
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
@@ -247,32 +271,39 @@ void main() {
       id: 'video/e1',
       title: 'Show 01',
       dest: File('${dir.path}/e1.mp4'),
-      run: (File target,
-          {void Function(double progress)? onProgress,
-          void Function(int received, int? total)? onBytes,
-          Future<void>? cancelSignal}) async {
-        report = onProgress;
-        await gate.future;
-      },
+      run:
+          (
+            File target, {
+            void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal,
+          }) async {
+            report = onProgress;
+            await gate.future;
+          },
     );
 
     useTallSurface(tester);
-    await tester.pumpWidget(detailPage(
-      remoteVideos: <RemoteVideoInfo>[
-        remoteEpisode('video/e1', 'Show 01', 0),
-        remoteEpisode('video/e2', 'Show 02', 1),
-      ],
-      downloads: manager,
-    ));
+    await tester.pumpWidget(
+      detailPage(
+        remoteVideos: <RemoteVideoInfo>[
+          remoteEpisode('video/e1', 'Show 01', 0),
+          remoteEpisode('video/e2', 'Show 02', 1),
+        ],
+        downloads: manager,
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
     final Finder badge = find.byKey(
-        const ValueKey<String>('collection_episode_downloading_video/e1'));
+      const ValueKey<String>('collection_episode_downloading_video/e1'),
+    );
     expect(badge, findsOneWidget, reason: '正在下载的那一集必须画进度环');
     expect(
       find.byKey(
-          const ValueKey<String>('collection_episode_downloading_video/e2')),
+        const ValueKey<String>('collection_episode_downloading_video/e2'),
+      ),
       findsNothing,
       reason: '没在下载的集不画',
     );
@@ -280,10 +311,12 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<FushiDownloadProgressRing>(find.descendant(
-            of: badge,
-            matching: find.byType(FushiDownloadProgressRing),
-          ))
+          .widget<FushiDownloadProgressRing>(
+            find.descendant(
+              of: badge,
+              matching: find.byType(FushiDownloadProgressRing),
+            ),
+          )
           .value,
       0.5,
       reason: '进度环跟着管理器的进度回报走',
@@ -304,21 +337,24 @@ void main() {
     int? passedIndex;
 
     useTallSurface(tester);
-    await tester.pumpWidget(detailPage(
-      remoteVideos: <RemoteVideoInfo>[
-        remoteEpisode('video/e1', 'Show 01', 0),
-        remoteEpisode('video/e2', 'Show 02', 1),
-      ],
-      onOpenRemote: (
-        RemoteVideoInfo episode,
-        List<RemoteVideoInfo> members,
-        int index,
-      ) {
-        opened = episode;
-        passedMembers = members;
-        passedIndex = index;
-      },
-    ));
+    await tester.pumpWidget(
+      detailPage(
+        remoteVideos: <RemoteVideoInfo>[
+          remoteEpisode('video/e1', 'Show 01', 0),
+          remoteEpisode('video/e2', 'Show 02', 1),
+        ],
+        onOpenRemote:
+            (
+              RemoteVideoInfo episode,
+              List<RemoteVideoInfo> members,
+              int index,
+            ) {
+              opened = episode;
+              passedMembers = members;
+              passedIndex = index;
+            },
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -327,8 +363,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(opened?.id, 'video/e2');
-    expect(passedMembers?.map((RemoteVideoInfo v) => v.id).toList(),
-        <String>['video/e1', 'video/e2']);
+    expect(passedMembers?.map((RemoteVideoInfo v) => v.id).toList(), <String>[
+      'video/e1',
+      'video/e2',
+    ]);
     expect(passedIndex, 1);
   });
 
@@ -336,20 +374,25 @@ void main() {
   // 下载副本的地方（任务列表只在 iOS 缺席的「浏览 → 下载」里）。合集详情页的集卡
   // 菜单就地给出互联下载的暂停 / 继续 / 取消，以及「删除本机副本」——后者只给
   // id 仍在对端清单里的本机成员，用户自己导入的本机原件不给。
-  testWidgets('集卡菜单：远端集给继续 / 取消下载；下载副本给「删除本机副本」，本机原件不给',
-      (WidgetTester tester) async {
+  testWidgets('集卡菜单：远端集给继续 / 取消下载；下载副本给「删除本机副本」，本机原件不给', (
+    WidgetTester tester,
+  ) async {
     // e1：从对端下载来的副本（本机有行，id 也在对端清单里）；e2：用户自己的本机
     // 文件（对端没有）；e3：只在对端、上次下到一半被暂停。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e1'),
-      title: const Value('Show 01'),
-      videoPath: const Value('/remote_videos/Show 01.mkv'),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/e2'),
-      title: const Value('Show 02'),
-      videoPath: const Value('/v/Show 02.mkv'),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e1'),
+        title: const Value('Show 01'),
+        videoPath: const Value('/remote_videos/Show 01.mkv'),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/e2'),
+        title: const Value('Show 02'),
+        videoPath: const Value('/v/Show 02.mkv'),
+      ),
+    );
     for (final String uid in <String>['video/e1', 'video/e2', 'video/e3']) {
       await db.addToCollection(collectionId, MediaKind.video, uid);
     }
@@ -363,27 +406,32 @@ void main() {
       id: 'video/e3',
       title: 'Show 03',
       dest: dest,
-      run: (File target,
-              {void Function(double progress)? onProgress,
-              void Function(int received, int? total)? onBytes,
-              Future<void>? cancelSignal}) async {},
+      run:
+          (
+            File target, {
+            void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal,
+          }) async {},
       receivedBytes: 10,
       totalBytes: 100,
     );
     final List<String> deletedCopies = <String>[];
 
     useTallSurface(tester);
-    await tester.pumpWidget(detailPage(
-      remoteVideos: <RemoteVideoInfo>[
-        remoteEpisode('video/e1', 'Show 01', 0),
-        remoteEpisode('video/e3', 'Show 03', 2),
-      ],
-      downloads: manager,
-      deleteLocalCopy: (VideoBookRow row) async {
-        deletedCopies.add(row.bookUid);
-        return false;
-      },
-    ));
+    await tester.pumpWidget(
+      detailPage(
+        remoteVideos: <RemoteVideoInfo>[
+          remoteEpisode('video/e1', 'Show 01', 0),
+          remoteEpisode('video/e3', 'Show 03', 2),
+        ],
+        downloads: manager,
+        deleteLocalCopy: (VideoBookRow row) async {
+          deletedCopies.add(row.bookUid);
+          return false;
+        },
+      ),
+    );
     await tester.pumpAndSettle();
 
     Future<void> openMenu(String uid) async {
@@ -405,22 +453,30 @@ void main() {
     }
 
     await openMenu('video/e2');
-    expect(find.text(t.collection_episode_local_copy_delete), findsNothing,
-        reason: '对端没有这一集：是本机原件，不是下载副本');
+    expect(
+      find.text(t.collection_episode_local_copy_delete),
+      findsNothing,
+      reason: '对端没有这一集：是本机原件，不是下载副本',
+    );
     await closeMenu();
 
     await openMenu('video/e3');
     expect(find.text(t.download_task_resume), findsOneWidget);
     expect(find.text(t.interconnect_download_cancel), findsOneWidget);
-    expect(find.text(t.download_task_pause), findsNothing,
-        reason: '暂停中的任务不再给暂停');
+    expect(
+      find.text(t.download_task_pause),
+      findsNothing,
+      reason: '暂停中的任务不再给暂停',
+    );
     await tester.tap(find.text(t.interconnect_download_cancel));
     // 取消里有真实文件 IO（删 part / 清单）：交替让出真实时间与冲刷 fake zone。
-    for (int i = 0;
-        i < 200 &&
-            (manager.taskFor('video/e3') != null ||
-                File('${dest.path}.part').existsSync());
-        i++) {
+    for (
+      int i = 0;
+      i < 200 &&
+          (manager.taskFor('video/e3') != null ||
+              File('${dest.path}.part').existsSync());
+      i++
+    ) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 5)),
       );
@@ -428,8 +484,11 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(manager.taskFor('video/e3'), isNull, reason: '取消后任务移出');
-    expect(File('${dest.path}.part').existsSync(), isFalse,
-        reason: '取消删掉半成品，重开 app 不会再被自动续传');
+    expect(
+      File('${dest.path}.part').existsSync(),
+      isFalse,
+      reason: '取消删掉半成品，重开 app 不会再被自动续传',
+    );
 
     await openMenu('video/e1');
     expect(find.text(t.collection_episode_local_copy_delete), findsOneWidget);

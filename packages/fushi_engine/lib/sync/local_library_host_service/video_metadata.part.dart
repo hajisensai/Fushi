@@ -14,8 +14,9 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     String? bookUid,
   }) async {
     if (bookUid != null) {
-      final VideoMetadataWorkRow? row =
-          await _db.getVideoMetadataWorkByBook(bookUid);
+      final VideoMetadataWorkRow? row = await _db.getVideoMetadataWorkByBook(
+        bookUid,
+      );
       if (row == null || (since != null && row.updatedAt <= since)) {
         return const <VideoMetadataWorkEntry>[];
       }
@@ -52,8 +53,9 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
       key: key,
       updatedAt: row.updatedAt,
       lockedFields: <String>[
-        for (final VideoMetadataLockableField f
-            in parseLockedFields(row.lockedFields))
+        for (final VideoMetadataLockableField f in parseLockedFields(
+          row.lockedFields,
+        ))
           f.name,
       ],
       lookup: await lookupOfWork(_db, row.id),
@@ -77,8 +79,8 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     required VideoMetadataWorkKey key,
     required String query,
   }) async {
-    final VideoSourceScrapeTaskController? controller =
-        await _scrapeController?.call();
+    final VideoSourceScrapeTaskController? controller = await _scrapeController
+        ?.call();
     if (controller == null) return const <VideoMetadataCandidateEntry>[];
     final _PlannedUnitResolution resolved = await _plannedUnitForKey(key);
     final VideoPendingScrapeWork? unit = resolved.unit;
@@ -88,11 +90,11 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     if (seed == null) return const <VideoMetadataCandidateEntry>[];
     final List<VideoSourceScrapeConfirmationCandidate> candidates =
         await controller.searchManualCandidates(
-      source: seed.source,
-      workTitle: seed.work.title,
-      workStableKey: seed.work.stableKey,
-      query: query,
-    );
+          source: seed.source,
+          workTitle: seed.work.title,
+          workStableKey: seed.work.stableKey,
+          query: query,
+        );
     return <VideoMetadataCandidateEntry>[
       for (final VideoSourceScrapeConfirmationCandidate c in candidates)
         VideoMetadataCandidateEntry(lookup: c.lookup, work: c.work),
@@ -104,8 +106,8 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     required VideoMetadataWorkKey key,
     required VideoMetadataLookup lookup,
   }) async {
-    final VideoSourceScrapeTaskController? controller =
-        await _scrapeController?.call();
+    final VideoSourceScrapeTaskController? controller = await _scrapeController
+        ?.call();
     if (controller == null) {
       return const VideoMetadataWriteResult.conflict(
         VideoMetadataConflict.notPlanned,
@@ -127,13 +129,13 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
         VideoMetadataConflict.notPlanned,
       );
     }
-    final SourceScrapeReport scrapeReport =
-        await controller.rescrapeWorkWithLookup(
-      source: unit.source,
-      workTitle: unit.work.title,
-      workStableKey: unit.work.stableKey,
-      lookup: lookup,
-    );
+    final SourceScrapeReport scrapeReport = await controller
+        .rescrapeWorkWithLookup(
+          source: unit.source,
+          workTitle: unit.work.title,
+          workStableKey: unit.work.stableKey,
+          lookup: lookup,
+        );
     // 刮削链的失败不抛、进 report（provider 挂 / 封禁 / 候选被类型门拒）；不能
     // 因为库里还躺着上次的旧行就回 ok（审查 PR#1431 #5）。
     if (scrapeReport.failedWorks > 0 ||
@@ -163,9 +165,9 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     final VideoPendingScrapeWork? unit = resolved.unit;
     const VideoMetadataEpisodeGroupListing empty =
         VideoMetadataEpisodeGroupListing(
-      groups: <VideoMetadataEpisodeGroupSummary>[],
-      current: null,
-    );
+          groups: <VideoMetadataEpisodeGroupSummary>[],
+          current: null,
+        );
     if (unit == null) return empty;
     final VideoMetadataWorkRow? row = await _workRowForTarget(unit.work);
     if (row == null || row.mediaType != VideoMetadataMediaKind.tv.name) {
@@ -173,11 +175,13 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     }
     final VideoMetadataProviderIdentityRow? tmdb =
         (await _db.getVideoMetadataProviderIdentities(workId: row.id))
-            .where((VideoMetadataProviderIdentityRow i) =>
-                i.provider == VideoMetadataProviderKind.tmdb.name)
+            .where(
+              (VideoMetadataProviderIdentityRow i) =>
+                  i.provider == VideoMetadataProviderKind.tmdb.name,
+            )
             .firstOrNull;
-    final VideoSourceScrapeTaskController? controller =
-        await _scrapeController?.call();
+    final VideoSourceScrapeTaskController? controller = await _scrapeController
+        ?.call();
     if (tmdb == null || controller == null) {
       return VideoMetadataEpisodeGroupListing(
         groups: const <VideoMetadataEpisodeGroupSummary>[],
@@ -185,11 +189,13 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
       );
     }
     return VideoMetadataEpisodeGroupListing(
-      groups: await controller.listEpisodeGroups(VideoMetadataLookup(
-        provider: VideoMetadataProviderKind.tmdb,
-        externalId: tmdb.externalId,
-        mediaKind: VideoMetadataMediaKind.tv,
-      )),
+      groups: await controller.listEpisodeGroups(
+        VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: tmdb.externalId,
+          mediaKind: VideoMetadataMediaKind.tv,
+        ),
+      ),
       current: row.episodeGroupId,
     );
   }
@@ -210,8 +216,9 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
       );
     }
     final VideoPendingScrapeWork? unit = resolved.unit;
-    final VideoMetadataWorkRow? row =
-        unit == null ? null : await _workRowForTarget(unit.work);
+    final VideoMetadataWorkRow? row = unit == null
+        ? null
+        : await _workRowForTarget(unit.work);
     if (unit == null || row == null) {
       return const VideoMetadataWriteResult.conflict(
         VideoMetadataConflict.notPlanned,
@@ -220,15 +227,16 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     // 先把「能不能重刮」判完再落库：控制器没接 / 作品没有身份时回 409，此时
     // 分组锁不能已经写进去——否则对端看到失败、库里却换了 episode_group_id，
     // 下一次任何重刮都按新分组走。
-    final VideoSourceScrapeTaskController? controller =
-        await _scrapeController?.call();
+    final VideoSourceScrapeTaskController? controller = await _scrapeController
+        ?.call();
     if (controller == null || await lookupOfWork(_db, row.id) == null) {
       return const VideoMetadataWriteResult.conflict(
         VideoMetadataConflict.notPlanned,
       );
     }
     await _runExclusive(
-        () => _db.setVideoMetadataWorkEpisodeGroup(row.id, groupId));
+      () => _db.setVideoMetadataWorkEpisodeGroup(row.id, groupId),
+    );
     // lookup 自带行上的 episodeGroupId：写完再读，重刮才按新分组走。
     final VideoMetadataLookup? lookup = await lookupOfWork(_db, row.id);
     if (lookup == null) {
@@ -241,10 +249,9 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
 
   Future<VideoMetadataWorkRow?> _workRowForTarget(
     VideoSourceScrapeWork target,
-  ) =>
-      target.collection == null
-          ? _db.getVideoMetadataWorkByBook(target.members.single.bookUid)
-          : _db.getVideoMetadataWorkByCollection(target.collection!.id);
+  ) => target.collection == null
+      ? _db.getVideoMetadataWorkByBook(target.members.single.bookUid)
+      : _db.getVideoMetadataWorkByCollection(target.collection!.id);
 
   /// 自然键 → 计划器里的作品单元。
   ///
@@ -255,11 +262,11 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     VideoMetadataWorkKey key,
   ) async {
     if (key.isCollection) {
-      final MediaCollectionRow? collection =
-          await _db.getMediaCollectionByNaturalKey(
-        key.collectionName!,
-        key.collectionType!,
-      );
+      final MediaCollectionRow? collection = await _db
+          .getMediaCollectionByNaturalKey(
+            key.collectionName!,
+            key.collectionType!,
+          );
       if (collection == null) return const _PlannedUnitResolution.none();
       final List<VideoPendingScrapeWork> planned =
           await planScrapeWorksForCollection(_db, collection.id);
@@ -275,8 +282,9 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
             .where((SourceLibraryRow s) => s.transport == 'local')
             .toList(growable: false);
     for (final SourceLibraryRow source in sources) {
-      for (final VideoSourceScrapeWork work
-          in await VideoSourceWorkPlanner(_db).plan(source)) {
+      for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
+        _db,
+      ).plan(source)) {
         if (work.stableKey == stableKey) {
           return _PlannedUnitResolution.single(
             VideoPendingScrapeWork(source: source, work: work),
@@ -311,7 +319,8 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
         ],
       );
     }
-    final VideoSourceScrapeWork? target = resolved.unit?.work ??
+    final VideoSourceScrapeWork? target =
+        resolved.unit?.work ??
         (key.isCollection ? null : await resolveMetadataWorkTarget(_db, key));
     if (target == null) {
       return const VideoMetadataWriteResult.conflict(
@@ -359,10 +368,10 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
 /// [_LocalLibraryHostVideoMetadata._plannedUnitForKey] 的三态结果。
 class _PlannedUnitResolution {
   const _PlannedUnitResolution.none()
-      : unit = null,
-        ambiguous = const <VideoPendingScrapeWork>[];
+    : unit = null,
+      ambiguous = const <VideoPendingScrapeWork>[];
   const _PlannedUnitResolution.single(VideoPendingScrapeWork this.unit)
-      : ambiguous = const <VideoPendingScrapeWork>[];
+    : ambiguous = const <VideoPendingScrapeWork>[];
   const _PlannedUnitResolution.ambiguous(this.ambiguous) : unit = null;
 
   final VideoPendingScrapeWork? unit;

@@ -40,8 +40,8 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   Completer<void>? gate;
 
   static Uint8List pngOf(int index) => Uint8List.fromList(
-        img.encodePng(img.Image(width: 100 + index, height: 150 + index)),
-      );
+    img.encodePng(img.Image(width: 100 + index, height: 150 + index)),
+  );
 
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.mihon;
@@ -54,18 +54,18 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<OnlineMangaRefreshResult> refresh(
-          OnlineMangaLibraryEntry entry) async =>
+    OnlineMangaLibraryEntry entry,
+  ) async =>
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) async =>
-      <OnlineMangaPageRef>[
-        for (int i = 0; i < pageCount; i++)
-          InterconnectMangaPageRef(index: i, bookKey: 'fake', remoteIndex: i),
-      ];
+  }) async => <OnlineMangaPageRef>[
+    for (int i = 0; i < pageCount; i++)
+      InterconnectMangaPageRef(index: i, bookKey: 'fake', remoteIndex: i),
+  ];
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
@@ -82,8 +82,9 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<List<int>> fetchCover(
-          OnlineMangaLibraryEntry entry, String url) async =>
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    OnlineMangaLibraryEntry entry,
+    String url,
+  ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }
 
 /// 记录 update / stop 顺序的假保活（BUG-2714）。
@@ -113,11 +114,11 @@ class _FakeOcrService implements MangaOcrService {
 
   @override
   Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
-        detectorReady: true,
-        recognizerReady: true,
-        diskBytes: 1,
-        totalBytes: 1,
-      );
+    detectorReady: true,
+    recognizerReady: true,
+    diskBytes: 1,
+    totalBytes: 1,
+  );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() =>
@@ -131,8 +132,7 @@ class _FakeOcrService implements MangaOcrService {
     required String imageDirPath,
     String? volumeTitle,
     int startPage = 0,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
 }
 
 const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
@@ -151,16 +151,16 @@ const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
 ];
 
 OnlineMangaLibraryEntry _entry() => const OnlineMangaLibraryEntry(
-      runtime: OnlineMangaRuntimeKind.mihon,
-      extensionPackage: 'org.example.fixture',
-      sourceId: '1',
-      series: OnlineMangaSeries(
-        key: '/series/fixture',
-        title: 'Fixture series',
-        raw: <String, Object?>{'url': '/series/fixture'},
-      ),
-      chapters: _chapters,
-    );
+  runtime: OnlineMangaRuntimeKind.mihon,
+  extensionPackage: 'org.example.fixture',
+  sourceId: '1',
+  series: OnlineMangaSeries(
+    key: '/series/fixture',
+    title: 'Fixture series',
+    raw: <String, Object?>{'url': '/series/fixture'},
+  ),
+  chapters: _chapters,
+);
 
 void main() {
   late Directory root;
@@ -174,16 +174,15 @@ void main() {
   MangaDownloadService build({
     MangaDownloadOcrHook? onChapterDownloaded,
     DownloadKeepAlive? keepAlive,
-  }) =>
-      MangaDownloadService(
-        database: db,
-        serviceFor: (OnlineMangaRuntimeKind runtime) => library,
-        onChapterDownloaded: onChapterDownloaded,
-        keepAlive: keepAlive,
-        wait: (Duration duration) async {
-          waits.add(duration);
-        },
-      );
+  }) => MangaDownloadService(
+    database: db,
+    serviceFor: (OnlineMangaRuntimeKind runtime) => library,
+    onChapterDownloaded: onChapterDownloaded,
+    keepAlive: keepAlive,
+    wait: (Duration duration) async {
+      waits.add(duration);
+    },
+  );
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('fushi-manga-download-');
@@ -247,11 +246,13 @@ void main() {
       mangaChapterJsonFile(chapterDir).readAsStringSync(),
     );
     expect(
-        payload.images.map((MokuroImage image) => image.url).toList(), <String>[
-      'images/page-000001.png',
-      'images/page-000002.png',
-      'images/page-000003.png',
-    ]);
+      payload.images.map((MokuroImage image) => image.url).toList(),
+      <String>[
+        'images/page-000001.png',
+        'images/page-000002.png',
+        'images/page-000003.png',
+      ],
+    );
     expect(payload.images[0].size.width, 100);
     expect(payload.images[0].size.height, 150);
     expect(payload.images[2].size.width, 102);
@@ -353,7 +354,9 @@ void main() {
     await downloads.whenIdle;
 
     expect(
-        (await jobOf('/chapter/1')).status, MangaDownloadJobStatus.cancelled);
+      (await jobOf('/chapter/1')).status,
+      MangaDownloadJobStatus.cancelled,
+    );
     expect(chapterDir.existsSync(), isFalse, reason: '半成品目录必须删掉');
     downloads.dispose();
   });
@@ -367,7 +370,9 @@ void main() {
     );
     await downloads.cancel(job.jobId);
     expect(
-        (await jobOf('/chapter/2')).status, MangaDownloadJobStatus.cancelled);
+      (await jobOf('/chapter/2')).status,
+      MangaDownloadJobStatus.cancelled,
+    );
     final MangaDownloadJobRow again = await downloads.enqueueChapter(
       entry: _entry(),
       chapter: _chapters.first,
@@ -425,8 +430,11 @@ void main() {
     );
     expect(again.status, MangaDownloadJobStatus.done);
     await downloads.whenIdle;
-    expect(adapter.fetchCounts, <int, int>{0: 1, 1: 1, 2: 1},
-        reason: '已下载的章不该再打源');
+    expect(adapter.fetchCounts, <int, int>{
+      0: 1,
+      1: 1,
+      2: 1,
+    }, reason: '已下载的章不该再打源');
 
     // 目录被删 → 判据失效 → 重新排队（worker 在跑，行可能已被立刻领走）。
     await deleteChapterDownload(bookDir, '/chapter/1');
@@ -441,8 +449,11 @@ void main() {
     );
     await downloads.whenIdle;
     expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
-    expect(adapter.fetchCounts, <int, int>{0: 2, 1: 2, 2: 2},
-        reason: '目录没了就得真的重下');
+    expect(adapter.fetchCounts, <int, int>{
+      0: 2,
+      1: 2,
+      2: 2,
+    }, reason: '目录没了就得真的重下');
     downloads.dispose();
   });
 
@@ -481,8 +492,11 @@ void main() {
     final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
     expect(running.job.managedDirectory, chapterDir.path);
     expect(running.mangaJsonPath, mangaChapterJsonFile(chapterDir).path);
-    expect(specs.single.imageDirPath, chapterDir.path,
-        reason: '从章目录起算，OCR 产物的 url 才是 images/page-…');
+    expect(
+      specs.single.imageDirPath,
+      chapterDir.path,
+      reason: '从章目录起算，OCR 产物的 url 才是 images/page-…',
+    );
     downloads.dispose();
     await registry.cancelAll();
   });
@@ -493,13 +507,13 @@ void main() {
       onChapterDownloaded: (MangaDownloadedChapter chapter) async {
         final MangaOcrRunningJob? job =
             await runAutoMangaOcrForDownloadedChapter(
-          chapter: chapter,
-          engines: MangaOcrWizardEngines(service: _FakeOcrService()),
-          registry: registry,
-          preference: MangaOcrEnginePreference.googleLens,
-          lensLanguage: 'ja',
-          buildEvents: (_) => const Stream<MangaOcrBackgroundEvent>.empty(),
-        );
+              chapter: chapter,
+              engines: MangaOcrWizardEngines(service: _FakeOcrService()),
+              registry: registry,
+              preference: MangaOcrEnginePreference.googleLens,
+              lensLanguage: 'ja',
+              buildEvents: (_) => const Stream<MangaOcrBackgroundEvent>.empty(),
+            );
         expect(job, isNull);
       },
     );
@@ -511,8 +525,11 @@ void main() {
     await downloads.start();
     await downloads.whenIdle;
     expect(registry.running(bookKey), isNull);
-    expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done,
-        reason: 'OCR 跳过不影响下载结果');
+    expect(
+      (await jobOf('/chapter/1')).status,
+      MangaDownloadJobStatus.done,
+      reason: 'OCR 跳过不影响下载结果',
+    );
     downloads.dispose();
   });
 
@@ -532,12 +549,18 @@ void main() {
 
       expect(keepAlive.events.first, 'update:Fixture series');
       expect(keepAlive.events.last, 'stop');
-      expect(keepAlive.events.where((String e) => e == 'stop'), hasLength(1),
-          reason: '队列没排空之前不能撤（后台里撤了就再也拉不起前台服务）');
+      expect(
+        keepAlive.events.where((String e) => e == 'stop'),
+        hasLength(1),
+        reason: '队列没排空之前不能撤（后台里撤了就再也拉不起前台服务）',
+      );
       expect(keepAlive.percents, contains(100));
       downloads.dispose();
-      expect(keepAlive.events.where((String e) => e == 'stop'), hasLength(1),
-          reason: '已撤过，dispose 不重复 stop');
+      expect(
+        keepAlive.events.where((String e) => e == 'stop'),
+        hasLength(1),
+        reason: '已撤过，dispose 不重复 stop',
+      );
     });
 
     test('跑到一半 dispose → 撤保活', () async {

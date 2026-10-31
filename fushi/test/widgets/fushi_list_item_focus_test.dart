@@ -5,27 +5,30 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 void main() {
-  testWidgets('clickable FushiListItem registers with the focus root',
-      (WidgetTester tester) async {
+  testWidgets('clickable FushiListItem registers with the focus root', (
+    WidgetTester tester,
+  ) async {
     int taps = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: Column(
-          children: <Widget>[
-            FushiListItem(
-              focusId: const FushiFocusId('first-row'),
-              title: const Text('First'),
-              onTap: () => taps += 1,
-            ),
-            FushiListItem(
-              focusId: const FushiFocusId('second-row'),
-              title: const Text('Second'),
-              onTap: () => taps += 1,
-            ),
-          ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Column(
+            children: <Widget>[
+              FushiListItem(
+                focusId: const FushiFocusId('first-row'),
+                title: const Text('First'),
+                onTap: () => taps += 1,
+              ),
+              FushiListItem(
+                focusId: const FushiFocusId('second-row'),
+                title: const Text('Second'),
+                onTap: () => taps += 1,
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -47,26 +50,29 @@ void main() {
   // 就是 `autofocus`。它不是装饰——BUG-1049 的「打开对话框即落在正确的那一行，回车直接
   // 确认」全靠它。这条锁住：带 autofocus 的行开屏就持有键盘焦点，且 Enter 直接触发
   // onTap（对话框里没有 FushiFocusRoot，走的是 InkWell 自己的焦点节点）。
-  testWidgets('autofocus FushiListItem takes keyboard focus on open',
-      (WidgetTester tester) async {
+  testWidgets('autofocus FushiListItem takes keyboard focus on open', (
+    WidgetTester tester,
+  ) async {
     int taps = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Column(
-          children: <Widget>[
-            FushiListItem(
-              title: const Text('Other window'),
-              onTap: () => taps += 1,
-            ),
-            FushiListItem(
-              autofocus: true,
-              title: const Text('The game window'),
-              onTap: () => taps += 1,
-            ),
-          ],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: <Widget>[
+              FushiListItem(
+                title: const Text('Other window'),
+                onTap: () => taps += 1,
+              ),
+              FushiListItem(
+                autofocus: true,
+                title: const Text('The game window'),
+                onTap: () => taps += 1,
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final InkWell focused = tester.widget<InkWell>(
@@ -88,17 +94,18 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('passive FushiListItem is not a focus target',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: FushiFocusRoot(
-        child: Column(
-          children: <Widget>[
-            FushiListItem(title: Text('Passive')),
-          ],
+  testWidgets('passive FushiListItem is not a focus target', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FushiFocusRoot(
+          child: Column(
+            children: <Widget>[FushiListItem(title: Text('Passive'))],
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(

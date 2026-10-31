@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_compute/fushi_compute.dart';
-import 'package:fushi_engine/media/video/strm_file.dart' show lacksLocalMediaFile;
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 

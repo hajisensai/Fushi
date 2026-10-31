@@ -59,7 +59,9 @@ void main() {
   group('delay prefs 键公式冻结（wire/持久化契约）', () {
     test('键字符串逐字节冻结', () {
       expect(
-          videoRemoteDelayPrefKey('video/u1'), 'video_remote_delay_video/u1');
+        videoRemoteDelayPrefKey('video/u1'),
+        'video_remote_delay_video/u1',
+      );
       expect(
         videoRemoteDelayAtPrefKey('video/u1'),
         'video_remote_delay_at_video/u1',
@@ -85,15 +87,25 @@ void main() {
     test('播放偏好泛化批新键族冻结（音轨/副字幕源/副字幕调轴）', () {
       expect(videoRemoteAudioTrackPrefKey('u'), 'video_remote_audio_track_u');
       expect(
-          videoRemoteAudioTrackAtPrefKey('u'), 'video_remote_audio_track_at_u');
-      expect(videoRemoteSecondarySubtitlePrefKey('u'),
-          'video_remote_secondary_subtitle_u');
-      expect(videoRemoteSecondarySubtitleAtPrefKey('u'),
-          'video_remote_secondary_subtitle_at_u');
-      expect(videoRemoteSecondaryDelayPrefKey('u'),
-          'video_remote_secondary_delay_u');
-      expect(videoRemoteSecondaryDelayAtPrefKey('u'),
-          'video_remote_secondary_delay_at_u');
+        videoRemoteAudioTrackAtPrefKey('u'),
+        'video_remote_audio_track_at_u',
+      );
+      expect(
+        videoRemoteSecondarySubtitlePrefKey('u'),
+        'video_remote_secondary_subtitle_u',
+      );
+      expect(
+        videoRemoteSecondarySubtitleAtPrefKey('u'),
+        'video_remote_secondary_subtitle_at_u',
+      );
+      expect(
+        videoRemoteSecondaryDelayPrefKey('u'),
+        'video_remote_secondary_delay_u',
+      );
+      expect(
+        videoRemoteSecondaryDelayAtPrefKey('u'),
+        'video_remote_secondary_delay_at_u',
+      );
     });
   });
 
@@ -116,8 +128,10 @@ void main() {
         secondarySubtitleAt: 50, // held 无戳(0) → 覆盖
         secondaryDelayAt: 401, // 带戳 null → 显式清除覆盖
       );
-      final VideoPlaybackSyncState merged =
-          VideoPlaybackSyncState.merge(held, incoming);
+      final VideoPlaybackSyncState merged = VideoPlaybackSyncState.merge(
+        held,
+        incoming,
+      );
       expect(merged.delayMs, -1500, reason: '旧戳不覆盖');
       expect(merged.audioTrackId, '5', reason: '严格较新覆盖');
       expect(merged.secondarySubtitleSource, 'embedded:4');
@@ -160,17 +174,25 @@ void main() {
       expect(back.delayMs, -1500);
       expect(back.delayUpdatedAtMs, 1700000000000);
       // 旧 host 的 json 没有 delayUpdatedAtMs 键。
-      final RemoteVideoInfo legacy = RemoteVideoInfo.fromJson(
-          <String, Object?>{'id': 'video/x', 'title': 'X', 'delayMs': -1500});
+      final RemoteVideoInfo legacy = RemoteVideoInfo.fromJson(<String, Object?>{
+        'id': 'video/x',
+        'title': 'X',
+        'delayMs': -1500,
+      });
       expect(legacy.delayMs, -1500);
-      expect(legacy.delayUpdatedAtMs, 0,
-          reason: '缺键 = host 无新主张，client 带戳本地值应在 LWW 胜出');
+      expect(
+        legacy.delayUpdatedAtMs,
+        0,
+        reason: '缺键 = host 无新主张，client 带戳本地值应在 LWW 胜出',
+      );
     });
 
     test('copyWith 透传新字段', () {
       const RemoteVideoInfo info = RemoteVideoInfo(id: 'a', title: 'A');
-      final RemoteVideoInfo updated =
-          info.copyWith(delayMs: 250, delayUpdatedAtMs: 42);
+      final RemoteVideoInfo updated = info.copyWith(
+        delayMs: 250,
+        delayUpdatedAtMs: 42,
+      );
       expect(updated.delayMs, 250);
       expect(updated.delayUpdatedAtMs, 42);
       expect(info.copyWith().delayUpdatedAtMs, 0);
@@ -190,8 +212,10 @@ void main() {
       expect(info.copyWith().audioTrackId, '3');
       expect(info.copyWith().completedAt, 1700000000000);
       // 旧 host 缺键 → null（向后兼容）。
-      final RemoteVideoInfo legacy = RemoteVideoInfo.fromJson(
-          <String, Object?>{'id': 'video/x', 'title': 'X'});
+      final RemoteVideoInfo legacy = RemoteVideoInfo.fromJson(<String, Object?>{
+        'id': 'video/x',
+        'title': 'X',
+      });
       expect(legacy.audioTrackId, isNull);
       expect(legacy.completedAt, isNull);
     });

@@ -7,12 +7,12 @@ import 'package:fushi/models.dart';
 class TermField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   TermField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Term',
-          description: 'Dictionary headword or phrase.',
-          icon: Icons.speaker_notes_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Term',
+        description: 'Dictionary headword or phrase.',
+        icon: Icons.speaker_notes_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static TermField get instance => _instance;

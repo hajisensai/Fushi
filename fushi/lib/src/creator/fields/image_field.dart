@@ -18,13 +18,14 @@ import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 class ImageField extends ImageExportField {
   /// Initialise this field with the predetermined and hardset values.
   ImageField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Image',
-          description: 'Visual supplement. Text field can be used to enter'
-              ' search terms for image sources.',
-          icon: FushiIcons.image,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Image',
+        description:
+            'Visual supplement. Text field can be used to enter'
+            ' search terms for image sources.',
+        icon: FushiIcons.image,
+      );
 
   /// Get the singleton instance of this field.
   static ImageField get instance => _instance;
@@ -67,10 +68,7 @@ class ImageField extends ImageExportField {
               ),
             ),
           const Gap(10),
-          buildFooterLoading(
-            appModel: appModel,
-            context: context,
-          ),
+          buildFooterLoading(appModel: appModel, context: context),
         ],
       );
     }
@@ -186,8 +184,9 @@ class ImageField extends ImageExportField {
                 if (index != indexNotifier.value) {
                   return;
                 }
-                final cropEnhancement = appModel.enhancements[
-                    ImageField.instance]![CropImageEnhancement.key]!;
+                final cropEnhancement =
+                    appModel.enhancements[ImageField
+                        .instance]![CropImageEnhancement.key]!;
 
                 cropEnhancement.enhanceCreatorParams(
                   context: context,
@@ -209,10 +208,9 @@ class ImageField extends ImageExportField {
                     behavior: HitTestBehavior.opaque,
                     onTap: _dismissLongPressPreview,
                     child: ColoredBox(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .scrim
-                          .withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.scrim.withValues(alpha: 0.5),
                       child: buildImage(image: image, fit: BoxFit.contain),
                     ),
                   ),
@@ -270,10 +268,7 @@ class ImageField extends ImageExportField {
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
-              padding: const EdgeInsets.only(
-                top: 1.25,
-                right: 4,
-              ),
+              padding: const EdgeInsets.only(top: 1.25, right: 4),
               child: FushiIcon(
                 icon,
                 size: fontSize,
@@ -292,10 +287,7 @@ class ImageField extends ImageExportField {
           if (selectedIndex == -1)
             TextSpan(
               text: t.image_search_label_none_middle,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: fontSize,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
             ),
           if (selectedIndex != -1)
             TextSpan(
@@ -308,10 +300,7 @@ class ImageField extends ImageExportField {
           if (selectedIndex != -1)
             TextSpan(
               text: '${selectedIndex! + 1} ',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: fontSize,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
             ),
           TextSpan(
             text: t.image_search_label_middle,
@@ -322,10 +311,7 @@ class ImageField extends ImageExportField {
           ),
           TextSpan(
             text: '$itemCount ',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: fontSize,
-            ),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
           ),
           if (currentSearchTerm != null && currentSearchTerm!.trim().isNotEmpty)
             TextSpan(
@@ -347,10 +333,7 @@ class ImageField extends ImageExportField {
           if (currentSearchTerm != null && currentSearchTerm!.trim().isNotEmpty)
             TextSpan(
               text: currentSearchTerm,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: fontSize,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
             ),
         ],
       ),
@@ -375,10 +358,7 @@ class ImageField extends ImageExportField {
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
-              padding: const EdgeInsets.only(
-                top: 1.25,
-                right: 4,
-              ),
+              padding: const EdgeInsets.only(top: 1.25, right: 4),
               child: FushiIcon(
                 icon,
                 size: fontSize,
@@ -397,10 +377,7 @@ class ImageField extends ImageExportField {
           if (currentSearchTerm != null && currentSearchTerm!.trim().isNotEmpty)
             TextSpan(
               text: currentSearchTerm,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: fontSize,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize),
             )
           else
             TextSpan(

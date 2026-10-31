@@ -131,7 +131,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('system-font-add'))),)
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(
+              find.byKey(const ValueKey<String>('system-font-add')),
+            ),
+          )
           .onPressed,
       isNull,
     );

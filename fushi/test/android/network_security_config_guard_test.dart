@@ -30,50 +30,57 @@ void main() {
   final File configFile = File(
     'android/app/src/main/res/xml/network_security_config.xml',
   );
-  final File manifestFile = File(
-    'android/app/src/main/AndroidManifest.xml',
-  );
-
-  test('network_security_config.xml exists and is referenced by the manifest',
-      () {
-    expect(configFile.existsSync(), isTrue,
-        reason: 'BUG-377 fix lives in this file');
-    final String manifest = manifestFile.readAsStringSync();
-    expect(
-      manifest.contains(
-        'android:networkSecurityConfig="@xml/network_security_config"',
-      ),
-      isTrue,
-      reason:
-          'manifest must point <application> at the network security config '
-          'or the cleartext policy never takes effect',
-    );
-  });
+  final File manifestFile = File('android/app/src/main/AndroidManifest.xml');
 
   test(
-      'base-config permits cleartext so LAN paired-device sync works on Android',
-      () {
-    final String xml = configFile.readAsStringSync();
-    // Normalize whitespace so attribute-order/spacing changes do not break us.
-    final String compact = xml.replaceAll(RegExp(r'\s+'), ' ');
-    expect(
-      RegExp(r'<base-config[^>]*cleartextTrafficPermitted="true"')
-          .hasMatch(compact),
-      isTrue,
-      reason: 'BUG-377: base-config must allow cleartext, else Android rejects '
-          'every http:// LAN peer and paired-device download fails',
-    );
-    expect(
-      RegExp(r'<base-config[^>]*cleartextTrafficPermitted="false"')
-          .hasMatch(compact),
-      isFalse,
-      reason: 'base-config="false" is the exact regression that broke '
-          'paired-device download on Android',
-    );
-  });
+    'network_security_config.xml exists and is referenced by the manifest',
+    () {
+      expect(
+        configFile.existsSync(),
+        isTrue,
+        reason: 'BUG-377 fix lives in this file',
+      );
+      final String manifest = manifestFile.readAsStringSync();
+      expect(
+        manifest.contains(
+          'android:networkSecurityConfig="@xml/network_security_config"',
+        ),
+        isTrue,
+        reason:
+            'manifest must point <application> at the network security config '
+            'or the cleartext policy never takes effect',
+      );
+    },
+  );
 
-  test('app-owned public log-upload endpoint stays https-only (no downgrade)',
-      () {
+  test(
+    'base-config permits cleartext so LAN paired-device sync works on Android',
+    () {
+      final String xml = configFile.readAsStringSync();
+      // Normalize whitespace so attribute-order/spacing changes do not break us.
+      final String compact = xml.replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+        RegExp(
+          r'<base-config[^>]*cleartextTrafficPermitted="true"',
+        ).hasMatch(compact),
+        isTrue,
+        reason:
+            'BUG-377: base-config must allow cleartext, else Android rejects '
+            'every http:// LAN peer and paired-device download fails',
+      );
+      expect(
+        RegExp(
+          r'<base-config[^>]*cleartextTrafficPermitted="false"',
+        ).hasMatch(compact),
+        isFalse,
+        reason:
+            'base-config="false" is the exact regression that broke '
+            'paired-device download on Android',
+      );
+    },
+  );
+
+  test('app-owned public log-upload endpoint stays https-only (no downgrade)', () {
     final String xml = configFile.readAsStringSync();
     final String compact = xml.replaceAll(RegExp(r'\s+'), ' ');
     // There must be a domain-config that forbids cleartext and lists the
@@ -84,7 +91,8 @@ void main() {
     expect(
       httpsOnlyBlock.hasMatch(compact),
       isTrue,
-      reason: 'BUG-377: keep logs.wrds.xyz pinned https-only via a '
+      reason:
+          'BUG-377: keep logs.wrds.xyz pinned https-only via a '
           'cleartext=false domain-config (defense against future downgrade)',
     );
   });

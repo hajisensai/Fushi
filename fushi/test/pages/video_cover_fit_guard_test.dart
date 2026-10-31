@@ -16,61 +16,66 @@ void main() {
   const String path = 'lib/src/pages/implementations/home_video_page.dart';
 
   test(
-      'video covers render with BoxFit.contain (complete, no crop) — TODO-616C',
-      () {
-    final String source = File(path).readAsStringSync();
+    'video covers render with BoxFit.contain (complete, no crop) — TODO-616C',
+    () {
+      final String source = File(path).readAsStringSync();
 
-    // 远端云视频封面：缓存文件 + 网络图两处。
-    final String remoteCover =
-        _functionSource(source, 'Widget _buildRemoteVideoCover(');
-    // 本地视频封面。
-    final String localCover = _functionSource(source, 'Widget _buildCover(');
+      // 远端云视频封面：缓存文件 + 网络图两处。
+      final String remoteCover = _functionSource(
+        source,
+        'Widget _buildRemoteVideoCover(',
+      );
+      // 本地视频封面。
+      final String localCover = _functionSource(source, 'Widget _buildCover(');
 
-    for (final entry in <String, String>{
-      '_buildRemoteVideoCover': remoteCover,
-      '_buildCover': localCover,
-    }.entries) {
-      final String name = entry.key;
-      final String body = entry.value;
+      for (final entry in <String, String>{
+        '_buildRemoteVideoCover': remoteCover,
+        '_buildCover': localCover,
+      }.entries) {
+        final String name = entry.key;
+        final String body = entry.value;
 
+        expect(
+          body,
+          isNot(contains('fit: BoxFit.cover')),
+          reason:
+              '$name 不得用 BoxFit.cover——会把 16:9 源裁进更窄的卡槽，'
+              '裁掉左右（TODO-616 阶段 C 回归）',
+        );
+        expect(
+          body,
+          isNot(contains('fit: BoxFit.fitHeight')),
+          reason:
+              '$name 不得用 BoxFit.fitHeight——卡槽比源更窄，fitHeight 会让'
+              '宽度溢出被裁掉左右，仍是裁切',
+        );
+        expect(
+          body,
+          contains('fit: BoxFit.contain'),
+          reason: '$name 必须用 BoxFit.contain 让整帧完整显示、不裁切',
+        );
+      }
+
+      // 远端封面：缓存文件 / 钉扎客户端 URL 的选链自 PR #1539 起收口在
+      // `_remoteCoverProvider`（返回 ImageProvider），这里只剩一个 Image 槽位，
+      // 它必须 contain。
       expect(
-        body,
-        isNot(contains('fit: BoxFit.cover')),
-        reason: '$name 不得用 BoxFit.cover——会把 16:9 源裁进更窄的卡槽，'
-            '裁掉左右（TODO-616 阶段 C 回归）',
+        source,
+        contains('ImageProvider? _remoteCoverProvider('),
+        reason: '远端封面选链必须收口在 _remoteCoverProvider',
       );
       expect(
-        body,
-        isNot(contains('fit: BoxFit.fitHeight')),
-        reason: '$name 不得用 BoxFit.fitHeight——卡槽比源更窄，fitHeight 会让'
-            '宽度溢出被裁掉左右，仍是裁切',
+        RegExp(r'fit: BoxFit\.contain').allMatches(remoteCover).length,
+        1,
+        reason: '远端封面唯一的 Image 槽位必须用 BoxFit.contain',
       );
       expect(
-        body,
-        contains('fit: BoxFit.contain'),
-        reason: '$name 必须用 BoxFit.contain 让整帧完整显示、不裁切',
+        RegExp(r'fit: BoxFit\.contain').allMatches(localCover).length,
+        1,
+        reason: '本地视频封面必须用 BoxFit.contain',
       );
-    }
-
-    // 远端封面：缓存文件 / 钉扎客户端 URL 的选链自 PR #1539 起收口在
-    // `_remoteCoverProvider`（返回 ImageProvider），这里只剩一个 Image 槽位，
-    // 它必须 contain。
-    expect(
-      source,
-      contains('ImageProvider? _remoteCoverProvider('),
-      reason: '远端封面选链必须收口在 _remoteCoverProvider',
-    );
-    expect(
-      RegExp(r'fit: BoxFit\.contain').allMatches(remoteCover).length,
-      1,
-      reason: '远端封面唯一的 Image 槽位必须用 BoxFit.contain',
-    );
-    expect(
-      RegExp(r'fit: BoxFit\.contain').allMatches(localCover).length,
-      1,
-      reason: '本地视频封面必须用 BoxFit.contain',
-    );
-  });
+    },
+  );
 }
 
 /// 截取从 [startToken] 起到下一个顶层 `  Widget xxx(` 方法定义之前的源码片段。
@@ -81,7 +86,8 @@ String _functionSource(String source, String startToken) {
   final RegExpMatch? next = nextWidget.firstMatch(
     source.substring(start + startToken.length),
   );
-  final int end =
-      next == null ? source.length : start + startToken.length + next.start + 1;
+  final int end = next == null
+      ? source.length
+      : start + startToken.length + next.start + 1;
   return source.substring(start, end);
 }

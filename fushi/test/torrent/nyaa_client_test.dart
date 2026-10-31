@@ -126,13 +126,12 @@ NyaaClient _clientWith(
   Future<http.Response> Function(http.Request request) handler, {
   Duration? requestTimeout,
   Duration minRequestInterval = Duration.zero,
-}) =>
-    NyaaClient(
-      baseUrl: 'https://nyaa.si',
-      client: MockClient(handler),
-      requestTimeout: requestTimeout ?? kDownloadDiscoveryTimeout,
-      minRequestInterval: minRequestInterval,
-    );
+}) => NyaaClient(
+  baseUrl: 'https://nyaa.si',
+  client: MockClient(handler),
+  requestTimeout: requestTimeout ?? kDownloadDiscoveryTimeout,
+  minRequestInterval: minRequestInterval,
+);
 
 void main() {
   group('parseNyaaRss', () {
@@ -204,7 +203,8 @@ void main() {
       expect(codeOf(''), NyaaFeedErrorCode.emptyBody);
       expect(
         codeOf(
-            '<?xml version="1.0" encoding="shift_jis"?><rss><channel/></rss>'),
+          '<?xml version="1.0" encoding="shift_jis"?><rss><channel/></rss>',
+        ),
         NyaaFeedErrorCode.unsupportedEncoding,
       );
       expect(codeOf('<rss><channel>'), NyaaFeedErrorCode.malformedXml);
@@ -255,7 +255,8 @@ void main() {
     });
 
     test('BUG-1946：sukebei / 镜像站 <site>/xmlns/nyaa 命名空间被接受，路径不同才拒', () {
-      String feed(String ns) => '''
+      String feed(String ns) =>
+          '''
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:nyaa="$ns">
   <channel><item>
@@ -288,8 +289,11 @@ void main() {
         'https://nyaa.si/xmlns/nyaa/',
         'nyaa',
       ]) {
-        expect(codeOf(feed(ns)), NyaaFeedErrorCode.invalidNamespace,
-            reason: ns);
+        expect(
+          codeOf(feed(ns)),
+          NyaaFeedErrorCode.invalidNamespace,
+          reason: ns,
+        );
       }
 
       expect(isNyaaNamespace(null), isFalse);
@@ -404,21 +408,15 @@ void main() {
       expect(descriptor.videoSource, AnimeVideoSource.webDl);
       expect(descriptor.videoCodec, AnimeVideoCodec.hevc);
       expect(descriptor.bitDepth, 10);
-      expect(
-        descriptor.dynamicRanges,
-        <AnimeDynamicRange>{
-          AnimeDynamicRange.hdr10Plus,
-          AnimeDynamicRange.dolbyVision,
-        },
-      );
-      expect(
-        descriptor.audioCodecs,
-        <AnimeAudioCodec>{AnimeAudioCodec.eac3, AnimeAudioCodec.aac},
-      );
-      expect(
-        descriptor.subtitlePresentation,
-        AnimeSubtitlePresentation.soft,
-      );
+      expect(descriptor.dynamicRanges, <AnimeDynamicRange>{
+        AnimeDynamicRange.hdr10Plus,
+        AnimeDynamicRange.dolbyVision,
+      });
+      expect(descriptor.audioCodecs, <AnimeAudioCodec>{
+        AnimeAudioCodec.eac3,
+        AnimeAudioCodec.aac,
+      });
+      expect(descriptor.subtitlePresentation, AnimeSubtitlePresentation.soft);
       expect(descriptor.isHdr, isTrue);
     });
 
@@ -431,20 +429,18 @@ void main() {
       expect(descriptor.videoSource, AnimeVideoSource.bluRay);
       expect(descriptor.videoCodec, AnimeVideoCodec.avc);
       expect(descriptor.bitDepth, 10);
-      expect(
-        descriptor.audioCodecs,
-        <AnimeAudioCodec>{AnimeAudioCodec.flac, AnimeAudioCodec.dtsHd},
-      );
-      expect(
-        descriptor.subtitlePresentation,
-        AnimeSubtitlePresentation.hard,
-      );
+      expect(descriptor.audioCodecs, <AnimeAudioCodec>{
+        AnimeAudioCodec.flac,
+        AnimeAudioCodec.dtsHd,
+      });
+      expect(descriptor.subtitlePresentation, AnimeSubtitlePresentation.hard);
       expect(descriptor.isHdr, isFalse);
     });
 
     test('没有明确标签时不猜资源规格', () {
-      final AnimeReleaseDescriptor descriptor =
-          makeTorrent('Show - 05 [ABCD1234]').releaseDescriptor;
+      final AnimeReleaseDescriptor descriptor = makeTorrent(
+        'Show - 05 [ABCD1234]',
+      ).releaseDescriptor;
 
       expect(descriptor.releaseGroup, isNull);
       expect(descriptor.resolution, isNull);
@@ -598,11 +594,7 @@ void main() {
         captured = req.url;
         return http.Response(kNyaaNoResultsHtml, 200);
       });
-      await client.search(
-        'x',
-        sort: NyaaSort.date,
-        order: NyaaSortOrder.asc,
-      );
+      await client.search('x', sort: NyaaSort.date, order: NyaaSortOrder.asc);
       expect(captured!.queryParameters['s'], 'id');
       expect(captured!.queryParameters['o'], 'asc');
       client.close();
@@ -649,7 +641,9 @@ void main() {
       expect(await client.search('', page: kNyaaMaxBrowsePages + 1), isEmpty);
       expect(requests, 1);
       expect(
-          await client.search('   ', page: kNyaaMaxBrowsePages + 1), isEmpty);
+        await client.search('   ', page: kNyaaMaxBrowsePages + 1),
+        isEmpty,
+      );
       expect(requests, 1, reason: '空白关键词按浏览算');
       expect(await client.search('', page: kNyaaMaxBrowsePages), isEmpty);
       expect(requests, 2);
@@ -843,16 +837,16 @@ void main() {
         final List<Duration> startedAt = <Duration>[];
         final List<String> order = <String>[];
         NyaaClient instance(String name) => NyaaClient(
-              // 三个实例共用这个独占 host（虚拟时钟不能和别的用例共用同一格）。
-              baseUrl: 'https://throttle-cross-instance.nyaa.test',
-              client: MockClient((http.Request req) async {
-                startedAt.add(async.elapsed);
-                order.add(name);
-                return http.Response(kNyaaNoResultsHtml, 200);
-              }),
-              minRequestInterval: interval,
-              monotonicNow: () => async.elapsed,
-            );
+          // 三个实例共用这个独占 host（虚拟时钟不能和别的用例共用同一格）。
+          baseUrl: 'https://throttle-cross-instance.nyaa.test',
+          client: MockClient((http.Request req) async {
+            startedAt.add(async.elapsed);
+            order.add(name);
+            return http.Response(kNyaaNoResultsHtml, 200);
+          }),
+          minRequestInterval: interval,
+          monotonicNow: () => async.elapsed,
+        );
         final List<NyaaClient> clients = <NyaaClient>[
           instance('discovery'),
           instance('provider'),
@@ -877,12 +871,18 @@ void main() {
         async.elapse(interval);
         expect(startedAt, <Duration>[Duration.zero, interval, interval * 2]);
         async.elapse(interval);
-        expect(
-          startedAt,
-          <Duration>[Duration.zero, interval, interval * 2, interval * 3],
-        );
+        expect(startedAt, <Duration>[
+          Duration.zero,
+          interval,
+          interval * 2,
+          interval * 3,
+        ]);
         expect(completed, 3);
-        expect(order.skip(1), <String>['discovery', 'provider', 'subscription']);
+        expect(order.skip(1), <String>[
+          'discovery',
+          'provider',
+          'subscription',
+        ]);
         for (final NyaaClient c in <NyaaClient>[warmup, ...clients]) {
           c.close();
         }

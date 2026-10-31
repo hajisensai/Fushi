@@ -8,15 +8,12 @@ void main() {
   test(
     'Windows containment terminates only its exact child when closed',
     () async {
-      final Process child = await Process.start(
-        'powershell.exe',
-        <String>[
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          'Start-Sleep -Seconds 30',
-        ],
-      );
+      final Process child = await Process.start('powershell.exe', <String>[
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        'Start-Sleep -Seconds 30',
+      ]);
       final MihonChildProcessContainment containment =
           MihonChildProcessContainment.platform();
       addTearDown(() async {

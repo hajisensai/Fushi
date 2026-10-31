@@ -68,12 +68,11 @@ Map<int, TmdbEpisodeMatch> matchEpisodesToTmdb(
   Iterable<VideoMetadataEpisode> tmdbEpisodes, {
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
-}) =>
-    _matchAgainstPool(
-      sources,
-      _pool(tmdbEpisodes, candidateAliases, specials: false),
-      specials: false,
-    );
+}) => _matchAgainstPool(
+  sources,
+  _pool(tmdbEpisodes, candidateAliases, specials: false),
+  specials: false,
+);
 
 /// 特典版：AniDB `S` 型集只在 TMDB 第 0 季池里找（Shoko `GetEpisodeList`：
 /// `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`），评分链到
@@ -87,12 +86,11 @@ Map<int, TmdbEpisodeMatch> matchSpecialsToTmdb(
   Iterable<VideoMetadataEpisode> tmdbEpisodes, {
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
-}) =>
-    _matchAgainstPool(
-      sources,
-      _pool(tmdbEpisodes, candidateAliases, specials: true),
-      specials: true,
-    );
+}) => _matchAgainstPool(
+  sources,
+  _pool(tmdbEpisodes, candidateAliases, specials: true),
+  specials: true,
+);
 
 List<_Candidate> _pool(
   Iterable<VideoMetadataEpisode> tmdbEpisodes,
@@ -125,12 +123,11 @@ List<_Candidate> _pool(
         }.toList(growable: false),
       ),
   ]..sort((_Candidate a, _Candidate b) {
-      final int season =
-          a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
-      return season != 0
-          ? season
-          : a.episode.episodeNumber.compareTo(b.episode.episodeNumber);
-    });
+    final int season = a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
+    return season != 0
+        ? season
+        : a.episode.episodeNumber.compareTo(b.episode.episodeNumber);
+  });
 }
 
 Map<int, TmdbEpisodeMatch> _matchAgainstPool(
@@ -158,11 +155,11 @@ Map<int, TmdbEpisodeMatch> _matchAgainstPool(
   final Set<_Candidate> used = <_Candidate>{};
 
   bool accepts(int pass, TmdbEpisodeMatchRating rating) => switch (pass) {
-        1 => rating == TmdbEpisodeMatchRating.dateAndTitle,
-        2 => rating.index <= TmdbEpisodeMatchRating.title.index,
-        3 => rating.index <= TmdbEpisodeMatchRating.dateKinda.index,
-        _ => rating != TmdbEpisodeMatchRating.none,
-      };
+    1 => rating == TmdbEpisodeMatchRating.dateAndTitle,
+    2 => rating.index <= TmdbEpisodeMatchRating.title.index,
+    3 => rating.index <= TmdbEpisodeMatchRating.dateKinda.index,
+    _ => rating != TmdbEpisodeMatchRating.none,
+  };
 
   for (int pass = 1; pass <= 4; pass++) {
     final Set<int> lockedSeasons = <int>{
@@ -205,7 +202,7 @@ Map<int, TmdbEpisodeMatch> _matchAgainstPool(
 
 class _Candidate {
   _Candidate(this.episode, this.normalizedTitles)
-      : airDate = _parseDate(episode.airDate);
+    : airDate = _parseDate(episode.airDate);
   final VideoMetadataEpisode episode;
   final List<String> normalizedTitles;
   final DateTime? airDate;
@@ -213,7 +210,7 @@ class _Candidate {
 
 class _Source {
   _Source(this.source, this.normalizedTitles)
-      : airDate = _parseDate(source.airDate);
+    : airDate = _parseDate(source.airDate);
   final TmdbEpisodeMatchSource source;
   final List<String> normalizedTitles;
   final DateTime? airDate;
@@ -251,8 +248,9 @@ class _SimilarityTable {
   final Float64List _values;
 
   /// `TitleNormalizer.similarityNormalized(sourceTitle, candidateTitle)`。
-  double of(String sourceTitle, String candidateTitle) => _values[
-      _rows[sourceTitle]! * _columns.length + _columns[candidateTitle]!];
+  double of(String sourceTitle, String candidateTitle) =>
+      _values[_rows[sourceTitle]! * _columns.length +
+          _columns[candidateTitle]!];
 }
 
 class _Link {
@@ -288,8 +286,9 @@ _Anchor _anchor(_Source source, List<_Source> ordered, Map<int, _Link> links) {
       after = link;
     }
   }
-  final int? afterOrder =
-      before == null ? null : _order(before.candidate.episode);
+  final int? afterOrder = before == null
+      ? null
+      : _order(before.candidate.episode);
   if (before == null) {
     return _Anchor(after?.candidate.episode.seasonNumber, afterOrder);
   }
@@ -328,20 +327,22 @@ _Link? _bestMatch(
 }) {
   final int? anchorSeason = anchor.season;
   // 播出日 ±2 天内的候选，按日差、季、集排序（Shoko `CalculateAirDateProbability`）。
-  final List<(_Candidate, int)> dated = <(_Candidate, int)>[
-    for (final _Candidate candidate in candidates)
-      if (_dayDiff(source.airDate, candidate.airDate) case final int diff
-          when diff <= 2)
-        (candidate, diff),
-  ]..sort(((_Candidate, int) a, (_Candidate, int) b) {
-      final int diff = a.$2.compareTo(b.$2);
-      if (diff != 0) return diff;
-      final int season =
-          a.$1.episode.seasonNumber.compareTo(b.$1.episode.seasonNumber);
-      return season != 0
-          ? season
-          : a.$1.episode.episodeNumber.compareTo(b.$1.episode.episodeNumber);
-    });
+  final List<(_Candidate, int)> dated =
+      <(_Candidate, int)>[
+        for (final _Candidate candidate in candidates)
+          if (_dayDiff(source.airDate, candidate.airDate) case final int diff
+              when diff <= 2)
+            (candidate, diff),
+      ]..sort(((_Candidate, int) a, (_Candidate, int) b) {
+        final int diff = a.$2.compareTo(b.$2);
+        if (diff != 0) return diff;
+        final int season = a.$1.episode.seasonNumber.compareTo(
+          b.$1.episode.seasonNumber,
+        );
+        return season != 0
+            ? season
+            : a.$1.episode.episodeNumber.compareTo(b.$1.episode.episodeNumber);
+      });
   final Set<_Candidate> datedSet = <_Candidate>{
     for (final (_Candidate candidate, _) in dated) candidate,
   };

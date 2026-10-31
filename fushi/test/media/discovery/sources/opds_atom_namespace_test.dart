@@ -35,8 +35,10 @@ void main() {
 
   test('每个 findAllElements / findElements 调用都带 namespace: \'*\'', () {
     final RegExp call = RegExp(r'\.find(All)?Elements\([^)]*\)');
-    final List<String> sites =
-        call.allMatches(code).map((RegExpMatch m) => m.group(0)!).toList();
+    final List<String> sites = call
+        .allMatches(code)
+        .map((RegExpMatch m) => m.group(0)!)
+        .toList();
     expect(sites, isNotEmpty, reason: '一个查找都没有 = 锚点漂了，不是真的干净');
     for (final String site in sites) {
       expect(
@@ -56,7 +58,8 @@ void main() {
     expect(
       inside,
       total,
-      reason: '_attribute 之外还有 ${total - inside} 处裸 getAttribute：'
+      reason:
+          '_attribute 之外还有 ${total - inside} 处裸 getAttribute：'
           '`thr:count` / `opds:facetGroup` 这类带前缀的属性会取不到',
     );
     expect(
