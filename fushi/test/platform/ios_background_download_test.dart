@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,17 +16,21 @@ void main() {
 
   const MethodChannel channel = MethodChannel('test/background_download');
   late List<MethodCall> calls;
+
+  /// 原生侧对各方法的答复（缺省 null）。
+  late Map<String, Object?> replies;
   late DateTime clock;
   late bool foreground;
 
   setUp(() {
     calls = <MethodCall>[];
+    replies = <String, Object?>{};
     clock = DateTime(2026, 10, 31);
     foreground = true;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
           calls.add(call);
-          return null;
+          return replies[call.method];
         });
   });
 
@@ -48,6 +54,7 @@ void main() {
           required String destPath,
           required void Function(int, int) onReceiveProgress,
           CancelToken? cancelToken,
+          DictionaryDownloadHandoff? handoff,
         }) async => fail('fallback must not be used'),
     connectTimeout: const Duration(seconds: 30),
     stallTimeout: const Duration(seconds: 60),
@@ -272,6 +279,7 @@ void main() {
             required String destPath,
             required void Function(int, int) onReceiveProgress,
             CancelToken? cancelToken,
+            DictionaryDownloadHandoff? handoff,
           }) async {
             fallbackUsed = true;
           },
@@ -296,6 +304,7 @@ void main() {
             required String destPath,
             required void Function(int, int) onReceiveProgress,
             CancelToken? cancelToken,
+            DictionaryDownloadHandoff? handoff,
           }) async {
             fallbackCount++;
           },
@@ -307,6 +316,157 @@ void main() {
     );
     expect(fallbackCount, 1);
     expect(transport.pendingIds, isEmpty);
+  });
+
+  group('BUG-3887 续：进程被系统回收后接管在途任务', () {
+    const DictionaryDownloadHandoff handoff = DictionaryDownloadHandoff(
+      url: 'https://example.com/a.zip',
+      candidates: <String>[
+        'https://example.com/a.zip',
+        'https://mirror.example/a.zip',
+      ],
+      candidateIndex: 1,
+      destPath: '/tmp/a.zip',
+      payload: <String, Object?>{'kind': 'dictionaryImport'},
+    );
+
+    Iterable<String> methods() => calls.map((MethodCall c) => c.method);
+    Map<Object?, Object?> argsOf(String method) =>
+        calls.lastWhere((MethodCall c) => c.method == method).arguments
+            as Map<Object?, Object?>;
+
+    Future<AdoptedDictionaryDownload> recoverOne(
+      IosBackgroundDownloadTransport transport,
+    ) async {
+      replies['recover'] = <Object?>[
+        <String, Object?>{'id': 'old-1', 'meta': jsonEncode(handoff.toJson())},
+      ];
+      final List<AdoptedDictionaryDownload> adopted = await transport.recover();
+      expect(adopted, hasLength(1));
+      return adopted.single;
+    }
+
+    test('带 handoff 发起：meta 交给原生注册表，结束后先 forget 再返回', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      final Future<void> done = transport.download(
+        url: handoff.candidate,
+        destPath: handoff.destPath,
+        onReceiveProgress: (_, _) {},
+        handoff: handoff,
+      );
+      final String id = await startedId();
+      final Object? meta = argsOf('start')['meta'];
+      expect(
+        DictionaryDownloadHandoff.tryParse(
+          jsonDecode(meta! as String),
+        )?.candidateIndex,
+        1,
+      );
+      await nativeSends('complete', <String, Object?>{'id': id, 'error': null});
+      await done;
+      expect(argsOf('forget')['id'], id);
+    });
+
+    test('不带 handoff 的下载不进注册表（没人能接）', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      final Future<void> done = transport.download(
+        url: 'https://example.com/a.zip',
+        destPath: '/tmp/a.zip',
+        onReceiveProgress: (_, _) {},
+      );
+      final String id = await startedId();
+      expect(argsOf('start').containsKey('meta'), isFalse);
+      await nativeSends('complete', <String, Object?>{'id': id, 'error': null});
+      await done;
+      expect(methods(), isNot(contains('forget')));
+    });
+
+    test('重启后接管还在跑的任务：接上已收字节与后续进度，complete 后完成并释放记录', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      final AdoptedDictionaryDownload adopted = await recoverOne(transport);
+      expect(adopted.handoff.candidate, 'https://mirror.example/a.zip');
+      replies['attach'] = <String, Object?>{
+        'state': 'running',
+        'received': 300,
+        'total': 1000,
+      };
+      final List<int> seen = <int>[];
+      final Future<void> done = adopted.wait(
+        onReceiveProgress: (int r, int t) => seen.add(r),
+      );
+      for (int i = 0; i < 20 && seen.isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(argsOf('attach')['id'], 'old-1');
+      await nativeSends('progress', <String, Object?>{
+        'id': 'old-1',
+        'received': 900,
+        'total': 1000,
+      });
+      await nativeSends('complete', <String, Object?>{
+        'id': 'old-1',
+        'error': null,
+      });
+      await done;
+      expect(seen, <int>[300, 900]);
+      expect(argsOf('forget')['id'], 'old-1');
+      expect(methods(), isNot(contains('start')), reason: '接管不是重新下载');
+    });
+
+    test('进程不在时已交付：attach 答 delivered，立即完成', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      final AdoptedDictionaryDownload adopted = await recoverOne(transport);
+      replies['attach'] = <String, Object?>{'state': 'delivered'};
+      await adopted.wait(onReceiveProgress: (_, _) {});
+      expect(argsOf('forget')['id'], 'old-1');
+      expect(transport.pendingIds, isEmpty);
+    });
+
+    test('进程不在时已失败：原样翻译成同类型 DioError（镜像回退照常判）', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      final AdoptedDictionaryDownload adopted = await recoverOne(transport);
+      replies['attach'] = <String, Object?>{
+        'state': 'failed',
+        'error': <String, Object?>{'kind': 'connection'},
+      };
+      Object? error;
+      try {
+        await adopted.wait(onReceiveProgress: (_, _) {});
+      } catch (e) {
+        error = e;
+      }
+      expect(isDictionaryTransportFailure(error!), isTrue);
+    });
+
+    test('真孤儿：记录解析不出接管描述 → 当场 discard，不交给上层', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      replies['recover'] = <Object?>[
+        <String, Object?>{'id': 'bad-1', 'meta': 'not json'},
+        <String, Object?>{'id': 'bad-2', 'meta': '{"url": 1}'},
+      ];
+      expect(await transport.recover(), isEmpty);
+      expect(
+        calls
+            .where((MethodCall c) => c.method == 'discard')
+            .map(
+              (MethodCall c) => (c.arguments as Map<Object?, Object?>)['id'],
+            ),
+        <String>['bad-1', 'bad-2'],
+      );
+    });
+
+    test('没人要的接管任务：discard 交给原生（取消 + 删已交付文件）', () async {
+      final IosBackgroundDownloadTransport transport = newTransport();
+      final AdoptedDictionaryDownload adopted = await recoverOne(transport);
+      await adopted.discard();
+      expect(argsOf('discard')['id'], 'old-1');
+    });
+
+    test('本引擎没注册原生通道：没有可接管的下载', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      expect(await newTransport().recover(), isEmpty);
+    });
   });
 
   group('代理裁决 → 原生会话配置', () {

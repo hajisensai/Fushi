@@ -4,10 +4,12 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
+import 'package:fushi/src/media/source_library/source_library_privacy.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -965,5 +967,159 @@ void main() {
     now += const Duration(days: 1).inMilliseconds;
     await s.maybeSyncInBackground();
     expect(backfills, 2);
+  });
+
+  // 反馈 kEAgATi1LF：来源库隐私开关。书架用真实的 buildLocalShelf 从库里建（不注入
+  // 固定书架），钉死「打开开关 → 立即同步 → 服务端撤下已上报的条目」整条链路。
+  group('隐私来源：打开开关后从服务端撤下', () {
+    late int secretSource;
+
+    LeaderboardService realShelfService() => LeaderboardService(
+      database: () => db,
+      supportRoot: () async => root,
+      profileId: () async => 1,
+      httpClientFactory: () async => MockClient(server.handle),
+      defaultBaseUrl: Uri.parse('https://rank.example'),
+      clockMs: () => now,
+      shelfBuilder: (FushiDatabase d, int profileId, DateTime at) =>
+          buildLocalShelf(d, profileId: profileId, now: at),
+      isbnBackfill: (FushiDatabase _) async => 0,
+      coverThumb: (LocalShelfEntry _) async => null,
+    );
+
+    Future<void> book(String key, {int? sourceId}) async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/x/$key.epub',
+          extractDir: '/x/$key',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 0,
+          completedAt: Value<DateTime?>(DateTime(2023, 1, 1)),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+    }
+
+    setUp(() async {
+      secretSource = await db
+          .into(db.mediaSources)
+          .insert(
+            MediaSourcesCompanion.insert(
+              label: 'nsfw',
+              mediaKind: 'book',
+              rootPath: '/books/nsfw',
+              createdAt: 0,
+            ),
+          );
+      await book('Nsfw', sourceId: secretSource);
+      await book('Open');
+    });
+
+    Map<Object?, Object?> lastShelfBody() =>
+        jsonDecode(utf8.decode(server.at('/v1/shelf').last.bodyBytes))
+            as Map<Object?, Object?>;
+
+    /// 与隐私对话框同一流程：先落库，打开时再撤下（对话框里撤下在后台跑）。
+    /// 关掉时不撤下，返回 null。
+    Future<SourceLibraryWithdrawResult?> toggle(
+      LeaderboardService s,
+      bool isPrivate,
+    ) async {
+      await setSourceLibraryPrivate(
+        db: db,
+        sourceId: secretSource,
+        isPrivate: isPrivate,
+      );
+      if (!isPrivate) return null;
+      return withdrawSourceLibraryFromLeaderboard(s.syncAfterPrivacyChange);
+    }
+
+    test('已上报的隐私来源条目被 remove，公开条目保留；开关已落库', () async {
+      final LeaderboardService s = realShelfService();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
+
+      server.requests.clear();
+      final SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.withdrawn);
+      expect((await db.getMediaSourceById(secretSource))!.isPrivate, isTrue);
+      expect(server.at('/v1/shelf'), hasLength(1));
+      final Map<Object?, Object?> body = lastShelfBody();
+      expect(body['remove'], <Object?>['W_Nsfw']);
+      expect(body['put'], isEmpty, reason: '没变的公开条目不重传');
+      expect(server.shelfWorks, <String>{'W_Open'});
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.syncState.entries.keys, <String>[
+        'book:Open',
+      ], reason: '同步状态不再记着撤下的条目');
+
+      // 关掉：开关落库、不立即同步；下一次同步照常重新上传。
+      server.requests.clear();
+      expect(await toggle(s, false), isNull);
+      expect(server.requests, isEmpty);
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
+    });
+
+    test('在途同步（开关之前建的书架）结束后再跑一轮，不搭它的便车', () async {
+      final LeaderboardService s = realShelfService();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Nsfw', 'W_Open'});
+
+      // 让下一轮有东西可传（读完日变了 → put），请求挂在服务端；期间打开开关。
+      await db
+          .update(db.epubBooks)
+          .write(
+            EpubBooksCompanion(
+              completedAt: Value<DateTime?>(DateTime(2023, 2, 1)),
+            ),
+          );
+      server.shelfGate = Completer<void>();
+      server.shelfArrived = Completer<void>();
+      final Future<void> inFlight = s.syncNow();
+      await server.shelfArrived.future;
+      final Future<SourceLibraryWithdrawResult?> toggling = toggle(s, true);
+      server.shelfGate!.complete();
+      await inFlight;
+      server.shelfGate = null;
+      final SourceLibraryWithdrawResult? result = await toggling;
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.withdrawn);
+      expect(server.shelfWorks, <String>{'W_Open'});
+    });
+
+    test('没开排行榜 / 上传关着：不发书架请求，结果为「仅本地」', () async {
+      final LeaderboardService s = realShelfService();
+      SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.notUploading);
+      expect(server.requests, isEmpty);
+
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.setUploadEnabled(false);
+      server.requests.clear();
+      result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.notUploading);
+      expect(server.at('/v1/shelf'), isEmpty);
+    });
+
+    test('撤下的同步失败：开关仍生效（不回滚），结果带错误；下次同步补撤', () async {
+      final LeaderboardService s = realShelfService();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.syncNow();
+      server.failShelf = true;
+      final SourceLibraryWithdrawResult? result = await toggle(s, true);
+      expect(result!.outcome, SourceLibraryWithdrawOutcome.failed);
+      expect(result.error, isA<LeaderboardApiException>());
+      expect((await db.getMediaSourceById(secretSource))!.isPrivate, isTrue);
+      expect(server.shelfWorks, contains('W_Nsfw'));
+
+      server.failShelf = false;
+      await s.syncNow();
+      expect(server.shelfWorks, <String>{'W_Open'});
+    });
   });
 }

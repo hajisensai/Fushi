@@ -3,8 +3,10 @@
 #include <windows.foundation.h>
 #include <winrt/base.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <initializer_list>
 #include <iostream>
@@ -380,10 +382,42 @@ namespace flutter_inappwebview_plugin
     return true;
   }
 
+  ABI::Windows::Graphics::SizeInt32 TextureBridge::FramePoolSizeFor(
+    ABI::Windows::Graphics::SizeInt32 item_size) const
+  {
+    // BUG-3913：每 Close 一个帧池、再按新尺寸 CreateFreeThreaded 一个，系统侧都留下
+    // 约一份帧池缓冲永不归还（帧池已 Close、注册表已回收，插件侧无引用）。所以帧池
+    // 按容量分配：容量内改尺寸时 WGC 照常交付 ContentSize 变化的帧（内容在帧纹理
+    // 左上角），帧池本身不动。
+    //
+    // 容量是设备倍率下的物理像素；捕获源按捕获倍率栅格化（着色器链开着时只有设备
+    // 倍率的一半），帧池要的是「捕获倍率下的容量」。直接拿设备倍率的容量会让着色器
+    // 路径的帧池白占 4 倍面积。向上取整：捕获源 = 布局 × 捕获倍率，而容量 ≥
+    // ceil(布局 × 设备倍率)，所以 ceil(容量 × 比值) 一定盖得住捕获源。
+    const double ratio = capture_scale_ratio_ > 0.0f && capture_scale_ratio_ < 1.0f
+      ? static_cast<double>(capture_scale_ratio_)
+      : 1.0;
+    const auto capture_capacity = [ratio](size_t device_pixels) -> size_t {
+      return static_cast<size_t>(
+        std::ceil(static_cast<double>(device_pixels) * ratio));
+      };
+    const size_t capacity_width = capture_capacity(capacity_.width);
+    const size_t capacity_height = capture_capacity(capacity_.height);
+    ABI::Windows::Graphics::SizeInt32 size = item_size;
+    if (capacity_width > static_cast<size_t>((std::max)(size.Width, 0))) {
+      size.Width = static_cast<int32_t>(capacity_width);
+    }
+    if (capacity_height > static_cast<size_t>((std::max)(size.Height, 0))) {
+      size.Height = static_cast<int32_t>(capacity_height);
+    }
+    return size;
+  }
+
   bool TextureBridge::CreateAndStartFramePoolLocked()
   {
-    ABI::Windows::Graphics::SizeInt32 size;
-    capture_item_->get_Size(&size);
+    ABI::Windows::Graphics::SizeInt32 item_size = { 0, 0 };
+    capture_item_->get_Size(&item_size);
+    const ABI::Windows::Graphics::SizeInt32 size = FramePoolSizeFor(item_size);
     auto lifetime = std::make_shared<WgcFramePoolLifetime>();
     lifetime->generation = ++frame_pool_generation_;
     lifetime->size = size;
@@ -431,21 +465,24 @@ namespace flutter_inappwebview_plugin
     return true;
   }
 
-  void TextureBridge::RecreateFramePoolLocked()
+  bool TextureBridge::RecreateFramePoolLocked()
   {
     ABI::Windows::Graphics::SizeInt32 current_size = { 0, 0 };
     const auto lifetime = frame_pool_lifetime_;
     if (capture_item_ && SUCCEEDED(capture_item_->get_Size(&current_size)) &&
-      lifetime && lifetime->frame_pool &&
-      current_size.Width == lifetime->size.Width &&
-      current_size.Height == lifetime->size.Height) {
-      WgcLog::Write("recreate-skip-samesize", lifetime->PoolForLog(),
-        JoinDetails({
-          GenerationDetail(lifetime->generation),
-          SizeDetail("current_size", current_size),
-          SizeDetail("lifetime_size", lifetime->size),
-        }));
-      return;
+      lifetime && lifetime->frame_pool) {
+      // BUG-3913：放得下就不重建（旧判据是「尺寸完全相等」，于是每次改尺寸都重建）。
+      const auto wanted = FramePoolSizeFor(current_size);
+      if (wanted.Width <= lifetime->size.Width &&
+        wanted.Height <= lifetime->size.Height) {
+        WgcLog::Write("recreate-skip-fits", lifetime->PoolForLog(),
+          JoinDetails({
+            GenerationDetail(lifetime->generation),
+            SizeDetail("current_size", current_size),
+            SizeDetail("lifetime_size", lifetime->size),
+          }));
+        return false;
+      }
     }
 
     WgcLog::Write("recreate", lifetime ? lifetime->PoolForLog() : nullptr,
@@ -458,6 +495,7 @@ namespace flutter_inappwebview_plugin
     if (!CreateAndStartFramePoolLocked()) {
       is_running_ = false;
     }
+    return true;
   }
 
   bool TextureBridge::StartPumpLocked(
@@ -763,8 +801,9 @@ namespace flutter_inappwebview_plugin
       WgcLog::Write("frame-needs-update", lifetime->PoolForLog(),
         FrameHandlerDetail(lifetime, true, lifetime->retiring, false, true));
       needs_update_ = false;
-      RecreateFramePoolLocked();
-      return;
+      if (RecreateFramePoolLocked()) {
+        return;
+      }
     }
 
     bool has_frame = false;
@@ -791,6 +830,11 @@ namespace flutter_inappwebview_plugin
       if (SUCCEEDED(frame->get_Surface(frame_surface.put()))) {
         last_frame_ =
           TryGetDXGIInterfaceFromObject<ID3D11Texture2D>(frame_surface);
+        ABI::Windows::Graphics::SizeInt32 content_size = { 0, 0 };
+        if (FAILED(frame->get_ContentSize(&content_size))) {
+          content_size = { 0, 0 };
+        }
+        last_frame_content_size_ = content_size;
         if (!ShouldDropFrame()) {
           has_frame = true;
         }

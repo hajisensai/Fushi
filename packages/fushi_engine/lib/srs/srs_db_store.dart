@@ -33,16 +33,12 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 /// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
 const int kSrsSync2MigrateBatch = 20000;
 
-/// 本机时间：服务器校时锚点 + 本进程单调时钟（Stopwatch）。
-///
-/// 计划要求「含睡眠的开机单调时钟」（Android elapsedRealtime 等）；纯 Dart 拿不到，这里退到本进程内的
-/// Stopwatch：同一进程内改系统时间不影响记录，进程重启后要重新校时（锚点按进程 bootId 失效）。
+/// 本机时间：墙钟 + 同步校时测得的偏移（[SrsTrustedClock]）。偏移按进程 bootId 失效：进程重启后要重新校时
+/// （两次运行之间用户可能改过系统时间）。
 SrsTrustedClock srsProcessTrustedClock() {
-  final Stopwatch sw = Stopwatch()..start();
   final int base = DateTime.now().millisecondsSinceEpoch;
   return SrsTrustedClock(
     wallClockMs: () => DateTime.now().millisecondsSinceEpoch,
-    monotonicMs: () => base + sw.elapsedMilliseconds,
     bootId: '${base}_${Random.secure().nextInt(1 << 30)}',
   );
 }
@@ -109,6 +105,7 @@ class SrsDeckSummary {
     required this.newBudget,
     required this.totalCards,
     this.parentId,
+    this.rwkvPending = false,
   });
 
   final SrsDeckView deck;
@@ -122,6 +119,10 @@ class SrsDeckSummary {
   final int reviewCount;
   final SrsNewCardBudget newBudget;
   final int totalCards;
+
+  /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没算进
+  /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
+  final bool rwkvPending;
 }
 
 /// 复习页一张卡的全部信息。
@@ -360,8 +361,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 排程内核；null = 原生库不可用（只能浏览 / 编辑，不能复习）。
   final FsrsEngine? engine;
 
-  /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantReviews]）；
-  /// null 或它没准备好时 RWKV 牌组按存下的到期日排队（`SrsAnswerPreview.rwkvUnavailable`）。
+  /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantInput]）。它没准备好时
+  /// RWKV 牌组的复习卡一张都不出（[SrsStudyState.rwkvPending]），**不**退回按 FSRS-7 存下的到期日排队。
+  /// null = 这个宿主根本没有 RWKV 运行时（无头引擎 / 测试），RWKV 牌组按到期日排。
   SrsRwkvScheduling? rwkv;
 
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
@@ -527,14 +529,17 @@ class SrsDbStore implements SrsSync2Host {
         }
       });
 
-  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间暂停这条连接的 WAL 自动 checkpoint，结束后
-  /// checkpoint 一次再恢复原值。
+  /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间把这条连接的 WAL 自动 checkpoint 阈值调到
+  /// [_bulkWalAutocheckpointPages]，结束后 checkpoint 一次再恢复原值。
   ///
   /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次
   /// 事务都远超阈值，于是每次提交都把同一批热页（索引、缓存表）拷回主库一遍——实测迁移
-  /// 1.5 万笔记时 COMMIT 合计 37 秒，暂停后 6 秒。WAL 在导入期间会长大，结束时一次并回；
-  /// 中途崩溃也无妨：下次打开时 SQLite 照常回放 WAL。可嵌套；按数据库连接计数（几个
-  /// profile 的副本共用一条连接），只有最外层恢复。
+  /// 1.5 万笔记时 COMMIT 合计 37 秒，调大后 6 秒。中途崩溃也无妨：下次打开时 SQLite 照常回放
+  /// WAL。可嵌套；按数据库连接计数（几个 profile 的副本共用一条连接），只有最外层恢复。
+  ///
+  /// 不能整个关掉（以前设 0）：WAL 里每读一页都要从新到旧逐段查 wal-index 的哈希段（每段 4096 帧），
+  /// WAL 不并回就一直长，每次读页越来越慢——5 万笔记的包每批写约 12 MB，导入后段 WAL 到几 GB，
+  /// 纯插入一批从 8 ms 涨到 99 ms，整体随规模平方增长。封顶后 WAL 最多几个哈希段，各阶段每批耗时持平。
   ///
   /// 收尾的 checkpoint 在内核另开的连接上做（`wal_checkpoint`，native/fushi_fsrs/src/store/mod.rs），不在写
   /// 连接上：并回一份几十 MB 的 WAL 要几百毫秒，在写连接上做那期间本机作答全排在它后面。并完才恢复自动
@@ -548,7 +553,9 @@ class SrsDbStore implements SrsSync2Host {
       state.restore = rows.isEmpty
           ? 1000
           : (rows.first.data.values.first as int?) ?? 1000;
-      await db.customStatement('PRAGMA wal_autocheckpoint = 0');
+      await db.customStatement(
+        'PRAGMA wal_autocheckpoint = $_bulkWalAutocheckpointPages',
+      );
     }
     try {
       return await body();
@@ -566,6 +573,10 @@ class SrsDbStore implements SrsSync2Host {
       }
     }
   }
+
+  /// 大批量写入期间的 WAL 自动 checkpoint 阈值（页，缺省页大小 4 KB 下约 64 MB）：远大于一个导入批次的
+  /// 写入量（同一批热页不每批并回一次），又把 WAL 限在 4 个 wal-index 哈希段以内（见 [bulkWrites]）。
+  static const int _bulkWalAutocheckpointPages = 16384;
 
   static final Expando<_BulkWriteState> _bulkWrites =
       Expando<_BulkWriteState>();
@@ -630,10 +641,10 @@ class SrsDbStore implements SrsSync2Host {
         '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
             '${Random.secure().nextInt(1 << 30).toRadixString(36)}';
     final Object? anchor = j['anchor'];
-    if (anchor is Map) {
+    // 旧版本写的 `{s, m, b}`（服务器时间 + 单调读数）不再认：bootId 也只在写下它的进程里有效。
+    if (anchor is Map && anchor['o'] is int && anchor['b'] is String) {
       _trusted.restoreAnchor(
-        serverTimeMs: anchor['s']! as int,
-        monotonicMs: anchor['m']! as int,
+        offsetMs: anchor['o']! as int,
         bootId: anchor['b']! as String,
       );
     }
@@ -668,6 +679,8 @@ class SrsDbStore implements SrsSync2Host {
     'cacheRev': _cacheRevision,
     'revision': _revision,
     'epoch': _epoch,
+    if (_trusted.anchorState case final ({int offsetMs, String bootId}) a)
+      'anchor': <String, Object?>{'o': a.offsetMs, 'b': a.bootId},
   };
 
   (int, SrsTimeSource) now() => _trusted.now();
@@ -2291,11 +2304,16 @@ class SrsDbStore implements SrsSync2Host {
 
   /// RWKV 全量回放：[cardIds]（回放的加入顺序）的保留评分行按评分时刻排好序，连同同一快照里的日志指纹；
   /// [since] 之后出现、不在这些卡血统里的卡作为 [SrsRwkvReplay.strays] 返回。
+  ///
+  /// [rebaseSince]：局部重放——同一快照里算出 rowid 在它之后的日志让回放序列最早从哪个时刻起不同
+  /// （[SrsRwkvReplay.divergeAt]），行只取从 [rowsFrom]（给了的话）或分歧时刻起的。
   Future<SrsRwkvReplay> rwkvReplay(
     List<String> cardIds,
     List<int> ids,
     SrsDayContext day, {
     required int since,
+    int? rebaseSince,
+    int? rowsFrom,
   }) async => srsDecodeRwkvReplay(
     await _coreRwkvReplay(
       core.address,
@@ -2306,6 +2324,8 @@ class SrsDbStore implements SrsSync2Host {
       day.utcOffsetMin,
       day.rolloverHour,
       since,
+      rebaseSince,
+      rowsFrom,
     ),
   );
 
@@ -3098,8 +3118,6 @@ class SrsDbStore implements SrsSync2Host {
   SrsAnswerPreview _previewOf(_PreviewRaw raw, SrsDeckTree tree) {
     final SrsSchedulingConfig config = _schedulingConfigIn(tree, raw.deck);
     final List<Object?> plan = raw.r['plan']! as List<Object?>;
-    final bool rwkvUnavailable =
-        config.algorithm.usesRwkv && !(rwkv?.ready ?? false);
     return SrsAnswerPreview(
       plan: SrsAnswerPlan(<int, SrsScheduleResult>{
         for (int i = 0; i < 4; i++)
@@ -3108,7 +3126,7 @@ class SrsDbStore implements SrsSync2Host {
           ),
       }),
       memoryBefore: SrsMemory.fromJson(raw.r['memoryBefore']),
-      algorithm: config.algorithm.usesRwkv && !rwkvUnavailable
+      algorithm: _queuesByRwkv(config)
           ? SrsAlgorithm.rwkv
           : config.algorithm.memoryAlgorithm,
       params: <double>[
@@ -3117,7 +3135,6 @@ class SrsDbStore implements SrsSync2Host {
       ],
       nowMs: raw.nowMs,
       timeSource: raw.source,
-      rwkvUnavailable: rwkvUnavailable,
     );
   }
 
@@ -3314,7 +3331,12 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
-  SrsDeckSummary _summaryFrom(SrsDeckView d, SrsDeckTree tree, Object? row) {
+  SrsDeckSummary _summaryFrom(
+    SrsDeckView d,
+    SrsDeckTree tree,
+    Object? row, {
+    Set<String> rwkvPendingDecks = const <String>{},
+  }) {
     final List<Object?> c = (row as List?) ?? const <Object?>[];
     int at(int i, int fallback) =>
         (c.length > i ? c[i] as int? : null) ?? fallback;
@@ -3336,19 +3358,43 @@ class SrsDbStore implements SrsSync2Host {
             : SrsNewCardBudgetReason.values.byName(reason),
       ),
       totalCards: at(3, 0),
+      rwkvPending:
+          rwkvPendingDecks.isNotEmpty &&
+          tree.subtree(d.id).any(rwkvPendingDecks.contains),
     );
+  }
+
+  /// 排队请求（[_studyRequest]）里因 RWKV 没准备好而一张复习卡都没交的 RWKV 牌组（[_instantInput] 的 `pending`）。
+  static Set<String> _rwkvPendingDecks(Map<String, Object?> request) {
+    final Map<Object?, Object?>? rw = request['rwkv'] as Map<Object?, Object?>?;
+    if (rw == null || rw['pending'] != true) return const <String>{};
+    return <String>{
+      for (final Object? d
+          in (rw['decks'] as Map<Object?, Object?>? ??
+                  const <Object?, Object?>{})
+              .keys)
+        d! as String,
+    };
   }
 
   SrsStudyState? _studyStateOf(
     Map<String, Object?> r,
     SrsDeckTree tree,
-    String deckId,
-  ) {
+    String deckId, {
+    Map<String, Object?>? request,
+  }) {
     final SrsDeckView? d = tree[deckId];
     final Map<Object?, Object?>? counts = r['counts'] as Map<Object?, Object?>?;
     if (d == null || counts == null) return null;
     return SrsStudyState(
-      summary: _summaryFrom(d, tree, counts[deckId]),
+      summary: _summaryFrom(
+        d,
+        tree,
+        counts[deckId],
+        rwkvPendingDecks: request == null
+            ? const <String>{}
+            : _rwkvPendingDecks(request),
+      ),
       next: r['next'] as String?,
       after: r['after'] as String?,
     );
@@ -3362,20 +3408,22 @@ class SrsDbStore implements SrsSync2Host {
   }) async {
     final SrsDeckTree tree = await deckTree();
     if (tree[deckId] == null) return null;
-    return _studyStateOf(
-      await _sync2(
-        await _studyRequest(tree, deckId, pick: true, exclude: exclude),
-      ),
+    final Map<String, Object?> request = await _studyRequest(
       tree,
       deckId,
+      pick: true,
+      exclude: exclude,
     );
+    return _studyStateOf(await _sync2(request), tree, deckId, request: request);
   }
 
   /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数（一次排队命令）。
   Future<List<SrsDeckSummary>> deckSummaries() async {
     final SrsDeckTree tree = await deckTree();
+    final Map<String, Object?> request = await _studyRequest(tree, null);
+    final Set<String> pending = _rwkvPendingDecks(request);
     final Map<Object?, Object?> counts =
-        ((await _sync2(await _studyRequest(tree, null)))['counts'] as Map?) ??
+        ((await _sync2(request))['counts'] as Map?) ??
         const <Object?, Object?>{};
     final Map<String?, List<SrsDeckView>> children =
         <String?, List<SrsDeckView>>{};
@@ -3390,7 +3438,7 @@ class SrsDbStore implements SrsSync2Host {
       final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
         ..sort(SrsDeckView.compareSiblings);
       for (final SrsDeckView d in level) {
-        out.add(_summaryFrom(d, tree, counts[d.id]));
+        out.add(_summaryFrom(d, tree, counts[d.id], rwkvPendingDecks: pending));
         visit(d.id);
       }
     }
@@ -3404,10 +3452,12 @@ class SrsDbStore implements SrsSync2Host {
   Future<SrsDeckSummary?> deckSummary(String deckId) async {
     final SrsDeckTree tree = await deckTree();
     if (tree[deckId] == null) return null;
+    final Map<String, Object?> request = await _studyRequest(tree, deckId);
     return _studyStateOf(
-      await _sync2(await _studyRequest(tree, deckId)),
+      await _sync2(request),
       tree,
       deckId,
+      request: request,
     )?.summary;
   }
 
@@ -3630,10 +3680,16 @@ class SrsDbStore implements SrsSync2Host {
     return <String, double>{
       for (final String d in decks)
         if (_schedulingConfigIn(tree, d) case final SrsSchedulingConfig c
-            when c.algorithm.usesRwkv)
+            when _queuesByRwkv(c))
           d: c.desiredRetention,
     };
   }
+
+  /// 按 [config] 排程的牌组在这个宿主上是不是由 RWKV-Instant 排队：算法是 RWKV **且**宿主装配了 RWKV 运行时
+  /// （[rwkv]）。没有运行时的宿主（无头服务端 / CLI）上 RWKV 牌组照存下的 FSRS-7 到期日排队（[_instantInput]
+  /// 返回 null），这时评分日志的 `alg` 也必须是 FSRS-7（[_previewOf]）——日志记的是实际排它的算法。
+  bool _queuesByRwkv(SrsSchedulingConfig config) =>
+      rwkv != null && config.algorithm.usesRwkv;
 
   /// 这些牌组里可能有按 RWKV-Instant 排队的（有 RWKV 服务且有 RWKV 牌组）。
   bool _instantPossible(SrsDeckTree tree, Iterable<String> decks) =>
@@ -3644,8 +3700,11 @@ class SrsDbStore implements SrsSync2Host {
   /// （RWKV 服务是另一个原生库，[SrsRwkvScheduling]），排队规则（目标保留率、同日间隔守卫、每天最少复习数、
   /// 按 R 升序、每日上限）在内核（store/study.rs `instant_eligible`）。
   ///
-  /// 返回 null = [decks] 里没有 RWKV 牌组，或 RWKV 现在用不了（没装配 / 没准备好 / 出错）：这些牌组照旧按
-  /// 到期日排队。没启用「每天最少复习数」时只交 R 不高于目标保留率的卡（其余的内核也只会丢掉）。
+  /// 返回 null = [decks] 里没有 RWKV 牌组，或这个宿主没有 RWKV 运行时（[rwkv] 为 null）。RWKV 没准备好（权重
+  /// 没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
+  /// （[SrsStudyState.rwkvPending]），复习页等 RWKV 就绪再出。绝不退回按 FSRS-7 存下的到期日排队——那是另一种
+  /// 排程，日志的 `alg` 会混进 FSRS-7，时钟出问题时还会把「回放失败 → 改按到期日」放大成整批重复出卡。
+  /// 没启用「每天最少复习数」时只交 R 不高于目标保留率的卡（其余的内核也只会丢掉）。
   Future<Map<String, Object?>?> _instantInput(
     SrsDeckTree tree,
     List<String> decks,
@@ -3664,6 +3723,27 @@ class SrsDbStore implements SrsSync2Host {
                 .paramsOwner(tree.effectiveDeckOf(d, fallback: defaultDeckId))
                 .rwkvQueue,
         };
+    final Map<String, Object?> deckInput = <String, Object?>{
+      for (final MapEntry<String, double> e in targets.entries)
+        e.key: <Object?>[
+          e.value,
+          queueOf[e.key]!.minReviewsPerDay,
+          queueOf[e.key]!.repeatMinReviews,
+          queueOf[e.key]!.repeatMinSeconds,
+        ],
+    };
+    final Map<String, Object?> pending = <String, Object?>{
+      'decks': deckInput,
+      'cands': const <Object?>[],
+      'pending': true,
+    };
+    if (!source.ready) {
+      // 不读候选卡：没准备好时 [SrsRwkvScheduling.instantRetrievability] 只触发准备并返回 null。
+      unawaited(
+        source.instantRetrievability(const <SrsRwkvCandidate>[], nowMs: nowMs),
+      );
+      return pending;
+    }
     final List<_RwkvCandidate> rows = (await _rwkvCandidates(
       day.dayIndexOf(nowMs),
       targets.keys,
@@ -3672,20 +3752,19 @@ class SrsDbStore implements SrsSync2Host {
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
       nowMs: nowMs,
     );
-    if (scores == null || scores.length != rows.length) return null;
+    if (scores == null) return pending;
+    if (scores.length != rows.length) {
+      // 违反 [SrsRwkvScheduling.instantRetrievability] 的契约（与候选同序同长）：不是「没准备好」，当成
+      // pending 的话复习页会一直等一个已经来过的「就绪」。
+      throw StateError(
+        'SrsDbStore: RWKV returned ${scores.length} scores for ${rows.length} cards',
+      );
+    }
     final bool anyMinimum = queueOf.values.any(
       (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
     );
     return <String, Object?>{
-      'decks': <String, Object?>{
-        for (final MapEntry<String, double> e in targets.entries)
-          e.key: <Object?>[
-            e.value,
-            queueOf[e.key]!.minReviewsPerDay,
-            queueOf[e.key]!.repeatMinReviews,
-            queueOf[e.key]!.repeatMinSeconds,
-          ],
-      },
+      'decks': deckInput,
       'cands': <Object?>[
         for (int i = 0; i < rows.length; i++)
           if (scores[i].isFinite &&
@@ -4279,6 +4358,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 副本还能写（没有被 [retire]、也没有因重读失败作废）。
   bool get isUsable => _unusable == null;
 
+  /// 当前代码正跑在本副本的独占区里（[runExclusive] 的 body 内，按 Zone 认）。
+  ///
+  /// 外层锁（[SrsExclusiveOuter]）的实现据此判断重入：已在激活副本独占区里的代码再调别的副本的写方法，
+  /// 必须直接执行，不能再排队等这把锁（否则自己等自己）。
+  bool get holdsExclusive => identical(Zone.current[_writeZoneKey], this);
+
   Future<List<SrsEvent>> exportAll() async {
     final List<SrsEvent> out = await exportEntitiesAndEdits();
     for (final SrsReviewLogRow r in await (db.select(
@@ -4421,12 +4506,12 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 同步成功拿到服务器时间后校时。[atMonotonicMs] 见 [SrsTrustedClock.anchor]。
-  Future<void> anchorTime(int serverTimeMs, {int? atMonotonicMs}) =>
+  /// 同步成功拿到服务器时间后校时。[observedAtWallMs] 见 [SrsTrustedClock.anchor]。
+  Future<void> anchorTime(int serverTimeMs, {int? observedAtWallMs}) =>
       runExclusive(() async {
         _trusted.anchor(
           serverTimeMs: serverTimeMs,
-          atMonotonicMs: atMonotonicMs,
+          observedAtWallMs: observedAtWallMs,
         );
         await _saveLocal();
       });
@@ -4763,6 +4848,10 @@ class SrsStudyState {
 
   /// 排除 [next] 之后的下一张（预取的猜测：真正的下一张仍以评分后的排队为准）。
   final String? after;
+
+  /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没出，等就绪后
+  /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。与 [summary] 的同名标志同源。
+  bool get rwkvPending => summary.rwkvPending;
 }
 
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
@@ -4862,6 +4951,8 @@ Future<Uint8List> _coreRwkvReplay(
   int utcOffsetMin,
   int rolloverHour,
   int since,
+  int? rebaseSince,
+  int? rowsFrom,
 ) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
   address,
   (SrsCore c) => c.rwkvReplay(
@@ -4871,6 +4962,8 @@ Future<Uint8List> _coreRwkvReplay(
     utcOffsetMin: utcOffsetMin,
     rolloverHour: rolloverHour,
     since: since,
+    rebaseSince: rebaseSince,
+    rowsFrom: rowsFrom,
   ),
 );
 

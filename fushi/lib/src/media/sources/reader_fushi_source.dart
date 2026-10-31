@@ -14,6 +14,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
+    show LyricsIllustrationCue;
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart'
+    show LyricsControlsStyle;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -25,6 +29,7 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
@@ -1100,6 +1105,13 @@ class ReaderFushiSource extends ReaderMediaSource {
           ? InterconnectMangaCatalog.peerBookKeyOf(bookRow?.sourceMetadata) ??
                 await db.syncDeletionBookKeyOf(bookKey)
           : bookKey;
+      // 这本书在云盘同步根下的书文件夹名：与 `SyncBackend.ensureBookFolder` 同一派生
+      // （sanitizeTtuFilename(书名)）。墓碑键可能是对端键 / 别名，云通道删云盘文件夹
+      // 只认这个名字——也必须删行前按当时的书名取。
+      final String? syncTombstoneCloudFolderName =
+          scope == DeleteScope.syncEverywhere && bookRow != null
+          ? sanitizeTtuFilename(bookRow.title)
+          : null;
 
       // TODO-1195 part B: a user shelf delete records a tombstone so a later
       // backup MERGE import never resurrects this book from an old backup.
@@ -1115,6 +1127,7 @@ class ReaderFushiSource extends ReaderMediaSource {
             'book',
             syncTombstoneKey,
             DateTime.now().millisecondsSinceEpoch,
+            cloudFolderName: syncTombstoneCloudFolderName,
           );
         } catch (_) {
           // best-effort：删除墓碑记账失败不影响书已删。
@@ -2070,6 +2083,45 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<void> setLyricsPanelMirrored(bool v) async {
     await (readerSettings?.setLyricsPanelMirrored(v) ??
         setPreference<bool>(key: 'lyrics_panel_mirrored', value: v));
+  }
+
+  /// MD3 歌词模式播放控件布局（`lyrics_controls_style`，默认新版）。只影响 Flutter
+  /// 覆盖层，写完经 [onChromeReloadLive] 重建一次。
+  LyricsControlsStyle get lyricsControlsStyle => LyricsControlsStyle.fromWire(
+    readerSettings?.lyricsControlsStyle ??
+        getPreference<String>(
+          key: 'lyrics_controls_style',
+          defaultValue: LyricsControlsStyle.modern.wire,
+        ),
+  );
+  Future<void> setLyricsControlsStyle(LyricsControlsStyle v) async {
+    await (readerSettings?.setLyricsControlsStyle(v.wire) ??
+        setPreference<String>(key: 'lyrics_controls_style', value: v.wire));
+    onChromeReloadLive?.call();
+  }
+
+  /// 新版窄屏播放卡展开 / 收起（`lyrics_controls_expanded`，默认收起）。
+  bool get lyricsControlsExpanded =>
+      readerSettings?.lyricsControlsExpanded ??
+      getPreference<bool>(key: 'lyrics_controls_expanded', defaultValue: false);
+  Future<void> setLyricsControlsExpanded(bool v) async {
+    await (readerSettings?.setLyricsControlsExpanded(v) ??
+        setPreference<bool>(key: 'lyrics_controls_expanded', value: v));
+  }
+
+  /// 歌词模式插图提示方式（`lyrics_illustration_cue`，默认弹出停留）。
+  LyricsIllustrationCue get lyricsIllustrationCue =>
+      LyricsIllustrationCue.fromWire(
+        readerSettings?.lyricsIllustrationCue ??
+            getPreference<String>(
+              key: 'lyrics_illustration_cue',
+              defaultValue: LyricsIllustrationCue.popup.wire,
+            ),
+      );
+  Future<void> setLyricsIllustrationCue(LyricsIllustrationCue v) async {
+    await (readerSettings?.setLyricsIllustrationCue(v.wire) ??
+        setPreference<String>(key: 'lyrics_illustration_cue', value: v.wire));
+    onChromeReloadLive?.call();
   }
 
   /// 歌词模式次要按钮布局（`lyrics_control_layout` / `_compact`）。[compact] =

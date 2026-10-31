@@ -37,6 +37,7 @@ void main() {
 
     final MediaSourceRow source = MediaSourceRow(
       videoGroupingMode: 'series',
+      isPrivate: false,
       id: 7,
       label: 'Private Anime',
       mediaKind: 'video',
@@ -127,6 +128,7 @@ void main() {
     final File output = File(p.join(temp.path, 'limited.zip'));
     final MediaSourceRow source = MediaSourceRow(
       videoGroupingMode: 'series',
+      isPrivate: false,
       id: 1,
       label: 'Anime',
       mediaKind: 'video',

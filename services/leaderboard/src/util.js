@@ -45,6 +45,15 @@ export function b64urlDecode(s) {
   }
 }
 
+/** PEM（如 Apple 下载的 .p8）→ DER 字节；BEGIN/END 行与空白都忽略。 */
+export function pemToDer(pem) {
+  const b64 = String(pem).replace(/-----(BEGIN|END)[^-]*-----/g, '').replace(/\s+/g, '');
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.codePointAt(i);
+  return out;
+}
+
 export async function sha256(bytes) {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
 }

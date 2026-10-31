@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 
@@ -33,8 +34,32 @@ const Duration kPluginLyricsNegativeCacheTtl = Duration(days: 1);
 typedef MusicPluginLyricsFetcher =
     Future<MusicPluginLyrics?> Function(String pluginId, String trackId);
 
+/// 向歌词插件搜候选（app 装配：`MusicPluginManager.source(id).lyricsSearch`）。
+typedef MusicPluginLyricsSearcher =
+    Future<List<MusicPluginLyricsCandidate>> Function(
+      String pluginId,
+      String title, {
+      String? artist,
+      String? album,
+      int? durationMs,
+      String? query,
+    });
+
+/// 按候选的 ref 向歌词插件取词（app 装配：`MusicPluginManager.source(id).lyricsFetch`）。
+typedef MusicPluginLyricsRefFetcher =
+    Future<MusicPluginLyrics?> Function(String pluginId, Object ref);
+
+/// 已启用的歌词插件 id，按用户排序（LRCLIB 不在其中，固定最前）。
+typedef MusicLyricsProviderIds = Future<List<String>> Function();
+
+/// 插件歌词有译文时的落库格式：`raw` 是插件给的**原始各轨**（[MusicPluginLyrics.toJson] 的
+/// JSON），不是合并后的派生物。合并规则随解析器版本变（如译文配对），缓存版本对不上时由
+/// [parseStoredMusicLyrics] 用当前解析器从原始各轨就地重新合并——平台曲目自带歌词（③'）与
+/// 歌词插件（⑤）共用这一条，不必回插件重取，也不会在旧合并结果上重解析而把旧错误留住。
+const String kMusicPluginLyricsTracksFormat = 'plugin-tracks';
+
 /// 插件歌词 → 落库原文 + 时间轴。有译文（`translation`）时按时间与原文配对、合进同一条时间轴，
-/// 落库存 TTML（无损：缓存版本变化重解析时译文不丢）；没有译文就原样存插件给的格式。
+/// 落库存原始各轨（[kMusicPluginLyricsTracksFormat]）；没有译文就原样存插件给的格式。
 Future<({Uint8List raw, String format, LyricTimeline timeline})>
 buildMusicPluginLyrics(
   MusicPluginLyrics lyrics,
@@ -54,18 +79,53 @@ buildMusicPluginLyrics(
     durationMs,
   );
   final String lang = tr.language ?? 'zh-Hans';
-  return Isolate.run(() {
-    final LyricTimeline merged = FushiLyrics.mergeTranslation(
-      primary,
-      secondary,
-      lang,
-    );
-    return (
-      raw: FushiLyrics.export(merged, 'ttml'),
-      format: 'ttml',
-      timeline: merged,
-    );
-  });
+  final LyricTimeline merged = await Isolate.run(
+    () => FushiLyrics.mergeTranslation(primary, secondary, lang),
+  );
+  return (
+    raw: utf8.encode(
+      jsonEncode(
+        MusicPluginLyrics(original: original, translation: tr).toJson(),
+      ),
+    ),
+    format: kMusicPluginLyricsTracksFormat,
+    timeline: merged,
+  );
+}
+
+/// `music_lyrics` 一行（`raw` + `format`）→ 时间轴。所有读这张表的地方（歌词解析、语料索引）
+/// 共用这一条，不各自猜解析提示：
+/// - [kMusicPluginLyricsTracksFormat]：从插件原始各轨重新合并；
+/// - 手动指定行的 raw 是 TTML（无损交换格式）——选的是 ASS 时除外：ASS 原文要留给 libass
+///   原样渲染，按 ASS 解析；
+/// - 其余按行记的格式解析。
+///
+/// 原始各轨解不开时抛 [LyricsParseException]（与格式解析失败同一类错误）。
+Future<LyricTimeline> parseStoredMusicLyrics(
+  Uint8List raw,
+  String format, {
+  required bool isUserEdited,
+  required Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
+  parse,
+  int? durationMs,
+}) async {
+  if (format == kMusicPluginLyricsTracksFormat) {
+    final MusicPluginLyrics? tracks;
+    try {
+      tracks = MusicPluginLyrics.fromJson(jsonDecode(utf8.decode(raw)));
+    } on FormatException catch (e) {
+      throw LyricsParseException('plugin lyrics tracks: ${e.message}');
+    }
+    if (tracks == null) {
+      throw const LyricsParseException('plugin lyrics tracks: no original');
+    }
+    return (await buildMusicPluginLyrics(tracks, durationMs, parse)).timeline;
+  }
+  return parse(
+    raw,
+    isUserEdited && !musicLyricsFormatIsAss(format) ? 'ttml' : format,
+    durationMs,
+  );
 }
 
 /// 负缓存行的 format。
@@ -94,6 +154,11 @@ class MusicLyricsTrackRef {
   final int? cueStartMs;
 
   bool get isCueTrack => cueStartMs != null;
+
+  /// 这一首认不认同目录 sidecar / 文件内嵌歌词：CUE 虚拟曲目（那些属于整张镜像）与在线音源
+  /// 插件曲目（[path] 是 `fushi-plugin` URI，不是本地文件）都不认。解析与选来源面板共用。
+  bool get readsLocalLyrics =>
+      !isCueTrack && parseMusicPluginTrackPath(path) == null;
 }
 
 /// 解析结果：生效的时间轴（已带该来源的偏移）+ 它来自哪个来源。
@@ -169,8 +234,14 @@ class MusicLyricsService {
     parse,
     int Function()? now,
     MusicPluginLyricsFetcher? pluginLyrics,
+    MusicPluginLyricsSearcher? pluginSearch,
+    MusicPluginLyricsRefFetcher? pluginFetch,
+    MusicLyricsProviderIds? providers,
   }) : _database = database,
        _pluginLyrics = pluginLyrics,
+       _pluginSearch = pluginSearch,
+       _pluginFetch = pluginFetch,
+       _providers = providers,
        _lrclib = lrclib,
        _onlineEnabled = onlineEnabled,
        _listDir = listDir,
@@ -193,6 +264,9 @@ class MusicLyricsService {
   _parse;
   final int Function() _now;
   final MusicPluginLyricsFetcher? _pluginLyrics;
+  final MusicPluginLyricsSearcher? _pluginSearch;
+  final MusicPluginLyricsRefFetcher? _pluginFetch;
+  final MusicLyricsProviderIds? _providers;
 
   Future<List<MusicLyricRow>> _rows(FushiDatabase db, String trackUid) =>
       (db.select(
@@ -211,14 +285,14 @@ class MusicLyricsService {
     if (cache != null && row.timelineVersion == version) {
       t = decodeLyricTimeline(cache);
     } else {
-      // 手动指定行的 raw 是 TTML（无损交换格式）——选的是 ASS 时除外：ASS 原文要留给
-      // libass 原样渲染（[choose]），重建时按 ASS 解析（外挂翻译文件合并的结果此时不保留）。
-      t = await _parse(
+      // 手动指定的 ASS 行重建时按 ASS 解析（外挂翻译文件合并的结果此时不保留）；插件原始各轨
+      // 按当前解析器重新合并。
+      t = await parseStoredMusicLyrics(
         row.raw,
-        row.isUserEdited && !musicLyricsFormatIsAss(row.format)
-            ? 'ttml'
-            : row.format,
-        durationMs,
+        row.format,
+        isUserEdited: row.isUserEdited,
+        parse: _parse,
+        durationMs: durationMs,
       );
       t = t.copyWith(source: row.source, isUserEdited: row.isUserEdited);
       await _writeCache(db, row.trackUid, row.source, t);
@@ -328,7 +402,7 @@ class MusicLyricsService {
         parseMusicPluginTrackPath(track.path);
 
     // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。
-    if (!track.isCueTrack && plugin == null) {
+    if (track.readsLocalLyrics) {
       final _Sidecar? side = await _readSidecars(track);
       if (side != null) {
         final MusicLyricRow? prev = rowOf(MusicLyricsSource.sidecar);
@@ -352,7 +426,7 @@ class MusicLyricsService {
     }
 
     // ③ 内嵌（读文件头在后台 isolate）。
-    if (!track.isCueTrack && plugin == null) {
+    if (track.readsLocalLyrics) {
       final MusicLyricRow? prev = rowOf(MusicLyricsSource.embedded);
       final EmbeddedLyrics? emb = await _bestEmbedded(track);
       if (emb != null) {
@@ -383,10 +457,13 @@ class MusicLyricsService {
       final MusicLyricRow? prev = rowOf(source);
       final bool hasLyrics =
           prev != null && prev.format != kMusicLyricsNoneFormat;
-      // 落库的是「原文 + 翻译合并后」的派生 TTML：合并规则随解析器版本变（如翻译配对），
-      // 只重解析这份 TTML 修不好旧合并结果，必须回插件取原始两轨重新合并。
+      // 现在落库的是插件原始各轨（[kMusicPluginLyricsTracksFormat]），版本变了由 _timelineOf
+      // 就地重新合并。早期版本落的是「原文 + 翻译合并后」的派生 TTML：只重解析这份 TTML 修不好
+      // 旧合并结果，这种旧行版本对不上时回插件取原始两轨重新合并（之后就按原始各轨落库）。
       final bool mergedByOldParser =
-          hasLyrics && prev.timelineVersion != FushiLyrics.parserVersion;
+          hasLyrics &&
+          prev.format != kMusicPluginLyricsTracksFormat &&
+          prev.timelineVersion != FushiLyrics.parserVersion;
       if (hasLyrics && !mergedByOldParser) {
         return MusicLyricsResolution(
           timeline: await _timelineOf(db, prev, track.durationMs),
@@ -449,8 +526,39 @@ class MusicLyricsService {
       }
     }
 
-    // ④ LRCLIB：先看缓存（含负缓存），再按需在线查。
-    final MusicLyricRow? cached = rowOf(MusicLyricsSource.lrclib);
+    // ④ LRCLIB（固定第一）→ ⑤ 已启用的歌词插件按用户排序，第一个命中的胜出。
+    // LRCLIB 联网失败不挡后面的插件：记下异常，插件也没结果时再抛给调用方。
+    Object? lrclibError;
+    StackTrace? lrclibStack;
+    try {
+      final MusicLyricsResolution? viaLrclib = await _resolveLrclib(
+        db,
+        track,
+        rowOf(MusicLyricsSource.lrclib),
+      );
+      if (viaLrclib != null) return viaLrclib;
+    } on Exception catch (e, st) {
+      lrclibError = e;
+      lrclibStack = st;
+    }
+    final MusicLyricsResolution? viaPlugins = await _resolvePluginProviders(
+      db,
+      track,
+      rowOf,
+    );
+    if (viaPlugins != null) return viaPlugins;
+    if (lrclibError != null) {
+      Error.throwWithStackTrace(lrclibError, lrclibStack!);
+    }
+    return null;
+  }
+
+  /// LRCLIB：先看缓存（含负缓存），再按需在线查。
+  Future<MusicLyricsResolution?> _resolveLrclib(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    MusicLyricRow? cached,
+  ) async {
     if (cached != null) {
       if (cached.format != kMusicLyricsNoneFormat) {
         return MusicLyricsResolution(
@@ -498,6 +606,131 @@ class MusicLyricsService {
       timeline: t.copyWith(offsetMs: cached?.offsetMs ?? 0),
       source: MusicLyricsSource.lrclib,
     );
+  }
+
+  /// 歌词插件来源：按用户排序逐个「缓存（含负缓存）→ lyricsSearch → 评分挑 → lyricsFetch」，
+  /// 第一个拿到歌词的胜出。插件报错只跳过它（不写负缓存），不影响后面的插件。
+  ///
+  /// 缓存键是 [MusicLyricsSource.lyricsPlugin]，与平台曲目自带歌词（③'，
+  /// [MusicLyricsSource.plugin]）分开；缓存命中走 [_timelineOf]，与 ③' 同一条新鲜度判断
+  /// （原始各轨按当前解析器重新合并）。
+  Future<MusicLyricsResolution?> _resolvePluginProviders(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    MusicLyricRow? Function(String source) rowOf,
+  ) async {
+    final MusicLyricsProviderIds? listProviders = _providers;
+    final MusicPluginLyricsSearcher? search = _pluginSearch;
+    final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
+    if (listProviders == null || search == null || fetch == null) return null;
+    final List<String> ids = await listProviders();
+    for (final String id in ids) {
+      final String source = MusicLyricsSource.lyricsPlugin(id);
+      final MusicLyricRow? prev = rowOf(source);
+      if (prev != null) {
+        if (prev.format != kMusicLyricsNoneFormat) {
+          return MusicLyricsResolution(
+            timeline: await _timelineOf(db, prev, track.durationMs),
+            source: source,
+          );
+        }
+        if (_now() - prev.updatedAt <
+            kPluginLyricsNegativeCacheTtl.inMilliseconds) {
+          continue;
+        }
+      }
+      if (!_onlineEnabled()) continue;
+      try {
+        final MusicPluginLyrics? got = await _searchAndFetch(
+          id,
+          track,
+          search,
+          fetch,
+        );
+        if (got == null) {
+          await _upsert(
+            db,
+            trackUid: track.trackUid,
+            source: source,
+            format: kMusicLyricsNoneFormat,
+            raw: Uint8List(0),
+          );
+          continue;
+        }
+        final ({Uint8List raw, String format, LyricTimeline timeline}) built =
+            await buildMusicPluginLyrics(got, track.durationMs, _parse);
+        final LyricTimeline t = built.timeline.copyWith(source: source);
+        await _upsert(
+          db,
+          trackUid: track.trackUid,
+          source: source,
+          format: built.format,
+          raw: built.raw,
+          timeline: t,
+        );
+        return MusicLyricsResolution(
+          timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
+          source: source,
+        );
+      } on MusicPluginException {
+        continue;
+      } on LyricsParseException {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Future<MusicPluginLyrics?> _searchAndFetch(
+    String pluginId,
+    MusicLyricsTrackRef track,
+    MusicPluginLyricsSearcher search,
+    MusicPluginLyricsRefFetcher fetch,
+  ) async {
+    final Map<String, MusicPluginLyricsCandidate> byKey =
+        <String, MusicPluginLyricsCandidate>{};
+    final List<LyricsCandidate> all = await searchWithFallbackQueries(
+      title: track.title,
+      artist: track.artist,
+      durationMs: track.durationMs,
+      run: (String q) async {
+        final List<MusicPluginLyricsCandidate> items = await search(
+          pluginId,
+          track.title,
+          artist: track.artist,
+          album: track.album,
+          durationMs: track.durationMs,
+          query: q,
+        );
+        final List<LyricsCandidate> out = <LyricsCandidate>[];
+        for (final MusicPluginLyricsCandidate c in items) {
+          final String key = jsonEncode(c.ref);
+          byKey[key] = c;
+          out.add(
+            LyricsCandidate(
+              providerId: pluginId,
+              title: c.title,
+              artist: c.artist ?? '',
+              durationMs: c.durationMs,
+              ref: <String, String>{'k': key},
+            ),
+          );
+        }
+        return out;
+      },
+    );
+    final LyricsCandidate? best = pickBestLyricsCandidate(
+      all,
+      title: track.title,
+      artist: track.artist,
+      durationMs: track.durationMs,
+    );
+    if (best == null) return null;
+    final MusicPluginLyrics? lyrics = await fetch(
+      pluginId,
+      byKey[best.ref['k']]!.ref,
+    );
+    return lyrics?.original == null ? null : lyrics;
   }
 
   Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {
@@ -583,7 +816,7 @@ class MusicLyricsService {
     MusicLyricsTrackRef track,
   ) async {
     final List<MusicLyricsCandidate> out = <MusicLyricsCandidate>[];
-    if (!track.isCueTrack) {
+    if (track.readsLocalLyrics) {
       final _Sidecar? side = await _readSidecars(track);
       if (side != null) {
         out.add(
@@ -618,21 +851,31 @@ class MusicLyricsService {
     final FushiDatabase? db = _database();
     if (db != null) {
       for (final MusicLyricRow r in await _rows(db, track.trackUid)) {
-        if ((r.source == MusicLyricsSource.lrclib ||
-                MusicLyricsSource.isPlugin(r.source)) &&
-            r.format != kMusicLyricsNoneFormat) {
-          out.add(
-            MusicLyricsCandidate(
-              source: r.source,
-              label: MusicLyricsSource.isPlugin(r.source)
-                  ? MusicLyricsSource.pluginIdOf(r.source)!
-                  : 'LRCLIB',
-              format: r.format,
-              raw: r.raw,
-              timeline: await _timelineOf(db, r, track.durationMs),
-            ),
-          );
-        }
+        if (r.format == kMusicLyricsNoneFormat) continue;
+        // 插件来源的标签是插件 id；平台曲目自带歌词与歌词插件搜到的是两种来源，界面按
+        // [MusicLyricsCandidate.source] 再标出是哪一种。
+        final String? label = r.source == MusicLyricsSource.lrclib
+            ? 'LRCLIB'
+            : MusicLyricsSource.pluginIdOf(r.source) ??
+                  MusicLyricsSource.lyricsPluginIdOf(r.source);
+        if (label == null) continue;
+        final LyricTimeline timeline = await _timelineOf(
+          db,
+          r,
+          track.durationMs,
+        );
+        out.add(
+          MusicLyricsCandidate(
+            source: r.source,
+            label: label,
+            // 原始各轨不是歌词格式：展示合并后时间轴的格式（[choose] 存 TTML）。
+            format: r.format == kMusicPluginLyricsTracksFormat
+                ? timeline.format
+                : r.format,
+            raw: r.raw,
+            timeline: timeline,
+          ),
+        );
       }
     }
     return out;

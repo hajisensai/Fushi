@@ -37,6 +37,7 @@ import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_sessions.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -50,6 +51,15 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
 const double kAiAgentSidePanelBreakpoint = 840;
+
+/// 浮层 / 侧栏里对话区可用高度低于它（横屏手机弹出软键盘时只剩 130~175dp）就进
+/// 「紧凑」排版：藏掉标题栏和上下文 chip，只留对话列表 + 输入栏。否则标题栏 + chip
+/// 把高度吃光，输入框被裁掉，用户既输入不了也滚不动。
+const double kAiAgentTightHeight = 200;
+
+/// 紧凑排版里上下文 / 屏幕附件 chip 收进输入行左侧，最多占输入行宽度的这个比例，
+/// 剩下的留给输入框。
+const double kAiAgentTightAttachmentWidthFactor = 0.4;
 
 /// 装扩展类操作（D9）：确认卡片换成「要安装这个扩展吗？」的标题。
 final RegExp _kExtensionInstallOp = RegExp(
@@ -118,7 +128,10 @@ Future<AiAgentConversationController?> _resolveAiAgentConversation(
 ) async {
   final AiAgentController? local = AiAgentController.instanceOrNull;
   if (local == null) return null;
-  if (local.hasProvider) return local;
+  if (local.hasProvider) {
+    await local.syncWithActiveProfile();
+    return local;
+  }
   final opContext = appOpContext;
   final String url =
       opContext?.appModel.prefsRepo.downloadExecutionHostUrl ?? '';
@@ -267,10 +280,14 @@ Future<void> _showSidePanel(
           Animation<double> secondaryAnimation,
         ) {
           final ColorScheme scheme = Theme.of(dialogContext).colorScheme;
+          // 软键盘把面板整块抬到键盘上方（对话框路由不会自己让位）。
+          final double keyboard = MediaQuery.viewInsetsOf(dialogContext).bottom;
           return Align(
             alignment: AlignmentDirectional.centerEnd,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
+            child: AnimatedPadding(
+              duration: fushiMotionDuration(dialogContext, FushiMotion.short),
+              curve: FushiMotion.standard,
+              padding: EdgeInsets.all(12) + EdgeInsets.only(bottom: keyboard),
               child: Material(
                 color: scheme.surfaceContainerLow,
                 elevation: 6,
@@ -320,7 +337,17 @@ Future<void> _showSidePanel(
   );
 }
 
-/// 整页外壳。
+/// 会话列表常驻在整页左侧的宽度（窗口宽于 [kAiAgentSidePanelBreakpoint] 时）。
+const double kAiAgentSessionsColumnWidth = 300;
+
+/// 「会话」按钮（弹出会话列表）。
+const ValueKey<String> kAiAgentSessionsButtonKey = ValueKey<String>(
+  'ai-agent-sessions',
+);
+
+/// 整页外壳。宽屏把会话列表常驻在对话左侧；窄屏在页头放「会话」按钮弹出列表。
+/// 远端会话没有本机存档（[AiAgentConversationController.sessionLibrary] 为 null），
+/// 两者都不出现。
 class AiAgentPage extends StatelessWidget {
   const AiAgentPage({required this.controller, this.uiContext, super.key});
 
@@ -329,21 +356,50 @@ class AiAgentPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AiAgentSessionLibrary? library = controller.sessionLibrary;
+    final bool sideList =
+        library != null &&
+        MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint;
     return FushiPageScaffold(
       title: t.ai_agent_title,
+      actions: <Widget>[
+        if (library != null && !sideList)
+          FushiIconButtonControl(
+            key: kAiAgentSessionsButtonKey,
+            tooltip: t.ai_agent_sessions_title,
+            onPressed: () =>
+                unawaited(showAiAgentSessionsSheet(context, library)),
+            icon: const FushiIcon(FushiIcons.history),
+          ),
+      ],
       body: SafeArea(
         top: false,
         bottom: false,
         child: Builder(
-          builder: (BuildContext bodyContext) => Padding(
-            padding: EdgeInsets.only(
-              top: MediaQuery.paddingOf(bodyContext).top,
-            ),
-            child: AiAgentConversation(
+          builder: (BuildContext bodyContext) {
+            final Widget conversation = AiAgentConversation(
               controller: controller,
               uiContext: uiContext,
-            ),
-          ),
+            );
+            return Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(bodyContext).top,
+              ),
+              child: sideList
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        SizedBox(
+                          width: kAiAgentSessionsColumnWidth,
+                          child: AiAgentSessionList(library: library),
+                        ),
+                        const FushiVerticalDivider(width: 1),
+                        Expanded(child: conversation),
+                      ],
+                    )
+                  : conversation,
+            );
+          },
         ),
       ),
     );
@@ -481,9 +537,24 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<AgentEntry> entries = _controller.entries;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool tight =
+            widget.compact && constraints.maxHeight < kAiAgentTightHeight;
+        return _conversationColumn(context, tokens, entries, tight: tight);
+      },
+    );
+  }
+
+  Widget _conversationColumn(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    List<AgentEntry> entries, {
+    required bool tight,
+  }) {
     return Column(
       children: <Widget>[
-        if (widget.compact) _compactHeader(context),
+        if (widget.compact && !tight) _compactHeader(context),
         if (!widget.compact && _controller.executorLabel != null)
           _executorBar(context),
         if (!widget.compact &&
@@ -515,7 +586,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             ],
           ),
         ),
-        _composer(context),
+        _composer(context, tight: tight),
       ],
     );
   }
@@ -559,6 +630,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               onPressed: () => unawaited(_undoAll()),
               child: Text(t.ai_agent_undo_all(n: '$undoable')),
             ),
+          ?_sessionsButton(context),
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-new-session'),
             tooltip: t.ai_agent_new_session,
@@ -576,6 +648,18 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             ),
         ],
       ),
+    );
+  }
+
+  /// 浮层 / 侧栏顶栏的「会话」按钮：弹出会话列表（远端会话没有本机存档，不出现）。
+  Widget? _sessionsButton(BuildContext context) {
+    final AiAgentSessionLibrary? library = _controller.sessionLibrary;
+    if (library == null) return null;
+    return FushiIconButtonControl(
+      key: kAiAgentSessionsButtonKey,
+      tooltip: t.ai_agent_sessions_title,
+      onPressed: () => unawaited(showAiAgentSessionsSheet(context, library)),
+      icon: const FushiIcon(FushiIcons.history),
     );
   }
 
@@ -1130,7 +1214,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   /// MD3 下是**一层**悬浮面板：chip、输入框、按钮都直接放在面板上，输入框不再另套
   /// 一层不同底色的圆角框（面板套面板显得臃肿），按钮贴底对齐（多行输入时不悬在
   /// 中间）。Apple / 墨水屏没有外层面板，输入框自己带底色 / 描边。
-  Widget _composer(BuildContext context) {
+  Widget _composer(BuildContext context, {bool tight = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
@@ -1154,6 +1238,9 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
         hintText: t.ai_agent_input_hint,
+        // 提示语只占一行：默认跟随 maxLines（4），输入框一变窄（紧凑排版里与
+        // 上下文 chip 同行）提示语就折成多行把输入栏撑高、挤掉对话区。
+        hintMaxLines: 1,
         border: InputBorder.none,
         filled: false,
         isDense: true,
@@ -1163,7 +1250,23 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         ),
       ),
     );
-    final Widget row = Row(
+    // 这条消息要带的页面上下文。点掉 = 这一场不再带上下文（唯一的查看 / 移除
+    // 入口，紧凑排版里也不能藏）。
+    final Widget? contextChip = contextTitle == null
+        ? null
+        : FushiInputChip(
+            key: const ValueKey<String>('ai-agent-context-chip'),
+            label: Text(
+              t.ai_agent_context_chip(title: contextTitle),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            // 紧凑排版里 chip 与输入框同行：不额外撑 48dp 触控外框，免得把输入行
+            // 撑高、再挤掉对话区。
+            dense: tight,
+            onDeleted: () => setState(() => _contextDropped = true),
+          );
+    Widget buildRow(double? tightWidth) => Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
         // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
@@ -1178,6 +1281,26 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           if (!panel) SizedBox(width: tokens.spacing.gap / 2),
         ] else if (panel)
           const SizedBox(width: 12),
+        // 紧凑排版没有 chip 行：上下文 chip 与屏幕附件 chip 收进输入行左侧一条，
+        // 最多占行宽的 [kAiAgentTightAttachmentWidthFactor]，上下文标题省略号截断，
+        // 删除键始终可见。
+        if (tightWidth != null)
+          ConstrainedBox(
+            key: const ValueKey<String>('ai-agent-inline-attachments'),
+            constraints: BoxConstraints(
+              maxWidth: tightWidth * kAiAgentTightAttachmentWidthFactor,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (contextChip != null) Flexible(child: contextChip),
+                  AiAgentScreenTextChip(attachment: _screenText),
+                ],
+              ),
+            ),
+          ),
         Expanded(
           child: panel
               ? field
@@ -1209,6 +1332,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           ),
       ],
     );
+    // 两种排法共用同一个 LayoutBuilder → Row 结构：键盘弹起正是切进紧凑排版的
+    // 时刻，若外层结构随之变化，输入框会被重建、丢焦点收键盘。
+    final Widget row = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          buildRow(tight ? constraints.maxWidth : null),
+    );
     final Widget body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1221,15 +1350,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              AiAgentScreenTextChip(attachment: _screenText),
-              if (contextTitle != null)
+              if (!tight) AiAgentScreenTextChip(attachment: _screenText),
+              if (contextChip != null && !tight)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2, left: 4),
-                  child: FushiInputChip(
-                    key: const ValueKey<String>('ai-agent-context-chip'),
-                    label: Text(t.ai_agent_context_chip(title: contextTitle)),
-                    onDeleted: () => setState(() => _contextDropped = true),
-                  ),
+                  child: contextChip,
                 ),
             ],
           ),

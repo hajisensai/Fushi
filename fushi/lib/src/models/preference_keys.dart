@@ -57,6 +57,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
   // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
   'ai_key_health',
+  // bool（默认 false）：外部 AI 访问（MCP）。打开后本机 MCP 客户端凭配对令牌可调
+  // 操作目录；授权只对点它的这台设备成立（设备本地）。
+  'ai_mcp_enabled',
+  // String：外部 AI 配对令牌的 SHA-256 hex（令牌本身不落盘）。空串 = 未生成。
+  // 设备本地：令牌是发给这台机器上某个 MCP 客户端的。
+  'ai_mcp_token_sha256',
   // 用户自配的 AI 提供商清单，每条里带 base64 的 apiKeyB64 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
@@ -476,6 +482,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_media_session',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
+  // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
+  'music_lyrics_providers',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
@@ -643,6 +651,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：复习页顶栏悬浮——不占布局、默认收起，点卡面空白 / 右键唤出、
   // 再点收起（与小说、漫画阅读器的悬浮顶栏同一口径）；false = 固定页头常驻。非凭据、跨设备。
   'srs_review_chrome_floating',
+  // String（SrsReviewGestureMap.encode() 的 JSON：{"v":1,"front":{手势:动作},"back":{…}}，
+  // 默认 '' = 默认映射）：复习页卡面手势（点按分区 / 双击 / 长按 / 四向滑动）在问题面、
+  // 答案面各执行什么。读不出 / 不认识的值回落默认，不认识的手势名原样保留。非凭据、跨设备。
+  'srs_review_gestures',
   // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
   // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
   'srs_review_hide_hard_easy',

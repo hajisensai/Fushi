@@ -116,10 +116,9 @@ bool isBookContentSyncEnabled(
   EpubBookRow book, {
   required bool syncContent,
   required bool syncMangaContent,
-}) =>
-    BookFormat.parseOrEpub(book.format) == BookFormat.manga
-        ? syncMangaContent
-        : syncContent;
+}) => BookFormat.parseOrEpub(book.format) == BookFormat.manga
+    ? syncMangaContent
+    : syncContent;
 
 /// 单本书一次同步的归类结果：成功应用 / 真失败 / 良性空操作。
 ///
@@ -151,11 +150,11 @@ class SyncManager {
     required FushiDatabase db,
     required SyncBackend backend,
     this.onContentProgress,
-  })  : _db = db,
-        _repo = SyncRepository(db),
-        _backend = backend,
-        _scope = syncChannelScopeOf(backend),
-        _progressDimension = progressBaselineDimensionOf(backend);
+  }) : _db = db,
+       _repo = SyncRepository(db),
+       _backend = backend,
+       _scope = syncChannelScopeOf(backend),
+       _progressDimension = progressBaselineDimensionOf(backend);
 
   final FushiDatabase _db;
   final SyncRepository _repo;
@@ -244,7 +243,8 @@ class SyncManager {
             // 重试是因为一次瞬时后端错误；此时快照多半已经陈旧，不再复用它，
             // 老老实实逐本列举拿最新状态。
             listing: null,
-            onProgressResult: (SyncBookResult result) => progressResult = result,
+            onProgressResult: (SyncBookResult result) =>
+                progressResult = result,
           );
           await _persistDriveCache();
           return result;
@@ -278,6 +278,7 @@ class SyncManager {
     bool syncMangaContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
+    Set<String> skipBookKeys = const <String>{},
     void Function(int done, int total, String title)? onBookProgress,
   }) async {
     // 全部书都命中索引时，下面的循环一次 `_syncBookOnce` 都不会进，而 folder 缓存
@@ -291,6 +292,17 @@ class SyncManager {
     for (int i = 0; i < books.length; i++) {
       final book = books[i];
       onBookProgress?.call(i, books.length, book.title);
+
+      // 云通道的推送否决（反馈 R8duEiqRuy，见 `SyncOrchestrator` 的
+      // `_cloudPushVetoedBookKeys`）：这本书在云盘上有管得着它的删除墓碑，同步它会
+      // `ensureBookFolder` 把被删的书文件夹建回去、替用户撤销那次删除。整本跳过；
+      // 本机这份是否删掉由墓碑阶段的确认框问用户。
+      if (skipBookKeys.contains(book.bookKey)) {
+        results.add(
+          SyncBookResult(direction: SyncResult.skipped, title: book.title),
+        );
+        continue;
+      }
 
       final result = await syncBook(
         book: book,
@@ -348,8 +360,9 @@ class SyncManager {
     final folderId = await _backend.ensureBookFolder(
       bookTitle: book.title,
       rootFolderId: rootId,
-      readCoverData:
-          coverPath == null ? null : () => _readCoverBytes(coverPath),
+      readCoverData: coverPath == null
+          ? null
+          : () => _readCoverBytes(coverPath),
     );
 
     // 书的远端文件夹名与它的 assetKey 是同一个值（都是 sanitize 后的书名，见
@@ -425,7 +438,9 @@ class SyncManager {
     // 落地时据此比较后写入（中间可能有互联对端 PUT 进更新的断点）。
     final int audiobookStamp = syncAudioBook
         ? await _db.getPrefTyped<int>(
-            audiobookPositionAtPrefKey(book.bookKey), 0)
+            audiobookPositionAtPrefKey(book.bookKey),
+            0,
+          )
         : 0;
     final chapters = parseChaptersJson(book.chaptersJson);
 
@@ -480,7 +495,8 @@ class SyncManager {
       // legacy last-write-wins outcome for single-sided / unanimous cases;
       // when both timestamps are equal it returns `synced`, so fall back to
       // the content-aware tie-break for the genuine same-ms collision.
-      syncDir = res.direction == SyncDirection.synced &&
+      syncDir =
+          res.direction == SyncDirection.synced &&
               localPosition?.updatedAt != null &&
               remoteTimestamp != null
           ? _determineSyncDirection(
@@ -499,7 +515,10 @@ class SyncManager {
       // common ancestor is this timestamp regardless of who decided it.
       if (localPosition?.updatedAt != null) {
         await _db.setSyncBaseline(
-            assetKey, _progressDimension, localPosition!.updatedAt);
+          assetKey,
+          _progressDimension,
+          localPosition!.updatedAt,
+        );
       }
       return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
@@ -542,7 +561,9 @@ class SyncManager {
       case SyncDirection.exportToTtu:
         if (localPosition == null && !syncContent) {
           return SyncBookResult(
-              direction: SyncResult.skipped, title: book.title);
+            direction: SyncResult.skipped,
+            title: book.title,
+          );
         }
         // BUG-201: see _handleImport above — the export baseline is written
         // inside _handleExport immediately after the remote progress file
@@ -602,8 +623,9 @@ class SyncManager {
     // has read further wins — the larger reading position is the value worth
     // keeping. Only fall back to 'synced' when both sides genuinely agree (or
     // the remote fraction is unparseable / local content unknown).
-    final double? remoteProgress =
-        _parseRemoteProgressFraction(remoteProgressFile!.name);
+    final double? remoteProgress = _parseRemoteProgressFraction(
+      remoteProgressFile!.name,
+    );
     if (localProgress == null || remoteProgress == null) {
       return SyncDirection.synced;
     }
@@ -613,8 +635,10 @@ class SyncManager {
     // normCharOffset 步长」——若按 1e-6 比就误判「本地更靠后」→ 多余地原样重导出，把云端
     // 原值改写成近似（用户报的「差几个字符」）。把远端分数先过同一套存储网格量化，使
     // 「导入后没动」稳定判为 synced、不重导出，云端原值原样保留。
-    final double remoteOnGrid =
-        _quantizeToStorageGrid(remoteProgress, chapters);
+    final double remoteOnGrid = _quantizeToStorageGrid(
+      remoteProgress,
+      chapters,
+    );
     final double delta = localProgress - remoteOnGrid;
     if (delta.abs() <= _progressTieEpsilon) return SyncDirection.synced;
     return delta > 0 ? SyncDirection.exportToTtu : SyncDirection.importFromTtu;
@@ -624,12 +648,16 @@ class SyncManager {
   /// 章内 0-10000 量化）所能表示的最近分数。本地进度本就走 `toExploredCharCount`
   /// 落在该网格上，故远端分数过一遍同样的 round-trip 后即可同分辨率比对。
   double _quantizeToStorageGrid(
-      double fraction, List<ChapterCharInfo> chapters) {
+    double fraction,
+    List<ChapterCharInfo> chapters,
+  ) {
     final int total = totalCharacterCount(chapters);
     if (total <= 0) return fraction;
     final int explored = (fraction * total).round();
-    final pos =
-        fromExploredCharCount(exploredCharCount: explored, chapters: chapters);
+    final pos = fromExploredCharCount(
+      exploredCharCount: explored,
+      chapters: chapters,
+    );
     return toExploredCharCount(
           sectionIndex: pos.sectionIndex,
           normCharOffset: pos.normCharOffset,
@@ -747,7 +775,10 @@ class SyncManager {
     // the auto path and the manual (compare useRemote→import) path so a
     // user-resolved conflict's new ancestor is also persisted here.
     await _db.setSyncBaseline(
-        assetKey, _progressDimension, remoteProgress.lastBookmarkModified);
+      assetKey,
+      _progressDimension,
+      remoteProgress.lastBookmarkModified,
+    );
 
     // Import statistics
     if (syncStats && statsFileId != null) {
@@ -802,9 +833,11 @@ class SyncManager {
       // 分数（见 paged_book_sync_position）；字符表换算对它们恒为 0。
       final double progress;
       if (isPagedSyncBook(book)) {
-        exploredChars =
-            localPosition.sectionIndex < 0 ? 0 : localPosition.sectionIndex;
-        progress = pagedProgressFraction(
+        exploredChars = localPosition.sectionIndex < 0
+            ? 0
+            : localPosition.sectionIndex;
+        progress =
+            pagedProgressFraction(
               pageIndex: exploredChars,
               pageCount: pagedSyncPageCount(book),
             ) ??
@@ -854,8 +887,11 @@ class SyncManager {
         if (statsFileId != null) {
           remoteStats = await _backend.getStatsFile(statsFileId);
         }
-        final merged =
-            _mergeStatistics(remoteStats ?? [], localStats, statsSyncMode);
+        final merged = _mergeStatistics(
+          remoteStats ?? [],
+          localStats,
+          statsSyncMode,
+        );
         if (merged.isNotEmpty) {
           await _backend.updateStatsFile(
             folderId: folderId,
@@ -956,8 +992,9 @@ class SyncManager {
         present = await _backend.findContentFile(folderId, name) != null;
       }
       if (!present) {
-        final Directory tmpDir =
-            Directory.systemTemp.createTempSync('fushi_epub_export');
+        final Directory tmpDir = Directory.systemTemp.createTempSync(
+          'fushi_epub_export',
+        );
         final File epubTmp = File(p.join(tmpDir.path, fileName));
         try {
           // 漫画 → 书目录整树 zip（manga.json 标记 + 页图）；EPUB → 既有重打包。
@@ -977,7 +1014,9 @@ class SyncManager {
         } finally {
           try {
             tmpDir.deleteSync(recursive: true);
-          } catch (_) {/* best-effort temp cleanup */}
+          } catch (_) {
+            /* best-effort temp cleanup */
+          }
         }
       }
     }
@@ -1009,52 +1048,55 @@ class SyncManager {
     // 快照：tagsAddedAt=当前标签名→加入戳；tagTombstones=移除墓碑名→移除戳，让远端按
     // max(add) vs max(removed) 裁决，删除/改名（旧名进墓碑+新名进 add）跨端传播、防复活。
     // v1 兼容字段 tags 仍是名单供旧端只增读取。有标签或有墓碑才写（否则无谓 PUT）。
-    final Map<String, int> tagAddedAt =
-        await _db.bookTagAddedAtByName(book.bookKey);
-    final Map<String, int> tagTombstones =
-        await _db.tagTombstonesByName(book.bookKey, MediaKind.epub);
+    final Map<String, int> tagAddedAt = await _db.bookTagAddedAtByName(
+      book.bookKey,
+    );
+    final Map<String, int> tagTombstones = await _db.tagTombstonesByName(
+      book.bookKey,
+      MediaKind.epub,
+    );
     if ((tagAddedAt.isNotEmpty || tagTombstones.isNotEmpty) &&
         await wanted(kSyncBookTagsAssetName)) {
       await _backend
           .putJsonAsset(folderId, kSyncBookTagsAssetName, <String, Object?>{
-        'schemaVersion': 2,
-        'tags': tagAddedAt.keys.toList(),
-        'tagsAddedAt': tagAddedAt,
-        'tagTombstones': tagTombstones,
-      });
+            'schemaVersion': 2,
+            'tags': tagAddedAt.keys.toList(),
+            'tagsAddedAt': tagAddedAt,
+            'tagTombstones': tagTombstones,
+          });
     }
 
     // per-book 自定义 CSS sidecar（LWW by updatedAt）。用户改写的书内 CSS 存 book_css.json
     // 权威全量快照（含重置墓碑 deleted），供他端按 updatedAt 取较新落地。有行才写。
     final List<BookCustomCssRow> cssRows = await _db.getBookCssRows(book.uid);
     if (cssRows.isNotEmpty && await wanted(kSyncBookCssAssetName)) {
-      await _backend
-          .putJsonAsset(folderId, kSyncBookCssAssetName, <String, Object?>{
-        'schemaVersion': 1,
-        'files': <String, Object?>{
-          for (final BookCustomCssRow r in cssRows)
-            r.relativePath: <String, Object?>{
-              'content': r.content,
-              'deleted': r.deleted,
-              'updatedAt': r.updatedAt,
-            },
-        },
-      });
-    }
-
-    final MangaReaderOverrideRow? readerOverride =
-        await _db.getMangaReaderOverride(book.uid);
-    if (readerOverride != null && await wanted(kSyncMangaReaderAssetName)) {
       await _backend.putJsonAsset(
         folderId,
-        kSyncMangaReaderAssetName,
+        kSyncBookCssAssetName,
         <String, Object?>{
           'schemaVersion': 1,
-          'overrides': jsonDecode(readerOverride.overridesJson),
-          'updatedAt': readerOverride.updatedAt,
-          'deleted': readerOverride.deleted,
+          'files': <String, Object?>{
+            for (final BookCustomCssRow r in cssRows)
+              r.relativePath: <String, Object?>{
+                'content': r.content,
+                'deleted': r.deleted,
+                'updatedAt': r.updatedAt,
+              },
+          },
         },
       );
+    }
+
+    final MangaReaderOverrideRow? readerOverride = await _db
+        .getMangaReaderOverride(book.uid);
+    if (readerOverride != null && await wanted(kSyncMangaReaderAssetName)) {
+      await _backend
+          .putJsonAsset(folderId, kSyncMangaReaderAssetName, <String, Object?>{
+            'schemaVersion': 1,
+            'overrides': jsonDecode(readerOverride.overridesJson),
+            'updatedAt': readerOverride.updatedAt,
+            'deleted': readerOverride.deleted,
+          });
     }
   }
 
@@ -1064,8 +1106,7 @@ class SyncManager {
     List<TtuStatistics> localStats,
     List<TtuStatistics> externalStats,
     StatisticsSyncMode mode,
-  ) =>
-      mergeStatistics(localStats, externalStats, mode);
+  ) => mergeStatistics(localStats, externalStats, mode);
 
   // ── DB helpers ────────────────────────────────────────────────────
 
@@ -1073,29 +1114,33 @@ class SyncManager {
     final rows = await _db.getAllReadingStatistics();
     return rows
         .where((r) => r.title == title)
-        .map((r) => TtuStatistics(
-              title: r.title,
-              dateKey: r.dateKey,
-              charactersRead: r.charactersRead,
-              readingTimeSec: r.readingTimeMs / 1000.0,
-              minReadingSpeed: 0,
-              altMinReadingSpeed: 0,
-              lastReadingSpeed: 0,
-              maxReadingSpeed: 0,
-              lastStatisticModified: r.lastStatisticModified,
-            ))
+        .map(
+          (r) => TtuStatistics(
+            title: r.title,
+            dateKey: r.dateKey,
+            charactersRead: r.charactersRead,
+            readingTimeSec: r.readingTimeMs / 1000.0,
+            minReadingSpeed: 0,
+            altMinReadingSpeed: 0,
+            lastReadingSpeed: 0,
+            maxReadingSpeed: 0,
+            lastStatisticModified: r.lastStatisticModified,
+          ),
+        )
         .toList();
   }
 
   Future<void> _writeStatisticsToDb(List<TtuStatistics> stats) async {
     for (final stat in stats) {
-      await _db.setReadingStatistic(ReadingStatisticsCompanion(
-        title: Value(stat.title),
-        dateKey: Value(stat.dateKey),
-        charactersRead: Value(stat.charactersRead),
-        readingTimeMs: Value((stat.readingTimeSec * 1000).round()),
-        lastStatisticModified: Value(stat.lastStatisticModified),
-      ));
+      await _db.setReadingStatistic(
+        ReadingStatisticsCompanion(
+          title: Value(stat.title),
+          dateKey: Value(stat.dateKey),
+          charactersRead: Value(stat.charactersRead),
+          readingTimeMs: Value((stat.readingTimeSec * 1000).round()),
+          lastStatisticModified: Value(stat.lastStatisticModified),
+        ),
+      );
     }
   }
 
@@ -1186,16 +1231,18 @@ List<TtuStatistics> mergeStatistics(
         readingTimeSec: max(existing.readingTimeSec, stat.readingTimeSec),
         minReadingSpeed:
             existing.minReadingSpeed > 0 && stat.minReadingSpeed > 0
-                ? min(existing.minReadingSpeed, stat.minReadingSpeed)
-                : max(existing.minReadingSpeed, stat.minReadingSpeed),
+            ? min(existing.minReadingSpeed, stat.minReadingSpeed)
+            : max(existing.minReadingSpeed, stat.minReadingSpeed),
         altMinReadingSpeed:
             existing.altMinReadingSpeed > 0 && stat.altMinReadingSpeed > 0
-                ? min(existing.altMinReadingSpeed, stat.altMinReadingSpeed)
-                : max(existing.altMinReadingSpeed, stat.altMinReadingSpeed),
+            ? min(existing.altMinReadingSpeed, stat.altMinReadingSpeed)
+            : max(existing.altMinReadingSpeed, stat.altMinReadingSpeed),
         lastReadingSpeed: max(existing.lastReadingSpeed, stat.lastReadingSpeed),
         maxReadingSpeed: max(existing.maxReadingSpeed, stat.maxReadingSpeed),
-        lastStatisticModified:
-            max(existing.lastStatisticModified, stat.lastStatisticModified),
+        lastStatisticModified: max(
+          existing.lastStatisticModified,
+          stat.lastStatisticModified,
+        ),
       );
     }
   }

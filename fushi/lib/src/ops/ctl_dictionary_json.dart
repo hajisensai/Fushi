@@ -78,32 +78,41 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
   throw CtlFailure.notFound('没有名为「$q」的词典（fushi_cli dict ls 查看）');
 }
 
-/// 把 [target] 移到同类型词典列表里的 [position]（1 起算，越界钳到两端），
-/// 返回重排后的整组（`order` 已按新下标改写）。与词典管理页 `_reorderDictionaries`
-/// 同一语义：只在同一类型分区内排序。
+/// 把 [target] 移到它**所在语言组**里的 [position]（1 起算，越界钳到组的两端），
+/// 返回重排后的整个分区（`order` 已按新下标改写）。与词典管理页
+/// `_reorderDictionaries` 同一语义（反馈 D_Nz5R4vSH）：分区按「有效语言」分组
+/// （[groupDictionariesByLanguage]），排序只在组内进行（[moveDictionaryWithinLanguageGroup]）；
+/// 返回的分区是规范顺序——各语言组按显示顺序首尾相接，其它组的组内顺序不变，
+/// 旧数据里的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
+/// 分区里只有一个语言组时就是整个分区内排序。
 ///
-/// [section] 是分区名（报错用）；缺省按 [target] 自身类型。混合词典在「汉字」分区
-/// 排序时传 `kanji`。
+/// [sameType] 是一个分区（已按分区顺序排好）；[section] 是分区名（报错用），
+/// 缺省按 [target] 自身类型。混合词典在「汉字」分区排序时传 `kanji`。
 List<Dictionary> ctlReorderDictionaries(
   List<Dictionary> sameType,
   Dictionary target,
   int position, {
   DictionaryType? section,
 }) {
-  final List<Dictionary> clone = List<Dictionary>.of(sameType);
-  final int from = clone.indexOf(target);
-  if (from < 0) {
+  final int sectionIndex = sameType.indexWhere(
+    (Dictionary d) => d.name == target.name,
+  );
+  if (sectionIndex < 0) {
     throw CtlFailure.notFound(
       '词典「${target.name}」不在 ${(section ?? target.type).name} 分区里',
     );
   }
-  final Dictionary item = clone.removeAt(from);
-  final int to = (position - 1).clamp(0, clone.length);
-  clone.insert(to, item);
-  for (int i = 0; i < clone.length; i++) {
-    clone[i].order = i;
+  final List<Dictionary> merged =
+      moveDictionaryWithinLanguageGroup(
+        sameType,
+        sameType[sectionIndex].name,
+        position - 1,
+      ) ??
+      concatenateLanguageGroups(sameType);
+  for (int i = 0; i < merged.length; i++) {
+    merged[i].order = i;
   }
-  return clone;
+  return merged;
 }
 
 /// 校验 `PUT /api/admin/dictionaries/:name` 的汉字部分参数（BUG-3573）。
@@ -402,6 +411,11 @@ Map<String, Object?> ctlFlushReportJson(PendingFlushReport report) =>
       'unreachable': report.unreachable,
       'skipped': report.skipped,
       'awaitingConfirmation': report.awaitingConfirmation,
+      // 停下 / 失败的原因：稳定码 + 后端原文（诊断用，不本地化）。
+      'stopErrorCode': report.stopOutcome?.errorCode,
+      'stopError': report.stopOutcome?.errorDetail,
+      'failureErrorCode': report.failureOutcome?.errorCode,
+      'failureError': report.failureOutcome?.errorDetail,
     };
 
 /// 词典内容语言覆盖的取值：`auto`（或 `-`）= 恢复自动（null），其余当 BCP-47 码原样用。
