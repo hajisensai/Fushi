@@ -2368,8 +2368,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  static const List<int> _imagePauseOptions = [0, 5, 10, 15];
-
   static const List<int> _skipActionOptions = [0, 5, 10, 15, 30];
 
   Widget _buildSkipActionSection() {
@@ -2395,26 +2393,24 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
+  /// 插图停留秒数：步进器（0 = 关，1 秒一档，上限
+  /// [AudiobookPlayerController.maxImagePauseSec]）。原先只给 0/5/10/15 四档分段，
+  /// 所有者要求能自定义停留多少秒（BUG-3887）。
   Widget _buildImagePauseSection(AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.imagePauseSec,
       builder: (ctx, sec, _) {
-        return AdaptiveSettingsSegmentedRow<int>(
+        return AdaptiveSettingsStepperRow(
           title: t.image_pause,
           subtitle: t.image_pause_hint,
           icon: FushiIcons.image,
-          controlBelow: true,
-          segments: _imagePauseOptions
-              .map(
-                (s) => ButtonSegment<int>(
-                  value: s,
-                  label: Text(s == 0 ? t.image_pause_off : '${s}s'),
-                  tooltip: s == 0 ? t.image_pause_off : '${s}s',
-                ),
-              )
-              .toList(),
-          selected: sec,
-          onChanged: ctrl.setImagePauseSec,
+          value: sec.toDouble(),
+          step: 1,
+          min: 0,
+          max: AudiobookPlayerController.maxImagePauseSec.toDouble(),
+          format: (double v) =>
+              v.round() == 0 ? t.image_pause_off : '${v.round()}s',
+          onChanged: (double v) => ctrl.setImagePauseSec(v.round()),
         );
       },
     );

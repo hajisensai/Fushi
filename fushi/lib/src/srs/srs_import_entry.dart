@@ -77,6 +77,16 @@ String _formatSteps(List<double> steps) => steps
     })
     .join(' ');
 
+/// 冲突笔记按（原因, 笔记类型名）计数，保持首次出现的顺序。
+Map<(String, String), int> _conflictCounts(List<SrsImportNoteIssue> issues) {
+  final Map<(String, String), int> out = <(String, String), int>{};
+  for (final SrsImportNoteIssue i in issues) {
+    final (String, String) key = (i.reason, i.noteType);
+    out[key] = (out[key] ?? 0) + 1;
+  }
+  return out;
+}
+
 /// 导入报告 → 给人看的行（只列非零 / 非空的项）。
 List<String> srsImportReportLines(SrsImportReport r) => <String>[
   t.srs_import_report_notes(
@@ -130,8 +140,17 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     t.srs_import_report_default_fsrs(preset: preset),
   for (final String preset in r.invalidParams.keys)
     t.srs_import_report_invalid_params(preset: preset),
-  if (r.conflictNotes.isNotEmpty)
-    t.srs_import_report_conflicts(n: r.conflictNotes.length),
+  // 按（原因, 笔记类型）分行：只给总数时用户看不出是哪个类型、为什么、该怎么办。
+  for (final MapEntry<(String, String), int> e in _conflictCounts(
+    r.conflictNotes,
+  ).entries)
+    switch (e.key.$1) {
+      SrsImportIssueReason.noteTypeChanged =>
+        t.srs_import_report_conflicts_type_changed(n: e.value, name: e.key.$2),
+      SrsImportIssueReason.noteTypeKindMismatch =>
+        t.srs_import_report_conflicts_kind_mismatch(n: e.value, name: e.key.$2),
+      _ => t.srs_import_report_conflicts_missing_type(n: e.value),
+    },
   if (r.removedInSource.isNotEmpty)
     t.srs_import_report_removed(n: r.removedInSource.length),
   if (r.futureCards.isNotEmpty)

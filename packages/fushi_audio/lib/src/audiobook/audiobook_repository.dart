@@ -360,8 +360,17 @@ class AudiobookRepository {
 
   // ── image pause ─────────────────────────────────────────────────
 
+  /// 插图停留秒数的默认值（所有者 2026-10-31 拍板：2 秒，原为 0 = 关）。
+  ///
+  /// 只作用于**从未设置过**的书：偏好表里没有这本书的行时才回落到它。用户显式
+  /// 设成 0（关闭）会落一行 `i:0`（唯一写入方是设置项经
+  /// `AudiobookPlayerController.setImagePauseSec` → [updateImagePauseSec]，载入
+  /// 不回写），读到的就是 0，保持关闭。
+  static const int defaultImagePauseSec = 2;
+
   Future<int> readImagePauseSec(String bookKey) async {
-    return _db.getPrefTyped('$_kImagePauseSecKeyPrefix$bookKey', 0);
+    return _db.getPrefTyped(
+        '$_kImagePauseSecKeyPrefix$bookKey', defaultImagePauseSec);
   }
 
   Future<void> updateImagePauseSec({

@@ -748,10 +748,6 @@ class AnotherPopupPart {
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
-      'lib/src/utils/adaptive/nav_overflow/nav_dial_bar.dart':
-          'Hand-drawn dial nav bar: tick marks and the knob are geometry derived from the dial radius, not card/container chrome (panel uses FushiM3eShape).',
-      'lib/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart':
-          'Hand-drawn mode-strip nav bar: the 2dp bottom marker under the highlight is a glyph, not chrome (the highlight itself is NavMorphShape).',
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
           'Apple design-system sidebar/tab strip: radii follow the iOS/macOS sidebar selection and tab-pill metrics (Apple branch, not M3E).',
       'lib/src/utils/components/fushi_design_tokens.dart':
@@ -1349,12 +1345,6 @@ class AnotherPopupPart {
       },
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{
         'fontSize:',
-      },
-      'lib/src/utils/adaptive/nav_overflow/nav_dial_bar.dart': <String>{
-        'BorderRadius.circular(',
-      },
-      'lib/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart': <String>{
         'BorderRadius.circular(',
