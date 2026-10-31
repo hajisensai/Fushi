@@ -176,6 +176,9 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 补发队列里的卡。
   ///
   /// 连续补发所有可补发的卡，遇到「后端不可达」就停下（剩下的也必然不可达）。
+  /// 用户点「全部发送」（[interactive]）时 `failed` 的卡也一起重试；自动补发不碰它们。
+  /// 此前「全部发送」同样跳过 `failed`，队列里只剩失败卡时它什么也不做，还报出
+  /// 「已发送 0、失败 0、剩余 0」，失败卡只能逐张点重试（反馈 NYjj59uzBY）。
   ///
   /// 每张卡都要切 app 的后端（AnkiMobile，[BaseAnkiRepository.switchesAppPerNote]）
   /// 走另一条路：只有用户显式点「全部发送」（[interactive]）才发，而且一次只发
@@ -198,7 +201,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
         }
         return inner.switchesAppPerNote
             ? _startAnkiMobileSend(interactive: interactive)
-            : _flushAll();
+            : _flushAll(includeFailed: interactive);
       });
 
   /// 批量模式下自动补发要不要停手：读的是与 [mineEntry] 入队判据同一份设置。
@@ -207,7 +210,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
 
   /// 只补发队列里的一张（控制通道 `anki pending send <id>` / `retry`）。
   ///
-  /// 与 [flush] 同一把串行锁、同一个 [_sendOne]，所以 `failed` 的卡（[flush] 不碰）也能
+  /// 与 [flush] 同一把串行锁、同一个 [_sendOne]，所以 `failed` 的卡（自动 [flush] 不碰）也能
   /// 单独重发：[_sendOne] 的 `markSending` 只拒绝已落地 / 已上传给落地设备的卡。
   /// 每张卡都要切 app 的后端（AnkiMobile）时和 [flush] 一样只在 [interactive] 下拉起。
   Future<PendingFlushReport> flushOne(String id, {bool interactive = false}) =>
@@ -278,7 +281,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
     return done.future;
   }
 
-  Future<PendingFlushReport> _flushAll() async {
+  Future<PendingFlushReport> _flushAll({required bool includeFailed}) async {
     try {
       await _store.sweepOrphanPayloads();
     } catch (_) {
@@ -286,7 +289,10 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
     }
     int delivered = 0;
     int failed = 0;
-    for (final PendingMineRow row in await _store.sendable()) {
+    final List<PendingMineRow> batch = includeFailed
+        ? await _store.sendableIncludingFailed()
+        : await _store.sendable();
+    for (final PendingMineRow row in batch) {
       switch (await _sendOne(row)) {
         case _SendResult.delivered:
           delivered++;
@@ -314,15 +320,16 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   }
 
   /// 用户点「全部发送」。还停在 `sending` 的卡（用户在 AnkiMobile 里取消后手动切回、
-  /// 或回跳没送达）一律退回 `pending` 重发，由 AnkiMobile 自己查重兜底。不拿本机账本
+  /// 或回跳没送达）一律退回 `pending` 重发，由 AnkiMobile 自己查重兜底；`failed` 的卡
+  /// 同样退回 `pending`，与其他后端的「全部发送」一致（连失败的一起重试）。不拿本机账本
   /// 判「已送达」：账本只按词记，同一个词以前制过卡，这张被取消的就会被静默当成已进
   /// Anki 丢掉。然后拉起一张。
   Future<PendingFlushReport> _startAnkiMobileSend({
     required bool interactive,
   }) async {
     if (!interactive) return const PendingFlushReport(skipped: true);
-    for (final PendingMineRow row in await _store.rows()) {
-      if (row.status == PendingMineStatus.sending) {
+    for (final PendingMineRow row in await _store.sendableIncludingFailed()) {
+      if (row.status != PendingMineStatus.pending) {
         await _store.markPending(row.id);
       }
     }
