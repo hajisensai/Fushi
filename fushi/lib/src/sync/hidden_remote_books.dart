@@ -243,6 +243,7 @@ Future<RemoteBookClient?> resolveShelfRemoteBookClient(
     backend: backend,
     backendType: type,
     rootFolderId: rootFolderId,
+    database: database,
   );
 }
 

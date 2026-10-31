@@ -70,10 +70,12 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
     setState(() => _saving = true);
     try {
       // 本次勾选状态即下次默认值；被隐藏的那一项保持加载来的旧值，不会被覆盖。
-      await widget.onPersistChoices?.call(DeletePromptRememberedChoices(
-        syncEverywhere: _syncDelete,
-        deleteLocalFiles: _deleteLocalFiles,
-      ));
+      await widget.onPersistChoices?.call(
+        DeletePromptRememberedChoices(
+          syncEverywhere: _syncDelete,
+          deleteLocalFiles: _deleteLocalFiles,
+        ),
+      );
     } catch (error, stackTrace) {
       debugPrint('Delete prompt preference write failed: $error\n$stackTrace');
     }
@@ -136,9 +138,9 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
             if (widget.showSyncScope)
               DeleteConfirmCheckboxRow(
                 title: t.delete_scope_sync_everywhere,
-                subtitle: _syncDelete
-                    ? t.delete_scope_sync_everywhere_desc
-                    : t.delete_scope_keep_local_desc,
+                // 反馈 TXKXSgDhP6：副标题是条件句、不随勾选翻面。旧版不勾时显示「其他设备
+                // 保留」，和标题「从所有设备删除」并排读成自相矛盾。
+                subtitle: t.delete_scope_sync_everywhere_desc,
                 value: _syncDelete,
                 onChanged: (bool v) => setState(() => _syncDelete = v),
               )
@@ -324,7 +326,10 @@ class BookProfileDialogFrame extends StatelessWidget {
               ),
         footer: Align(
           alignment: Alignment.centerRight,
-          child: FushiTextButton(onPressed: onClose, child: Text(t.dialog_close)),
+          child: FushiTextButton(
+            onPressed: onClose,
+            child: Text(t.dialog_close),
+          ),
         ),
       ),
     );

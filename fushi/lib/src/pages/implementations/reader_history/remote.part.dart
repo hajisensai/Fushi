@@ -458,11 +458,15 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// * 「信息」→ 弹基本元数据（书名 + 是否含有声书）。
   /// * 「仅从本机移除」→ 恒显示：只把这张占位卡从本机书架隐藏（按来源 + 远端身份
   ///   记进 [PreferencesRepository.hiddenRemoteBooks]），对端 / 云盘那份不动。
-  /// * 「彻底删除」→ 仅当 host 允许 client 删除时显示。判据 = 当前远端来源是
+  /// * 「同时从远端删除」→ 仅当 host 允许 client 删除时显示。判据 = 当前远端来源是
   ///   [InterconnectSyncBackend]（已配对互联 host）：host 对任一鉴权通过的已配对
   ///   peer 开放 `DELETE /api/library/books/<id>`，没有按 peer 的只读权限；云盘
-  ///   后端（[CloudRemoteBookClient]）没有删除接口，按类型隐藏（真实能力边界）。
-  ///   二次确认写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。
+  ///   备份来源（[CloudRemoteBookClient]）同样提供：删书文件夹 + 发布云删除墓碑。
+  ///   二次确认写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。只在对端此刻在线、
+  ///   可达时可点：菜单打开即重探 host（[RemoteDeleteAvailabilityBuilder]），探测中 /
+  ///   离线 / 配对被拒时禁用并写明原因（反馈 R8duEiqRuy，所有者 2026-10-31 拍板）。
+  ///   host 删除后自己记同步删除墓碑（`sync_deletion_tombstones`），其它已下载这本书
+  ///   的 peer 经 `/api/tombstones` 收到删除——不是只删 host 上的文件。
   ///
   /// [removeFromCollection] 非空 = 合集详情页成员语境，菜单补「移出合集」
   /// （BUG-2969：合集内外同一个菜单，见 [_showCollectionMemberMenu]）。
@@ -471,60 +475,80 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     VoidCallback? removeFromCollection,
   }) {
     final RemoteBookClient? client = _remoteBookClient;
-    final bool canDelete = client is InterconnectSyncBackend;
+    final InterconnectSyncBackend? hostDeleter =
+        client is InterconnectSyncBackend ? client : null;
+    // 云盘备份来源也能从远端删（反馈 R8duEiqRuy 那本书来自云盘，所有者 2026-10-31
+    // 追加）：六种云盘后端都支持递归删书文件夹，删除走云墓碑（见
+    // [CloudRemoteBookClient.deleteRemoteBook]）。
+    final CloudRemoteBookClient? cloudDeleter = client is CloudRemoteBookClient
+        ? client
+        : null;
+    final Future<RemoteSourceReachability> Function()? probe =
+        hostDeleter?.probeHostReachability ??
+        cloudDeleter?.probeRemoteReachability;
     showMediaItemActions<void>(
       context: context,
-      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
-        coverMaterial: ShelfCoverMaterial.glossyBook,
-        cover: _buildRemoteBookCover(book),
-        coverBackdrop: _remoteBookCoverBackdrop(book),
-        title: book.displayName,
-        showLaunchAction: false,
-        listActions: _removeFromCollectionActions(
-          dialogContext,
-          removeFromCollection,
-        ),
-        quickActions: <DialogQuickAction>[
-          DialogQuickAction(
-            label: t.remote_book_download,
-            icon: Icons.download_outlined,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _downloadRemoteBook(book);
-            },
-          ),
-          // 「信息」弹窗目前只有一条附加元数据（是否含有声书）；无附加信息时弹出
-          // 即空壳，隐藏入口（巡检 PR-3 最小改法——待远端元数据丰富后再放开）。
-          if (book.hasAudiobook)
-            DialogQuickAction(
-              label: t.remote_book_info,
-              icon: Icons.info_outline,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _showRemoteBookInfo(book);
-              },
+      builder: (BuildContext dialogContext) => RemoteDeleteAvailabilityBuilder(
+        probe: probe,
+        kind: client?.remoteSourceKind ?? RemoteBookSourceKind.interconnect,
+        builder: (BuildContext _, String? deleteDisabledReason) =>
+            MediaItemDialogFrame(
+              coverMaterial: ShelfCoverMaterial.glossyBook,
+              cover: _buildRemoteBookCover(book),
+              coverBackdrop: _remoteBookCoverBackdrop(book),
+              title: book.displayName,
+              showLaunchAction: false,
+              listActions: _removeFromCollectionActions(
+                dialogContext,
+                removeFromCollection,
+              ),
+              quickActions: <DialogQuickAction>[
+                DialogQuickAction(
+                  label: t.remote_book_download,
+                  icon: Icons.download_outlined,
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _downloadRemoteBook(book);
+                  },
+                ),
+                // 「信息」弹窗目前只有一条附加元数据（是否含有声书）；无附加信息时弹出
+                // 即空壳，隐藏入口（巡检 PR-3 最小改法——待远端元数据丰富后再放开）。
+                if (book.hasAudiobook)
+                  DialogQuickAction(
+                    label: t.remote_book_info,
+                    icon: Icons.info_outline,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _showRemoteBookInfo(book);
+                    },
+                  ),
+              ],
+              dangerActions: <DialogDangerAction>[
+                if (client != null)
+                  DialogDangerAction(
+                    label: t.remote_book_hide_local,
+                    icon: FushiIcons.visibilityOff,
+                    muted: true,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _hideRemoteBookLocally(book, client);
+                    },
+                  ),
+                if (probe != null)
+                  DialogDangerAction(
+                    label: t.remote_book_delete_everywhere,
+                    disabledReason: deleteDisabledReason,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      if (hostDeleter != null) {
+                        _confirmDeleteRemoteBook(book, hostDeleter);
+                      } else {
+                        _confirmDeleteCloudRemoteBook(book, cloudDeleter!);
+                      }
+                    },
+                  ),
+              ],
             ),
-        ],
-        dangerActions: <DialogDangerAction>[
-          if (client != null)
-            DialogDangerAction(
-              label: t.remote_book_hide_local,
-              icon: FushiIcons.visibilityOff,
-              muted: true,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _hideRemoteBookLocally(book, client);
-              },
-            ),
-          if (canDelete)
-            DialogDangerAction(
-              label: t.remote_book_delete_everywhere,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _confirmDeleteRemoteBook(book, client);
-              },
-            ),
-        ],
       ),
     );
   }
@@ -688,6 +712,43 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         FushiSnackBar(content: Text(t.remote_delete_audiobook_partial)),
       );
     }
+  }
+
+  /// 从云盘备份删除远端书（[CloudRemoteBookClient.deleteRemoteBook]：先发布删除墓碑、
+  /// 再删书文件夹），删完强制刷新远端列表。二次确认写明是哪个云盘上的哪本书，以及
+  /// 其它设备下次同步会确认是否一并删除。失败如实提示，不假装删成功。
+  Future<void> _confirmDeleteCloudRemoteBook(
+    RemoteBookInfo book,
+    CloudRemoteBookClient client,
+  ) async {
+    final bool? confirmed = await _confirmRemoteDelete(
+      book.displayName,
+      message: t.remote_book_delete_cloud_confirm(
+        name: book.displayName,
+        backend: syncBackendLabel(client.backendType),
+      ),
+      confirmLabel: t.remote_book_delete_everywhere,
+    );
+    if (confirmed != true) return;
+    bool failed = false;
+    try {
+      await client.deleteRemoteBook(book);
+    } catch (e, stack) {
+      failed = true;
+      ErrorLogService.instance.log(
+        'ReaderFushiHistoryPage.deleteCloudRemoteBook',
+        e,
+        stack,
+      );
+    }
+    if (!mounted) return;
+    if (failed) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.remote_delete_failed)));
+      return;
+    }
+    _forceRefreshRemoteBooks();
   }
 
   /// 远端书长按菜单头部模糊垫底与封面宽高比的图源：与 [_buildRemoteBookCover]
@@ -1655,38 +1716,46 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   }) {
     final String title = book.title ?? book.identity;
     final RemoteBookClient? client = _remoteBookClient;
-    final bool canDelete = client is InterconnectSyncBackend;
+    final InterconnectSyncBackend? deleter = client is InterconnectSyncBackend
+        ? client
+        : null;
     showMediaItemActions<void>(
       context: context,
-      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
-        coverMaterial: ShelfCoverMaterial.glossyBook,
-        cover: _coverPlaceholderIcon(Icons.headphones_outlined),
-        title: title,
-        showLaunchAction: false,
-        listActions: _removeFromCollectionActions(
-          dialogContext,
-          removeFromCollection,
-        ),
-        quickActions: <DialogQuickAction>[
-          DialogQuickAction(
-            label: t.remote_book_download,
-            icon: Icons.download_outlined,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _downloadRemoteSrtAudiobook(book);
-            },
-          ),
-        ],
-        dangerActions: <DialogDangerAction>[
-          if (canDelete)
-            DialogDangerAction(
-              label: t.dialog_delete,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _confirmDeleteRemoteSrt(book, client);
-              },
+      // 与远端 EPUB 卡同一条可用性规则：对端此刻在线、可达才可删（R8duEiqRuy）。
+      builder: (BuildContext dialogContext) => RemoteDeleteAvailabilityBuilder(
+        probe: deleter?.probeHostReachability,
+        builder: (BuildContext _, String? deleteDisabledReason) =>
+            MediaItemDialogFrame(
+              coverMaterial: ShelfCoverMaterial.glossyBook,
+              cover: _coverPlaceholderIcon(Icons.headphones_outlined),
+              title: title,
+              showLaunchAction: false,
+              listActions: _removeFromCollectionActions(
+                dialogContext,
+                removeFromCollection,
+              ),
+              quickActions: <DialogQuickAction>[
+                DialogQuickAction(
+                  label: t.remote_book_download,
+                  icon: Icons.download_outlined,
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _downloadRemoteSrtAudiobook(book);
+                  },
+                ),
+              ],
+              dangerActions: <DialogDangerAction>[
+                if (deleter != null)
+                  DialogDangerAction(
+                    label: t.remote_book_delete_everywhere,
+                    disabledReason: deleteDisabledReason,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _confirmDeleteRemoteSrt(book, deleter);
+                    },
+                  ),
+              ],
             ),
-        ],
       ),
     );
   }
