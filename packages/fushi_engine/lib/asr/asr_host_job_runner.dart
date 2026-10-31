@@ -35,7 +35,7 @@ class AsrHostJobRunner implements HostJobRunner {
   /// 每个任务按素材新建一份服务（隔离 isolate 生命周期）。素材是服务实例级
   /// 字段（任务目录哈希也含它），所以由任务参数决定、不能在装配时写死。
   final asr.AsrTranscriptionService Function(asr.AsrAudioProfile profile)
-      serviceFactory;
+  serviceFactory;
 
   /// `videoId` → 本机视频文件路径（host 库）；null = 不支持 videoId。
   final Future<String?> Function(String videoId)? resolveVideoPath;
@@ -46,13 +46,16 @@ class AsrHostJobRunner implements HostJobRunner {
 
   @override
   Future<Map<String, Object?>> capability() async {
-    final asr.AsrTranscriptionService service =
-        serviceFactory(asr.AsrAudioProfile.cleanSpeech);
+    final asr.AsrTranscriptionService service = serviceFactory(
+      asr.AsrAudioProfile.cleanSpeech,
+    );
     final Map<String, Object?> models = <String, Object?>{};
     for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
       try {
-        final asr.AsrTranscribePlan plan =
-            await service.plan(language: language, preference: preference);
+        final asr.AsrTranscribePlan plan = await service.plan(
+          language: language,
+          preference: preference,
+        );
         models[language.tag] = <String, Object?>{
           'ready': plan.modelReady,
           'variant': plan.variant.name,
@@ -93,37 +96,44 @@ class AsrHostJobRunner implements HostJobRunner {
 
   @override
   String contentTypeFor(String outputName) {
-    if (outputName.endsWith('.srt')) return 'application/x-subrip; charset=utf-8';
+    if (outputName.endsWith('.srt'))
+      return 'application/x-subrip; charset=utf-8';
     if (outputName.endsWith('.jsonl')) return 'application/x-ndjson';
     return 'application/octet-stream';
   }
 
   @override
   Future<HostJobOutcome> run(HostJobContext ctx) async {
-    final asr.AsrLanguage language =
-        asr.AsrLanguage.fromBookLanguage(ctx.params['language'].toString())!;
-    final _ResolvedAudio audio = await _resolveAudio(ctx);
-    final List<String> audioPaths = audio.paths;
+    final asr.AsrLanguage language = asr.AsrLanguage.fromBookLanguage(
+      ctx.params['language'].toString(),
+    )!;
+    final List<String> audioPaths = await _resolveAudio(ctx);
     final asr.AsrAudioProfile profile = asrAudioProfileForJob(
       explicit: ctx.params['audioProfile']?.toString(),
       fromLibraryVideo: (ctx.params['videoId']?.toString() ?? '').isNotEmpty,
       path: audioPaths.first,
     );
     final asr.AsrTranscriptionService service = serviceFactory(profile);
-    final asr.AsrTranscribePlan plan =
-        await service.plan(language: language, preference: preference);
+    final asr.AsrTranscribePlan plan = await service.plan(
+      language: language,
+      preference: preference,
+    );
     if (!plan.modelReady) {
       throw StateError(
         'asr models for ${language.tag} are not downloaded on this host '
         '(run `fushi_server models pull --language ${language.tag}`)',
       );
     }
-    // 输入是 host 库里的文件（库视频 / 按哈希命中的有声书音频）时，转录服务的任务
-    // 目录与 host 自己在本机转这组文件时是同一个（目录哈希按路径算）。那份目录原本
-    // 就在（host 用户自己转过 / 正在转）就不能在结束时删掉，否则把人家的转录稿一起
-    // 删了；只有本任务新建的才当中间产物清掉。
-    final bool keepServiceJobDir = audio.fromHostLibrary &&
-        await (await service.jobDirFor(audioPaths, language)).exists();
+    // 转录服务的任务目录按「文件名 + 字节数 + 模型」派生，与路径无关：host 用户自己在
+    // 本机转同一组音频（库里的文件，或内容相同、同名的上传件）用的是同一个目录。目录
+    // 归属记在目录里的 [kRemoteAsrJobDirMarker]：本任务（或之前某个被取消 / 中断的远端
+    // 任务）建的才是远端中间产物，结束时清掉；不带标记的是 host 用户自己的，绝不删。
+    final bool keepServiceJobDir = await claimAsrServiceJobDir(
+      await service.jobDirFor(audioPaths, language),
+      jobId: ctx.jobId,
+      finishedBefore: () async =>
+          await service.finishedSrtPath(audioPaths, language) != null,
+    );
     ctx.onProgress(0, 'loading model');
     final asr.AsrRunningTranscription running = await service.start(
       audioPaths: audioPaths,
@@ -136,11 +146,15 @@ class AsrHostJobRunner implements HostJobRunner {
     try {
       await for (final asr.AsrTranscribeEvent e in running.run()) {
         switch (e) {
-          case asr.AsrTranscribeProgressEvent(progress: final asr.AsrTranscribeProgress pr):
+          case asr.AsrTranscribeProgressEvent(
+            progress: final asr.AsrTranscribeProgress pr,
+          ):
             ctx.onProgress(pr.fraction ?? 0, 'transcribing');
           case asr.AsrTranscribePausedEvent():
             if (ctx.cancel.isCancelled) throw const HostJobCancelledException();
-          case asr.AsrTranscribeFinishedEvent(result: final asr.AsrTranscribeResult r):
+          case asr.AsrTranscribeFinishedEvent(
+            result: final asr.AsrTranscribeResult r,
+          ):
             result = r;
         }
       }
@@ -148,14 +162,17 @@ class AsrHostJobRunner implements HostJobRunner {
       await running.dispose();
     }
     if (ctx.cancel.isCancelled) throw const HostJobCancelledException();
-    final asr.AsrTranscribeResult done = result ??
+    final asr.AsrTranscribeResult done =
+        result ??
         (throw StateError('asr transcription ended without a result'));
     final File srt = File(done.srtPath);
     await srt.copy(ctx.output(asr.AsrJobFiles.srt).path);
     final Map<String, String> outputs = <String, String>{
       asr.AsrJobFiles.srt: asr.AsrJobFiles.srt,
     };
-    final File tokens = File(p.join(p.dirname(done.srtPath), asr.AsrJobFiles.cueTokens));
+    final File tokens = File(
+      p.join(p.dirname(done.srtPath), asr.AsrJobFiles.cueTokens),
+    );
     if (await tokens.exists()) {
       await tokens.copy(ctx.output(asr.AsrJobFiles.cueTokens).path);
       outputs[asr.AsrJobFiles.cueTokens] = asr.AsrJobFiles.cueTokens;
@@ -170,14 +187,15 @@ class AsrHostJobRunner implements HostJobRunner {
     );
   }
 
-  Future<_ResolvedAudio> _resolveAudio(HostJobContext ctx) async {
+  Future<List<String>> _resolveAudio(HostJobContext ctx) async {
     final String? videoId = ctx.params['videoId']?.toString();
     if (videoId != null && videoId.isNotEmpty) {
       final Future<String?> Function(String)? resolve = resolveVideoPath;
-      if (resolve == null) throw const FormatException('asr: videoId not supported on this host');
+      if (resolve == null)
+        throw const FormatException('asr: videoId not supported on this host');
       final String? path = await resolve(videoId);
       if (path == null) throw FormatException('asr: unknown videoId $videoId');
-      return _ResolvedAudio(<String>[path], fromHostLibrary: true);
+      return <String>[path];
     }
     final String? named = ctx.params['input']?.toString();
     final List<String> names = named != null && named.isNotEmpty
@@ -187,23 +205,41 @@ class AsrHostJobRunner implements HostJobRunner {
     final List<String> paths = <String>[];
     for (final String name in names) {
       final File f = ctx.input(name);
-      if (!await f.exists()) throw FormatException('asr: input "$name" not uploaded');
+      if (!await f.exists())
+        throw FormatException('asr: input "$name" not uploaded');
       paths.add(f.path);
     }
-    return _ResolvedAudio(
-      paths,
-      fromHostLibrary: names.any(ctx.isHostInput),
-    );
+    return paths;
   }
 }
 
-class _ResolvedAudio {
-  const _ResolvedAudio(this.paths, {required this.fromHostLibrary});
+/// 远端任务建的转录服务任务目录里的归属标记（内容 = 建它的 host 任务 id）。
+const String kRemoteAsrJobDirMarker = '.fushi_remote_job';
 
-  final List<String> paths;
-
-  /// 至少有一个路径是 host 库里的文件（不在本任务的 inputs 目录里）。
-  final bool fromHostLibrary;
+/// 远端任务开跑前认领转录服务的任务目录 [dir]；返回结束时是否必须**保留**它。
+///
+/// - 目录不存在：本任务新建并写标记 → 不保留（成功后当中间产物清掉）。之后若本任务
+///   被取消 / 进程中断，目录带着标记留下，下次哪个远端任务用到它都会清掉，不会因为
+///   「目录早就在」被当成 host 用户的转录永远留着。
+/// - 目录已在且没有标记：host 用户自己在转 / 转过 → 保留。
+/// - 标记是本任务自己的（同一任务重启后重跑）→ 不保留。
+/// - 目录带标记但 [finishedBefore] 为真：远端任务成功时会当场清掉目录，带标记又已
+///   转完只能是 host 用户在本机把那份残留续转完了 → 现在归 host 用户，保留。
+/// - 其余（带标记、未转完）：远端残留 → 不保留。
+Future<bool> claimAsrServiceJobDir(
+  Directory dir, {
+  required String jobId,
+  required Future<bool> Function() finishedBefore,
+}) async {
+  final File marker = File(p.join(dir.path, kRemoteAsrJobDirMarker));
+  if (!await dir.exists()) {
+    await dir.create(recursive: true);
+    await marker.writeAsString(jobId, flush: true);
+    return false;
+  }
+  if (!await marker.exists()) return true;
+  if ((await marker.readAsString()).trim() == jobId) return false;
+  return finishedBefore();
 }
 
 /// `cleanSpeech` / `mixedAudio`（大小写不敏感）→ 枚举；认不出返回 null。
