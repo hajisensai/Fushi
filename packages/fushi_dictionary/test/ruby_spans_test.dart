@@ -21,6 +21,47 @@ void main() {
     expect(FushiRubySpan.listFromWire(null), isEmpty);
   });
 
+  test('listFromWire 对不可信的远端数组设上限：区间数 / 读音长度 / 扫描项数', () {
+    const int max = FushiRubySpan.maxWireSpans;
+    final List<FushiRubySpan> many = FushiRubySpan.listFromWire(<Object?>[
+      for (int i = 0; i < max * 10; i++)
+        <String, Object?>{'s': i, 'e': i + 1, 'r': 'か'},
+    ]);
+    expect(many, hasLength(max));
+    expect(
+      many.last,
+      const FushiRubySpan(start: max - 1, end: max, reading: 'か'),
+    );
+
+    final String longReading = 'あ' * (FushiRubySpan.maxWireReadingLength + 1);
+    expect(
+      FushiRubySpan.listFromWire(<Object?>[
+        <String, Object?>{'s': 0, 'e': 1, 'r': longReading},
+        <String, Object?>{
+          's': 1,
+          'e': 2,
+          'r': 'あ' * FushiRubySpan.maxWireReadingLength,
+        },
+      ]),
+      <FushiRubySpan>[
+        FushiRubySpan(
+          start: 1,
+          end: 2,
+          reading: 'あ' * FushiRubySpan.maxWireReadingLength,
+        ),
+      ],
+    );
+
+    // 前面一长串畸形项刷不满区间上限，也不会无界遍历：超过扫描上限后面的合法项不再看。
+    expect(
+      FushiRubySpan.listFromWire(<Object?>[
+        for (int i = 0; i < max * 4; i++) 'junk',
+        <String, Object?>{'s': 0, 'e': 1, 'r': 'せわ'},
+      ]),
+      isEmpty,
+    );
+  });
+
   test('shiftRubySpans 按句首剥离长度平移，越界的丢弃', () {
     expect(
       shiftRubySpans(
