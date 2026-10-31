@@ -277,7 +277,9 @@ void main() {
       await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
       <int>[7, 7],
     );
-    expect(prepared.deferredWriters, <(String, String)>[('a#1', 'old.png')]);
+    expect(prepared.deferredWriters.keys, <(String, String)>[
+      ('a#1', 'old.png'),
+    ]);
     expect(legacyFile.existsSync(), isTrue, reason: '绑定还没发布到位置：旧文件留着');
     // 收尾之前写入者目录里又来了一个（列表之后才出现的）文件：收尾只删逐个确认搬好的那个。
     final File lateFile = File(

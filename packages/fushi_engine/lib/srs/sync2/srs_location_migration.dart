@@ -70,7 +70,18 @@ class SrsLocationPrepared {
   String? error;
 
   /// 新根已在用时，处理旧根残留失败的原因（读失败 / 解不开 / 新根的口令问题）：不挡新根的同步，下一轮再试。
+  /// 调用方必须记日志（[leftoverCause] / [leftoverStack] 是抛出来的原始错误与栈；口令问题没有异常，二者为 null）。
   String? leftoverError;
+
+  /// [leftoverError] 来自异常时的原始错误。
+  Object? leftoverCause;
+
+  /// [leftoverCause] 的栈。
+  StackTrace? leftoverStack;
+
+  /// [srsFinishLocationMigration] 删旧文件时逐个出的错（读 / 删失败）：这些文件留在待删里下一轮再删，不让已经成功的
+  /// 一轮同步报失败；调用方必须记日志。
+  final List<(Object, StackTrace)> cleanupErrors = <(Object, StackTrace)>[];
 
   /// 旧根 `meta.json` 上的加密参数（要口令时 UI 用）。
   SrsKdf? kdf;
@@ -96,11 +107,14 @@ class SrsLocationPrepared {
   /// 导入旧段时的非致命错误。
   final List<String> errors = <String>[];
 
-  /// 按名字存的旧文件（旧根路径）：内容已核对在新根，等绑定发布后由 [srsFinishLocationMigration] 删。
-  final List<String> deferred = <String>[];
+  /// 按名字存的旧文件（旧根路径 → 迁移时读到的原始字节的 sha256）：内容已核对在新根，等绑定发布后由
+  /// [srsFinishLocationMigration] 删。删之前按这个 sha 再核对一次——名字是可变的，迁移之后同名文件被换成了别的内容
+  /// （同步工具晚到的旧版本写入）就不能删，留给下一次准备重新搬。
+  final Map<String, String> deferred = <String, String>{};
 
-  /// 同上，写入者目录里的（写入者, 文件名）。
-  final List<(String, String)> deferredWriters = <(String, String)>[];
+  /// 同上，写入者目录里的（写入者, 文件名）→ 原始字节的 sha256。
+  final Map<(String, String), String> deferredWriters =
+      <(String, String), String>{};
 
   /// 补绑定之后本机日志的最后一个 seq：位置上传水位到了它，绑定就已发布。
   int? publishSeq;
@@ -167,8 +181,16 @@ class SrsAssetV1Writers implements SrsV1Writers {
   Future<List<String>> mediaNames(String writer) async =>
       (await _list(writer)).keys.toList()..sort();
 
+  /// 本实例还没列过 [writer] 就先列（收尾可能在另一个实例上跑）：没列过不等于「不在」。
+  Future<void> _ensureListed(String writer) async {
+    if (_media.containsKey(writer)) return;
+    if (!_writerIds.containsKey(writer)) await writers();
+    await _list(writer);
+  }
+
   @override
   Future<bool> getMedia(String writer, String name, File dst) async {
+    await _ensureListed(writer);
     final String? id = _media[writer]?[name];
     if (id == null) return false;
     try {
@@ -184,10 +206,7 @@ class SrsAssetV1Writers implements SrsV1Writers {
   @override
   Future<void> deleteMedia(String writer, String name) async {
     // 收尾可能在另一个实例上跑（没列过目录）：先列，只删这一个名字现在对应的那个文件。
-    if (!_media.containsKey(writer)) {
-      if (!_writerIds.containsKey(writer)) await writers();
-      await _list(writer);
-    }
+    await _ensureListed(writer);
     final String? id = _media[writer]?[name];
     if (id != null) await store.deleteAsset(id);
   }
@@ -273,10 +292,12 @@ int _minReaderOf(Map<String, Object?> meta) {
   return v is num ? v.toInt() : 1;
 }
 
-/// 集合根上除了 `meta.json` 之外还有没有东西。
+/// 集合根上除了 `meta.json`（与迁移自己写的 [kSrsV1SweepMarker]，它不是集合数据）之外还有没有东西。
 Future<bool> _hasData(SrsLocationStore s) async {
   for (final SrsLocationEntry e in await s.list('')) {
-    if (e.name == 'meta.json' && !e.isFolder) continue;
+    if (!e.isFolder && (e.name == 'meta.json' || e.name == kSrsV1SweepMarker)) {
+      continue;
+    }
     if (e.isFolder && (await _files(s, e.name)).isEmpty) continue;
     return true;
   }
@@ -378,9 +399,8 @@ Future<SrsLocationPrepared> srsPrepareLocation({
     return out;
   }
   final Map<String, Object?>? v3Meta = cur as Map<String, Object?>?;
-  if (v3Meta != null && (memo?.swept(host.profileUid, locationId) ?? false)) {
-    return out;
-  }
+  // 本进程已经扫干净的位置同样要走第 1 步：每一轮都确认围栏还在（被删 / 被同步工具换回旧 meta 时重立并接着迁移），
+  // 只是围栏在时不再列旧根（见 [_Migration.run]）。
   final _Migration m = _Migration(
     host: host,
     v1: v1,
@@ -402,8 +422,12 @@ Future<SrsLocationPrepared> srsPrepareLocation({
   }
   try {
     await m.run();
-  } on Object catch (e) {
-    out.leftoverError = '$e';
+  } on Object catch (e, stack) {
+    // 不挡新根的同步，但不吞：原始错误与栈交给调用方记日志（srs_sync_scheduler.dart 两条路径都记）。
+    out
+      ..leftoverError = '$e'
+      ..leftoverCause = e
+      ..leftoverStack = stack;
   }
   return out;
 }
@@ -436,28 +460,87 @@ Future<int> srsFinishLocationMigration({
   }
   if (!published) return 0;
   int n = 0;
-  final List<String> kept = <String>[];
-  await srsRunPooled(prepared.deferred, kSrsSync2Concurrency, (
-    String path,
+  final Map<String, String> kept = <String, String>{};
+  // 逐个文件：一个读 / 删失败只留下它自己（下一轮再删），记进 cleanupErrors，不让这一轮已经成功的同步报失败。
+  await srsRunPooled(prepared.deferred.entries.toList(), kSrsSync2Concurrency, (
+    MapEntry<String, String> e,
   ) async {
-    if (await _deleteOld(v1, path)) {
-      n++;
-    } else {
-      kept.add(path);
+    try {
+      final String? now = await _rawSha(
+        (File dst) => srsLocationGetFile(v1, e.key, dst),
+      );
+      if (now == null) {
+        n++; // 已经不在（别的设备收尾删了）。
+      } else if (now != e.value) {
+        // 迁移之后同名文件换了内容：搬进新根、绑上的是旧内容，这份没人搬过——不删，下一次准备重新搬。
+        prepared.skipped.add(e.key);
+      } else if (await _deleteOld(v1, e.key)) {
+        n++;
+      } else {
+        kept[e.key] = e.value;
+      }
+    } on Object catch (err, stack) {
+      kept[e.key] = e.value;
+      prepared.cleanupErrors.add((err, stack));
     }
   });
-  for (final (String, String) w in prepared.deferredWriters) {
-    await writers!.deleteMedia(w.$1, w.$2);
-    n++;
+  final Map<(String, String), String> keptWriters =
+      <(String, String), String>{};
+  for (final MapEntry<(String, String), String> e
+      in prepared.deferredWriters.entries) {
+    final (String w, String name) = e.key;
+    try {
+      final String? now = await _rawSha(
+        (File dst) => writers!.getMedia(w, name, dst),
+      );
+      if (now == null) {
+        n++;
+      } else if (now != e.value) {
+        prepared.skipped.add('$w/media/$name');
+      } else {
+        await writers!.deleteMedia(w, name);
+        n++;
+      }
+    } on Object catch (err, stack) {
+      keptWriters[e.key] = e.value;
+      prepared.cleanupErrors.add((err, stack));
+    }
   }
   // 没删掉的留在待删里：这一进程下一轮收尾再删；进程重启了就由下一次准备重新核对、重新排队。
   prepared.deferred
     ..clear()
     ..addAll(kept);
-  prepared.deferredWriters.clear();
+  prepared.deferredWriters
+    ..clear()
+    ..addAll(keptWriters);
   prepared.deleted += n;
-  await removeEmptyDirs?.call();
+  try {
+    await removeEmptyDirs?.call();
+  } on Object catch (err, stack) {
+    prepared.cleanupErrors.add((err, stack));
+  }
   return n;
+}
+
+/// 用 [fetch] 把一个旧文件下载到临时文件，交回原始字节的 sha256；已经不在为 null。
+Future<String?> _rawSha(Future<bool> Function(File dst) fetch) async {
+  final File f = File(
+    p.join(
+      Directory.systemTemp.path,
+      'fushi_srs_migrate_check_${DateTime.now().microsecondsSinceEpoch}_'
+      '${Random().nextInt(1 << 30)}',
+    ),
+  );
+  try {
+    if (!await fetch(f)) return null;
+    return await srsMediaSha256File(f);
+  } finally {
+    try {
+      if (await f.exists()) await f.delete();
+    } on FileSystemException {
+      // 临时文件留给系统清理。
+    }
+  }
 }
 
 /// 删一个内容已经核对过的旧文件。删不掉（Windows 上别的设备此刻正开着它读——同时迁移的另一台新版本、同步工具）
@@ -586,6 +669,10 @@ class _Migration {
         await v1.put('meta.json', srsEncodeV1Fence(fence));
       case _V1Kind.fenced:
         fence = old.meta;
+        // 围栏原本就在、本进程已经扫干净过：不再列旧根（围栏不在时上面已经重立，接着把旧版本这段时间写的迁走）。
+        if (ready && (memo?.swept(host.profileUid, locationId) ?? false)) {
+          return;
+        }
     }
 
     // 旧根上还有什么（只列目录）。
@@ -654,9 +741,12 @@ class _Migration {
     out.migrated = true;
 
     // 2. 只读导入旧根上的段：不记这个位置的 head / 转发账（progressId 为 null），只为看到已有的媒体绑定。
+    // 没读全（解不开 / 部分段拉取失败）就不知道哪些名字已经有人绑过：这一轮按名字存的旧文件一个都不补绑定、不排删，
+    // 留在旧根等下一轮读全了再做（内容寻址的照常搬，它们不靠绑定）。
+    bool bindingsSeen = false;
     if (readKey != null || fence['kdf'] == null) {
       final SrsSync2Report pulled = SrsSync2Report();
-      await srsSync2Pull(
+      final bool whole = await srsSync2Pull(
         host: host,
         location: v1,
         progressId: null,
@@ -664,6 +754,14 @@ class _Migration {
         report: pulled,
       );
       out.errors.addAll(pulled.errors);
+      if (pulled.missing > 0) {
+        out.errors.add('v1 segments not readable yet: ${pulled.missing}');
+      }
+      bindingsSeen =
+          whole &&
+          pulled.errors.isEmpty &&
+          pulled.missing == 0 &&
+          pulled.error == null;
     }
 
     final List<String> doomed = <String>[];
@@ -675,6 +773,7 @@ class _Migration {
       write: writeKey == null ? null : SrsMediaCipher(host, writeKey),
       nowMs: nowMs,
       out: out,
+      canBind: bindingsSeen,
     );
 
     // 3. 段 / head / 转发件 / 说明文件原样写进新根，核对字节。
@@ -682,6 +781,8 @@ class _Migration {
     final List<String> plainFlat = <String>[];
     final List<String> plainObjects = <String>[];
     final Map<String, List<String>> sealedDirs = <String, List<String>>{};
+    // 本轮最初列出、按规矩留在旧根不动的文件（不认识的）：完成标记的指纹只由它们算。
+    final List<(String, int?)> untouched = <(String, int?)>[];
     for (final (String, int?) f in files) {
       final List<String> parts = f.$1.split('/');
       if (parts.first == 'devices' && parts.length >= 3) {
@@ -692,8 +793,10 @@ class _Migration {
         plainObjects.add(f.$1);
       } else if (parts.first == kSrsSealedMediaFolder && parts.length >= 3) {
         (sealedDirs['${parts[0]}/${parts[1]}'] ??= <String>[]).add(f.$1);
+      } else {
+        // 别的（不认识的文件）不碰。
+        untouched.add(f);
       }
-      // 别的（不认识的文件）不碰。
     }
     await srsRunPooled(deviceFiles, kSrsSync2Concurrency, (String path) async {
       final Uint8List? bytes = await v1.get(path);
@@ -742,12 +845,16 @@ class _Migration {
     if (out.skipped.isEmpty &&
         out.deferred.isEmpty &&
         out.deferredWriters.isEmpty) {
-      // 记下这一次处理完之后旧根的样子；下次进程启动只比清单。
-      final Map<String, List<String>> wm = <String, List<String>>{};
-      if (archive) wm.addAll(writerMedia);
-      final String after = archive
+      // 记下这一次处理完之后旧根该有的样子；下次进程启动只比清单。指纹只由本轮最初列出的文件算（归档：全部，一个
+      // 不删；否则：留着不动的那些）——绝不能拿处理完之后重新列出的清单算：迁移期间同步工具 / 旧版本新带来的文件
+      // 本轮没搬过，算进指纹就被当成「已处理」，永远留在旧根、别的设备收不到。
+      final String? after = archive
           ? listing
-          : _fingerprint(await _files(v1, ''), wm);
+          : await _settledListing(untouched);
+      if (after == null) {
+        // 处理期间旧根多出了 / 换了文件：不写标记、不记扫干净，下一轮重新列、接着搬。
+        return;
+      }
       await v1.put(
         kSrsV1SweepMarker,
         utf8.encode(
@@ -756,6 +863,20 @@ class _Migration {
       );
       _markSwept();
     }
+  }
+
+  /// 删完之后旧根恰好只剩 [untouched]（路径与大小都对得上）时交回它们的清单指纹；多出 / 换了文件为 null。写入者目录
+  /// 不在这里比：非归档位置有写入者媒体就一定有待删的（不会走到写标记），晚到的写入者媒体下次列目录时让指纹对不上。
+  Future<String?> _settledListing(List<(String, int?)> untouched) async {
+    final Set<String> want = <String>{
+      for (final (String, int?) f in untouched) '${f.$1}\t${f.$2 ?? ''}',
+    };
+    final Set<String> now = <String>{
+      for (final (String, int?) f in await _files(v1, ''))
+        '${f.$1}\t${f.$2 ?? ''}',
+    };
+    if (now.length != want.length || !now.containsAll(want)) return null;
+    return _fingerprint(untouched, const <String, List<String>>{});
   }
 
   /// [path] 在新根上的字节与 [bytes] 相同（不在就写，写完重读）。新根上同名而内容不同（半截 / 别的东西）不覆盖——
@@ -789,11 +910,15 @@ class _MediaMover {
     required this.write,
     required this.nowMs,
     required this.out,
+    required this.canBind,
   });
 
   final SrsSync2Host host;
   final SrsLocationStore v1;
   final SrsLocationStore current;
+
+  /// 旧根上的段读全了（已有的媒体绑定都看得到）：只有这时才给按名字存的旧文件补绑定、排删；否则它们这一轮记 skipped。
+  final bool canBind;
 
   /// 解旧根加密媒体的（旧根的 kdf）；null = 旧根明文或本机没有那把密钥。
   final SrsMediaCipher? read;
@@ -810,9 +935,9 @@ class _MediaMover {
   final List<Map<String, Object?>> _binds = <Map<String, Object?>>[];
   final Set<String> _stored = <String>{};
 
-  /// 按名字存的旧文件（内容已核对在新根），绑定发布后才删。
-  final List<String> byName = <String>[];
-  final List<(String, String)> byWriter = <(String, String)>[];
+  /// 按名字存的旧文件（内容已核对在新根）→ 原始字节的 sha256，绑定发布后核对一次才删。
+  final Map<String, String> byName = <String, String>{};
+  final Map<(String, String), String> byWriter = <(String, String), String>{};
 
   File _scratch(String tag) => File(
     p.join(
@@ -885,17 +1010,18 @@ class _MediaMover {
     return true;
   }
 
-  /// 按名字存的旧文件（明文已在 [plain]）：放进新根，名字记进待绑定。
-  Future<bool> _byName(String name, File plain) async {
-    if (!srsIsBareMediaName(name)) return false;
+  /// 按名字存的旧文件（明文已在 [plain]）：放进新根，名字记进待绑定。交回明文的 sha256；没放成 / 这一轮不能绑定为
+  /// null。
+  Future<String?> _byName(String name, File plain) async {
+    if (!canBind || !srsIsBareMediaName(name)) return null;
     final String sha = await srsMediaSha256File(plain);
-    if (!await _store(plain, sha)) return false;
+    if (!await _store(plain, sha)) return null;
     _binds.add(<String, Object?>{
       'name': name,
       'sha': sha,
       'size': await plain.length(),
     });
-    return true;
+    return sha;
   }
 
   /// 旧根 `media/<名字>`（协议 1 的明文按名字存）。
@@ -903,8 +1029,10 @@ class _MediaMover {
       srsRunPooled(paths, kSrsSync2Concurrency, (String path) async {
         await _withTemp('plain', (File tmp) async {
           if (!await srsLocationGetFile(v1, path, tmp)) return;
-          if (await _byName(p.posix.basename(path), tmp)) {
-            byName.add(path);
+          // 明文按名字存：原始字节就是明文。
+          final String? sha = await _byName(p.posix.basename(path), tmp);
+          if (sha != null) {
+            byName[path] = sha;
           } else {
             out.skipped.add(path);
           }
@@ -969,8 +1097,9 @@ class _MediaMover {
         }
         await _withTemp('v1', (File tmp) async {
           await tmp.writeAsBytes(plain, flush: true);
-          if (await _byName(name, tmp)) {
-            byName.add(path);
+          if (await _byName(name, tmp) != null) {
+            // 删前核对的是旧根上的原始字节（封装），不是解开的明文。
+            byName[path] = sha256.convert(sealed).toString();
           } else {
             out.skipped.add(path);
           }
@@ -1041,8 +1170,9 @@ class _MediaMover {
       srsRunPooled(names, kSrsSync2Concurrency, (String name) async {
         await _withTemp('writer', (File tmp) async {
           if (!await ws.getMedia(w, name, tmp)) return;
-          if (await _byName(name, tmp)) {
-            byWriter.add((w, name));
+          final String? sha = await _byName(name, tmp);
+          if (sha != null) {
+            byWriter[(w, name)] = sha;
           } else {
             out.skipped.add('$w/media/$name');
           }
