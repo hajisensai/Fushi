@@ -107,9 +107,6 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
 
   @override
   void dispose() {
-    FushiDesktopTitleBar.visibleHeightListenable.removeListener(
-      _onTitleBarResize,
-    );
     _host?.detach(this);
     super.dispose();
   }
@@ -177,42 +174,6 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    FushiDesktopTitleBar.visibleHeightListenable.addListener(_onTitleBarResize);
-  }
-
-  void _onTitleBarResize() {
-    if (mounted) setState(() {});
-  }
-
-  // 标题栏里那截背景的构建材料（由 [build] 每次刷新；标题栏在 Navigator 之外、
-  // 拿不到本页的主题与 MediaQuery，构建时原样套回去）。
-  late LyricsPlayerDesign _backdropDesign;
-  late ThemeData _backdropTheme;
-  late MediaQueryData _backdropMediaQuery;
-  double _bleed = 0;
-
-  /// 标题栏里画的那份背景：与页面同一个外观、同一主题、同一画布（见
-  /// [LyricsPlayerDesign.buildBackground] 的 bleedTop），只是被标题栏裁到最上面
-  /// 一截。方法 tear-off 恒等，上报记录按值比较不会每帧重发。
-  Widget _buildTitleBarBackdrop(BuildContext context) {
-    return MediaQuery(
-      data: _backdropMediaQuery,
-      child: Theme(
-        data: _backdropTheme,
-        child: Builder(
-          builder: (BuildContext context) => _backdropDesign.buildBackground(
-            context,
-            widget.data,
-            bleedTop: _bleed,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
     _host?.attach(this, _coverScheme);
     final bool apple = isGlassDesign(context);
@@ -249,15 +210,9 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
         ? (_coverScheme?.surfaceContainerHigh ?? const Color(0xFF1C1C1E))
         : scheme.surface;
     final Color topEdgeForeground = apple ? Colors.white : scheme.onSurface;
-    // 自绘标题栏占的高度：背景向上延伸这么多，画布顶上那截交给标题栏画。
-    final double bleed = FushiDesktopTitleBar.visibleHeight;
     final ThemeData themed = coverScheme == null
         ? base
         : _themeFor(base, coverScheme);
-    _backdropDesign = design;
-    _backdropTheme = themed;
-    _backdropMediaQuery = MediaQuery.of(context);
-    _bleed = bleed;
     // 结构恒定：Theme 包装层无论设计系统都在，只换数据。整份主题按封面 scheme
     // 重走工厂（不是只换 colorScheme）：菜单 / 倍速面板 / 提示条这些弹出层的
     // 表面色烤在组件主题里，只换 colorScheme 它们仍是全局色。
@@ -271,38 +226,16 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
               final Size size = constraints.biggest;
               final EdgeInsets padding = MediaQuery.paddingOf(context);
               final Rect rect = design.lyricsRect(context, size, padding);
-              final Size canvas = Size(size.width, size.height + bleed);
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),
-                backdrop: bleed <= 0
-                    ? null
-                    : (
-                        canvas: canvas,
-                        builder: _buildTitleBarBackdrop,
-                        revision: Object.hash(
-                          identityHashCode(themed),
-                          widget.data.cover,
-                          apple,
-                        ),
-                      ),
                 child: Stack(
                   fit: StackFit.expand,
                   children: <Widget>[
-                    // 背景画布比页面高出标题栏那一截、向上越界（Stack 裁掉）；
-                    // 标题栏画同一画布的顶上那截，页面与标题栏之间没有色带。
-                    Positioned(
-                      left: 0,
-                      top: -bleed,
-                      width: canvas.width,
-                      height: canvas.height,
+                    Positioned.fill(
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: widget.callbacks.onTapBackground,
-                        child: design.buildBackground(
-                          context,
-                          widget.data,
-                          bleedTop: bleed,
-                        ),
+                        child: design.buildBackground(context, widget.data),
                       ),
                     ),
                     Positioned.fromRect(

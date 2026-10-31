@@ -32,7 +32,7 @@ const reply = '<p>「あ、うん、え？」</p>';
 const chapterStart = figure + sentence + reply;
 // 章中插图：前一段 → 图 → 这句。
 const midChapter = '<p>たぶんそういうのわかってて言ってるんだと思うよ」</p>' + figure + sentence + reply;
-// BUG-3887：图前是不以「。！？」收尾的对白段（轻小说里最常见的形状）。按句分屏时它曾越过
+// BUG-3891：图前是不以「。！？」收尾的对白段（轻小说里最常见的形状）。按句分屏时它曾越过
 // 插图把图后的这句吞进同一个句子单元，插图屏排到这句之后、字符区间倒挂。
 const dialogueBeforeFigure = '<p>「たぶんそういうのわかってて言ってるんだと思うよ」</p>' + figure + sentence + reply;
 
@@ -201,7 +201,7 @@ try {
     arrival.resumed.detected === 1,
     'chapter arrival: the follow then shows the sentence ' + JSON.stringify(arrival));
   passed++;
-  // ④ BUG-3887：按句分屏（vnScreenMode = sentences，保留对白气泡关 = 默认值）+ 图前是「……」对白段。插图必须独占
+  // ④ BUG-3891：按句分屏（vnScreenMode = sentences，保留对白气泡关 = 默认值）+ 图前是「……」对白段。插图必须独占
   // 一屏、排在图前那句与图后这句之间；跟随从图前那句推进到这句时先停在图上。
   const sentences = await driver.evalOnPage(pageFor(scripts.cssVertical, dialogueBeforeFigure, 'sentences', false), `(async () => {
     ${HELPERS}

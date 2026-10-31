@@ -53,6 +53,26 @@ String normalizeServerSearchTerm(String term) {
   return s;
 }
 
+/// 把请求方原文振假名区间（以清洗前的 [raw] 为坐标系）对齐到 [normalizeServerSearchTerm]
+/// 之后的 [normalized]（app `alignRubySpansToSearchTerm` 的服务端版）：减去句首被剥掉的
+/// 标点 / 符号长度，丢掉越界 / 被截断 / 清洗后基字对不上的段（宁可不用也不错配）。
+List<FushiRubySpan> alignServerRubySpans({
+  required String raw,
+  required String normalized,
+  required List<FushiRubySpan> spans,
+}) {
+  if (spans.isEmpty) return spans;
+  final Match? m = _leadingPunctuationRegex.firstMatch(raw);
+  final int lead = m == null ? 0 : m.end;
+  return <FushiRubySpan>[
+    for (final FushiRubySpan span in shiftRubySpans(spans, leadingStrip: lead, length: normalized.length))
+      if (span.end + lead <= raw.length &&
+          raw.substring(span.start + lead, span.end + lead) == normalized.substring(span.start, span.end))
+        span,
+  ];
+}
+
+final RegExp _leadingPunctuationRegex = RegExp(r'^[\p{P}\p{S}]+', unicode: true);
 final RegExp _emojiRegex = RegExp(r'\p{Extended_Pictographic}', unicode: true);
 final RegExp _punctuationRegex = RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
 final RegExp _loneSurrogateRegex = RegExp('[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]');
@@ -216,7 +236,15 @@ class ServerDictionaryHost {
   ///
   /// [chineseSimpToTrad]：请求方声明查词语言为中文时置 true（引擎额外试简体 → 繁體
   /// 变体）。服务端没有「当前查词语言」，请求不带语言时为 false。
-  DictionarySearchResult? search(String rawTerm, {required int maximumTerms, bool chineseSimpToTrad = false}) {
+  ///
+  /// [rubySpans]：请求方原文自带的振假名（以 [rawTerm] 为坐标系），对齐后交给引擎按读音
+  /// 排同长度候选。
+  DictionarySearchResult? search(
+    String rawTerm, {
+    required int maximumTerms,
+    bool chineseSimpToTrad = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+  }) {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
@@ -227,6 +255,7 @@ class ServerDictionaryHost {
       term,
       maxResults: maximumTerms,
       chineseSimpToTrad: chineseSimpToTrad,
+      rubySpans: alignServerRubySpans(raw: rawTerm, normalized: term, spans: rubySpans),
     );
     if (results.isEmpty) {
       if (kanji.isEmpty) return null;
@@ -251,7 +280,12 @@ class ServerDictionaryHost {
   }
 
   /// 只要弹窗 JSON 的快路径（浏览器扩展 `popupOnly`），不物化 DictionaryEntry。
-  RemoteDictionaryPopupLookup? searchPopup(String rawTerm, {required int maximumTerms, bool chineseSimpToTrad = false}) {
+  RemoteDictionaryPopupLookup? searchPopup(
+    String rawTerm, {
+    required int maximumTerms,
+    bool chineseSimpToTrad = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+  }) {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
@@ -259,6 +293,7 @@ class ServerDictionaryHost {
       term,
       maxResults: maximumTerms,
       chineseSimpToTrad: chineseSimpToTrad,
+      rubySpans: alignServerRubySpans(raw: rawTerm, normalized: term, spans: rubySpans),
     );
     if (results.isEmpty) return null;
     int bestLength = 0;
@@ -327,7 +362,11 @@ class ServerDictionaryHost {
 /// 请求带了请求方查词语言（[FushiRemoteLanguageLookupService]）时按它决定是否开简体 →
 /// 繁體回落；不带语言 = 旧行为（不回落）。
 class ServerRemoteLookupService
-    implements FushiRemoteLookupService, FushiRemotePopupLookupService, FushiRemoteLanguageLookupService {
+    implements
+        FushiRemoteLookupService,
+        FushiRemotePopupLookupService,
+        FushiRemoteLanguageLookupService,
+        FushiRemoteRubyLookupService {
   ServerRemoteLookupService(this.dictionaries);
 
   final ServerDictionaryHost dictionaries;
@@ -369,6 +408,35 @@ class ServerRemoteLookupService
     term,
     maximumTerms: maximumTerms,
     chineseSimpToTrad: isChineseLanguageTag(language),
+  );
+
+  @override
+  Future<DictionarySearchResult?> searchDictionaryWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+  }) async => dictionaries.search(
+    term,
+    maximumTerms: maximumTerms,
+    chineseSimpToTrad: language != null && isChineseLanguageTag(language),
+    rubySpans: rubySpans,
+  );
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+    RemoteDictionaryPopupTiming? timing,
+  }) async => dictionaries.searchPopup(
+    term,
+    maximumTerms: maximumTerms,
+    chineseSimpToTrad: language != null && isChineseLanguageTag(language),
+    rubySpans: rubySpans,
   );
 
   @override

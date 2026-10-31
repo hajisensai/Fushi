@@ -302,16 +302,7 @@ abstract class LyricsPlayerDesign {
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding);
 
   /// 背景层（铺满）。必须是不透明的——它就是歌词页的底色。
-  ///
-  /// [bleedTop]：背景向上延伸到桌面自绘标题栏底下的高度。画布 = 页面尺寸再加
-  /// 这一截，布局相关的形状（宽屏歌词底板）仍按页面尺寸算、整体下移
-  /// [bleedTop]——这样标题栏画画布顶上那截、页面画下面那截，两边像素连续，
-  /// 标题栏不再是一条独立色带。
-  Widget buildBackground(
-    BuildContext context,
-    LyricsPlayerData data, {
-    double bleedTop = 0,
-  });
+  Widget buildBackground(BuildContext context, LyricsPlayerData data);
 
   /// 控件层（铺满，透明处不吃指针）。[lyricsRect] 是 [lyricsRect] 算出的同一个矩形，
   /// 供控件避让 / 对齐。

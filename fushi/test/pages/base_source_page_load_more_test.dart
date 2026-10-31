@@ -55,6 +55,43 @@ class LoadMoreTestAppModel extends AppModel {
 
   int lastOverrideMaximumTerms = 0;
 
+  /// 每次带来源 ruby 的查询收到的区间（[searchDictionaryWithRuby]）。
+  final List<List<FushiRubySpan>> rubyQueries = <List<FushiRubySpan>>[];
+
+  @override
+  Future<DictionarySearchResult> searchDictionaryWithRuby({
+    required String searchTerm,
+    required List<FushiRubySpan> rubySpans,
+    bool searchWithWildcards = false,
+    int? overrideMaximumTerms,
+  }) async {
+    if (rubySpans.isEmpty) {
+      return searchDictionary(
+        searchTerm: searchTerm,
+        searchWithWildcards: searchWithWildcards,
+        overrideMaximumTerms: overrideMaximumTerms,
+      );
+    }
+    rubyQueries.add(rubySpans);
+    final DictionarySearchResult plain = await searchDictionary(
+      searchTerm: searchTerm,
+      searchWithWildcards: searchWithWildcards,
+      overrideMaximumTerms: overrideMaximumTerms,
+    );
+    // 模拟引擎的读音排序：读音吻合来源 ruby 的那条提到最前。
+    final String wanted = rubySpans.first.reading;
+    final List<DictionaryEntry> ranked = <DictionaryEntry>[
+      ...plain.entries.where((DictionaryEntry e) => e.reading == wanted),
+      ...plain.entries.where((DictionaryEntry e) => e.reading != wanted),
+    ];
+    return DictionarySearchResult(
+      searchTerm: searchTerm,
+      entries: ranked,
+      headwordCount: plain.headwordCount,
+      truncated: plain.truncated,
+    );
+  }
+
   @override
   int get maximumTerms => 10;
 
@@ -121,10 +158,14 @@ class LoadMoreHostPage extends BaseSourcePage {
 }
 
 class LoadMoreHostPageState extends BaseSourcePageState<LoadMoreHostPage> {
-  Future<void> search(String term) {
+  Future<void> search(
+    String term, {
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+  }) {
     return searchDictionaryResult(
       searchTerm: term,
       selectionRect: const Rect.fromLTWH(40, 40, 8, 8),
+      rubySpans: rubySpans,
     );
   }
 
@@ -224,6 +265,32 @@ void main() {
     // A further load-more is a no-op once allLoaded.
     await state.loadMoreForLayer(0);
     expect(state.debugPopupStack.single.entryCount, 25);
+  });
+
+  testWidgets('loadMoreForLayer 带着首查的来源 ruby 续查：读音排序在整份替换后不丢', (
+    WidgetTester tester,
+  ) async {
+    final appModel = LoadMoreTestAppModel(totalAvailable: 25);
+    final hostKey = GlobalKey<LoadMoreHostPageState>();
+    await tester.pumpWidget(_buildApp(appModel: appModel, hostKey: hostKey));
+    await tester.pump();
+    await tester.pump();
+
+    final state = hostKey.currentState!;
+    // 'reading5' 按频率排第 6；来源 ruby 说这里就读它 → 首查应排第一。
+    const List<FushiRubySpan> ruby = <FushiRubySpan>[
+      FushiRubySpan(start: 0, end: 1, reading: 'reading5'),
+    ];
+    await state.search('高', rubySpans: ruby);
+    String firstReading() =>
+        state.debugPopupEntries.single.result!.entries.first.reading;
+    expect(firstReading(), 'reading5');
+
+    await state.loadMoreForLayer(0);
+    expect(state.debugPopupStack.single.entryCount, 20);
+    expect(appModel.rubyQueries, <List<FushiRubySpan>>[ruby, ruby],
+        reason: '续查必须带首查那组 ruby');
+    expect(firstReading(), 'reading5', reason: '加载更多后顺序不变');
   });
 
   test('source guard: base_source_page wires onScrolledToBottom to load-more',

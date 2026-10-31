@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/section_visibility.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/utils.dart';
@@ -50,6 +51,62 @@ enum MediaLibraryViewKind {
 
   // 「设置」视图已移除（2026-10-09 用户拍板）：它只是全局「设置 › <本域>」分类的
   // 投影，与全局设置、阅读时的设置面板重复。各域设置一律从全局设置进入。
+}
+
+/// 库页顶栏的一级分组（2026-10-30 用户拍板「顶部胶囊只剩两个」方案 D）：
+///
+/// - [library]：「我的」内容——已入库条目与用户自己的媒体服务器；
+/// - [online]：去网上找——发现、在线来源、扩展。
+///
+/// 导入（扫描根 + 快速导入）是低频管理页，不占页签：由工具栏右端的
+/// [libraryImportChromeButton] 进入。一级恒为一到两段，任何宽度都放得下；组内
+/// 多个视图由顶栏下方的二级胶囊切换。书 / 漫画 / 视频 / 游戏四个库页同一分法。
+enum LibrarySectionGroup { library, online }
+
+/// [kind] 所属的一级分组；导入（[MediaLibraryViewKind.sources]）不属于任何组。
+LibrarySectionGroup? librarySectionGroupOf(MediaLibraryViewKind kind) =>
+    switch (kind) {
+      MediaLibraryViewKind.library ||
+      MediaLibraryViewKind.mediaServers => LibrarySectionGroup.library,
+      MediaLibraryViewKind.discover ||
+      MediaLibraryViewKind.browse ||
+      MediaLibraryViewKind.onlineSources ||
+      MediaLibraryViewKind.extensions => LibrarySectionGroup.online,
+      MediaLibraryViewKind.sources => null,
+    };
+
+/// 库页工具栏右端的「导入」圆钮：切换型按钮，停在导入页时呈选中态，再点一次
+/// 回到之前的视图（四个库页壳共用，见 [LibrarySectionGroup]）。
+///
+/// 没有导入页、导入是几个零散动作的库页（音乐：加文件夹 / 管理文件夹 / 加光盘 /
+/// 读 CD）把 [selected] 恒给 false，[onTap] 里在 [anchorKey] 所在位置弹菜单。
+Widget libraryImportChromeButton({
+  required bool selected,
+  required VoidCallback onTap,
+  required String focusIdPrefix,
+  GlobalKey? anchorKey,
+}) {
+  final Widget button = FushiIconButton(
+    key: ValueKey<String>('$focusIdPrefix-import'),
+    icon: FushiIcons.libraryAdd,
+    tooltip: t.library_view_import,
+    selected: selected,
+    alwaysVisible: true,
+    onTap: onTap,
+  );
+  return KeyedSubtree(
+    key: anchorKey,
+    child: Builder(
+      // Apple：与右侧动作组同一形态（无色玻璃胶囊，高 fushiAppleFloatingExtent），
+      // 不套 56 高的 MD3 圆，否则比动作组高一截；MD3 用页头圆。
+      builder: (BuildContext context) => isGlassDesign(context)
+          ? FushiShellHeaderActions(
+              actions: <Widget>[button],
+              appleFloating: true,
+            )
+          : fushiFloatingLeading(button)!,
+    ),
+  );
 }
 
 /// 一个视图的声明：显示名 + 内容构建器。
@@ -151,14 +208,12 @@ class MediaLibraryShell extends StatefulWidget {
 class _MediaLibraryShellState extends State<MediaLibraryShell> {
   int _currentIndex = 0;
 
-  /// 「在线源」组上次停留的视图（来源 / 扩展），点组页签回到这里。
-  MediaLibraryViewKind _lastOnline = MediaLibraryViewKind.onlineSources;
+  /// 每个一级分组上次停留的视图：点组页签回到组内上次的位置。
+  final Map<LibrarySectionGroup, MediaLibraryViewKind> _lastInGroup =
+      <LibrarySectionGroup, MediaLibraryViewKind>{};
 
-  /// 来源 / 扩展同属「在线源」组（2026-10-14 用户：视频库顶栏分组后「在线源
-  /// 这块其他模块也该跟进」）：顶栏只占一段，组内由二级胶囊切换。
-  static bool _isOnline(MediaLibraryViewKind kind) =>
-      kind == MediaLibraryViewKind.onlineSources ||
-      kind == MediaLibraryViewKind.extensions;
+  /// 进导入页之前停留的视图：再点一次导入钮回到这里。
+  MediaLibraryViewKind? _beforeImport;
 
   /// 已访问过的视图下标（惰性构建 + 保活，见类文档）。
   final Set<int> _visited = <int>{0};
@@ -204,10 +259,16 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     if (index == _currentIndex) return;
     // 换了视图，新页面从顶部开始：工具栏回来。
     _chrome.resetToTop();
+    final MediaLibraryViewKind previous = widget.views[_currentIndex].kind;
     setState(() {
       _currentIndex = index;
       _visited.add(index);
-      if (_isOnline(kind)) _lastOnline = kind;
+      final LibrarySectionGroup? group = librarySectionGroupOf(kind);
+      if (group != null) _lastInGroup[group] = kind;
+      if (kind == MediaLibraryViewKind.sources &&
+          previous != MediaLibraryViewKind.sources) {
+        _beforeImport = previous;
+      }
     });
   }
 
@@ -273,9 +334,15 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     }
     final Widget navigation = _buildNavigation(views);
     final Widget sections = SectionSwipeNavigator<MediaLibraryViewKind>(
-      // 触屏横滑切到相邻视图，序即 [views] 声明序（与分段条同一份真相）。
+      // 触屏横滑切到相邻视图，序即页签的视觉序：先「我的」组、再「在线」组，组内
+      // 按声明序（与两级页签同一份真相），跨组照样接着滑，首 / 末再往外交给外层
+      // 切模块。导入不是页签，只在停在导入页时排在最后（从它滑回相邻视图）。
       sections: <MediaLibraryViewKind>[
-        for (final MediaLibraryViewSpec spec in views) spec.kind,
+        for (final LibrarySectionGroup group in LibrarySectionGroup.values)
+          for (final MediaLibraryViewSpec spec in _membersOf(views, group))
+            spec.kind,
+        if (views[_currentIndex].kind == MediaLibraryViewKind.sources)
+          MediaLibraryViewKind.sources,
       ],
       selected: views[_currentIndex].kind,
       onSelect: _select,
@@ -284,6 +351,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           for (int i = 0; i < views.length; i++)
             if (_visited.contains(i))
               Offstage(
+                // 按视图种类认身份：保活视图按下标排，中间冒出新视图（如媒体
+                // 服务器）时不带 key 会让后面已保活的视图错位重建、丢 State。
+                key: ValueKey<MediaLibraryViewKind>(views[i].kind),
                 offstage: i != _currentIndex,
                 child: TickerMode(
                   enabled: i == _currentIndex,
@@ -338,14 +408,26 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
               chrome: FushiFloatingChromeBar(
                 tabs: navigation,
                 slot: _actionsSlot,
+                trailing: kinds.contains(MediaLibraryViewKind.sources)
+                    ? libraryImportChromeButton(
+                        selected:
+                            views[_currentIndex].kind ==
+                            MediaLibraryViewKind.sources,
+                        onTap: _toggleImport,
+                        focusIdPrefix: widget.focusIdPrefix,
+                      )
+                    : null,
               ),
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
                 // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
                 // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
-                // 自动累加两行）；不在「在线源」组时不占高度。
+                // 自动累加两行）；当前组只有一个视图（或在导入页）时不占高度。
                 child: FushiFloatingChromeOverlay(
-                  chrome: _buildOnlineSubNavigation(context, views),
+                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                  nestedGap: 0,
+                  opaqueChrome: true,
+                  chrome: _buildSubNavigation(context, views),
                   child: sections,
                 ),
               ),
@@ -363,79 +445,107 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       ? view
       : FushiFloatingChromeInsetPadding(child: view);
 
+  /// 导入钮：不在导入页时进去，在导入页时回到进来前的视图。
+  void _toggleImport() {
+    final MediaLibraryViewKind current = widget.views[_currentIndex].kind;
+    if (current != MediaLibraryViewKind.sources) {
+      _select(MediaLibraryViewKind.sources);
+      return;
+    }
+    _select(_beforeImport ?? widget.views.first.kind);
+  }
+
+  /// [group] 内按声明序的视图。
+  List<MediaLibraryViewSpec> _membersOf(
+    List<MediaLibraryViewSpec> views,
+    LibrarySectionGroup group,
+  ) => <MediaLibraryViewSpec>[
+    for (final MediaLibraryViewSpec spec in views)
+      if (librarySectionGroupOf(spec.kind) == group) spec,
+  ];
+
+  /// 组页签此刻代表的视图：当前就在组内时是当前视图，否则是组内上次停留的
+  /// （已下线就退回组内第一个）。
+  MediaLibraryViewKind _groupValue(
+    LibrarySectionGroup group,
+    List<MediaLibraryViewSpec> members,
+    MediaLibraryViewKind selected,
+  ) {
+    if (librarySectionGroupOf(selected) == group) return selected;
+    final MediaLibraryViewKind? last = _lastInGroup[group];
+    return members.any((MediaLibraryViewSpec spec) => spec.kind == last)
+        ? last!
+        : members.first.kind;
+  }
+
+  String _groupLabel(
+    LibrarySectionGroup group,
+    List<MediaLibraryViewSpec> members,
+  ) => members.length == 1
+      ? members.single.label
+      : switch (group) {
+          // 「我的」组以库视图自己的名字命名（书架）。
+          LibrarySectionGroup.library => members.first.label,
+          LibrarySectionGroup.online => t.library_view_online,
+        };
+
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
+    final List<LibrarySectionTab<MediaLibraryViewKind>> tabs =
+        <LibrarySectionTab<MediaLibraryViewKind>>[];
+    for (final LibrarySectionGroup group in LibrarySectionGroup.values) {
+      final List<MediaLibraryViewSpec> members = _membersOf(views, group);
+      if (members.isEmpty) continue;
+      tabs.add(
+        LibrarySectionTab<MediaLibraryViewKind>(
+          value: _groupValue(group, members, selected),
+          label: _groupLabel(group, members),
+          // 组页签的值随组内停留的视图变，顺序身份认组。
+          orderId: group.name,
+        ),
+      );
+    }
+    // 一级只剩一组（iOS 合规门下没有在线视图）时不画胶囊。
+    if (tabs.length < 2) return const SizedBox.shrink();
+    // 停在导入页时高亮「我的」组：导入管理的就是本地库。
+    final MediaLibraryViewKind shown = librarySectionGroupOf(selected) == null
+        ? tabs.first.value
+        : selected;
     // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
     // 单个焦点停靠点，左右方向键原地切视图，手柄/键盘可达）。
-    final List<MediaLibraryViewSpec> online = <MediaLibraryViewSpec>[
-      for (final MediaLibraryViewSpec spec in views)
-        if (_isOnline(spec.kind)) spec,
-    ];
-    final bool groupOnline = online.length > 1;
-    // 「在线源」组页签的值是组内此刻 / 上次停留的视图，点它即回到那里；选中
-    // 判据仍是当前视图。
-    // 只在真的并组（≥2 个在线视图）时才用得到；没有在线视图的壳（iOS 合规门 /
-    // 宿主不可用）不能去取 `online.first`。
-    final MediaLibraryViewKind onlineValue = !groupOnline || _isOnline(selected)
-        ? selected
-        : online.any((MediaLibraryViewSpec spec) => spec.kind == _lastOnline)
-        ? _lastOnline
-        : online.first.kind;
     return LibrarySectionTabs<MediaLibraryViewKind>(
       key: _navigationKey,
-      tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
-        for (final MediaLibraryViewSpec spec in views)
-          if (!groupOnline || !_isOnline(spec.kind))
-            LibrarySectionTab<MediaLibraryViewKind>(
-              value: spec.kind,
-              label: spec.label,
-              orderId: spec.kind.name,
-            )
-          else if (identical(spec, online.first))
-            LibrarySectionTab<MediaLibraryViewKind>(
-              value: onlineValue,
-              label: t.media_import_segment_sources,
-              // 组页签的值随组内停留的视图变，顺序身份认组。
-              orderId: 'online',
-            ),
-      ],
-      selected: selected,
+      tabs: tabs,
+      selected: shown,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
       floating: true,
-      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序（书 / 漫画各一份）。
-      orderKey: widget.focusIdPrefix,
     );
   }
 
-  /// 「在线源」组的二级胶囊（来源 / 扩展）；不在该组或组内只有一个视图时为空。
-  Widget _buildOnlineSubNavigation(
+  /// 当前组的二级胶囊（书架 / 媒体服务器；发现 / 来源 / 扩展）；组内只有一个
+  /// 视图或停在导入页时为空。
+  Widget _buildSubNavigation(
     BuildContext context,
     List<MediaLibraryViewSpec> views,
   ) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
-    final List<MediaLibraryViewSpec> online = <MediaLibraryViewSpec>[
-      for (final MediaLibraryViewSpec spec in views)
-        if (_isOnline(spec.kind)) spec,
-    ];
-    if (online.length < 2 || !_isOnline(selected)) {
-      return const SizedBox.shrink();
-    }
+    final LibrarySectionGroup? group = librarySectionGroupOf(selected);
+    if (group == null) return const SizedBox.shrink();
+    final List<MediaLibraryViewSpec> members = _membersOf(views, group);
+    if (members.length < 2) return const SizedBox.shrink();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4 = 两级页签之间 12
-      // （同浏览页二级内容域）。
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
+      // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12 由嵌套层统一给
+      // （[kFushiFloatingChromeGap] + 顶栏底边 4），这里不再叠竖向留白。
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: LibrarySectionTabs<MediaLibraryViewKind>(
+          // 换组即换一份页签（段数与段值都变），不复用旧 controller。
+          key: ValueKey<LibrarySectionGroup>(group),
           tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
-            for (final MediaLibraryViewSpec spec in online)
+            for (final MediaLibraryViewSpec spec in members)
               LibrarySectionTab<MediaLibraryViewKind>(
                 value: spec.kind,
                 label: spec.label,
@@ -443,9 +553,13 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           ],
           selected: selected,
           onChanged: _select,
-          focusIdPrefix: '${widget.focusIdPrefix}-online',
+          focusIdPrefix: '${widget.focusIdPrefix}-${group.name}',
           secondary: true,
-          floating: true,
+          // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+          // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
+          // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义页签顺序。一级恒为两组，排序
+          // 落在组内的二级胶囊上（书 / 漫画各组各一份）。
+          orderKey: '${widget.focusIdPrefix}-${group.name}',
         ),
       ),
     );

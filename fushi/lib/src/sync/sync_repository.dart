@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preference_keys.dart'
     show kAnkiSettingsPrefKey;
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show kPageBackdropDeviceLocalPrefKeys;
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
@@ -1835,6 +1837,8 @@ class SyncRepository {
     // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合……）：
     // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
     ...kWebBrowserDeviceLocalPrefKeys,
+    // 页面背景的自定义图片文件路径与取色缓存：文件只在这台设备的数据目录里。
+    ...kPageBackdropDeviceLocalPrefKeys,
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
@@ -2006,6 +2010,8 @@ class SyncRepository {
     'tts_active_preset_id',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
     'mining_tts_fallback_voice',
+    // galgame 台词浮窗 TTS 设置：里面的声音也是上面清单里的预设 id。
+    'gal_line_tts_settings',
     // 本机 GPT-SoVITS 整合包的磁盘路径与端口：换一台设备毫无意义。
     'tts_gpt_sovits_local',
     // 本机 Irodori-TTS-Server 的专属目录与端口：同上。

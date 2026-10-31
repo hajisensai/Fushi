@@ -76,8 +76,8 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
   final DictionaryPopupController controller = DictionaryPopupController(
     lowMemory: false,
   );
-  final List<({String term, int maximumTerms})> searches =
-      <({String term, int maximumTerms})>[];
+  final List<({String term, int maximumTerms, List<FushiRubySpan> ruby})>
+  searches = <({String term, int maximumTerms, List<FushiRubySpan> ruby})>[];
   final List<String> played = <String>[];
   final _StubResources resources = _StubResources();
 
@@ -92,14 +92,24 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
   Future<DictionarySearchResult> searchPopupDictionary({
     required String term,
     required int maximumTerms,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
-    searches.add((term: term, maximumTerms: maximumTerms));
+    searches.add((term: term, maximumTerms: maximumTerms, ruby: rubySpans));
+    // 模拟引擎的读音排序：带了与「せわしい」吻合的来源 ruby 时它排前，否则按频率
+    // 「いそがしい」在前。
+    final bool rubyRanked = rubySpans.any(
+      (FushiRubySpan s) => s.reading == 'せわ',
+    );
+    final List<String> readings = rubyRanked
+        ? const <String>['せわしい', 'いそがしい']
+        : const <String>['いそがしい', 'せわしい'];
     return DictionarySearchResult(
       searchTerm: term,
       truncated: true,
       headwordCount: 1,
       entries: <DictionaryEntry>[
-        DictionaryEntry(word: term, reading: 'よみ', meaning: 'm'),
+        for (final String reading in readings)
+          DictionaryEntry(word: term, reading: reading, meaning: 'm'),
       ],
     );
   }
@@ -125,7 +135,7 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
               index: i,
               screen: screen,
               controller: controller,
-              onPush: (String text, Rect rect) async => 0,
+              onPush: (String text, Rect rect, List<FushiRubySpan> _) async => 0,
               onPop: (int index) {},
             ),
         ],
@@ -187,6 +197,56 @@ void main() {
     expect(host.searches[1].maximumTerms, 11);
     expect(app.localSearches, 0, reason: '注入后不得再查本机词典');
     // 冷建 WebView 的翻可见兜底计时（1.8s）在测试里没有 popupRendered 来收。
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('load-more 带着首查的来源 ruby 续查：读音排序在整份替换后不丢', (
+    WidgetTester tester,
+  ) async {
+    final (_HostState host, _) = await pump(tester);
+    const List<FushiRubySpan> ruby = <FushiRubySpan>[
+      FushiRubySpan(start: 0, end: 1, reading: 'せわ'),
+    ];
+    // 句首空白随查询串 trim 平移：坐标系以 trim 后的「忙しい」为准。
+    await host.pushNestedPopup(
+      query: ' 忙しい',
+      selectionRect: const Rect.fromLTWH(10, 10, 4, 4),
+      controller: host.controller,
+      replaceStack: true,
+      rubySpans: const <FushiRubySpan>[
+        FushiRubySpan(start: 1, end: 2, reading: 'せわ'),
+      ],
+    );
+    await tester.pump();
+    final DictionaryPopupEntry entry = host.controller.entries.single;
+    expect(entry.rubySpans, ruby);
+    List<String?> readings() =>
+        entry.result!.entries.map((DictionaryEntry e) => e.reading).toList();
+    expect(readings(), <String>['せわしい', 'いそがしい']);
+
+    await host.loadMoreForEntry(entry: entry, controller: host.controller);
+    await tester.pump();
+    expect(host.searches.last.ruby, ruby, reason: '续查必须带首查那组 ruby');
+    expect(readings(), <String>['せわしい', 'いそがしい'], reason: '加载更多后顺序不变');
+
+    // 原地跳到别的词（链接点击没有来源 ruby）→ 本层 ruby 清空；后退回原词 → ruby
+    // 随历史页恢复，此后加载更多仍按读音排序。
+    await host.navigatePopupInPlace(
+      controller: host.controller,
+      index: 0,
+      entry: entry,
+      query: '犬',
+    );
+    await tester.pump();
+    expect(entry.searchTerm, '犬');
+    expect(entry.rubySpans, isEmpty);
+    expect(host.controller.goBack(entry, scrollTop: 0), isTrue);
+    expect(entry.searchTerm, '忙しい');
+    expect(entry.rubySpans, ruby);
+    await host.loadMoreForEntry(entry: entry, controller: host.controller);
+    await tester.pump();
+    expect(host.searches.last.ruby, ruby);
+    expect(readings(), <String>['せわしい', 'いそがしい']);
     await tester.pump(const Duration(seconds: 2));
   });
 

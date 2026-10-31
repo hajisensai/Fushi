@@ -11,6 +11,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart' show rubySpansForQuery;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -1597,6 +1598,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // 无热槽（低内存 / seed 未就绪）时 beginTop 自动退回压新层，行为不变。
     pushNestedPopup(
       query: word,
+      rubySpans: rubySpansForQuery(line.rubySpans, charIndex, word.length),
       selectionRect: rect,
       controller: _popup,
       reuseWarmSlot: true,
@@ -2856,11 +2858,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           index: i,
           screen: screen,
           controller: _popup,
-          onPush: (String text, Rect rect) => pushNestedPopup(
-            query: text,
-            selectionRect: rect,
-            controller: _popup,
-          ),
+          onPush: (String text, Rect rect, List<FushiRubySpan> rubySpans) =>
+              pushNestedPopup(
+                query: text,
+                selectionRect: rect,
+                controller: _popup,
+                rubySpans: rubySpans,
+              ),
           onPop: (int index) => popNestedPopupAt(index, _popup),
         ),
       ...buildParkedRealmLayers(screen: screen, controller: _popup),

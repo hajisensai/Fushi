@@ -117,7 +117,7 @@ class _HarnessState extends State<_Harness> {
             keepWebViewWarm: true,
             webViewKey: widget.webViewKey,
             onDismiss: () {},
-            onTextSelected: (String _, Rect __) {},
+            onTextSelected: (_, __, ___) {},
             onLinkClick: (String _, Rect __) {},
             onMineEntry: (Map<String, String> _) async =>
                 const MinePopupResult(),

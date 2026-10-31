@@ -85,6 +85,7 @@ add_library(fushidicts STATIC
     fushidicts_src/text_processor/opencc_st_data.cpp
     fushidicts_src/scan/word_scan.cpp
     fushidicts_src/scan/mixed_orthography.cpp
+    fushidicts_src/scan/ruby_reading.cpp
     fushidicts_src/deinflector.cpp
     fushidicts_src/query.cpp
     fushidicts_src/lookup.cpp

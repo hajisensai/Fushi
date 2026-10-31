@@ -26,6 +26,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, kStatSourceMusic;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -72,7 +73,7 @@ import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiDesktopTitleBar, FushiTitleBarColorScope, fushiTitleBarColorsOn;
+    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -140,6 +141,33 @@ String? musicCdgCompanionOf(MusicPlayItem item) {
 String musicLyricsLookupTerm(KaraokeLookupHit hit) {
   final int at = hit.charIndexInLine.clamp(0, hit.lineText.length);
   return hit.lineText.substring(at);
+}
+
+/// 纯函数：[musicLyricsLookupTerm] 查词串上的源注音区间（坐标系 = 查词串）。
+///
+/// [syllables] 是命中行的音节（行文本 = 音节文本拼接），只取起点不早于
+/// [charIndexInLine] 的音节：被查词起点截断的注音基字丢弃。只用解析器读出的
+/// `LyricSyllable.ruby`，不推断读音。
+List<FushiRubySpan> musicLyricsRubySpans(
+  List<LyricSyllable> syllables,
+  int charIndexInLine,
+) {
+  final List<FushiRubySpan> spans = <FushiRubySpan>[];
+  int offset = 0;
+  for (final LyricSyllable s in syllables) {
+    final int start = offset;
+    offset += s.text.length;
+    final String reading = (s.ruby ?? '').trim();
+    if (reading.isEmpty || s.text.isEmpty || start < charIndexInLine) continue;
+    spans.add(
+      FushiRubySpan(
+        start: start - charIndexInLine,
+        end: offset - charIndexInLine,
+        reading: reading,
+      ),
+    );
+  }
+  return spans;
 }
 
 /// 纯函数：查词时要不要暂停（设置开着且正在播）。
@@ -382,8 +410,18 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _pausedForLookup = true;
       unawaited(_engine.pause());
     }
+    final LyricTimeline? timeline = _timeline;
+    final LyricLine? line =
+        timeline != null &&
+            hit.lineIndex >= 0 &&
+            hit.lineIndex < timeline.lines.length
+        ? timeline.lines[hit.lineIndex]
+        : null;
     await searchDictionaryResult(
       searchTerm: musicLyricsLookupTerm(hit),
+      rubySpans: line != null && line.text == hit.lineText
+          ? musicLyricsRubySpans(line.syllables, hit.charIndexInLine)
+          : const <FushiRubySpan>[],
       selectionRect: hit.globalRect,
     );
   }
@@ -2058,9 +2096,7 @@ class _TitleBarScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiTitleBarColorScope(
-    colors: FushiDesktopTitleBar.immersivePagesFillWindow
-        ? fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface)
-        : null,
+    colors: fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface),
     child: child,
   );
 }

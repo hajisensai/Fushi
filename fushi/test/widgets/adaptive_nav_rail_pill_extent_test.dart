@@ -114,13 +114,24 @@ void main() {
       )
       .first;
 
-  Rect stateLayerRect(WidgetTester tester, Finder anchor) {
+  /// 状态层在 InkWell 自身坐标系里的框（未经祖先变换）。
+  Rect stateLayerLocalRect(WidgetTester tester, Finder anchor) {
     final Finder ink = inkAround(anchor);
     final InkWell inkWell = tester.widget<InkWell>(ink);
     final RenderBox ref = tester.renderObject<RenderBox>(ink);
     final RectCallback? callback = inkWell.getRectCallback(ref);
-    final Rect local = callback == null ? Offset.zero & ref.size : callback();
-    return local.shift(ref.localToGlobal(Offset.zero));
+    return callback == null ? Offset.zero & ref.size : callback();
+  }
+
+  /// 状态层的屏幕框：经完整的祖先变换换算，与 [WidgetTester.getRect] 同一坐标系。
+  /// 不能只平移 localToGlobal(Offset.zero)：Material 浮动底栏整体按
+  /// [kFushiFloatingCapsuleScale] 缩放（FushiCapsuleScale），局部尺寸 ≠ 屏幕尺寸。
+  Rect stateLayerRect(WidgetTester tester, Finder anchor) {
+    final RenderBox ref = tester.renderObject<RenderBox>(inkAround(anchor));
+    return MatrixUtils.transformRect(
+      ref.getTransformTo(null),
+      stateLayerLocalRect(tester, anchor),
+    );
   }
 
   /// 底栏：标签所在 Column 的第一个孩子是药丸槽（pillWidth × 32）。
@@ -155,16 +166,28 @@ void main() {
     for (final AdaptiveNavItem item in items) {
       final Finder anchor = anchorOf(item);
       final Rect layer = stateLayerRect(tester, anchor);
-      expect(layer.size, selected.size, reason: '${item.label}：状态层与选中指示器尺寸不一致');
+      // 两边都是经缩放变换换算出的屏幕坐标，浮点末位可能不同，按 1e-6 比。
+      expect(
+        layer.size.width,
+        closeTo(selected.width, 1e-6),
+        reason: '${item.label}：状态层与选中指示器宽度不一致',
+      );
+      expect(
+        layer.size.height,
+        closeTo(selected.height, 1e-6),
+        reason: '${item.label}：状态层与选中指示器高度不一致',
+      );
       expect(
         layer,
-        indicatorOf(tester, anchor),
+        rectMoreOrLessEquals(indicatorOf(tester, anchor), epsilon: 1e-6),
         reason: '${item.label}：状态层没有落在自己的指示器上',
       );
+      // borderRadius 是 InkWell 局部坐标里的值：与局部状态层框的半高比（上面已
+      // 断言屏幕框与指示器重合，同一变换下局部高也与指示器相同）。
       final InkWell inkWell = tester.widget<InkWell>(inkAround(anchor));
       expect(
         inkWell.borderRadius,
-        BorderRadius.circular(selected.height / 2),
+        BorderRadius.circular(stateLayerLocalRect(tester, anchor).height / 2),
         reason: '${item.label}：状态层圆角与指示器不一致',
       );
     }

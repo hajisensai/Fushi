@@ -110,6 +110,40 @@ void main() {
     final Rect circle = tester.getRect(circleFinder);
     expect(circle.bottom, lessThanOrEqualTo(bar.bottom));
 
+    // 遮罩必须画在栏之下：Material 下返回圆整体按胶囊比例缩（56 → 48）后居中
+    // 在 56 高的栏里、离栏下沿还有 4，测试渲染器的投影（≈3 px 就截止）够不到
+    // 栏下沿，像素对比在栏外已经看不出遮罩盖没盖住投影——叠放顺序直接钉在真实
+    // 页面的结构上。
+    final Element stackElement = tester.element(
+      find
+          .ancestor(
+            of: find.descendant(of: page, matching: find.byType(AppBar)),
+            matching: find.byType(Stack),
+          )
+          .first,
+    );
+    final List<Element> stackChildren = <Element>[];
+    stackElement.visitChildren(stackChildren.add);
+    final int barIndex = stackChildren.indexWhere(
+      (Element child) => child.widget is AppBar,
+    );
+    final int scrimIndex = stackChildren.indexWhere(
+      (Element child) => find
+          .descendant(
+            of: find.byElementPredicate((Element e) => e == child),
+            matching: find.byType(FushiTopFadeScrim),
+          )
+          .evaluate()
+          .isNotEmpty,
+    );
+    expect(barIndex, isNonNegative);
+    expect(scrimIndex, isNonNegative, reason: '栏下沿应有共享渐隐遮罩');
+    expect(
+      scrimIndex,
+      lessThan(barIndex),
+      reason: '遮罩必须先画、胶囊后画，否则返回圆投影在栏下沿被盖成一条直线',
+    );
+
     final ({ByteData bytes, int width}) pixels = (await tester.runAsync(
       () async {
         final RenderRepaintBoundary boundary =
@@ -132,16 +166,16 @@ void main() {
           pixels.bytes.getUint8(offset + 2);
     }
 
-    // 栏外 2 px：遮罩几乎不透明，旧顺序会把两处都盖成白色；正确顺序
-    // 应保留返回圆的投影，而远离胶囊的对照点仍为页面底色。
-    final double y = bar.bottom + 2;
+    // 返回圆下沿外 2 px：投影在且没被任何东西（遮罩 / 栏裁切）盖成页面底色，
+    // 而同一行远离胶囊的对照点仍为页面底色。
+    final double y = circle.bottom + 2;
     final int underCircle = luminanceAt(Offset(circle.center.dx, y));
     final int awayFromChrome = luminanceAt(Offset(bar.right * 0.75, y));
     expect(awayFromChrome, greaterThanOrEqualTo(3 * 250));
     expect(
       underCircle,
       lessThan(awayFromChrome - 6),
-      reason: '真实合集页返回圆在栏下沿外仍有投影，不能被渐隐遮罩截平',
+      reason: '真实合集页返回圆下沿外仍有投影，不能被渐隐遮罩截平',
     );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

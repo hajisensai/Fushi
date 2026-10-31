@@ -1057,35 +1057,41 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     // 多选时批量条贴在列表下方并自己让出 [bottomInset]，列表本身不再重复让。
     final double listBottomInset = _selectionMode ? 0 : bottomInset;
 
+    // 自动滚动条的轨道按 MediaQuery padding 让位：顶部让出浮动头部，拇指才不会
+    // 画进页签行。
+    final MediaQueryData media = MediaQuery.of(context);
     Widget scroller({required bool withControls}) => FushiEntranceScope(
       replayKey: _statusFilter,
-      child: CustomScrollView(
-        key: const PageStorageKey<String>('download-task-list'),
-        slivers: <Widget>[
-          SliverToBoxAdapter(child: SizedBox(height: chromeInset)),
-          if (widget.header != null)
-            SliverPadding(
-              // 横幅自带上边距、无内容时零高度：这里只给页边。
-              padding: EdgeInsets.symmetric(horizontal: page),
-              sliver: SliverToBoxAdapter(child: widget.header),
-            ),
-          if (withControls)
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 4),
-              sliver: SliverToBoxAdapter(
-                child: _buildControls(visible, rendered),
+      child: MediaQuery(
+        data: media.copyWith(padding: media.padding.copyWith(top: chromeInset)),
+        child: CustomScrollView(
+          key: const PageStorageKey<String>('download-task-list'),
+          slivers: <Widget>[
+            SliverToBoxAdapter(child: SizedBox(height: chromeInset)),
+            if (widget.header != null)
+              SliverPadding(
+                // 横幅自带上边距、无内容时零高度：这里只给页边。
+                padding: EdgeInsets.symmetric(horizontal: page),
+                sliver: SliverToBoxAdapter(child: widget.header),
               ),
+            if (withControls)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 4),
+                sliver: SliverToBoxAdapter(
+                  child: _buildControls(visible, rendered),
+                ),
+              ),
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                page,
+                withControls ? 4 : tokens.spacing.gap,
+                page,
+                listBottomInset + (showFab ? 96 : 24),
+              ),
+              sliver: body,
             ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              page,
-              withControls ? 4 : tokens.spacing.gap,
-              page,
-              listBottomInset + (showFab ? 96 : 24),
-            ),
-            sliver: body,
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
@@ -1124,6 +1130,10 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                     width: 360,
                     child: SingleChildScrollView(
                       key: const ValueKey<String>('download-task-side-pane'),
+                      // 主列表才是分区的主滚动视图（顶栏收起 / 回顶跟它走）；侧窗格
+                      // 若也继承 PrimaryScrollController，宽屏下一个控制器挂两个
+                      // position，Scrollbar 断言。
+                      primary: false,
                       padding: EdgeInsets.fromLTRB(
                         0,
                         chromeInset + tokens.spacing.gap,

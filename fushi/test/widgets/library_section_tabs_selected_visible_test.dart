@@ -218,11 +218,25 @@ void main() {
       tester.element(selected),
       axis: Axis.horizontal,
     ).position;
+    // 动作胶囊（8 + 152）在屏幕上挤掉 160，居中目标随之右移可视区收缩量的
+    // 一半。浮动页签胶囊整体按 kFushiFloatingCapsuleScale 缩放，滚动偏移在
+    // 缩放层里面，所以收缩量要换算回页签自身坐标：屏幕 160 ÷ 缩放比。缩放比
+    // 直接量（可视区屏幕宽 ÷ 局部宽），不写死常量。
+    final RenderBox viewportBox = tester.renderObject<RenderBox>(
+      find
+          .descendant(
+            of: glassUnwrap<TabBar>(find.byType(TabBar)),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    final double scale = _viewportRect(tester).width / viewportBox.size.width;
+    const double actionsScreenWidth = 8 + 152;
     final double target =
         RenderAbstractViewport.of(
           tab,
         ).getOffsetToReveal(tab, 0.5, axis: Axis.horizontal).offset +
-        80;
+        actionsScreenWidth / 2 / scale;
     position.jumpTo(target);
     // 不推进时钟：宽度变窄后，旧 activity 正好停在新的居中目标上。
     position.animateTo(

@@ -129,7 +129,7 @@ font:700 30px/1.5 -apple-system,sans-serif}
               keepWebViewWarm: true,
               webViewKey: widget.webViewKey,
               onDismiss: () {},
-              onTextSelected: (String _, Rect __) {},
+              onTextSelected: (_, __, ___) {},
               onLinkClick: (String _, Rect __) {},
               onMineEntry: (Map<String, String> _) async =>
                   const MinePopupResult(),

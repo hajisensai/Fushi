@@ -68,7 +68,7 @@ class LyricSyllable {
   final int endMs;
   final LyricFill fill;
 
-  /// 注音（源文件自带或自动生成）。
+  /// 源文件自带的注音（解析器读出；不自动生成）。
   final String? ruby;
 
   int get durationMs => endMs - startMs;

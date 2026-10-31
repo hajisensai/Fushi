@@ -21,7 +21,13 @@ class DistBatchResult {
     required this.lines,
     required this.elapsed,
     this.infraError,
+    this.filtered = false,
   });
+
+  /// The run selects tests by name / tag ([distTestFilterActive]): a suite
+  /// with no matching test is fine, so this batch may run none of its tests
+  /// (the whole run must still run one, [DistRunVerdict.failure]).
+  final bool filtered;
 
   final int batchId;
   final String worker;
@@ -75,9 +81,20 @@ class DistBatchResult {
   /// Why this batch is red, or null.
   String? get failure {
     if (infraError != null) return infraError;
+    // Under a filter, package:test's "no tests ran" exit of a batch whose
+    // suites all loaded and reported `done: success` without an error is the
+    // filter matching nothing here, not a failure: a local run of the same
+    // files passes as long as some other suite matched. A load / compile
+    // failure is still a failed test or a missing `done`, so it stays red.
+    final bool nothingMatched =
+        filtered &&
+        exitCode == kTestNoTestsRanExitCode &&
+        summary.success == true &&
+        summary.errors.isEmpty;
     final String? verdict = resolveFlutterTestVerdictFailure(
-      flutterExitCode: exitCode,
+      flutterExitCode: nothingMatched ? 0 : exitCode,
       summary: summary,
+      minimumTests: filtered ? 0 : 1,
     );
     if (verdict != null) return verdict;
     if (missingSuites.isNotEmpty) {
@@ -88,6 +105,28 @@ class DistBatchResult {
     return null;
   }
 }
+
+/// package:test's exit code when no test ran (`flutter test` / `dart test`
+/// pass it on): with a name / tag filter, "no test of these suites matched".
+const int kTestNoTestsRanExitCode = 79;
+
+/// `flutter test` / `dart test` options that select tests by name or tag.
+const Set<String> _kTestFilterOptions = <String>{
+  '--name',
+  '-n',
+  '--plain-name',
+  '--tags',
+  '-t',
+  '--exclude-tags',
+  '-x',
+};
+
+/// Whether [testArgs] select tests by name or tag, so a suite (and with it a
+/// batch) may legitimately run none of its tests.
+bool distTestFilterActive(List<String> testArgs) => testArgs.any((String a) {
+  final int eq = a.indexOf('=');
+  return _kTestFilterOptions.contains(eq < 0 ? a : a.substring(0, eq));
+});
 
 /// Splits a json-reporter stream holding several runs back to back at each
 /// run's `start` event. A stream with no `start` at all is one run.
@@ -274,9 +313,17 @@ List<String> expandDistItestReports(List<String> lines) {
 
 /// The whole run.
 class DistRunVerdict {
-  DistRunVerdict({required this.results, required this.unplaced});
+  DistRunVerdict({
+    required this.results,
+    required this.unplaced,
+    this.filtered = false,
+  });
 
   final List<DistBatchResult> results;
+
+  /// Tests are selected by name / tag: single batches may run none, the run
+  /// as a whole must still run at least one (as `flutter test` here would).
+  final bool filtered;
 
   /// Suites no live worker could take (platform / capability), never run.
   final List<String> unplaced;
@@ -297,6 +344,9 @@ class DistRunVerdict {
     if (results.isEmpty) return 'no batch ran';
     if (failed.isNotEmpty) {
       return '${failed.length} of ${results.length} batch(es) failed';
+    }
+    if (filtered && testsCompleted == 0) {
+      return 'no test matched the name / tag filter in any suite';
     }
     if (unplaced.isNotEmpty) {
       return '${unplaced.length} suite(s) had no eligible worker and never '

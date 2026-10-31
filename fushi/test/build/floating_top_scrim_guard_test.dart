@@ -339,8 +339,57 @@ void main() {
       final String bar = File(
         'lib/src/utils/components/fushi_desktop_title_bar.dart',
       ).readAsStringSync();
-      expect(bar.contains('? Colors.transparent\n'), isTrue);
+
+      // ① 页面整窗铺满：页面子树挂在 Positioned.fill 里（经 MediaQuery 拿顶部
+      // 让位），不是 Column 里标题行下面的 Expanded。
+      final int page = bar.indexOf('child: widget.child');
+      expect(page, isNonNegative, reason: '找不到页面子树挂载点');
+      final int fill = bar.lastIndexOf('Positioned.fill(', page);
+      expect(fill, isNonNegative, reason: '页面子树必须挂在 Positioned.fill 里');
+      final String fillToPage = bar.substring(fill, page);
+      expect(fillToPage.contains('Expanded('), isFalse);
+      expect(fillToPage.contains('Column('), isFalse);
+      expect(
+        RegExp(
+          r'Positioned\.fill\(\s*child: MediaQuery\(',
+        ).hasMatch(bar.substring(fill)),
+        isTrue,
+        reason: '页面经 MediaQuery 拿顶部让位，自身仍铺满整窗',
+      );
       expect(bar.contains('top: mediaQuery.padding.top + inset'), isTrue);
+
+      // ② 标题行是同一个 Stack 里压在页面上方的一层（Positioned 贴顶、定高），
+      // 不占版面高度。
+      expect(
+        RegExp(
+          r'Positioned\(\s*top: 0,\s*left: 0,\s*right: 0,\s*'
+          r'height: FushiDesktopTitleBar\.height,',
+        ).hasMatch(bar.substring(page)),
+        isTrue,
+        reason: '标题行必须是页面之后、贴顶定高的 Positioned 叠层',
+      );
+
+      // ③ 标题行底色看不见：只能是全透明，或沉浸页 macOS 上为抢回平台视图
+      // 命中而铺的 1/255 页面底色——不能退回一条实色带。
+      final Match? fillDecl = RegExp(
+        r'final Color captionFill =([^;]*);',
+      ).firstMatch(bar);
+      expect(fillDecl, isNotNull, reason: '找不到标题行底色 captionFill');
+      final String expr = fillDecl!.group(1)!;
+      expect(expr.contains('Colors.transparent'), isTrue);
+      final List<String> branches = expr
+          .split(RegExp(r'[?:]'))
+          .skip(1)
+          .map((String s) => s.trim())
+          .toList();
+      expect(branches, isNotEmpty);
+      for (final String branch in branches) {
+        expect(
+          branch == 'Colors.transparent' || branch.endsWith('.withAlpha(1)'),
+          isTrue,
+          reason: '标题行底色分支「$branch」不是透明 / 1/255',
+        );
+      }
     });
   });
 }

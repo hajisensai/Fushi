@@ -37,14 +37,16 @@ void main() {
       ),
     );
     expect(tester.takeException(), isNull, reason: '长标题不得撑爆整行');
+    // 工具行整体按胶囊比例缩（[FushiCapsuleScale]）：限宽按屏幕上的宽度比，
+    // 用 getRect（含缩放变换）而不是 getSize（缩放前的局部宽度）。
     final double titleWidth = tester
-        .getSize(
+        .getRect(
           find.byKey(const ValueKey<String>('floating-chrome-shell-title')),
         )
         .width;
     expect(titleWidth, lessThanOrEqualTo(rowWidth / 3 + 0.01));
     expect(
-      tester.getSize(find.byKey(const ValueKey<String>('tabs'))).width,
+      tester.getRect(find.byKey(const ValueKey<String>('tabs'))).width,
       greaterThan(rowWidth / 3),
       reason: '页签胶囊要保有剩余宽度',
     );

@@ -1,6 +1,5 @@
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -101,41 +100,34 @@ void main() {
     expect(settingsOpened, 1);
   });
 
-  testWidgets('分区页签在嵌套栈之上：进首页、钻进网格都不被路由盖住', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('点服务器以二级页面打开：整页盖住分区页签，返回回到列表', (WidgetTester tester) async {
     final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
     await tester.pumpWidget(
       harness(<MediaServerEntry>[MediaServerEntry(browser: only)]),
     );
     await tester.pumpAndSettle();
+    expect(find.text('nav-probe').hitTestable(), findsOneWidget);
 
-    // 单台一进分区就自动 push 首页——此前页签只在栈底的列表页里，这一步就被整页
-    // 盖掉，用户看到的是「点开媒体服务器就占满整个页面」。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('media-server-card-fake:nas')),
+    );
+    await tester.pumpAndSettle();
+    // 2026-10-30 用户：「点击进去媒体服务器应该要是二级界面」——根导航器整页
+    // push，分区页签不再叠在服务器页之上。
     expect(find.byType(MediaServerHomeView), findsOneWidget);
     expect(
       find.text('nav-probe').hitTestable(),
-      findsOneWidget,
-      reason: '首页压在栈顶时分区页签仍可见可点',
+      findsNothing,
+      reason: '二级页面盖住整页，包括分区页签',
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('media-server-home-search')),
-    );
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey<String>('media-server-grid-search')),
-      findsOneWidget,
-    );
-    expect(
-      find.text('nav-probe').hitTestable(),
-      findsOneWidget,
-      reason: '再钻一层（网格）页签仍在最上方',
-    );
-    expect(find.text('nav-probe'), findsOneWidget, reason: '页签只画一份');
+    expect(find.byType(MediaServerHomeView), findsNothing);
+    expect(find.text('nav-probe').hitTestable(), findsOneWidget);
   });
 
-  testWidgets('单台：直接进那台的首页；返回后才出现列表', (WidgetTester tester) async {
+  testWidgets('单台：不自动进首页，列表露出那张卡；点进去才拉库', (WidgetTester tester) async {
     final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
     await tester.pumpWidget(
       harness(<MediaServerEntry>[
@@ -144,27 +136,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(MediaServerHomeView), findsOneWidget);
-    expect(only.listLibrariesCalls, 1, reason: '首页真的开始拉库');
-    expect(
-      find.byKey(const ValueKey<String>('media-server-card-fake:nas')),
-      findsNothing,
-      reason: '单台时列表不该露出来',
-    );
-
-    await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-
     expect(find.byType(MediaServerHomeView), findsNothing);
+    expect(only.listLibrariesCalls, 0, reason: '没点进去一个请求都不发');
     expect(
       find.byKey(const ValueKey<String>('media-server-card-fake:nas')),
       findsOneWidget,
-      reason: '返回后列表才出现，且不再自动进首页',
     );
     expect(find.text('alice'), findsOneWidget, reason: '卡片带账号');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('media-server-card-fake:nas')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsOneWidget);
+    expect(only.listLibrariesCalls, 1, reason: '首页真的开始拉库');
   });
 
-  testWidgets('两台：列出两张卡，点一张进它的首页；Escape 退回列表', (WidgetTester tester) async {
+  testWidgets('两台：列出两张卡，点一张进它的首页；返回退回列表', (WidgetTester tester) async {
     final FakeMediaServerBrowser a = fakeServer('a', 'Alpha');
     final FakeMediaServerBrowser b = fakeServer('b', 'Beta');
     await tester.pumpWidget(
@@ -189,62 +177,27 @@ void main() {
     expect(a.listLibrariesCalls, 0, reason: '没点的那台一个请求都不发');
     expect(find.text('Beta 的库'), findsWidgets);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(
-      find.byType(MediaServerHomeView),
-      findsNothing,
-      reason: 'Escape 退一层嵌套栈',
-    );
+    expect(find.byType(MediaServerHomeView), findsNothing, reason: '返回退出二级页面');
     expect(find.byType(MediaServerListView), findsOneWidget);
   });
 
-  testWidgets('系统返回：可见时退一层嵌套栈；被 Offstage 保活（systemBackActive=false）时不动',
-      (WidgetTester tester) async {
-    final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
-    await tester.pumpWidget(
-      harness(<MediaServerEntry>[MediaServerEntry(browser: only)]),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(MediaServerHomeView), findsOneWidget);
-
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(find.byType(MediaServerHomeView), findsNothing,
-        reason: '可见时 Android 返回沿嵌套栈退一层');
-    expect(find.byType(MediaServerListView), findsOneWidget);
-
-    // 换成「看不见」：壳把分区切走 / HomePage 切到别的 tab 时传 false。
-    final FakeMediaServerBrowser hidden = fakeServer('nas2', 'NAS2');
-    await tester.pumpWidget(
-      harness(
-        <MediaServerEntry>[MediaServerEntry(browser: hidden)],
-        systemBackActive: false,
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(MediaServerHomeView), findsOneWidget);
-
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(find.byType(MediaServerHomeView), findsOneWidget,
-        reason: '看不见的分区不得偷偷 pop 自己的嵌套栈');
-  });
-
-  testWidgets('手柄：B 退一层由本页消费，其余按钮转发给祖先 Actions（不吞 LT/RT/Y）',
-      (WidgetTester tester) async {
+  testWidgets('手柄：列表页上非返回键转发给祖先 Actions（不吞 LT/RT/Y）', (
+    WidgetTester tester,
+  ) async {
     final List<GamepadButton> outer = <GamepadButton>[];
     final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
     await tester.pumpWidget(
-      harness(
-        <MediaServerEntry>[MediaServerEntry(browser: only)],
-        outerGamepad: outer,
-      ),
+      harness(<MediaServerEntry>[
+        MediaServerEntry(browser: only),
+      ], outerGamepad: outer),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(MediaServerHomeView), findsOneWidget);
 
-    final BuildContext inside = tester.element(find.byType(MediaServerHomeView));
+    final BuildContext inside = tester.element(
+      find.byType(MediaServerListView),
+    );
     Actions.maybeInvoke<GamepadButtonIntent>(
       inside,
       const GamepadButtonIntent(GamepadButton.y),
@@ -254,21 +207,16 @@ void main() {
       const GamepadButtonIntent(GamepadButton.lt),
     );
     await tester.pumpAndSettle();
-    expect(outer, <GamepadButton>[GamepadButton.y, GamepadButton.lt],
-        reason: '非返回键必须到达 HomePage 那层，否则换 tab / 搜索在分区内失灵');
-    expect(find.byType(MediaServerHomeView), findsOneWidget);
-
-    Actions.maybeInvoke<GamepadButtonIntent>(
-      inside,
-      const GamepadButtonIntent(GamepadButton.b),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(MediaServerHomeView), findsNothing, reason: 'B 退一层');
-    expect(outer.length, 2, reason: 'B 被本页消费，不再上溯');
+    expect(outer, <GamepadButton>[
+      GamepadButton.y,
+      GamepadButton.lt,
+    ], reason: '非返回键必须到达 HomePage 那层，否则换 tab / 搜索在分区内失灵');
+    expect(find.byType(MediaServerListView), findsOneWidget);
   });
 
-  testWidgets('多线路：卡片出「切换线路」菜单，选另一条 → 回调 + 列表重取；单线路无入口',
-      (WidgetTester tester) async {
+  testWidgets('多线路：卡片出「切换线路」菜单，选另一条 → 回调 + 列表重取；单线路无入口', (
+    WidgetTester tester,
+  ) async {
     final FakeMediaServerBrowser a = fakeServer('a', 'Alpha');
     final FakeMediaServerBrowser b = fakeServer('b', 'Beta');
     final List<String> switched = <String>[];
@@ -298,7 +246,9 @@ void main() {
       systemBackActive: true,
     );
     await tester.pumpWidget(
-      TranslationProvider(child: MaterialApp(home: Scaffold(body: page))),
+      TranslationProvider(
+        child: MaterialApp(home: Scaffold(body: page)),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -307,19 +257,28 @@ void main() {
       findsNothing,
       reason: '单线路不出切换入口',
     );
-    final Finder switcher =
-        find.byKey(const ValueKey<String>('media-server-route-switch-fake:b'));
+    final Finder switcher = find.byKey(
+      const ValueKey<String>('media-server-route-switch-fake:b'),
+    );
     expect(switcher, findsOneWidget);
 
     await tester.tap(switcher);
     await tester.pumpAndSettle();
-    expect(find.text('https://b.example.com'), findsOneWidget, reason: '菜单列出线路');
+    expect(
+      find.text('https://b.example.com'),
+      findsOneWidget,
+      reason: '菜单列出线路',
+    );
     await tester.tap(find.text('https://b.example.com').last);
     await tester.pumpAndSettle();
 
     expect(switched, <String>['https://b.example.com']);
     expect(loads, 2, reason: '切换后列表重取');
-    expect(find.text('https://b.example.com'), findsOneWidget, reason: '卡片显示新线路');
+    expect(
+      find.text('https://b.example.com'),
+      findsOneWidget,
+      reason: '卡片显示新线路',
+    );
     expect(find.text('http://b:8096'), findsNothing);
     expect(find.byType(MediaServerHomeView), findsNothing, reason: '切线路不进首页');
   });

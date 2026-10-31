@@ -47,8 +47,13 @@ class FushiContinueHero extends StatelessWidget {
     this.frameCover = true,
     this.onLongPress,
     this.metaIcon,
+    this.widthCap,
     super.key,
   });
+
+  /// 调用方按自己的网格给的卡宽上限（书架：与第三本书右缘对齐）；null =
+  /// [maxWidth]。
+  final double? widthCap;
 
   /// 卡宽上限，见类注释。尺寸对齐旧版继续卡（用户 2026-10-28 给的旧版截图：
   /// 约 750 宽、封面 112 高、内边距 12）。
@@ -257,7 +262,7 @@ class FushiContinueHero extends StatelessWidget {
     final Widget lifted = Align(
       alignment: AlignmentDirectional.centerStart,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: maxWidth),
+        constraints: BoxConstraints(maxWidth: widthCap ?? maxWidth),
         child: FushiHoverLift(
           scale: 1.01,
           builder: (BuildContext _, bool __) => card,

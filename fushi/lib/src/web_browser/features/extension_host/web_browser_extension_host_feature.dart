@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
@@ -413,6 +414,8 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
         sentence: body['sentence'] is String ? body['sentence'] as String : '',
         fromHover: body['fromHover'] == true,
         origin: surface,
+        // content.js 已把原文振假名对齐到 term；无 ruby 时为空、与旧查词等价。
+        rubySpans: FushiRubySpan.listFromWire(body['ruby']),
         onMatched: (int matched) => unawaited(
           _evaluate(
             tab,
