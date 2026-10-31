@@ -86,6 +86,9 @@ class SrsSync2Report {
   /// 收到但因果还不满足、留在缓冲里的条数。
   int pending = 0;
 
+  /// 内核要拉、位置上却没读到的段数（head 指向的段暂时还列不到，最终一致）：这一轮跳过，下一轮再来。
+  int missing = 0;
+
   /// 这一轮上传的段数。
   int uploaded = 0;
 
@@ -414,6 +417,7 @@ Future<bool> srsSync2Pull({
       concurrency: fetchConcurrency,
     )) {
       // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
+      report.missing += batch.covered - batch.segments.length;
       if (batch.segments.isNotEmpty) {
         absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
       }
