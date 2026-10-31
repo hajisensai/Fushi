@@ -222,7 +222,11 @@ void main() {
         profileUid: kStatsVecProfile,
         deviceId: 'v',
         engine: const FakeFsrsEngine(),
-        trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-v'),
+        trustedClock: SrsTrustedClock(
+          wallClockMs: () => t,
+          bootClockMs: () => t,
+          bootId: 'boot-v',
+        ),
         fallbackRolloverHour: () => 4,
       );
     }

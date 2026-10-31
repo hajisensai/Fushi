@@ -16,6 +16,7 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_zstd_decompress(const u8*, usize, usize* out_len) -> u8*` | zstd 解码（.apkg 新格式），失败返回 NULL |
 | `ffsrs_free_bytes(u8*, usize)` | 释放解码缓冲区 |
 | `ffsrs_abi_version() -> i32` | ABI 版本（当前 2）；Dart 侧不一致即判不可用 |
+| `ffsrs_boot_time_ms() -> i64` | 自本次开机以来的毫秒，含睡眠、不受改系统时间影响（Linux / Android `CLOCK_BOOTTIME`、Apple `CLOCK_MONOTONIC`、Windows `GetTickCount64`；见 `src/boot_clock.rs`）；取不到返回 -1。SRS 可信时间按它推算 |
 | `ffsrs_search_corpus_new(const u8* text, usize, const u32* layout, usize, char** err) -> Corpus*` | Anki 搜索语料的结构：笔记类型 / 字段名 / 标签 / 牌组 / 模板名（UTF-8 拼接）与字段排布（u32 布局，见 `src/search.rs` `Corpus::new`），**不含字段值**；失败返回 NULL 并在 `err`（可空）写错误串。句柄内部带锁，可跨线程调用 |
 | `ffsrs_search_corpus_free(Corpus*)` | 释放语料（Dart 侧挂在 `NativeFinalizer` 上） |
 | `ffsrs_search_corpus_needs(const Corpus*, const char* query) -> char*` | 一条查询要哪些字段值：`{"ok":{"all":true}}`（未限定字段的文本 / `re:`）或 `{"ok":{"all":false,"names":[字段名 id…]}}`；查询不合法时与 match 同形报错。只读建语料时定死的字段名表、**不拿语料锁**：另一线程上的 match 正在求值（持锁）时也立即返回 |

@@ -180,7 +180,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     location: location,
     locationId: directoryKey,
     nowMs: () => store.now().$1,
-    wallClockMs: store.trustedClock.wallNowMs,
+    bootClockMs: store.trustedClock.bootNowMs,
     key: locationKey,
     onFetchProgress: onFetchProgress,
     onUploadStart: onUploadStart,
@@ -873,13 +873,11 @@ class SrsSyncScheduler {
         );
       }
     }
-    // 服务器时间与写 head 那次上传同一刻的墙钟配对（[SrsSync2Report.serverTimeWallMs]），与这一轮跑了多久无关。
+    // 服务器时间与写 head 那次上传同一刻的开机时钟配对（[SrsSync2Report.serverTimeBootMs]），与这一轮跑了多久无关。
     final int? serverTime = report.serverTimeMs;
-    if (serverTime != null) {
-      await store.anchorTime(
-        serverTime,
-        observedAtWallMs: report.serverTimeWallMs,
-      );
+    final int? observedAt = report.serverTimeBootMs;
+    if (serverTime != null && observedAt != null) {
+      await store.anchorTime(serverTime, observedAtBootMs: observedAt);
       final int? skew = store.trustedClock.wallSkewMs;
       if (skew != null && skew.abs() > kSrsClockSkewWarnMs) {
         _noticeOnce(SrsSyncNotice.clockSkew);

@@ -642,7 +642,11 @@ void main() {
         profileUid: kProfile,
         deviceId: 'dev',
         engine: const _Engine(),
-        trustedClock: SrsTrustedClock(wallClockMs: () => now, bootId: 'b'),
+        trustedClock: SrsTrustedClock(
+          wallClockMs: () => now,
+          bootClockMs: () => now,
+          bootId: 'b',
+        ),
         fallbackRolloverHour: () => 4,
       );
     });

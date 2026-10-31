@@ -33,15 +33,19 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 /// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
 const int kSrsSync2MigrateBatch = 20000;
 
-/// 本机时间：墙钟 + 同步校时测得的偏移（[SrsTrustedClock]）。偏移按进程 bootId 失效：进程重启后要重新校时
-/// （两次运行之间用户可能改过系统时间）。
-SrsTrustedClock srsProcessTrustedClock() {
-  final int base = DateTime.now().millisecondsSinceEpoch;
-  return SrsTrustedClock(
-    wallClockMs: () => DateTime.now().millisecondsSinceEpoch,
-    bootId: '${base}_${Random.secure().nextInt(1 << 30)}',
-  );
-}
+/// 本进程（isolate）的身份：持久化的校时读数（服务器时间 + 开机时钟读数）只在写下它的进程里接着用。
+/// 同一进程里重开 profile / 副本时它不变，校时不丢；进程重启（含重新开机，开机时钟归零）后换新。
+final String _srsProcessBootId =
+    '${DateTime.now().millisecondsSinceEpoch}_'
+    '${Random.secure().nextInt(1 << 30)}';
+
+/// 本机时间（[SrsTrustedClock]）：校时那一刻的服务器时间 + 原生开机时钟（含睡眠、不受改系统时间影响，
+/// [SrsCore.bootTimeMs]）之后走过的量。进程重启后到下一次校时前按墙钟 + 上一个进程留下的偏移估算。
+SrsTrustedClock srsProcessTrustedClock(SrsCore core) => SrsTrustedClock(
+  wallClockMs: () => DateTime.now().millisecondsSinceEpoch,
+  bootClockMs: core.bootTimeMs,
+  bootId: _srsProcessBootId,
+);
 
 /// 批量写的一项：某实体的某字段改成 [value]（见 [SrsDbStore.editFieldsBatch]）。
 class SrsFieldChange {
@@ -299,7 +303,7 @@ class SrsDbStore implements SrsSync2Host {
       profileUid: profileUid,
       deviceId: deviceId,
       engine: engine,
-      trustedClock: trustedClock ?? srsProcessTrustedClock(),
+      trustedClock: trustedClock ?? srsProcessTrustedClock(core),
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
       styles: styles,
@@ -641,11 +645,16 @@ class SrsDbStore implements SrsSync2Host {
         '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
             '${Random.secure().nextInt(1 << 30).toRadixString(36)}';
     final Object? anchor = j['anchor'];
-    // 旧版本写的 `{s, m, b}`（服务器时间 + 单调读数）不再认：bootId 也只在写下它的进程里有效。
+    // `{o, b, s?, t?}`：o = 可信时间 − 墙钟，s / t = 校时时的服务器时间与开机时钟读数（只在写下它的进程 b 里接着
+    // 用，见 [SrsTrustedClock.restoreAnchor]）。更旧的 `{s, m, b}`（服务器时间 + Stopwatch 读数）没有 o，不认。
     if (anchor is Map && anchor['o'] is int && anchor['b'] is String) {
+      final Object? server = anchor['s'];
+      final Object? boot = anchor['t'];
       _trusted.restoreAnchor(
         offsetMs: anchor['o']! as int,
         bootId: anchor['b']! as String,
+        serverTimeMs: server is int ? server : null,
+        bootTimeMs: boot is int ? boot : null,
       );
     }
     return row != null;
@@ -679,8 +688,13 @@ class SrsDbStore implements SrsSync2Host {
     'cacheRev': _cacheRevision,
     'revision': _revision,
     'epoch': _epoch,
-    if (_trusted.anchorState case final ({int offsetMs, String bootId}) a)
-      'anchor': <String, Object?>{'o': a.offsetMs, 'b': a.bootId},
+    if (_trusted.anchorState case final SrsClockAnchorState a)
+      'anchor': <String, Object?>{
+        'o': a.offsetMs,
+        'b': a.bootId,
+        if (a.serverTimeMs case final int server) 's': server,
+        if (a.bootTimeMs case final int boot) 't': boot,
+      },
   };
 
   (int, SrsTimeSource) now() => _trusted.now();
@@ -4506,12 +4520,12 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 同步成功拿到服务器时间后校时。[observedAtWallMs] 见 [SrsTrustedClock.anchor]。
-  Future<void> anchorTime(int serverTimeMs, {int? observedAtWallMs}) =>
+  /// 同步成功拿到服务器时间后校时。[observedAtBootMs] 见 [SrsTrustedClock.anchor]。
+  Future<void> anchorTime(int serverTimeMs, {required int observedAtBootMs}) =>
       runExclusive(() async {
         _trusted.anchor(
           serverTimeMs: serverTimeMs,
-          observedAtWallMs: observedAtWallMs,
+          observedAtBootMs: observedAtBootMs,
         );
         await _saveLocal();
       });

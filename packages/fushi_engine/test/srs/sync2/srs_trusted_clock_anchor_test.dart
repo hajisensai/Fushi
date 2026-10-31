@@ -1,8 +1,12 @@
 // 反馈（2026-10-31）：系统时间是准的，Fushi 却提示「该设备时钟明显超前」，复习记录写进了 10 分 42 秒后的
 // 未来。根因：校时把一轮同步**末尾**写 head 时的服务器时间，配上这一轮**开头**的时钟读数，整轮同步的耗时
 // （大库、卡顿时十几分钟）全算成「本机时钟落后」，可信时间超前同样的时长；另外可信时间按 Stopwatch 推算，
-// Android 深睡不计时，睡醒后可信时间落后。修复：可信时间 = 墙钟 + 偏移，偏移由服务器时间与写 head 那次上传
-// 同一刻的墙钟配对得出（SrsSync2Report.serverTimeWallMs）。
+// Android 深睡不计时，睡醒后可信时间落后。
+//
+// 修复：可信时间 = 校时那一刻的服务器时间 + 开机时钟（含睡眠、不受改系统时间影响，native ffsrs_boot_time_ms）
+// 之后走过的量；服务器时间与写 head 那次上传同一刻的开机时钟读数配对（SrsSync2Report.serverTimeBootMs）。
+// 中间一度改成「墙钟 + 偏移」（PR #2711）：校时后同一进程里改系统时间，可信时间跟着跳、「系统时间不准」也查不出来，
+// 本文件的「改系统时间」用例钉住这条。
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -63,50 +67,179 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   group('SrsTrustedClock', () {
-    test('可信时间 = 墙钟 + 校时偏移：睡眠（墙钟跳走）后照样准，不再按单调时钟推算', () {
+    test('深睡：开机时钟照走（Stopwatch / CLOCK_MONOTONIC 停了也无关），可信时间不落后', () {
+      // 墙钟与开机时钟各走各的：只有开机时钟进可信时间。
       final List<int> wall = <int>[1000000];
+      final List<int> boot = <int>[50000];
       final SrsTrustedClock c = SrsTrustedClock(
         wallClockMs: () => wall[0],
+        bootClockMs: () => boot[0],
         bootId: 'b',
       );
       expect(c.now(), (1000000, SrsTimeSource.wall));
-      // 服务器比本机快 5 秒，在墙钟 1000000 那一刻观测到。
-      c.anchor(serverTimeMs: 1005000, observedAtWallMs: 1000000);
+      // 服务器比本机墙钟快 5 秒，在开机时钟 50000 那一刻观测到。
+      c.anchor(serverTimeMs: 1005000, observedAtBootMs: 50000);
       expect(c.wallSkewMs, -5000);
-      wall[0] += 10 * 3600 * 1000; // 睡了 10 小时：墙钟照走，单调时钟（Android）不走
-      expect(c.now(), (wall[0] + 5000, SrsTimeSource.anchored));
+      // 睡了 10 小时：墙钟、开机时钟都走；单调时钟（Android CLOCK_MONOTONIC / Dart Stopwatch）不走，不参与。
+      const int sleep = 10 * 3600 * 1000;
+      wall[0] += sleep;
+      boot[0] += sleep;
+      expect(c.now(), (1005000 + sleep, SrsTimeSource.anchored));
+      expect(c.wallSkewMs, -5000);
     });
 
-    test('观测时刻晚于校时调用无关：偏移只看服务器时间与同一刻的墙钟', () {
-      final List<int> wall = <int>[5000000];
+    test('校时后改系统时间：可信时间不跟着跳，wallSkewMs 现算报出来', () {
+      final List<int> wall = <int>[1000000];
+      final List<int> boot = <int>[7000];
       final SrsTrustedClock c = SrsTrustedClock(
         wallClockMs: () => wall[0],
+        bootClockMs: () => boot[0],
         bootId: 'b',
       );
-      // 服务器时间在墙钟 4000000 时盖下（与本机一致），校时调用发生在 1000 秒后。
-      c.anchor(serverTimeMs: 4000000, observedAtWallMs: 4000000);
+      c.anchor(serverTimeMs: 1000000, observedAtBootMs: 7000);
       expect(c.wallSkewMs, 0);
-      expect(c.now().$1, wall[0]);
+      wall[0] += 60000;
+      boot[0] += 60000;
+      expect(c.now(), (1060000, SrsTimeSource.anchored));
+      // 用户把系统时间往后拨 2 小时：可信时间照旧，偏差如实报 +2 小时。
+      wall[0] += 2 * 3600 * 1000;
+      expect(c.now(), (1060000, SrsTimeSource.anchored));
+      expect(c.wallSkewMs, 2 * 3600 * 1000);
+      // 再拨到比真实时间早 1 天，又过 1 秒：同样。
+      wall[0] = 1060000 - 24 * 3600 * 1000;
+      boot[0] += 1000;
+      expect(c.now(), (1061000, SrsTimeSource.anchored));
+      expect(c.wallSkewMs, -24 * 3600 * 1000 - 1000);
+      // 持久化下来的偏移是「可信时间 − 当前墙钟」，供下一个进程估算。
+      expect(c.anchorState?.offsetMs, 24 * 3600 * 1000 + 1000);
     });
 
-    test('偏移只在写下它的进程里有效', () {
+    test('观测时刻早于校时调用无关：只配服务器时间与同一刻的开机时钟', () {
+      final List<int> boot = <int>[5000000];
+      final SrsTrustedClock c = SrsTrustedClock(
+        wallClockMs: () => boot[0] + 123,
+        bootClockMs: () => boot[0],
+        bootId: 'b',
+      );
+      // 服务器时间在开机时钟 4000000 时盖下，校时调用发生在 1000 秒后。
+      c.anchor(serverTimeMs: 9000000, observedAtBootMs: 4000000);
+      expect(c.now().$1, 10000000);
+    });
+
+    test('同一进程恢复：完整接上服务器时间 + 开机时钟读数', () {
+      final List<int> boot = <int>[30000];
       final SrsTrustedClock c = SrsTrustedClock(
         wallClockMs: () => 0,
+        bootClockMs: () => boot[0],
+        bootId: 'p1',
+      );
+      c.restoreAnchor(
+        offsetMs: 999,
+        bootId: 'p1',
+        serverTimeMs: 600000,
+        bootTimeMs: 10000,
+      );
+      expect(c.isAnchored, isTrue);
+      expect(c.now(), (620000, SrsTimeSource.anchored));
+    });
+
+    test('重启（别的进程 / 开机时钟归零）：退回墙钟 + 上次偏移，标未校时，直到下一次校时', () {
+      final List<int> wall = <int>[2000000];
+      final List<int> boot = <int>[500];
+      final SrsTrustedClock other = SrsTrustedClock(
+        wallClockMs: () => wall[0],
+        bootClockMs: () => boot[0],
         bootId: 'new',
       );
-      c.restoreAnchor(offsetMs: 600000, bootId: 'old');
-      expect(c.isAnchored, isFalse);
-      c.restoreAnchor(offsetMs: 600000, bootId: 'new');
-      expect(c.now(), (600000, SrsTimeSource.anchored));
+      other.restoreAnchor(
+        offsetMs: 600000,
+        bootId: 'old',
+        serverTimeMs: 1000000,
+        bootTimeMs: 90000000,
+      );
+      expect(other.isAnchored, isFalse);
+      expect(other.wallSkewMs, isNull);
+      expect(other.now(), (2600000, SrsTimeSource.wall));
+      // 偏移继续往下传（再重启一次照样用），但不带开机时钟读数。
+      expect(other.anchorState, (
+        bootId: 'new',
+        offsetMs: 600000,
+        serverTimeMs: null,
+        bootTimeMs: null,
+      ));
+      // 同一个 bootId、开机时钟却比读数小（读数来自重启前）：同样不认读数。
+      final SrsTrustedClock same = SrsTrustedClock(
+        wallClockMs: () => wall[0],
+        bootClockMs: () => boot[0],
+        bootId: 'old',
+      );
+      same.restoreAnchor(
+        offsetMs: 600000,
+        bootId: 'old',
+        serverTimeMs: 1000000,
+        bootTimeMs: 90000000,
+      );
+      expect(same.isAnchored, isFalse);
+      expect(same.now(), (2600000, SrsTimeSource.wall));
+      // 下一次校时后回到按开机时钟推算。
+      other.anchor(serverTimeMs: 2000100, observedAtBootMs: 500);
+      expect(other.now(), (2000100, SrsTimeSource.anchored));
+      expect(other.wallSkewMs, -100);
     });
+  });
+
+  test('本机状态落库：同一进程重开副本接着按开机时钟算；重新开机后退回墙钟 + 偏移', () async {
+    final List<int> wall = <int>[
+      DateTime.utc(2026, 10, 31, 4).millisecondsSinceEpoch,
+    ];
+    final List<int> boot = <int>[3600000];
+    SrsTrustedClock clockFor(String bootId) => SrsTrustedClock(
+      wallClockMs: () => wall[0],
+      bootClockMs: () => boot[0],
+      bootId: bootId,
+    );
+    final SrsStorage st = await openTestSrsStorage();
+    Future<SrsDbStore> open(SrsTrustedClock c) => SrsDbStore.open(
+      db: st.db,
+      core: st.core,
+      profileUid: kProfile,
+      deviceId: 'A',
+      engine: FfiFsrsEngine.tryCreate(),
+      trustedClock: c,
+    );
+    final SrsDbStore first = await open(clockFor('p1'));
+    // 服务器比墙钟快 7 分钟。
+    await first.anchorTime(wall[0] + 420000, observedAtBootMs: boot[0]);
+    // 校时后墙钟被拨慢 1 小时、又过了 1 分钟：可信时间不受影响。
+    wall[0] += 60000 - 3600000;
+    boot[0] += 60000;
+    final int trusted = first.now().$1;
+    expect(trusted - wall[0], 420000 + 3600000);
+    expect(first.trustedClock.wallSkewMs, -(420000 + 3600000));
+    // 用同一刻的读数再校一次（服务器时间不变）：落库最新的偏移。
+    await first.anchorTime(trusted, observedAtBootMs: boot[0]);
+
+    final SrsDbStore sameProcess = await open(clockFor('p1'));
+    expect(sameProcess.now(), (trusted, SrsTimeSource.anchored));
+    boot[0] += 1000;
+    wall[0] += 1000;
+    expect(sameProcess.now(), (trusted + 1000, SrsTimeSource.anchored));
+
+    // 重新开机：开机时钟从头计，进程身份也换了。
+    boot[0] = 2000;
+    final SrsDbStore rebooted = await open(clockFor('p2'));
+    expect(rebooted.trustedClock.isAnchored, isFalse);
+    expect(rebooted.now(), (trusted + 1000, SrsTimeSource.wall));
   });
 
   test('慢同步一轮跑了好几分钟：校时后墙钟偏差仍接近 0（以前 = 整轮耗时，误报「时钟超前」、复习写进未来）', () async {
     final List<int> wall = <int>[
       DateTime.utc(2026, 10, 31, 4).millisecondsSinceEpoch,
     ];
+    // 开机时钟与墙钟同速，起点不同。
     final SrsTrustedClock clock = SrsTrustedClock(
       wallClockMs: () => wall[0],
+      bootClockMs: () => wall[0] - 1700000000000,
       bootId: 'boot',
     );
     final SrsStorage st = await openTestSrsStorage();
@@ -132,13 +265,13 @@ void main() {
       location: loc,
       locationId: 'loc',
       nowMs: () => s.now().$1,
-      wallClockMs: clock.wallNowMs,
+      bootClockMs: clock.bootNowMs,
     );
     expect(r.error, isNull);
     expect(wall[0] - startedAt, greaterThan(3 * 60 * 1000));
     expect(r.serverTimeMs, isNotNull);
-    expect(r.serverTimeWallMs, isNotNull);
-    await s.anchorTime(r.serverTimeMs!, observedAtWallMs: r.serverTimeWallMs);
+    expect(r.serverTimeBootMs, isNotNull);
+    await s.anchorTime(r.serverTimeMs!, observedAtBootMs: r.serverTimeBootMs!);
     // 服务器与本机时钟一致：偏差只剩写 head 那一次上传耗时的一半。
     expect(clock.wallSkewMs!.abs(), lessThanOrEqualTo(30000 ~/ 2));
     expect((s.now().$1 - wall[0]).abs(), lessThanOrEqualTo(30000 ~/ 2));
@@ -150,6 +283,7 @@ void main() {
     ];
     final SrsTrustedClock clock = SrsTrustedClock(
       wallClockMs: () => wall[0],
+      bootClockMs: () => wall[0] - 1700000000000,
       bootId: 'boot',
     );
     final SrsStorage st = await openTestSrsStorage();
@@ -178,9 +312,30 @@ void main() {
       location: loc,
       locationId: 'loc',
       nowMs: () => s.now().$1,
-      wallClockMs: clock.wallNowMs,
+      bootClockMs: clock.bootNowMs,
     );
-    await s.anchorTime(r.serverTimeMs!, observedAtWallMs: r.serverTimeWallMs);
+    await s.anchorTime(r.serverTimeMs!, observedAtBootMs: r.serverTimeBootMs!);
     expect((clock.wallSkewMs! + skew).abs(), lessThanOrEqualTo(1000));
+  });
+
+  test('生产时钟：开机时钟取自原生库（缺库 / 缺符号直接失败，不退回别的时钟）', () async {
+    final SrsStorage st = await openTestSrsStorage();
+    final SrsTrustedClock c = srsProcessTrustedClock(st.core);
+    final int a = c.bootNowMs();
+    expect(a, greaterThan(0));
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    // Windows GetTickCount64 分辨率约 16 ms。
+    expect(c.bootNowMs() - a, inInclusiveRange(40, 5000));
+    // 同一进程两次取到的身份相同：重开副本不丢校时。
+    c.anchor(serverTimeMs: 1, observedAtBootMs: a);
+    final SrsClockAnchorState saved = c.anchorState!;
+    final SrsTrustedClock again = srsProcessTrustedClock(st.core);
+    again.restoreAnchor(
+      offsetMs: saved.offsetMs,
+      bootId: saved.bootId,
+      serverTimeMs: saved.serverTimeMs,
+      bootTimeMs: saved.bootTimeMs,
+    );
+    expect(again.isAnchored, isTrue);
   });
 }

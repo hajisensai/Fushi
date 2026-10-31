@@ -373,6 +373,12 @@ final class SrsCoreBindings {
 
   void _freeBytes(ffi.Pointer<ffi.Uint8> p, int len) =>
       _fsrs.bindings.ffsrs_free_bytes(p, len);
+
+  int _bootTimeMs() {
+    final int ms = _fsrs.bindings.ffsrs_boot_time_ms();
+    if (ms < 0) throw StateError('ffsrs_boot_time_ms: boot clock unavailable');
+    return ms;
+  }
 }
 
 /// 一个打开的 srs.db。
@@ -384,6 +390,10 @@ final class SrsCore {
 
   /// 本对象负责关闭（[fromAddress] 包出来的不负责）。
   final bool owned;
+
+  /// 自本次开机以来的毫秒，含睡眠、不受改系统时间影响（`ffsrs_boot_time_ms`）。可信时间
+  /// （[SrsTrustedClock]）按它推算；取不到时抛 [StateError]（原生库是硬依赖，不退回别的时钟）。
+  int bootTimeMs() => _b._bootTimeMs();
 
   /// 在当前 isolate 同步打开 / 新建 [path]（`<数据库目录>/srs.db`）。可能整段做格式升级：只给测试与已在
   /// 后台 isolate 里的代码用，app 走 [openInBackground]（守卫 fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart）。
