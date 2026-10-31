@@ -162,13 +162,14 @@ Apple 平台按全局规则在 `ssh mac` 上验（iPhone 真机 + macOS 14+）�
 - 依赖 Apple 账号状态：开发者账号 / MusicKit key 被吊销时全体用户同时失效。
 - 条款变化：MusicKit / Apple Music API 条款与品牌规范上线前须再核一遍原文。
 
-## 9. 待所有者拍板
+## 9. 所有者拍板（2026-11-01）
 
-1. 是否同意 Fushi 本体内置 Apple Music 官方集成（不同于 10-29 的插件改判，这是本体能力）。
-2. ~~新建 MusicKit 私钥~~（已完成，进 Worker secret，§3.6）；**仍待**：主 App ID（iOS / macOS）
-   勾选 MusicKit 服务（原生播放只认这个，与 Worker token 无关）。
-3. 网页桥托管页是否放排行榜 Worker（`rank.fushi.moe/musickit/`）。
-4. macOS 是否接受「仅 14+、稳定性视 spike 结果」，不行就先只上 iOS。
+1. 本体内置 Apple Music 官方集成：按「做」推进（所有者回复了 2–4 未否决 1；有异议随时叫停）。
+2. ~~新建 MusicKit 私钥~~（已完成，进 Worker secret，§3.6）；主 App ID（iOS / macOS）**已勾选 MusicKit 服务**。
+3. 网页桥托管页**放排行榜 Worker**：`https://rank.fushi.moe/musickit/`（`services/leaderboard/src/musickit_page.js`）。
+   与 `/dev` 同源可接受：`/dev` 会话 cookie 为 HttpOnly + `Path=/dev` + SameSite=Strict，页面脚本读不到；
+   页面 CSP 只放行本站与 Apple 域名脚本、禁内联脚本、禁被嵌入；页面只在 app 的隔离 WebView profile 里打开。
+4. macOS **接受仅 14+**，稳定性视 spike 结果，不行先只上 iOS。
 
 ## 参考
 
