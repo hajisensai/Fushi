@@ -347,6 +347,8 @@ class AiAgentController extends ChangeNotifier
   Future<List<AiAgentSessionSummary>> listSessions() async =>
       database.listAiAgentSessionSummaries(
         profileUid: await database.resolveActiveProfileUid(),
+        // 替已配对设备跑的远端会话属于对方，不进本机会话列表（操作记录页照列）。
+        excludeScenes: kAiAgentLocalLibraryExcludedScenes,
       );
 
   @override

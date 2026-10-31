@@ -30,8 +30,8 @@ import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/ops/op_routes.dart';
 
-/// 远端会话存进对话存档时的场景名（操作记录页据此分组）。
-const String kAiAgentRemoteScene = 'remote';
+export 'package:fushi/src/ai/agent/ai_agent_session_archive.dart'
+    show kAiAgentRemoteScene;
 
 /// 互联 host 的全部助手会话：AI 下视频 + AI 助手并存（`/api/assistant`）。
 HostAssistantProvider createAppAssistantHost(AppModel appModel) =>
