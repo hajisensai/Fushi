@@ -158,6 +158,8 @@ h2{font-size:15px;margin:20px 0 8px}
 .badge.s-resolved{border-color:var(--ok);color:var(--ok)}
 .badge.warn{border-color:#c98a00;color:#c98a00}
 .badge.ok{border-color:var(--ok);color:var(--ok)}
+.badge.insider{background:#d0216e;border-color:#d0216e;color:#fff;font-weight:700}
+.row.insider{background:rgba(208,33,110,.08);border-left:4px solid #d0216e;padding-left:8px}
 .card.ai{border-left:3px solid var(--ok)}
 .note{border-left:3px solid #c98a00;padding:6px 10px;margin:12px 0;font-size:14px}
 pre,.body{white-space:pre-wrap;word-break:break-word;margin:0}
@@ -290,6 +292,18 @@ ${form}
 
 const TABS = [['active', '未结案'], ...STATUSES.map((s) => [s, STATUS_LABEL[s]]), ['flagged', '可疑'], ['all', '全部']];
 
+/**
+ * 开发者账户提的反馈：醒目徽标（自己提的写「我提的」，其他开发者写昵称）。外部用户提的返回空串。
+ * @param {{id: string, nickname: string} | null} reporter
+ * @param {{id: string}} viewer 当前登录的开发者
+ * @returns {string}
+ */
+export function devReporterBadge(reporter, viewer) {
+  if (!reporter) return '';
+  const label = reporter.id === viewer.id ? '★ 我提的' : `★ 开发者 ${reporter.nickname}`;
+  return `<span class="badge insider">${esc(label)}</span>`;
+}
+
 async function listPage(env, url, dev) {
   const status = url.searchParams.get('status') || 'active';
   const q = (url.searchParams.get('q') || '').trim();
@@ -306,7 +320,8 @@ async function listPage(env, url, dev) {
 <input type="search" name="q" value="${esc(q)}" maxlength="100" placeholder="编号 / 标题 / 正文">
 <button>搜索</button>${q ? ` <a href="/dev?status=${esc(status)}">清除</a>` : ''}
 </form>`;
-  const rows = res.items.map((f) => `<a class="row" href="/dev/f/${esc(f.id)}">
+  const rows = res.items.map((f) => `<a class="row${f.devReporter ? ' insider' : ''}" href="/dev/f/${esc(f.id)}">
+${devReporterBadge(f.devReporter, dev)}
 <span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 <span class="badge">${esc(CATEGORY_LABEL[f.category] || f.category)}</span>
 <span class="muted">#${esc(f.id)}</span>
@@ -697,7 +712,7 @@ function installSection(trail, fix) {
 <div class="card"><p>${badge}</p><p class="muted"><code>${esc(trail.installId)}</code></p>${summary}</div>${versions}${related}`;
 }
 
-async function detailPage(env, id) {
+async function detailPage(env, id, dev) {
   const f = await devView(env, await feedbackById(env, id));
   const meta = Object.entries(f.meta || {})
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
@@ -735,6 +750,7 @@ async function detailPage(env, id) {
     : '匿名';
   return html(layout(f.title, `<p><a href="/dev">← 返回列表</a></p>
 <h1>${esc(f.title)}</h1>
+${f.reporter && f.reporter.isDev ? `<p>${devReporterBadge(f.reporter, dev)}</p>` : ''}
 <p class="muted"><span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 ${esc(CATEGORY_LABEL[f.category] || f.category)} · #${esc(f.id)} · ${esc(fmtTime(f.createdAt))} · ${reporter}
 ${f.contact ? ` · 联系方式：${esc(f.contact)}` : ''}</p>
@@ -829,7 +845,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     await refreshProjectStats(env, now, { force: true });
     return redirect('/dev/project');
   }
-  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1]);
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1], dev);
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
       range: request.headers.get('Range'),
