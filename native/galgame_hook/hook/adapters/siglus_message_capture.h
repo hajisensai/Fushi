@@ -15,6 +15,9 @@ struct SiglusMessageLayout {
   uint32_t surface_stride = 0;
   uint32_t message_surface_return = 0;
   uint32_t scenario_return = 0;
+  // The message entry itself calls Scenario (no wrapper frame);
+  // message_surface_return is then unused and must stay zero.
+  bool direct_scenario_call = false;
 };
 
 struct SiglusMessageOwnerSnapshot {
@@ -77,7 +80,8 @@ bool ArmSiglusMessageTicket(const SiglusMessageLayout& layout, uint32_t owner,
                            SiglusMessageTicket* ticket) {
   if (ticket == nullptr) return false;
   *ticket = {};  // Every outer entry revokes the previous ticket, including failure.
-  if (entry_esp < 4 || layout.message_surface_return == 0 ||
+  if (entry_esp < 4 ||
+      (layout.direct_scenario_call != (layout.message_surface_return == 0)) ||
       layout.scenario_return == 0 ||
       !ReadSiglusMessageOwner(layout, owner, read, &ticket->snapshot))
     return false;
@@ -98,15 +102,22 @@ bool ConsumeSiglusMessageTicket(const SiglusMessageLayout& layout,
   *ticket = {};  // A mismatching/recursive inner call consumes too; never retry it.
   if (!pending.armed || frozen == nullptr || entry_esp == 0 ||
       wrapper_ebp == 0 || entry_esp >= wrapper_ebp ||
-      wrapper_ebp >= pending.entry_esp - 4 ||
       ((entry_esp | wrapper_ebp | pending.entry_esp) & 3u) != 0 ||
       surface != pending.snapshot.surface) return false;
-  uint32_t saved_ebp = 0, wrapper_return = 0, scenario_return = 0, address = 0;
-  if (!read(wrapper_ebp, &saved_ebp) || saved_ebp != pending.entry_esp - 4 ||
-      !SiglusMessageCheckedAddress(wrapper_ebp, 4, &address) ||
-      !read(address, &wrapper_return) ||
-      wrapper_return != layout.message_surface_return ||
-      !read(entry_esp, &scenario_return) ||
+  uint32_t scenario_return = 0;
+  if (layout.direct_scenario_call) {
+    // Scenario's caller frame is the armed message entry's own EBP.
+    if (layout.message_surface_return != 0 ||
+        wrapper_ebp != pending.entry_esp - 4) return false;
+  } else {
+    uint32_t saved_ebp = 0, wrapper_return = 0, address = 0;
+    if (wrapper_ebp >= pending.entry_esp - 4 ||
+        !read(wrapper_ebp, &saved_ebp) || saved_ebp != pending.entry_esp - 4 ||
+        !SiglusMessageCheckedAddress(wrapper_ebp, 4, &address) ||
+        !read(address, &wrapper_return) ||
+        wrapper_return != layout.message_surface_return) return false;
+  }
+  if (!read(entry_esp, &scenario_return) ||
       scenario_return != layout.scenario_return) return false;
   SiglusMessageOwnerSnapshot current;
   if (!ReadSiglusMessageOwner(layout, pending.owner, read, &current) ||
