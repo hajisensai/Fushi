@@ -93,7 +93,9 @@ test('预设与 app theme_notifier.dart themePresets 同名同种子同变体（
   const P = loadPalette();
   const dart = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'models', 'theme_notifier.dart'), 'utf8');
   const block = /static const Map<String, ThemePreset> themePresets = \{([\s\S]*?)\n  \};/.exec(dart)[1];
-  const app = [...block.matchAll(/'(m3-[a-z]+)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*variant: ([A-Za-z.]+),/g)]
+  // 尾逗号可有可无：dart format 会把放得下的条目折成单行 `(seed: …, variant: …)`，
+  // 那时最后一个字段后面没有逗号。守卫要比的是内容，不能钉在排版上。
+  const app = [...block.matchAll(/'(m3-[a-z]+)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*variant: ([A-Za-z.]+),?\s*\)/g)]
     .map((m) => ({ key: m[1], seed: '#' + m[2].toLowerCase(), variant: m[3] === 'kFushiDefaultSchemeVariant' ? 'vibrant' : m[3].split('.').pop() }));
   assert.ok(app.length >= 10, 'Dart 预设表解析失败');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(P.PRESETS.map((p) => ({ key: p.key, seed: p.seed, variant: p.variant })))), app);
@@ -111,7 +113,7 @@ test('旧扩展预设 id 只读映射到最接近的新预设（与 app legacyPr
   // app 侧旧预设表的种子 / 中性 / 纯黑与这里一致（同名七款）。
   const dart = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'models', 'theme_notifier.dart'), 'utf8');
   let n = 0;
-  for (const m of dart.matchAll(/'([a-z]+-theme)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*neutral: (true|false),\s*dark: (?:true|false),\s*pureBlack: (true|false),/g)) {
+  for (const m of dart.matchAll(/'([a-z]+-theme)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*neutral: (true|false),\s*dark: (?:true|false),\s*pureBlack: (true|false),?\s*\)/g)) {
     n++;
     assert.deepStrictEqual(JSON.parse(JSON.stringify(P.LEGACY_PRESETS[m[1]])), { seed: '#' + m[2].toLowerCase(), neutral: m[3] === 'true', pureBlack: m[4] === 'true' }, m[1]);
   }

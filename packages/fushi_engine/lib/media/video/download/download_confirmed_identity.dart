@@ -127,8 +127,8 @@ VideoMetadataLookup? _manualAniDbLookup(VideoDownloadJobRow job) {
     return null;
   }
   final int? id = int.tryParse(job.externalId?.trim() ?? '');
-  final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
-      .asNameMap()[job.mediaKind];
+  final VideoMetadataMediaKind? kind =
+      VideoMetadataMediaKind.values.asNameMap()[job.mediaKind];
   if (id == null || id <= 0 || kind == null) return null;
   return VideoMetadataLookup(
     provider: VideoMetadataProviderKind.anidb,
@@ -152,13 +152,12 @@ VideoDownloadJobFileRow? mainMovieDownloadFile(
 }
 
 /// 任务下到库里的视频文件（规范化路径）。
-Set<String> downloadJobImportedVideoPaths(
-  List<VideoDownloadJobFileRow> files,
-) => <String>{
-  for (final VideoDownloadJobFileRow row in files)
-    if (row.kind == 'video' && row.finalAbsolutePath != null)
-      normalizeVideoPath(row.finalAbsolutePath!),
-};
+Set<String> downloadJobImportedVideoPaths(List<VideoDownloadJobFileRow> files) =>
+    <String>{
+      for (final VideoDownloadJobFileRow row in files)
+        if (row.kind == 'video' && row.finalAbsolutePath != null)
+          normalizeVideoPath(row.finalAbsolutePath!),
+    };
 
 /// 在 [works] 里包含任务导入文件的那些作品。
 List<VideoSourceScrapeWork> downloadJobPathMatches(
@@ -234,17 +233,19 @@ VideoSourceScrapeWork? downloadJobWork(
 Future<Map<String, VideoMetadataLookup>> downloadConfirmedLookupsForWorks(
   FushiDatabase database,
   List<VideoSourceScrapeWork> works,
-) async => <String, VideoMetadataLookup>{
-  for (final MapEntry<String, List<VideoMetadataLookup>> entry
-      in (await downloadConfirmedLookupListsForWorks(database, works)).entries)
-    entry.key: entry.value.first,
-};
+) async =>
+    <String, VideoMetadataLookup>{
+      for (final MapEntry<String, List<VideoMetadataLookup>> entry
+          in (await downloadConfirmedLookupListsForWorks(database, works))
+              .entries)
+        entry.key: entry.value.first,
+    };
 
 /// 同 [downloadConfirmedLookupsForWorks]，但给出任务记下的**全部**可直取身份
 /// （首选在前，见 [videoDownloadJobConfirmedLookups]）：一家资料源连不上时，同一部
 /// 作品的另一个 id 照样可用（BUG-3073）。身份一致性按首选身份判。
 Future<Map<String, List<VideoMetadataLookup>>>
-downloadConfirmedLookupListsForWorks(
+    downloadConfirmedLookupListsForWorks(
   FushiDatabase database,
   List<VideoSourceScrapeWork> works,
 ) async {
@@ -253,9 +254,7 @@ downloadConfirmedLookupListsForWorks(
       <String, List<VideoDownloadJobFileRow>>{};
   for (final VideoDownloadJobFileRow row
       in await database.getImportedVideoDownloadJobFiles()) {
-    filesByJob
-        .putIfAbsent(row.jobId, () => <VideoDownloadJobFileRow>[])
-        .add(row);
+    filesByJob.putIfAbsent(row.jobId, () => <VideoDownloadJobFileRow>[]).add(row);
   }
   if (filesByJob.isEmpty) return const <String, List<VideoMetadataLookup>>{};
   final Set<String> memberPaths = <String>{
@@ -272,9 +271,8 @@ downloadConfirmedLookupListsForWorks(
     if (!downloadJobImportedVideoPaths(files).any(memberPaths.contains)) {
       continue;
     }
-    final List<VideoMetadataLookup> lookups = videoDownloadJobConfirmedLookups(
-      job,
-    );
+    final List<VideoMetadataLookup> lookups =
+        videoDownloadJobConfirmedLookups(job);
     if (lookups.isEmpty) continue;
     final VideoSourceScrapeWork? work = downloadJobWork(job, files, works);
     if (work == null) continue;
