@@ -111,6 +111,7 @@ Future<SrsDbStore> openTestStore({
     engine: const FakeFsrsEngine(),
     trustedClock: SrsTrustedClock(
       wallClockMs: () => now(),
+      bootClockMs: () => now(),
       bootId: 'boot-$deviceId',
     ),
     fallbackRolloverHour: () => 4,

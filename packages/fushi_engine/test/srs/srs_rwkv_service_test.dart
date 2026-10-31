@@ -268,7 +268,11 @@ class _Fixture {
       profileUid: kProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(wallClockMs: () => clock[0], bootId: 'b'),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => clock[0],
+        bootClockMs: () => clock[0],
+        bootId: 'b',
+      ),
     );
     return _Fixture._(
       store,
