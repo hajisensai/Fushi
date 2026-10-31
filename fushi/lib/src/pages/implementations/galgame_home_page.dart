@@ -614,6 +614,15 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         final double page = tokens.spacing.page;
         final GalgameEntry? hero = _recentGame ?? _random;
         final List<GalgameEntry> recent = _recentlyPlayed;
+        // 宽屏方案 A：最近玩过的其余游戏排在「继续游戏」主卡旁边；并排时下面那条
+        // 「最近玩过」行就不再画（同一批封面不出现两次），窄屏照旧。
+        final List<GalgameEntry> heroSide = hero == null
+            ? const <GalgameEntry>[]
+            : recent.where((GalgameEntry g) => g.id != hero.id).toList();
+        final bool heroSideBySide = FushiContinueSpotlight.sideBySide(
+          constraints.maxWidth - page * 2,
+          heroSide.length,
+        );
         final GalgameEntry? randomGame = _random;
         final Widget? random = randomGame == null
             ? null
@@ -649,10 +658,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                           SizedBox(height: tokens.spacing.card),
                           FushiStaggeredEntrance(
                             index: 4,
-                            child: _buildHero(context, hero),
+                            child: _buildHero(context, hero, heroSide),
                           ),
                         ],
-                        if (recent.isNotEmpty) ...<Widget>[
+                        if (recent.isNotEmpty && !heroSideBySide) ...<Widget>[
                           SizedBox(height: tokens.spacing.card),
                           FushiStaggeredEntrance(
                             index: 5,
@@ -785,31 +794,54 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   // ── 区域 B：继续游戏 hero ────────────────────────────────────────────────
 
-  /// 「继续游戏」大卡：与书架 / 漫画书架同一张满宽 [FushiContinueHero]
-  /// （2026-10-28 统一）。游戏盒封面自带框；眉标「游玩中 / 继续游戏」，元信息
-  /// 最后游玩 + 累计时长；整卡点按 = 启动，长按 / 右键 = 详情（与随机推荐卡同一
-  /// 约定；卡上不放按钮，2026-10-28 与书 / 视频 / 音乐统一）。
-  Widget _buildHero(BuildContext context, GalgameEntry game) {
+  /// 「继续游戏」区：所有库页共用的「继续」组件 [FushiContinueSpotlight]
+  /// （2026-10-31 方案 A + 合一）。主卡是游戏盒封面（自带框）+ 眉标「游玩中 /
+  /// 继续游戏」+ 最后游玩 / 累计时长；宽屏时 [side]（最近玩过的其余游戏）排在
+  /// 旁边。整卡点按 = 启动，长按 / 右键 = 详情（与随机推荐卡同一约定；卡上不放
+  /// 按钮，2026-10-28 与书 / 视频 / 音乐统一）。
+  Widget _buildHero(
+    BuildContext context,
+    GalgameEntry game,
+    List<GalgameEntry> side,
+  ) {
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
         ? t.game_status_playing
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
-    return FushiContinueHero(
-      cardKey: ValueKey<String>('games_home_hero_${game.id}'),
-      focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
-      cover: _gameCaseFrame(_GameCoverArt(game: game)),
-      frameCover: false,
-      coverAspectRatio: kShelfGameCaseAspectRatio,
-      eyebrow: statusLabel,
-      title: game.displayName,
-      metaLines: <String>[
-        if (hasPlayed)
-          '${t.game_stat_last_played}  ${_formatDay(game.lastPlayedMs)}',
-        '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
+    return FushiContinueSpotlight(
+      sideRowKey: const ValueKey<String>('games_home_continue_side_row'),
+      // 调用处已包在 FushiStaggeredEntrance(index: 4) 里整块进场。
+      staggerEntrance: false,
+      main: FushiContinueEntry(
+        key: ValueKey<String>('games_home_hero_${game.id}'),
+        focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
+        cover: _gameCaseFrame(_GameCoverArt(game: game)),
+        frameCover: false,
+        coverAspectRatio: kShelfGameCaseAspectRatio,
+        eyebrow: statusLabel,
+        title: game.displayName,
+        metaLines: <String>[
+          if (hasPlayed)
+            '${t.game_stat_last_played}  ${_formatDay(game.lastPlayedMs)}',
+          '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
+        ],
+        onOpen: () => unawaited(_launchGame(game)),
+        onLongPress: () => unawaited(_openDetail(game)),
+      ),
+      side: <FushiContinueEntry>[
+        for (final GalgameEntry g in side.take(12))
+          FushiContinueEntry(
+            key: ValueKey<String>('games_home_continue_side_${g.id}'),
+            focusId: FushiFocusId('game-recent-${g.id}'),
+            cover: _gameCaseFrame(_GameCoverArt(game: g)),
+            frameCover: false,
+            coverAspectRatio: kShelfGameCaseAspectRatio,
+            title: g.displayName,
+            subtitle: g.lastPlayedMs > 0 ? _formatDay(g.lastPlayedMs) : null,
+            onOpen: () => unawaited(_launchGame(g)),
+            onLongPress: () => unawaited(_openDetail(g)),
+          ),
       ],
-      onOpen: () => unawaited(_launchGame(game)),
-      onLongPress: () => unawaited(_openDetail(game)),
-      entranceIndex: null,
     );
   }
 

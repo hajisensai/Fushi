@@ -149,13 +149,15 @@ void main() {
     // 行卡统一 2:3 竖封面。2026-10-28 用户选定方案 F：首屏换成
     // VideoContinueSpotlight（剧照主卡 + 16:9 小卡），它就是全部的继续观看，
     // 下面不再另起「继续观看」行。撤任一接线即转红。
+    // 2026-10-31 起首屏换成各库页共用的 FushiContinueSpotlight（剧照 / 竖海报
+    // 按封面方向选主卡皮）。
     expect(
-      homeSrc.contains('VideoContinueSpotlight('),
+      homeSrc.contains('FushiContinueSpotlight('),
       isTrue,
-      reason: '首屏继续观看区（主卡 + 小卡）',
+      reason: '首屏继续观看区（主卡 + 封面行）',
     );
     final String spotlightSrc = File(
-      'lib/src/media/video/video_continue_spotlight.dart',
+      'lib/src/utils/components/fushi_continue_hero.dart',
     ).readAsStringSync();
     expect(
       spotlightSrc.contains('HorizontalDragScrollable('),
