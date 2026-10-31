@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179384 (10552 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3342,6 +3342,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get dict_language_auto => 'Automatic';
   String get dict_language_description =>
       'Decides which font renders this dictionary\'s text. Automatic uses the language the dictionary declares.';
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  String get dict_language_group_unset => 'Language not set';
   String get dict_language_title => 'Dictionary content language';
   String get dict_language_tooltip => 'Content language';
   String dict_manager_summary({required Object n, required Object m}) =>
@@ -20487,6 +20492,13 @@ class _StringsAr extends _StringsEn {
   @override
   String get dict_language_description =>
       'تحدد الخط المستخدم لعرض نص هذا القاموس. التلقائي يستخدم اللغة التي يعلنها القاموس.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'لغة محتوى القاموس';
   @override
@@ -46126,6 +46138,13 @@ class _StringsDe extends _StringsEn {
   @override
   String get dict_language_description =>
       'Bestimmt, welche Schriftart den Text dieses Wörterbuchs rendert. Automatisch verwendet die vom Wörterbuch deklarierte Sprache.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Inhaltssprache des Wörterbuchs';
   @override
@@ -72101,6 +72120,13 @@ class _StringsEs extends _StringsEn {
   @override
   String get dict_language_description =>
       'Decide qué fuente renderiza el texto de este diccionario. Automático usa el idioma que el diccionario declara.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Idioma del contenido del diccionario';
   @override
@@ -98144,6 +98170,13 @@ class _StringsFr extends _StringsEn {
   String get dict_language_description =>
       'Détermine quelle police affiche le texte de ce dictionnaire. Automatique utilise la langue déclarée par le dictionnaire.';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => 'Langue du contenu du dictionnaire';
   @override
   String get dict_language_tooltip => 'Langue du contenu';
@@ -124167,6 +124200,13 @@ class _StringsId extends _StringsEn {
   String get dict_language_description =>
       'Menentukan font mana yang merender teks kamus ini. Otomatis menggunakan bahasa yang dideklarasikan kamus.';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => 'Bahasa konten kamus';
   @override
   String get dict_language_tooltip => 'Bahasa konten';
@@ -149950,6 +149990,13 @@ class _StringsIt extends _StringsEn {
   String get dict_language_description =>
       'Decide quale font renderizza il testo di questo dizionario. Automatico usa la lingua dichiarata dal dizionario.';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => 'Lingua del contenuto del dizionario';
   @override
   String get dict_language_tooltip => 'Lingua del contenuto';
@@ -175669,6 +175716,13 @@ class _StringsJa extends _StringsEn {
   String get dict_language_description =>
       'この辞書のテキストを表示するフォントを決定します。自動の場合、辞書が宣言した言語を使用します。';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => '辞書コンテンツ言語';
   @override
   String get dict_language_tooltip => 'コンテンツ言語';
@@ -200548,6 +200602,13 @@ class _StringsKo extends _StringsEn {
   @override
   String get dict_language_description =>
       '이 사전의 텍스트를 렌더링할 글꼴을 결정합니다. 자동은 사전이 선언한 언어를 사용합니다.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => '사전 콘텐츠 언어';
   @override
@@ -225688,6 +225749,13 @@ class _StringsNl extends _StringsEn {
   @override
   String get dict_language_description =>
       'Bepaalt welk lettertype de tekst van dit woordenboek weergeeft. Automatisch gebruikt de taal die het woordenboek declareert.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Woordenboek-inhoudstaal';
   @override
@@ -251568,6 +251636,13 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get dict_language_description =>
       'Define qual fonte renderiza o texto deste dicionário. Automático usa o idioma declarado pelo dicionário.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Idioma do conteúdo do dicionário';
   @override
@@ -277487,6 +277562,13 @@ class _StringsRu extends _StringsEn {
   String get dict_language_description =>
       'Определяет, какой шрифт используется для отображения текста словаря. «Автоматически» использует язык, указанный в словаре.';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => 'Язык содержимого словаря';
   @override
   String get dict_language_tooltip => 'Язык содержимого';
@@ -303301,6 +303383,13 @@ class _StringsTh extends _StringsEn {
   String get dict_language_description =>
       'กำหนดฟอนต์ที่ใช้แสดงข้อความพจนานุกรม อัตโนมัติจะใช้ภาษาที่พจนานุกรมระบุไว้';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => 'ภาษาเนื้อหาพจนานุกรม';
   @override
   String get dict_language_tooltip => 'ภาษาเนื้อหา';
@@ -328904,6 +328993,13 @@ class _StringsTr extends _StringsEn {
   @override
   String get dict_language_description =>
       'Bu sözlüğün metnini hangi yazı tipinin oluşturacağını belirler. Otomatik, sözlüğün beyan ettiği dili kullanır.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Sözlük içerik dili';
   @override
@@ -354654,6 +354750,13 @@ class _StringsVi extends _StringsEn {
   String get dict_language_description =>
       'Quyết định phông chữ nào hiển thị văn bản của từ điển này. Tự động sử dụng ngôn ngữ mà từ điển khai báo.';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
+  @override
   String get dict_language_title => 'Ngôn ngữ nội dung từ điển';
   @override
   String get dict_language_tooltip => 'Ngôn ngữ nội dung';
@@ -379889,6 +379992,13 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get dict_language_description => '决定这本词典的文字用哪种字体渲染。自动 = 用词典自己声明的语言。';
   @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n} 本';
+  @override
+  String get dict_language_group_unset => '未标注语言';
+  @override
   String get dict_language_title => '词典内容语言';
   @override
   String get dict_language_tooltip => '内容语言';
@@ -403557,6 +403667,13 @@ class _StringsZhHk extends _StringsEn {
   String get dict_language_auto => '自動';
   @override
   String get dict_language_description => '決定這本詞典的文字用哪種字體渲染。自動 = 用詞典自己聲明的語言。';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => '詞典內容語言';
   @override
@@ -427265,6 +427382,11 @@ extension on _StringsEn {
         return 'Automatic';
       case 'dict_language_description':
         return 'Decides which font renders this dictionary\'s text. Automatic uses the language the dictionary declares.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Dictionary content language';
       case 'dict_language_tooltip':
@@ -449188,6 +449310,11 @@ extension on _StringsAr {
         return 'تلقائي';
       case 'dict_language_description':
         return 'تحدد الخط المستخدم لعرض نص هذا القاموس. التلقائي يستخدم اللغة التي يعلنها القاموس.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'لغة محتوى القاموس';
       case 'dict_language_tooltip':
@@ -471129,6 +471256,11 @@ extension on _StringsDe {
         return 'Automatisch';
       case 'dict_language_description':
         return 'Bestimmt, welche Schriftart den Text dieses Wörterbuchs rendert. Automatisch verwendet die vom Wörterbuch deklarierte Sprache.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Inhaltssprache des Wörterbuchs';
       case 'dict_language_tooltip':
@@ -493115,6 +493247,11 @@ extension on _StringsEs {
         return 'Automático';
       case 'dict_language_description':
         return 'Decide qué fuente renderiza el texto de este diccionario. Automático usa el idioma que el diccionario declara.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Idioma del contenido del diccionario';
       case 'dict_language_tooltip':
@@ -515097,6 +515234,11 @@ extension on _StringsFr {
         return 'Automatique';
       case 'dict_language_description':
         return 'Détermine quelle police affiche le texte de ce dictionnaire. Automatique utilise la langue déclarée par le dictionnaire.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Langue du contenu du dictionnaire';
       case 'dict_language_tooltip':
@@ -537071,6 +537213,11 @@ extension on _StringsId {
         return 'Otomatis';
       case 'dict_language_description':
         return 'Menentukan font mana yang merender teks kamus ini. Otomatis menggunakan bahasa yang dideklarasikan kamus.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Bahasa konten kamus';
       case 'dict_language_tooltip':
@@ -559013,6 +559160,11 @@ extension on _StringsIt {
         return 'Automatico';
       case 'dict_language_description':
         return 'Decide quale font renderizza il testo di questo dizionario. Automatico usa la lingua dichiarata dal dizionario.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Lingua del contenuto del dizionario';
       case 'dict_language_tooltip':
@@ -580951,6 +581103,11 @@ extension on _StringsJa {
         return '自動';
       case 'dict_language_description':
         return 'この辞書のテキストを表示するフォントを決定します。自動の場合、辞書が宣言した言語を使用します。';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return '辞書コンテンツ言語';
       case 'dict_language_tooltip':
@@ -602789,6 +602946,11 @@ extension on _StringsKo {
         return '자동';
       case 'dict_language_description':
         return '이 사전의 텍스트를 렌더링할 글꼴을 결정합니다. 자동은 사전이 선언한 언어를 사용합니다.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return '사전 콘텐츠 언어';
       case 'dict_language_tooltip':
@@ -624677,6 +624839,11 @@ extension on _StringsNl {
         return 'Automatisch';
       case 'dict_language_description':
         return 'Bepaalt welk lettertype de tekst van dit woordenboek weergeeft. Automatisch gebruikt de taal die het woordenboek declareert.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Woordenboek-inhoudstaal';
       case 'dict_language_tooltip':
@@ -646643,6 +646810,11 @@ extension on _StringsPtBr {
         return 'Automático';
       case 'dict_language_description':
         return 'Define qual fonte renderiza o texto deste dicionário. Automático usa o idioma declarado pelo dicionário.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Idioma do conteúdo do dicionário';
       case 'dict_language_tooltip':
@@ -668606,6 +668778,11 @@ extension on _StringsRu {
         return 'Автоматически';
       case 'dict_language_description':
         return 'Определяет, какой шрифт используется для отображения текста словаря. «Автоматически» использует язык, указанный в словаре.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Язык содержимого словаря';
       case 'dict_language_tooltip':
@@ -690549,6 +690726,11 @@ extension on _StringsTh {
         return 'อัตโนมัติ';
       case 'dict_language_description':
         return 'กำหนดฟอนต์ที่ใช้แสดงข้อความพจนานุกรม อัตโนมัติจะใช้ภาษาที่พจนานุกรมระบุไว้';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'ภาษาเนื้อหาพจนานุกรม';
       case 'dict_language_tooltip':
@@ -712485,6 +712667,11 @@ extension on _StringsTr {
         return 'Otomatik';
       case 'dict_language_description':
         return 'Bu sözlüğün metnini hangi yazı tipinin oluşturacağını belirler. Otomatik, sözlüğün beyan ettiği dili kullanır.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Sözlük içerik dili';
       case 'dict_language_tooltip':
@@ -734428,6 +734615,11 @@ extension on _StringsVi {
         return 'Tự động';
       case 'dict_language_description':
         return 'Quyết định phông chữ nào hiển thị văn bản của từ điển này. Tự động sử dụng ngôn ngữ mà từ điển khai báo.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Ngôn ngữ nội dung từ điển';
       case 'dict_language_tooltip':
@@ -756288,6 +756480,11 @@ extension on _StringsZhCn {
         return '自动';
       case 'dict_language_description':
         return '决定这本词典的文字用哪种字体渲染。自动 = 用词典自己声明的语言。';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n} 本';
+      case 'dict_language_group_unset':
+        return '未标注语言';
       case 'dict_language_title':
         return '词典内容语言';
       case 'dict_language_tooltip':
@@ -777969,6 +778166,11 @@ extension on _StringsZhHk {
         return '自動';
       case 'dict_language_description':
         return '決定這本詞典的文字用哪種字體渲染。自動 = 用詞典自己聲明的語言。';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return '詞典內容語言';
       case 'dict_language_tooltip':

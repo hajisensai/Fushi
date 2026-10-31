@@ -2080,6 +2080,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Automatisch",
   "dict_language_description": "Bepaalt welk lettertype de tekst van dit woordenboek weergeeft. Automatisch gebruikt de taal die het woordenboek declareert.",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "Woordenboek-inhoudstaal",
   "dict_language_tooltip": "Inhoudstaal",
   "dict_manager_summary": "$n dictionaries · $m enabled",

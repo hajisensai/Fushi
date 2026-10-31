@@ -128,6 +128,62 @@ void main() {
     expect(last.map((Dictionary d) => d.name), <String>['a', 'b', 'c']);
   });
 
+  test('ctlReorderDictionaries: position 在语言组内计算，其它组槽位不动 (D_Nz5R4vSH)', () {
+    final Dictionary ja1 = _dict(
+      'ja1',
+      order: 0,
+      metadata: const <String, String>{'sourceLanguage': 'ja'},
+    );
+    final Dictionary en1 = _dict(
+      'en1',
+      order: 1,
+      metadata: const <String, String>{'sourceLanguage': 'en'},
+    );
+    final Dictionary ja2 = _dict(
+      'ja2',
+      order: 2,
+      metadata: const <String, String>{'sourceLanguage': 'ja'},
+    );
+    final Dictionary none = _dict('none', order: 3);
+    final Dictionary ja3 = _dict(
+      'ja3',
+      order: 4,
+      metadata: const <String, String>{'sourceLanguage': 'ja'},
+    );
+    // ja3 移到日语组第 1 位：只在日语组原占的 0/2/4 槽位里重排。
+    final List<Dictionary> moved = ctlReorderDictionaries(
+      <Dictionary>[ja1, en1, ja2, none, ja3],
+      ja3,
+      1,
+    );
+    expect(moved.map((Dictionary d) => d.name), <String>[
+      'ja3',
+      'en1',
+      'ja1',
+      'none',
+      'ja2',
+    ]);
+    expect(moved.map((Dictionary d) => d.order), <int>[0, 1, 2, 3, 4]);
+    // 越界钳到组尾（日语组 3 本），不越过别组。
+    final List<Dictionary> last = ctlReorderDictionaries(moved, ja3, 99);
+    expect(last.map((Dictionary d) => d.name), <String>[
+      'ja1',
+      'en1',
+      'ja2',
+      'none',
+      'ja3',
+    ]);
+    // 单本组：任何位置都原地不动。
+    final List<Dictionary> single = ctlReorderDictionaries(last, en1, 1);
+    expect(single.map((Dictionary d) => d.name), <String>[
+      'ja1',
+      'en1',
+      'ja2',
+      'none',
+      'ja3',
+    ]);
+  });
+
   test('ctlDictionaryJson / ctlSortedDictionaries', () {
     final Dictionary hidden = _dict(
       'freq',
@@ -184,35 +240,67 @@ void main() {
       expect(ctlDictionaryJson(kanji).containsKey('kanjiEnabled'), isFalse);
     });
 
-    test('ctlCheckKanjiPartParams：kanjiEnabled 只给混合词典，kanjiPosition 只给汉字分区成员',
-        () {
-      Matcher status(int code) => throwsA(
-            isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', code),
-          );
-      ctlCheckKanjiPartParams(mixed, kanjiEnabled: true, kanjiPosition: 1);
-      ctlCheckKanjiPartParams(kanji, kanjiPosition: 2);
-      expect(() => ctlCheckKanjiPartParams(kanji, kanjiEnabled: true), status(400));
-      expect(() => ctlCheckKanjiPartParams(term, kanjiEnabled: false), status(400));
-      expect(() => ctlCheckKanjiPartParams(term, kanjiPosition: 1), status(400));
-      expect(() => ctlCheckKanjiPartParams(mixed, kanjiPosition: 0), status(400));
-    });
+    test(
+      'ctlCheckKanjiPartParams：kanjiEnabled 只给混合词典，kanjiPosition 只给汉字分区成员',
+      () {
+        Matcher status(int code) => throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', code),
+        );
+        ctlCheckKanjiPartParams(mixed, kanjiEnabled: true, kanjiPosition: 1);
+        ctlCheckKanjiPartParams(kanji, kanjiPosition: 2);
+        expect(
+          () => ctlCheckKanjiPartParams(kanji, kanjiEnabled: true),
+          status(400),
+        );
+        expect(
+          () => ctlCheckKanjiPartParams(term, kanjiEnabled: false),
+          status(400),
+        );
+        expect(
+          () => ctlCheckKanjiPartParams(term, kanjiPosition: 1),
+          status(400),
+        );
+        expect(
+          () => ctlCheckKanjiPartParams(mixed, kanjiPosition: 0),
+          status(400),
+        );
+      },
+    );
 
     test('在「汉字」分区里排序：成员与顺序取 kanjiSectionDictionariesOf', () {
-      final List<Dictionary> section =
-          kanjiSectionDictionariesOf(<Dictionary>[term, kanji, mixed]);
-      expect(section.map((Dictionary d) => d.name), <String>['mixed', 'kanjidic']);
+      final List<Dictionary> section = kanjiSectionDictionariesOf(<Dictionary>[
+        term,
+        kanji,
+        mixed,
+      ]);
+      expect(section.map((Dictionary d) => d.name), <String>[
+        'mixed',
+        'kanjidic',
+      ]);
       final List<Dictionary> moved = ctlReorderDictionaries(
         section,
         mixed,
         2,
         section: DictionaryType.kanji,
       );
-      expect(moved.map((Dictionary d) => d.name), <String>['kanjidic', 'mixed']);
+      expect(moved.map((Dictionary d) => d.name), <String>[
+        'kanjidic',
+        'mixed',
+      ]);
       expect(
-        () => ctlReorderDictionaries(section, term, 1,
-            section: DictionaryType.kanji),
-        throwsA(isA<CtlFailure>().having(
-            (CtlFailure f) => f.message, 'message', contains('kanji 分区'))),
+        () => ctlReorderDictionaries(
+          section,
+          term,
+          1,
+          section: DictionaryType.kanji,
+        ),
+        throwsA(
+          isA<CtlFailure>().having(
+            (CtlFailure f) => f.message,
+            'message',
+            contains('kanji 分区'),
+          ),
+        ),
       );
     });
   });

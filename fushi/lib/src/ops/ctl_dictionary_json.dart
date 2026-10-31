@@ -78,32 +78,42 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
   throw CtlFailure.notFound('没有名为「$q」的词典（fushi_cli dict ls 查看）');
 }
 
-/// 把 [target] 移到同类型词典列表里的 [position]（1 起算，越界钳到两端），
-/// 返回重排后的整组（`order` 已按新下标改写）。与词典管理页 `_reorderDictionaries`
-/// 同一语义：只在同一类型分区内排序。
+/// 把 [target] 移到它**所在语言组**里的 [position]（1 起算，越界钳到组的两端），
+/// 返回重排后的整个分区（`order` 已按新下标改写）。与词典管理页
+/// `_reorderDictionaries` 同一语义（反馈 D_Nz5R4vSH）：分区按「有效语言」分组
+/// （[groupDictionariesByLanguage]），排序只在组内进行；组内挪完后经
+/// [mergeLanguageGroupOrder] 填回该组原占的槽位，其它组的词典位置一个不动。
+/// 分区里只有一个语言组时就是整个分区内排序。
 ///
-/// [section] 是分区名（报错用）；缺省按 [target] 自身类型。混合词典在「汉字」分区
-/// 排序时传 `kanji`。
+/// [sameType] 是一个分区（已按分区顺序排好）；[section] 是分区名（报错用），
+/// 缺省按 [target] 自身类型。混合词典在「汉字」分区排序时传 `kanji`。
 List<Dictionary> ctlReorderDictionaries(
   List<Dictionary> sameType,
   Dictionary target,
   int position, {
   DictionaryType? section,
 }) {
-  final List<Dictionary> clone = List<Dictionary>.of(sameType);
-  final int from = clone.indexOf(target);
-  if (from < 0) {
+  final int sectionIndex = sameType.indexWhere(
+    (Dictionary d) => d.name == target.name,
+  );
+  if (sectionIndex < 0) {
     throw CtlFailure.notFound(
       '词典「${target.name}」不在 ${(section ?? target.type).name} 分区里',
     );
   }
-  final Dictionary item = clone.removeAt(from);
-  final int to = (position - 1).clamp(0, clone.length);
-  clone.insert(to, item);
-  for (int i = 0; i < clone.length; i++) {
-    clone[i].order = i;
+  final Dictionary member = sameType[sectionIndex];
+  final String? language = dictionaryLanguageGroupOf(member);
+  final List<Dictionary> group = <Dictionary>[
+    for (final Dictionary d in sameType)
+      if (dictionaryLanguageGroupOf(d) == language) d,
+  ];
+  group.remove(member);
+  group.insert((position - 1).clamp(0, group.length), member);
+  final List<Dictionary> merged = mergeLanguageGroupOrder(sameType, group);
+  for (int i = 0; i < merged.length; i++) {
+    merged[i].order = i;
   }
-  return clone;
+  return merged;
 }
 
 /// 校验 `PUT /api/admin/dictionaries/:name` 的汉字部分参数（BUG-3573）。

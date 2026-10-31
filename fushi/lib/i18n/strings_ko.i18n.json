@@ -2080,6 +2080,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "자동",
   "dict_language_description": "이 사전의 텍스트를 렌더링할 글꼴을 결정합니다. 자동은 사전이 선언한 언어를 사용합니다.",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "사전 콘텐츠 언어",
   "dict_language_tooltip": "콘텐츠 언어",
   "dict_manager_summary": "$n dictionaries · $m enabled",
