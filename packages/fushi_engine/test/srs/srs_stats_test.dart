@@ -570,6 +570,61 @@ void main() {
       ]);
       expect(m, <int>[1, 2, 1]);
     });
+
+    test('RWKV 此刻：现在该复习 / 接近目标线按 R 与所在牌组目标数；日均只数这些卡近 30 天的复习', () {
+      SrsStatCard rwkv(String id, double? r, {bool suspended = false}) =>
+          SrsStatCard(
+            id: id,
+            noteId: 'n$id',
+            deckId: 'd',
+            state: SrsStatCardState.mature,
+            suspended: suspended,
+            retrievability: r,
+            desiredRetention: 0.8,
+            byRecall: true,
+          );
+      SrsStatReview review(String cardId, int day) => SrsStatReview(
+        cardId: cardId,
+        at: kJst.dayStartMs(day),
+        day: day,
+        hour: 9,
+        rating: 3,
+        kind: SrsStatReviewKind.mature,
+      );
+      final SrsStatsData d = SrsStatsData(
+        day: kJst,
+        nowMs: nowMs,
+        reviews: <SrsStatReview>[
+          review('a', today),
+          review('b', today - 29),
+          review('b', today - 30), // 超出 30 天
+          review('f', today), // FSRS 卡不算
+        ],
+        cards: <SrsStatCard>[
+          rwkv('a', 0.8), // = 目标：该复习
+          rwkv('b', 0.84), // 接近
+          rwkv('c', 0.9),
+          rwkv('e', 0.1, suspended: true),
+          const SrsStatCard(
+            id: 'f',
+            noteId: 'nf',
+            deckId: 'd2',
+            state: SrsStatCardState.young,
+            dueDay: 0,
+          ),
+        ],
+        maturityEvents: const <SrsStatMaturityEvent>[],
+      );
+      final SrsRwkvNow now = d.rwkvNow!;
+      expect(now.total, 3);
+      expect(now.due, 1);
+      expect(now.near, 1);
+      expect(now.dailyAverage, closeTo(2 / 30, 1e-9));
+      expect(d.hasDueDateCards, isTrue, reason: 'FSRS 卡 f 按到期日');
+      final SrsStatsData onlyRwkv = d.subset(<String>{'a', 'b', 'c'});
+      expect(onlyRwkv.hasDueDateCards, isFalse);
+      expect(d.subset(<String>{'f'}).rwkvNow, isNull, reason: '没有按 R 排队的卡');
+    });
   });
 
   group('loadSrsStats（真实库）', () {

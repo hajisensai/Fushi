@@ -31,20 +31,62 @@ List<Map<String, Object?>> _vectors() {
 Map<String, Object?> _map(Object? v) => (v! as Map).cast<String, Object?>();
 
 /// 向量生成之后牌组视图新加的字段，按它们的缺省补进期望视图（向量的输入里本来就没有这些键，
-/// 旧实现的视图里自然也没有）：`rwkvQueue.refreshEvery`（2026-10-23，fb7289744c）。
+/// 旧实现的视图里自然也没有）：`rwkvQueue.refreshEvery`（2026-10-23，fb7289744c）、
+/// `rwkvQueue.ignoreLimit`（2026-10-30）。
 Object? _withLaterDefaults(Object? view) {
   if (view is! Map) return view;
   final Map<String, Object?> v = view.cast<String, Object?>();
   final Object? q = v['rwkvQueue'];
-  if (q is! Map || q.containsKey('refreshEvery')) return v;
+  if (q is! Map) return v;
+  const SrsRwkvQueueSettings d = SrsRwkvQueueSettings();
   return <String, Object?>{
     for (final MapEntry<String, Object?> e in v.entries)
       e.key: e.key == 'rwkvQueue'
           ? <String, Object?>{
               ...q.cast<String, Object?>(),
-              'refreshEvery': const SrsRwkvQueueSettings().refreshEvery,
+              if (!q.containsKey('refreshEvery'))
+                'refreshEvery': d.refreshEvery,
+              if (!q.containsKey('ignoreLimit'))
+                'ignoreLimit': d.ignoreReviewLimit,
             }
           : e.value,
+  };
+}
+
+/// 向量生成之后改了的语义：步长写成空列表 = 不用步长（2026-10-30；以前回落默认步长）。
+/// 按胜出的 `steps` 修改把期望视图里对应的一项改成空列表。
+Object? _withEmptySteps(Object? view, Map<String, Object?> vector) {
+  if (view is! Map || vector['kind'] != 'deck') return view;
+  final Map<String, Object?> e = _map(vector['expect']);
+  String? winner;
+  for (final Object? r in e['regs']! as List<Object?>) {
+    final List<Object?> reg = r! as List<Object?>;
+    final List<Object?> ids = reg[1]! as List<Object?>;
+    if (reg[0] == 'steps' && ids.isNotEmpty) winner = ids.first as String?;
+  }
+  if (winner == null) return view;
+  // 同一 id 的重复修改（向量里故意造的 dup）值不一致时，胜出哪份由内核定，这里不改期望。
+  final List<Object?> values = <Object?>[
+    for (final Object? j in vector['edits']! as List<Object?>)
+      if (_map(jsonDecode(j! as String)) case final Map<String, Object?> edit
+          when edit['id'] == winner)
+        edit['v'],
+  ];
+  if (values.isEmpty ||
+      values.any((Object? x) => jsonEncode(x) != jsonEncode(values.first)) ||
+      values.first is! Map) {
+    return view;
+  }
+  final Map<String, Object?> value = _map(values.first);
+  bool empty(String k) => value[k] is List && (value[k]! as List).isEmpty;
+  return <String, Object?>{
+    for (final MapEntry<String, Object?> en
+        in view.cast<String, Object?>().entries)
+      en.key:
+          (en.key == 'learnSteps' && empty('learn')) ||
+              (en.key == 'relearnSteps' && empty('relearn'))
+          ? <double>[]
+          : en.value,
   };
 }
 
@@ -300,7 +342,7 @@ void main() {
       expect(got['concurrent'], e['concurrent']);
       expect(
         jsonEncode(got['view']),
-        jsonEncode(_withLaterDefaults(e['view'])),
+        jsonEncode(_withEmptySteps(_withLaterDefaults(e['view']), v)),
         reason: jsonEncode(v),
       );
       expect(got['noop'], e['noop'], reason: jsonEncode(v));

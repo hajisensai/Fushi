@@ -31,7 +31,8 @@ List<double>? parseSrsSteps(String text) {
       .split(RegExp(r'[\s,，、]+'))
       .where((String s) => s.isNotEmpty)
       .toList();
-  if (parts.isEmpty) return null;
+  // 留空 = 不用步长（直接进复习）。
+  if (parts.isEmpty) return const <double>[];
   final List<double> out = <double>[];
   for (final String p in parts) {
     final double? v = double.tryParse(p);
@@ -96,6 +97,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   final TextEditingController _rwkvRepeatReviews = TextEditingController();
   final TextEditingController _rwkvRepeatSeconds = TextEditingController();
   final TextEditingController _rwkvRefreshEvery = TextEditingController();
+  final TextEditingController _newLoadBudget = TextEditingController();
+  final TextEditingController _newLoadBoost = TextEditingController();
+  bool _newLoadAuto = true;
+  bool _rwkvIgnoreLimit = false;
   double _retention = 0.8;
   SrsAlgorithm _algorithm = srsDefaultAlgorithm;
   bool _autoOptimize = true;
@@ -103,6 +108,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _autoplayAudio = true;
   bool _replayQuestionAudio = true;
   SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
+
+  /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
+  SrsAlgorithm? _parentOwnerAlgorithm;
 
   String? _learnError;
   String? _relearnError;
@@ -126,6 +134,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       _rwkvRepeatReviews,
       _rwkvRepeatSeconds,
       _rwkvRefreshEvery,
+      _newLoadBudget,
+      _newLoadBoost,
     ]) {
       c.dispose();
     }
@@ -158,8 +168,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
-        _learnSteps.text = _formatSteps(deck.learnSteps);
-        _relearnSteps.text = _formatSteps(deck.relearnSteps);
+        final String? parent = tree.parentOf(deck.id);
+        _parentOwnerAlgorithm = parent == null
+            ? null
+            : tree.paramsOwner(parent).localAlgorithm;
         _maxInterval.text = '${deck.maxIntervalDays}';
         _retention = deck.desiredRetention.clamp(0.7, 0.97);
         _algorithm = deck.localAlgorithm;
@@ -172,6 +184,14 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
         _rwkvRefreshEvery.text = '${deck.rwkvQueue.refreshEvery}';
+        _rwkvIgnoreLimit = deck.rwkvQueue.ignoreReviewLimit;
+        _newLoadAuto = deck.newCardPlan.autoLoad;
+        _newLoadBudget.text = '${deck.newCardPlan.budgetPercent}';
+        _newLoadBoost.text = '${deck.newCardPlan.boostPercent}';
+        // 步长按此刻生效的算法显示（没写过步长的 RWKV 牌组为空，见 [SrsDeckView.learnStepsFor]）；
+        // 要在 _algorithm / _ownParams / _hasParent 都就位之后算。
+        _learnSteps.text = _formatSteps(_baselineLearn);
+        _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
       });
     } catch (e, stack) {
@@ -182,6 +202,35 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           _error = e;
         });
       }
+    }
+  }
+
+  /// 保存后本牌组按哪个算法排程：自己管参数（或顶层）= 页面上选的算法；随上级 = 上级的。
+  /// 没写过步长时实际用的步长取决于它（RWKV 不用步长，FSRS 用默认步长）。
+  SrsAlgorithm get _stepsAlgorithm => (_ownParams || !_hasParent)
+      ? _algorithm
+      : (_parentOwnerAlgorithm ?? _algorithm);
+
+  /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
+  List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
+  List<double> get _baselineRelearn => _deck!.relearnStepsFor(_stepsAlgorithm);
+
+  /// 改了决定排程算法的选项（算法、随上级 / 自己管）：输入框还是原先生效值的，换成新算法下的
+  /// 生效值，免得显示的步长与保存后实际用的对不上；用户已改过的输入原样保留（保存时与新生效值比）。
+  void _changeStepsAlgorithm(VoidCallback change) {
+    final String learnBefore = _formatSteps(_baselineLearn);
+    final String relearnBefore = _formatSteps(_baselineRelearn);
+    change();
+    bool untouched(TextEditingController c, String before) {
+      final List<double>? parsed = parseSrsSteps(c.text);
+      return parsed != null && _formatSteps(parsed) == before;
+    }
+
+    if (untouched(_learnSteps, learnBefore)) {
+      _learnSteps.text = _formatSteps(_baselineLearn);
+    }
+    if (untouched(_relearnSteps, relearnBefore)) {
+      _relearnSteps.text = _formatSteps(_baselineRelearn);
     }
   }
 
@@ -199,7 +248,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             current.repeatMinSeconds,
         'refreshEvery':
             int.tryParse(_rwkvRefreshEvery.text.trim()) ?? current.refreshEvery,
+        'ignoreLimit': _rwkvIgnoreLimit,
       });
+
+  /// 输入框里的新卡计划；空 / 非数字的项沿用 [current]，越界的夹到合法范围。
+  SrsNewCardPlan _newCardPlan(
+    SrsNewCardPlan current,
+  ) => SrsNewCardPlan.fromValue(<String, Object?>{
+    'auto': _newLoadAuto,
+    'budget': int.tryParse(_newLoadBudget.text.trim()) ?? current.budgetPercent,
+    'boost': int.tryParse(_newLoadBoost.text.trim()) ?? current.boostPercent,
+  });
 
   /// 与物化视图逐项比较，只收改动过的键。步长不合法返回 null（并标出错误）。
   Map<String, Object?>? _changes() {
@@ -219,6 +278,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         'review': reviewsPerDay.clamp(0, 99999),
       };
     }
+    // 新卡计划与每日上限一样是牌组自己的值（不随参数继承）。
+    final SrsNewCardPlan plan = _newCardPlan(deck.newCardPlan);
+    if (plan != deck.newCardPlan) {
+      out[SrsFieldKeys.deckNewPlan] = plan.toValue();
+    }
     final List<double>? learn = parseSrsSteps(_learnSteps.text);
     final List<double>? relearn = parseSrsSteps(_relearnSteps.text);
     _learnError = learn == null || !srsValidateSteps(learn)
@@ -228,8 +292,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ? t.srs_settings_steps_invalid
         : null;
     if (_learnError != null || _relearnError != null) return null;
-    if (_formatSteps(learn!) != _formatSteps(deck.learnSteps) ||
-        _formatSteps(relearn!) != _formatSteps(deck.relearnSteps)) {
+    // 与「不写步长、按保存后的算法」实际生效的步长比（同一次编辑里切了算法也对得上）。
+    if (_formatSteps(learn!) != _formatSteps(_baselineLearn) ||
+        _formatSteps(relearn!) != _formatSteps(_baselineRelearn)) {
       out[SrsFieldKeys.deckSteps] = <String, Object?>{
         'learn': learn,
         'relearn': relearn,
@@ -581,6 +646,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       spacing: tokens.spacing.gap * 1.5,
       children: <Widget>[
         Text(t.srs_settings_rwkv_queue, style: tokens.type.sectionLabel),
+        Text(
+          t.srs_settings_rwkv_steps_note,
+          style: context.fushiType.bodySmall,
+        ),
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('srs-settings-rwkv-ignore-limit'),
+          title: t.srs_settings_rwkv_ignore_limit,
+          subtitle: t.srs_settings_rwkv_ignore_limit_hint,
+          value: _rwkvIgnoreLimit,
+          onChanged: (bool v) => setState(() => _rwkvIgnoreLimit = v),
+        ),
         _numberField(
           _rwkvMinReviews,
           t.srs_settings_rwkv_min_reviews,
@@ -763,14 +839,16 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-learn-steps'),
           controller: _learnSteps,
           labelText: t.srs_settings_learn_steps,
-          helperText: t.srs_settings_steps_hint,
+          helperText:
+              '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
           errorText: _learnError,
         ),
         FushiTextField(
           key: const ValueKey<String>('srs-settings-relearn-steps'),
           controller: _relearnSteps,
           labelText: t.srs_settings_relearn_steps,
-          helperText: t.srs_settings_steps_hint,
+          helperText:
+              '${t.srs_settings_steps_hint}\n${t.srs_settings_steps_empty_hint}',
           errorText: _relearnError,
         ),
         _conflictNote(context, SrsFieldKeys.deckSteps),
@@ -806,6 +884,35 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             t.srs_settings_inherited_from(name: _owner?.name ?? ''),
             style: context.fushiType.bodyMedium,
           ),
+      ]),
+      // 新卡计划与每日上限一样是牌组自己的值（不随继承），放在新卡顺序之后。
+      _group(context, <Widget?>[
+        Text(
+          t.srs_settings_new_plan,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('srs-settings-new-load-auto'),
+          title: t.srs_settings_new_load_auto,
+          subtitle: t.srs_settings_new_load_auto_hint,
+          value: _newLoadAuto,
+          onChanged: (bool v) => setState(() => _newLoadAuto = v),
+        ),
+        if (_newLoadAuto) ...<Widget?>[
+          _numberField(
+            _newLoadBudget,
+            t.srs_settings_new_load_budget,
+            helper: t.srs_settings_new_load_budget_hint,
+            key: const ValueKey<String>('srs-settings-new-load-budget'),
+          ),
+          _numberField(
+            _newLoadBoost,
+            t.srs_settings_new_load_boost,
+            helper: t.srs_settings_new_load_boost_hint,
+            key: const ValueKey<String>('srs-settings-new-load-boost'),
+          ),
+        ],
+        _conflictNote(context, SrsFieldKeys.deckNewPlan),
       ]),
     ];
   }
@@ -843,7 +950,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ],
           selected: <bool>{_ownParams},
           onSelectionChanged: (Set<bool> v) =>
-              setState(() => _ownParams = v.first),
+              setState(() => _changeStepsAlgorithm(() => _ownParams = v.first)),
         ),
       );
       add(_conflictNote(context, SrsFieldKeys.deckParamsMode));
@@ -897,7 +1004,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ],
           selected: <SrsAlgorithm>{_algorithm},
           onSelectionChanged: (Set<SrsAlgorithm> v) =>
-              setState(() => _algorithm = v.first),
+              setState(() => _changeStepsAlgorithm(() => _algorithm = v.first)),
         ),
       );
       if (deck.algorithmUnknownLocally) {

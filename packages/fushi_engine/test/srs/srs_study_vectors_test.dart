@@ -111,6 +111,27 @@ void main() {
     await limits(b, 20, 2);
     await limits(b1, 20, 20);
     await limits(other, 4, 5);
+    // 向量是加「RWKV 牌组没写过步长 = 不用步长」与「新建牌组忽略每日复习上限」（PR #2663）之前用旧实现
+    // 生成的：把那时的生效值明确写上（学习 / 重学步长 1 10 / 10，按每日复习上限截断），向量照旧逐项对拍。
+    // 新语义另有测试（srs_rwkv_service_test.dart、native/fushi_fsrs store/study.rs）。
+    for (final String d in <String>[
+      s.defaultDeckId,
+      root,
+      a,
+      a1,
+      a2,
+      b,
+      b1,
+      other,
+    ]) {
+      await s.editFields(SrsEntityKind.deck, d, <String, Object?>{
+        SrsFieldKeys.deckSteps: <String, Object?>{
+          'learn': SrsDeckView.defaultLearnSteps,
+          'relearn': SrsDeckView.defaultRelearnSteps,
+        },
+        SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings().toValue(),
+      });
+    }
     // 子牌组用 FSRS-7（与 RWKV 混排）；Other 用 RWKV 默认。
     await s.editField(
       SrsEntityKind.deck,

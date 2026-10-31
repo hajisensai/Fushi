@@ -699,7 +699,8 @@ class _Exporter {
       'replayq': o?.replayQuestionAudio ?? true,
       'new': <String, Object?>{
         'bury': false,
-        'delays': o?.learnSteps ?? SrsDeckView.defaultLearnSteps,
+        'delays':
+            o?.learnStepsFor(o.localAlgorithm) ?? SrsDeckView.defaultLearnSteps,
         'initialFactor': 2500,
         'ints': <int>[1, 4, 0],
         'order': 1,
@@ -714,7 +715,9 @@ class _Exporter {
         'hardFactor': 1.2,
       },
       'lapse': <String, Object?>{
-        'delays': o?.relearnSteps ?? SrsDeckView.defaultRelearnSteps,
+        'delays':
+            o?.relearnStepsFor(o.localAlgorithm) ??
+            SrsDeckView.defaultRelearnSteps,
         'leechAction': 1,
         'leechFails': 8,
         'minInt': 1,

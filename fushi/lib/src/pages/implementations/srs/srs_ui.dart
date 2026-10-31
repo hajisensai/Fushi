@@ -272,10 +272,13 @@ class SrsAdaptiveSections extends StatelessWidget {
   }
 }
 
-/// 新卡被自动缩减时的一行说明；没缩减返回 null。
+/// 新卡被自动调整时的一行说明；没调整返回 null。
 String? srsNewBudgetNote(SrsNewCardBudget budget) => switch (budget.reason) {
   SrsNewCardBudgetReason.reduced => t.srs_deck_new_reduced(n: budget.allowed),
   SrsNewCardBudgetReason.paused => t.srs_deck_new_paused,
+  SrsNewCardBudgetReason.increased => t.srs_deck_new_increased(
+    n: budget.allowed,
+  ),
   null => null,
 };
 
@@ -437,6 +440,7 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.deckRetention => t.srs_settings_retention,
   SrsFieldKeys.deckAlgorithm => t.srs_settings_algorithm,
   SrsFieldKeys.deckRwkvQueue => t.srs_settings_rwkv_queue,
+  SrsFieldKeys.deckNewPlan => t.srs_settings_new_plan,
   SrsFieldKeys.deckFsrs6Params ||
   SrsFieldKeys.deckFsrs7Params => t.srs_key_params,
   SrsFieldKeys.deckAutoOptimize => t.srs_settings_auto_optimize,
