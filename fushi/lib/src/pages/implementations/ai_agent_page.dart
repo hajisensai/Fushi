@@ -1263,10 +1263,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             ),
             // 紧凑排版里 chip 与输入框同行：不额外撑 48dp 触控外框，免得把输入行
             // 撑高、再挤掉对话区。
-            visualDensity: tight ? VisualDensity.compact : null,
-            materialTapTargetSize: tight
-                ? MaterialTapTargetSize.shrinkWrap
-                : null,
+            dense: tight,
             onDeleted: () => setState(() => _contextDropped = true),
           );
     Widget buildRow(double? tightWidth) => Row(
