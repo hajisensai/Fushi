@@ -1,4 +1,5 @@
-import 'package:drift/drift.dart' show ApplyInterceptor, QueryExecutor, QueryInterceptor;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
@@ -137,6 +138,34 @@ void main() {
       expect(tile.value, isFalse);
       expect(tile.onChanged, isNotNull);
       expect(inheritedNote, findsNothing);
+    });
+
+    testWidgets('$system：所在来源库开了隐私（v140）→ 开关显示开、禁用、写明来源库', (
+      WidgetTester tester,
+    ) async {
+      await tester.runAsync(() async {
+        await book('Nsfw');
+        final int source = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: '私人文件夹',
+            mediaKind: 'book',
+            rootPath: '/books/private',
+            createdAt: 0,
+          ),
+        );
+        await (db.update(db.epubBooks)..where((t) => t.bookKey.equals('Nsfw')))
+            .write(EpubBooksCompanion(sourceId: Value<int?>(source)));
+        await db.updateMediaSourcePrivate(source, true);
+      });
+      await pumpDialog(tester, apple: apple, bookKey: 'Nsfw');
+
+      final FushiSwitchListTile tile = switchTile(tester);
+      expect(tile.value, isTrue, reason: '实际私密，不能显示成关');
+      expect(tile.onChanged, isNull, reason: '作品开关拨不掉来源库的私密');
+      expect(
+        find.text(t.media_privacy_inherited_source_note(source: '私人文件夹')),
+        findsOneWidget,
+      );
     });
   }
 

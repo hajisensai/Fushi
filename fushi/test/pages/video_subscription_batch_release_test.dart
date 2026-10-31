@@ -87,6 +87,7 @@ VideoMediaReference _media() => VideoMediaReference(
 
 const MediaSourceRow _source = MediaSourceRow(
   videoGroupingMode: 'series',
+  isPrivate: false,
   id: 1,
   label: 'Videos',
   mediaKind: 'video',

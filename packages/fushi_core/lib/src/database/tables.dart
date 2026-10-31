@@ -979,6 +979,12 @@ class MediaSources extends Table {
   TextColumn get videoGroupingMode =>
       text().withDefault(const Constant('series'))();
 
+  /// 隐私来源（schema v140，反馈 kEAgATi1LF）：true = 本扫描根产出的条目一律按
+  /// 「私密」处理（口径同作品级 `media_privacy_flags`，见 fushi_engine
+  /// `MediaPrivacySnapshot`）——不上传排行榜公开书架 / 主页、不推 Bangumi。
+  /// 设备本地配置（不进互联同步）；存量来源 false。
+  BoolColumn get isPrivate => boolean().withDefault(const Constant(false))();
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 

@@ -515,6 +515,26 @@ class LeaderboardService extends ChangeNotifier {
     return _runExclusive(() => _sync(claim: false));
   }
 
+  /// 本机的私密范围刚变大（来源库打开隐私开关）：已上报过、现在变私密的作品要从
+  /// 服务端撤下。书架里不再有它们，书架同步把「本地已消失」的作品 remove 掉，所以
+  /// 这里只需立即跑一次同步——排在在途同步**之后**新跑一轮（在途那轮的书架是开关
+  /// 之前建的，搭它的便车撤不下）。
+  ///
+  /// 返回 true = 已同步撤下；false = 不需要（没开排行榜 / 上传关着 → 本来就不上传；
+  /// 本机被另一台上传设备挡住 → 本机书架本来就没在上传）。同步失败照常抛给调用方
+  /// （UI 须明说没撤下；后台同步节流照常兜底重试）。
+  Future<bool> syncAfterPrivacyChange() async {
+    await load();
+    final LeaderboardLocalAccount? account = _account;
+    if (account == null ||
+        !account.uploadEnabled ||
+        account.uploadBlockedByOtherDevice) {
+      return false;
+    }
+    await _runExclusive(() => _sync(claim: false));
+    return true;
+  }
+
   /// 由本设备接管本账户的书架上传：清空本机同步状态、清掉「被另一台挡住」标记 →
   /// reset + claim 全量同步。接管即表示要从本机上传，上传开关一并打开。标记在开始时就
   /// 清：接管中途失败（如 429）也不能让后台同步永久停下，下一轮会从断点续传。同意语义

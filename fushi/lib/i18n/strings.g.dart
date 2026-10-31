@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179503 (10559 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -7511,6 +7511,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Private items are never uploaded to the leaderboard or shared: they are left off your public shelf and share cards, and their progress is not pushed to Bangumi. Anything already uploaded is removed at the next leaderboard sync. Your daily character total still counts them, without saying what you read.';
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   String get media_privacy_marked_toast => 'Marked private';
@@ -7577,6 +7579,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get media_source_open_folder => 'Open folder';
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  String get media_source_privacy_action => 'Privacy';
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  String get media_source_privacy_switch => 'Keep this source library private';
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   String get media_source_remove => 'Remove source';
   String get media_source_remove_download_keep =>
       'Don\'t move (pause those subscriptions)';
@@ -27577,6 +27593,9 @@ class _StringsAr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -27693,6 +27712,28 @@ class _StringsAr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -53372,6 +53413,9 @@ class _StringsDe extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -53491,6 +53535,28 @@ class _StringsDe extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -79360,6 +79426,9 @@ class _StringsEs extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -79480,6 +79549,28 @@ class _StringsEs extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -105420,6 +105511,9 @@ class _StringsFr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -105540,6 +105634,28 @@ class _StringsFr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -131330,6 +131446,9 @@ class _StringsId extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -131448,6 +131567,28 @@ class _StringsId extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -157173,6 +157314,9 @@ class _StringsIt extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -157293,6 +157437,28 @@ class _StringsIt extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -182547,6 +182713,9 @@ class _StringsJa extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -182660,6 +182829,28 @@ class _StringsJa extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -207446,6 +207637,9 @@ class _StringsKo extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -207559,6 +207753,28 @@ class _StringsKo extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -232882,6 +233098,9 @@ class _StringsNl extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -233001,6 +233220,28 @@ class _StringsNl extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -258795,6 +259036,9 @@ class _StringsPtBr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -258915,6 +259159,28 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -284684,6 +284950,9 @@ class _StringsRu extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -284803,6 +285072,28 @@ class _StringsRu extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -310392,6 +310683,9 @@ class _StringsTh extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -310508,6 +310802,28 @@ class _StringsTh extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -336074,6 +336390,9 @@ class _StringsTr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -336190,6 +336509,28 @@ class _StringsTr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -361798,6 +362139,9 @@ class _StringsVi extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -361916,6 +362260,28 @@ class _StringsVi extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -386437,6 +386803,9 @@ class _StringsZhCn extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       '因所在合集「${collections}」已设为私密，这部作品也是私密的。要取消，请到该合集的「私密」里关闭。';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      '因所在来源库「${source}」已设为私密，这部作品也是私密的。要取消，请到该来源库的「隐私」里关闭。';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       '读取私密状态失败，暂时无法修改：${reason}';
   @override
@@ -386545,6 +386914,24 @@ class _StringsZhCn extends _StringsEn {
   String get media_source_open_folder => '打开文件夹';
   @override
   String get media_source_open_folder_failed => '无法打开文件夹，它可能已被移动、删除或断开连接。';
+  @override
+  String get media_source_privacy_action => '隐私';
+  @override
+  String get media_source_privacy_badge => '私密：不上传排行榜';
+  @override
+  String get media_source_privacy_cleared_toast => '来源库已取消私密';
+  @override
+  String get media_source_privacy_hint =>
+      '这个来源库里的所有条目都按私密处理：不上传到排行榜，不出现在公开书架、个人主页与分享卡上，进度也不推送到 Bangumi。打开后，已经上传过的条目会立即从排行榜撤下（失败则在下次同步时撤下）。每日总字数仍会计入，但不带作品信息。移除此来源后，这些条目仍保持私密。';
+  @override
+  String get media_source_privacy_marked_toast => '来源库已设为私密';
+  @override
+  String get media_source_privacy_switch => '将此来源库设为私密';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      '来源库已设为私密，但从排行榜撤下失败，下次同步会再试：${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast => '来源库已设为私密，其条目已从排行榜撤下';
   @override
   String get media_source_remove => '移除来源';
   @override
@@ -410233,6 +410620,9 @@ class _StringsZhHk extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -410342,6 +410732,28 @@ class _StringsZhHk extends _StringsEn {
   String get media_source_open_folder => 'Open Folder';
   @override
   String get media_source_open_folder_failed => '無法開啟資料夾，可能已被移動、刪除或中斷連線。';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -433348,6 +433760,9 @@ extension on _StringsEn {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -433455,6 +433870,23 @@ extension on _StringsEn {
         return 'Open folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove source';
       case 'media_source_remove_download_keep':
@@ -455265,6 +455697,9 @@ extension on _StringsAr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -455372,6 +455807,23 @@ extension on _StringsAr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -477229,6 +477681,9 @@ extension on _StringsDe {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -477336,6 +477791,23 @@ extension on _StringsDe {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -499207,6 +499679,9 @@ extension on _StringsEs {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -499314,6 +499789,23 @@ extension on _StringsEs {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -521195,6 +521687,9 @@ extension on _StringsFr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -521302,6 +521797,23 @@ extension on _StringsFr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -543156,6 +543668,9 @@ extension on _StringsId {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -543263,6 +543778,23 @@ extension on _StringsId {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -565106,6 +565638,9 @@ extension on _StringsIt {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -565213,6 +565748,23 @@ extension on _StringsIt {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -587014,6 +587566,9 @@ extension on _StringsJa {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -587121,6 +587676,23 @@ extension on _StringsJa {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -608854,6 +609426,9 @@ extension on _StringsKo {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -608961,6 +609536,23 @@ extension on _StringsKo {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -630770,6 +631362,9 @@ extension on _StringsNl {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -630877,6 +631472,23 @@ extension on _StringsNl {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -652732,6 +653344,9 @@ extension on _StringsPtBr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -652839,6 +653454,23 @@ extension on _StringsPtBr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -674698,6 +675330,9 @@ extension on _StringsRu {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -674805,6 +675440,23 @@ extension on _StringsRu {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -696633,6 +697285,9 @@ extension on _StringsTh {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -696740,6 +697395,23 @@ extension on _StringsTh {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -718574,6 +719246,9 @@ extension on _StringsTr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -718681,6 +719356,23 @@ extension on _StringsTr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -740513,6 +741205,9 @@ extension on _StringsVi {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -740620,6 +741315,23 @@ extension on _StringsVi {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -762315,6 +763027,9 @@ extension on _StringsZhCn {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             '因所在合集「${collections}」已设为私密，这部作品也是私密的。要取消，请到该合集的「私密」里关闭。';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            '因所在来源库「${source}」已设为私密，这部作品也是私密的。要取消，请到该来源库的「隐私」里关闭。';
       case 'media_privacy_load_failed':
         return ({required Object reason}) => '读取私密状态失败，暂时无法修改：${reason}';
       case 'media_privacy_marked_toast':
@@ -762418,6 +763133,23 @@ extension on _StringsZhCn {
         return '打开文件夹';
       case 'media_source_open_folder_failed':
         return '无法打开文件夹，它可能已被移动、删除或断开连接。';
+      case 'media_source_privacy_action':
+        return '隐私';
+      case 'media_source_privacy_badge':
+        return '私密：不上传排行榜';
+      case 'media_source_privacy_cleared_toast':
+        return '来源库已取消私密';
+      case 'media_source_privacy_hint':
+        return '这个来源库里的所有条目都按私密处理：不上传到排行榜，不出现在公开书架、个人主页与分享卡上，进度也不推送到 Bangumi。打开后，已经上传过的条目会立即从排行榜撤下（失败则在下次同步时撤下）。每日总字数仍会计入，但不带作品信息。移除此来源后，这些条目仍保持私密。';
+      case 'media_source_privacy_marked_toast':
+        return '来源库已设为私密';
+      case 'media_source_privacy_switch':
+        return '将此来源库设为私密';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            '来源库已设为私密，但从排行榜撤下失败，下次同步会再试：${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return '来源库已设为私密，其条目已从排行榜撤下';
       case 'media_source_remove':
         return '移除来源';
       case 'media_source_remove_download_keep':
@@ -784017,6 +784749,9 @@ extension on _StringsZhHk {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -784124,6 +784859,23 @@ extension on _StringsZhHk {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return '無法開啟資料夾，可能已被移動、刪除或中斷連線。';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':

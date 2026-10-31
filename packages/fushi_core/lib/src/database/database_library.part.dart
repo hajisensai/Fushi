@@ -140,6 +140,25 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             updatedAt: Value<int>(nowAt),
           ));
         }
+        if (source != null && source.isPrivate) {
+          // 隐私来源：移除来源保留条目，FK 随后把 source_id 清空，条目就不再「属于
+          // 隐私来源」。先把每个条目逐一标成作品级私密，用户的「别上排行榜」意图
+          // 跟着条目走，不会因为移除来源而突然公开。
+          for (final String bookKey in await (selectOnly(epubBooks)
+                ..addColumns(<Expression<Object>>[epubBooks.bookKey])
+                ..where(epubBooks.sourceId.equals(id)))
+              .map((TypedResult r) => r.read(epubBooks.bookKey)!)
+              .get()) {
+            await setMediaPrivate(TagHostKind.epub, bookKey, true, at: nowAt);
+          }
+          for (final String bookUid in await (selectOnly(videoBooks)
+                ..addColumns(<Expression<Object>>[videoBooks.bookUid])
+                ..where(videoBooks.sourceId.equals(id)))
+              .map((TypedResult r) => r.read(videoBooks.bookUid)!)
+              .get()) {
+            await setMediaPrivate(TagHostKind.video, bookUid, true, at: nowAt);
+          }
+        }
         if (source != null && source.mediaKind == 'video') {
           // 来源设置可能刚改过还没重扫；FK 清空 sourceId 前保留最终组织选择。
           await (update(videoBooks)..where((t) => t.sourceId.equals(id))).write(
@@ -220,6 +239,20 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   Future<void> updateMediaSourceLabel(int id, String label) =>
       (update(mediaSources)..where((t) => t.id.equals(id)))
           .write(MediaSourcesCompanion(label: Value(label)));
+
+  /// 设置来源的隐私开关（v140，`media_sources.is_private`）。只写这一列。
+  Future<void> updateMediaSourcePrivate(int id, bool isPrivate) =>
+      (update(mediaSources)..where((t) => t.id.equals(id)))
+          .write(MediaSourcesCompanion(isPrivate: Value(isPrivate)));
+
+  /// 开着隐私开关的来源 id（排行榜 / Bangumi 等出站路径的私密判定读它）。
+  Future<Set<int>> privateMediaSourceIds() async => <int>{
+        for (final TypedResult r in await (selectOnly(mediaSources)
+              ..addColumns(<Expression<Object>>[mediaSources.id])
+              ..where(mediaSources.isPrivate.equals(true)))
+            .get())
+          r.read(mediaSources.id)!,
+      };
 
   /// 更新来源排序权重（来源库 UI 拖拽重排后逐行回写，与 [getAllMediaSources] /
   /// [getMediaSourcesByKind] 的 orderBy(sortOrder, id) 对齐）。只写 sortOrder 列，
