@@ -127,8 +127,8 @@ VideoMetadataLookup? _manualAniDbLookup(VideoDownloadJobRow job) {
     return null;
   }
   final int? id = int.tryParse(job.externalId?.trim() ?? '');
-  final VideoMetadataMediaKind? kind =
-      VideoMetadataMediaKind.values.asNameMap()[job.mediaKind];
+  final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
+      .asNameMap()[job.mediaKind];
   if (id == null || id <= 0 || kind == null) return null;
   return VideoMetadataLookup(
     provider: VideoMetadataProviderKind.anidb,
@@ -152,12 +152,13 @@ VideoDownloadJobFileRow? mainMovieDownloadFile(
 }
 
 /// 任务下到库里的视频文件（规范化路径）。
-Set<String> downloadJobImportedVideoPaths(List<VideoDownloadJobFileRow> files) =>
-    <String>{
-      for (final VideoDownloadJobFileRow row in files)
-        if (row.kind == 'video' && row.finalAbsolutePath != null)
-          normalizeVideoPath(row.finalAbsolutePath!),
-    };
+Set<String> downloadJobImportedVideoPaths(
+  List<VideoDownloadJobFileRow> files,
+) => <String>{
+  for (final VideoDownloadJobFileRow row in files)
+    if (row.kind == 'video' && row.finalAbsolutePath != null)
+      normalizeVideoPath(row.finalAbsolutePath!),
+};
 
 /// 在 [works] 里包含任务导入文件的那些作品。
 List<VideoSourceScrapeWork> downloadJobPathMatches(
@@ -233,19 +234,17 @@ VideoSourceScrapeWork? downloadJobWork(
 Future<Map<String, VideoMetadataLookup>> downloadConfirmedLookupsForWorks(
   FushiDatabase database,
   List<VideoSourceScrapeWork> works,
-) async =>
-    <String, VideoMetadataLookup>{
-      for (final MapEntry<String, List<VideoMetadataLookup>> entry
-          in (await downloadConfirmedLookupListsForWorks(database, works))
-              .entries)
-        entry.key: entry.value.first,
-    };
+) async => <String, VideoMetadataLookup>{
+  for (final MapEntry<String, List<VideoMetadataLookup>> entry
+      in (await downloadConfirmedLookupListsForWorks(database, works)).entries)
+    entry.key: entry.value.first,
+};
 
 /// 同 [downloadConfirmedLookupsForWorks]，但给出任务记下的**全部**可直取身份
 /// （首选在前，见 [videoDownloadJobConfirmedLookups]）：一家资料源连不上时，同一部
 /// 作品的另一个 id 照样可用（BUG-3073）。身份一致性按首选身份判。
 Future<Map<String, List<VideoMetadataLookup>>>
-    downloadConfirmedLookupListsForWorks(
+downloadConfirmedLookupListsForWorks(
   FushiDatabase database,
   List<VideoSourceScrapeWork> works,
 ) async {
@@ -254,7 +253,9 @@ Future<Map<String, List<VideoMetadataLookup>>>
       <String, List<VideoDownloadJobFileRow>>{};
   for (final VideoDownloadJobFileRow row
       in await database.getImportedVideoDownloadJobFiles()) {
-    filesByJob.putIfAbsent(row.jobId, () => <VideoDownloadJobFileRow>[]).add(row);
+    filesByJob
+        .putIfAbsent(row.jobId, () => <VideoDownloadJobFileRow>[])
+        .add(row);
   }
   if (filesByJob.isEmpty) return const <String, List<VideoMetadataLookup>>{};
   final Set<String> memberPaths = <String>{
@@ -271,8 +272,9 @@ Future<Map<String, List<VideoMetadataLookup>>>
     if (!downloadJobImportedVideoPaths(files).any(memberPaths.contains)) {
       continue;
     }
-    final List<VideoMetadataLookup> lookups =
-        videoDownloadJobConfirmedLookups(job);
+    final List<VideoMetadataLookup> lookups = videoDownloadJobConfirmedLookups(
+      job,
+    );
     if (lookups.isEmpty) continue;
     final VideoSourceScrapeWork? work = downloadJobWork(job, files, works);
     if (work == null) continue;
@@ -291,45 +293,75 @@ bool _sameLookup(VideoMetadataLookup a, VideoMetadataLookup b) =>
     a.externalId == b.externalId &&
     a.mediaKind == b.mediaKind;
 
-/// 库里这个视频文件是哪条下载任务下的 → 那条任务入队时确认的作品引用。
+/// 库里视频文件是哪条下载任务下的 → 那条任务入队时确认的作品引用。
 ///
-/// 补字幕按**库里的刮削身份**搜，可动画的刮削主源常是 TMDB，落库的身份只有
+/// 补字幕按**库内的刮削身份**搜，可动画的刮削主源常是 TMDB，落库的身份只有
 /// tmdb / imdb / tvdb——不带 AniList / MAL 这类动画专库 id。Jimaku 的权威检索键
 /// 恰恰是 `anilist_id`：TMDB 关联与 TMDB 的长标题（含副标题、中点写成 U+2027）在
 /// Jimaku 都搜不到条目，于是字幕站明明有这一集，下载后缺字幕重试也永远补不上
 /// （BUG-3926：《凶乱令嬢ニア・リストン》第 4 集）。下载入队时用户确认过的身份里
 /// 正好有这些 id，同一个文件的字幕搜索要把它们带上（见 [mergeDownloadConfirmedIdentity]）。
 ///
-/// 没有任务导入过这个文件、任务身份里没有任何外部 id、或多条任务给出互不相干的
-/// 身份（用户先后确认了不同作品）时为 null——宁可不补，也不猜。
-Future<VideoMediaReference?> downloadConfirmedReferenceForVideoPath(
-  FushiDatabase database,
-  String videoPath,
-) async {
-  final String wanted = normalizeVideoPath(videoPath);
-  final Set<String> jobIds = <String>{
-    for (final VideoDownloadJobFileRow row
-        in await database.getImportedVideoDownloadJobFiles())
-      if (normalizeVideoPath(row.finalAbsolutePath!) == wanted) row.jobId,
-  };
-  VideoMediaReference? found;
-  for (final String jobId in jobIds) {
-    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
-    if (job == null) continue;
-    final VideoMediaReference reference = videoDownloadJobMediaReference(job);
-    final Map<String, String> ids = videoMediaReferenceStrongIds(reference);
-    if (ids.isEmpty) continue;
-    if (found == null) {
-      found = reference;
-      continue;
+/// **一批补字幕共用一个实例**（刮完整季逐集补、一轮下载后重试）：「规范化路径 →
+/// 任务」索引在第一次 [referenceFor] 时由**一次**
+/// `getImportedVideoDownloadJobFiles` 扫描建好，之后每集只查内存；任务行按 id
+/// 取一次后缓存。逐集新建实例 = 逐集全表扫描（集数 × 下载文件数），正是这个类
+/// 要消灭的。任务文件行只记原始 `final_absolute_path`（分隔符 / 大小写随平台），
+/// 库里没有可索引的规范化路径列，所以只能在内存里按 [normalizeVideoPath] 建索引。
+///
+/// 索引是建立那一刻的快照：一批之内新导入的任务不会出现——批内不会有新导入，
+/// 下一批新建实例即可。
+final class DownloadConfirmedIdentityResolver {
+  DownloadConfirmedIdentityResolver(this._database);
+
+  final FushiDatabase _database;
+  Future<Map<String, Set<String>>>? _jobIdsByPath;
+  final Map<String, Future<VideoDownloadJobRow?>> _jobs =
+      <String, Future<VideoDownloadJobRow?>>{};
+
+  /// [videoPath] 这个库内文件的下载确认身份。
+  ///
+  /// 没有任务导入过这个文件、任务身份里没有任何外部 id、或多条任务给出互不相干
+  /// 的身份（用户先后确认了不同作品）时为 null——宁可不补，也不猜。
+  Future<VideoMediaReference?> referenceFor(String videoPath) async {
+    final Map<String, Set<String>> index = await (_jobIdsByPath ??=
+        _loadPathIndex());
+    final Set<String>? jobIds = index[normalizeVideoPath(videoPath)];
+    if (jobIds == null) return null;
+    VideoMediaReference? found;
+    for (final String jobId in jobIds) {
+      final VideoDownloadJobRow? job = await (_jobs[jobId] ??= _database
+          .getVideoDownloadJob(jobId));
+      if (job == null) continue;
+      final VideoMediaReference reference = videoDownloadJobMediaReference(job);
+      final Map<String, String> ids = videoMediaReferenceStrongIds(reference);
+      if (ids.isEmpty) continue;
+      if (found == null) {
+        found = reference;
+        continue;
+      }
+      final Map<String, String> previous = videoMediaReferenceStrongIds(found);
+      final bool sameWork = ids.entries.any(
+        (MapEntry<String, String> entry) => previous[entry.key] == entry.value,
+      );
+      if (!sameWork) return null;
     }
-    final Map<String, String> previous = videoMediaReferenceStrongIds(found);
-    final bool sameWork = ids.entries.any(
-      (MapEntry<String, String> entry) => previous[entry.key] == entry.value,
-    );
-    if (!sameWork) return null;
+    return found;
   }
-  return found;
+
+  Future<Map<String, Set<String>>> _loadPathIndex() async {
+    final Map<String, Set<String>> index = <String, Set<String>>{};
+    for (final VideoDownloadJobFileRow row
+        in await _database.getImportedVideoDownloadJobFiles()) {
+      index
+          .putIfAbsent(
+            normalizeVideoPath(row.finalAbsolutePath!),
+            () => <String>{},
+          )
+          .add(row.jobId);
+    }
+    return index;
+  }
 }
 
 /// 引用里全部外部 id，`命名空间 → id`（命名空间小写，空值丢弃）。类型字段与

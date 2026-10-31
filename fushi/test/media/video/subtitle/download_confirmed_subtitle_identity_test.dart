@@ -128,8 +128,8 @@ void main() {
   });
 
   group('库内补字幕目标带上下载确认身份', () {
-    late FushiDatabase db;
-    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    late _ScanCountingDatabase db;
+    setUp(() => db = _ScanCountingDatabase());
     tearDown(() => db.close());
 
     Future<VideoBookRow> seedLibrary() async {
@@ -168,7 +168,11 @@ void main() {
       return (await db.getVideoBookByBookUid(uid))!;
     }
 
-    Future<void> seedJob(String jobId, VideoMediaReference identity) async {
+    Future<void> seedJob(
+      String jobId,
+      VideoMediaReference identity, {
+      String path = _path,
+    }) async {
       await db.upsertVideoDownloadJob(
         VideoDownloadJobsCompanion.insert(
           jobId: jobId,
@@ -196,7 +200,7 @@ void main() {
               '[SubsPlease] Kyouran Reijou Nia Liston - 04 (1080p) [1A604A90].mkv',
           currentRelativePath: 'S01E04.mkv',
           // 任务行记的是 Windows 反斜杠路径，库里是正斜杠：按规范化路径认。
-          finalAbsolutePath: Value<String?>(_path.replaceAll('/', r'\')),
+          finalAbsolutePath: Value<String?>(path.replaceAll('/', r'\')),
           kind: const Value<String>('video'),
           status: const Value<String>(VideoDownloadJobFileStatus.imported),
           createdAt: 1,
@@ -212,6 +216,7 @@ void main() {
       final SubtitleBackfillTarget target = (await libraryVideoSubtitleTarget(
         db,
         book,
+        confirmedIdentities: DownloadConfirmedIdentityResolver(db),
       )).target!;
 
       expect(target.media.anilistId, 206949);
@@ -226,6 +231,7 @@ void main() {
       final SubtitleBackfillTarget target = (await libraryVideoSubtitleTarget(
         db,
         book,
+        confirmedIdentities: DownloadConfirmedIdentityResolver(db),
       )).target!;
 
       expect(target.media.anilistId, isNull);
@@ -248,12 +254,58 @@ void main() {
         ),
       );
 
-      expect(await downloadConfirmedReferenceForVideoPath(db, _path), isNull);
+      expect(
+        await DownloadConfirmedIdentityResolver(db).referenceFor(_path),
+        isNull,
+      );
       final SubtitleBackfillTarget target = (await libraryVideoSubtitleTarget(
         db,
         book,
+        confirmedIdentities: DownloadConfirmedIdentityResolver(db),
       )).target!;
       expect(target.media.anilistId, isNull);
+    });
+
+    test('一批 N 集共用一个解析器：下载文件行只扫一次，不是逐集全表扫描', () async {
+      const int episodes = 12;
+      String episodePath(int episode) =>
+          _path.replaceFirst('S01E04', 'S01E${'$episode'.padLeft(2, '0')}');
+      for (int episode = 1; episode <= episodes; episode++) {
+        await seedJob(
+          'job-ep$episode',
+          _confirmed(),
+          path: episodePath(episode),
+        );
+      }
+      // 一条与本批无关的下载：在索引里，但不该被任何一集认走。
+      await seedJob(
+        'job-other',
+        VideoMediaReference(
+          providerId: 'anilist',
+          mediaId: '1',
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+          title: 'other',
+          anilistId: 1,
+          externalIds: const <String, String>{'anilist': '1'},
+        ),
+        path: 'D:/video/other/other - S01E01.mkv',
+      );
+
+      final DownloadConfirmedIdentityResolver resolver =
+          DownloadConfirmedIdentityResolver(db);
+      expect(db.importedFileScans, 0, reason: '建实例不扫：没有目标的批次零开销');
+      for (int episode = 1; episode <= episodes; episode++) {
+        final VideoMediaReference? reference = await resolver.referenceFor(
+          episodePath(episode),
+        );
+        expect(reference?.anilistId, 206949, reason: '第 $episode 集');
+      }
+      expect(
+        await resolver.referenceFor('D:/video/not-downloaded.mkv'),
+        isNull,
+      );
+      expect(db.importedFileScans, 1);
     });
   });
 
@@ -304,4 +356,18 @@ final class _Provider implements VideoSubtitleProvider {
 
   @override
   void close() {}
+}
+
+/// 数「已导入下载文件行」全表扫描的次数（[DownloadConfirmedIdentityResolver] 的
+/// 批量契约：一批只扫一次）。
+final class _ScanCountingDatabase extends FushiDatabase {
+  _ScanCountingDatabase() : super.forTesting(NativeDatabase.memory());
+
+  int importedFileScans = 0;
+
+  @override
+  Future<List<VideoDownloadJobFileRow>> getImportedVideoDownloadJobFiles() {
+    importedFileScans++;
+    return super.getImportedVideoDownloadJobFiles();
+  }
 }
