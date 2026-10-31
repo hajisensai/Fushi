@@ -46,6 +46,8 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
+      # strings.g.dart 不入库：编 app 前由它生成（生成器 fushi/tool/gen_i18n.dart 在 fushi/** 里）。
+      - '.github/actions/gen-i18n/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
@@ -496,6 +498,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     # 内置 libtorrent 引擎的 Android .so：vcpkg 交叉编 libtorrent + bridge，产物落
     # native/fushi_torrent/prebuilt/android/arm64-v8a/，由 fushi/android/app/
@@ -1930,6 +1935,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
       uses: actions/download-artifact@v7

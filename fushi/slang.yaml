@@ -4,8 +4,6 @@ input_directory: lib/i18n
 input_file_pattern: .i18n.json
 output_directory: lib/i18n
 output_file_name: strings.g.dart
-# 文件头的「Built on <时刻>」每次生成都变，会让任意两条加 key 的 PR 在 strings.g.dart
-# 头部必然冲突（json 已靠 i18n_sync 的前驱插入避开尾部热点）。「Strings: <总数>」那行
-# 要 `statistics: false`，但本仓 slang 3.17 还不支持该选项；两边加同样多 key 时它改成
-# 同一个值、能自动合并，数量不同才冲突，重新生成即可。
+# strings.g.dart 不入库，由 tool/gen_i18n.dart（slang + dart format）生成。关掉文件头的
+# 「Built on <时刻>」：生成结果只取决于输入，gen_i18n 的戳记与「同输入同字节」才成立。
 timestamp: false
