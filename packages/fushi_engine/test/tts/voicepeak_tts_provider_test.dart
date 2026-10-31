@@ -21,8 +21,9 @@ class _FakeProcess implements Process {
   final StreamController<List<int>> _err = StreamController<List<int>>();
   bool killed = false;
 
-  void finish(int code, {String stdout = ''}) {
+  void finish(int code, {String stdout = '', String stderr = ''}) {
     if (stdout.isNotEmpty) _out.add(utf8.encode(stdout));
+    if (stderr.isNotEmpty) _err.add(utf8.encode(stderr));
     unawaited(_out.close());
     unawaited(_err.close());
     if (!_exit.isCompleted) _exit.complete(code);
@@ -273,27 +274,124 @@ void main() {
     await expectLater(synth(preset()), failsWith(TtsFailureCode.notConfigured));
   });
 
+  /// 合成按 [synthesis] 结束；诊断用的列表命令按给定输出回答。
+  void cli({
+    required void Function(_FakeProcess proc) synthesis,
+    String narrators = 'Japanese Male 1\nJapanese Female 1\n',
+    int narratorsExit = 0,
+    String emotions = 'happy\nsad\n',
+  }) {
+    behaviour = (_FakeProcess proc) async {
+      switch (proc.args.first) {
+        case '--list-narrator':
+          proc.finish(narratorsExit, stdout: narrators);
+        case '--list-emotion':
+          proc.finish(0, stdout: emotions);
+        default:
+          synthesis(proc);
+      }
+    };
+  }
+
+  Matcher failure(
+    TtsFailureCode code, {
+    required bool transient,
+    Object? detail,
+  }) => throwsA(
+    isA<TtsFailure>()
+        .having((TtsFailure f) => f.code, 'code', code)
+        .having((TtsFailure f) => f.isTransient, 'transient', transient)
+        .having((TtsFailure f) => f.detail, 'detail', detail ?? anything),
+  );
+
   test(
-    'non-zero exit and missing output map to transient badResponse',
+    'non-zero exit with a valid narrator is transient and keeps stderr',
     () async {
-      behaviour = (_FakeProcess proc) async => proc.finish(3);
+      cli(
+        synthesis: (_FakeProcess proc) =>
+            proc.finish(3, stderr: 'engine\n  init failed\n'),
+      );
       await expectLater(
         synth(preset()),
-        throwsA(
-          isA<TtsFailure>()
-              .having(
-                (TtsFailure f) => f.code,
-                'code',
-                TtsFailureCode.badResponse,
-              )
-              .having((TtsFailure f) => f.detail, 'detail', 'exit 3')
-              .having((TtsFailure f) => f.isTransient, 'transient', isTrue),
+        failure(
+          TtsFailureCode.badResponse,
+          transient: true,
+          detail: 'exit 3: engine init failed',
         ),
       );
-      behaviour = (_FakeProcess proc) async => proc.finish(0);
-      await expectLater(synth(preset()), failsWith(TtsFailureCode.badResponse));
+      expect(spawned.map((_FakeProcess x) => x.args.first), <String>[
+        '-s',
+        '--list-narrator',
+      ]);
+      cli(synthesis: (_FakeProcess proc) => proc.finish(0));
+      await expectLater(
+        synth(preset()),
+        failure(
+          TtsFailureCode.badResponse,
+          transient: true,
+          detail: 'no output',
+        ),
+      );
     },
   );
+
+  test('uninstalled narrator is a permanent rejection', () async {
+    cli(
+      synthesis: (_FakeProcess proc) => proc.finish(1, stderr: 'oops'),
+      narrators: 'Japanese Male 1\n',
+    );
+    await expectLater(
+      synth(preset()),
+      failure(
+        TtsFailureCode.rejected,
+        transient: false,
+        detail: allOf(contains('Japanese Female 1'), contains('exit 1: oops')),
+      ),
+    );
+  });
+
+  test('no narrators at all is notConfigured (not retried)', () async {
+    cli(synthesis: (_FakeProcess proc) => proc.finish(1), narrators: '');
+    await expectLater(
+      synth(preset()),
+      failure(TtsFailureCode.notConfigured, transient: false),
+    );
+  });
+
+  test('unknown emotion for the narrator is a permanent rejection', () async {
+    cli(synthesis: (_FakeProcess proc) => proc.finish(1));
+    await expectLater(
+      synth(preset(extra: <String, String>{'emotion': 'happy=50,angry=20'})),
+      failure(
+        TtsFailureCode.rejected,
+        transient: false,
+        detail: contains('angry'),
+      ),
+    );
+    // 情感都在：仍按临时失败。
+    cli(synthesis: (_FakeProcess proc) => proc.finish(1));
+    await expectLater(
+      synth(preset(extra: <String, String>{'emotion': 'happy=50, sad=0'})),
+      failure(TtsFailureCode.badResponse, transient: true),
+    );
+  });
+
+  test('diagnosis that cannot list narrators stays transient', () async {
+    cli(synthesis: (_FakeProcess proc) => proc.finish(1), narratorsExit: 2);
+    await expectLater(
+      synth(preset()),
+      failure(TtsFailureCode.badResponse, transient: true, detail: 'exit 1'),
+    );
+  });
+
+  test('failure detail flattens and truncates stderr', () {
+    expect(voicepeakFailureDetail('exit 1', ''), 'exit 1');
+    expect(voicepeakFailureDetail('exit 1', ' a\r\n b '), 'exit 1: a b');
+    final String long = voicepeakFailureDetail('exit 1', 'x' * 400 + 'END');
+    expect(long, startsWith('exit 1: …'));
+    expect(long, endsWith('END'));
+    expect(long.length, 'exit 1: …'.length + 300);
+  });
 
   test('cancel kills the running process', () async {
     behaviour = (_FakeProcess proc) async {};
@@ -354,6 +452,21 @@ void main() {
       expect(maxActive, 1);
     },
   );
+
+  test('listing failures carry stderr', () async {
+    behaviour = (_FakeProcess proc) async =>
+        proc.finish(5, stderr: 'license expired');
+    final VoicepeakTtsProvider provider =
+        descriptor().create(preset(), const TtsHost()) as VoicepeakTtsProvider;
+    await expectLater(
+      provider.listVoices(),
+      failure(
+        TtsFailureCode.badResponse,
+        transient: true,
+        detail: 'exit 5: license expired',
+      ),
+    );
+  });
 
   test('listVoices / listEmotions parse one name per line', () async {
     behaviour = (_FakeProcess proc) async => proc.finish(
