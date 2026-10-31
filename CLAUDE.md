@@ -66,7 +66,7 @@
 - EPUB 阅读器走 reader_fushi 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。（旧文档提过的 `ttuBookId` 列在当前 schema 已不存在，只活在迁移阶梯里。）
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_fushi 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
-- 国际化用 Slang，源文件 `fushi/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
+- 国际化用 Slang，源文件 `fushi/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart` **不入库**（`.gitignore`），由 `dart fushi/tool/gen_i18n.dart` 生成（bootstrap / `setup_worktree.ps1`（含 `-SkipBootstrap`）/ 编 app 的 CI job / dist worker / 本机 `heavy.dart` 跑 fushi/ 下命令前 / `post-checkout`·`post-merge` 钩子都自动跑；钩子由 `tool/git_hooks/install.sh` 装进仓库级 hooks 的标记块）。
 - 5 平台均出包：`auto` 下统一 MD3，Cupertino / macOS renderer 仅为隐藏内部能力。Apple 设计系统组件悬浮面实色、窗口级 Mica / vibrancy 只认 `windowBackdropRequestedOf`。桌面 EPUB：Windows 用 fork 的 `flutter_inappwebview_windows`，Linux 用 vendored `flutter_inappwebview_linux`（WPE）。**Linux App 只能从源码构建**（CI 不出包）；**macOS 只出 Apple Silicon**。（[细则](docs/agent/rules-detail.md#五平台与-apple-设计系统)）
 - **iOS 版按 App Store 合规少三类能力**：① 内置 / 预置外部发现源与「发现」页签；② 在线漫画 / 视频 / 小说源宿主；③ 下载中心。判据**只在 `fushi/lib/src/models/store_compliance.dart` 的 `StoreRestrictedCapability` 写一次**，消费端不各写 `Platform.isIOS`；用户自填地址的服务器 iOS 保留（`userConfiguredServersAvailableOn`）；游戏串流接收 iOS 保留；Aidoku 已整体移除只剩冻结持久化名。守卫 `ios_store_compliance_guard_test.dart`——失效是静默的，改这三块前先读它和细则。（[细则](docs/agent/rules-detail.md#ios-商店合规)）
 
@@ -114,9 +114,9 @@
 
 - 新增/删除 i18n key **禁止手动逐文件编辑**，必须用 `fushi/tool/i18n_sync.dart`（Slang 要求 17 个文件 key 完整，缺 key 报错）：`--add <key> <en> <zh>` / `--remove <key>` / `--rename <old> <new>` / `--sort` / 无参补全缺失 / `--dry-run` 预览。四个操作 flag **可重复、可混用**，按给出顺序执行、每个文件只读写一次（`--remove a --remove b --add c en zh`）；任何没被 flag 消费的参数一律报 usage error 退出，不会像旧实现那样把多出来的 key 静默吞掉（契约测试 `fushi/test/tools/i18n_sync_ops_test.dart`）。
 - 批量删 key 后**必须按精确键名复核**（`grep '"<key>"'` 带引号）：裸子串会被同前缀的 key 假阳性命中（如 `..._favorites` 命中 `..._favorites_empty`）。
-- **17 份 i18n json 顶层 key 全排序**（守卫 `i18n_keys_sorted_guard_test.dart`，修法 `--sort`）；冲突交给按 key 三方合并驱动 `fushi/tool/i18n_merge_driver.dart`（只对本地 merge 生效，PR 页显示 i18n 冲突就本地 `git merge origin/develop`）；`strings.g.dart` 冲突取任一侧后 `dart run slang` + `dart format`。（[细则](docs/agent/rules-detail.md#i18n-全排序与合并驱动)）
+- **17 份 i18n json 顶层 key 全排序**（守卫 `i18n_keys_sorted_guard_test.dart`，修法 `--sort`）；冲突交给按 key 三方合并驱动 `fushi/tool/i18n_merge_driver.dart`（只对本地 merge 生效，PR 页显示 i18n 冲突就本地 `git merge origin/develop`）。（[细则](docs/agent/rules-detail.md#i18n-全排序与合并驱动)）
 - `--remove` + `--add` **不等于**改名：它会把 16 种语言的既有翻译降级成英文值并把 key 挪离原位。改名只能用 `--rename`（逐语言保留原翻译，挪到新名字的字典序位置）。
-- 改完 key 跑 `dart run slang` 重新生成 `strings.g.dart`，再 `dart format` 生成文件；不要手改生成文件。
+- 改完 key 跑 `dart fushi/tool/gen_i18n.dart`（slang + `dart format`，输入没变秒退）重新生成不入库的 `strings.g.dart`；不要手改生成文件，也不要提交它（守卫 `strings_g_dart_untracked_guard_test.dart`）；不经 heavy.dart 直接跑 `flutter test` 前若刚 rebase / 解完冲突，先手动跑它。
 
 ## 验证
 

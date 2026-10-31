@@ -54,6 +54,8 @@ on:
       - '.github/workflows/build-multiplatform.yml'
       - '.github/actions/setup-fushi-anki-sync/**'
       - '.github/actions/provide-baked-secrets/**'
+      # strings.g.dart 不入库：三个 app job 编译前由它生成（生成器 fushi/tool/gen_i18n.dart 在 fushi/** 里）。
+      - '.github/actions/gen-i18n/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
@@ -93,7 +95,7 @@ jobs:
   #     appSmoke 脚本、编进每个 app 的原生库（fushidicts / fushi_p2p / fushi_fsrs / fushi_compute /
   #     fushi_web_core / fushi_rwkv，各 verify_abi.sh 还读 packages/fushi_p2p / packages/fushi_srs /
   #     packages/fushi_compute / packages/fushi_web_core / packages/fushi_rwkv 的 Dart 绑定）、本文件、三个平台 job 都
-  #     uses 的本地 action，以及
+  #     uses 的本地 action（含生成不入库 strings.g.dart 的 gen-i18n 与它调的 fushi/tool/gen_i18n.dart），以及
   #     vendored 插件的 pubspec.yaml（原生依赖声明在那里）。
   #     fushi/pubspec.yaml 故意不在里面：原生插件的增删一定会改 pubspec.lock；单改它的 PR
   #     实测（09-20 以来 5 条）全是 +build 版本号、资产目录、纯 Dart 依赖。
@@ -161,7 +163,7 @@ jobs:
           echo "event=$EVENT all=$all changed files: $(wc -l < "$files")"
           cat "$files"
 
-          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|tool/vendored_binaries\.(json|py)$|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(fetch-vendored-binaries|provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute|setup-fushi-rwkv|setup-fushi-music|setup-fushi-corpus)/)'
+          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|tool/vendored_binaries\.(json|py)$|fushi/tool/gen_i18n\.dart$|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(fetch-vendored-binaries|provide-baked-secrets|gen-i18n|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute|setup-fushi-rwkv|setup-fushi-music|setup-fushi-corpus)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
@@ -312,6 +314,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # The GitHub-hosted ubuntu runner DOES ship /dev/kvm (nested virtualization
       # has been available on the standard Ubuntu images since 2023), but the
       # `runner` user is not a member of the `kvm` group, so the emulator's own
@@ -979,6 +984,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 互联 P2P 隧道（iroh）dylib：Runner 的「Bundle fushi_p2p dylib」构建阶段
       # （fushi/macos/bundle_fushi_p2p.sh）copy-if-present 进 Contents/Frameworks。
       # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以只编 arm64。
@@ -1581,6 +1589,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # Unsigned DEVICE build: needs no Development Team and links the device
       # arch of all plugins (incl. gamepads_ios / record_ios). The --simulator
       # path was wrong before — record_mp3_plus shipped a device-only static lib
@@ -1716,6 +1727,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 内置 libtorrent 引擎的 Windows DLL：vcpkg 编 libtorrent + bridge，产物落
       # native/fushi_torrent/prebuilt/windows-x64/，供下面 flutter build windows
       # 的 copy-if-present 随包（缺则跳，运行期回退 qb）。

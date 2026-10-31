@@ -264,6 +264,14 @@ void main() {
       '.github/actions/setup-fushi-compute/action.yml': apps,
       '.github/actions/setup-fushi-rwkv/action.yml': apps,
       '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
+      // strings.g.dart 不入库：三个 app job 编译前跑 gen-i18n action → fushi/tool/gen_i18n.dart，
+      // 改生成器 / action 要在三个平台上真跑一次（Windows runner 的 bash / dart 路径不同）。
+      // linux-server 不编 app（fushi_server 闭包不依赖 package:fushi），不跑生成。
+      '.github/actions/gen-i18n/action.yml': apps,
+      'fushi/tool/gen_i18n.dart': apps,
+      // i18n json / slang 配置只改 Dart 生成物，同「只改 Dart」：main.yml 的 analyze + 全量测试兜底。
+      'fushi/lib/i18n/en.i18n.json': <String>{},
+      'fushi/slang.yaml': <String>{},
     };
     final List<String> wrong = <String>[
       for (final MapEntry<String, Set<String>> c in cases.entries)

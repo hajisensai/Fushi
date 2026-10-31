@@ -66,6 +66,9 @@ jobs:
       - name: Apply pub cache patches
         shell: bash
         run: bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 只给 test/goldens 目录：裸 `--tags golden` 会让 flutter test 把 test/ 下全部
       # ~3.5k 个 suite 逐个编译加载来找标签（首轮实测：编译约 27 分钟，43 张 40 秒跑完后进程又空转
       # 十几分钟，撞 45 分钟超时被取消）。代价是 golden 必须放在 test/goldens 下——
