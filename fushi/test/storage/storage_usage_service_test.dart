@@ -1044,4 +1044,95 @@ void main() {
       expect(formatStorageBytes(200 * 1024 * 1024), '200 MB');
     });
   });
+
+  group('resolveStorageCacheRoots（反馈 UjgERnk4jd：macOS 共享 Caches）', () {
+    test('macOS 只扫本 app 专属缓存目录，从不碰共享临时根', () async {
+      // 未沙盒 macOS：临时根 = 全用户共享的 ~/Library/Caches，
+      // 专属缓存 = ~/Library/Caches/<bundle id>。
+      final Directory sharedCaches = Directory(p.join(tempRoot.path, 'Caches'))
+        ..createSync();
+      final Directory owned = Directory(
+        p.join(sharedCaches.path, 'app.fushi.reader'),
+      )..createSync();
+      writeFile(p.join(sharedCaches.path, 'com.spotify.client', 'x.bin'), 9000);
+      writeFile(p.join(sharedCaches.path, 'Google', 'Chrome', 'y.bin'), 7000);
+      writeFile(p.join(owned.path, 'remote_cover_cache', 'a.jpg'), 300);
+      int tempCalls = 0;
+      int systemTempCalls = 0;
+
+      final List<Directory> roots = await resolveStorageCacheRoots(
+        platform: StorageCacheRootPlatform.macOS,
+        tempRoot: () async {
+          tempCalls++;
+          return sharedCaches;
+        },
+        systemTemp: () {
+          systemTempCalls++;
+          return sharedCaches;
+        },
+        appCacheRoot: () async => owned,
+      );
+
+      expect(roots.map((Directory d) => d.path), <String>[owned.path]);
+      expect(tempCalls, 0);
+      expect(systemTempCalls, 0);
+
+      // 端到端：按这组根扫出来的「缓存」类目里没有别的 app 的目录，
+      // 也就没有能删到它们的派生文件条目。
+      final List<StorageCategoryUsage> all =
+          await StorageUsageService(
+                documentsRoot: () async => docs,
+                supportRoot: () async => support,
+                cacheRoots: () async => roots,
+                documentsRootIsFushiOwned: () async => true,
+              )
+              .scanCategories(
+                books: const <StorageBookRef>[],
+                dictionaryNames: const <String>[],
+              )
+              .toList();
+      final StorageCategoryUsage cached = all.firstWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.cache,
+      );
+      expect(cached.bytes, 300);
+      for (final StorageEntryUsage entry in cached.entries) {
+        for (final String path in entry.paths) {
+          expect(p.isWithin(owned.path, path), isTrue, reason: path);
+        }
+      }
+    });
+
+    test('Windows / Linux 共享临时目录：一个根都不扫', () async {
+      final List<Directory> roots = await resolveStorageCacheRoots(
+        platform: StorageCacheRootPlatform.sharedTempDesktop,
+        tempRoot: () async => fail('不该解析临时根'),
+        systemTemp: () => fail('不该解析 systemTemp'),
+        appCacheRoot: () async => fail('不该解析缓存根'),
+      );
+      expect(roots, isEmpty);
+    });
+
+    test('iOS / Android 沙盒：临时根 + systemTemp，相同则去重', () async {
+      final Directory caches = Directory(p.join(tempRoot.path, 'Library'));
+      final Directory tmp = Directory(p.join(tempRoot.path, 'tmp'));
+      final List<Directory> both = await resolveStorageCacheRoots(
+        platform: StorageCacheRootPlatform.sandboxedMobile,
+        tempRoot: () async => caches,
+        systemTemp: () => tmp,
+        appCacheRoot: () async => fail('沙盒平台不需要专属缓存根'),
+      );
+      expect(both.map((Directory d) => d.path), <String>[
+        caches.path,
+        tmp.path,
+      ]);
+
+      final List<Directory> same = await resolveStorageCacheRoots(
+        platform: StorageCacheRootPlatform.sandboxedMobile,
+        tempRoot: () async => caches,
+        systemTemp: () => Directory(caches.path),
+        appCacheRoot: () async => fail('沙盒平台不需要专属缓存根'),
+      );
+      expect(same.map((Directory d) => d.path), <String>[caches.path]);
+    });
+  });
 }

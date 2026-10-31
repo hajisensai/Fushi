@@ -1,0 +1,6 @@
+## BUG-3894 · macos-storage-shared-caches
+- **报告**：2026-10-29（群反馈 UjgERnk4jd，经 fushi-bot 代提交：「fushi 的磁盘占用把 spotify、chrome 的缓存都算进去了」）
+- **真实性**：✅ 真 bug（根因 `fushi/lib/src/storage/storage_usage_service.dart` `_defaultCacheRoots`：macOS 分支把 `AppPaths.tempRootDirectory()`（`app_paths.dart` `_resolveTempRoot` → `getTemporaryDirectory()`）当成 app 私有缓存扫；macOS 发布版已去沙盒（`Release.entitlements`），path_provider_foundation 2.5.1 的 temp = `NSCachesDirectory` 且**不**追加 bundle id，即全用户共享的 `~/Library/Caches`。缓存条目是 `derivedFile`，存储页能删到别的 app 的缓存目录）
+- **[x] ① 已修复** — 抽出纯函数 `resolveStorageCacheRoots`：macOS 只扫 `AppPaths.appCacheRootDirectory()`（`getApplicationCacheDirectory()`，macOS 上追加 bundle id，只属于 Fushi），不再碰共享临时根与 systemTemp；iOS/Android、Windows/Linux 行为不变（分支 pr/fb-macos-storage-cache）
+- **[x] ② 已加自动化测试** — `fushi/test/storage/storage_usage_service_test.dart` group `resolveStorageCacheRoots`（模拟共享 Caches 里放 Spotify/Chrome 目录，断言 macOS 根只含专属目录、扫出的缓存条目全部落在专属目录内且不解析临时根；另两种平台的根选择）
+- **备注**：取舍——直接写在共享 `~/Library/Caches` 根下的 Fushi 临时文件 / 遗留备份包在 macOS 上不再进统计（与 Windows/Linux 同口径：少报，绝不把别人的东西算成并删成自己的）。把 macOS 临时根整体迁到专属子目录是更大的改动（40+ 处直接调 `getTemporaryDirectory()`），未做。path_provider_foundation 2.6.0 起 macOS temp 自身就会追加 bundle id。未在 Mac 真机打开存储页复看。
