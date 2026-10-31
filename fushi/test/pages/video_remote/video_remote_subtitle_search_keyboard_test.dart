@@ -1,18 +1,9 @@
-// 横屏手机 + 软键盘：「在线搜索字幕」弹层的搜索框必须完整可见、不溢出。
+// 「在线搜索字幕」弹层的高度适配：
 //
-// 现象（用户截图）：横屏播视频时点「问 AI」，输入框自动聚焦弹出键盘，浮动面板被
-// 压成 ~130dp 的一条，标题栏 + 上下文 chip 把高度吃光，对话列表高度为 0、输入框被
-// 裁掉，既不能输入也不能滚动。
-//
-// 断言：键盘上方的浮层里，输入框完整可见、对话列表仍有可读高度。
-// 设了 `FUSHI_PREVIEW_OUT=<目录>` 还会写 PNG（`FUSHI_PREVIEW_SUFFIX` 给 before / after）。
-import 'dart:io';
-import 'dart:ui' as ui;
-
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show FontLoader;
-
-import 'package:flutter/rendering.dart';
+// - 横屏手机 + 软键盘（弹层正文只剩 ~110dp）：不溢出，搜索行完整在键盘上方，
+//   搜索行并进结果的滚动视口一起滚。
+// - 高度够时：搜索行固定在结果上方，滚结果不会把搜索行滚走；结果是懒构建的。
+// - 键盘弹起触发两种排法切换时，搜索行原样搬家，输入焦点不丢。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -20,140 +11,212 @@ import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtit
 import 'package:fushi/utils.dart';
 import 'package:material_ui/material_ui.dart';
 
-final String? _outDir = Platform.environment['FUSHI_PREVIEW_OUT'];
-String get _suffix => Platform.environment['FUSHI_PREVIEW_SUFFIX'] ?? 'shot';
+const ValueKey<String> _queryKey = ValueKey<String>(
+  'video-remote-subtitle-search-query',
+);
+const ValueKey<String> _headerKey = ValueKey<String>(
+  'video-remote-subtitle-search-header',
+);
+const ValueKey<String> _scrollKey = ValueKey<String>(
+  'video-remote-subtitle-search-scroll',
+);
 
-const String _latinFamily = 'FushiPreview';
-
-void main() {
-  setUpAll(() async {
-    if (_outDir == null || _outDir!.isEmpty) return;
-    final FontLoader latin = FontLoader(_latinFamily);
-    final String root =
-        Platform.environment['FLUTTER_ROOT'] ?? 'D:/flutter_sdk/flutter_3.47.6';
-    for (final String w in <String>['Regular', 'Medium', 'Bold']) {
-      final File f = File(
-        '$root/bin/cache/artifacts/material_fonts/Roboto-$w.ttf',
-      );
-      if (f.existsSync()) {
-        latin.addFont(
-          Future<ByteData>.value(ByteData.sublistView(f.readAsBytesSync())),
-        );
-      }
-    }
-    await latin.load();
-    for (final (String family, String path) in <(String, String)>[
-      ('FushiSymbols', 'assets/icon_fonts/FushiSymbolsRounded.ttf'),
-      ('FushiSymbolsFilled', 'assets/icon_fonts/FushiSymbolsRoundedFilled.ttf'),
-    ]) {
-      if (File(path).existsSync()) {
-        await (FontLoader(family)..addFont(
-              Future<ByteData>.value(
-                ByteData.sublistView(File(path).readAsBytesSync()),
-              ),
-            ))
-            .load();
-      }
-    }
-  });
-
-  testWidgets('landscape phone + keyboard: search fields stay visible', (
-    WidgetTester tester,
-  ) async {
-    const double dpr = 2.75;
-    const Size logical = Size(800, 360);
-    const double keyboard = 200;
-    tester.view.devicePixelRatio = dpr;
-    tester.view.physicalSize = logical * dpr;
-    tester.view.viewInsets = const FakeViewPadding(bottom: keyboard * dpr);
-    addTearDown(tester.view.reset);
-
-    const Key boundaryKey = ValueKey<String>('preview-boundary');
-    final ThemeData base = buildFushiThemeData(
-      scheme: buildFushiColorScheme(
-        seedColor: kFushiDefaultSeed,
-        brightness: Brightness.light,
-      ),
-      designSystem: FushiDesignSystem.auto,
-      glassDesign: false,
-      textTheme: FushiTypeScale.buildTextTheme(
-        const TextStyle(fontFamily: _latinFamily),
-      ),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: base.copyWith(platform: TargetPlatform.android),
-        builder: (BuildContext context, Widget? app) => RepaintBoundary(
-          key: boundaryKey,
-          child: FushiFocusRoot(child: app!),
+List<VideoRemoteSubtitleCandidate> _candidates(int count) =>
+    <VideoRemoteSubtitleCandidate>[
+      for (int i = 0; i < count; i++)
+        VideoRemoteSubtitleCandidate(
+          id: '$i',
+          fileName: 'frieren_${i.toString().padLeft(2, '0')}.ja.srt',
+          provider: 'jimaku',
+          language: 'ja',
         ),
-        home: Builder(
-          builder: (BuildContext context) => Scaffold(
-            backgroundColor: const Color(0xFF000000),
-            body: Center(
-              child: TextButton(
-                onPressed: () => showVideoRemoteSubtitleSearchSheet(
-                  context: context,
-                  search: (String? q, int? e) async =>
-                      const VideoRemoteSubtitleSearchResult(
-                        query: 'Frieren',
-                        episode: 3,
-                        candidates: <VideoRemoteSubtitleCandidate>[
-                          VideoRemoteSubtitleCandidate(
-                            id: '1',
-                            fileName: 'frieren_03.ja.srt',
-                            provider: 'jimaku',
-                            language: 'ja',
-                          ),
-                          VideoRemoteSubtitleCandidate(
-                            id: '2',
-                            fileName: 'frieren_03.en.srt',
-                            provider: 'jimaku',
-                            language: 'en',
-                          ),
-                        ],
-                      ),
-                  download: (_) async {},
-                  errorText: (Object e) => '$e',
-                ),
-                child: const Text('open'),
+    ];
+
+void _setView(WidgetTester tester, Size logical, {double keyboard = 0}) {
+  const double dpr = 2.75;
+  tester.view.devicePixelRatio = dpr;
+  tester.view.physicalSize = logical * dpr;
+  tester.view.viewInsets = FakeViewPadding(bottom: keyboard * dpr);
+}
+
+/// [focusRoot] = 外包 [FushiFocusRoot]（真 app 的焦点根）。竖屏底部弹层挂上它时，
+/// 实测主焦点落在集号输入框的「粘贴」尾钮上，打开过程中报「Invisible
+/// SemanticsNodes」断言；这在 develop（本弹层改排版之前的 Column 版）上同样复现，
+/// 是与本弹层排版无关的独立问题，另案处理。本用例只验排版，不挂焦点根。
+Future<void> _openSheet(
+  WidgetTester tester,
+  int resultCount, {
+  bool focusRoot = true,
+}) async {
+  final ThemeData base = buildFushiThemeData(
+    scheme: buildFushiColorScheme(
+      seedColor: kFushiDefaultSeed,
+      brightness: Brightness.light,
+    ),
+    designSystem: FushiDesignSystem.auto,
+    glassDesign: false,
+    textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: base.copyWith(platform: TargetPlatform.android),
+      builder: (BuildContext context, Widget? app) =>
+          focusRoot ? FushiFocusRoot(child: app!) : app!,
+      home: Builder(
+        builder: (BuildContext context) => Scaffold(
+          body: Center(
+            child: TextButton(
+              onPressed: () => showVideoRemoteSubtitleSearchSheet(
+                context: context,
+                search: (String? q, int? e) async =>
+                    VideoRemoteSubtitleSearchResult(
+                      query: 'Frieren',
+                      episode: 3,
+                      candidates: _candidates(resultCount),
+                    ),
+                download: (_) async {},
+                errorText: (Object e) => '$e',
               ),
+              child: const Text('open'),
             ),
           ),
         ),
       ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    ),
+  );
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+}
 
-    if (_outDir != null && _outDir!.isNotEmpty) {
-      final RenderRepaintBoundary boundary = tester
-          .renderObject<RenderRepaintBoundary>(find.byKey(boundaryKey));
-      final ui.Image image = (await tester.runAsync(
-        () => boundary.toImage(pixelRatio: dpr),
-      ))!;
-      final ByteData? data = await tester.runAsync<ByteData?>(
-        () => image.toByteData(format: ui.ImageByteFormat.png),
-      );
-      image.dispose();
-      final Directory out = Directory(_outDir!)..createSync(recursive: true);
-      File(
-        '${out.path}/subtitle_search_landscape_keyboard_$_suffix.png',
-      ).writeAsBytesSync(data!.buffer.asUint8List());
-    }
+bool _headerInsideScroll() => find
+    .descendant(of: find.byKey(_scrollKey), matching: find.byKey(_headerKey))
+    .evaluate()
+    .isNotEmpty;
 
-    expect(tester.takeException(), isNull, reason: 'no layout overflow');
-    for (final String key in <String>[
-      'video-remote-subtitle-search-episode',
-      'video-remote-subtitle-search-go',
-    ]) {
-      final Rect r = tester.getRect(find.byKey(ValueKey<String>(key)));
+void main() {
+  testWidgets(
+    'landscape phone + keyboard: no overflow, search row above keyboard',
+    (WidgetTester tester) async {
+      const Size logical = Size(800, 360);
+      const double keyboard = 200;
+      _setView(tester, logical, keyboard: keyboard);
+      addTearDown(tester.view.reset);
+
+      await _openSheet(tester, 2);
+
+      expect(tester.takeException(), isNull, reason: 'no layout overflow');
       expect(
-        r.bottom,
-        lessThanOrEqualTo(logical.height - keyboard + 0.5),
-        reason: '$key must sit above the keyboard',
+        _headerInsideScroll(),
+        isTrue,
+        reason: 'too short to pin: search row scrolls with the results',
       );
-    }
+      for (final String key in <String>[
+        'video-remote-subtitle-search-query',
+        'video-remote-subtitle-search-episode',
+        'video-remote-subtitle-search-go',
+      ]) {
+        final Rect r = tester.getRect(find.byKey(ValueKey<String>(key)));
+        expect(
+          r.bottom,
+          lessThanOrEqualTo(logical.height - keyboard + 0.5),
+          reason: '$key must sit above the keyboard',
+        );
+      }
+    },
+  );
+
+  testWidgets(
+    'tall viewport: search row stays pinned while many results scroll, '
+    'results are built lazily',
+    (WidgetTester tester) async {
+      const Size logical = Size(400, 900);
+      _setView(tester, logical);
+      addTearDown(tester.view.reset);
+
+      const int count = 60;
+      await _openSheet(tester, count, focusRoot: false);
+      expect(tester.takeException(), isNull);
+      expect(_headerInsideScroll(), isFalse, reason: 'header pinned above');
+
+      // 懒构建：60 行远超视口，末尾的行不应被建出来。
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-remote-subtitle-${count - 1}'),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
+      final RegExp tileKey = RegExp(r'^video-remote-subtitle-\d+$');
+      final int built = find
+          .byWidgetPredicate(
+            (Widget w) =>
+                w.key is ValueKey<String> &&
+                tileKey.hasMatch((w.key! as ValueKey<String>).value),
+            skipOffstage: false,
+          )
+          .evaluate()
+          .length;
+      expect(built, greaterThan(0));
+      expect(built, lessThan(count));
+
+      final Rect queryBefore = tester.getRect(find.byKey(_queryKey));
+      final Rect firstBefore = tester.getRect(
+        find.byKey(const ValueKey<String>('video-remote-subtitle-0')),
+      );
+      await tester.drag(find.byKey(_scrollKey), const Offset(0, -400));
+      await tester.pumpAndSettle();
+
+      // 结果确实滚了：第一行上移 / 已移出。
+      final Finder first = find.byKey(
+        const ValueKey<String>('video-remote-subtitle-0'),
+      );
+      if (first.evaluate().isNotEmpty) {
+        expect(tester.getRect(first).top, lessThan(firstBefore.top - 100));
+      }
+      // 搜索行原地不动、仍完整在屏幕内。
+      final Rect queryAfter = tester.getRect(find.byKey(_queryKey));
+      expect(queryAfter, queryBefore);
+      expect(queryAfter.top, greaterThanOrEqualTo(0));
+      expect(queryAfter.bottom, lessThanOrEqualTo(logical.height));
+      expect(find.byKey(_queryKey).hitTestable(), findsOneWidget);
+    },
+  );
+
+  testWidgets('keyboard opening moves the search row without losing focus', (
+    WidgetTester tester,
+  ) async {
+    const Size logical = Size(800, 700);
+    _setView(tester, logical);
+    addTearDown(tester.view.reset);
+
+    await _openSheet(tester, 20);
+    expect(_headerInsideScroll(), isFalse);
+
+    await tester.showKeyboard(find.byKey(_queryKey));
+    await tester.pump();
+    final EditableTextState before = tester.state<EditableTextState>(
+      find.descendant(
+        of: find.byKey(_queryKey),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(before.widget.focusNode.hasFocus, isTrue);
+
+    // 键盘升起：弹层正文变矮，搜索行改为并进滚动视口。
+    _setView(tester, logical, keyboard: 450);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(_headerInsideScroll(), isTrue);
+
+    final EditableTextState after = tester.state<EditableTextState>(
+      find.descendant(
+        of: find.byKey(_queryKey),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(identical(after, before), isTrue, reason: 'same field state');
+    expect(after.widget.focusNode.hasFocus, isTrue, reason: 'focus kept');
+    expect(after.widget.controller.text, 'Frieren');
   });
 }
