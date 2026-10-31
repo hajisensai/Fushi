@@ -62,7 +62,7 @@ class VideoSubtitleRegistry {
   ///
   /// 不能只报 `failures.first`：正常应答但零命中的来源不进 failures，于是「Jimaku
   /// 没搜到这部作品」会被另一家的超时盖住，用户看到「超时」去查网络，真正该查的
-  /// 身份问题无人知晓（BUG-3892）。
+  /// 身份问题无人知晓（BUG-3926）。
   String describeEmptySearch(
     ProviderBatchResult<VideoSubtitleCandidate> result,
   ) {

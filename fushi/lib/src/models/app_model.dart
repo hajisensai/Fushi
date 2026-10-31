@@ -7352,7 +7352,7 @@ class AppModel with ChangeNotifier {
             ),
     );
     for (final SubtitleBackfillTarget scraped in targets) {
-      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3892）。
+      // 刮削主源是 TMDB 时身份不带 AniList，补回下载确认的身份（BUG-3926）。
       final SubtitleBackfillTarget target = scraped.withMedia(
         await withDownloadConfirmedIdentity(
           database,
