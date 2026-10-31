@@ -15,7 +15,7 @@ class $SrsEntitiesTable extends SrsEntities
     'id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -26,7 +26,7 @@ class $SrsEntitiesTable extends SrsEntities
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _kindMeta = const VerificationMeta('kind');
@@ -129,11 +129,11 @@ class $SrsEntitiesTable extends SrsEntities
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsEntityRow(
       id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       kind: attachedDatabase.typeMapping.read(
@@ -177,8 +177,8 @@ class SrsEntityRow extends DataClass implements Insertable<SrsEntityRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['profile_uid'] = Variable<String>(profileUid);
+    map['id'] = Variable<String>(id, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
     map['kind'] = Variable<String>(kind);
     map['payload_json'] = Variable<String>(payloadJson);
     map['created_at'] = Variable<int>(createdAt);
@@ -338,10 +338,10 @@ class SrsEntitiesCompanion extends UpdateCompanion<SrsEntityRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<String>(id.value);
+      map['id'] = Variable<String>(id.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (kind.present) {
       map['kind'] = Variable<String>(kind.value);
@@ -384,7 +384,7 @@ class $SrsFieldEditsTable extends SrsFieldEdits
     'id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -395,7 +395,7 @@ class $SrsFieldEditsTable extends SrsFieldEdits
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _entityKindMeta = const VerificationMeta(
@@ -417,7 +417,7 @@ class $SrsFieldEditsTable extends SrsFieldEdits
     'entity_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _fieldKeyMeta = const VerificationMeta(
@@ -439,7 +439,7 @@ class $SrsFieldEditsTable extends SrsFieldEdits
     'writer_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _seqMeta = const VerificationMeta('seq');
@@ -554,11 +554,11 @@ class $SrsFieldEditsTable extends SrsFieldEdits
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsFieldEditRow(
       id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       entityKind: attachedDatabase.typeMapping.read(
@@ -566,7 +566,7 @@ class $SrsFieldEditsTable extends SrsFieldEdits
         data['${effectivePrefix}entity_kind'],
       )!,
       entityId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}entity_id'],
       )!,
       fieldKey: attachedDatabase.typeMapping.read(
@@ -574,7 +574,7 @@ class $SrsFieldEditsTable extends SrsFieldEdits
         data['${effectivePrefix}field_key'],
       )!,
       writerId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}writer_id'],
       )!,
       seq: attachedDatabase.typeMapping.read(
@@ -618,12 +618,12 @@ class SrsFieldEditRow extends DataClass implements Insertable<SrsFieldEditRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['profile_uid'] = Variable<String>(profileUid);
+    map['id'] = Variable<String>(id, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
     map['entity_kind'] = Variable<String>(entityKind);
-    map['entity_id'] = Variable<String>(entityId);
+    map['entity_id'] = Variable<String>(entityId, srsIdType);
     map['field_key'] = Variable<String>(fieldKey);
-    map['writer_id'] = Variable<String>(writerId);
+    map['writer_id'] = Variable<String>(writerId, srsIdType);
     map['seq'] = Variable<int>(seq);
     map['json'] = Variable<String>(json);
     return map;
@@ -840,22 +840,22 @@ class SrsFieldEditsCompanion extends UpdateCompanion<SrsFieldEditRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<String>(id.value);
+      map['id'] = Variable<String>(id.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (entityKind.present) {
       map['entity_kind'] = Variable<String>(entityKind.value);
     }
     if (entityId.present) {
-      map['entity_id'] = Variable<String>(entityId.value);
+      map['entity_id'] = Variable<String>(entityId.value, srsIdType);
     }
     if (fieldKey.present) {
       map['field_key'] = Variable<String>(fieldKey.value);
     }
     if (writerId.present) {
-      map['writer_id'] = Variable<String>(writerId.value);
+      map['writer_id'] = Variable<String>(writerId.value, srsIdType);
     }
     if (seq.present) {
       map['seq'] = Variable<int>(seq.value);
@@ -898,7 +898,7 @@ class $SrsReviewLogsTable extends SrsReviewLogs
     'id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -909,7 +909,7 @@ class $SrsReviewLogsTable extends SrsReviewLogs
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _cardIdMeta = const VerificationMeta('cardId');
@@ -918,7 +918,7 @@ class $SrsReviewLogsTable extends SrsReviewLogs
     'card_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _kindMeta = const VerificationMeta('kind');
@@ -1099,15 +1099,15 @@ class $SrsReviewLogsTable extends SrsReviewLogs
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsReviewLogRow(
       id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       cardId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}card_id'],
       )!,
       kind: attachedDatabase.typeMapping.read(
@@ -1173,9 +1173,9 @@ class SrsReviewLogRow extends DataClass implements Insertable<SrsReviewLogRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['profile_uid'] = Variable<String>(profileUid);
-    map['card_id'] = Variable<String>(cardId);
+    map['id'] = Variable<String>(id, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
+    map['card_id'] = Variable<String>(cardId, srsIdType);
     map['kind'] = Variable<String>(kind);
     if (!nullToAbsent || rating != null) {
       map['rating'] = Variable<int>(rating);
@@ -1437,13 +1437,13 @@ class SrsReviewLogsCompanion extends UpdateCompanion<SrsReviewLogRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<String>(id.value);
+      map['id'] = Variable<String>(id.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (cardId.present) {
-      map['card_id'] = Variable<String>(cardId.value);
+      map['card_id'] = Variable<String>(cardId.value, srsIdType);
     }
     if (kind.present) {
       map['kind'] = Variable<String>(kind.value);
@@ -1503,7 +1503,7 @@ class $SrsUnknownEventsTable extends SrsUnknownEvents
     'id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -1514,7 +1514,7 @@ class $SrsUnknownEventsTable extends SrsUnknownEvents
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _jsonMeta = const VerificationMeta('json');
@@ -1571,11 +1571,11 @@ class $SrsUnknownEventsTable extends SrsUnknownEvents
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsUnknownEventRow(
       id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       json: attachedDatabase.typeMapping.read(
@@ -1604,8 +1604,8 @@ class SrsUnknownEventRow extends DataClass
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['profile_uid'] = Variable<String>(profileUid);
+    map['id'] = Variable<String>(id, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
     map['json'] = Variable<String>(json);
     return map;
   }
@@ -1727,10 +1727,10 @@ class SrsUnknownEventsCompanion extends UpdateCompanion<SrsUnknownEventRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<String>(id.value);
+      map['id'] = Variable<String>(id.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (json.present) {
       map['json'] = Variable<String>(json.value);
@@ -1767,7 +1767,7 @@ class $SrsEventLocalTable extends SrsEventLocal
     'event_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -1778,7 +1778,7 @@ class $SrsEventLocalTable extends SrsEventLocal
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _outboxSeqMeta = const VerificationMeta(
@@ -1879,11 +1879,11 @@ class $SrsEventLocalTable extends SrsEventLocal
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsEventLocalRow(
       eventId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}event_id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       outboxSeq: attachedDatabase.typeMapping.read(
@@ -1928,8 +1928,8 @@ class SrsEventLocalRow extends DataClass
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['event_id'] = Variable<String>(eventId);
-    map['profile_uid'] = Variable<String>(profileUid);
+    map['event_id'] = Variable<String>(eventId, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
     if (!nullToAbsent || outboxSeq != null) {
       map['outbox_seq'] = Variable<int>(outboxSeq);
     }
@@ -2098,10 +2098,10 @@ class SrsEventLocalCompanion extends UpdateCompanion<SrsEventLocalRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (eventId.present) {
-      map['event_id'] = Variable<String>(eventId.value);
+      map['event_id'] = Variable<String>(eventId.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (outboxSeq.present) {
       map['outbox_seq'] = Variable<int>(outboxSeq.value);
@@ -2146,7 +2146,7 @@ class $SrsLocalStateTable extends SrsLocalState
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _jsonMeta = const VerificationMeta('json');
@@ -2198,7 +2198,7 @@ class $SrsLocalStateTable extends SrsLocalState
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsLocalStateRow(
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       json: attachedDatabase.typeMapping.read(
@@ -2222,7 +2222,7 @@ class SrsLocalStateRow extends DataClass
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['profile_uid'] = Variable<String>(profileUid);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
     map['json'] = Variable<String>(json);
     return map;
   }
@@ -2329,7 +2329,7 @@ class SrsLocalStateCompanion extends UpdateCompanion<SrsLocalStateRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (json.present) {
       map['json'] = Variable<String>(json.value);
@@ -2365,7 +2365,7 @@ class $SrsSentBatchesTable extends SrsSentBatches
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _writerIdMeta = const VerificationMeta(
@@ -2376,7 +2376,7 @@ class $SrsSentBatchesTable extends SrsSentBatches
     'writer_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _batchNoMeta = const VerificationMeta(
@@ -2455,11 +2455,11 @@ class $SrsSentBatchesTable extends SrsSentBatches
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsSentBatchRow(
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       writerId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}writer_id'],
       )!,
       batchNo: attachedDatabase.typeMapping.read(
@@ -2497,8 +2497,8 @@ class SrsSentBatchRow extends DataClass implements Insertable<SrsSentBatchRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['profile_uid'] = Variable<String>(profileUid);
-    map['writer_id'] = Variable<String>(writerId);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
+    map['writer_id'] = Variable<String>(writerId, srsIdType);
     map['batch_no'] = Variable<int>(batchNo);
     map['bytes'] = Variable<Uint8List>(bytes);
     return map;
@@ -2645,10 +2645,10 @@ class SrsSentBatchesCompanion extends UpdateCompanion<SrsSentBatchRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (writerId.present) {
-      map['writer_id'] = Variable<String>(writerId.value);
+      map['writer_id'] = Variable<String>(writerId.value, srsIdType);
     }
     if (batchNo.present) {
       map['batch_no'] = Variable<int>(batchNo.value);
@@ -2687,7 +2687,7 @@ class $SrsNotesCacheTable extends SrsNotesCache
     'id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -2698,7 +2698,7 @@ class $SrsNotesCacheTable extends SrsNotesCache
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _noteTypeIdMeta = const VerificationMeta(
@@ -2709,7 +2709,7 @@ class $SrsNotesCacheTable extends SrsNotesCache
     'note_type_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _guidMeta = const VerificationMeta('guid');
@@ -2738,7 +2738,7 @@ class $SrsNotesCacheTable extends SrsNotesCache
     'deck_id',
     aliasedName,
     true,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _deletedAtMeta = const VerificationMeta(
@@ -2975,15 +2975,15 @@ class $SrsNotesCacheTable extends SrsNotesCache
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsNoteCacheRow(
       id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       noteTypeId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}note_type_id'],
       )!,
       guid: attachedDatabase.typeMapping.read(
@@ -2995,7 +2995,7 @@ class $SrsNotesCacheTable extends SrsNotesCache
         data['${effectivePrefix}created_at'],
       )!,
       deckId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}deck_id'],
       ),
       deletedAt: attachedDatabase.typeMapping.read(
@@ -3081,13 +3081,13 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['profile_uid'] = Variable<String>(profileUid);
-    map['note_type_id'] = Variable<String>(noteTypeId);
+    map['id'] = Variable<String>(id, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
+    map['note_type_id'] = Variable<String>(noteTypeId, srsIdType);
     map['guid'] = Variable<String>(guid);
     map['created_at'] = Variable<int>(createdAt);
     if (!nullToAbsent || deckId != null) {
-      map['deck_id'] = Variable<String>(deckId);
+      map['deck_id'] = Variable<String>(deckId, srsIdType);
     }
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<int>(deletedAt);
@@ -3414,13 +3414,13 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<String>(id.value);
+      map['id'] = Variable<String>(id.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (noteTypeId.present) {
-      map['note_type_id'] = Variable<String>(noteTypeId.value);
+      map['note_type_id'] = Variable<String>(noteTypeId.value, srsIdType);
     }
     if (guid.present) {
       map['guid'] = Variable<String>(guid.value);
@@ -3429,7 +3429,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
       map['created_at'] = Variable<int>(createdAt.value);
     }
     if (deckId.present) {
-      map['deck_id'] = Variable<String>(deckId.value);
+      map['deck_id'] = Variable<String>(deckId.value, srsIdType);
     }
     if (deletedAt.present) {
       map['deleted_at'] = Variable<int>(deletedAt.value);
@@ -3496,7 +3496,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     'id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -3507,7 +3507,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _noteIdMeta = const VerificationMeta('noteId');
@@ -3516,7 +3516,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     'note_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _templateIdMeta = const VerificationMeta(
@@ -3527,7 +3527,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     'template_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _clozeOrdMeta = const VerificationMeta(
@@ -3548,7 +3548,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     'deck_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _suspendedMeta = const VerificationMeta(
@@ -3701,7 +3701,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     'last_log_id',
     aliasedName,
     true,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _schedulerMeta = const VerificationMeta(
@@ -3965,19 +3965,19 @@ class $SrsCardsCacheTable extends SrsCardsCache
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsCardCacheRow(
       id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       noteId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}note_id'],
       )!,
       templateId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}template_id'],
       )!,
       clozeOrd: attachedDatabase.typeMapping.read(
@@ -3985,7 +3985,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
         data['${effectivePrefix}cloze_ord'],
       )!,
       deckId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}deck_id'],
       )!,
       suspended: attachedDatabase.typeMapping.read(
@@ -4041,7 +4041,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
         data['${effectivePrefix}last_reviewed_at'],
       ),
       lastLogId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}last_log_id'],
       ),
       scheduler: attachedDatabase.typeMapping.read(
@@ -4136,12 +4136,12 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['profile_uid'] = Variable<String>(profileUid);
-    map['note_id'] = Variable<String>(noteId);
-    map['template_id'] = Variable<String>(templateId);
+    map['id'] = Variable<String>(id, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
+    map['note_id'] = Variable<String>(noteId, srsIdType);
+    map['template_id'] = Variable<String>(templateId, srsIdType);
     map['cloze_ord'] = Variable<int>(clozeOrd);
-    map['deck_id'] = Variable<String>(deckId);
+    map['deck_id'] = Variable<String>(deckId, srsIdType);
     map['suspended'] = Variable<bool>(suspended);
     if (!nullToAbsent || buriedUntilDay != null) {
       map['buried_until_day'] = Variable<int>(buriedUntilDay);
@@ -4168,7 +4168,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       map['last_reviewed_at'] = Variable<int>(lastReviewedAt);
     }
     if (!nullToAbsent || lastLogId != null) {
-      map['last_log_id'] = Variable<String>(lastLogId);
+      map['last_log_id'] = Variable<String>(lastLogId, srsIdType);
     }
     map['scheduler'] = Variable<String>(scheduler);
     map['note_created_at'] = Variable<int>(noteCreatedAt);
@@ -4679,22 +4679,22 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (id.present) {
-      map['id'] = Variable<String>(id.value);
+      map['id'] = Variable<String>(id.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (noteId.present) {
-      map['note_id'] = Variable<String>(noteId.value);
+      map['note_id'] = Variable<String>(noteId.value, srsIdType);
     }
     if (templateId.present) {
-      map['template_id'] = Variable<String>(templateId.value);
+      map['template_id'] = Variable<String>(templateId.value, srsIdType);
     }
     if (clozeOrd.present) {
       map['cloze_ord'] = Variable<int>(clozeOrd.value);
     }
     if (deckId.present) {
-      map['deck_id'] = Variable<String>(deckId.value);
+      map['deck_id'] = Variable<String>(deckId.value, srsIdType);
     }
     if (suspended.present) {
       map['suspended'] = Variable<bool>(suspended.value);
@@ -4736,7 +4736,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
       map['last_reviewed_at'] = Variable<int>(lastReviewedAt.value);
     }
     if (lastLogId.present) {
-      map['last_log_id'] = Variable<String>(lastLogId.value);
+      map['last_log_id'] = Variable<String>(lastLogId.value, srsIdType);
     }
     if (scheduler.present) {
       map['scheduler'] = Variable<String>(scheduler.value);
@@ -4801,7 +4801,7 @@ class $SrsStatReviewsTable extends SrsStatReviews
     'log_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _profileUidMeta = const VerificationMeta(
@@ -4812,7 +4812,7 @@ class $SrsStatReviewsTable extends SrsStatReviews
     'profile_uid',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _cardIdMeta = const VerificationMeta('cardId');
@@ -4821,7 +4821,7 @@ class $SrsStatReviewsTable extends SrsStatReviews
     'card_id',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: srsIdType,
     requiredDuringInsert: true,
   );
   static const VerificationMeta _occurredAtMeta = const VerificationMeta(
@@ -5013,15 +5013,15 @@ class $SrsStatReviewsTable extends SrsStatReviews
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SrsStatReviewRow(
       logId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}log_id'],
       )!,
       profileUid: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}profile_uid'],
       )!,
       cardId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
+        srsIdType,
         data['${effectivePrefix}card_id'],
       )!,
       occurredAt: attachedDatabase.typeMapping.read(
@@ -5093,9 +5093,9 @@ class SrsStatReviewRow extends DataClass
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['log_id'] = Variable<String>(logId);
-    map['profile_uid'] = Variable<String>(profileUid);
-    map['card_id'] = Variable<String>(cardId);
+    map['log_id'] = Variable<String>(logId, srsIdType);
+    map['profile_uid'] = Variable<String>(profileUid, srsIdType);
+    map['card_id'] = Variable<String>(cardId, srsIdType);
     map['occurred_at'] = Variable<int>(occurredAt);
     map['utc_offset_min'] = Variable<int>(utcOffsetMin);
     if (!nullToAbsent || rating != null) {
@@ -5361,13 +5361,13 @@ class SrsStatReviewsCompanion extends UpdateCompanion<SrsStatReviewRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     if (logId.present) {
-      map['log_id'] = Variable<String>(logId.value);
+      map['log_id'] = Variable<String>(logId.value, srsIdType);
     }
     if (profileUid.present) {
-      map['profile_uid'] = Variable<String>(profileUid.value);
+      map['profile_uid'] = Variable<String>(profileUid.value, srsIdType);
     }
     if (cardId.present) {
-      map['card_id'] = Variable<String>(cardId.value);
+      map['card_id'] = Variable<String>(cardId.value, srsIdType);
     }
     if (occurredAt.present) {
       map['occurred_at'] = Variable<int>(occurredAt.value);

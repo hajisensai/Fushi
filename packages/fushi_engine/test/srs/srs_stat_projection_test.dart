@@ -80,7 +80,9 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
       in await s.db
           .customSelect(
             'SELECT card_id, json FROM srs_review_logs WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(s.profileUid)],
+            variables: <Variable<Object>>[
+              Variable<String>(s.profileUid, srsIdType),
+            ],
           )
           .get()) {
     (byCard[r.read<String>('card_id')] ??= <SrsReviewLog>[]).add(
@@ -303,7 +305,7 @@ void main() {
         .customSelect(
           'SELECT occurred_at, duration_ms FROM srs_stat_reviews '
           'WHERE log_id = ?',
-          variables: <Variable<Object>>[Variable<String>(again.id)],
+          variables: <Variable<Object>>[Variable<String>(again.id, srsIdType)],
         )
         .getSingle();
     expect(row.read<int>('occurred_at'), now);
@@ -332,7 +334,7 @@ void main() {
   test('存量库（缓存修订号 1、投影表为空）打开时补齐', () async {
     await scenario();
     final List<String> want = await projectionRows(db);
-    expect(await cacheRev(), '6');
+    expect(await cacheRev(), '8');
     await db.customStatement('DELETE FROM srs_stat_reviews');
     await db.customStatement(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
@@ -341,7 +343,7 @@ void main() {
 
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '6');
+    expect(await cacheRev(), '8');
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
 
@@ -353,7 +355,7 @@ void main() {
     );
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '6');
+    expect(await cacheRev(), '8');
   });
 
   test('统计读取路径不读复习日志表（大量日志：240 条笔记 × 2 卡 × 4 条）', () async {

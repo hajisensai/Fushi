@@ -48,7 +48,7 @@ void main() {
     // 说明这次没有重扫库。
     final String fp = store.contentFingerprint;
     await srs.db.customStatement(
-      'UPDATE srs_notes_cache SET pending_decision = 1 WHERE id = ?',
+      'UPDATE srs_notes_cache SET pending_decision = 1 WHERE id = srs_id(?)',
       <Object>[note],
     );
     container.read(srsRevisionProvider.notifier).state++;

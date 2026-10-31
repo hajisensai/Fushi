@@ -68,11 +68,15 @@ class SrsBackupSource {
 
   String _t(String table) => '$_prefix$table';
 
+  /// ID 列的绑定：srs.db（[SrsDatabase]）里 ID 列存编码值，要走 `srsIdType`；老备份在 fushi.db 里，仍是文本。
+  Variable<String> _id(String v) =>
+      Variable<String>(v, _db is SrsDatabase ? srsIdType : null);
+
   Future<bool> _any(String table, String profileUid) async =>
       await _db
           .customSelect(
             'SELECT 1 FROM ${_t(table)} WHERE profile_uid = ? LIMIT 1',
-            variables: <Variable<Object>>[Variable<String>(profileUid)],
+            variables: <Variable<Object>>[_id(profileUid)],
           )
           .getSingleOrNull() !=
       null;
@@ -85,7 +89,7 @@ class SrsBackupSource {
     final List<QueryRow> ids = await _db
         .customSelect(
           'SELECT id FROM ${_t('srs_entities')} WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(profileUid)],
+          variables: <Variable<Object>>[_id(profileUid)],
         )
         .get();
     if (ids.any((QueryRow r) => !builtin.contains(r.read<String>('id')))) {
@@ -122,9 +126,7 @@ class SrsBackupSource {
   /// 该 profile 的全部事件（身份记录 → 修改记录 → 复习日志 → 不认识的事件），
   /// 解码方式与 [SrsDbStore.exportAll] 一致。
   Future<List<SrsEvent>> eventsOf(String profileUid) async {
-    final List<Variable<Object>> v = <Variable<Object>>[
-      Variable<String>(profileUid),
-    ];
+    final List<Variable<Object>> v = <Variable<Object>>[_id(profileUid)];
     Map<String, Object?> obj(String json) =>
         (jsonDecode(json) as Map).cast<String, Object?>();
     final List<SrsEvent> out = <SrsEvent>[];
@@ -352,7 +354,7 @@ Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
             'SELECT 1 FROM srs_entities WHERE profile_uid = ? AND kind = ? '
             'LIMIT 1',
             variables: <Variable<Object>>[
-              Variable<String>(uid),
+              Variable<String>(uid, srsIdType),
               Variable<String>(SrsEntityKind.note.wire),
             ],
           )
@@ -398,7 +400,7 @@ Future<void> _deleteProfileRows(SrsDatabase srs, String uid) =>
     srs.transaction(() async {
       for (final String table in _kSrsProfileTables) {
         await srs.customStatement(
-          'DELETE FROM $table WHERE profile_uid = ?',
+          'DELETE FROM $table WHERE profile_uid = srs_id(?)',
           <Object>[uid],
         );
       }
@@ -414,7 +416,7 @@ Future<Set<String>> _existingEventIds(SrsDatabase db, List<String> ids) async {
     );
     final String marks = List<String>.filled(chunk.length, '?').join(', ');
     final List<Variable<Object>> vars = <Variable<Object>>[
-      for (final String id in chunk) Variable<String>(id),
+      for (final String id in chunk) Variable<String>(id, srsIdType),
     ];
     for (final String table in const <String>[
       'srs_entities',

@@ -14,6 +14,13 @@ import 'package:fushi_srs/fushi_srs.dart';
 typedef SrsSqlSelect =
     Future<List<Map<String, Object?>>> Function(String sql, List<Object?> args);
 
+/// 绑定给 ID 列的参数（srs.db 里 ID 列存编码值，绑定要走 `srsIdType`）：[SrsSqlSelect] 的实现遇到它
+/// 按 ID 绑定，其它 String 照原样。
+class SrsId {
+  const SrsId(this.value);
+  final String value;
+}
+
 /// 清单里显示的计数（见 [srsBackupCounts]）。
 typedef SrsBackupCounts = ({int notes, int cards, int reviews});
 
@@ -91,19 +98,19 @@ Future<SrsBackupCounts> srsBackupCounts(
   final int notes = await count(
     'SELECT COUNT(*) AS c FROM srs_notes_cache '
     'WHERE profile_uid = ? AND deleted_at IS NULL',
-    <Object?>[profileUid],
+    <Object?>[SrsId(profileUid)],
   );
   final int cards = await count(
     'SELECT COUNT(*) AS c FROM srs_cards_cache '
     'WHERE profile_uid = ? AND hidden = 0',
-    <Object?>[profileUid],
+    <Object?>[SrsId(profileUid)],
   );
   // 有效复习 = 有评分的 review 日志里没被 undo 撤销的。只解码 undo 日志（通常很少）拿被撤销的 ID，
   // 其余全用计数查询，不把整张日志表读进内存。
   final Set<String> revoked = <String>{};
   for (final Map<String, Object?> r in await select(
     'SELECT json FROM srs_review_logs WHERE profile_uid = ? AND kind = ?',
-    <Object?>[profileUid, SrsLogKind.undo],
+    <Object?>[SrsId(profileUid), SrsLogKind.undo],
   )) {
     final Object? target = (jsonDecode(r['json']! as String) as Map)['revokes'];
     if (target is String) revoked.add(target);
@@ -112,7 +119,7 @@ Future<SrsBackupCounts> srsBackupCounts(
       'profile_uid = ? AND kind = ? AND rating IS NOT NULL';
   int reviews = await count(
     'SELECT COUNT(*) AS c FROM srs_review_logs WHERE $validReview',
-    <Object?>[profileUid, SrsLogKind.review],
+    <Object?>[SrsId(profileUid), SrsLogKind.review],
   );
   final List<String> ids = revoked.toList();
   for (int i = 0; i < ids.length; i += 500) {
@@ -121,7 +128,11 @@ Future<SrsBackupCounts> srsBackupCounts(
       'SELECT COUNT(*) AS c FROM srs_review_logs '
       'WHERE $validReview AND id IN '
       '(${List<String>.filled(chunk.length, '?').join(',')})',
-      <Object?>[profileUid, SrsLogKind.review, ...chunk],
+      <Object?>[
+        SrsId(profileUid),
+        SrsLogKind.review,
+        for (final String c in chunk) SrsId(c),
+      ],
     );
   }
   return (notes: notes, cards: cards, reviews: reviews);
@@ -144,7 +155,7 @@ Future<void> _pageRows(
       'WHERE profile_uid = ? AND rowid > ?'
       '${extraWhere == null ? '' : ' AND $extraWhere'} '
       'ORDER BY rowid LIMIT ?',
-      <Object?>[profileUid, after, pageSize],
+      <Object?>[SrsId(profileUid), after, pageSize],
     );
     if (rows.isEmpty) return;
     await onPage(rows);

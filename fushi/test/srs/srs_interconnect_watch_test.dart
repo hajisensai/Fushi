@@ -157,6 +157,55 @@ void main() {
     });
   });
 
+  // 审查 S-8：复习中几乎每答一张卡就推一轮（新小段 + 写 head + 唤醒对端）。改为最长等待批量，离开复习页立即推。
+  test('复习中按最长等待批量推送（变动不顺延），离开复习页 / 进后台立即推', () {
+    fakeAsync((FakeAsync fa) {
+      final List<Duration> at = <Duration>[];
+      bool reviewing = true;
+      final SrsLocalPush push = SrsLocalPush(
+        push: () async {
+          at.add(fa.elapsed);
+          return true;
+        },
+        batching: () => reviewing,
+        clock: () => DateTime(2026).add(fa.elapsed),
+      );
+      expect(kSrsLocalPushMaxWait, greaterThanOrEqualTo(const Duration(seconds: 30)));
+      expect(kSrsLocalPushMaxWait, lessThanOrEqualTo(const Duration(seconds: 60)));
+      // 每 5 s 答一张卡，共 3 分钟：去抖的话一张卡一轮（或一直顺延），这里是每 maxWait 一轮。
+      for (int i = 0; i < 36; i++) {
+        push.trigger();
+        fa.elapse(const Duration(seconds: 5));
+      }
+      final int expected = const Duration(minutes: 3).inSeconds ~/ kSrsLocalPushMaxWait.inSeconds;
+      expect(at.length, inInclusiveRange(expected - 1, expected + 1), reason: '$at');
+      for (int i = 1; i < at.length; i++) {
+        expect(at[i] - at[i - 1], greaterThanOrEqualTo(kSrsLocalPushMaxWait));
+      }
+      // 再答一张，然后离开复习页：不等 maxWait，立即推。
+      push.trigger();
+      fa.elapse(const Duration(seconds: 1));
+      final int before = at.length;
+      reviewing = false;
+      push.flush();
+      fa.flushMicrotasks();
+      fa.elapse(Duration.zero);
+      expect(at.length, before + 1, reason: 'flush pushes right away');
+      expect(push.pending, isFalse);
+      // 没有待推的 flush 什么都不做。
+      push.flush();
+      fa.elapse(const Duration(seconds: 1));
+      expect(at.length, before + 1);
+      // 不在复习页：普通去抖（10 s）。
+      push.trigger();
+      fa.elapse(kSrsLocalPushDebounce - const Duration(seconds: 1));
+      expect(at.length, before + 1);
+      fa.elapse(const Duration(seconds: 2));
+      expect(at.length, before + 2);
+      push.dispose();
+    });
+  });
+
   test('推送抛错与返回 false 同样退避', () {
     fakeAsync((FakeAsync fa) {
       int calls = 0;

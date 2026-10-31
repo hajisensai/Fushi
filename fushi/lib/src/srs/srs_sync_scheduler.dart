@@ -1,6 +1,6 @@
 /// 复习（SRS）同步的调度：什么时候、用哪个后端跑一轮同步 v2（`srsSync2Round`，
 /// docs/specs/2026-10-25-srs-sync-v2-design.md）。每条已认证的同步通道就是一个存储位置（同步 + 媒体用途，
-/// 设计 §6.5 的「已登录过的网盘账号直接复用」），布局 `fushi-srs/<profileUid>/v2/`。
+/// 设计 §6.5 的「已登录过的网盘账号直接复用」），布局 `fushi-srs/<profileUid>/v3/`（旧根 `v2/` 只剩围栏，见 srs_location_migration.dart）。
 ///
 /// 三个触发点，都只在复习模块开着时存在（由 `srs_app_runtime.dart` 装配）：
 /// 1. 常规同步每条通道成功后（`syncChannelPostRunHook`，与常规同步同一把互斥锁、同一个
@@ -46,6 +46,7 @@ import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -127,8 +128,12 @@ int? srsMaxConcurrentWritesOf(SyncAssetStore backend) {
   return inner is DropboxSyncBackend ? 1 : null;
 }
 
-/// 生产实现：现有同步后端上的 v2 集合根（`fushi-srs/<profileUid>/v2/`）跑一轮同步 v2。[directoryKey] 就是
-/// 这个位置的稳定身份（本机按它记每个位置传到了哪）。
+/// 本进程里已经确认旧集合根扫干净的位置（进程重启后的第一轮再扫一遍，接住围栏那一刻还在跑的旧版本晚到的写入）。
+final SrsLocationMigrationMemo _srsMigrationMemo = SrsLocationMigrationMemo();
+
+/// 生产实现：现有同步后端上的集合根（`fushi-srs/<profileUid>/v3/`）跑一轮同步 v2。先 [srsPrepareLocation]：立住
+/// 旧根 `v2/` 上让旧版本停下的围栏，旧根上有协议 1 的数据就迁过来。[directoryKey] 就是这个位置的稳定身份（本机按
+/// 它记每个位置传到了哪）。
 Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
@@ -136,24 +141,90 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   SrsLocationKey? locationKey,
   void Function(int done, int total)? onFetchProgress,
   void Function()? onUploadStart,
+  Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
 }) async {
+  final SrsLocationStore location = SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+  );
+  final SrsLocationStore v1 = SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+    folder: kSrsSync2V1Folder,
+  );
+  final SrsV1Writers writers = SrsAssetV1Writers(backend, store.profileUid);
+  final SrsLocationPrepared prepared = await srsPrepareLocation(
+    host: store,
+    v1: v1,
+    current: location,
+    locationId: directoryKey,
+    key: locationKey,
+    nowMs: () => store.now().$1,
+    recordPresence: true,
+    writers: writers,
+    memo: _srsMigrationMemo,
+  );
+  if (prepared.needsUpgrade || prepared.error != null) {
+    final SrsSync2Report r = SrsSync2Report()
+      ..needsUpgrade = prepared.needsUpgrade
+      ..error = prepared.needsUpgrade ? kSrsSyncNeedsUpgrade : prepared.error
+      ..kdf = prepared.kdf;
+    return r;
+  }
+  srsLogMigrationLeftover(prepared, directoryKey);
   final SrsSync2Report r = await srsSync2Round(
     host: store,
-    location: SrsAssetLocationStore(
-      store: backend,
-      profileUid: store.profileUid,
-      maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
-    ),
+    location: location,
     locationId: directoryKey,
     nowMs: () => store.now().$1,
     key: locationKey,
     onFetchProgress: onFetchProgress,
     onUploadStart: onUploadStart,
+    beforeUpload: beforeUpload,
     shouldStop: shouldStop,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
+  if (r.error == null) {
+    // 按名字存的旧媒体：这一轮把补上的绑定发布到这个位置之后才删。
+    await srsFinishLocationMigration(
+      host: store,
+      v1: v1,
+      prepared: prepared,
+      progressId: srsLocationProgressId(
+        directoryKey,
+        r.encrypted ? locationKey?.keyHex : null,
+      ),
+      writers: writers,
+    );
+    srsLogMigrationCleanup(prepared, directoryKey);
+  }
   return r;
+}
+
+/// 旧根残留没处理成（读失败 / 解不开 / 新根口令问题）：不挡新根，但必须落日志（带原始栈），下一轮再试。
+void srsLogMigrationLeftover(SrsLocationPrepared prepared, String locationId) {
+  final String? leftover = prepared.leftoverError;
+  if (leftover == null) return;
+  ErrorLogService.instance.log(
+    'srsPrepareLocation',
+    StateError('srs v1 leftovers on $locationId: $leftover'),
+    prepared.leftoverStack ?? StackTrace.current,
+  );
+}
+
+/// 迁移收尾删旧文件时逐个出的错：那些文件留着下一轮再删，这一轮的同步照样算成功，但每个错都记日志。
+void srsLogMigrationCleanup(SrsLocationPrepared prepared, String locationId) {
+  for (final (Object e, StackTrace stack) in prepared.cleanupErrors) {
+    ErrorLogService.instance.log(
+      'srsFinishLocationMigration',
+      StateError('srs v1 cleanup on $locationId: $e'),
+      stack,
+    );
+  }
+  prepared.cleanupErrors.clear();
 }
 
 /// 本机直接读写的同步目录：本机作为互联 host 时，别的设备经互联写进来的就是这块目录，
@@ -176,16 +247,19 @@ typedef SrsMediaSyncRunner =
       required String locationId,
     });
 
-/// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。
+/// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体
+/// （[srsSyncMedia]）。
 Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
   Directory mediaRoot, {
   SrsMediaCipher? cipher,
   required String locationId,
+  bool uploadOnly = false,
 }) => srsSyncMedia(
   cipher: cipher,
   locationId: locationId,
+  uploadOnly: uploadOnly,
   location: SrsAssetLocationStore(
     store: backend,
     profileUid: store.profileUid,
@@ -193,7 +267,6 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   ),
   store: store,
   mediaRoot: mediaRoot,
-  legacy: srsLegacyMediaReader(backend, store.profileUid),
 );
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
@@ -380,8 +453,47 @@ class SrsSyncScheduler {
         onUploadStart: () => srsSyncProgress.value = const SrsSyncProgress(
           stage: SrsSyncStage.uploading,
         ),
+        beforeUpload: (String? keyHex) =>
+            _mediaBeforeUpload(backend, store, directoryKey, keyHex),
         shouldStop: () => _halted,
       );
+
+  /// 发段之前先把本机的媒体传上去（设计 §6.1 写入纪律 3，审查 S-10）：本机新加 / 改过的媒体的绑定随这一轮的段
+  /// 发出，读到这些段的设备马上就能拿到内容。只在本机内容可能变了（内容指纹与本位置上次对账时不同）或本位置还没
+  /// 对账过时跑；失败只记日志，不影响复习数据本身的同步。
+  Future<void> _mediaBeforeUpload(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String key,
+    String? keyHex,
+  ) async {
+    final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
+    if (readMediaRoot == null || _halted) return;
+    if (_mediaReconciledAt[key] != null &&
+        _mediaReconciledContent[key] == store.contentFingerprint) {
+      return;
+    }
+    try {
+      final Directory? root = await readMediaRoot();
+      if (root == null) return;
+      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+      await srsDefaultMediaSyncRunner(
+        backend,
+        store,
+        root,
+        cipher: keyHex == null ? null : SrsMediaCipher(store, keyHex),
+        locationId: key,
+        uploadOnly: true,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'SrsSyncScheduler.mediaBeforeUpload',
+        e,
+        stack,
+      );
+    }
+  }
+
   final Future<Directory?> Function()? _readMediaRoot;
   final SrsMediaSyncRunner _mediaRunner;
   final DateTime Function() _clock;
@@ -472,6 +584,19 @@ class SrsSyncScheduler {
     if (r.encryptionEnabled && k != null) {
       await _onEncryptionEnabled?.call(locationId, k.enabled());
     }
+  }
+
+  /// 媒体对账在 [locationId] 上有内容对象用这把密钥解不开（第一块就认证不过：密钥证明不了是对的，见
+  /// srs_media_sync.dart [SrsMediaSyncReport.undecryptable]）：按口令不对提示（[kSrsSync2WrongKey]，与握手报的同一条
+  /// 提示）。这些对象不记可疑、持有者也不覆盖重传——修不好的是密钥，不是对象。
+  void _noteMediaKey(String locationId, SrsMediaSyncReport? media) {
+    if (media == null || media.undecryptable.isEmpty) return;
+    final SrsLocationCryptoState? was = locationCrypto[locationId];
+    locationCrypto[locationId] = SrsLocationCryptoState(
+      kdf: was?.kdf,
+      encrypted: was?.encrypted ?? true,
+      error: kSrsSync2WrongKey,
+    );
   }
 
   /// 调度器已卸下，或库正关着：这一轮不该开始 / 不该继续。
@@ -776,7 +901,8 @@ class SrsSyncScheduler {
         _mediaReconciledContent[key] != content ||
         _clock().difference(reconciled) >= kSrsMediaReconcileInterval;
     if (report.error == null && readMediaRoot != null && mediaDue && !_halted) {
-      // 媒体跟在事件之后：先拿到引用它们的笔记，再按内容哈希补齐两边缺的文件。
+      // 完整对账跟在事件之后：先拿到引用它们的笔记与绑定，再按内容哈希补齐两边缺的文件（本机的媒体已在发段之前
+      // 传过一遍，见 [_mediaBeforeUpload]）。
       // 媒体失败只记日志，不影响复习数据本身的同步结果。
       try {
         final Directory? root = await readMediaRoot();
@@ -794,6 +920,7 @@ class SrsSyncScheduler {
             locationId: key,
           );
           mediaChanged = media.downloaded > 0;
+          _noteMediaKey(key, media);
           _mediaReconciledAt[key] = _clock();
           _mediaReconciledContent[key] = content;
         }
@@ -845,10 +972,15 @@ class SrsSyncScheduler {
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
   /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。
   ///
-  /// 用户主动的一轮（「立即同步」、进复习 tab、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
-  Future<SrsSyncNowResult> syncNow() async {
+  /// 用户明确要求的一轮（「立即同步」、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
+  Future<SrsSyncNowResult> syncNow() => _syncAll(fullMediaReconcile: true);
+
+  /// 跑一轮全部通道。[fullMediaReconcile] = 不复用上次媒体对账的结论（只有用户手动「立即同步」）；否则媒体对账照
+  /// 内容指纹门控（[_mediaReconciledContent] / [kSrsMediaReconcileInterval]），没变就不重做（审查 S-11：以前进复习
+  /// 页的节流同步也清空对账时刻，每次进页都把几万个媒体整套对一遍）。
+  Future<SrsSyncNowResult> _syncAll({required bool fullMediaReconcile}) async {
     if (_halted) return const SrsSyncNowResult(ran: 0);
-    _mediaReconciledAt.clear();
+    if (fullMediaReconcile) _mediaReconciledAt.clear();
     _linkDecided.removeWhere(
       (String _, ({DateTime at, SrsProfileConflict? conflict}) d) =>
           d.conflict != null,
@@ -895,8 +1027,15 @@ class SrsSyncScheduler {
           store: store,
           mediaRoot: mediaRoot,
           key: _locationKey?.call(l.locationId),
+          migrationMemo: _srsMigrationMemo,
         );
+        final SrsLocationPrepared? prepared = r.prepared;
+        if (prepared != null) {
+          srsLogMigrationLeftover(prepared, l.locationId);
+          srsLogMigrationCleanup(prepared, l.locationId);
+        }
         await _noteCrypto(l.locationId, r.crypto);
+        _noteMediaKey(l.locationId, r.media);
         // 握手没过但不是口令类问题（meta.json 读不到 / 位置来自更新版本）：如实记成这个位置没同步成。
         // 口令类问题由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
         final String? error = (r.crypto?.needsUpgrade ?? false)
@@ -955,7 +1094,8 @@ class SrsSyncScheduler {
     return SrsSyncNowResult(ran: ran, errors: errors);
   }
 
-  /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。
+  /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。媒体对账走内容指纹
+  /// 门控，不做全量（只有手动「立即同步」做，见 [syncNow]）。
   Future<bool> syncThrottled() async {
     final DateTime now = _clock();
     final DateTime? last = _lastThrottledAt;
@@ -963,7 +1103,7 @@ class SrsSyncScheduler {
       return false;
     }
     _lastThrottledAt = now;
-    await syncNow();
+    await _syncAll(fullMediaReconcile: false);
     return true;
   }
 

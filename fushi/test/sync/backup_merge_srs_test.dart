@@ -77,7 +77,9 @@ void main() {
       (await targetSrs.db
               .customSelect(
                 'SELECT profile_uid FROM srs_entities WHERE id = ?',
-                variables: <Variable<Object>>[Variable<String>(entityId)],
+                variables: <Variable<Object>>[
+                  Variable<String>(entityId, srsIdType),
+                ],
               )
               .getSingleOrNull())
           ?.read<String>('profile_uid');
@@ -217,14 +219,14 @@ void main() {
         expect(
           await srsCount(
             'SELECT COUNT(*) AS c FROM srs_entities '
-            "WHERE profile_uid = '$oldUid'",
+            "WHERE profile_uid = srs_id('$oldUid')",
           ),
           0,
         );
         expect(
           await srsCount(
             'SELECT COUNT(*) AS c FROM srs_local_state '
-            "WHERE profile_uid = '$oldUid'",
+            "WHERE profile_uid = srs_id('$oldUid')",
           ),
           0,
         );
