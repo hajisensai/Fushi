@@ -19,7 +19,7 @@ DictionaryPopupLayer _layer({required bool bottomDocked}) {
     result: DictionarySearchResult(searchTerm: 'x'),
     webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
     onDismiss: () {},
-    onTextSelected: (String _, Rect __) {},
+    onTextSelected: (String _, Rect __, List<Object?> ___) {},
     onLinkClick: (String _, Rect __) {},
     onMineEntry: (Map<String, String> _) async => const MinePopupResult(),
     onDuplicateCheck: (String _, String __) async => false,

@@ -1933,11 +1933,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       // TODO-617：顶层查词把 WebView 局部 localRect 经结果 WebView 的 render box
                       // localToGlobal 映成屏幕坐标（popupWordScreenRect），与根 Overlay 弹窗同系。
                       // localRect==Zero 时直传 Zero，由 mixin fallbackSelectionRect 兜底。
-                      onTextSelected: (text, localRect) {
+                      onTextSelected: (text, localRect, rubySpans) {
                         _pushNestedPopup(
                           text,
                           _resultWordScreenRect(localRect),
                           reuseWarmSlot: true,
+                          rubySpans: rubySpans,
                         );
                       },
                       onLinkClick: (query, localRect) {
@@ -2180,6 +2181,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     String query,
     Rect selectionRect, {
     bool reuseWarmSlot = false,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     return pushNestedPopup(
       query: query,
@@ -2187,6 +2189,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       controller: _popup,
       reuseWarmSlot: reuseWarmSlot,
       autoRead: true,
+      rubySpans: rubySpans,
     );
   }
 
@@ -2209,7 +2212,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       index: index,
       screen: screen,
       controller: _popup,
-      onPush: (text, rect) => _pushNestedPopup(text, rect),
+      onPush: (text, rect, rubySpans) =>
+          _pushNestedPopup(text, rect, rubySpans: rubySpans),
       onPop: _popNestedPopupAt,
     );
   }

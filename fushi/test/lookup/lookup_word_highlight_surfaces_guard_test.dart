@@ -43,7 +43,7 @@ void main() {
         reason: 'mixin onTextSelected 未 highlightSelection(count)',
       );
       expect(
-        src.contains('final int count = await onPush('),
+        src.contains('await onPush(text, childRect, rubySpans)'),
         isTrue,
         reason: 'mixin 未 await onPush 取匹配字数用于高亮',
       );
@@ -61,7 +61,12 @@ void main() {
       // onPush 必须返回匹配字数（Future<int>），否则拿不到 count。
       expect(
         src.contains(
-          'required Future<int> Function(String text, Rect selectionRect) onPush',
+          'required Future<int> Function(\n'
+          '      String text,\n'
+          '      Rect selectionRect,\n'
+          '      List<FushiRubySpan> rubySpans,\n'
+          '    )\n'
+          '    onPush,',
         ),
         isTrue,
         reason: 'onPush 签名未返回 Future<int> 匹配字数',
@@ -80,7 +85,7 @@ void main() {
 
     test('阅读器车道 onTextSelected 高亮父卡片；onLinkClick 原地跳转不叠层', () {
       final String src = base.readAsStringSync();
-      final int text = src.indexOf('onTextSelected: (text, localRect) async {');
+      final int text = src.indexOf('onTextSelected: (text, localRect, rubySpans) async {');
       expect(text, greaterThanOrEqualTo(0),
           reason: 'base_source_page 缺 onTextSelected');
       final int idx = src.indexOf('onLinkClick: (query, localRect) =>', text);

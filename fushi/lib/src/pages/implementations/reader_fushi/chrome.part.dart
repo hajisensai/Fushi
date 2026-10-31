@@ -358,6 +358,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           await searchDictionaryResult(
             searchTerm: selectedText,
             selectionRect: rect,
+            rubySpans: sel != null && sel.text == selectedText
+                ? sel.rubySpans
+                : const <FushiRubySpan>[],
           );
           if (mounted) _checkFavoriteStatus();
           return;

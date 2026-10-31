@@ -86,6 +86,44 @@ abstract class FushiRemoteLanguageLookupService {
   });
 }
 
+/// 查词请求带了**原文自带振假名**（wire 字段 [kRemoteLookupRubyField]，`[{s, e, r}]`，
+/// 以请求的 `term` 为 UTF-16 坐标系）时的可选能力：实现方把区间交给引擎
+/// （`LookupOptions::ruby_readings`），同匹配长度的候选里读音与原文 ruby 吻合的排前面。
+/// 只用来源自带的读音，不推断读音。
+///
+/// 探测式接口（与 [FushiRemoteLanguageLookupService] 同法）：请求不带 ruby、或 service
+/// 没实现它（旧实现 / 测试替身）时一律走旧方法，结果照原序。[language] 为 null = 请求
+/// 没声明查词语言（旧行为）。分派只在 [searchRemoteDictionaryForRequest] /
+/// [searchRemoteDictionaryPopupForRequest] 一处。
+abstract class FushiRemoteRubyLookupService {
+  /// [rubySpans] 非空，以 [term]（清洗前）为坐标系；实现方负责与清洗后的查询串对齐。
+  Future<DictionarySearchResult?> searchDictionaryWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+  });
+
+  /// [searchDictionaryWithRuby] 的 popup 快路径版本；[timing] 同
+  /// [FushiRemoteTimedPopupLookupService]。
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithRuby({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required List<FushiRubySpan> rubySpans,
+    String? language,
+    RemoteDictionaryPopupTiming? timing,
+  });
+}
+
+/// 查词请求体里「原文振假名区间」的字段名（可选；缺省 / 空数组 = 旧行为）。
+const String kRemoteLookupRubyField = 'ruby';
+
+/// 从请求体取原文振假名区间（畸形项丢弃，见 [FushiRubySpan.listFromWire]）。
+List<FushiRubySpan> remoteLookupRubySpansOf(Map<String, dynamic> body) =>
+    FushiRubySpan.listFromWire(body[kRemoteLookupRubyField]);
+
 /// 查词请求体里「请求方查词语言」的字段名（可选；缺省 = 旧行为，按 host 本机语言）。
 const String kRemoteLookupLanguageField = 'language';
 
@@ -105,8 +143,18 @@ Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
   required bool wildcards,
   required int maximumTerms,
   required String? language,
+  List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
 }) {
   final Object service = lookup;
+  if (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) {
+    return service.searchDictionaryWithRuby(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      rubySpans: rubySpans,
+      language: language,
+    );
+  }
   if (language != null && service is FushiRemoteLanguageLookupService) {
     return service.searchDictionaryInLanguage(
       term: term,
@@ -125,9 +173,14 @@ Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
 /// 本次请求能否走 popup 快路径（[searchRemoteDictionaryPopupForRequest]）；false 时调用方
 /// 回落完整查词。单列成判断而不是让快路径返回 null，免得「没有快路径」与「快路径查无
 /// 结果」混成同一个 null。
-bool hasPopupFastPath(FushiRemoteLookupService lookup, {String? language}) {
+bool hasPopupFastPath(
+  FushiRemoteLookupService lookup, {
+  String? language,
+  List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+}) {
   final Object service = lookup;
-  return (language != null && service is FushiRemoteLanguageLookupService) ||
+  return (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) ||
+      (language != null && service is FushiRemoteLanguageLookupService) ||
       service is FushiRemotePopupLookupService;
 }
 
@@ -139,8 +192,19 @@ Future<RemoteDictionaryPopupLookup?> searchRemoteDictionaryPopupForRequest(
   required int maximumTerms,
   required String? language,
   RemoteDictionaryPopupTiming? timing,
+  List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
 }) {
   final Object service = lookup;
+  if (rubySpans.isNotEmpty && service is FushiRemoteRubyLookupService) {
+    return service.searchDictionaryPopupWithRuby(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      rubySpans: rubySpans,
+      language: language,
+      timing: timing,
+    );
+  }
   if (language != null && service is FushiRemoteLanguageLookupService) {
     return service.searchDictionaryPopupInLanguage(
       term: term,
@@ -320,10 +384,7 @@ abstract class FushiRemoteHistoryService {
 
 /// 对端 host 返回的单词音频查询结果（原始字节 + Content-Type，wire DTO）。
 class RemoteAudioLookup {
-  const RemoteAudioLookup({
-    required this.bytes,
-    required this.contentType,
-  });
+  const RemoteAudioLookup({required this.bytes, required this.contentType});
 
   final Uint8List bytes;
   final String contentType;

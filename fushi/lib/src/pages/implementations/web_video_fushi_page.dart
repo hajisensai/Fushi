@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:media_kit_video/media_kit_video.dart'
     show defaultEnterNativeFullscreen, defaultExitNativeFullscreen;
 
@@ -2094,12 +2095,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                       index: i,
                       screen: screen,
                       controller: _popup,
-                      onPush: (String text, Rect rect) => pushNestedPopup(
-                        query: text,
-                        selectionRect: rect,
-                        controller: _popup,
-                        autoRead: true,
-                      ),
+                      onPush:
+                          (
+                            String text,
+                            Rect rect,
+                            List<FushiRubySpan> rubySpans,
+                          ) => pushNestedPopup(
+                            query: text,
+                            selectionRect: rect,
+                            controller: _popup,
+                            autoRead: true,
+                            rubySpans: rubySpans,
+                          ),
                       onPop: _popNestedPopupAt,
                     ),
                   ...buildParkedRealmLayers(screen: screen, controller: _popup),
