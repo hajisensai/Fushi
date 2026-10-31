@@ -28,6 +28,9 @@ const double _kModernWideThumbHeight = 44;
 
 /// 迷你条 / 展开卡的上下内边距与行距。
 const double _kModernMiniPadding = 8;
+
+/// 迷你条底边波浪进度的高度：波峰 ±4 + 3 描边，留 1 像素余量。
+const double _kModernMiniWaveHeight = 12;
 const double _kModernFullPadding = 12;
 const double _kModernFullGap = 6;
 
@@ -39,10 +42,6 @@ const double _kModernGrabHeight = 12;
 const double _kModernWideMargin = 24;
 const double _kModernIslandGap = 16;
 const double _kModernSeekBand = 24;
-
-/// 进度线：平时粗细 / 悬停或拖动时粗细。
-const double _kModernLineThin = 4;
-const double _kModernLineThick = 8;
 
 /// 右岛动作收进 ⋯ 的优先级（高 → 低）：放不下时从末尾起收。显示顺序仍按用户的
 /// 按钮布局（[LyricsControlLayout]）。
@@ -413,324 +412,6 @@ class _ClockSecondsBuilderState extends State<_ClockSecondsBuilder> {
 String _remainingText(Duration position, Duration total) =>
     '-${formatLyricsPlayerTime(total > position ? total - position : Duration.zero)}';
 
-/// 直线进度条（新版窄屏 / 宽屏 / 迷你条共用）。
-///
-/// 平时一根 [thickness] 粗的直线；可拖时（[onSeek] 非 null）鼠标悬停 / 键盘焦点 /
-/// 拖动中加粗到 [activeThickness] 并显示拖动钮，悬停与拖动时钮上方冒时间气泡（变化
-/// 走 `FushiMotion.short`）。点按 / 拖动松手跳到该处，←/→ 前后 5 秒。位置每秒读一次
-/// （拖动中跟手），没有常驻动画——重画只落在自带的 RepaintBoundary 里。
-class _LyricsLineSeekBar extends StatefulWidget {
-  const _LyricsLineSeekBar({
-    required this.clock,
-    required this.onSeek,
-    required this.height,
-    this.thickness = _kModernLineThin,
-    this.activeThickness = _kModernLineThick,
-    this.bubble = false,
-    this.debugLabel = 'lyrics-line-seek',
-  });
-
-  final LyricsPlayerClock clock;
-  final ValueChanged<Duration>? onSeek;
-
-  /// 命中带高度（线画在中间）。
-  final double height;
-  final double thickness;
-  final double activeThickness;
-
-  /// 悬停 / 拖动时是否在钮上方显示时间气泡（宽屏整宽线用）。
-  final bool bubble;
-  final String debugLabel;
-
-  @override
-  State<_LyricsLineSeekBar> createState() => _LyricsLineSeekBarState();
-}
-
-class _LyricsLineSeekBarState extends State<_LyricsLineSeekBar> {
-  late final FocusNode _focus = FocusNode(debugLabel: widget.debugLabel);
-  Timer? _poll;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-
-  /// 悬停处的比例（null = 没悬停）。
-  double? _hover;
-
-  /// 拖动中的比例（null = 没在拖）。
-  double? _drag;
-
-  /// 刚跳转的目标：播放器回报追上之前先显示它。
-  Duration? _pending;
-  DateTime _pendingAt = DateTime.fromMillisecondsSinceEpoch(0);
-  bool _focused = false;
-
-  bool get _seekable => widget.onSeek != null;
-
-  @override
-  void initState() {
-    super.initState();
-    _read();
-    _poll = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && _drag == null && _read()) setState(() {});
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _LyricsLineSeekBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.clock, widget.clock)) _read();
-  }
-
-  @override
-  void dispose() {
-    _poll?.cancel();
-    _focus.dispose();
-    super.dispose();
-  }
-
-  bool _read() {
-    final Duration p = widget.clock.position;
-    final Duration d = widget.clock.duration;
-    final Duration? pending = _pending;
-    if (pending != null) {
-      final bool caughtUp = (p - pending).abs() < const Duration(seconds: 2);
-      final bool stale =
-          DateTime.now().difference(_pendingAt) > const Duration(seconds: 2);
-      if (caughtUp || stale) _pending = null;
-    }
-    // 只在线上真会挪动（≥ 1 秒）时重画。
-    final bool changed =
-        (p - _position).abs() >= const Duration(seconds: 1) || d != _duration;
-    if (changed) {
-      _position = p;
-      _duration = d;
-    }
-    return changed;
-  }
-
-  double get _fraction {
-    final double? drag = _drag;
-    if (drag != null) return drag;
-    final int total = _duration.inMilliseconds;
-    if (total <= 0) return 0;
-    final Duration pos = _pending ?? _position;
-    return (pos.inMilliseconds / total).clamp(0.0, 1.0);
-  }
-
-  double _fractionAt(double dx, double width) {
-    if (width <= 0) return 0;
-    final double f = (dx / width).clamp(0.0, 1.0);
-    return Directionality.of(context) == TextDirection.rtl ? 1 - f : f;
-  }
-
-  void _commit(double fraction) {
-    if (_duration <= Duration.zero) return;
-    final Duration target = _duration * fraction;
-    setState(() {
-      _pending = target;
-      _pendingAt = DateTime.now();
-      _drag = null;
-    });
-    widget.onSeek?.call(target);
-  }
-
-  void _seekBy(Duration delta) {
-    if (_duration <= Duration.zero) return;
-    Duration target = (_pending ?? _position) + delta;
-    if (target < Duration.zero) target = Duration.zero;
-    if (target > _duration) target = _duration;
-    setState(() {
-      _pending = target;
-      _pendingAt = DateTime.now();
-    });
-    widget.onSeek?.call(target);
-  }
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-    final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    const Duration step = Duration(seconds: 5);
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      _seekBy(rtl ? -step : step);
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      _seekBy(rtl ? step : -step);
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool active =
-        _seekable && (_hover != null || _drag != null || _focused);
-    final Duration motion = fushiMotionDuration(context, FushiMotion.short);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double width = constraints.maxWidth;
-        final double? bubbleAt = widget.bubble ? (_drag ?? _hover) : null;
-        final Widget paint = TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: active ? 1 : 0),
-          duration: motion,
-          curve: FushiMotion.standard,
-          builder: (BuildContext context, double emphasis, Widget? _) =>
-              CustomPaint(
-                size: Size(width, widget.height),
-                painter: _LineSeekPainter(
-                  fraction: _fraction,
-                  thickness:
-                      widget.thickness +
-                      (widget.activeThickness - widget.thickness) * emphasis,
-                  thumb: emphasis,
-                  activeColor: cs.primary,
-                  trackColor: cs.secondaryContainer,
-                  rtl: Directionality.of(context) == TextDirection.rtl,
-                ),
-              ),
-        );
-        Widget bar = RepaintBoundary(child: paint);
-        if (bubbleAt != null && _duration > Duration.zero) {
-          final bool rtl = Directionality.of(context) == TextDirection.rtl;
-          final double x = (rtl ? 1 - bubbleAt : bubbleAt) * width;
-          bar = Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              bar,
-              Positioned(
-                left: x - 40,
-                width: 80,
-                bottom: widget.height - 2,
-                child: IgnorePointer(
-                  child: Center(
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: cs.inverseSurface,
-                        shape: const StadiumBorder(),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        child: Text(
-                          formatLyricsPlayerTime(_duration * bubbleAt),
-                          style: context.fushiType.labelSmall.tabular.copyWith(
-                            color: cs.onInverseSurface,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-        if (!_seekable) return bar;
-        return Semantics(
-          slider: true,
-          label: t.lyrics_seek_bar,
-          value: formatLyricsPlayerTime(_pending ?? _position),
-          child: Focus(
-            focusNode: _focus,
-            onKeyEvent: _onKey,
-            onFocusChange: (bool f) => setState(() => _focused = f),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              onHover: (PointerHoverEvent e) => setState(
-                () => _hover = _fractionAt(e.localPosition.dx, width),
-              ),
-              onExit: (_) => setState(() => _hover = null),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapUp: (TapUpDetails d) =>
-                    _commit(_fractionAt(d.localPosition.dx, width)),
-                onHorizontalDragStart: (DragStartDetails d) => setState(
-                  () => _drag = _fractionAt(d.localPosition.dx, width),
-                ),
-                onHorizontalDragUpdate: (DragUpdateDetails d) => setState(
-                  () => _drag = _fractionAt(d.localPosition.dx, width),
-                ),
-                onHorizontalDragEnd: (_) {
-                  final double? f = _drag;
-                  if (f != null) _commit(f);
-                },
-                onHorizontalDragCancel: () => setState(() => _drag = null),
-                child: bar,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _LineSeekPainter extends CustomPainter {
-  const _LineSeekPainter({
-    required this.fraction,
-    required this.thickness,
-    required this.thumb,
-    required this.activeColor,
-    required this.trackColor,
-    required this.rtl,
-  });
-
-  final double fraction;
-  final double thickness;
-
-  /// 拖动钮显现程度（0 = 不画，1 = 全尺寸）。
-  final double thumb;
-  final Color activeColor;
-  final Color trackColor;
-  final bool rtl;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double cy = size.height / 2;
-    final Radius r = Radius.circular(thickness / 2);
-    final Rect track = Rect.fromLTRB(
-      0,
-      cy - thickness / 2,
-      size.width,
-      cy + thickness / 2,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(track, r),
-      Paint()..color = trackColor,
-    );
-    final double x = (rtl ? 1 - fraction : fraction) * size.width;
-    final Rect active = rtl
-        ? Rect.fromLTRB(x, track.top, size.width, track.bottom)
-        : Rect.fromLTRB(0, track.top, x, track.bottom);
-    if (active.width > 0) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(active, r),
-        Paint()..color = activeColor,
-      );
-    }
-    if (thumb > 0.01) {
-      canvas.drawCircle(
-        Offset(x.clamp(0, size.width), cy),
-        (thickness / 2 + 4) * thumb,
-        Paint()..color = activeColor,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LineSeekPainter old) =>
-      old.fraction != fraction ||
-      old.thickness != thickness ||
-      old.thumb != thumb ||
-      old.activeColor != activeColor ||
-      old.trackColor != trackColor ||
-      old.rtl != rtl;
-}
-
 /// 封面 / 插图缩略图：固定高 [height]，宽按图片原比例（夹在 0.5–1.6 倍高之间，
 /// 超出的部分按原比例留边、不裁切）。比例变化（封面 ↔ 插图）时宽度按
 /// `FushiMotion.short` 过渡。无图画 primaryContainer 底 + 书本图标。
@@ -819,7 +500,7 @@ class _AspectThumbState extends State<_AspectThumb> {
       builder: (BuildContext context, double width, Widget? child) =>
           SizedBox(width: width, height: h, child: child),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: FushiM3eShape.smallRadius,
         child: image == null
             ? ColoredBox(
                 color: cs.primaryContainer,
@@ -832,7 +513,7 @@ class _AspectThumbState extends State<_AspectThumb> {
                 ),
               )
             : ColoredBox(
-                color: cs.surfaceContainerHighest,
+                color: FushiDesignTokens.of(context).surfaces.overlay,
                 child: Image(
                   image: image,
                   fit: BoxFit.contain,
@@ -1181,9 +862,9 @@ class _ModernMiniContent extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(
             10,
-            _kModernMiniPadding,
+            2 * _kModernMiniPadding - _kModernMiniWaveHeight,
             6,
-            _kModernMiniPadding,
+            _kModernMiniWaveHeight,
           ),
           child: SizedBox(
             height: geometry.miniRowHeight,
@@ -1260,18 +941,22 @@ class _ModernMiniContent extends StatelessWidget {
             ),
           ),
         ),
+        // 底边波浪进度（只显示、不可拖，与经典同一个 FushiWavySeekBar：播放中
+        // 流动、暂停时振幅收成直线）。波峰 ±4 + 描边要 [_kModernMiniWaveHeight]
+        // 高，收起态总高不变：按钮行整体上移，底下让出这条带。
         Positioned(
-          left: 20,
-          right: 20,
-          bottom: 3,
-          height: 3,
-          child: _LyricsLineSeekBar(
+          left: 16,
+          right: 16,
+          bottom: 0,
+          height: _kModernMiniWaveHeight,
+          child: FushiWavySeekBar(
+            debugLabel: 'lyrics-mini-seek',
             clock: data.clock,
+            isPlaying: data.isPlaying,
             onSeek: null,
-            height: 3,
-            thickness: 3,
-            activeThickness: 3,
-            debugLabel: 'lyrics-mini-line',
+            strokeWidth: 3,
+            barHeight: _kModernMiniWaveHeight,
+            showTimes: false,
           ),
         ),
       ],
@@ -1373,11 +1058,14 @@ class _ModernFullContent extends StatelessWidget {
                       Text(formatLyricsPlayerTime(position), style: timeStyle),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: _LyricsLineSeekBar(
+                        child: FushiWavySeekBar(
+                          debugLabel: 'lyrics-md3-seek',
                           clock: data.clock,
+                          isPlaying: data.isPlaying,
                           onSeek: callbacks.onSeek,
-                          height: geometry.fullSeekHeight,
-                          debugLabel: 'lyrics-modern-seek',
+                          strokeWidth: 5,
+                          barHeight: geometry.fullSeekHeight,
+                          showTimes: false,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -1512,12 +1200,14 @@ class _ModernWideChrome extends StatelessWidget {
         ),
         Positioned.fromRect(
           rect: g.seekBand,
-          child: _LyricsLineSeekBar(
+          child: FushiWavySeekBar(
+            debugLabel: 'lyrics-md3-seek',
             clock: data.clock,
+            isPlaying: data.isPlaying,
             onSeek: callbacks.onSeek,
-            height: g.seekBand.height,
-            bubble: true,
-            debugLabel: 'lyrics-modern-wide-seek',
+            strokeWidth: 5,
+            barHeight: g.seekBand.height,
+            showTimes: false,
           ),
         ),
         if (leftWidth >= g.islandHeight)

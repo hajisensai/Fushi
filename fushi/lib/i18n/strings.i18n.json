@@ -4417,7 +4417,6 @@
   "lyrics_mode": "Lyrics mode",
   "lyrics_mode_hint_body": "Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.",
   "lyrics_mode_hint_title": "Lyrics mode",
-  "lyrics_seek_bar": "Playback position",
   "lyrics_sentence_replay": "Replay current sentence",
   "lyrics_skipped_text_show": "Show unread book text",
   "lyrics_skipped_text_show_hint": "Book text the narrator skipped, or the transcript could not match, appears between lines in small grey text",

@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176528 (10384 per locale)
+/// Strings: 176511 (10383 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6677,7 +6677,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_mode_hint_body =>
       'Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.';
   String get lyrics_mode_hint_title => 'Lyrics mode';
-  String get lyrics_seek_bar => 'Playback position';
   String get lyrics_sentence_replay => 'Replay current sentence';
   String get lyrics_skipped_text_show => 'Show unread book text';
   String get lyrics_skipped_text_show_hint =>
@@ -25887,8 +25886,6 @@ class _StringsAr extends _StringsEn {
       'وضع كلمات الأغاني له إعداد حجم خط خاص به. يمكنك ضبطه في ⚙ الإعدادات ← الطباعة.';
   @override
   String get lyrics_mode_hint_title => 'وضع كلمات الأغاني';
-  @override
-  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -51243,8 +51240,6 @@ class _StringsDe extends _StringsEn {
       'Der Liedtextmodus hat eine eigene Schriftgrößeneinstellung. Du kannst sie unter ⚙ Einstellungen → Typografie anpassen.';
   @override
   String get lyrics_mode_hint_title => 'Liedtextmodus';
-  @override
-  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -76817,8 +76812,6 @@ class _StringsEs extends _StringsEn {
       'El modo de letras tiene su propia configuración de tamaño de fuente. Puedes ajustarlo en ⚙ Ajustes → Tipografía.';
   @override
   String get lyrics_mode_hint_title => 'Modo de letras';
-  @override
-  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -102464,8 +102457,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'Mode paroles';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -127991,8 +127982,6 @@ class _StringsId extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'Mode Lirik';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -153406,8 +153395,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'Modalità testi';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -178430,8 +178417,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => '歌詞モード';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => '朗読されなかった本文を表示';
@@ -202910,8 +202895,6 @@ class _StringsKo extends _StringsEn {
       '가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.';
   @override
   String get lyrics_mode_hint_title => '가사 모드';
-  @override
-  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -227901,8 +227884,6 @@ class _StringsNl extends _StringsEn {
       'De songtekstmodus heeft een eigen lettergrootte-instelling. Je kunt deze aanpassen via ⚙ Instellingen → Typografie.';
   @override
   String get lyrics_mode_hint_title => 'Songtekstmodus';
-  @override
-  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -253400,8 +253381,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'Modo de letras';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -278884,8 +278863,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'Режим текстов песен';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -304202,8 +304179,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'โหมดเนื้อเพลง';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -329463,8 +329438,6 @@ class _StringsTr extends _StringsEn {
       'Şarkı sözü modunun kendi yazı boyutu ayarı vardır. ⚙ Ayarlar → Tipografi bölümünden ayarlayabilirsiniz.';
   @override
   String get lyrics_mode_hint_title => 'Şarkı Sözü Modu';
-  @override
-  String get lyrics_seek_bar => 'Playback position';
   @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
@@ -354784,8 +354757,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => 'Chế độ lời bài hát';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -379108,8 +379079,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => '歌词模式';
   @override
-  String get lyrics_seek_bar => '播放进度';
-  @override
   String get lyrics_sentence_replay => '重播当前句';
   @override
   String get lyrics_skipped_text_show => '显示未朗读的原文';
@@ -402485,8 +402454,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get lyrics_mode_hint_title => '歌詞模式';
   @override
-  String get lyrics_seek_bar => 'Playback position';
-  @override
   String get lyrics_sentence_replay => 'Replay current sentence';
   @override
   String get lyrics_skipped_text_show => 'Show unread book text';
@@ -425316,8 +425283,6 @@ extension on _StringsEn {
         return 'Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.';
       case 'lyrics_mode_hint_title':
         return 'Lyrics mode';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -446887,8 +446852,6 @@ extension on _StringsAr {
         return 'وضع كلمات الأغاني له إعداد حجم خط خاص به. يمكنك ضبطه في ⚙ الإعدادات ← الطباعة.';
       case 'lyrics_mode_hint_title':
         return 'وضع كلمات الأغاني';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -468499,8 +468462,6 @@ extension on _StringsDe {
         return 'Der Liedtextmodus hat eine eigene Schriftgrößeneinstellung. Du kannst sie unter ⚙ Einstellungen → Typografie anpassen.';
       case 'lyrics_mode_hint_title':
         return 'Liedtextmodus';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -490132,8 +490093,6 @@ extension on _StringsEs {
         return 'El modo de letras tiene su propia configuración de tamaño de fuente. Puedes ajustarlo en ⚙ Ajustes → Tipografía.';
       case 'lyrics_mode_hint_title':
         return 'Modo de letras';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -511775,8 +511734,6 @@ extension on _StringsFr {
         return 'Le mode paroles a son propre réglage de taille de police. Vous pouvez l\'ajuster dans ⚙ Paramètres → Typographie.';
       case 'lyrics_mode_hint_title':
         return 'Mode paroles';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -533393,8 +533350,6 @@ extension on _StringsId {
         return 'Mode lirik memiliki pengaturan ukuran font sendiri. Anda dapat menyesuaikannya di ⚙ Pengaturan → Tipografi.';
       case 'lyrics_mode_hint_title':
         return 'Mode Lirik';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -554995,8 +554950,6 @@ extension on _StringsIt {
         return 'La modalità testi ha la propria impostazione della dimensione del carattere. Puoi regolarla in ⚙ Impostazioni → Tipografia.';
       case 'lyrics_mode_hint_title':
         return 'Modalità testi';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -576561,8 +576514,6 @@ extension on _StringsJa {
         return '歌詞モードには独自のフォントサイズ設定があります。⚙ 設定 → タイポグラフィで調整できます。';
       case 'lyrics_mode_hint_title':
         return '歌詞モード';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -598056,8 +598007,6 @@ extension on _StringsKo {
         return '가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.';
       case 'lyrics_mode_hint_title':
         return '가사 모드';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -619618,8 +619567,6 @@ extension on _StringsNl {
         return 'De songtekstmodus heeft een eigen lettergrootte-instelling. Je kunt deze aanpassen via ⚙ Instellingen → Typografie.';
       case 'lyrics_mode_hint_title':
         return 'Songtekstmodus';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -641236,8 +641183,6 @@ extension on _StringsPtBr {
         return 'O modo de letras tem sua própria configuração de tamanho de fonte. Você pode ajustá-lo em ⚙ Configurações → Tipografia.';
       case 'lyrics_mode_hint_title':
         return 'Modo de letras';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -662856,8 +662801,6 @@ extension on _StringsRu {
         return 'Режим текстов песен имеет собственную настройку размера шрифта. Вы можете настроить его в ⚙ Настройки → Типографика.';
       case 'lyrics_mode_hint_title':
         return 'Режим текстов песен';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -684449,8 +684392,6 @@ extension on _StringsTh {
         return 'โหมดเนื้อเพลงมีการตั้งค่าขนาดตัวอักษรของตัวเอง คุณสามารถปรับได้ใน ⚙ การตั้งค่า → การจัดรูปแบบ';
       case 'lyrics_mode_hint_title':
         return 'โหมดเนื้อเพลง';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -706042,8 +705983,6 @@ extension on _StringsTr {
         return 'Şarkı sözü modunun kendi yazı boyutu ayarı vardır. ⚙ Ayarlar → Tipografi bölümünden ayarlayabilirsiniz.';
       case 'lyrics_mode_hint_title':
         return 'Şarkı Sözü Modu';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -727637,8 +727576,6 @@ extension on _StringsVi {
         return 'Chế độ lời bài hát có cài đặt cỡ chữ riêng. Bạn có thể điều chỉnh trong ⚙ Cài đặt → Kiểu chữ.';
       case 'lyrics_mode_hint_title':
         return 'Chế độ lời bài hát';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
@@ -749103,8 +749040,6 @@ extension on _StringsZhCn {
         return '歌词模式有独立的字号设置，可在 ⚙ 设置 → 排版 中调整。';
       case 'lyrics_mode_hint_title':
         return '歌词模式';
-      case 'lyrics_seek_bar':
-        return '播放进度';
       case 'lyrics_sentence_replay':
         return '重播当前句';
       case 'lyrics_skipped_text_show':
@@ -770457,8 +770392,6 @@ extension on _StringsZhHk {
         return '歌詞模式有自己的字體大小設定。你可以在 ⚙ 設定 → 排版 中調整。';
       case 'lyrics_mode_hint_title':
         return '歌詞模式';
-      case 'lyrics_seek_bar':
-        return 'Playback position';
       case 'lyrics_sentence_replay':
         return 'Replay current sentence';
       case 'lyrics_skipped_text_show':
