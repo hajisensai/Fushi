@@ -218,6 +218,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     - name: Run dart analyze
       working-directory: fushi
@@ -537,6 +540,9 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+    # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+    - name: Generate i18n
+      uses: ./.github/actions/gen-i18n
 
     # Golden image tests are gated to the reference platform (the dev host where
     # goldens were generated); Linux CI font/raster rendering differs and would

@@ -193,6 +193,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: bash
@@ -496,6 +499,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh

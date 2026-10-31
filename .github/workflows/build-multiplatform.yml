@@ -304,6 +304,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # The GitHub-hosted ubuntu runner DOES ship /dev/kvm (nested virtualization
       # has been available on the standard Ubuntu images since 2023), but the
       # `runner` user is not a member of the `kvm` group, so the emulator's own
@@ -449,6 +452,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 互联 P2P 隧道（iroh）Linux .so：服务端按 bin/../lib/libfushi_p2p.so 定位。
       # 失败口径同 libtorrent：构建失败即 job 失败。rust-cache 的 key 按平台分；缓存未命中
       # 只会变慢，没有任何步骤的成败挂在 cache-hit 上。持久库命中时跳过 Rust 工具链与
@@ -966,6 +972,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 互联 P2P 隧道（iroh）dylib：Runner 的「Bundle fushi_p2p dylib」构建阶段
       # （fushi/macos/bundle_fushi_p2p.sh）copy-if-present 进 Contents/Frameworks。
       # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以只编 arm64。
@@ -1563,6 +1572,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # Unsigned DEVICE build: needs no Development Team and links the device
       # arch of all plugins (incl. gamepads_ios / record_ios). The --simulator
       # path was wrong before — record_mp3_plus shipped a device-only static lib
@@ -1693,6 +1705,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
+      # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
+      - name: Generate i18n
+        uses: ./.github/actions/gen-i18n
       # 内置 libtorrent 引擎的 Windows DLL：vcpkg 编 libtorrent + bridge，产物落
       # native/fushi_torrent/prebuilt/windows-x64/，供下面 flutter build windows
       # 的 copy-if-present 随包（缺则跳，运行期回退 qb）。
