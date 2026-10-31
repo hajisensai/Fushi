@@ -2108,6 +2108,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "อัตโนมัติ",
   "dict_language_description": "กำหนดฟอนต์ที่ใช้แสดงข้อความพจนานุกรม อัตโนมัติจะใช้ภาษาที่พจนานุกรมระบุไว้",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "ภาษาเนื้อหาพจนานุกรม",
   "dict_language_tooltip": "ภาษาเนื้อหา",
   "dict_manager_summary": "$n dictionaries · $m enabled",

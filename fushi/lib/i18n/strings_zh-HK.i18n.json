@@ -2108,6 +2108,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "自動",
   "dict_language_description": "決定這本詞典的文字用哪種字體渲染。自動 = 用詞典自己聲明的語言。",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "詞典內容語言",
   "dict_language_tooltip": "內容語言",
   "dict_manager_summary": "$n dictionaries · $m enabled",

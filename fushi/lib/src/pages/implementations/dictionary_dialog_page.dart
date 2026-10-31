@@ -1717,13 +1717,90 @@ class _DictionaryDialogPageState extends BasePageState {
         if (selectedDictionaries.isEmpty)
           _buildEmptyCategoryRow()
         else
-          // 进场窗口：首开与切换词典类型时，首屏词典行错峰淡入上移。
+          // 进场窗口：首开与切换词典类型时，首屏的组标题与词典行错峰淡入上移。
           FushiEntranceScope(
             replayKey: _selectedType,
-            child: _buildDictionaryList(selectedDictionaries),
+            child: _buildLanguageGroups(selectedDictionaries),
           ),
       ],
     );
+  }
+
+  /// 按「有效语言」（手动指定优先，其次包内声明）分组的列表（反馈 D_Nz5R4vSH）：
+  /// 每组一个语言名标题 + 一列只能在组内拖动的词典；没有语言信息的归「未标注
+  /// 语言」组放最后。分组与组内顺序的推导见 [groupDictionariesByLanguage]——
+  /// 组内顺序就是全局查词优先级在该组的子序列，组内重排只在该组原占的槽位里
+  /// 重新分配（[mergeLanguageGroupOrder]），不影响其它组。
+  ///
+  /// 只有一个语言组时不画组标题：多数用户只装一种语言的词典，列表保持原样，
+  /// 不平白多一行标题；两组及以上才需要标题来区分。
+  Widget _buildLanguageGroups(List<Dictionary> section) {
+    final List<DictionaryLanguageGroup> groups =
+        groupDictionariesByLanguage(section);
+    final bool showHeaders = groups.length > 1;
+    final List<Widget> children = <Widget>[];
+    // 错峰下标跨组累加：标题与词典行按屏幕自上而下依次进场。
+    int entranceIndex = 0;
+    for (int g = 0; g < groups.length; g++) {
+      final DictionaryLanguageGroup group = groups[g];
+      if (showHeaders) {
+        children.add(
+          FushiStaggeredEntrance(
+            index: entranceIndex++,
+            child: _buildLanguageGroupHeader(group, first: g == 0),
+          ),
+        );
+      }
+      children.add(
+        _buildDictionaryList(
+          group.dictionaries,
+          groupKey: group.language,
+          entranceOffset: entranceIndex,
+        ),
+      );
+      entranceIndex += group.dictionaries.length;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  /// 组标题：语言自称（与内容语言选择器同一套标签，见 [contentLanguageLabelOf]）
+  /// + 本组本数。走 [SettingsSectionHeader]，MD3 / Apple 各按自己的分组外标题排。
+  Widget _buildLanguageGroupHeader(
+    DictionaryLanguageGroup group, {
+    required bool first,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String? language = group.language;
+    final String label = language == null
+        ? t.dict_language_group_unset
+        : contentLanguageLabelOf(language);
+    return KeyedSubtree(
+      key: ValueKey<String>('dict-language-group-${language ?? ''}'),
+      child: SettingsSectionHeader(
+        t.dict_language_group_title(
+          language: label,
+          n: group.dictionaries.length,
+        ),
+        padding: EdgeInsets.only(
+          top: first ? 0 : tokens.spacing.card,
+          bottom: tokens.spacing.gap,
+        ),
+      ),
+    );
+  }
+
+  /// [dictionary] 在它所在分区里的语言组（组内顺序）。详情里的上移 / 下移 /
+  /// 置顶 / 置底 / 移到第几位与键盘 Alt+↑↓ 都以组为排序范围。
+  List<Dictionary> _languageGroupOf(Dictionary dictionary) {
+    final String? language = dictionaryLanguageGroupOf(dictionary);
+    return <Dictionary>[
+      for (final Dictionary d
+          in _dictionariesForType(_sectionTypeOf(dictionary)))
+        if (dictionaryLanguageGroupOf(d) == language) d,
+    ];
   }
 
   /// 列表头：分类标题 + 「共 N 本 · 已启用 M 本」，右侧是排序方式提示（桌面
@@ -2100,10 +2177,19 @@ class _DictionaryDialogPageState extends BasePageState {
   // → 任意缩放下都精确跟手、零偏移且视觉一致。键盘 Alt+↑/↓ 与详情里的
   // 上移 / 下移按钮（Icons.keyboard_arrow_up / Icons.keyboard_arrow_down）仍是
   // 无障碍 / 手柄重排路径。
-  Widget _buildDictionaryList(List<Dictionary> dictionaries) {
+  ///
+  /// 一组语言一列：[dictionaries] 是该组词典（组内顺序），拖拽天然只能落在本组
+  /// 之内；[groupKey] 让各组的列表 element 不因组数变化而错位复用；
+  /// [entranceOffset] 是本组第一行在整屏错峰序列里的下标。
+  Widget _buildDictionaryList(
+    List<Dictionary> dictionaries, {
+    required String? groupKey,
+    required int entranceOffset,
+  }) {
     final bool split =
         dictionaryManagerUsesSplitLayout(MediaQuery.sizeOf(context).width);
     return FushiReorderableColumn(
+      key: ValueKey<String>('dict-language-list-${groupKey ?? ''}'),
       itemCount: dictionaries.length,
       // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
       // 圆角传卡片半径，让拖拽浮层裁成圆角、不在卡片四角露出底色。
@@ -2119,7 +2205,7 @@ class _DictionaryDialogPageState extends BasePageState {
       // 位移、不改布局，列表测高与拖拽浮层复制不受影响；拖拽浮层挂载时窗口早已
       // 关闭，浮层瞬间出现。
       itemBuilder: (BuildContext context, int index) => FushiStaggeredEntrance(
-        index: index,
+        index: entranceOffset + index,
         child: _buildDictionaryTile(
           dictionary: dictionaries[index],
           index: index,
@@ -2135,6 +2221,10 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 并持久化。`newIndex` 是移动完成后该词典应处的位置（非 SDK 的「插入前下标」），
   /// 拖拽、键盘、详情里的上移 / 下移 / 置顶 / 置底统一走这套最终下标语义——无需
   /// SDK 的 `if(new>old)new--` 特例。越界与原地不动直接忽略。
+  ///
+  /// [dictionaries] 是**一个语言组**（组内顺序）：组内挪完后用
+  /// [mergeLanguageGroupOrder] 填回本分区该组原占的槽位，再按分区整体重编号——
+  /// 其它组的词典相对位置一个都不变。
   Future<bool> _reorderDictionaries(
     int oldIndex,
     int newIndex,
@@ -2145,10 +2235,14 @@ class _DictionaryDialogPageState extends BasePageState {
         newIndex == oldIndex) {
       return false;
     }
-    final List<Dictionary> cloneDictionaries = List.from(dictionaries);
+    final List<Dictionary> group = List<Dictionary>.of(dictionaries);
+    final Dictionary item = group.removeAt(oldIndex);
+    group.insert(newIndex, item);
 
-    final Dictionary item = cloneDictionaries.removeAt(oldIndex);
-    cloneDictionaries.insert(newIndex, item);
+    final List<Dictionary> cloneDictionaries = mergeLanguageGroupOrder(
+      _dictionariesForType(_selectedType),
+      group,
+    );
 
     // 「汉字」分区里混合词典只动汉字部分的位置，不能走按 order 整体重编号的路径
     // （那会把它在「术语」分区的位置一起改掉）。
@@ -2167,10 +2261,9 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 把 [dictionary] 挪到本类型列表的最终下标 [to]（详情里的四个排序按钮）。
+  /// 把 [dictionary] 挪到它所在语言组的最终下标 [to]（详情里的四个排序按钮）。
   Future<bool> _moveDictionaryTo(Dictionary dictionary, int to) async {
-    final List<Dictionary> dictionaries =
-        _dictionariesForType(_sectionTypeOf(dictionary));
+    final List<Dictionary> dictionaries = _languageGroupOf(dictionary);
     final int from =
         dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
     if (from < 0) return false;
@@ -2181,8 +2274,7 @@ class _DictionaryDialogPageState extends BasePageState {
   /// [_reorderDictionaries] 写入路径，焦点跟着被移动的词典走（列表所在路由是
   /// 当前路由时——窄屏从底部 sheet 里移动时焦点留在 sheet，sheet 内容自己刷新）。
   Future<void> _promptMoveDictionary(Dictionary dictionary) async {
-    final List<Dictionary> dictionaries =
-        _dictionariesForType(_sectionTypeOf(dictionary));
+    final List<Dictionary> dictionaries = _languageGroupOf(dictionary);
     final int from =
         dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
     if (from < 0 || dictionaries.length < 2) return;
@@ -2329,8 +2421,8 @@ class _DictionaryDialogPageState extends BasePageState {
     required bool showHeader,
     required VoidCallback onDeleteRequested,
   }) {
-    final List<Dictionary> siblings =
-        _dictionariesForType(_sectionTypeOf(dictionary));
+    // 位置与「共几本」都按语言组算：排序只在组内进行。
+    final List<Dictionary> siblings = _languageGroupOf(dictionary);
     final int position =
         siblings.indexWhere((Dictionary d) => d.name == dictionary.name);
     final DictionaryFormat? format =
@@ -2499,7 +2591,8 @@ class _DictionaryDialogPageState extends BasePageState {
       key: const ValueKey<String>('dict-batch-move-to'),
       icon: Icons.format_list_numbered,
       tooltip: t.dict_order_position_move,
-      enabled: picked.length == 1 && visible.length > 1,
+      enabled:
+          picked.length == 1 && _languageGroupOf(picked.single).length > 1,
       onTap: () => _promptMoveDictionary(picked.single),
     );
     final Widget delete = FushiIconButton(
