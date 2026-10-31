@@ -44,6 +44,51 @@ Future<Dio> createDictionaryDio() async {
   return dio;
 }
 
+/// 单个候选地址的传输实现：把 [url] 下到 [destPath]，进度经 [onReceiveProgress]
+/// 回报（`total` 未知时为 -1），[cancelToken] 置位即停。
+///
+/// 失败**必须**抛 [DioError]（取消用 [DioErrorType.cancel]，连不上 / 超时 / 已答复
+/// 的错误状态码各用对应的 type）：候选回退（[isDictionaryTransportFailure]）、
+/// 失败归因与「取消不算失败」的判据全按 [DioError] 写，换了传输也不能换契约。
+typedef DictionaryDownloadTransport = Future<void> Function({
+  required String url,
+  required String destPath,
+  required void Function(int received, int total) onReceiveProgress,
+  CancelToken? cancelToken,
+});
+
+/// 默认传输：进程内 [Dio]（代理与超时见 [createDictionaryDio]）。
+Future<void> dioDictionaryDownloadTransport({
+  required String url,
+  required String destPath,
+  required void Function(int received, int total) onReceiveProgress,
+  CancelToken? cancelToken,
+}) async {
+  final Dio dio = await createDictionaryDio();
+  try {
+    await dio.download(
+      url,
+      destPath,
+      cancelToken: cancelToken,
+      options: Options(
+        followRedirects: true,
+        maxRedirects: 5,
+      ),
+      onReceiveProgress: onReceiveProgress,
+    );
+  } finally {
+    dio.close();
+  }
+}
+
+/// 词典包下载的**传输层**装配钩子（BUG-3887）。
+///
+/// 未接线（桌面 / Android / 单测）时用 [dioDictionaryDownloadTransport]。iOS 上进程
+/// 切到后台几十秒即被挂起，进程内的 socket 跟着停，几 GB 的词典包永远下不完；app
+/// 在启动时把它接成系统后台 `URLSession`（`ios_background_download.dart`），传输
+/// 交给系统守护进程，app 挂起期间照常下载。与 [dictionaryDioFactory] 同一套装配方向。
+DictionaryDownloadTransport? dictionaryDownloadTransport;
+
 /// 候选地址解析钩子（BUG-2188）：把 catalog 里的**一个**下载地址展开成按优先级排序的
 /// 候选序列（首位必须是原址）。app 在启动时接线成 GitHub 公共镜像展开
 /// （`installDictionaryUrlCandidatesResolver`）；未接线时（单测 / popup 等精简入口）
@@ -989,24 +1034,23 @@ class DictionaryDownloader {
     final List<String> attempted = <String>[];
 
     Object? lastError;
+    void onReceiveProgress(int received, int total) {
+      if (total > 0) {
+        progressNotifier.value = received / total;
+      }
+      onBytes?.call(received, total);
+    }
+
+    final DictionaryDownloadTransport transport =
+        dictionaryDownloadTransport ?? dioDictionaryDownloadTransport;
     for (final String candidate in candidates) {
       attempted.add(candidate);
-      final Dio dio = await createDictionaryDio();
       try {
-        await dio.download(
-          candidate,
-          destPath,
+        await transport(
+          url: candidate,
+          destPath: destPath,
+          onReceiveProgress: onReceiveProgress,
           cancelToken: cancelToken,
-          options: Options(
-            followRedirects: true,
-            maxRedirects: 5,
-          ),
-          onReceiveProgress: (int received, int total) {
-            if (total > 0) {
-              progressNotifier.value = received / total;
-            }
-            onBytes?.call(received, total);
-          },
         );
         return File(destPath);
       } catch (e) {
@@ -1031,8 +1075,6 @@ class DictionaryDownloader {
         if (!isDictionaryTransportFailure(e)) break;
         // 进度条归零，否则下一个候选从上一跳的比例开始往回跳。
         progressNotifier.value = 0;
-      } finally {
-        dio.close();
       }
     }
 

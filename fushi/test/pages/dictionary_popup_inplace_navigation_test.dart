@@ -37,7 +37,7 @@ void main() {
             historyNav: historyNav,
             onClose: () {},
             onDismiss: () {},
-            onTextSelected: (text, rect) {},
+            onTextSelected: (text, rect, _) {},
             onLinkClick: (query, rect) {},
             onMineEntry: (fields) async => const MinePopupResult(),
             onDuplicateCheck: (expression, reading) async => false,

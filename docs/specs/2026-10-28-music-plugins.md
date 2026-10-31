@@ -224,6 +224,14 @@ Challenge {
   退出、装卸 / 启停插件后重拉），喜欢 / 取消喜欢调 `like` 成功后才改缓存。本地 / 服务器曲目不能收藏。
   推荐页顶部「我喜欢的音乐」快捷格直接打开 `like` 给的平台歌单（插件歌单详情页），未登录时去登录。
 
+## 5.1 第三方开发包
+
+面向插件作者（含 AI 编程助手）的开发包在 `tools/music-plugin-sdk/`：单文件契约 `GUIDE.md`（英文，§2–§4 的
+作者向改写）、零依赖 Node CLI `fushi-plugin.mjs`（`check` / `run` / `smoke` / `login` / `pack` / `inspect`，
+本地沙箱复用同一份前奏、同一套网络授权与上限，返回值按 Dart 解析逻辑逐项核对）、类型 `fushi-plugin.d.ts`、
+模板与示例插件。改本文 §2–§4 或宿主规则时同步改开发包；前奏副本与能力 / 权限等清单由
+`fushi/test/build/music_plugin_sdk_sync_guard_test.dart` 钉住。
+
 ## 6. 待决
 
 - 信任公钥 / 官方插件仓库是否要有、由谁签。

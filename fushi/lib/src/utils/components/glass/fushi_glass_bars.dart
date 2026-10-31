@@ -153,11 +153,10 @@ TextStyle fushiAppleInlineTitleStyle(BuildContext context) {
 
 /// [fushiAppleInlineTitleStyle] 的副标题：移动 12 / 桌面 11、secondaryLabel。
 TextStyle fushiAppleInlineSubtitleStyle(BuildContext context) {
-  return (Theme.of(context).textTheme.labelSmall ?? const TextStyle())
-      .copyWith(
-        color: appleColorsOf(context).secondaryLabel,
-        fontSize: fushiAppleCompact(context) ? 11 : 12,
-      );
+  return (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
+    color: appleColorsOf(context).secondaryLabel,
+    fontSize: fushiAppleCompact(context) ? 11 : 12,
+  );
 }
 
 /// 可点的 Apple 内联标题按下高亮的圆角（与 iOS 导航栏标题菜单同口径）。
@@ -341,28 +340,28 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
   @override
   Widget build(BuildContext context) {
     return Stack(
-        clipBehavior: Clip.none,
-        fit: StackFit.passthrough,
-        children: <Widget>[
-          // 画在顶栏**之下**、盖住整段栏区再往下延伸一条渐隐带：页面把正文铺到
-          // 透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时，只在栏
-          // 下沿画「上实下透」的带，带的实色上沿与栏区里透出来的内容之间是一条
-          // 硬线（2026-10-09 用户 iOS 截图）。栏区实色与带最靠边处同色，正文
-          // 排在栏下的普通页面观感不变（栏区本来就是页面底色）。
-          if (widget.enabled)
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: -_kGlassTopEdgeExtent,
-              child: FushiAppleScrollEdge(
-                side: FushiScrollEdgeSide.top,
-                visible: _scrolledUnder,
-                bandExtent: _kGlassTopEdgeExtent,
-              ),
+      clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        // 画在顶栏**之下**、盖住整段栏区再往下延伸一条渐隐带：页面把正文铺到
+        // 透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时，只在栏
+        // 下沿画「上实下透」的带，带的实色上沿与栏区里透出来的内容之间是一条
+        // 硬线（2026-10-09 用户 iOS 截图）。栏区实色与带最靠边处同色，正文
+        // 排在栏下的普通页面观感不变（栏区本来就是页面底色）。
+        if (widget.enabled)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: -_kGlassTopEdgeExtent,
+            child: FushiAppleScrollEdge(
+              side: FushiScrollEdgeSide.top,
+              visible: _scrolledUnder,
+              bandExtent: _kGlassTopEdgeExtent,
             ),
-          widget.child,
-        ],
+          ),
+        widget.child,
+      ],
     );
   }
 }
@@ -645,18 +644,19 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     final ScaffoldState? scaffold = Scaffold.maybeOf(context);
     final bool bodyBehindBar = scaffold?.widget.extendBodyBehindAppBar ?? false;
     final Color? scaffoldColor = scaffold?.widget.backgroundColor;
-    final Color? scrimColor =
-        scaffoldColor != null && scaffoldColor.a >= 1 ? scaffoldColor : null;
+    final Color? scrimColor = scaffoldColor != null && scaffoldColor.a >= 1
+        ? scaffoldColor
+        : null;
     Widget fadeIn(Widget scrim) => ValueListenableBuilder<bool>(
-          valueListenable: scrolledUnder,
-          builder: (BuildContext context, bool under, Widget? scrim) =>
-              AnimatedOpacity(
+      valueListenable: scrolledUnder,
+      builder: (BuildContext context, bool under, Widget? scrim) =>
+          AnimatedOpacity(
             opacity: under ? 1 : 0,
             duration: fushiMotionDuration(context, FushiMotion.short),
             child: scrim,
           ),
-          child: scrim,
-        );
+      child: scrim,
+    );
     return Stack(
       clipBehavior: Clip.none,
       fit: StackFit.passthrough,
@@ -671,11 +671,11 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
               LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) =>
                     FushiTopFadeScrim(
-                  solidHeight: 0,
-                  fadeExtent: constraints.maxHeight,
-                  topOpacity: kFushiTopScrimOverlayOpacity,
-                  color: scrimColor,
-                ),
+                      solidHeight: 0,
+                      fadeExtent: constraints.maxHeight,
+                      topOpacity: kFushiTopScrimOverlayOpacity,
+                      color: scrimColor,
+                    ),
               ),
             ),
           ),
@@ -708,15 +708,12 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
 /// 否则返回键旁会留一颗空胶囊（合集详情页把标题交给 hero）。标题外层若是
 /// [AnimatedOpacity] / [Opacity]（「hero 滚出视野后才淡入标题」），把透明度提到
 /// 胶囊**外面**，整颗胶囊随标题一起淡入淡出，而不是只淡文字、空壳常驻。
-Widget? _floatingTitleCapsule(
-  Widget? title,
-  FushiScrollAwayController chrome,
-) {
+Widget? _floatingTitleCapsule(Widget? title, FushiScrollAwayController chrome) {
   if (title == null || _isEmptyTitle(title)) return null;
   Widget capsule(Widget inner) => FushiScrollAwayChrome(
-        controller: chrome,
-        child: FushiPageChromeTitle(title: inner),
-      );
+    controller: chrome,
+    child: FushiPageChromeTitle(title: inner),
+  );
   final Widget current = title;
   if (current is AnimatedOpacity && current.child != null) {
     if (_isEmptyTitle(current.child!)) return null;
@@ -755,8 +752,7 @@ bool _isEmptyTitle(Widget title) {
     return rich != null && rich.trim().isEmpty;
   }
   if (title is SizedBox) {
-    return title.child == null &&
-        (title.width == 0 || title.height == 0);
+    return title.child == null && (title.width == 0 || title.height == 0);
   }
   return false;
 }
@@ -1860,6 +1856,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.textScaler,
     this.indicatorAnimation,
     this.track = true,
+    this.segmented = true,
     this.trackInset,
   }) : _secondary = false;
 
@@ -1897,6 +1894,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.textScaler,
     this.indicatorAnimation,
     this.track = true,
+    this.segmented = true,
     this.trackInset,
   }) : _secondary = true;
 
@@ -1937,6 +1935,12 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
   /// false：只画胶囊里的 TabBar 本体，不再叠第二层轨道——胶囊套胶囊会出两圈
   /// 圆角与底色，内层还会被外层裁掉两端。Apple 设计系统下忽略。
   final bool track;
+
+  /// Material 下是否画成 M3E 分段（选中段是一枚 secondaryContainer 胶囊）。
+  /// false = 框架原生的 M3 页签：一级是文字下的圆头短条，`.secondary` 是横贯
+  /// 整个页签的细下划线 + 整排淡分隔线（库页二级分区，2026-10-30 方案 B）。
+  /// Apple 设计系统不读它。
+  final bool segmented;
 
   /// Material（M3E）分段胶囊轨道离左右边缘的距离；null = 默认 12（轨道在
   /// 一块没有页边的全宽区域里时留的呼吸位）。调用方已经按页边内缩（页签与
@@ -2086,9 +2090,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
             ? titleSmall?.copyWith(fontWeight: FontWeight.w500)
             : null);
     final bool motion = !eink;
-    final TabBar Function({
-      required List<Widget> tabs,
-    }) build = _secondary
+    final TabBar Function({required List<Widget> tabs}) build = _secondary
         ? ({required List<Widget> tabs}) => TabBar.secondary(
             tabs: tabs,
             controller: controller,
@@ -2121,7 +2123,8 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
                 splashBorderRadius ?? BorderRadius.circular(999),
             tabAlignment: tabAlignment,
             textScaler: textScaler,
-            indicatorAnimation: indicatorAnimation ??
+            indicatorAnimation:
+                indicatorAnimation ??
                 (motion
                     ? TabIndicatorAnimation.elastic
                     : TabIndicatorAnimation.linear),
@@ -2158,7 +2161,8 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
                 splashBorderRadius ?? BorderRadius.circular(999),
             tabAlignment: tabAlignment,
             textScaler: textScaler,
-            indicatorAnimation: indicatorAnimation ??
+            indicatorAnimation:
+                indicatorAnimation ??
                 (motion
                     ? TabIndicatorAnimation.elastic
                     : TabIndicatorAnimation.linear),
@@ -2172,6 +2176,12 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
+      if (!segmented) {
+        return Material(
+          type: MaterialType.transparency,
+          child: _material(Theme.of(context)),
+        );
+      }
       if (track) return _FushiM3eSegmentedTabs(bar: this);
       return Material(
         type: MaterialType.transparency,
@@ -2210,9 +2220,7 @@ class _FushiM3eSegmentedTabs extends StatelessWidget {
             shape: StadiumBorder(
               side: eink
                   ? BorderSide(color: cs.outline)
-                  : BorderSide(
-                      color: cs.outlineVariant.withValues(alpha: 0.4),
-                    ),
+                  : BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
             ),
           ),
           child: ClipPath(

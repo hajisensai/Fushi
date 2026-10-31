@@ -188,6 +188,84 @@ window.fushiSelection = {
         return base ? { node: base, offset: 0 } : null;
     },
 
+    // 文本节点所在的 ruby 基字段：{ nodes: 该段基字文本节点（文档序）, reading: 配对的
+    // <rt> 文本 }。一个 <ruby> 可有多对基字 / rt；postProcessRuby 之后每个基字被包进
+    // .ruby-unit、rt 被包进 .ruby-rt 并多出 .ruby-reserve 读音副本，所以这里递归下降，
+    // 并用 isIgnoredLookupText 排除 reserve / rt / rp 文本（与取词串的构造口径一致）。
+    // 只用 DOM 里现成的 <rt> 文本，绝不推断读音。cache 是一次取词内 ruby → 段表缓存。
+    rubySegmentOf(node, cache) {
+        if (!node || this.isIgnoredLookupText(node)) return null;
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        const ruby = el && el.closest ? el.closest('ruby') : null;
+        if (!ruby) return null;
+        let segments = cache.get(ruby);
+        if (!segments) {
+            segments = [];
+            let pending = [];
+            const self = this;
+            const collect = (n) => {
+                if (n.nodeType === Node.TEXT_NODE) {
+                    if (self.isIgnoredLookupText(n)) return;
+                    if (!/^[\s　]*$/.test(n.nodeValue || '')) pending.push(n);
+                    return;
+                }
+                if (n.nodeType !== Node.ELEMENT_NODE) return;
+                const tag = n.tagName;
+                if (tag === 'RT') {
+                    segments.push({ nodes: pending, reading: (n.textContent || '').trim() });
+                    pending = [];
+                    return;
+                }
+                if (tag === 'RP' || tag === 'RTC') return;
+                for (let c = n.firstChild; c; c = c.nextSibling) collect(c);
+            };
+            for (let c = ruby.firstChild; c; c = c.nextSibling) collect(c);
+            cache.set(ruby, segments);
+        }
+        for (let i = 0; i < segments.length; i++) {
+            if (segments[i].nodes.indexOf(node) >= 0) return segments[i];
+        }
+        return null;
+    },
+
+    // 查询串 text（= ranges 各段依次拼接）里**完整**落在选区内的 ruby 基字：
+    // [{ s, e, r }]，s/e 为 text 内 UTF-16 区间，r 为来源自带的 <rt> 读音。基字只被
+    // 扫到一部分的不报；text 不是各段的精确拼接时整体不报（坐标会错位）。
+    rubyReadingSpans(ranges, text) {
+        const spans = [];
+        const cache = new Map();
+        let pos = 0;
+        let open = null;
+        for (let i = 0; i < ranges.length; i++) {
+            const range = ranges[i];
+            const length = range.end - range.start;
+            if (text.substr(pos, length) !== (range.node.nodeValue || '').slice(range.start, range.end)) {
+                return [];
+            }
+            const seg = this.rubySegmentOf(range.node, cache);
+            const full = range.start === 0 && range.end === (range.node.nodeValue || '').length;
+            if (!seg || !seg.reading || !full) {
+                open = null;
+            } else {
+                const index = seg.nodes.indexOf(range.node);
+                if (index === 0) {
+                    open = { seg, start: pos, next: 1 };
+                } else if (!open || open.seg !== seg || open.next !== index) {
+                    open = null;
+                } else {
+                    open.next = index + 1;
+                }
+                if (open && open.next === seg.nodes.length) {
+                    spans.push({ s: open.start, e: pos + length, r: seg.reading });
+                    open = null;
+                }
+            }
+            pos += length;
+        }
+        if (pos !== text.length) return [];
+        return spans;
+    },
+
     findParagraph(node) {
         let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         // 表单控件镜像自成一段：句子不越出字段去拼宿主页其它文字。
@@ -644,15 +722,17 @@ window.fushiSelection = {
 
         if (!text) return null;
 
+        const rubyReadings = this.rubyReadingSpans(ranges, text);
         this.selection = {
             startNode,
             startOffset,
             ranges,
-            text
+            text,
+            rubyReadings
         };
 
         const rect = this.getSelectionRect(x, y);
-        window.flutter_inappwebview.callHandler('textSelected', text, rect);
+        window.flutter_inappwebview.callHandler('textSelected', text, rect, rubyReadings);
 
         return text;
     },

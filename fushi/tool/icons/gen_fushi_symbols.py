@@ -335,11 +335,24 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     # Material Symbols 没有 incognito 字形（上游码位表至 master 都没有），无痕沿用
     # visibility_off；单独给语义名，换字形时只改这一行。
     ("incognito", "visibility_off", "visibility_off_outlined", "visibility_off", "无痕浏览"),
+    # ── 外观 › 页面背景（2026-10-31，PR #2660）──────────────────────────
+    ("pageBackdrop", "wallpaper", "wallpaper_outlined", "wallpaper", "页面背景 / 壁纸"),
+    ("opacity", "opacity", "opacity_outlined", "opacity", "浓度 / 强度"),
+    ("scrim", "gradient", "gradient_outlined", "gradient", "遮罩浓度（图片上的渐变压暗）"),
+    ("portraitImage", "stay_current_portrait", "stay_current_portrait_outlined", "stay_current_portrait", "竖屏专用图片"),
+    ("addImage", "add_photo_alternate", "add_photo_alternate_outlined", "add_photo_alternate", "添加图片"),
+    ("ambientMotion", "motion_photos_on", "motion_photos_on_outlined", "motion_photos_on", "环境动效（缓慢漂移）"),
 ]
 
 # 旧 Material 图标在 Apple 映射表里没有、或映射不合适时，直接指定 CupertinoIcons 名
 # （线框, 实心）。
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
+    "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
+    "opacity": ("drop", "drop_fill"),
+    "scrim": ("circle_lefthalf_fill", "circle_lefthalf_fill"),
+    "portraitImage": ("device_phone_portrait", "device_phone_portrait"),
+    "addImage": ("plus_rectangle_on_rectangle", "plus_rectangle_fill_on_rectangle_fill"),
+    "ambientMotion": ("sparkles", "sparkles"),
     "settingsGear": ("gear", "gear_solid"),
     "repeatOne": ("repeat_1", "repeat_1"),
     "shuffle": ("shuffle", "shuffle"),

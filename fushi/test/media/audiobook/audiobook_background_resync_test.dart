@@ -246,7 +246,7 @@ void main() {
       );
     });
 
-    test('BUG-3887：插图停留秒数可自定义（不再只有 0/5/10/15），超上限夹住并持久', () async {
+    test('BUG-3891：插图停留秒数可自定义（不再只有 0/5/10/15），超上限夹住并持久', () async {
       final AudiobookPlayerController c = await _playingController();
       final List<int> persisted = <int>[];
       c.onImagePausePersist = (int sec) async => persisted.add(sec);

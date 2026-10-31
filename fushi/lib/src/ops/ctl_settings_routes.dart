@@ -770,7 +770,10 @@ Future<void> _applySetting(
   final SettingsItem? item = entry.item;
   switch (item) {
     case SettingsSwitchItem():
-      await item.onChanged(context, parseCtlSettingBool(raw));
+      // 开关也可能拒绝某个值（例如要求改走带确认的动作）：ArgumentError → 400。
+      await _guardCliInput<void>(() async {
+        await item.onChanged(context, parseCtlSettingBool(raw));
+      });
     case SettingsSegmentedItem<Object>():
       final List<SettingsSegmentOption<Object>> choices = item.optionsFor(
         context,

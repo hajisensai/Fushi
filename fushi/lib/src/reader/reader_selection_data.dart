@@ -1,3 +1,5 @@
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
+
 class ReaderSelectionData {
   ReaderSelectionData({
     required this.text,
@@ -22,6 +24,7 @@ class ReaderSelectionData {
     this.fromHover = false,
     this.carriesLyricsCueContext = false,
     this.lyricsCueContext,
+    this.rubySpans = const <FushiRubySpan>[],
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -52,6 +55,7 @@ class ReaderSelectionData {
       fromHover: json['fromHover'] as bool? ?? false,
       carriesLyricsCueContext: json.containsKey('lyricsCueContext'),
       lyricsCueContext: _readStringKeyedMap(json['lyricsCueContext']),
+      rubySpans: FushiRubySpan.listFromWire(json['rubyReadings']),
     );
   }
 
@@ -127,6 +131,11 @@ class ReaderSelectionData {
 
   /// 歌词文档选词那一刻的命中 cue：`{textFragmentId, cueIndex}`；没命中 cue 为 null。
   final Map<String, dynamic>? lyricsCueContext;
+
+  /// [text] 里带原文振假名的基字（`{s, e, r}`：UTF-16 区间 + `<rt>` 读音），由
+  /// `buildSelectionPayload` 从 DOM 的 `<ruby>` 读出。查词据此让读音吻合的同长度候选
+  /// 排前；旧 payload / 无 ruby 为空。
+  final List<FushiRubySpan> rubySpans;
 }
 
 Map<String, dynamic>? _readStringKeyedMap(Object? raw) {

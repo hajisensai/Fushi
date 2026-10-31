@@ -1144,6 +1144,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         sentence: data.sentence.isEmpty ? data.text : data.sentence,
         fromHover: data.fromHover,
         origin: this,
+        rubySpans: data.rubySpans,
         onMatched: (int count) => unawaited(
           _evaluateQuiet(ReaderSelectionScripts.highlightInvocation(count)),
         ),

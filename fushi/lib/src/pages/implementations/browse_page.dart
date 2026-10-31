@@ -400,26 +400,6 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       onChanged: _selectOnlineDomain,
       focusIdPrefix: 'browse-${tab.name}-domain',
       onEdgeOverscroll: (int delta) => _handOffFrom(tab, delta),
-      // 来源 / 扩展与左边的内容域同一种二级胶囊页签（浏览页二级选择一律是
-      // 页签，不用分段按钮）。
-      trailing: LibrarySectionTabs<OnlineSourcesSection>(
-        key: const ValueKey<String>('browse-online-section-picker'),
-        tabs: <LibrarySectionTab<OnlineSourcesSection>>[
-          LibrarySectionTab<OnlineSourcesSection>(
-            value: OnlineSourcesSection.sources,
-            label: t.library_view_sources,
-          ),
-          LibrarySectionTab<OnlineSourcesSection>(
-            value: OnlineSourcesSection.extensions,
-            label: t.media_import_segment_extensions,
-          ),
-        ],
-        selected: _onlineSection,
-        onChanged: _selectOnlineSection,
-        focusIdPrefix: 'browse-online-section',
-        secondary: true,
-        floating: true,
-      ),
       // 在线来源面的主滚动视图自己把头部高度加成顶部 sliver（内容滚到头部底下）。
       pageHandlesInset: true,
       pageBuilder: (OnlineSourcesDomain domain) => Stack(
@@ -757,6 +737,27 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   ///
   /// 页头动作只在「下载」页签出现（「添加任务」+ 下载设置）：它们不是来源 / 扩展 /
   /// 发现的动作。动作登记进本页自己的 [_actionsSlot]，由按钮组胶囊画出。
+  /// 在线源顶栏右上角的「来源 / 扩展」胶囊切换（与一级页签同一种浮动胶囊）。
+  Widget _buildOnlineSectionSwitch() {
+    return LibrarySectionTabs<OnlineSourcesSection>(
+      key: const ValueKey<String>('browse-online-section-picker'),
+      tabs: <LibrarySectionTab<OnlineSourcesSection>>[
+        LibrarySectionTab<OnlineSourcesSection>(
+          value: OnlineSourcesSection.sources,
+          label: t.library_view_sources,
+        ),
+        LibrarySectionTab<OnlineSourcesSection>(
+          value: OnlineSourcesSection.extensions,
+          label: t.media_import_segment_extensions,
+        ),
+      ],
+      selected: _onlineSection,
+      onChanged: _selectOnlineSection,
+      focusIdPrefix: 'browse-online-section',
+      floating: true,
+    );
+  }
+
   Widget _buildHeader(TabController controller, List<BrowseTab> tabs) {
     // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
     // 左上角凭空出现返回键。
@@ -767,9 +768,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? child) {
-        final bool onDownloads =
-            tabs[controller.index.clamp(0, tabs.length - 1)] ==
-            BrowseTab.downloads;
+        final BrowseTab current =
+            tabs[controller.index.clamp(0, tabs.length - 1)];
+        final bool onDownloads = current == BrowseTab.downloads;
         // 扩展的「扩展仓库」不在顶栏：它和导入 APK 一起排在扩展目录批量安装那一行
         // （2026-10-25 用户拍板，顶栏那颗无字图标与正文按钮重复）。
         final List<Widget> actions = <Widget>[
@@ -815,6 +816,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                     onTap: () => Navigator.of(context).maybePop(),
                   ),
                 ),
+          // 在线源的「来源 / 扩展」切换放在顶栏右上角的胶囊里（2026-10-30
+          // 用户），二级行只留内容域（小说 / 漫画 / 视频），一行一条下划线。
+          trailing: current == BrowseTab.sources
+              ? _buildOnlineSectionSwitch()
+              : null,
           tabs: child!,
         );
       },
@@ -1284,36 +1290,35 @@ class _BrowseSwipeSectionsState<T extends Object>
     final bool showTabs = widget.tabs.length > 1;
     // 二级页签行叠在页面上、与一级页签行同一份显隐（[FushiFloatingChromeOverlay]
     // 读同一个作用域），收放不改页面视口。
+    final Widget? trailing = widget.trailing;
     return FushiFloatingChromeOverlay(
-      chrome: !(showTabs || widget.trailing != null)
+      // 与库页二级同一形态（2026-10-30 方案 B）：下划线页签贴着一级顶栏，
+      // 不再隔 8。
+      nestedGap: 0,
+      opaqueChrome: true,
+      chrome: !(showTabs || trailing != null)
           ? const SizedBox.shrink()
           : Padding(
-              // 与上面的一级页签浮动胶囊、页面内容同一条页边（左缘对齐）；
-              // 顶上 8 + 浮动工具栏底边 4 = 两级页签之间 12。
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.gap,
-              ),
+              // 与上面的一级页签浮动胶囊、页面内容同一条页边（左缘对齐）。
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
               child: Row(
                 children: <Widget>[
                   if (showTabs)
                     Expanded(
-                      // 二级内容域：贴合内容宽的紧凑扁平分段胶囊（比一级悬浮
-                      // 页签胶囊矮一档、不浮），摆不下在胶囊里横滑。
+                      // 二级内容域：M3 secondary 下划线页签（无底色、36 高），
+                      // 摆不下时横滑。
+                      flex: widget.tabs.length,
                       child: LibrarySectionTabs<T>.controlled(
                         key: widget.pickerKey,
                         tabs: widget.tabs,
                         controller: controller,
                         focusIdPrefix: widget.focusIdPrefix,
                         secondary: true,
-                        floating: true,
                       ),
-                    )
-                  else
-                    const Spacer(),
-                  if (widget.trailing != null) widget.trailing!,
+                    ),
+                  // 下划线页签要有限宽才能铺满 / 横滑：尾部的来源 / 扩展页签按
+                  // 段数（2）分宽，没有内容域页签时占满整行。
+                  if (trailing != null) Expanded(flex: 2, child: trailing),
                 ],
               ),
             ),

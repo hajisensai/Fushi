@@ -15,37 +15,24 @@ Widget _testLibrary(
   BuildContext _,
   GalHookSessionController __,
   VoidCallback ___,
-) =>
-    const Center(child: Icon(Icons.sports_esports_outlined));
+) => const Center(child: Icon(Icons.sports_esports_outlined));
 
 /// 新增游戏首页（dashboard）后，游戏模块默认停在首页；这些针对库/工作台/诊断的
 /// 断言仍要在「库」子区上验证。用桩 dashboard 绕开首页对 appProvider 的依赖，并在
 /// setUp 里把 IndexedStack 起始子区切到库（与旧默认行为等价）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
-Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
-      children: <Widget>[
-        navigation,
-        const Text('game-discover'),
-      ],
-    );
+Widget _stubDiscover(BuildContext _, Widget navigation) =>
+    Column(children: <Widget>[navigation, const Text('game-discover')]);
 
 int _streamBuilds = 0;
 
 Widget _stubStream(BuildContext _, Widget navigation) {
   _streamBuilds++;
-  return Column(
-    children: <Widget>[
-      navigation,
-      const Text('game-stream'),
-    ],
-  );
+  return Column(children: <Widget>[navigation, const Text('game-stream')]);
 }
 
-Widget _testMonitorWithSections(
-  BuildContext _,
-  VoidCallback onShowLibrary,
-) {
+Widget _testMonitorWithSections(BuildContext _, VoidCallback onShowLibrary) {
   return FushiPageHeader.customTitle(
     title: GameSectionTabs(
       selected: GameSection.monitor,
@@ -75,8 +62,9 @@ void main() {
     gameSectionNotifier.value = GameSection.dashboard;
   });
 
-  testWidgets('library shows real capture count and true empty state',
-      (WidgetTester tester) async {
+  testWidgets('library shows real capture count and true empty state', (
+    WidgetTester tester,
+  ) async {
     TexthookerService.instance.appendLine('テスト台詞');
     await tester.pumpWidget(
       MaterialApp(
@@ -96,8 +84,9 @@ void main() {
     expect(find.byIcon(Icons.sports_esports_outlined), findsWidgets);
   });
 
-  testWidgets('monitor state survives library/workbench switches',
-      (WidgetTester tester) async {
+  testWidgets('monitor state survives library/workbench switches', (
+    WidgetTester tester,
+  ) async {
     int initCount = 0;
     int disposeCount = 0;
     await tester.pumpWidget(
@@ -134,8 +123,9 @@ void main() {
     expect(disposeCount, 0);
   });
 
-  testWidgets('800x600 top tabs carry neither diagnostics nor settings',
-      (WidgetTester tester) async {
+  testWidgets('800x600 top tabs carry neither diagnostics nor settings', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -156,15 +146,25 @@ void main() {
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(HomeGamePage)),
     );
-    final Finder gameSections =
-        find.byType(FushiAdjustableSegmented<GameSection>);
-    expect(gameSections, findsOneWidget);
+    // 2026-10-30 起两级页签：一级「游戏库 / 发现」，「游戏库」组内的首页 /
+    // 全部游戏 / 工作台 / 串流在顶栏下方的二级胶囊里；导入是工具栏右端的圆钮。
+    final Finder gameSections = find.byType(
+      FushiAdjustableSegmented<GameSection>,
+    );
+    expect(gameSections, findsNWidgets(2), reason: '一级 + 二级各一份');
+    expect(find.text(t.game_library), findsOneWidget, reason: '一级「游戏库」组');
+    expect(find.text(t.library_view_discover), findsOneWidget);
     expect(find.text(t.game_dashboard), findsOneWidget);
-    expect(find.text(t.game_library), findsOneWidget);
+    expect(find.text(t.game_library_all), findsOneWidget);
     expect(find.text(t.game_capture_workbench_tab), findsOneWidget);
     expect(
+      find.text(t.library_view_import),
+      findsNothing,
+      reason: '导入不再是页签（只在圆钮 tooltip 里）',
+    );
+    expect(
       controller.requestById(
-        const FushiFocusId('game-library-tab-sections'),
+        const FushiFocusId('game-subsection-tab-sections'),
       ),
       isTrue,
     );
@@ -176,16 +176,16 @@ void main() {
     );
 
     final FocusDriver driver = FocusDriver(tester);
-    // 库后一位是「捕获」。
+    // 二级胶囊里库后一位是「捕获」。
     await driver.adjust(steps: 1);
     expect(find.byKey(HomeGamePage.monitorKey), findsOneWidget);
 
     expect(
       controller.requestById(
-        const FushiFocusId('game-capture-tab-sections'),
+        const FushiFocusId('game-subsection-tab-sections'),
       ),
       isTrue,
-      reason: '切到捕获页后，新的稳定分段 ID 必须可聚焦',
+      reason: '切到捕获页后，二级胶囊的稳定分段 ID 仍可聚焦',
     );
     await tester.pump();
     expect(controller.primaryFocusIsManagedTarget, isTrue);
@@ -193,46 +193,58 @@ void main() {
 
     // 捕获之后是「串流」（把别的主机上的游戏串流到本机）。
     expect(find.text('game-stream'), findsOneWidget);
+    // 一级页签的稳定 ID 沿用各子区原来那份（串流 = game-stream-tab）。
     expect(
-      controller.requestById(
-        const FushiFocusId('game-stream-tab-sections'),
-      ),
+      controller.requestById(const FushiFocusId('game-stream-tab-sections')),
       isTrue,
-      reason: '切到串流页后，新的稳定分段 ID 必须可聚焦',
+      reason: '切到串流页后，一级分段的稳定 ID 必须可聚焦',
     );
     await tester.pump();
     await driver.adjust(steps: 1);
 
-    // 再之后是「发现」（2026-10-01 加回库页子标签，排在「导入」之前，与书 /
-    // 漫画 / 视频库页「发现 → 导入」同序）。
+    // 一级「游戏库」之后是「发现」。
     expect(find.text('game-discover'), findsOneWidget);
     expect(
-      controller.requestById(
-        const FushiFocusId('game-discover-tab-sections'),
-      ),
+      controller.requestById(const FushiFocusId('game-discover-tab-sections')),
       isTrue,
       reason: '切到发现页后，新的稳定分段 ID 必须可聚焦',
     );
     await tester.pump();
-    await driver.adjust(steps: 1);
-
-    // 2026-08-13 入库入口统一：「导入」分段；2026-10-09 起「设置」页签移除后它排
-    // 末位（与书 / 漫画 / 视频库页同构）。
-    expect(find.byKey(HomeGamePage.importKey), findsOneWidget);
     expect(
-      controller.requestById(
-        const FushiFocusId('game-import-tab-sections'),
-      ),
-      isTrue,
-      reason: '切到导入页后，新的稳定分段 ID 必须可聚焦',
+      find.byType(FushiAdjustableSegmented<GameSection>),
+      findsOneWidget,
+      reason: '发现组只有一段，不画二级胶囊',
     );
+
+    // 2026-08-13 入库入口统一：「导入」视图；2026-10-30 起它不再是页签，而是
+    // 工具栏右端的切换型圆钮（与书 / 漫画 / 视频库页同构）。
+    final Finder importButton = find.byKey(
+      const ValueKey<String>('game-library-view-import'),
+    );
+    expect(tester.widget<FushiIconButton>(importButton).selected, isFalse);
+    tester.widget<FushiIconButton>(importButton).onTap!();
+    await tester.pump();
+    expect(find.byKey(HomeGamePage.importKey), findsOneWidget);
+    expect(tester.widget<FushiIconButton>(importButton).selected, isTrue);
+    expect(
+      controller.requestById(const FushiFocusId('game-import-tab-sections')),
+      isTrue,
+      reason: '停在导入页时一级分段仍在、稳定 ID 必须可聚焦',
+    );
+    // 再点一次回到进导入页之前的「发现」。
+    tester.widget<FushiIconButton>(importButton).onTap!();
+    await tester.pump();
+    expect(gameSectionNotifier.value, GameSection.discover);
     expect(
       kGameSectionTabOrder.last,
       GameSection.importGames,
       reason: '模块内「设置」页签已移除（设置走全局「设置 › 游戏」），导入排末位',
     );
-    expect(find.text(t.game_diagnostics), findsNothing,
-        reason: '兼容性诊断不得继续占用游戏顶部高频页签');
+    expect(
+      find.text(t.game_diagnostics),
+      findsNothing,
+      reason: '兼容性诊断不得继续占用游戏顶部高频页签',
+    );
 
     // 诊断能力保留给捕获工作台 / 全局设置导航：程序化入口能进入详情。
     gameSectionNotifier.value = GameSection.diagnostics;
@@ -243,8 +255,9 @@ void main() {
     expect(find.byIcon(FushiIcons.audio), findsOneWidget);
   });
 
-  testWidgets('game tabs participate in managed focus navigation',
-      (WidgetTester tester) async {
+  testWidgets('game tabs participate in managed focus navigation', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: FushiFocusRoot(
@@ -263,9 +276,10 @@ void main() {
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
       tester.element(find.byType(HomeGamePage)),
     );
+    // 首页 / 全部游戏 / 工作台 / 串流在「游戏库」组的二级胶囊里。
     expect(
       controller.requestById(
-        const FushiFocusId('game-library-tab-sections'),
+        const FushiFocusId('game-subsection-tab-sections'),
       ),
       isTrue,
     );
@@ -278,8 +292,9 @@ void main() {
   });
 
   for (final Size size in <Size>[const Size(420, 760), const Size(1280, 800)]) {
-    testWidgets('game library lays out at ${size.width.toInt()}px',
-        (WidgetTester tester) async {
+    testWidgets('game library lays out at ${size.width.toInt()}px', (
+      WidgetTester tester,
+    ) async {
       await tester.binding.setSurfaceSize(size);
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -371,5 +386,4 @@ class _TestMonitorState extends State<_TestMonitor> {
       ],
     );
   }
-
 }

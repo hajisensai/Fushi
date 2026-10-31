@@ -1372,6 +1372,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             stylesRevision: fushiPopupCss.revision,
             // 扩展主题显式 light/dark：让 app 按这个明暗生成弹窗配色（旧 app 忽略该字段）。
             ...(colorScheme ? { colorScheme } : {}),
+            // 原文自带振假名 `[{s,e,r}]`（以 term 为坐标系）：app 让引擎把读音吻合的同长度
+            // 候选排前面。只在非空时带（旧 app 忽略该字段）。
+            ...(Array.isArray(msg.ruby) && msg.ruby.length ? { ruby: msg.ruby } : {}),
           }),
         }));
         const headersAt = performance.now();

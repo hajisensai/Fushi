@@ -48,12 +48,7 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
   }
 
   @override
-  Widget buildBackground(
-    BuildContext context,
-    LyricsPlayerData data, {
-    double bleedTop = 0,
-  }) {
-    // 模糊封面各层按画布比例铺，与页面几何无关：整张画布照画即可。
+  Widget buildBackground(BuildContext context, LyricsPlayerData data) {
     return LyricsShellAppleBackground(
       cover: data.cover,
       accent: appleColorsOf(context).accent,

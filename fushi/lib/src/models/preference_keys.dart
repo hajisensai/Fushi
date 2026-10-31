@@ -255,6 +255,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_window_bg_opacity',
   'gal_hook_toolbar_auto_hide',
   'gal_hook_toolbar_labels',
+  // String：galgame 台词浮窗 TTS 设置（整份 GalLineTtsSettings JSON，gal_line_tts.dart）。
+  // 含本机声音预设 id → 设备本地，见 sync_repository 的本机键表。
+  'gal_line_tts_settings',
   'gal_mining_animated_format',
   'gal_mining_clip_format',
   'gal_mining_image_mode',
@@ -521,6 +524,19 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'overlay_lookup_max_width',
   // bool：BT / 磁力下载前的 P2P 说明勾了「不再提示」（p2p_download_notice.dart）。
   'p2p_download_notice_dismissed',
+  // 页面背景（page_backdrop_style.dart）：预设 / 强度 / 漂移动效 / 图片模糊 /
+  // 遮罩浓度 / 从图片取色 / 选中的候选色随 Profile；两张图片路径与取色缓存
+  // （`path|修改时间:字节数|argb,argb…`）设备本地。
+  'page_backdrop_accent_index',
+  'page_backdrop_follow_image_accent',
+  'page_backdrop_image_blur',
+  'page_backdrop_image_landscape',
+  'page_backdrop_image_portrait',
+  'page_backdrop_image_scrim',
+  'page_backdrop_motion',
+  'page_backdrop_preset',
+  'page_backdrop_seed_cache',
+  'page_backdrop_strength',
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',

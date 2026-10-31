@@ -44,6 +44,9 @@ MAX_SLOTS=1
 # MAX_CONCURRENCY=4
 MIN_FREE_MEM_MB=4096
 MIN_FREE_DISK_GB=20
+# Compile checks (Android / desktop builds whose output never leaves this
+# machine); 0 turns them off.
+# ALLOW_BUILD=0
 LIMITS
   echo "wrote $W/limits"
 fi

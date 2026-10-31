@@ -13,6 +13,16 @@ struct LookupResult {
   std::vector<TransformGroup> trace;
   TermResult term;
   int preprocessor_steps;
+  // 与 LookupOptions::ruby_readings 的一致度（1 吻合 / 0 无从判断 / -1 冲突），比较器用。
+  int ruby_agreement = 0;
+};
+
+// 查询串里一段带原文振假名的基字：[start, end) 是查询串的**码点**区间，reading 是该
+// 基字自带的 <rt> 读音（来源读音，不是推断）。
+struct RubyReading {
+  std::size_t start = 0;
+  std::size_t end = 0;
+  std::string reading;
 };
 
 // 上游 bc62d2b/86c6e2f：调用方可控的排序选项。默认 Auto 逐字节复刻既有比较器
@@ -34,6 +44,10 @@ struct LookupOptions {
   // 查询语言为中文时置 true：文本预处理额外产出简体 → 繁體变体（原查询仍先试）。
   // 引擎本身语言无关，由调用方（Dart 的内容语言 / 查词来源语言）声明。
   bool chinese_simp_to_trad = false;
+  // 原文自带振假名（阅读器 / 歌词 / 卡片 / 网页取词时从 <ruby> 读出）。非空时同匹配
+  // 长度的候选里读音与 ruby 吻合的排前、冲突的排后（截断前生效），见
+  // scan/ruby_reading.hpp。空 = 比较器逐字不变。
+  std::vector<RubyReading> ruby_readings;
 };
 
 class Lookup {

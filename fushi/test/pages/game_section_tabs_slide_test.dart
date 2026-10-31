@@ -2,8 +2,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
-import 'package:fushi/src/pages/implementations/game_shared.dart'
-    show kGameSectionTabOrder;
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -26,13 +24,11 @@ Widget _stubLibrary(
   BuildContext _,
   GalHookSessionController __,
   VoidCallback ___,
-) =>
-    const SizedBox();
+) => const SizedBox();
 
 /// 发现子区桩：只带页头分段导航主位，不构建需要 provider 的发现正文。
-Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
-      children: <Widget>[FushiPageHeader.customTitle(title: navigation)],
-    );
+Widget _stubDiscover(BuildContext _, Widget navigation) =>
+    Column(children: <Widget>[FushiPageHeader.customTitle(title: navigation)]);
 
 void main() {
   setUp(() {
@@ -50,20 +46,21 @@ void main() {
   TabController shellController(WidgetTester tester) {
     // 2026-10-06 起分区页签由外壳浮动工具栏统一画一份（ad8496b2b86，
     // [GameSectionTabsHostScope]），子区页头里那份留空：全树（含 offstage 子区）
-    // 恰好一份。MD3 下 FushiTabBar 把原 TabBar 渲染在自己下面一层。
-    final Finder bar = find.byType(
-      FushiSectionTabBar<GameSection>,
+    // 一级恰好一份。2026-10-30 起一级只放「游戏库 / 发现」两组，组内子区在下方
+    // 的二级胶囊（secondary）里。MD3 下 FushiTabBar 把原 TabBar 渲染在自己下面
+    // 一层。
+    final Finder bar = find.byWidgetPredicate(
+      (Widget w) => w is FushiSectionTabBar<GameSection> && !w.secondary,
       skipOffstage: false,
     );
-    expect(bar, findsOneWidget, reason: '游戏外壳应恰好一份分区页签');
+    expect(bar, findsOneWidget, reason: '游戏外壳应恰好一份一级分区页签');
     final TabBar tabBar = tester.widget<TabBar>(
       find.descendant(of: bar, matching: find.byType(TabBar)),
     );
     return tabBar.controller!;
   }
 
-  testWidgets('库 → 发现：外壳页签从「库」滑到「发现」，而不是原地落位',
-      (WidgetTester tester) async {
+  testWidgets('库 → 发现：外壳页签从「库」滑到「发现」，而不是原地落位', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1440, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -82,13 +79,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final double from =
-        kGameSectionTabOrder.indexOf(GameSection.library).toDouble();
-    final double to =
-        kGameSectionTabOrder.indexOf(GameSection.discover).toDouble();
+    // 一级：「游戏库」组（库所在）是第 0 段，「发现」是第 1 段。
+    const double from = 0;
+    const double to = 1;
     final TabController shellTabs = shellController(tester);
-    expect(shellTabs.animation!.value, from,
-        reason: '外壳页签应停在用户真正所在的「库」');
+    expect(shellTabs.animation!.value, from, reason: '外壳页签应停在用户真正所在的「游戏库」组');
 
     gameSectionNotifier.value = GameSection.discover;
     await tester.pump();
@@ -98,8 +93,7 @@ void main() {
 
     expect(shellTabs.index, to.toInt());
     expect(shellTabs.animation!.value, greaterThan(from));
-    expect(shellTabs.animation!.value, lessThan(to),
-        reason: '切出来的那一刻指示条应正在滑动');
+    expect(shellTabs.animation!.value, lessThan(to), reason: '切出来的那一刻指示条应正在滑动');
 
     await tester.pumpAndSettle();
     expect(shellTabs.animation!.value, to);

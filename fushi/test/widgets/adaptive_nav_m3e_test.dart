@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show kFushiFloatingCapsuleScale;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -336,7 +338,10 @@ void main() {
       final RenderBox ref = tester.renderObject<RenderBox>(ink);
       final RectCallback? callback = inkWell.getRectCallback(ref);
       final Rect local = callback == null ? Offset.zero & ref.size : callback();
-      return local.shift(ref.localToGlobal(Offset.zero));
+      // 经完整祖先变换换成屏幕框：Material 浮动底栏整体按
+      // [kFushiFloatingCapsuleScale] 缩放，只平移 localToGlobal(Offset.zero)
+      // 会得到「局部尺寸 + 屏幕原点」的混合框。
+      return MatrixUtils.transformRect(ref.getTransformTo(null), local);
     }
 
     testWidgets('手机宽：竖排目的地、按标签行高精确适配、全部标签可见', (WidgetTester tester) async {
@@ -375,7 +380,14 @@ void main() {
         (2 * verticalPadding + shapeSlot + labelGap + labelHeight)
             .ceilToDouble(),
       );
-      expect(capsule, expectedCapsule, reason: '胶囊只为标签行高让位，不得凭空增加高度');
+      // 上面是胶囊自身坐标里的几何；Material 浮动底栏整体按
+      // [kFushiFloatingCapsuleScale] 缩放（FushiCapsuleScale），屏幕上量到的
+      // 胶囊高 = 局部高 × 缩放（上下 gap / margin 在缩放层外面，不缩）。
+      expect(
+        capsule,
+        closeTo(expectedCapsule * kFushiFloatingCapsuleScale, 1e-6),
+        reason: '胶囊只为标签行高让位，不得凭空增加高度',
+      );
       for (final AdaptiveNavItem item in items) {
         expect(labelPainted(tester, item.label), isTrue, reason: item.label);
         final Rect icon = tester.getRect(find.byIcon(item.icon).hitTestable());
@@ -393,12 +405,12 @@ void main() {
         );
       }
       // 悬停 / 按压状态层与选中多边形同框（带标签时 40 的方槽，圆形裁剪）。
+      // 40 是胶囊自身坐标里的槽；屏幕上同乘胶囊缩放。
+      const double slot = 40 * kFushiFloatingCapsuleScale;
       for (final AdaptiveNavItem item in items) {
-        expect(
-          stateLayerRect(tester, item.label).size,
-          const Size.square(40),
-          reason: item.label,
-        );
+        final Size layer = stateLayerRect(tester, item.label).size;
+        expect(layer.width, closeTo(slot, 1e-6), reason: item.label);
+        expect(layer.height, closeTo(slot, 1e-6), reason: item.label);
       }
     });
 

@@ -24,7 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show DictionarySearchResult;
+    show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 
 import 'package:fushi/media.dart' show ReaderFushiSource;
 import 'package:fushi/models.dart';
@@ -68,10 +68,15 @@ class SrsCardLookupRequest {
     this.fromHover = false,
     this.origin,
     this.onMatched,
+    this.rubySpans = const <FushiRubySpan>[],
   });
 
   /// 查询串（命中字起到段尾，引擎按最长匹配回报命中长度）。
   final String term;
+
+  /// [term] 上来源自带的振假名（卡面 / 网页的 `<ruby>`、原生卡面的结构化 ruby），引擎
+  /// 据此让读音吻合的同长度候选排前。
+  final List<FushiRubySpan> rubySpans;
 
   /// 被点文字的全局矩形（弹窗据此避让、绝不盖住被查词）。
   final Rect anchor;
@@ -163,7 +168,8 @@ class SrsCardLookupController extends ChangeNotifier {
 
   /// 在弹窗栈之上再压一层（弹窗释义里点词的嵌套查词入口，测试也走它）。
   Future<int> pushNested(String query, Rect selectionRect) =>
-      _host?._pushNested(query, selectionRect) ?? Future<int>.value(0);
+      _host?._pushNested(query, selectionRect, const <FushiRubySpan>[]) ??
+      Future<int>.value(0);
 
   /// 关掉最上面一层；没有可见弹窗返回 false。
   bool closeTop() => _host?._closeTop() ?? false;
@@ -316,10 +322,15 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
   Future<DictionarySearchResult> searchPopupDictionary({
     required String term,
     required int maximumTerms,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
     final SrsCardLookupSearch? search = ref.read(srsCardLookupSearchProvider);
     if (search != null) return search(term, maximumTerms);
-    return super.searchPopupDictionary(term: term, maximumTerms: maximumTerms);
+    return super.searchPopupDictionary(
+      term: term,
+      maximumTerms: maximumTerms,
+      rubySpans: rubySpans,
+    );
   }
 
   @override
@@ -432,17 +443,23 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
         replaceStack: true,
         reuseWarmSlot: true,
         autoRead: !request.fromHover,
+        rubySpans: request.rubySpans,
       );
       if (mounted && matched > 0) request.onMatched?.call(matched);
     }());
   }
 
-  Future<int> _pushNested(String query, Rect selectionRect) {
+  Future<int> _pushNested(
+    String query,
+    Rect selectionRect,
+    List<FushiRubySpan> rubySpans,
+  ) {
     _queries.add(query.trim());
     return pushNestedPopup(
       query: query,
       selectionRect: selectionRect,
       controller: _popup,
+      rubySpans: rubySpans,
     );
   }
 
@@ -714,9 +731,16 @@ String srsCardLookupInstallScript(String selectionSource) =>
 /// 段落的纯文本里每个注音段只占一个占位符，[segments] 记下各段在两边的偏移以便换算。
 @immutable
 class SrsLookupTextData {
-  const SrsLookupTextData(this.text, {this.segments});
+  const SrsLookupTextData(
+    this.text, {
+    this.segments,
+    this.rubySpans = const <FushiRubySpan>[],
+  });
 
   final String text;
+
+  /// 卡面来源自带的注音（坐标系 = [text]，基字区间 + `<rt>` 读音）；不推断读音。
+  final List<FushiRubySpan> rubySpans;
 
   /// 注音拼接文字的分段：`(outerStart, outerLength, fullStart, placeholder)`。
   final List<SrsLookupTextSegment>? segments;
@@ -773,6 +797,7 @@ typedef SrsNativeLookupHit = ({
   Rect anchor,
   RenderParagraph paragraph,
   int start,
+  List<FushiRubySpan> rubySpans,
 });
 
 /// 在 [root] 子树里按全局坐标找被点的字（纯几何，可单测）：命中路径上最深的
@@ -847,6 +872,11 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   if (term.characters.length > 100) term = term.characters.take(100).string;
   if (term.trim().isEmpty) return null;
   final int startUtf16 = data.text.characters.take(span.start).string.length;
+  final List<FushiRubySpan> rubySpans = srsLookupRubySpansForTerm(
+    data.rubySpans,
+    startUtf16,
+    term.length,
+  );
   final String sentence = extractSentenceAt(data.text, startUtf16, 1).sentence;
   return (
     term: term,
@@ -856,8 +886,17 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
     anchor: MatrixUtils.transformRect(paragraph.getTransformTo(null), box),
     paragraph: paragraph,
     start: startUtf16,
+    rubySpans: rubySpans,
   );
 }
+
+/// 纯函数：整段文字上的注音 [spans] → 查询串 `[termStart, termStart+termLength)` 坐标系；
+/// 基字被查询起点 / 终点截断的丢弃（[shiftRubySpans] 的判据）。
+List<FushiRubySpan> srsLookupRubySpansForTerm(
+  List<FushiRubySpan> spans,
+  int termStart,
+  int termLength,
+) => shiftRubySpans(spans, leadingStrip: termStart, length: termLength);
 
 /// 原生绘制的卡面区：点按 / 悬停取词（只认 [srsLookupText] 标过的文字）。
 ///
@@ -937,6 +976,7 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
     c.lookup(
       SrsCardLookupRequest(
         term: hit.term,
+        rubySpans: hit.rubySpans,
         anchor: hit.anchor,
         sentence: hit.sentence,
         fromHover: fromHover,

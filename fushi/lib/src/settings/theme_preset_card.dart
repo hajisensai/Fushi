@@ -25,10 +25,15 @@ class FushiThemePresetCard extends StatelessWidget {
     super.key,
     this.onLongPress,
     this.overlay,
+    this.cellWidth = width,
   });
 
-  /// 卡片宽度（设置行里 Wrap 排列）。
-  static const double width = 96;
+  /// 卡片最小宽度（设置行里按可用宽度算列数，见 [themePresetCellWidth]）。
+  static const double width = 72;
+
+  /// 本张卡的实际宽度：调用方按整行宽度等分后传入，卡片拉伸铺满一列，
+  /// 行尾不留空白（2026-10-30 用户「这种地方都要自适应自调节」）。
+  final double cellWidth;
 
   final Color seed;
   final ColorScheme scheme;
@@ -40,7 +45,7 @@ class FushiThemePresetCard extends StatelessWidget {
   /// 未选中时叠在种子色块中央的小图标（「跟随系统取色」的 ✨、新建的 +）。
   final IconData? overlay;
 
-  static const double _blockSize = 40;
+  static const double _blockSize = 36;
 
   @override
   Widget build(BuildContext context) {
@@ -110,24 +115,22 @@ class FushiThemePresetCard extends StatelessWidget {
       excludeSemantics: true,
       child: FushiCard(
         selected: selected,
-        color: selected
-            ? null
-            : (apple
-                  ? appleColorsOf(context).tertiaryFill
-                  : cs.surfaceContainerHigh),
+        // 紧凑色板：未选中不铺底，只有选中底色与悬停 / 按下状态层，十几个主题
+        // 不再一格一张卡占满整屏（2026-10-30 用户「太多太占位」）。
+        color: selected ? null : const Color(0x00000000),
         borderRadius: BorderRadius.circular(SettingsKitRadii.card(style)),
-        padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
         onTap: onTap,
         onLongPress: onLongPress,
         child: SizedBox(
-          width: width - 16,
+          width: cellWidth - 8,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               block,
-              const SizedBox(height: 8),
-              stripes,
               const SizedBox(height: 6),
+              stripes,
+              const SizedBox(height: 4),
               Text(
                 label,
                 maxLines: 1,
@@ -141,4 +144,16 @@ class FushiThemePresetCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 宽 [maxWidth]、间距 [gap] 的一行里，主题卡在不窄于
+/// [FushiThemePresetCard.width] 的前提下尽量多放、并等分铺满整行时的卡宽。
+double themePresetCellWidth(double maxWidth, double gap) {
+  const double min = FushiThemePresetCard.width;
+  if (!maxWidth.isFinite || maxWidth <= min) return min;
+  final int columns = ((maxWidth + gap) / (min + gap)).floor().clamp(
+    1,
+    1 << 10,
+  );
+  return (maxWidth - gap * (columns - 1)) / columns;
 }

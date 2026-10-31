@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show FushiRubySpan, shiftRubySpans;
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
@@ -307,6 +309,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 源文本条点字发起的「扫描查词」（Yomitan 式）。非空时本条与搜索框都**不动**：
     // 变的只有下方那份结果和条上的高亮跨度，锚点就是被点的那个字素簇。
     SourceLookupScan? scan,
+    // 释义里点词带来的来源振假名，以 [query] 为坐标系（下面随句首空白平移）。
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -338,6 +342,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 独立查词窗是整窗卡片（非贴选区小浮卡），搜索期保持卡片显示、空白由
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
+      rubySpans: shiftRubySpans(
+        rubySpans,
+        leadingStrip: query.length - query.trimLeft().length,
+        length: trimmed.length,
+      ),
     );
     if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
     setState(() {
@@ -871,11 +880,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onScrolledToBottom: entry.allLoaded
           ? null
           : () => loadMoreForEntry(entry: entry, controller: _popup),
-      onTextSelected: (text, localRect) {
+      onTextSelected: (text, localRect, rubySpans) {
         if (_popup.entries.length > index + 1) {
           setState(() => _popup.truncateTo(index + 1));
         }
-        _pushSearch(text, localRect);
+        _pushSearch(text, localRect, rubySpans: rubySpans);
       },
       // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
       // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
