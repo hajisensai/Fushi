@@ -103,6 +103,7 @@ class FushiLookupRequest {
     this.ffiCacheMaxBytes = kDefaultLookupFfiCacheMaxBytes,
     this.supersedeLane,
     this.chineseSimpToTrad = false,
+    this.rubySpans = const <FushiRubySpan>[],
   });
 
   /// 已清洗的查询串（交给引擎的就是它，结果的 searchTerm 也是它）。
@@ -133,6 +134,10 @@ class FushiLookupRequest {
 
   /// 查询语言为中文：引擎额外试简体 → 繁體拼写（原形结果照常在），原始结果缓存键带 `/zh`。
   final bool chineseSimpToTrad;
+
+  /// 查询串里带来源振假名的基字（以 [text] 为坐标系）。非空时引擎在同匹配长度的结果里
+  /// 让读音吻合 ruby 的排前（截断前生效）；原始结果缓存键带 ruby 后缀。
+  final List<FushiRubySpan> rubySpans;
 }
 
 /// 后台查词的产出。
@@ -189,11 +194,14 @@ FushiLookupOutcome _computeLookupOutcome({
   required FushiLookupFfiCache? cache,
 }) {
   final Stopwatch watch = Stopwatch()..start();
-  final String cacheKey = buildFfiLookupCacheKey(
-    term: request.text,
-    maxResults: request.maxResults,
-    chineseSimpToTrad: request.chineseSimpToTrad,
-  );
+  // ruby 改变引擎的排序与截断结果：带 ruby 的查询单独成键（无 ruby 时键逐字不变）。
+  final String cacheKey =
+      buildFfiLookupCacheKey(
+        term: request.text,
+        maxResults: request.maxResults,
+        chineseSimpToTrad: request.chineseSimpToTrad,
+      ) +
+      rubySpansCacheSuffix(request.rubySpans);
   List<FushiLookupResult>? ffiResults = cache?.get(cacheKey);
   final int ffiCacheMicros = watch.elapsedMicroseconds;
   final bool ffiCacheHit = ffiResults != null;
@@ -217,6 +225,7 @@ FushiLookupOutcome _computeLookupOutcome({
       request.text,
       maxResults: request.maxResults,
       chineseSimpToTrad: request.chineseSimpToTrad,
+      rubySpans: request.rubySpans,
     );
     ffiLookupMicros = watch.elapsedMicroseconds - lookupStart;
     if (ffiResults.isNotEmpty) {

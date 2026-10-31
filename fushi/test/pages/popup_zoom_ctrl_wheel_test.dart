@@ -127,7 +127,7 @@ void main() {
               webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
               onDismiss: () {},
               onClose: () {},
-              onTextSelected: (String text, Rect rect) {},
+              onTextSelected: (String text, Rect rect, List<Object?> _) {},
               onLinkClick: (String query, Rect rect) {},
               onMineEntry: (Map<String, String> fields) async =>
                   const MinePopupResult(),
@@ -203,7 +203,7 @@ void main() {
               webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
               onDismiss: () {},
               onClose: () {},
-              onTextSelected: (String text, Rect rect) {},
+              onTextSelected: (String text, Rect rect, List<Object?> _) {},
               onLinkClick: (String query, Rect rect) {},
               onMineEntry: (Map<String, String> fields) async =>
                   const MinePopupResult(),

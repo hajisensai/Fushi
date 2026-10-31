@@ -136,6 +136,16 @@ test('background：显式明暗随查词请求带 colorScheme；auto 不带', as
   await ask({ type: 'lookup', term: '世界' });
   const lookup2 = fetches.find((f) => /\/api\/lookup\/dictionary$/.test(f.url));
   assert.ok(!('colorScheme' in lookup2.body), 'auto 不带提示（app 按自己当前明暗）');
+  assert.ok(!('ruby' in lookup2.body), '消息不带 ruby 时请求体也不带（旧 app 契约不变）');
+  // 原文振假名：内容脚本消息带 ruby → 原样进 POST body；空数组不带。
+  fetches.length = 0;
+  await ask({ type: 'lookup', term: '忙しい', ruby: [{ s: 0, e: 1, r: 'せわ' }] });
+  const rubyLookup = fetches.find((f) => /\/api\/lookup\/dictionary$/.test(f.url));
+  assert.deepStrictEqual(rubyLookup.body.ruby, [{ s: 0, e: 1, r: 'せわ' }], 'ruby 必须随查词请求交给 app');
+  fetches.length = 0;
+  await ask({ type: 'lookup', term: '忙しい', ruby: [] });
+  const emptyRuby = fetches.find((f) => /\/api\/lookup\/dictionary$/.test(f.url));
+  assert.ok(!('ruby' in emptyRuby.body), '空 ruby 不发字段');
   // ② 样本转发 + app 语言记录
   const r = await ask({ type: 'studySample', sample: { mediaKind: 'video', mediaKey: 'web:yt-a', positionMs: 1000, playing: true, speed: 1 } });
   const study = fetches.find((f) => /\/api\/extension\/study$/.test(f.url));

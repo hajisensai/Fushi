@@ -1842,10 +1842,15 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
 
-    // 顶部分类页签：页签轨道与下方内容同一左缘（28），首段文字再进轨道内衬 4 +
-    // 页签内边距 16。
+    // 顶部分类页签：整排页签与下方内容同一左右缘（28），铺满面板宽度
+    // （2026-10-30「顶部栏改为全宽」）；首段文字落在左缘之内。
+    final Rect tabsRect = tester.getRect(
+      find.byKey(const ValueKey<String>('video-settings-tabs')),
+    );
+    expect(tabsRect.left, closeTo(28, 1.5));
+    expect(tabsRect.right, closeTo(1000 - 28, 1.5));
     final double tabTextLeft = tester.getTopLeft(_categoryChip('playback')).dx;
-    expect(tabTextLeft, closeTo(28 + 4 + 16, 1.5));
+    expect(tabTextLeft, greaterThan(28));
 
     // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 28、独占整宽。
     // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==28 的纵向

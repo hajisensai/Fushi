@@ -27,7 +27,8 @@ enum HomeDashboardPanel {
 
   /// 媒体库全景（需求 2026-10-29）：全部作品封面与制卡词组成的可操作 3D 球幕，附分享用
   /// 16 秒开场动画。默认判据（`home_panorama_panel.dart` 的
-  /// `resolveHomePanoramaPanelVisible`）：不钉隐藏就显示，空库时面板里给引导语。
+  /// `resolveHomePanoramaPanelVisible`）：默认不显示（2026-10-30），钉成显示才出现；
+  /// 空库时面板里给引导语。
   panorama('library_panorama');
 
   const HomeDashboardPanel(this.id);

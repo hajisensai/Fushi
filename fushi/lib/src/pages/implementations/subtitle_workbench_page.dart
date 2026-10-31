@@ -8,7 +8,6 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
@@ -227,8 +226,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       initialPreferredLanguage: host.preferredLanguageFor(spec.seriesKey),
       onPreferredLanguageChanged: (String lang) =>
           host.setPreferredLanguage(spec.seriesKey, lang),
-      onDownloaded: (List<String> paths) =>
-          Navigator.of(context).pop(paths),
+      onDownloaded: (List<String> paths) => Navigator.of(context).pop(paths),
     );
   }
 
@@ -279,32 +277,39 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       // 「放不放得下」同时取决于宽度、语言和字体，一个常量在任一维度上都必然选错。
       // 去掉文字标签，这三个变量一起消失——图标宽度是常量，再窄也不会溢出。
       actions: <Widget>[
-          if (_canSwitchScope)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: FushiSegmentedButton<SubtitleWorkbenchScope>(
-                  key: const ValueKey<String>('subtitle-workbench-scope'),
-                  showSelectedIcon: false,
-                  segments: <ButtonSegment<SubtitleWorkbenchScope>>[
-                    ButtonSegment<SubtitleWorkbenchScope>(
-                      value: SubtitleWorkbenchScope.episode,
-                      icon: const FushiIcon(FushiIcons.subtitles),
-                      tooltip: t.video_subtitle_scope_episode,
+        // 作用域开关是动作胶囊里两枚可选中的图标按钮：放分段按钮会在胶囊里再套
+        // 一层胶囊（2026-10-30 用户「被胶囊包住有点丑」）。
+        if (_canSwitchScope)
+          Row(
+            key: const ValueKey<String>('subtitle-workbench-scope'),
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final (
+                    SubtitleWorkbenchScope scope,
+                    IconData icon,
+                    String tip,
+                  )
+                  in <(SubtitleWorkbenchScope, IconData, String)>[
+                    (
+                      SubtitleWorkbenchScope.episode,
+                      FushiIcons.subtitles,
+                      t.video_subtitle_scope_episode,
                     ),
-                    ButtonSegment<SubtitleWorkbenchScope>(
-                      value: SubtitleWorkbenchScope.collection,
-                      icon: const FushiIcon(FushiIcons.collection),
-                      tooltip: t.video_subtitle_scope_collection,
+                    (
+                      SubtitleWorkbenchScope.collection,
+                      FushiIcons.collection,
+                      t.video_subtitle_scope_collection,
                     ),
-                  ],
-                  selected: <SubtitleWorkbenchScope>{_scope},
-                  onSelectionChanged: (Set<SubtitleWorkbenchScope> value) =>
-                      setState(() => _scope = value.first),
+                  ])
+                FushiIconButton(
+                  icon: icon,
+                  tooltip: tip,
+                  selected: _scope == scope,
+                  onTap: () => setState(() => _scope = scope),
                 ),
-              ),
-            ),
-        ],
+            ],
+          ),
+      ],
       body: Padding(
         padding: withBottomSafeInset(
           context,
@@ -323,15 +328,15 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           ),
           transitionBuilder: (Widget child, Animation<double> animation) =>
               FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.02),
-                end: Offset.zero,
-              ).animate(animation),
-              child: child,
-            ),
-          ),
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.02),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
           child: panel,
         ),
       ),

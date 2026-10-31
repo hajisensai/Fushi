@@ -103,6 +103,15 @@ String _effectiveProxyMode(String proxy) {
   return (mode: _effectiveProxyMode(proxy), proxy: proxy);
 }
 
+/// 进程级代理裁决的公开读法：此刻生效的模式（[kProxyModeAuto] /
+/// [kProxyModeDirect] / [kProxyModeManual]）与手填地址原串。
+///
+/// 给不走 `HttpClient` 的出站（iOS 系统后台 `URLSession` 等原生传输）用：它们装不上
+/// [applyAppProxy] 的 `findProxy` 闭包，只能拿裁决结果自己翻译成平台配置。与
+/// [applyAppProxy] 读的是同一份裁决，不另立判据。
+({String mode, String proxy}) resolveAppProxyDecision() =>
+    _resolveProxyDecision(null);
+
 void _installManualProxyCredentials(
   HttpClient client, {
   String? legacyUserProxy,

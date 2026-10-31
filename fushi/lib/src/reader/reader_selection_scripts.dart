@@ -1973,6 +1973,79 @@ window.fushiSelection = {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return el && el.closest ? el.closest('ruby') : null;
   },
+  // 文本节点所在的 ruby 基字段：{ nodes: 该段基字的文本节点（文档序）, reading: 配对的
+  // <rt> 文本 }。一个 <ruby> 可有多对基字 / rt（<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>），
+  // 按子节点顺序把 rt 之前累积的基字节点与这个 rt 配对。不在 ruby 基字里（含 rt / rp
+  // 自身）返回 null。cache 是一次 payload 构建内的 ruby → 段表缓存。
+  rubySegmentOf: function(node, cache) {
+    if (!node || this.isFurigana(node)) return null;
+    var ruby = this.rubyForNode(node);
+    if (!ruby) return null;
+    var segments = cache.get(ruby);
+    if (!segments) {
+      segments = [];
+      var pending = [];
+      var collect = function(n) {
+        if (n.nodeType === Node.TEXT_NODE) {
+          if (!/^[\s　]*$/.test(n.nodeValue || '')) pending.push(n);
+          return;
+        }
+        if (n.nodeType !== Node.ELEMENT_NODE) return;
+        var tag = n.tagName;
+        if (tag === 'RT') {
+          segments.push({ nodes: pending, reading: (n.textContent || '').trim() });
+          pending = [];
+          return;
+        }
+        if (tag === 'RP' || tag === 'RTC') return;
+        for (var c = n.firstChild; c; c = c.nextSibling) collect(c);
+      };
+      for (var child = ruby.firstChild; child; child = child.nextSibling) collect(child);
+      cache.set(ruby, segments);
+    }
+    for (var i = 0; i < segments.length; i++) {
+      if (segments[i].nodes.indexOf(node) >= 0) return segments[i];
+    }
+    return null;
+  },
+  // 查询串 text（= ranges 各段依次拼接）里**完整**落在选区内的 ruby 基字：
+  // [{ s, e, r }]，s/e 是 text 内 UTF-16 区间，r 是来源自带的 <rt> 读音。基字只被扫到
+  // 一部分（从基字中间点起 / 扫描在基字中途截断）的不报——读音无法按字拆分。宿主据此
+  // 让读音吻合的同长度词典候选排前（只用来源读音，不推断）。
+  rubyReadingSpans: function(ranges, text) {
+    var spans = [];
+    var cache = new Map();
+    var pos = 0;
+    var open = null;
+    for (var i = 0; i < ranges.length; i++) {
+      var range = ranges[i];
+      var length = range.end - range.start;
+      // 坐标系守卫：text 必须正是各段的依次拼接，否则区间会错位，宁可整体不报。
+      if (text.substr(pos, length) !== (range.node.nodeValue || '').slice(range.start, range.end)) {
+        return [];
+      }
+      var seg = this.rubySegmentOf(range.node, cache);
+      var full = range.start === 0 && range.end === (range.node.nodeValue || '').length;
+      if (!seg || !seg.reading || !full) {
+        open = null;
+      } else {
+        var index = seg.nodes.indexOf(range.node);
+        if (index === 0) {
+          open = { seg: seg, start: pos, next: 1 };
+        } else if (!open || open.seg !== seg || open.next !== index) {
+          open = null;
+        } else {
+          open.next = index + 1;
+        }
+        if (open && open.next === seg.nodes.length) {
+          spans.push({ s: open.start, e: pos + length, r: seg.reading });
+          open = null;
+        }
+      }
+      pos += length;
+    }
+    return spans;
+  },
   clearSelectionRubyHighlights: function() {
     if (!this.selectionRubyElements || !this.selectionRubyElements.length) return;
     this.selectionRubyElements.forEach(function(ruby) {
@@ -2903,6 +2976,7 @@ window.fushiSelection = {
     text = selected.map(function(part) {
       return part.node.textContent.slice(part.start, part.end);
     }).join('');
+    var rubyReadings = this.rubyReadingSpans(selected, text);
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
     var normalizedOffset = window.fushiReader
       ? this.getNormalizedOffset(startNode, startOffset) : null;
@@ -2967,6 +3041,7 @@ window.fushiSelection = {
       sentenceMatchableOffset: matchSentence.offset,
       sentenceMatchableLength: matchSentence.length,
       text: text,
+      rubyReadings: rubyReadings,
       sentence: sentence,
       audioCuePayload: window.fushiReader && window.fushiReader.cueIdAtDomPoint
         ? window.fushiReader.cueIdAtDomPoint(startNode, startOffset) : null,
@@ -3338,6 +3413,7 @@ window.fushiSelection = {
       sentenceMatchableOffset: matchSentence.offset,
       sentenceMatchableLength: matchSentence.length,
       text: text,
+      rubyReadings: this.rubyReadingSpans(ranges, text),
       sentence: mangaSentence !== null && mangaSentence !== ''
         ? mangaSentence : sentenceContext.sentence,
       rect: mangaGroupRect || this.getSelectionRect(x, y),

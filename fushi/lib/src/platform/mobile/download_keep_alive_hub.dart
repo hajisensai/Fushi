@@ -100,6 +100,6 @@ class _DownloadKeepAliveLease implements DownloadKeepAlive {
   Future<void> stop() => _hub._stop(_key);
 }
 
-/// app 进程唯一的 hub（Android 驱动前台服务，其余平台 no-op）。
+/// app 进程唯一的 hub（Android 驱动前台服务、iOS 驱动后台任务，桌面 no-op）。
 final DownloadKeepAliveHub downloadKeepAliveHub =
     DownloadKeepAliveHub(createDownloadKeepAlive());

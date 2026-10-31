@@ -1,10 +1,11 @@
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
-/// 每一页的底：页面底色 + 角落 M3E 形状背景（[LibraryShapeBackdrop]），并把子树
+/// 每一页的底：页面底色 + 可切换的装饰背景（[LibraryShapeBackdrop]：M3E 形状 / 用户图片），并把子树
 /// 的 `scaffoldBackgroundColor` 换成透明，让页面里默认底色的 [Scaffold] 透出形状。
 ///
 /// 用户 2026-10-25 拍板「背景整个应用都加」：由 [FushiBackdropPageTransitionsBuilder]
@@ -14,7 +15,8 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 /// 阅读器等）照旧盖住形状。
 ///
 /// Apple 设计系统 / 墨水屏不画形状、不改底色（玻璃主题的半透明底色要透出窗口
-/// 材质），但子树结构不变，切换设计系统时页面 State 不重建。
+/// 材质）；用户选的自定义图片 Apple 下照画、墨水屏不画；「纯色」预设一律不画。
+/// 子树结构不变，切换设计系统 / 背景预设时页面 State 不重建。
 ///
 /// 页面里拿 `scaffoldBackgroundColor` 当「不透明页底」用的地方（渐隐遮罩、加载罩）
 /// 改用 [fushiOpaquePageColor]；整页底色（Scaffold / 整页 Material）一律用
@@ -36,9 +38,15 @@ class FushiPageBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Route<Object?>? route = ModalRoute.of(context);
-    return ValueListenableBuilder<Set<Route<Object?>>>(
-      valueListenable: _transparentPageRoutes,
-      builder: (BuildContext context, Set<Route<Object?>> transparent, _) {
+    // 背景预设切换（纯色 ↔ 形状 ↔ 图片）会改变「这页底色要不要换成透明」，
+    // 与整页让开一起监听。
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[
+        _transparentPageRoutes,
+        pageBackdropSettings,
+      ]),
+      builder: (BuildContext context, _) {
+        final Set<Route<Object?>> transparent = _transparentPageRoutes.value;
         final ThemeData theme = Theme.of(context);
         final bool seeThrough = route != null && transparent.contains(route);
         final bool enabled =

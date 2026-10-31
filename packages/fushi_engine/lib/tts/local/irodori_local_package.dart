@@ -588,14 +588,19 @@ class IrodoriInstaller extends EngineChangeNotifier {
   final List<String> _log = <String>[];
   List<String> get logTail => List<String>.unmodifiable(_log);
 
-  bool get isBusy => switch (step) {
-    IrodoriInstallStep.downloadingUv ||
-    IrodoriInstallStep.downloadingSource ||
-    IrodoriInstallStep.installingPython ||
-    IrodoriInstallStep.installingPackages ||
-    IrodoriInstallStep.downloadingModel => true,
-    _ => false,
-  };
+  bool get isBusy =>
+      _inFlight.active ||
+      switch (step) {
+        IrodoriInstallStep.downloadingUv ||
+        IrodoriInstallStep.downloadingSource ||
+        IrodoriInstallStep.installingPython ||
+        IrodoriInstallStep.installingPackages ||
+        IrodoriInstallStep.downloadingModel => true,
+        _ => false,
+      };
+
+  /// 在途安装登记：同步占位防并发重入，完成信号给「删除」等。
+  final LocalInstallRun _inFlight = LocalInstallRun();
 
   bool _cancelled = false;
   HttpClient? _client;
@@ -621,6 +626,13 @@ class IrodoriInstaller extends EngineChangeNotifier {
     _process?.kill();
   }
 
+  /// 取消并等安装函数真正返回（下载 client / 子进程 / 文件句柄都已收尾）。
+  /// 「删除」必须先等它，再动安装目录。
+  Future<void> cancelAndWait() {
+    cancel();
+    return _inFlight.idle;
+  }
+
   /// 装进 [root]（专属子目录，见 [irodoriPackageDir]）。成功返回 true；失败 / 取消
   /// 返回 false（原因在 [failure]）。
   Future<bool> install({
@@ -629,7 +641,26 @@ class IrodoriInstaller extends EngineChangeNotifier {
     required IrodoriModelChoice model,
     required IrodoriDownloadSource source,
   }) async {
-    if (isBusy) return false;
+    if (!_inFlight.tryBegin()) return false;
+    try {
+      return await _install(
+        root: root,
+        backend: backend,
+        model: model,
+        source: source,
+      );
+    } finally {
+      _inFlight.end();
+      notifyListeners();
+    }
+  }
+
+  Future<bool> _install({
+    required String root,
+    required IrodoriTorchBackend backend,
+    required IrodoriModelChoice model,
+    required IrodoriDownloadSource source,
+  }) async {
     _cancelled = false;
     receivedBytes = 0;
     totalBytes = null;
@@ -1080,6 +1111,8 @@ class IrodoriInstaller extends EngineChangeNotifier {
       return _fail(IrodoriInstallFailure.environment, e.message);
     }
     _process = process;
+    // 取消落在子进程启动的 await 里时 cancel() 还看不到它：补杀。
+    if (_cancelled) process.kill();
     final List<Future<void>> streams = <Future<void>>[
       for (final Stream<List<int>> s in <Stream<List<int>>>[
         process.stdout,

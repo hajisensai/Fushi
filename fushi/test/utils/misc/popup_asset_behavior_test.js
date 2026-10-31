@@ -4369,7 +4369,7 @@ async function testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped() {
   console.log('SRS visible-batch tests passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 
-// BUG-3887：拖选词头文字时，松手补发的 click 落在 .expression 上。词头点击处理器原先
+// BUG-3889：拖选词头文字时，松手补发的 click 落在 .expression 上。词头点击处理器原先
 // 不看选区，直接 onLinkClick 原地重查同一个词 → renderPopup 重建 DOM → 选区丢失，
 // Ctrl+C / 右键复制读到空串。结束一次拖选的 click 不是「点词头」。
 function testHeadwordClickEndingDragSelectionKeepsSelection() {

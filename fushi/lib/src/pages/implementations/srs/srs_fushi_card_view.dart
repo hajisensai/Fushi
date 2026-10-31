@@ -23,6 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardBlock;
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/anki/card_source_origin.dart'
@@ -1369,9 +1370,20 @@ class SrsRubyText extends StatelessWidget {
   SrsLookupTextData _lookupData() {
     final StringBuffer full = StringBuffer();
     final List<SrsLookupTextSegment> map = <SrsLookupTextSegment>[];
+    final List<FushiRubySpan> rubySpans = <FushiRubySpan>[];
     int outer = 0;
     for (final SrsInline s in segments) {
       final bool placeholder = s.ruby != null;
+      final String reading = (s.ruby ?? '').trim();
+      if (reading.isNotEmpty && s.text.isNotEmpty) {
+        rubySpans.add(
+          FushiRubySpan(
+            start: full.length,
+            end: full.length + s.text.length,
+            reading: reading,
+          ),
+        );
+      }
       final int outerLength = placeholder ? 1 : s.text.length;
       map.add(
         SrsLookupTextSegment(
@@ -1384,7 +1396,11 @@ class SrsRubyText extends StatelessWidget {
       outer += outerLength;
       full.write(s.text);
     }
-    return SrsLookupTextData(full.toString(), segments: map);
+    return SrsLookupTextData(
+      full.toString(),
+      segments: map,
+      rubySpans: rubySpans,
+    );
   }
 
   @override

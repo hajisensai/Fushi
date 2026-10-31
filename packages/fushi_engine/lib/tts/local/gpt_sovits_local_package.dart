@@ -365,13 +365,18 @@ class GptSovitsInstaller extends EngineChangeNotifier {
   /// 失败时的技术细节（进日志，不直接给用户看）。
   String? detail;
 
-  bool get isBusy => switch (step) {
-    GptSovitsInstallStep.listing ||
-    GptSovitsInstallStep.downloading ||
-    GptSovitsInstallStep.extracting ||
-    GptSovitsInstallStep.configuring => true,
-    _ => false,
-  };
+  bool get isBusy =>
+      _inFlight.active ||
+      switch (step) {
+        GptSovitsInstallStep.listing ||
+        GptSovitsInstallStep.downloading ||
+        GptSovitsInstallStep.extracting ||
+        GptSovitsInstallStep.configuring => true,
+        _ => false,
+      };
+
+  /// 在途安装登记：同步占位防并发重入，完成信号给「删除」等。
+  final LocalInstallRun _inFlight = LocalInstallRun();
 
   bool _cancelled = false;
   HttpClient? _client;
@@ -390,6 +395,13 @@ class GptSovitsInstaller extends EngineChangeNotifier {
     _tar?.kill();
   }
 
+  /// 取消并等安装函数真正返回（下载 client / 子进程 / 文件句柄都已收尾）。
+  /// 「删除」必须先等它，再动安装目录。
+  Future<void> cancelAndWait() {
+    cancel();
+    return _inFlight.idle;
+  }
+
   /// 装进 [installDir] 下的专属子目录（[gptSovitsPackageDir]）。返回装好的布局；
   /// 失败 / 取消返回 null（原因在 [failure]）。下到一半的包留在专属子目录（`.part`），
   /// 下次安装从断点续。
@@ -398,7 +410,24 @@ class GptSovitsInstaller extends EngineChangeNotifier {
     required GptSovitsPackageSource source,
     required GptSovitsPackageVariant variant,
   }) async {
-    if (isBusy) return null;
+    if (!_inFlight.tryBegin()) return null;
+    try {
+      return await _install(
+        installDir: installDir,
+        source: source,
+        variant: variant,
+      );
+    } finally {
+      _inFlight.end();
+      notifyListeners();
+    }
+  }
+
+  Future<GptSovitsInstallLayout?> _install({
+    required String installDir,
+    required GptSovitsPackageSource source,
+    required GptSovitsPackageVariant variant,
+  }) async {
     _cancelled = false;
     receivedBytes = 0;
     totalBytes = null;
@@ -570,6 +599,8 @@ class GptSovitsInstaller extends EngineChangeNotifier {
       return false;
     }
     _tar = tar;
+    // 取消落在子进程启动的 await 里时 cancel() 还看不到它：补杀。
+    if (_cancelled) tar.kill();
     final List<String> errors = <String>[];
     // bsdtar 的 -v 逐条写到 stderr（`x path`）；按行数计进度。
     final Future<void> err = tar.stderr

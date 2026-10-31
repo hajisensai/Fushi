@@ -1114,8 +1114,12 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
+  // 与其它顶部浮动胶囊同一个整体缩放（[kFushiFloatingCapsuleScale]）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildHeader(context));
+
+  Widget _buildHeader(BuildContext context) {
     final SettingsKitStyle style = SettingsKitStyle.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);

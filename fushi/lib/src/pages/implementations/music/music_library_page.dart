@@ -45,6 +45,8 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart'
+    show LibrarySectionGroup, libraryImportChromeButton;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
@@ -68,6 +70,13 @@ import 'package:fushi/utils.dart';
 /// `fushi/build/music_design/music_ia.html`）。首页只负责浏览：搜索一律走右上角按钮推入的
 /// 二级搜索页（宽窄屏同一套，用户 2026-10-29 拍板），不在页签里就地过滤。
 enum MusicLibrarySection { recommend, songs, albums, artists, playlists, works }
+
+/// 音乐分区所属的一级分组（与书 / 漫画 / 视频 / 游戏库同一分法，见
+/// [LibrarySectionGroup]）：推荐来自在线插件音源，归「在线」；其余是本地曲库。
+LibrarySectionGroup musicLibrarySectionGroupOf(MusicLibrarySection s) =>
+    s == MusicLibrarySection.recommend
+    ? LibrarySectionGroup.online
+    : LibrarySectionGroup.library;
 
 String musicLibrarySectionLabel(MusicLibrarySection s) => switch (s) {
   MusicLibrarySection.recommend => t.music_section_recommend,
@@ -209,6 +218,12 @@ class MusicLibraryPage extends ConsumerStatefulWidget {
 
 class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   MusicLibrarySection _section = MusicLibrarySection.albums;
+
+  /// 「我的」组（曲库）上次停留的分区：在推荐页时点组页签回到这里。
+  MusicLibrarySection _lastLibrarySection = MusicLibrarySection.albums;
+
+  /// 导入钮的菜单锚点。
+  final GlobalKey _importAnchor = GlobalKey(debugLabel: 'music-import');
 
   /// 用户是否自己点过分区：没点过时，推荐页出现即默认落在推荐页。
   bool _sectionTouched = false;
@@ -450,35 +465,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             onTap: () => unawaited(_openSearchPage()),
           ),
           FushiIconButton(
-            key: const ValueKey<String>('music_add_folder'),
-            icon: FushiIcons.libraryAdd,
-            tooltip: t.music_folder_add,
-            enabled: idle,
-            onTap: () => unawaited(_addFolder()),
-          ),
-          FushiIconButton(
-            key: const ValueKey<String>('music_manage_sources'),
-            icon: FushiIcons.folderOpen,
-            tooltip: t.music_sources_manage,
-            enabled: idle,
-            onTap: () => unawaited(_manageSources()),
-          ),
-          FushiIconButton(
-            key: const ValueKey<String>('music_add_disc'),
-            icon: FushiIcons.storage,
-            tooltip: t.music_disc_add,
-            enabled: idle,
-            onTap: () => unawaited(_addDisc()),
-          ),
-          if (musicAudioCdSupported())
-            FushiIconButton(
-              key: const ValueKey<String>('music_read_cd'),
-              icon: FushiIcons.audio,
-              tooltip: t.music_cd_read,
-              enabled: idle,
-              onTap: () => unawaited(_readCd()),
-            ),
-          FushiIconButton(
             key: const ValueKey<String>('music_servers'),
             icon: FushiIcons.cloud,
             tooltip: t.music_servers_title,
@@ -492,6 +478,131 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             onTap: () => unawaited(_rescan()),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 导入钮菜单：加文件夹 / 管理文件夹 / 加光盘 / 读 CD（音乐没有独立的导入页，
+  /// 这几个入库动作收在库页共用的导入钮下，不占顶栏动作位）。
+  Future<void> _openImportMenu() async {
+    if (_scanning) return;
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
+    final RenderObject? button = _importAnchor.currentContext
+        ?.findRenderObject();
+    if (overlay is! RenderBox || button is! RenderBox) return;
+    // 坐标经 Overlay globalToLocal 消掉界面缩放（BUG-781 同族纪律）。
+    final Offset anchor = overlay.globalToLocal(
+      button.localToGlobal(button.size.bottomRight(Offset.zero)),
+    );
+    PopupMenuItem<Future<void> Function()> item(
+      String key,
+      IconData icon,
+      String label,
+      Future<void> Function() action,
+    ) => FushiPopupMenuItem<Future<void> Function()>(
+      key: ValueKey<String>(key),
+      value: action,
+      icon: icon,
+      label: label,
+    );
+    final Future<void> Function()? action =
+        await showFushiMenu<Future<void> Function()>(
+          context: context,
+          position: RelativeRect.fromRect(
+            Rect.fromPoints(anchor, anchor),
+            Offset.zero & overlay.size,
+          ),
+          items: <PopupMenuEntry<Future<void> Function()>>[
+            item(
+              'music_add_folder',
+              FushiIcons.libraryAdd,
+              t.music_folder_add,
+              _addFolder,
+            ),
+            item(
+              'music_manage_sources',
+              FushiIcons.folderOpen,
+              t.music_sources_manage,
+              _manageSources,
+            ),
+            item(
+              'music_add_disc',
+              FushiIcons.storage,
+              t.music_disc_add,
+              _addDisc,
+            ),
+            if (musicAudioCdSupported())
+              item('music_read_cd', FushiIcons.audio, t.music_cd_read, _readCd),
+          ],
+        );
+    if (action == null || !mounted) return;
+    await action();
+  }
+
+  void _selectSection(MusicLibrarySection v) => setState(() {
+    _sectionTouched = true;
+    _section = v;
+    if (musicLibrarySectionGroupOf(v) == LibrarySectionGroup.library) {
+      _lastLibrarySection = v;
+    }
+  });
+
+  /// 一级「我的 / 推荐」两组；没有推荐（未装 / 合规门）时只剩一组，不画胶囊。
+  Widget _buildTopTabs() {
+    if (!_hasRecommend) return const SizedBox.shrink();
+    final bool inLibrary =
+        musicLibrarySectionGroupOf(_section) == LibrarySectionGroup.library;
+    return LibrarySectionTabs<MusicLibrarySection>(
+      tabs: <LibrarySectionTab<MusicLibrarySection>>[
+        LibrarySectionTab<MusicLibrarySection>(
+          value: inLibrary ? _section : _lastLibrarySection,
+          label: t.music_library_tab,
+          orderId: LibrarySectionGroup.library.name,
+        ),
+        LibrarySectionTab<MusicLibrarySection>(
+          value: MusicLibrarySection.recommend,
+          label: musicLibrarySectionLabel(MusicLibrarySection.recommend),
+          orderId: LibrarySectionGroup.online.name,
+        ),
+      ],
+      selected: _section,
+      onChanged: _selectSection,
+      focusIdPrefix: 'music-library-view',
+      floating: true,
+    );
+  }
+
+  /// 曲库组的二级胶囊（歌曲 / 专辑 / 艺人 / 歌单 / 作品）；在推荐页时为空。
+  Widget _buildSubTabs(FushiDesignTokens tokens) {
+    if (musicLibrarySectionGroupOf(_section) != LibrarySectionGroup.library) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      // 与顶栏胶囊、页面内容同一条页边；二级下划线页签贴着顶栏（与书架 / 视频 /
+      // 游戏库同一间距）。
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: LibrarySectionTabs<MusicLibrarySection>(
+          tabs: <LibrarySectionTab<MusicLibrarySection>>[
+            for (final MusicLibrarySection s in MusicLibrarySection.values)
+              if (musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library)
+                LibrarySectionTab<MusicLibrarySection>(
+                  value: s,
+                  label: musicLibrarySectionLabel(s),
+                ),
+          ],
+          selected: _section,
+          onChanged: _selectSection,
+          focusIdPrefix: 'music-library-subview',
+          secondary: true,
+          // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
+          // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
+          // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义曲库分区顺序。
+          orderKey: 'music-library',
+        ),
       ),
     );
   }
@@ -630,28 +741,20 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
+                        // 一级只放「曲库 / 推荐」两组（2026-10-30 用户拍板方案 D，
+                        // 与书 / 漫画 / 视频 / 游戏库同一分法）；入库动作收在右端的
+                        // 导入钮菜单里。
                         FushiFloatingChromeBar(
-                          tabs: LibrarySectionTabs<MusicLibrarySection>(
-                            tabs: <LibrarySectionTab<MusicLibrarySection>>[
-                              for (final MusicLibrarySection s
-                                  in MusicLibrarySection.values)
-                                if (s != MusicLibrarySection.recommend ||
-                                    _hasRecommend)
-                                  LibrarySectionTab<MusicLibrarySection>(
-                                    value: s,
-                                    label: musicLibrarySectionLabel(s),
-                                  ),
-                            ],
-                            selected: _section,
-                            onChanged: (MusicLibrarySection v) => setState(() {
-                              _sectionTouched = true;
-                              _section = v;
-                            }),
-                            focusIdPrefix: 'music-library-view',
-                            floating: true,
-                          ),
+                          tabs: _buildTopTabs(),
                           slot: _actionsSlot,
+                          trailing: libraryImportChromeButton(
+                            selected: false,
+                            onTap: () => unawaited(_openImportMenu()),
+                            focusIdPrefix: 'music-library-view',
+                            anchorKey: _importAnchor,
+                          ),
                         ),
+                        _buildSubTabs(tokens),
                         SizedBox(height: tokens.spacing.gap),
                         if (snap == null ? null : _buildContinueHero(snap)
                             case final Widget hero)
@@ -671,27 +774,42 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                         ),
                         if (_scanning) const FushiLinearProgressIndicator(),
                         Expanded(
-                          child: snap == null
-                              ? const FushiLoadingView()
-                              : AnimatedSwitcher(
-                                  duration: fushiMotionDuration(
-                                    context,
-                                    FushiMotion.medium,
-                                  ),
-                                  // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
-                                  // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
-                                  // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
-                                  // 「attached to more than one ScrollPosition」。与视频
-                                  // 库外壳的保活分区同一套做法。
-                                  child: KeyedSubtree(
-                                    key: ValueKey<MusicLibrarySection>(
-                                      _section,
+                          // 触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 →
+                          // 推荐），跨组照样接着滑；首 / 末再往外交给首页外壳切模块
+                          // （与书架 / 视频 / 游戏库同一层 [SectionSwipeNavigator]）。
+                          child: SectionSwipeNavigator<MusicLibrarySection>(
+                            sections: <MusicLibrarySection>[
+                              for (final MusicLibrarySection s
+                                  in MusicLibrarySection.values)
+                                if (musicLibrarySectionGroupOf(s) ==
+                                    LibrarySectionGroup.library)
+                                  s,
+                              if (_hasRecommend) MusicLibrarySection.recommend,
+                            ],
+                            selected: _section,
+                            onSelect: _selectSection,
+                            child: snap == null
+                                ? const FushiLoadingView()
+                                : AnimatedSwitcher(
+                                    duration: fushiMotionDuration(
+                                      context,
+                                      FushiMotion.medium,
                                     ),
-                                    child: SectionPrimaryScrollScope(
-                                      child: _buildSection(context, snap),
+                                    // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
+                                    // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
+                                    // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
+                                    // 「attached to more than one ScrollPosition」。与视频
+                                    // 库外壳的保活分区同一套做法。
+                                    child: KeyedSubtree(
+                                      key: ValueKey<MusicLibrarySection>(
+                                        _section,
+                                      ),
+                                      child: SectionPrimaryScrollScope(
+                                        child: _buildSection(context, snap),
+                                      ),
                                     ),
                                   ),
-                                ),
+                          ),
                         ),
                       ],
                     ),

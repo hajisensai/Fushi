@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../tool/test_flow/dist_snapshot.dart';
+import '../../tool/test_flow/dist_workers.dart';
 
 Future<String> _git(
   Directory repo,
@@ -59,6 +60,51 @@ void main() {
     final DistSnapshot s = await createDistSnapshot(git, scratchDir: scratch);
     expect(s.isHead, isTrue);
     expect(s.commit, await _blob(repo, 'HEAD'));
+    expect(s.base, s.commit);
+  });
+
+  test('the next run pushes only what is new, though each run deletes its '
+      'own ref', () async {
+    // A worker checkout: receive-pack advertises its refs, never the
+    // detached HEAD the batches run on, so only refs/dist/base can tell the
+    // next push what the worker already has.
+    final Directory worker = Directory.systemTemp.createTempSync(
+      'dist_snapshot_worker_',
+    );
+    addTearDown(() => worker.deleteSync(recursive: true));
+    await _git(worker, <String>['init', '-q']);
+    // History worth skipping: a pack of these would dwarf the change below.
+    for (int i = 0; i < 20; i++) {
+      File('${repo.path}/lib/f$i.dart').writeAsStringSync('int f$i = $i;\n');
+      await _git(repo, <String>['add', '-A']);
+      await _git(repo, <String>['commit', '-q', '-m', 'c$i']);
+    }
+
+    // Objects the push of a fresh snapshot sent, as the sender counts them:
+    // the worker's own object count cannot tell, since a small pack is
+    // unpacked there and the objects it already had are dropped silently.
+    Future<int> push(String runId) async {
+      final DistSnapshot s = await createDistSnapshot(git, scratchDir: scratch);
+      final ProcessResult r = await Process.run('git', <String>[
+        'push',
+        '--progress',
+        worker.path,
+        ...distPushRefspecs(s, runId),
+      ], workingDirectory: repo.path);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      // What the run's `finish` does.
+      await _git(worker, <String>['update-ref', '-d', 'refs/dist/$runId']);
+      expect(await _git(worker, <String>['rev-parse', kDistBaseRef]), s.base);
+      final RegExpMatch? total = RegExp(
+        r'Total (\d+)',
+      ).firstMatch('${r.stderr}');
+      expect(total, isNotNull, reason: '${r.stderr}');
+      return int.parse(total!.group(1)!);
+    }
+
+    expect(await push('run1'), greaterThan(40));
+    File('${repo.path}/lib/code.dart').writeAsStringSync('int a = 9;\n');
+    expect(await push('run2'), lessThanOrEqualTo(4));
   });
 
   test(

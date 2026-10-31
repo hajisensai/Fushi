@@ -36,6 +36,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -250,8 +251,12 @@ class FushiFloatingPill extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final OutlinedBorder shape;
 
+  // 浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildCapsule(context));
+
+  Widget _buildCapsule(BuildContext context) {
     if (FushiBareToolbarScope.of(context)) {
       // 裸图标模式：保留形状裁剪（state layer 不溢出），不画底色与投影。
       return Material(
@@ -616,8 +621,12 @@ class FushiFloatingToolbar extends StatelessWidget {
       ? kFushiFloatingToolbarCompactExtent
       : kFushiFloatingToolbarExtent;
 
+  // 浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildCapsule(context));
+
+  Widget _buildCapsule(BuildContext context) {
     final ({
       Color container,
       Color foreground,
@@ -1495,7 +1504,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildBar(context));
+
+  Widget _buildBar(BuildContext context) {
     final ({
       Color container,
       Color foreground,
@@ -1757,8 +1769,12 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
     super.dispose();
   }
 
+  // 浮动胶囊统一按 [kFushiFloatingCapsuleScale] 缩（外层已缩过时不叠加）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      FushiCapsuleScale(child: _buildCapsule(context));
+
+  Widget _buildCapsule(BuildContext context) {
     final bool glass = isGlassDesign(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color bg = glass
@@ -1966,5 +1982,149 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
         );
       },
     );
+  }
+}
+
+/// 浮动胶囊（页头 / 库页顶栏 / 悬浮顶栏 / 底栏 / 阅读器工具栏 / FAB……）的整体
+/// 缩放（2026-10-30 用户「顶部浮动胶囊大小全部缩放当前的90%」，同日改 85%、
+/// 「胶囊最好就是所有地方都要生效」）：胶囊、按钮、图标、文字与点击区
+/// 一起缩，版面也按缩后的尺寸占位。只缩 Material，Apple 保持原尺寸。
+///
+/// 取 48 / 56（≈ 0.857）而不是整 0.85：56 高的胶囊与圆钮缩完正好 48，守住按钮
+/// 命中区 ≥ 48dp 的下限（0.85 会落到 47.6）。
+const double kFushiFloatingCapsuleScale =
+    kMinInteractiveDimension / kFushiFloatingToolbarCompactExtent;
+
+/// 把顶部浮动胶囊整行按 [kFushiFloatingCapsuleScale] 缩放：子树按放大后的约束排版，
+/// 自身报告缩小后的尺寸，绘制与命中测试同一个缩放变换。外层已经缩过（顶栏装
+/// 在库页顶栏层 / 页头外壳里）就原样返回，不叠两次。
+class FushiCapsuleScale extends StatelessWidget {
+  const FushiCapsuleScale({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // 只缩 Material（M3E）胶囊；Apple（Cupertino）设计系统保持原尺寸（用户
+    // 2026-10-30「所有胶囊 85% 对于 cupertino 不要生效」）。
+    if (isGlassDesign(context) ||
+        context.getInheritedWidgetOfExactType<_FushiCapsuleScaled>() != null) {
+      return child;
+    }
+    return _FushiCapsuleScaled(
+      child: _LayoutScale(scale: kFushiFloatingCapsuleScale, child: child),
+    );
+  }
+}
+
+class _FushiCapsuleScaled extends InheritedWidget {
+  const _FushiCapsuleScaled({required super.child});
+
+  @override
+  bool updateShouldNotify(_FushiCapsuleScaled oldWidget) => false;
+}
+
+class _LayoutScale extends SingleChildRenderObjectWidget {
+  const _LayoutScale({required this.scale, super.child});
+
+  final double scale;
+
+  @override
+  _RenderLayoutScale createRenderObject(BuildContext context) =>
+      _RenderLayoutScale(scale);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderLayoutScale renderObject,
+  ) {
+    renderObject.scale = scale;
+  }
+}
+
+class _RenderLayoutScale extends RenderProxyBox {
+  _RenderLayoutScale(this._scale);
+
+  double _scale;
+  set scale(double value) {
+    if (value == _scale) return;
+    _scale = value;
+    markNeedsLayout();
+  }
+
+  Matrix4 get _transform => Matrix4.diagonal3Values(_scale, _scale, 1);
+
+  BoxConstraints _childConstraints(BoxConstraints c) => BoxConstraints(
+    minWidth: c.minWidth / _scale,
+    maxWidth: c.maxWidth / _scale,
+    minHeight: c.minHeight / _scale,
+    maxHeight: c.maxHeight / _scale,
+  );
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      (child?.getMinIntrinsicWidth(height / _scale) ?? 0) * _scale;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      (child?.getMaxIntrinsicWidth(height / _scale) ?? 0) * _scale;
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      (child?.getMinIntrinsicHeight(width / _scale) ?? 0) * _scale;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      (child?.getMaxIntrinsicHeight(width / _scale) ?? 0) * _scale;
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final RenderBox? child = this.child;
+    if (child == null) return constraints.smallest;
+    return constraints.constrain(
+      child.getDryLayout(_childConstraints(constraints)) * _scale,
+    );
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(_childConstraints(constraints), parentUsesSize: true);
+    size = constraints.constrain(child.size * _scale);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final RenderBox? child = this.child;
+    if (child == null) return;
+    layer = context.pushTransform(
+      needsCompositing,
+      offset,
+      _transform,
+      (PaintingContext context, Offset offset) =>
+          context.paintChild(child, offset),
+      oldLayer: layer as TransformLayer?,
+    );
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final RenderBox? child = this.child;
+    if (child == null) return false;
+    return result.addWithPaintTransform(
+      transform: _transform,
+      position: position,
+      hitTest: (BoxHitTestResult result, Offset position) =>
+          child.hitTest(result, position: position),
+    );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    transform.multiply(_transform);
   }
 }

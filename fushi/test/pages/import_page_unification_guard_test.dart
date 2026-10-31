@@ -226,10 +226,11 @@ void main() {
       );
       expect(
         'secondary: true'.allMatches(browse),
-        hasLength(2),
+        hasLength(1),
         reason:
             '三处二级标签条共用 _BrowseSwipeSections 里同一份 secondary tabs；'
-            '另一处是在线源二级行右侧的来源 / 扩展页签',
+            '在线源的来源 / 扩展切换已挪到顶栏右上角的浮动胶囊（2026-10-30），'
+            '不再是第二排页签',
       );
       for (final String key in <String>[
         r"'browse-${tab.name}-domain-picker'",

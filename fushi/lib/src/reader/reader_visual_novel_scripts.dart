@@ -1920,7 +1920,7 @@ $sharedInitViewport
   },
   buildSentenceScreens: function() {
     this.sentenceAtomicRoots = this.buildSentenceAtomicRoots();
-    // BUG-3887：独立单元（插图 / 表格等原子块）先算出来，作为句子切分的硬边界传进
+    // BUG-3891：独立单元（插图 / 表格等原子块）先算出来，作为句子切分的硬边界传进
     // buildSentenceUnits——否则不以「。！？」收尾的一句（典型是「……」对白段）会越过插图
     // 把图后的正文吞进同一个句子单元，排序后插图屏落到这句之后、字符区间倒挂，跟随
     // 跨过插图时 pauseAtCrossedMediaScreen 看不见它（插图要等下一句才冒出来）。
@@ -2135,7 +2135,7 @@ $sharedInitViewport
     var unitStart = 0;
     var dialogueDepth = 0;
     var segmenterBoundaries = this.sentenceSegmenterBoundaryIndexes(items);
-    // BUG-3887：独立单元在原文里的位置是句子切分的硬边界（见 buildSentenceScreens）。
+    // BUG-3891：独立单元在原文里的位置是句子切分的硬边界（见 buildSentenceScreens）。
     var breaks = (Array.isArray(standaloneUnits) ? standaloneUnits : [])
       .map((unit) => ({
         start: this.screenStartRawCount(unit),

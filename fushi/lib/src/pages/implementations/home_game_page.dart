@@ -21,6 +21,8 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart'
+    show LibrarySectionGroup, libraryImportChromeButton;
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
@@ -106,6 +108,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
 
   /// 「串流」子区同理：一挂载就去连已配对主机，访问过才构建。
   late bool _streamVisited = _section == GameSection.stream;
+
+  /// 「我的游戏」组上次停留的子区：在发现 / 导入时点组页签回到这里。
+  late GameSection _lastLibrarySection =
+      gameSectionGroupOf(_section) == LibrarySectionGroup.library
+      ? _section
+      : GameSection.dashboard;
+
+  /// 进导入页之前停留的子区：再点一次导入钮回到这里。
+  GameSection _beforeImport = GameSection.library;
   late final GalHookSessionController _controller =
       widget.controller ?? GalHookSessionController.instance;
 
@@ -144,6 +155,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
     // 换了子区，新页面从顶部开始：工具栏回来。
     _chrome.resetToTop();
     setState(() {
+      if (requested == GameSection.importGames) _beforeImport = _section;
+      if (gameSectionGroupOf(requested) == LibrarySectionGroup.library) {
+        _lastLibrarySection = requested;
+      }
       _section = requested;
       if (requested == GameSection.discover) _discoverVisited = true;
       if (requested == GameSection.stream) _streamVisited = true;
@@ -167,6 +182,13 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showLibrary() => _showSection(GameSection.library);
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
+
+  /// 导入钮：不在导入页时进去，在导入页时回到进来前的子区。
+  void _toggleImport() => _showSection(
+    _section == GameSection.importGames
+        ? _beforeImport
+        : GameSection.importGames,
+  );
 
   /// 「导入」视图的进行中标记：选文件 / 拖放落库期间拖放区底部亮波浪进度。
   bool _importBusy = false;
@@ -267,16 +289,37 @@ class _HomeGamePageState extends State<HomeGamePage> {
         GameSection.stream => 'game-stream-tab',
       },
       floating: true,
+      lastLibrarySection: _lastLibrarySection,
       onSelectDashboard: _showDashboard,
       onSelectLibrary: _showLibrary,
       onSelectMonitor: _showMonitor,
     );
+    // 当前组的二级胶囊（首页 / 库 / 工作台 / 串流）；组内只有一段或停在导入 /
+    // 发现时为空，不占高度。
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget subNavigation = GameSectionTabs(
+      selected: _section,
+      focusIdPrefix: 'game-subsection-tab',
+      floating: true,
+      secondary: true,
+      onSelectDashboard: _showDashboard,
+      onSelectLibrary: _showLibrary,
+      onSelectMonitor: _showMonitor,
+    );
+    final bool hasSubNavigation =
+        gameSectionGroupOf(_section) == LibrarySectionGroup.library;
     final Widget body = LibrarySectionFollowScope(
       current: gameSectionNotifier,
       // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
       // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
       child: SectionSwipeNavigator<GameSection>(
-        sections: kGameSectionTabOrder,
+        // 导入不是页签，只在停在导入页时留在序里（从它滑回相邻子区）。
+        sections: <GameSection>[
+          for (final GameSection section in kGameSectionTabOrder)
+            if (section != GameSection.importGames ||
+                _section == GameSection.importGames)
+              section,
+        ],
         selected: _section,
         onSelect: _showSection,
         child: IndexedStack(
@@ -322,7 +365,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+                  FushiFloatingChromeBar(
+                    tabs: navigation,
+                    slot: _actionsSlot,
+                    trailing: libraryImportChromeButton(
+                      selected: _section == GameSection.importGames,
+                      onTap: _toggleImport,
+                      focusIdPrefix: 'game-library-view',
+                    ),
+                  ),
                   const SyncProgressBanner(
                     key: ValueKey<String>('games-sync-progress'),
                   ),
@@ -330,7 +381,28 @@ class _HomeGamePageState extends State<HomeGamePage> {
               ),
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
-                child: GameSectionTabsHostScope(child: body),
+                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+                // [FushiFloatingChromeOverlay] 读同一个作用域，子区的顶部让位
+                // 自动累加两行）。
+                child: FushiFloatingChromeOverlay(
+                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                  nestedGap: 0,
+                  opaqueChrome: true,
+                  chrome: !hasSubNavigation
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
+                          // 由嵌套层统一给，这里不再叠竖向留白。
+                          padding: EdgeInsets.symmetric(
+                            horizontal: tokens.spacing.page,
+                          ),
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: subNavigation,
+                          ),
+                        ),
+                  child: GameSectionTabsHostScope(child: body),
+                ),
               ),
             ),
           ),

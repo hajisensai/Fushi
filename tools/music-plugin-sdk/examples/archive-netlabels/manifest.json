@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "dev.fushi.example.archive-netlabels",
+  "name": "Netlabels (Internet Archive)",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "main.js",
+  "author": "Fushi",
+  "description": "Example plugin: Creative Commons netlabel releases from the Internet Archive, lyrics from LRCLIB.",
+  "homepage": "https://archive.org/details/netlabels",
+  "capabilities": ["search", "album", "stream", "lyrics", "home"],
+  "searchTypes": ["album", "song"],
+  "permissions": ["network", "storage"],
+  "network": { "domains": ["archive.org", "*.archive.org", "lrclib.net"], "methods": ["GET"] }
+}

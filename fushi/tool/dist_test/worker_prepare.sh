@@ -16,10 +16,16 @@ fi
 state=.git/fushi-dist
 mkdir -p "$state"
 # Heartbeat of the checkout lock while native builds run (first build of a
-# crate can take longer than the stale limit).
-(while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
+# crate can take longer than the stale limit). Only while the lock exists: a
+# coordinator that found no work left for this machine releases it and this
+# prepare runs on to warm the caches; touching then would leave a plain file
+# that blocks the next run's `mkdir` lock.
+(while sleep 60; do [ ! -d "$state/lock" ] || touch "$state/lock"; done) \
+  > /dev/null 2>&1 < /dev/null &
 heartbeat=$!
-trap 'kill "$heartbeat" 2>/dev/null' EXIT
+# worker_kill.sh (run when the next coordinator takes the lock) waits for it.
+echo "$$" > "$state/prepare.pid"
+trap 'kill "$heartbeat" 2>/dev/null; rm -f "$state/prepare.pid"' EXIT
 
 # Dependencies: pub get + pub-cache patches + one tiny test run, which builds
 # the native-asset hooks (sqlite3, pdfium download) while prepareEnv (proxy)
@@ -50,7 +56,7 @@ case "$(uname -s)" in
     echo "==> native libraries (tool/native_libs.ps1)"
     powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
       -File tool/native_libs.ps1
-    echo "==> ready"
+    echo "==> ready (this script: ${SECONDS}s; the rest of the step is checkout and ssh)"
     exit 0 ;;
   *) echo "error: unsupported worker OS $(uname -s)" >&2; exit 3 ;;
 esac
@@ -78,4 +84,4 @@ for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv; do
     echo "==> native/$crate unchanged"
   fi
 done
-echo "==> ready"
+echo "==> ready (this script: ${SECONDS}s; the rest of the step is checkout and ssh)"

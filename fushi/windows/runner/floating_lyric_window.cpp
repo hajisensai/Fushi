@@ -42,13 +42,13 @@ constexpr float kControlsTopDip = 8.0f;
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
 // Hook mode draws a centred toolbar whose slot count depends on the profile
-// (gal hook 10 槽 = 10 * 32 + 9 * 4 = 356dip，有声书 6 槽更窄). The generic 280dip
+// (gal hook 12 槽 = 12 * 32 + 11 * 4 = 428dip，有声书 6 槽更窄). The generic 280dip
 // floor would let the user drag the window narrower than its own controls,
 // clipping the leading buttons; hook mode therefore floors at the widest
 // toolbar's width plus a small margin. Bump this whenever
 // hook_toolbar::kMaxSlotCount grows — the floor is derived from that row width,
 // not from a taste-based round number（守卫按 kMaxSlotCount 复核）。
-constexpr float kHookTextMinStripWidthDip = 376.0f;
+constexpr float kHookTextMinStripWidthDip = 448.0f;
 // Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见
 // StartHoverLookupPolling）。 60ms ≈
 // 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
@@ -717,12 +717,16 @@ float FloatingLyricWindow::MinStripWidthDip() const {
   return hook_text_mode_ ? kHookTextMinStripWidthDip : kMinStripWidthDip;
 }
 
-void FloatingLyricWindow::SetVoiceState(bool replaying, bool recapturing) {
-  if (replaying_ == replaying && recapturing_ == recapturing) {
+void FloatingLyricWindow::SetVoiceState(bool replaying, bool recapturing,
+                                        bool speaking, bool auto_speak) {
+  if (replaying_ == replaying && recapturing_ == recapturing &&
+      speaking_ == speaking && auto_speak_ == auto_speak) {
     return;
   }
   replaying_ = replaying;
   recapturing_ = recapturing;
+  speaking_ = speaking;
+  auto_speak_ = auto_speak;
   RequestRender();
 }
 
@@ -1104,6 +1108,8 @@ hook_toolbar::States FloatingLyricWindow::ToolbarStates() const {
   hook_toolbar::States states;
   states.replaying = replaying_;
   states.recapturing = recapturing_;
+  states.speaking = speaking_;
+  states.auto_speak = auto_speak_;
   states.playing = playing_;
   states.pass_through = pass_through_;
   states.locked = locked_;

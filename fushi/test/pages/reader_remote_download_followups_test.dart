@@ -319,24 +319,38 @@ void main() {
     final double offset = shelf().offset;
     expect(offset, greaterThan(300), reason: '前置：书架已经滚下去了');
 
-    // 挑一张此刻完整可见的占位卡。
+    // 挑一张此刻完整可见的占位卡（按几何现挑，不钉死书名：页头 / 网格尺寸
+    // 一变，滚 900 后落在屏上的那排就不同）。
+    final double viewportBottom = tester
+        .getRect(find.byType(CustomScrollView))
+        .bottom;
+    final String title =
+        <String>[
+          for (int i = 10; i < 40; i++) 'Cloud${i.toString().padLeft(2, '0')}',
+        ].firstWhere((String name) {
+          final Finder card = find.byKey(
+            ValueKey<String>('remote_book_card_$name'),
+          );
+          if (card.hitTestable().evaluate().isEmpty) return false;
+          final Rect rect = tester.getRect(card);
+          return rect.top >= 0 && rect.bottom <= viewportBottom;
+        });
     final Finder target = find.byKey(
-      const ValueKey<String>('remote_book_card_Cloud20'),
+      ValueKey<String>('remote_book_card_$title'),
     );
-    expect(target.hitTestable(), findsOneWidget, reason: '前置：Cloud20 在屏上');
-    final Offset before = tester.getTopLeft(inGrid('Cloud20'));
+    final Offset before = tester.getTopLeft(inGrid(title));
 
     await tester.tap(target);
     await settle(tester);
 
     expect(
-      find.byKey(const ValueKey<String>('remote_book_card_Cloud20')),
+      find.byKey(ValueKey<String>('remote_book_card_$title')),
       findsNothing,
       reason: '前置：已下载成本地卡',
     );
     expect(shelf().offset, offset, reason: '下载完成不能把书架滚回顶部');
     // 本地卡与占位卡的文字块排版略有差异，比较的是它落在哪一格。
-    final Offset after = tester.getTopLeft(inGrid('Cloud20'));
+    final Offset after = tester.getTopLeft(inGrid(title));
     expect(
       (after - before).distance,
       lessThan(48),

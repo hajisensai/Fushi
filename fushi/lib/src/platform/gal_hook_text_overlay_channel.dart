@@ -1147,6 +1147,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextEventHandler? _onOverlayDestroyed;
   static GalHookTextEventHandler? _onReplayVoice;
   static GalHookTextEventHandler? _onRecaptureVoice;
+  static GalHookTextEventHandler? _onSpeakLine;
+  static GalHookTextEventHandler? _onToggleAutoSpeak;
   static GalHookTextLockHandler? _onLockChanged;
   static GalHookTextPassThroughHandler? _onPassThroughChanged;
   static GalHookTextBoundsHandler? _onBoundsChanged;
@@ -1170,6 +1172,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextEventHandler? onOverlayDestroyed,
     GalHookTextEventHandler? onReplayVoice,
     GalHookTextEventHandler? onRecaptureVoice,
+    GalHookTextEventHandler? onSpeakLine,
+    GalHookTextEventHandler? onToggleAutoSpeak,
     GalHookTextLockHandler? onLockChanged,
     GalHookTextPassThroughHandler? onPassThroughChanged,
     GalHookTextBoundsHandler? onBoundsChanged,
@@ -1191,6 +1195,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onOverlayDestroyed = onOverlayDestroyed;
     _onReplayVoice = onReplayVoice;
     _onRecaptureVoice = onRecaptureVoice;
+    _onSpeakLine = onSpeakLine;
+    _onToggleAutoSpeak = onToggleAutoSpeak;
     _onLockChanged = onLockChanged;
     _onPassThroughChanged = onPassThroughChanged;
     _onBoundsChanged = onBoundsChanged;
@@ -1215,6 +1221,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onOverlayDestroyed = null;
     _onReplayVoice = null;
     _onRecaptureVoice = null;
+    _onSpeakLine = null;
+    _onToggleAutoSpeak = null;
     _onLockChanged = null;
     _onPassThroughChanged = null;
     _onBoundsChanged = null;
@@ -1269,6 +1277,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         break;
       case 'recaptureVoice':
         await _onRecaptureVoice?.call();
+        break;
+      case 'speakLine':
+        await _onSpeakLine?.call();
+        break;
+      case 'toggleAutoSpeak':
+        await _onToggleAutoSpeak?.call();
         break;
       case 'close':
         await _onClose?.call();
@@ -1528,16 +1542,22 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     );
   }
 
-  /// 语音控件的可见状态（浮窗是独立窗口，用户只能在这里看到「正在试听 / 正在补录」）。
+  /// 语音控件的可见状态（浮窗是独立窗口，用户只能在这里看到「正在试听 / 正在补录 /
+  /// TTS 正在朗读 / 自动朗读开着」）。
   static Future<void> setVoiceState({
     required bool replaying,
     required bool recapturing,
+    bool speaking = false,
+    bool autoSpeak = false,
   }) async {
     if (!_instance.isSupported) return;
-    await _instance.channel.invokeMethod<void>(
-      'setVoiceState',
-      <String, Object?>{'replaying': replaying, 'recapturing': recapturing},
-    );
+    await _instance.channel
+        .invokeMethod<void>('setVoiceState', <String, Object?>{
+          'replaying': replaying,
+          'recapturing': recapturing,
+          'speaking': speaking,
+          'autoSpeak': autoSpeak,
+        });
   }
 
   /// 「悬停即查词」live 下发（设置项 `hover_auto_lookup`）：开着浮窗时改设置立刻生效，
