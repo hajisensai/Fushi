@@ -124,6 +124,14 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void initState() {
     super.initState();
     gameSectionNotifier.addListener(_onSectionRequested);
+    _controller.gameExitedCount.addListener(_onGameExited);
+  }
+
+  /// 游戏关掉、会话随之自动结束（BUG-3928）：还停在捕获工作台上就回游戏首页。
+  /// 用户此刻在别的子区（库、发现……）时不打扰。
+  void _onGameExited() {
+    if (_section != GameSection.monitor) return;
+    _showDashboard();
   }
 
   /// 浮动工具栏的显隐（滚动驱动，与视频 / 书 / 漫画库同构）。
@@ -142,6 +150,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     _chrome.dispose();
     _actionsSlot.dispose();
     gameSectionNotifier.removeListener(_onSectionRequested);
+    _controller.gameExitedCount.removeListener(_onGameExited);
     // HomeGamePage 生命周期结束后不要把一次外部导航请求泄漏给下一次挂载（也避免
     // profile/窗口重建后意外停在旧工作台）。回落到默认首屏（游戏首页）。运行中的
     // 页面仍由 notifier 正常保态。
