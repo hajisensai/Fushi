@@ -480,11 +480,44 @@ class DictionaryRepository {
   /// 写完必须清查词结果缓存：词典语言只影响渲染（字体链 + structured content 的
   /// lang 标注），但那份 HTML 是缓存过的——不清的话用户改了语言要等缓存自然过期
   /// 才看得到变化（与 toggleDictionaryHidden 同款理由，BUG-171/BUG-177）。
+  ///
+  /// 词典管理页按「有效语言」分组、组内排序（[groupDictionariesByLanguage]）。
+  /// 改完若换了组，这本词典在新组里排**最后**：序号取比其它所有词典都大的
+  /// [dictionaryOrderTailOf]，混合词典的「汉字」分区序号一并挪到尾部。没换组
+  /// （例如「自动 · ja」改成手动 `ja`）则位置不动。查词照旧查全部启用的词典，
+  /// 语言只决定它在管理页里归哪组、以及渲染用的字体链。
   Future<void> setDictionaryLanguageOverride(
       Dictionary dictionary, String? language) {
     final String trimmed = language?.trim() ?? '';
-    return _editDictionary(dictionary, (updated) {
-      updated.languageOverride = trimmed.isEmpty ? null : trimmed;
+    return _writeMetadata(() async {
+      final Dictionary current = _dictionariesCache.firstWhere(
+        (d) => d.name == dictionary.name,
+        orElse: () => throw StateError(
+          'Dictionary is no longer installed: ${dictionary.name}',
+        ),
+      );
+      Dictionary updated = _copyDictionary(current)
+        ..languageOverride = trimmed.isEmpty ? null : trimmed;
+      if (dictionaryLanguageGroupOf(updated) !=
+          dictionaryLanguageGroupOf(current)) {
+        final int tail = dictionaryOrderTailOf(
+          _dictionariesCache.where((d) => d.name != current.name),
+        );
+        updated = updated.copyWith(
+          order: tail,
+          metadata: updated.hasEmbeddedKanji
+              ? <String, String>{
+                  ...updated.metadata,
+                  kDictKanjiOrderKey: '$tail',
+                }
+              : null,
+        );
+      }
+      await _commitDictionaries(<Dictionary>[updated]);
+      // 与 [_editDictionary] 同理：只在写入成功后把结果回填给调用方手里的快照。
+      dictionary
+        ..order = updated.order
+        ..languageOverride = updated.languageOverride;
     });
   }
 
