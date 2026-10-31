@@ -54,6 +54,7 @@ class _TimeoutProvider implements VideoResourceProvider {
 
 const MediaSourceRow _source = MediaSourceRow(
   videoGroupingMode: 'series',
+  isPrivate: false,
   id: 1,
   label: 'Videos',
   mediaKind: 'video',

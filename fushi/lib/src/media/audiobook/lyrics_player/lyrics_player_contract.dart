@@ -103,6 +103,32 @@ String formatLyricsPlayerTime(Duration d) {
   return '$m:$ss';
 }
 
+/// MD3 歌词模式播放控件的布局（偏好 `lyrics_controls_style`，默认新版）。
+///
+/// * [modern]：新版（2026-10-31 用户拍板）。窄屏 = 可收起的迷你条（64dp）/ 展开卡
+///   （约 160dp）；宽屏 = 底部三浮岛（书名 · 播放胶囊 · 全部次要动作与关闭），
+///   进度条是浮岛上方的整宽直线，正文横向占满。
+/// * [classic]：经典布局原样保留（窄屏现卡、宽屏左栏 + 右上角按钮）。
+///
+/// 只作用于 MD3；Apple 设计系统不读它（设置面板在 Apple 下隐藏这一项）。
+enum LyricsControlsStyle {
+  modern('modern'),
+  classic('classic');
+
+  const LyricsControlsStyle(this.wire);
+
+  /// 持久化值（偏好里存的字符串，冻结）。
+  final String wire;
+
+  /// 偏好值 → 布局；未知值 / 空串回落到默认新版。
+  static LyricsControlsStyle fromWire(String? value) {
+    for (final LyricsControlsStyle style in values) {
+      if (style.wire == value) return style;
+    }
+    return modern;
+  }
+}
+
 /// 覆盖层一帧的静态数据（换书 / 播放态 / 倍速变化时重建）。高频变化的播放位置与
 /// 读数走 [LyricsPlayerClock]，由控件层自己按帧 / 按秒读，不经整页重建。
 @immutable
@@ -118,6 +144,8 @@ class LyricsPlayerData {
     this.statsTimerPaused = false,
     this.illustrations,
     this.sidesMirrored = false,
+    this.controlsStyle = LyricsControlsStyle.modern,
+    this.compactControlsExpanded = false,
     LyricsControlLayout? wideControls,
     LyricsControlLayout? compactControls,
   }) : _wideControls = wideControls,
@@ -141,6 +169,13 @@ class LyricsPlayerData {
   /// 宽屏双栏左右互换（偏好 `lyrics_panel_mirrored`）：true = 歌词在左、封面与
   /// 播放卡在右。只换位置，两栏各自的宽度不变。窄屏不受影响。
   final bool sidesMirrored;
+
+  /// MD3 播放控件布局（新版 / 经典，偏好 `lyrics_controls_style`）。
+  final LyricsControlsStyle controlsStyle;
+
+  /// 新版窄屏播放卡是否展开（偏好 `lyrics_controls_expanded`，默认收起）。
+  /// 宽屏 / 经典布局不读它。
+  final bool compactControlsExpanded;
 
   /// 书中插图（播放走过插图时封面位换成插图，见 lyrics_illustrations.dart）。
   /// null = 这本书没有可显示的插图（或还在探测），封面位照旧只显示封面。
@@ -193,7 +228,15 @@ abstract class LyricsPlayerClock implements FushiPlaybackClock {
 /// 之外——从页面弹出的菜单是全局主题的表面色，与歌词页完全不搭。
 @immutable
 class LyricsMenuAnchor {
-  const LyricsMenuAnchor({required this.rect, required this.context});
+  const LyricsMenuAnchor({
+    required this.rect,
+    required this.context,
+    this.collapsedItems = const <LyricsControlItem>[],
+  });
+
+  /// 新版宽屏右岛因宽度不够收进「⋯」的按钮（按显示顺序）；页面把它们排在菜单
+  /// 最前面。经典布局与窄屏恒为空。
+  final List<LyricsControlItem> collapsedItems;
 
   /// 按钮的全局矩形。
   final Rect rect;
@@ -224,7 +267,12 @@ class LyricsPlayerCallbacks {
     this.onReplayCue,
     this.onSwapSides,
     this.onExitBook,
+    this.onCompactControlsExpandedChanged,
   });
+
+  /// 新版窄屏播放卡展开 / 收起（写偏好 `lyrics_controls_expanded`）。null = 卡片
+  /// 固定在当前状态（测试 / 未接偏好）。
+  final ValueChanged<bool>? onCompactControlsExpandedChanged;
 
   /// 关掉歌词层并直接退出本书回书架，**不改**这本书记住的「歌词模式」——下次
   /// 打开仍是歌词模式（每本书各记各的，见 `ReaderFushiSource.lyricsModeForBook`）。

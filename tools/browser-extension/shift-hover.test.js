@@ -166,6 +166,7 @@ function loadContentAndFireShift(options) {
 
   return {
     docListeners,
+    winListeners,
     sent,
     dataset,
     nowRef,
@@ -523,4 +524,79 @@ test('侧栏把词交回页面：ruby 按侧栏 term 的 trim 对齐后随 looku
   assert.strictEqual(lookups.length, 1);
   assert.strictEqual(lookups[0].term, '忙しい');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+// 反馈 pBDjgW3T4v：鼠标已经停在词上时直接按 Shift 要立即查词，不要求再晃一下鼠标（对齐
+// Yomitan / Hachidori 的 modifier-on-keydown）。keydown 用 window 捕获阶段 mousemove 记下的
+// 最后指针位置，绕过 4px 位移阈值，其余门控与 mousemove 入口共用。
+function movePointer(h, x, y) {
+  for (const fn of h.winListeners.mousemove || []) fn({ clientX: x, clientY: y, target: {} });
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: false, clientX: x, clientY: y, buttons: 0 });
+}
+function pressShift(h, extra) {
+  const ev = Object.assign({ key: 'Shift', shiftKey: true, repeat: false, target: {} }, extra || {});
+  for (const fn of h.docListeners.keydown || []) fn(ev);
+}
+function releaseShift(h) {
+  for (const fn of h.docListeners.keyup || []) fn({ key: 'Shift', shiftKey: false, target: {} });
+}
+const shiftLookups = (h) => h.sent.filter((m) => m && m.type === 'lookup');
+
+test('pBDjgW3T4v 鼠标静止按下 Shift：用最后指针位置立即查词', () => {
+  const h = loadContentAndFireShift();
+  movePointer(h, 300, 400);
+  assert.strictEqual(shiftLookups(h).length, 0, '不按 Shift 移动不查词');
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 1, '静止按 Shift 必须立即发出查词');
+  assert.strictEqual(shiftLookups(h)[0].term, '世界');
+  assert.strictEqual(h.dataset.fushiMove, '300,400', '必须用最后已知的指针坐标扫');
+});
+
+test('pBDjgW3T4v 按住 Shift 的自动连发不重复查；松开再按同词可重查', () => {
+  const h = loadContentAndFireShift();
+  movePointer(h, 300, 400);
+  pressShift(h);
+  h.nowRef.value += 60000; // 越过在途闸截止时间，只看去重 / repeat 门控
+  pressShift(h, { repeat: true });
+  assert.strictEqual(shiftLookups(h).length, 1, 'keydown 自动连发不得重复查词');
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 1, '没松开 Shift 时同词去重仍生效');
+  releaseShift(h);
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 2, '松开 Shift 必须复位同词去重，鼠标不动再按可重查');
+});
+
+test('pBDjgW3T4v 没见过指针 / 焦点在输入框 / 组合键 / 总开关关闭时按 Shift 不查词', () => {
+  const fresh = loadContentAndFireShift();
+  pressShift(fresh);
+  assert.strictEqual(shiftLookups(fresh).length, 0, '没有已知指针位置不得扫');
+
+  const editing = loadContentAndFireShift();
+  movePointer(editing, 300, 400);
+  pressShift(editing, { target: { nodeType: 1, tagName: 'INPUT', parentElement: null } });
+  pressShift(editing, {
+    target: { nodeType: 1, tagName: 'DIV', isContentEditable: true, parentElement: null },
+  });
+  assert.strictEqual(shiftLookups(editing).length, 0, '在输入框里按 Shift（打大写）不得查词');
+
+  const combo = loadContentAndFireShift();
+  movePointer(combo, 300, 400);
+  pressShift(combo, { ctrlKey: true });
+  pressShift(combo, { key: 'a' });
+  assert.strictEqual(shiftLookups(combo).length, 0, 'Ctrl+Shift 组合键 / 非 Shift 键不得查词');
+
+  const off = loadContentAndFireShift({ stored: { shiftHoverLookup: false } });
+  movePointer(off, 300, 400);
+  pressShift(off);
+  assert.strictEqual(shiftLookups(off).length, 0, '关掉 Shift 悬停查词后按 Shift 也不得查词');
+});
+
+test('pBDjgW3T4v 在途期间按 Shift 记为待补查，不另发请求', () => {
+  const h = loadContentAndFireShift({ respond: false });
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(shiftLookups(h).length, 1);
+  movePointer(h, 500, 600);
+  h.nowRef.value += 100;
+  pressShift(h);
+  assert.strictEqual(shiftLookups(h).length, 1, '在途闸必须同样拦住 keydown 入口');
 });

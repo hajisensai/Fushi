@@ -32,6 +32,20 @@ fn record(c: &Connection, v: serde_json::Value) {
     );
 }
 
+/// 让 SQLite 的临时文件（大排序溢出、建索引、VACUUM 的整理副本）落在 [dir]（库所在目录）。Android 进程没有可写的
+/// 默认临时目录（无 TMPDIR，`/tmp` 不存在），不设的话大库升级 / 整理一溢出到临时文件就报「unable to open database
+/// file」。`temp_store_directory` 是进程全局的，所以只在用得着的那一段设、用完 [clear_temp_dir] 还原，不把一个可能
+/// 随 Profile 被删掉的目录留给别的库。
+pub(crate) fn set_temp_dir(c: &Connection, dir: &Path) {
+    let dir_text = dir.to_string_lossy().replace('\'', "''");
+    let _ = c.execute_batch(&format!("PRAGMA temp_store_directory = '{dir_text}';"));
+}
+
+/// 还原 [set_temp_dir]（回到平台默认）。
+pub(crate) fn clear_temp_dir(c: &Connection) {
+    let _ = c.execute_batch("PRAGMA temp_store_directory = '';");
+}
+
 /// 有 [PENDING] 就整理一次。[free] 是库所在卷的空闲字节（拿不到为 None：照样试，失败按上面的路径处理）。
 /// 返回是否整理了。
 pub(crate) fn run(c: &Connection, dir: &Path, free: Option<u64>, now: i64) -> bool {
@@ -49,10 +63,9 @@ pub(crate) fn run(c: &Connection, dir: &Path, free: Option<u64>, now: i64) -> bo
         record(c, json!({"at": now, "ok": false, "reason": "disk", "need": need, "free": free, "bytes": before}));
         return false;
     }
-    let dir_text = dir.to_string_lossy().replace('\'', "''");
-    let _ = c.execute_batch(&format!("PRAGMA temp_store_directory = '{dir_text}';"));
+    set_temp_dir(c, dir);
     let out = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
-    let _ = c.execute_batch("PRAGMA temp_store_directory = '';");
+    clear_temp_dir(c);
     // 成功时把整理后的页写回主文件、WAL 归零；失败时丢掉 VACUUM 写进 WAL 又回滚掉的那些帧占的空间。
     let _ = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
     match out {

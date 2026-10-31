@@ -1,0 +1,6 @@
+## BUG-3918 · home-hero-multi-episode-still-nondeterministic
+- **报告**：2026-10-31（审查 PR #2652「主卡优先用分集剧照」时发现）
+- **真实性**：✅ 真 bug（合入 PR #2652 后的代码）。`home_video_page.dart` 的 `_loadLibraryMaps` 把一文件多集（v110 一个 `bookUid` 绑多条分集行）里**各集**的 thumb 全部 `addAll` 进同一个 `bookUid` 桶，`video_home_layout.dart` 的 `orderedEpisodeStills` 只按 `position` 排序——不同集的 thumb `position` 通常都是 0（唯一键是 `(episode_id, kind, position)`，跨集不唯一），`List.sort` 不稳定，主卡剧照取决于全表查询行序与排序实现，刷新之间可能在两集剧照间跳，且不保证是正在续播的那一集。
+- **[x] ① 已修复** — 不再按文件混桶：每个文件保留完整的分集列表（季号 / 集号 / 片长 / 各集自己的图，`VideoFileEpisodeStills`），主卡渲染时用 `resumedFileEpisodeStills`（`fushi/lib/src/media/video/video_home_layout.dart:545`）按续播点挑集：各集都有片长时按集序累加片长定位 `lastPositionMs` 所在那一集（超出总长归最后一集），任一集缺片长取集序第一集；集序全序 = 季号（缺季排后）→ 集号 → 分集行 id；同集 thumb 按 `position` → `id` 全序。续播那一集没有剧照就返回空、走作品图链，不拿别集剧照冒充。页面入口 `_episodeStillProvider(VideoBookRow)`（`fushi/lib/src/pages/implementations/home_video_page.dart:1580`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_home_layout_test.dart`（`orderedEpisodeStills` 同 position 按 id、输入逆序结果不变；`resumedFileEpisodeStills` 按片长区间定位、缺片长回第一集、集序全序、续播集无图返回空）；集成测试 `fushi/integration_test/home_video_hero_episode_still_itest.dart` 断言主卡图片源等于剧照文件 / 回落封面文件，并清理写入的行。
+- **备注**：播放进度按文件记，没有逐集进度；按刮削片长定位是现有数据下唯一的续播点依据，片长与实际文件分段不一致时临界处可能落到相邻集。

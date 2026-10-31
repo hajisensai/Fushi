@@ -1,5 +1,5 @@
 // 复习卡面查词：原生区按字取词 → 查词弹窗（与阅读器同一套弹窗引擎）；弹窗里继续嵌套查；
-// 卡面原有点击（点例句显示注音）不被取词吃掉；卡面链接只放行 Fushi 来源跳转。
+// 卡面原有点击（点例句显示注音）不被取词吃掉，取词 / 显示注音用掉的点按也不报卡面手势；卡面链接只放行 Fushi 来源跳转。
 // 复习页整页（按键不评分、Esc 关弹窗回焦点）见 srs_pages_test.dart 的「卡面查词」组。
 import 'dart:ui' show BoxHeightStyle;
 
@@ -22,6 +22,7 @@ import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -90,6 +91,7 @@ void main() {
     required bool answer,
     bool apple = false,
     SrsCardLookupCardSource? Function()? cardSource,
+    void Function(SrsCardGestureEvent)? onCardGesture,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -140,6 +142,7 @@ void main() {
                       css: FushiCardNoteType.template.css,
                       languageCode: 'ja',
                       onBridgeKey: (_) {},
+                      onCardGesture: onCardGesture,
                     ),
                     fields: _fields(),
                     definitionsHtml: '<div class="fc-defs-only">defs</div>',
@@ -304,6 +307,45 @@ void main() {
     );
     lookup.closeAll();
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('原生区卡面手势：取词 / 显示注音用掉的点按不报单击，空白处照报', (WidgetTester tester) async {
+    final List<SrsCardGestureEvent> events = <SrsCardGestureEvent>[];
+    final SrsCardLookupController lookup = await pumpCard(
+      tester,
+      answer: true,
+      onCardGesture: events.add,
+    );
+    final Finder term = find.byKey(const ValueKey<String>('srs-fushi-term'));
+    final Finder sentence = find.byKey(
+      const ValueKey<String>('srs-fushi-sentence'),
+    );
+
+    // 点例句（注音收起）：显示注音，不是单击空白。
+    await tester.tapAt(tester.getTopLeft(sentence) + const Offset(6, 12));
+    await tester.pump();
+    expect(
+      find.descendant(of: sentence, matching: find.text('まいにち')),
+      findsOneWidget,
+    );
+    expect(events, isEmpty, reason: '显示注音用掉了这一下');
+
+    // 点词条的字：查词，不是单击空白。
+    await tester.tapAt(rubyBaseCenter(tester, term, '通'));
+    await settlePopup(tester);
+    expect(lookup.isOpen, isTrue);
+    expect(events, isEmpty, reason: '取词用掉了这一下');
+    lookup.closeAll();
+    await tester.pump(const Duration(seconds: 2));
+
+    // 卡面底部右下角的页边空白：报单击（带落点）。
+    const Offset blank = Offset(386, 836);
+    await tester.tapAt(blank);
+    await tester.pump();
+    expect(events, <SrsCardGestureEvent>[
+      const SrsCardGestureEvent(SrsCardGestureKind.tap, position: blank),
+    ]);
+    expect(lookup.isOpen, isFalse);
   });
 
   testWidgets('原生区：正面预热的释义区不登记为取词表面（只有原生词条可查）', (WidgetTester tester) async {

@@ -97,10 +97,13 @@ class _CountingBackend implements SrsRwkvBackend {
   Future<void> replay(RwkvRows r) async => rows += r.length;
 
   @override
-  Future<bool> append(RwkvRows r, List<int> tags) async {
+  Future<bool> append(RwkvRows r, List<int> tags, List<int> ats) async {
     rows += r.length;
     return true;
   }
+
+  @override
+  Future<int?> rewindFrom(int atMs, int floorMs) async => null;
 
   @override
   Future<bool> unappend(int tag) async => false;

@@ -401,6 +401,7 @@ void main() {
           rating: r,
           config: const SrsSchedulingConfig(),
           ctx: ctx(() => now),
+          rwkvQueued: false,
         );
         logs.add(l);
         return l;
@@ -418,6 +419,46 @@ void main() {
       expect(grad.result!.reps, 3);
       expect(grad.result!.dueDay, greaterThan(kDayCtx.dayIndexOf(now)));
     });
+
+    test(
+      '日志 alg 记实际排程的算法：RWKV 牌组只有由 RWKV-Instant 排队时记 rwkv，没有 RWKV 运行时（无头宿主）记 FSRS-7',
+      () {
+        const SrsSchedulingConfig rwkvDeck = SrsSchedulingConfig(
+          algorithm: SrsAlgorithm.rwkv,
+        );
+        SrsReviewLog rate({required bool rwkvQueued}) => ops.answer(
+          cardId: 'card',
+          history: SrsCardHistory(const <SrsReviewLog>[]),
+          rating: 3,
+          config: rwkvDeck,
+          ctx: ctx(() => kT0),
+          rwkvQueued: rwkvQueued,
+        );
+        final SrsReviewLog headless = rate(rwkvQueued: false);
+        expect(headless.algorithm, SrsAlgorithm.fsrs7.wire);
+        expect(
+          headless.paramsHash,
+          srsParamsHash(SrsAlgorithm.fsrs7, rwkvDeck.params),
+        );
+        expect(rate(rwkvQueued: true).algorithm, SrsAlgorithm.rwkv.wire);
+        // FSRS 牌组与 rwkvQueued 无关。
+        expect(
+          ops
+              .answer(
+                cardId: 'card',
+                history: SrsCardHistory(const <SrsReviewLog>[]),
+                rating: 3,
+                config: const SrsSchedulingConfig(
+                  algorithm: SrsAlgorithm.fsrs6,
+                ),
+                ctx: ctx(() => kT0),
+                rwkvQueued: true,
+              )
+              .algorithm,
+          SrsAlgorithm.fsrs6.wire,
+        );
+      },
+    );
 
     test('elapsed = 评分时刻 − lastReviewedAt：中间导入 / 改期不改变它（13 天的例子）', () {
       const int oct1 = kT0;

@@ -46,7 +46,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 139);
+    expect(migrated.schemaVersion, 142);
     expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
     await migrated.recordWebBrowserVisit(
       url: 'https://example.com/',
@@ -86,7 +86,7 @@ void main() {
         'started_at',
       ]),
     );
-    expect(probe.select('PRAGMA user_version').first.values.first, 139);
+    expect(probe.select('PRAGMA user_version').first.values.first, 142);
     // 重跑：表已存在时 _tableExists 守卫让整步 no-op，数据保留。
     probe.execute('PRAGMA user_version = 127');
     probe.dispose();
@@ -143,7 +143,7 @@ void main() {
         columnsOf(probe, 'collection_member_tombstones'),
         contains('published_at'),
       );
-      expect(probe.select('PRAGMA user_version').first.values.first, 139);
+      expect(probe.select('PRAGMA user_version').first.values.first, 142);
     });
   }
 
@@ -193,7 +193,7 @@ void main() {
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
     expect(tablesOf(probe), containsAll(branchTables));
-    expect(probe.select('PRAGMA user_version').first.values.first, 139);
+    expect(probe.select('PRAGMA user_version').first.values.first, 142);
   });
 
   // 次要变体：分支构建写成 125–127 后被 develop 构建（schemaVersion 128）升到 128，
@@ -237,6 +237,6 @@ void main() {
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
     expect(indexesOf(probe), containsAll(present));
-    expect(probe.select('PRAGMA user_version').first.values.first, 139);
+    expect(probe.select('PRAGMA user_version').first.values.first, 142);
   });
 }

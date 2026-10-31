@@ -40,6 +40,8 @@ import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_profile_stores.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -121,6 +123,14 @@ final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
     appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
   ),
 );
+
+/// 复习页卡面手势映射（按 profile 偏好，默认 = 点空白切换顶栏、其余不绑）。
+final Provider<SrsReviewGestureMap> srsReviewGesturesProvider =
+    Provider<SrsReviewGestureMap>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsReviewGestures),
+      ),
+    );
 
 /// 复习页底部操作行一端的重播音频键（按 profile 偏好，默认不放）。
 final Provider<SrsReviewReplayButton> srsReviewReplayButtonProvider =
@@ -223,54 +233,77 @@ final FutureProvider<SrsStorage?> srsStorageProvider =
       return ref.read(appProvider).srsStorage.acquire();
     });
 
-/// 当前 profile 的 SRS 副本；模块关着时为 null。
-final FutureProvider<SrsDbStore?> srsStoreProvider =
-    FutureProvider<SrsDbStore?>((Ref ref) async {
-      final SrsStorage? storage = await ref.watch(srsStorageProvider.future);
-      if (storage == null) return null;
-      final int activeProfileId = ref.watch(
-        profileViewModelProvider.select(
-          (ProfileUiState s) => s.activeProfileId,
+/// 各配置的复习副本登记处（见 srs_profile_stores.dart）：App 激活配置的副本经它打开，浏览器扩展
+/// 按所选（非激活）配置制卡时经它在同一个 srs.db 句柄上取那个配置的副本。进程级常驻。
+final Provider<SrsProfileStores> srsProfileStoresProvider =
+    Provider<SrsProfileStores>((Ref ref) {
+      final AppModel app = ref.read(appProvider);
+      return SrsProfileStores(
+        SrsProfileStoresDeps(
+          storage: () => ref.read(srsStorageProvider.future),
+          deviceId: () => SyncRepository(app.database).getOrCreateDeviceId(),
+          supportRoot: () => ref.read(srsSupportRootProvider)(),
+          engine: () => ref.read(srsEngineProvider),
         ),
       );
-      final FsrsEngine? engine = ref.watch(srsEngineProvider);
-      final AppModel app = ref.read(appProvider);
-      final int profileId = activeProfileId > 0
-          ? activeProfileId
-          : await app.database.resolveActiveProfileId();
-      final String profileUid = await app.database.profileUidOf(profileId);
-      final String deviceId = await SyncRepository(
-        app.database,
-      ).getOrCreateDeviceId();
-      final Directory support = await ref.watch(srsSupportRootProvider)();
-      final SrsDbStore store = await SrsDbStore.open(
-        db: storage.db,
-        core: storage.core,
-        profileUid: profileUid,
-        deviceId: deviceId,
-        engine: engine,
-        // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
-        // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
-        fallbackRolloverHour: () => app.statDayResetHour,
-        // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
-        styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
-      );
-      // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
-      bool disposed = false;
-      ref.onDispose(() => disposed = true);
-      srsRunLogged('srsCompactStoredStyles', () async {
-        await store.compactStoredStyles(shouldStop: () => disposed);
-      });
-      // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
-      srsRunLogged('srsPurgeExpiredTombstones', () async {
-        if (disposed) return;
-        await srsPurgeExpiredTombstones(
-          store,
-          mediaRoot: SrsMediaStore.directoryFor(support, profileUid),
-        );
-      });
-      return store;
     });
+
+/// 当前 profile 的 SRS 副本；模块关着时为 null。
+///
+/// 经 [srsProfileStoresProvider] 打开：浏览器扩展之前为这个配置开过的副本先作废，同一个 uid 不会
+/// 同时有两份活副本（见 [SrsProfileStores.activate]）。
+final FutureProvider<SrsDbStore?>
+srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
+  final SrsProfileStores stores = ref.read(srsProfileStoresProvider);
+  final SrsStorage? storage = await ref.watch(srsStorageProvider.future);
+  if (storage == null) {
+    await stores.releaseAll();
+    return null;
+  }
+  final int activeProfileId = ref.watch(
+    profileViewModelProvider.select((ProfileUiState s) => s.activeProfileId),
+  );
+  final FsrsEngine? engine = ref.watch(srsEngineProvider);
+  final AppModel app = ref.read(appProvider);
+  final int profileId = activeProfileId > 0
+      ? activeProfileId
+      : await app.database.resolveActiveProfileId();
+  final String profileUid = await app.database.profileUidOf(profileId);
+  final String deviceId = await SyncRepository(
+    app.database,
+  ).getOrCreateDeviceId();
+  final Directory support = await ref.watch(srsSupportRootProvider)();
+  final SrsDbStore store = await stores.activate(
+    profileUid,
+    () => SrsDbStore.open(
+      db: storage.db,
+      core: storage.core,
+      profileUid: profileUid,
+      deviceId: deviceId,
+      engine: engine,
+      // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
+      // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
+      fallbackRolloverHour: () => app.statDayResetHour,
+      // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
+      styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
+    ),
+  );
+  // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+  srsRunLogged('srsCompactStoredStyles', () async {
+    await store.compactStoredStyles(shouldStop: () => disposed);
+  });
+  // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
+  srsRunLogged('srsPurgeExpiredTombstones', () async {
+    if (disposed) return;
+    await srsPurgeExpiredTombstones(
+      store,
+      mediaRoot: SrsMediaStore.directoryFor(support, profileUid),
+    );
+  });
+  return store;
+});
 
 /// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理。
 final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
@@ -529,10 +562,17 @@ class SrsDeckListData {
   /// 今天还有没有可复习的卡（三种计数任一非零）。
   bool get hasWorkToday => todayNew + todayLearn + todayReview > 0;
 
-  /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡的顶层牌组；没有时为 null。
+  /// 有顶层牌组的到期数因 RWKV 还没准备好而不全（[SrsDeckSummary.rwkvPending]）：[todayReview] 的 0 不代表
+  /// 「今天复习完了」，首页显示「准备中」。
+  bool get rwkvPending =>
+      decks.any((SrsDeckSummary d) => d.depth == 0 && d.rwkvPending);
+
+  /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡（或到期数在等 RWKV）的顶层牌组；没有时为
+  /// null。等 RWKV 的牌组进复习页会看到准备进度，就绪后自动出卡。
   SrsDeckSummary? get firstRootWithWork {
     for (final SrsDeckSummary d in decks) {
-      if (d.depth == 0 && d.newCount + d.learnCount + d.reviewCount > 0) {
+      if (d.depth == 0 &&
+          (d.newCount + d.learnCount + d.reviewCount > 0 || d.rwkvPending)) {
         return d;
       }
     }
@@ -580,18 +620,33 @@ List<SrsDeckSummary> srsVisibleDecks(
 /// 只读牌组行：同步冲突数是另一个 provider（[srsConflictCountProvider]）。以前两者合在一个
 /// Future 里，新建 / 改名牌组后列表要等冲突扫描（读回并解析全部修改记录）跑完才换成新数据，
 /// 新牌组迟迟不出现（BUG-3548）。
-final FutureProvider<SrsDeckListData?> srsDeckListProvider =
-    FutureProvider<SrsDeckListData?>((Ref ref) async {
-      ref.watch(srsRevisionProvider);
-      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
-      if (store == null) return null;
-      final int revision = store.revision;
-      final List<SrsDeckSummary> decks = srsVisibleDecks(
-        await store.deckSummaries(),
-        defaultDeckId: store.defaultDeckId,
-      );
-      return SrsDeckListData(store: store, decks: decks, revision: revision);
-    });
+final FutureProvider<SrsDeckListData?>
+srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
+  ref.watch(srsRevisionProvider);
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return null;
+  final int revision = store.revision;
+  Future<List<SrsDeckSummary>> load() async => srsVisibleDecks(
+    await store.deckSummaries(),
+    defaultDeckId: store.defaultDeckId,
+  );
+  List<SrsDeckSummary> decks = await load();
+  // RWKV 牌组的到期数在等 RWKV（[SrsDeckSummary.rwkvPending]）：RWKV 就绪不是 store 的写入，不推进
+  // [srsRevisionProvider]，这里自己等它就绪再重读，列表 / 首页的「准备中」才会换成真实计数。
+  // 只在确有 pending 时取服务：pending 意味着 store 已装配了 RWKV（[srsRwkvServiceProvider] 已建好）。
+  if (decks.any((SrsDeckSummary d) => d.rwkvPending)) {
+    final SrsRwkvService? rwkv = await ref.read(srsRwkvServiceProvider.future);
+    if (rwkv != null) {
+      final StreamSubscription<SrsRwkvStatus> sub = rwkv.statusChanges
+          .where((SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready)
+          .listen((_) => ref.invalidateSelf());
+      ref.onDispose(sub.cancel);
+      // 计数途中就已就绪（事件在订阅之前发过了）：当场重读一次。
+      if (rwkv.ready) decks = await load();
+    }
+  }
+  return SrsDeckListData(store: store, decks: decks, revision: revision);
+});
 
 /// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
 const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';

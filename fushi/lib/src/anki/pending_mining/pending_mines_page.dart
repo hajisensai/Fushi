@@ -20,6 +20,42 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
+/// 「全部发送」结束后的 toast 文案：停下 / 失败时说清**为什么**。
+///
+/// 此前停下时一律报「连不上 Anki」——实际原因可能是连不上 Fushi 互联服务端、Anki
+/// 未配置、同步客户端未登录……用户无从下手。原因走与单张制卡同一套本地化
+/// （[localizeAnkiMineError]），未分类的失败退回后端原文。
+@visibleForTesting
+String pendingFlushMessage(PendingFlushReport report) {
+  final MineOutcome? stop = report.stopOutcome;
+  if (report.unreachable) {
+    return stop == null
+        ? t.anki_pending_mines_unreachable
+        : t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop));
+  }
+  final String summary = t.anki_pending_mines_flush_result(
+    delivered: report.delivered,
+    failed: report.failed,
+    remaining: report.remaining,
+  );
+  final MineOutcome? failure = report.failureOutcome;
+  return failure == null
+      ? summary
+      : '$summary\n${_pendingFailureReason(failure)}';
+}
+
+String _pendingFailureReason(MineOutcome outcome) {
+  if (outcome.result == MineResult.notConfigured) {
+    return t.card_export_not_configured;
+  }
+  final String? localized = localizeAnkiMineError(outcome.errorCode);
+  if (localized != null) return localized;
+  final String? detail = outcome.errorDetail;
+  return detail != null && detail.isNotEmpty
+      ? t.card_export_failed_detail(reason: detail)
+      : t.card_export_failed;
+}
+
 /// 订阅待发队列：表一变就重读一次（行数 / 行列表）。
 mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
     on ConsumerState<W> {
@@ -224,13 +260,7 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
       final PendingFlushReport report = await repo.flush(interactive: true);
       if (!mounted || repo.switchesAppPerNote) return;
       FushiToast.show(
-        msg: report.unreachable
-            ? t.anki_pending_mines_unreachable
-            : t.anki_pending_mines_flush_result(
-                delivered: report.delivered,
-                failed: report.failed,
-                remaining: report.remaining,
-              ),
+        msg: pendingFlushMessage(report),
         severity: report.unreachable || report.failed > 0
             ? ToastSeverity.warning
             : ToastSeverity.success,

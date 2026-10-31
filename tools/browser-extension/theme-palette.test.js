@@ -93,8 +93,6 @@ test('预设与 app theme_notifier.dart themePresets 同名同种子同变体（
   const P = loadPalette();
   const dart = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'models', 'theme_notifier.dart'), 'utf8');
   const block = /static const Map<String, ThemePreset> themePresets = \{([\s\S]*?)\n  \};/.exec(dart)[1];
-  // 尾逗号可有可无：dart format 会把放得下的条目折成单行 `(seed: …, variant: …)`，
-  // 那时最后一个字段后面没有逗号。守卫要比的是内容，不能钉在排版上。
   const app = [...block.matchAll(/'(m3-[a-z]+)': \(\s*seed: Color\(0xFF([0-9A-F]{6})\),\s*variant: ([A-Za-z.]+),?\s*\)/g)]
     .map((m) => ({ key: m[1], seed: '#' + m[2].toLowerCase(), variant: m[3] === 'kFushiDefaultSchemeVariant' ? 'vibrant' : m[3].split('.').pop() }));
   assert.ok(app.length >= 10, 'Dart 预设表解析失败');

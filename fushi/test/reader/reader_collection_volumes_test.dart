@@ -7,6 +7,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 
 /// BUG-2521：阅读器「同合集卷」上下文——归属 / 顺序 / 单卷退化 / 孤儿过滤，
 /// 以及兄弟卷目录构建与插图文件越界判据。
@@ -19,11 +20,15 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<String> insertEpub(String key, {String format = 'epub'}) async {
+  Future<String> insertEpub(
+    String key, {
+    String format = 'epub',
+    String? title,
+  }) async {
     await db.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: key,
-        title: 'Title $key',
+        title: title ?? 'Title $key',
         epubPath: '/$key.epub',
         extractDir: '/extract/$key',
         chapterCount: 1,
@@ -49,9 +54,9 @@ void main() {
 
   test('multi-volume collection: sortIndex order, current index, orphan and '
       'non-book members filtered, PDF volume kept but not peekable', () async {
-    final String v1 = await insertEpub('v1');
-    final String v2 = await insertEpub('v2');
-    final String v3 = await insertEpub('v3', format: 'pdf');
+    final String v1 = await insertEpub('v1', title: 'Alpha');
+    final String v2 = await insertEpub('v2', title: 'Beta');
+    final String v3 = await insertEpub('v3', format: 'pdf', title: 'Gamma');
     final int cid = await db.createMediaCollection('Series');
     await db.addToCollection(cid, MediaKind.epub, v2);
     await db.addToCollection(cid, MediaKind.epub, v1);
@@ -66,17 +71,96 @@ void main() {
     expect(ctx, isNotNull);
     expect(ctx!.collectionId, cid);
     expect(ctx.collectionName, 'Series');
-    expect(
-      ctx.volumes.map((ReaderVolume v) => v.bookKey).toList(),
-      <String>['v2', 'v1', 'v3'],
-      reason: '合集内顺序 = sortIndex（加入顺序），不是书名序',
-    );
+    expect(ctx.volumes.map((ReaderVolume v) => v.bookKey).toList(), <String>[
+      'v2',
+      'v1',
+      'v3',
+    ], reason: '合集内顺序 = sortIndex（加入顺序），不是书名序');
     expect(ctx.currentIndex, 1);
     expect(ctx.current.uid, v1);
     expect(ctx.volumes[0].canPeek, isTrue);
     expect(ctx.volumes[2].canPeek, isFalse, reason: 'PDF 卷只能整卷切过去');
     expect(ctx.volumes[0].extractDir, '/extract/v2');
   });
+
+  // BUG-3923：用户库里的实际加入顺序（合集 sortIndex）：5, 8, 7, 6, 4, 3, 2, 1，
+  // 外加一本系列键不同的番外「安達としまむらSS」。
+  const List<(String, String)> adachiAdded = <(String, String)>[
+    ('b5', '安達としまむら5'),
+    ('b8', '安達としまむら8'),
+    ('b7', '安達としまむら7'),
+    ('b6', '安達としまむら6'),
+    ('ss', '安達としまむらSS'),
+    ('b4', '安達としまむら4'),
+    ('b3', '安達としまむら3'),
+    ('b2', '安達としまむら2'),
+    ('b1', '安達としまむら'),
+  ];
+
+  Future<(int, Map<String, String>)> addAdachi() async {
+    final Map<String, String> uids = <String, String>{};
+    final int cid = await db.createMediaCollection('安達としまむら');
+    for (final (String key, String title) in adachiAdded) {
+      uids[key] = await insertEpub(key, title: title);
+      await db.addToCollection(cid, MediaKind.epub, uids[key]!);
+    }
+    return (cid, uids);
+  }
+
+  List<String> keysOf(ReaderVolumeContext ctx) =>
+      ctx.volumes.map((ReaderVolume v) => v.bookKey).toList();
+
+  test('volume chips show the persisted collection order verbatim (same as '
+      'the collection detail page; no display-layer reorder)', () async {
+    final (int cid, Map<String, String> uids) = await addAdachi();
+
+    final ReaderVolumeContext ctx = (await loadReaderVolumeContext(
+      db,
+      bookUid: uids['b3']!,
+    ))!;
+    final List<String> persisted = <String>[
+      for (final MediaCollectionItemRow i in await db.getCollectionItems(cid))
+        (await db.getEpubBookByUid(i.entryKey))!.bookKey,
+    ];
+    expect(keysOf(ctx), persisted);
+    expect(keysOf(ctx), <String>[
+      for (final (String key, String _) in adachiAdded) key,
+    ]);
+    expect(ctx.current.uid, uids['b3']);
+  });
+
+  test(
+    'main series + SS extra: shelf grouping heals the persisted order, '
+    'the reader follows it (user report: 5, 8, … with the current 3 last)',
+    () async {
+      final (int cid, Map<String, String> uids) = await addAdachi();
+
+      final BookSeriesGroupSummary healed = await BookSeriesGrouper(
+        db,
+      ).groupAll();
+      expect(healed.updatedCollectionIds, <int>[cid]);
+
+      final ReaderVolumeContext ctx = (await loadReaderVolumeContext(
+        db,
+        bookUid: uids['b3']!,
+      ))!;
+      // 主系列在自己占的位置里按卷号排（无卷号的「安達としまむら」= 第 1 卷），
+      // 番外 SS 留在原位（规则判不出它该夹在哪卷后，那是 AI 排序的活）。
+      expect(keysOf(ctx), <String>[
+        'b1',
+        'b2',
+        'b3',
+        'b4',
+        'ss',
+        'b5',
+        'b6',
+        'b7',
+        'b8',
+      ]);
+      expect(ctx.currentIndex, 2);
+      expect(ctx.current.uid, uids['b3']);
+    },
+  );
 
   test(
     'primary collection = smallest collection id (shelf fold rule)',

@@ -196,6 +196,33 @@ const int kDeletionTombstoneMarkerReadsPerRound = 200;
 /// 连接已坏（TLS 握手连环失败）时继续逐条撞只会把整轮拖长，剩下的下轮再读。
 const int kDeletionTombstoneReadFailureBudget = 3;
 
+/// 云墓碑一次扫描的结果（`SyncOrchestrator` 云通道）：[remote] = mediaType → itemKey →
+/// deletedAt；[complete] = 本轮是否完整读到了全部远端标记（不完整时不许推进消费基线，
+/// BUG-1934）；[nextBaseline] = 本轮开始时刻（基线钳制用）。
+typedef CloudDeletionTombstoneScan = ({
+  DeletionTombstoneEntries remote,
+  bool complete,
+  int nextBaseline,
+});
+
+/// 递归删掉云盘上一本书的文件夹（[folderId] = 书文件夹定位符），再逐出书名→folderId
+/// 缓存并写回持久层（BUG-202：陈旧映射会让下次上传打向已删的文件夹）。
+///
+/// 两个调用点：书架「同时从远端删除」（`CloudRemoteBookClient.deleteRemoteBook`）与
+/// 云通道发布「从所有设备删除」墓碑（[SyncOrchestrator] 墓碑扫描）。两处都**先**写
+/// 墓碑、**再**调本函数：墓碑没写成就什么都不删；本函数失败时墓碑已在，可重试。
+Future<void> deleteCloudBookFolder({
+  required SyncBackend backend,
+  required FushiDatabase db,
+  required String folderId,
+}) async {
+  await backend.deleteAsset(folderId, isFolder: true);
+  backend.evictFolderId(folderId);
+  await SyncRepository(
+    db,
+  ).setFolderCache(syncChannelScopeOf(backend), backend.cachedFolderIds);
+}
+
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
 /// a later resolution prompt needs, including both versions so [fingerprint] can
@@ -749,6 +776,23 @@ class SyncOrchestrator {
     // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
     // 音频文件 live 同步，请参考本方法的分流模式扩展。
     final bool managerSyncContent = isInterconnect ? false : syncContent;
+
+    // 云通道：书阶段之前先读一遍远端删除墓碑（反馈 R8duEiqRuy）。书阶段对每本本地书
+    // 都 `ensureBookFolder` + 补传内容，云盘上被「从远端删除」/「从所有设备删除」删掉
+    // 的书文件夹会被持有旧副本的设备原样建回去——删除意图在下一轮同步就蒸发。读到的
+    // 结果在墓碑阶段直接复用做消费，不重复读。读失败（已记进 report）则本轮不做否决，
+    // 墓碑阶段再完整跑一遍。互联通道的等价把关在 [_syncBooksContentLive]。
+    CloudDeletionTombstoneScan? cloudTombstoneScan;
+    Set<String> cloudVetoedBookKeys = const <String>{};
+    if (!isInterconnect) {
+      cloudTombstoneScan = await _scanCloudDeletionTombstones(report);
+      if (cloudTombstoneScan != null) {
+        cloudVetoedBookKeys = await _cloudPushVetoedBookKeys(
+          cloudTombstoneScan.remote,
+        );
+      }
+      mark('cloudTombstoneScan');
+    }
     final bool managerSyncMangaContent = isInterconnect
         ? false
         : syncMangaContent;
@@ -796,6 +840,7 @@ class SyncOrchestrator {
             syncContent: managerSyncContent,
             syncMangaContent: managerSyncMangaContent,
             listing: listing,
+            skipBookKeys: cloudVetoedBookKeys,
             onBookProgress: (int done, int itemTotal, String title) {
               settleReadingBook();
               readingBookStartMs = total.elapsedMilliseconds;
@@ -925,6 +970,9 @@ class SyncOrchestrator {
     _emitPhaseStart(SyncPhase.deletions);
     if (isInterconnect) {
       await _syncDeletionTombstonesLive(report, b);
+    } else if (cloudTombstoneScan != null) {
+      // 书阶段前已读过（推送否决用），直接消费，不再读一遍。
+      await _consumeCloudDeletionTombstones(report, cloudTombstoneScan);
     } else {
       await syncDeletionTombstones(report);
     }
@@ -1285,11 +1333,27 @@ class SyncOrchestrator {
   /// [SyncRunReport.noteDeletionHighWater]（=允许 UI 推进基线）。少读一条就闭嘴——基线
   /// 是标量，推过头会把那条没读到的、deletedAt 更小的删除永久压成「旧闻」。
   Future<void> syncDeletionTombstones(SyncRunReport report) async {
+    final CloudDeletionTombstoneScan? scan = await _scanCloudDeletionTombstones(
+      report,
+    );
+    if (scan == null) return;
+    await _consumeCloudDeletionTombstones(report, scan);
+  }
+
+  /// [syncDeletionTombstones] 的前半：发布本机未发布墓碑、读回远端全部墓碑（合并清单 +
+  /// 未覆盖的逐条标记）、写回本机清单。不碰本地库存，也不产删除候选。
+  ///
+  /// 单独拆出来是为了让云通道在**书阶段之前**就拿到远端墓碑（[run] 里的推送否决，
+  /// 反馈 R8duEiqRuy）：书阶段对每本本地书都 `ensureBookFolder`，不先看墓碑就会把
+  /// 被「从远端删除」/「从所有设备删除」的书文件夹重新建回云盘。读失败记进 [report]
+  /// 并返回 null。
+  Future<CloudDeletionTombstoneScan?> _scanCloudDeletionTombstones(
+    SyncRunReport report,
+  ) async {
     try {
       final String ns = await _backend.ensureNamespace(
         kSyncTombstonesNamespace,
       );
-      final SyncRepository repo = SyncRepository(_db);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
 
       // ── 发布：本机未发布墓碑 → 远端逐条标记（旧客户端只认它）+ 并入本机合并清单 ──
@@ -1299,6 +1363,8 @@ class SyncOrchestrator {
           .getSyncDeletionTombstones();
       final List<SyncDeletionTombstoneRow> ownRows =
           <SyncDeletionTombstoneRow>[];
+      // 云盘书文件夹清单，有书文件夹要处置时才列一次（本轮删掉的随手移出）。
+      List<SyncFileRef>? cloudBookFolders;
       for (final SyncDeletionTombstoneRow row in localRows) {
         // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
         // 数据」可能上千条，且没有逐条确认语义），也不进清单。
@@ -1309,17 +1375,74 @@ class SyncOrchestrator {
           continue;
         }
         ownRows.add(row);
-        if (row.remotePublishedAt != 0) continue;
-        await _backend.putJsonAsset(
-          ns,
-          deletionTombstoneAssetName(row.mediaType, row.itemKey),
-          deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
-        );
-        await _db.markSyncDeletionPublished(
-          row.mediaType,
-          row.itemKey,
-          nextBaseline,
-        );
+        final bool needsPublish = row.remotePublishedAt == 0;
+        // 「从所有设备删除」一本书：墓碑写上之后，把云盘上它的书文件夹也删掉（所有者
+        // 2026-10-31 拍板，不再只写墓碑留残留；顺序与失败语义同「同时从远端删除」）。
+        // 文件夹只按删除时记下的文件夹名找（v142 `cloudFolderName` =
+        // sanitizeTtuFilename(当时的书名)）：墓碑键是 bookKey / 对端键 / 别名，不一定
+        // 等于文件夹名，拿它去比会静默找不到。没记下文件夹名的（v142 之前的墓碑）不碰
+        // 任何文件夹，状态保持未处置、书架继续藏。已发布但文件夹还没处置的（书架直删时
+        // 删文件夹失败）也在这里重试。
+        final String? folderName = row.cloudFolderName;
+        final bool needsFolder =
+            row.mediaType == SyncTombstoneKind.book.dbValue &&
+            folderName != null &&
+            !TombstoneCloudFolderState.fromDb(row.cloudFolderState).resolved;
+        if (!needsPublish && !needsFolder) continue;
+        if (needsPublish) {
+          await _backend.putJsonAsset(
+            ns,
+            deletionTombstoneAssetName(row.mediaType, row.itemKey),
+            deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
+          );
+        }
+        if (needsFolder) {
+          // 删失败就什么都不标：下一轮重写同一条墓碑（幂等）并重试删文件夹；在那之前
+          // 书架照旧藏着这份残留（`loadPendingRemoteDeletionKeys`）。
+          try {
+            final List<SyncFileRef> folders = cloudBookFolders ??=
+                List<SyncFileRef>.of(
+                  await _backend.listBooks(
+                    await _backend.findOrCreateRootFolder(),
+                  ),
+                );
+            final List<SyncFileRef> matches = <SyncFileRef>[
+              for (final SyncFileRef f in folders)
+                if (f.name == folderName) f,
+            ];
+            for (final SyncFileRef f in matches) {
+              await deleteCloudBookFolder(
+                backend: _backend,
+                db: _db,
+                folderId: f.id,
+              );
+              folders.remove(f);
+            }
+            // 明确区分「删掉了」与「云盘上本就没有」：后者没删任何东西，但同样说明
+            // 此后出现的同名文件夹是新上传的。
+            await _db.markSyncDeletionCloudFolderState(
+              row.mediaType,
+              row.itemKey,
+              matches.isEmpty
+                  ? TombstoneCloudFolderState.absent
+                  : TombstoneCloudFolderState.deleted,
+            );
+          } catch (err) {
+            report.noteError(
+              'deletion tombstone: cloud book folder "$folderName" '
+              'not deleted, retried next sync',
+              err,
+            );
+            continue;
+          }
+        }
+        if (needsPublish) {
+          await _db.markSyncDeletionPublished(
+            row.mediaType,
+            row.itemKey,
+            nextBaseline,
+          );
+        }
       }
 
       // ── 消费：读合并清单 + 未被清单覆盖的逐条标记 → deleteLocal 候选（过基线守卫）──
@@ -1506,6 +1629,60 @@ class SyncOrchestrator {
         }
       }
 
+      return (
+        remote: remoteTombstones,
+        complete: scanComplete,
+        nextBaseline: nextBaseline,
+      );
+    } catch (e) {
+      report.noteError('deletion tombstones sync', e);
+      return null;
+    }
+  }
+
+  /// 云通道书阶段要跳过的本地书（bookKey）：云盘墓碑管得着它（删除发生在本机拥有它
+  /// 之后，判据与删除确认候选同源，[peerTombstoneVetoesPush]）。删除**之后**才在本机
+  /// 重新加入的书不跳过——那是新的加入意图。对端键与本机键不同的书按别名换算
+  /// （[aliasPeerBookTombstones]，在副本上做，不改 [remote]）。
+  Future<Set<String>> _cloudPushVetoedBookKeys(
+    DeletionTombstoneEntries remote,
+  ) async {
+    if (remote[SyncTombstoneKind.book.dbValue]?.isEmpty ?? true) {
+      return const <String>{};
+    }
+    final DeletionTombstoneEntries tombstones = <String, Map<String, int>>{
+      for (final MapEntry<String, Map<String, int>> e in remote.entries)
+        e.key: Map<String, int>.of(e.value),
+    };
+    final List<EpubBookRow> books = await _db.getAllEpubBooks();
+    aliasPeerBookTombstones(tombstones, <String, Map<String, int?>>{
+      SyncTombstoneKind.book.dbValue: <String, int?>{
+        for (final EpubBookRow b in books) b.bookKey: null,
+      },
+    }, peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
+    return <String>{
+      for (final EpubBookRow b in books)
+        if (peerTombstoneVetoesPush(
+          peerTombstones: tombstones,
+          mediaTypes: <String>[SyncTombstoneKind.book.dbValue],
+          itemKeys: <String>{b.bookKey, sanitizeTtuFilename(b.title)},
+          presentSinceAt: b.localAddedAt,
+        ))
+          b.bookKey,
+    };
+  }
+
+  /// [syncDeletionTombstones] 的后半：拿 [scan] 与本地在库键求交，产 deleteLocal 候选
+  /// （过因果基线守卫），完整观测时登记基线高水位。
+  Future<void> _consumeCloudDeletionTombstones(
+    SyncRunReport report,
+    CloudDeletionTombstoneScan scan,
+  ) async {
+    try {
+      final SyncRepository repo = SyncRepository(_db);
+      final DeletionTombstoneEntries remoteTombstones = scan.remote;
+      final bool scanComplete = scan.complete;
+      final int nextBaseline = scan.nextBaseline;
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       aliasPeerBookTombstones(

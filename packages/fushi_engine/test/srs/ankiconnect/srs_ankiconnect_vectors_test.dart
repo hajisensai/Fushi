@@ -292,11 +292,7 @@ void main() {
       profileUid: kAcVecProfile,
       deviceId: 'v',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        monotonicMs: () => t,
-        bootId: 'boot-v',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot-v'),
       fallbackRolloverHour: () => 4,
     );
     final SrsAnkiConnectHandler h = _handler(s);
