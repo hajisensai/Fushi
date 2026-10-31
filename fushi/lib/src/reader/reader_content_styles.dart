@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
+import 'package:fushi/src/reader/reader_book_font_aliases.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 
@@ -721,6 +722,14 @@ body::after {
       resolvedFontFamily = ReaderVerticalPunctuationFont.prependTo(
         resolvedFontFamily,
       );
+    }
+    // 電書協黑体别名（`.gfont` / 标题的 `sans-serif-ja`）：Android 上钉到系统 Noto Sans
+    // CJK JP，不落进可被 OEM 主题字体替换的 generic `sans-serif`。见 [ReaderBookFontAliases]。
+    final String bookFontAliases = ReaderBookFontAliases.fontFaces(
+      defaultTargetPlatform,
+    );
+    if (bookFontAliases.isNotEmpty) {
+      resolvedFontFaces = '$bookFontAliases\n$resolvedFontFaces';
     }
     // CSS padding does not accept negative values; clamp to 0.
     final double mt = math.max(0, settings.marginTop);
