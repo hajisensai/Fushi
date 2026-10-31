@@ -512,6 +512,55 @@ mod tests {
         assert!(register_value(&[(slim.as_str(), None, None)], "retention").is_err());
     }
 
+    /// PR #2663 新增的牌组寄存器（`newPlan` 新卡计划、`rwkvQueue` 里的 `ignoreLimit`）走同一条瘦存路径：逐字节拼回，
+    /// 寄存器值与从原文读的相同（原文不带 `id`，同上一条：内容派生 ID 的校验不在这里）；经 SQL（`srs_edit_pack` 写 / `json` 生成列读）同样无损，物化视图带出 `npl`。
+    #[test]
+    fn new_deck_registers_round_trip_through_slim_edits() {
+        use crate::registers::{deck_view_of, register_value, EditCols};
+        let keys = keys_of(&EDIT_KEYS);
+        let s = |x: &str| Some(serde_json::to_string(x).unwrap());
+        let p = "0193a1b2-0000-7000-8000-00000000beef";
+        let deck = "0193a1b2-0000-7000-8000-0000000000d1";
+        let cases = [
+            ("e1", "newPlan", r#"{"auto":false,"boost":30,"budget":120}"#),
+            ("e2", "rwkvQueue", r#"{"ignoreLimit":true,"minReviews":0,"refreshEvery":1,"repeatReviews":5,"repeatSeconds":30}"#),
+        ];
+        let c = Connection::open_in_memory().unwrap();
+        register(&c).unwrap();
+        c.execute_batch("CREATE TABLE t (jslim TEXT, id TEXT, p TEXT, k TEXT, e TEXT, f TEXT, w TEXT, s INTEGER);").unwrap();
+        let mut fulls: Vec<String> = Vec::new();
+        for (i, (id, f, v)) in cases.iter().enumerate() {
+            let seq = 10 + i as i64;
+            let full = format!(r#"{{"e":"{deck}","f":"{f}","hlc":"1700000000000:{i}:w1","k":"deck","p":"{p}","s":{seq},"ts":"anchored","v":{v},"w":"w1"}}"#);
+            let cols = EditCols { id: (*id).into(), k: "deck".into(), e: deck.into(), f: (*f).into(), w: "w1".into(), s: seq };
+            let frags = vec![s(id), s(p), s("deck"), s(deck), s(f), s("w1"), Some(seq.to_string())];
+            let slim = pack(&full, &keys, &frags);
+            assert!(slim.starts_with("~id{") && slim.contains(&format!(r#""v":{v}"#)), "{slim}");
+            assert_eq!(expand(&slim, &keys, &frags), full);
+            let want: serde_json::Value = serde_json::from_str(v).unwrap();
+            assert_eq!(register_value(&[(full.as_str(), None, None)], f).unwrap(), want);
+            assert_eq!(register_value(&[(slim.as_str(), None, Some(&cols))], f).unwrap(), want);
+            c.execute(
+                "INSERT INTO t SELECT srs_edit_pack(?1, ?2, ?3, 'deck', ?4, ?5, 'w1', ?6), ?2, ?3, 'deck', ?4, ?5, 'w1', ?6",
+                rusqlite::params![full, id, p, deck, f, seq],
+            )
+            .unwrap();
+            fulls.push(full);
+        }
+        let via_sql: Vec<String> = c
+            .prepare("SELECT srs_edit_json(jslim, id, p, k, e, f, w, s) FROM t ORDER BY s")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(via_sql, fulls);
+        let stored: Vec<crate::registers::StoredEdit<'_>> = fulls.iter().map(|j| (j.as_str(), None, None)).collect();
+        let view = deck_view_of(&serde_json::json!({}), &stored).unwrap();
+        assert_eq!(view["npl"], serde_json::json!({"auto": false, "boost": 30, "budget": 120}));
+        assert_eq!(view["rw"]["ignoreLimit"], serde_json::Value::Bool(true));
+    }
+
     /// 日志同理：历史状态与统计投影从「瘦存 + 列」算，与从原文算相同。
     #[test]
     fn history_reads_slim_logs_with_their_columns() {

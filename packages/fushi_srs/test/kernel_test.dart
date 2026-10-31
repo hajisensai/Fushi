@@ -492,6 +492,9 @@ void main() {
         10,
       ]);
       expect(srsSanitizeSteps(<double>[5, 1440], <double>[1]), <double>[5]);
+      // 空 = 不用步长（Anki 预设留空、设置页留空），不回落默认。
+      expect(srsSanitizeSteps(<double>[], <double>[1, 10]), isEmpty);
+      expect(srsValidateSteps(<double>[]), isTrue);
     });
 
     test('撤销只允许最后一条有效日志', () {
@@ -541,36 +544,28 @@ void main() {
     });
   });
 
-  group('新卡预算', () {
-    test('数据不足按上限 × 10；超 2 倍预算暂停；中间按比例', () {
-      SrsNewCardBudget b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 100,
-        reviewsPerDayLast30: <int>[50],
+  // 新卡预算的计算规则在 Rust 排队内核（native/fushi_fsrs/src/store/study.rs 的
+  // budget_matches_dart_rules / budget_follows_the_new_card_plan），这里只测牌组上的值对象。
+  group('新卡计划', () {
+    test('新卡计划值对象：缺省 / 坏值回落，越界夹住，往返不变', () {
+      expect(SrsNewCardPlan.fromValue(null), const SrsNewCardPlan());
+      expect(
+        SrsNewCardPlan.fromValue(<String, Object?>{
+          'auto': 'x',
+          'budget': 5,
+          'boost': 99999,
+        }),
+        const SrsNewCardPlan(
+          budgetPercent: SrsNewCardPlan.minBudgetPercent,
+          boostPercent: SrsNewCardPlan.maxBoostPercent,
+        ),
       );
-      expect(b.allowed, 20);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 401,
-        reviewsPerDayLast30: <int>[50],
+      const SrsNewCardPlan p = SrsNewCardPlan(
+        autoLoad: false,
+        budgetPercent: 200,
+        boostPercent: 30,
       );
-      expect(b.reason, SrsNewCardBudgetReason.paused);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 300,
-        reviewsPerDayLast30: <int>[50],
-      );
-      expect(b.reason, SrsNewCardBudgetReason.reduced);
-      expect(b.allowed, 10);
-      b = srsComputeNewCardBudget(
-        newPerDayLimit: 20,
-        dueReviews: 250,
-        reviewsPerDayLast30: <int>[
-          for (int i = 0; i < 30; i++) i.isEven ? 300 : 0,
-        ],
-      );
-      expect(b.reviewBudget, 450, reason: '只按有复习的天平均');
-      expect(b.allowed, 20);
+      expect(SrsNewCardPlan.fromValue(p.toValue()), p);
     });
   });
 

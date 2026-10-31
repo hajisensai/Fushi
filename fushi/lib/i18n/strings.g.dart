@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179078 (10534 per locale)
+/// Strings: 179367 (10551 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -10607,6 +10607,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_deck_name_invalid => 'A deck name cannot contain ::';
   String get srs_deck_new => 'New deck';
   String get srs_deck_new_child => 'New subdeck';
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   String srs_deck_new_reduced({required Object n}) =>
@@ -11261,6 +11263,16 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_settings_max_interval => 'Maximum interval (days)';
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
   String get srs_settings_new_order => 'New card order';
   String get srs_settings_new_order_frequency => 'By frequency';
   String get srs_settings_new_order_frequency_hint =>
@@ -11271,6 +11283,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_settings_new_per_day => 'New cards per day';
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  String get srs_settings_new_plan => 'New card plan';
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   String get srs_settings_optimize_kept =>
       'The current parameters already fit best; nothing changed';
@@ -11315,6 +11328,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   String get srs_settings_rwkv_min_reviews_hint =>
       'If fewer cards than this have been reviewed in this deck today, top up with the cards RWKV is least sure you remember, even above the desired retention. 0 turns it off.';
@@ -11339,8 +11355,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_settings_rwkv_repeat_seconds => 'Minimum seconds in between';
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
   String get srs_settings_save => 'Save';
   String get srs_settings_saved => 'Deck settings saved';
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
   String get srs_settings_steps_invalid =>
@@ -11433,6 +11453,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The scheduling engine is not available on this device, so retrievability cannot be computed.';
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   String get srs_stats_reviews_title => 'Reviews';
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  String get srs_stats_rwkv_now_due => 'Due now';
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   String srs_stats_seconds({required Object n}) => '${n}s';
   String get srs_stats_source_anki => 'Anki';
   String get srs_stats_source_audiobook => 'Audiobook';
@@ -32944,6 +32970,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -34033,6 +34062,22 @@ class _StringsAr extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -34049,6 +34094,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -34121,6 +34168,11 @@ class _StringsAr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -34160,9 +34212,15 @@ class _StringsAr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -34323,6 +34381,17 @@ class _StringsAr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -58773,6 +58842,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -59862,6 +59934,22 @@ class _StringsDe extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -59878,6 +59966,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -59950,6 +60040,11 @@ class _StringsDe extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -59989,9 +60084,15 @@ class _StringsDe extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -60152,6 +60253,17 @@ class _StringsDe extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -84724,6 +84836,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -85813,6 +85928,22 @@ class _StringsEs extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -85829,6 +85960,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -85901,6 +86034,11 @@ class _StringsEs extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -85940,9 +86078,15 @@ class _StringsEs extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -86103,6 +86247,17 @@ class _StringsEs extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -110763,6 +110918,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -111852,6 +112010,22 @@ class _StringsFr extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -111868,6 +112042,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -111940,6 +112116,11 @@ class _StringsFr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -111979,9 +112160,15 @@ class _StringsFr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -112142,6 +112329,17 @@ class _StringsFr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -136566,6 +136764,9 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -137655,6 +137856,22 @@ class _StringsId extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -137671,6 +137888,8 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -137743,6 +137962,11 @@ class _StringsId extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -137782,9 +138006,15 @@ class _StringsId extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -137945,6 +138175,17 @@ class _StringsId extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -162410,6 +162651,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -163499,6 +163743,22 @@ class _StringsIt extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -163515,6 +163775,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -163587,6 +163849,11 @@ class _StringsIt extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -163626,9 +163893,15 @@ class _StringsIt extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -163789,6 +164062,17 @@ class _StringsIt extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -187544,6 +187828,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -188633,6 +188920,22 @@ class _StringsJa extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -188649,6 +188952,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -188721,6 +189026,11 @@ class _StringsJa extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -188760,9 +189070,15 @@ class _StringsJa extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -188923,6 +189239,17 @@ class _StringsJa extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -212413,6 +212740,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -213502,6 +213832,22 @@ class _StringsKo extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -213518,6 +213864,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -213590,6 +213938,11 @@ class _StringsKo extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -213629,9 +213982,15 @@ class _StringsKo extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -213792,6 +214151,17 @@ class _StringsKo extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -237989,6 +238359,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -239078,6 +239451,22 @@ class _StringsNl extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -239094,6 +239483,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -239166,6 +239557,11 @@ class _StringsNl extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -239205,9 +239601,15 @@ class _StringsNl extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -239368,6 +239770,17 @@ class _StringsNl extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -263865,6 +264278,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -264954,6 +265370,22 @@ class _StringsPtBr extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -264970,6 +265402,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -265042,6 +265476,11 @@ class _StringsPtBr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -265081,9 +265520,15 @@ class _StringsPtBr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -265244,6 +265689,17 @@ class _StringsPtBr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -289718,6 +290174,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -290807,6 +291266,22 @@ class _StringsRu extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -290823,6 +291298,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -290895,6 +291372,11 @@ class _StringsRu extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -290934,9 +291416,15 @@ class _StringsRu extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -291097,6 +291585,17 @@ class _StringsRu extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -315323,6 +315822,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -316412,6 +316914,22 @@ class _StringsTh extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -316428,6 +316946,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -316500,6 +317020,11 @@ class _StringsTh extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -316539,9 +317064,15 @@ class _StringsTh extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -316702,6 +317233,17 @@ class _StringsTh extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -340993,6 +341535,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -342082,6 +342627,22 @@ class _StringsTr extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -342098,6 +342659,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -342170,6 +342733,11 @@ class _StringsTr extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -342209,9 +342777,15 @@ class _StringsTr extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -342372,6 +342946,17 @@ class _StringsTr extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -366658,6 +367243,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -367747,6 +368335,22 @@ class _StringsVi extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -367763,6 +368367,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -367835,6 +368441,11 @@ class _StringsVi extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -367874,9 +368485,15 @@ class _StringsVi extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -368037,6 +368654,17 @@ class _StringsVi extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -390838,6 +391466,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_deck_new_child => '新建子牌组';
   @override
+  String srs_deck_new_increased({required Object n}) => '今天复习较少，新卡增为 ${n} 张';
+  @override
   String get srs_deck_new_paused => '今天到期较多，暂停出新卡';
   @override
   String srs_deck_new_reduced({required Object n}) => '今天到期较多，新卡减为 ${n} 张';
@@ -391831,6 +392461,20 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_settings_max_interval_hint => '任何卡的下次复习都不会超过这么多天';
   @override
+  String get srs_settings_new_load_auto => '按复习量自动调整新卡';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      '复习预算 = 最近 30 天日均复习数 × 下面的百分比（至少为每日新卡上限的 10 倍）。到期复习超过预算时新卡按比例减少，超过 2 倍预算当天暂停。';
+  @override
+  String get srs_settings_new_load_boost => '复习少时多出新卡（%）';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      '到期复习不到预算一半时，新卡最多增加这么多百分比。0 = 不增加。';
+  @override
+  String get srs_settings_new_load_budget => '复习预算（日均复习数的 %）';
+  @override
+  String get srs_settings_new_load_budget_hint => '调小 = 到期堆积时更早减少新卡。默认 150。';
+  @override
   String get srs_settings_new_order => '新卡顺序';
   @override
   String get srs_settings_new_order_frequency => '按词频';
@@ -391846,6 +392490,8 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_new_per_day => '每日新卡上限';
   @override
   String get srs_settings_new_per_day_hint => '到期较多时会自动减少新卡';
+  @override
+  String get srs_settings_new_plan => '新卡计划';
   @override
   String get srs_settings_optimize_done => '排程参数已更新';
   @override
@@ -391908,6 +392554,11 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。';
   @override
+  String get srs_settings_rwkv_ignore_limit => '忽略每日复习上限';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      '回忆率降到目标保留率的复习卡全部出，不受每日复习上限截断。';
+  @override
   String get srs_settings_rwkv_min_reviews => '每天最少复习数';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -391946,9 +392597,14 @@ class _StringsZhCn extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV 估计的回忆率从你的整体通过率附近开始，而不是从 100% 开始：目标保留率高于这个通过率时卡片几乎马上又会出现，远低于它时复习会很少。';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'RWKV 牌组建议把学习步长和重学步长留空：答错的卡直接回到复习队列，由 RWKV 按回忆率决定什么时候再出（当天也会再出）。';
+  @override
   String get srs_settings_save => '保存';
   @override
   String get srs_settings_saved => '牌组设置已保存';
+  @override
+  String get srs_settings_steps_empty_hint => '留空 = 不用步长，卡片直接进入复习。';
   @override
   String get srs_settings_steps_hint => '用空格分隔，如 1 10；每一步都要短于一天';
   @override
@@ -392101,6 +392757,17 @@ class _StringsZhCn extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} 次复习';
   @override
   String get srs_stats_reviews_title => '复习量';
+  @override
+  String get srs_stats_rwkv_now_avg => '近 30 天日均复习';
+  @override
+  String get srs_stats_rwkv_now_due => '现在该复习';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV 不预测卡片哪天到期。「现在该复习」= 此刻估计回忆率已降到目标保留率的卡；「接近目标线」= 只比目标高不到 5 个百分点、接下来最先出的卡；「日均」= 过去 30 天你在这些牌组实际复习的张数。';
+  @override
+  String get srs_stats_rwkv_now_near => '接近目标线';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV 此刻';
   @override
   String srs_stats_seconds({required Object n}) => '${n} 秒';
   @override
@@ -414768,6 +415435,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_deck_new_child => 'New subdeck';
   @override
+  String srs_deck_new_increased({required Object n}) =>
+      'Few reviews due today, new cards raised to ${n}';
+  @override
   String get srs_deck_new_paused =>
       'Many reviews due today — no new cards today';
   @override
@@ -415857,6 +416527,22 @@ class _StringsZhHk extends _StringsEn {
   String get srs_settings_max_interval_hint =>
       'No card is scheduled further out than this';
   @override
+  String get srs_settings_new_load_auto => 'Adjust new cards to review load';
+  @override
+  String get srs_settings_new_load_auto_hint =>
+      'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+  @override
+  String get srs_settings_new_load_boost => 'Extra new cards on light days (%)';
+  @override
+  String get srs_settings_new_load_boost_hint =>
+      'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+  @override
+  String get srs_settings_new_load_budget =>
+      'Review budget (% of daily average)';
+  @override
+  String get srs_settings_new_load_budget_hint =>
+      'Lower = new cards shrink sooner when reviews pile up. Default 150.';
+  @override
   String get srs_settings_new_order => 'New card order';
   @override
   String get srs_settings_new_order_frequency => 'By frequency';
@@ -415873,6 +416559,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_settings_new_per_day_hint =>
       'When many reviews are due, Fushi automatically shows fewer new cards';
+  @override
+  String get srs_settings_new_plan => 'New card plan';
   @override
   String get srs_settings_optimize_done => 'Scheduling parameters updated';
   @override
@@ -415945,6 +416633,11 @@ class _StringsZhHk extends _StringsEn {
   String get srs_settings_rwkv_hint =>
       'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
   @override
+  String get srs_settings_rwkv_ignore_limit => 'Ignore the daily review limit';
+  @override
+  String get srs_settings_rwkv_ignore_limit_hint =>
+      'Show every review card whose recall has dropped to the target retention, however many there are.';
+  @override
   String get srs_settings_rwkv_min_reviews => 'Minimum reviews per day';
   @override
   String get srs_settings_rwkv_min_reviews_hint =>
@@ -415984,9 +416677,15 @@ class _StringsZhHk extends _StringsEn {
   String get srs_settings_rwkv_retention_note =>
       'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
   @override
+  String get srs_settings_rwkv_steps_note =>
+      'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
+  @override
   String get srs_settings_save => 'Save';
   @override
   String get srs_settings_saved => 'Deck settings saved';
+  @override
+  String get srs_settings_steps_empty_hint =>
+      'Leave blank for no steps: cards go straight to review.';
   @override
   String get srs_settings_steps_hint =>
       'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
@@ -416147,6 +416846,17 @@ class _StringsZhHk extends _StringsEn {
   String srs_stats_reviews_count({required Object n}) => '${n} reviews';
   @override
   String get srs_stats_reviews_title => 'Reviews';
+  @override
+  String get srs_stats_rwkv_now_avg => 'Daily reviews (30 days)';
+  @override
+  String get srs_stats_rwkv_now_due => 'Due now';
+  @override
+  String get srs_stats_rwkv_now_hint =>
+      'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+  @override
+  String get srs_stats_rwkv_now_near => 'Near the target';
+  @override
+  String get srs_stats_rwkv_now_title => 'RWKV right now';
   @override
   String srs_stats_seconds({required Object n}) => '${n}s';
   @override
@@ -437426,6 +438136,9 @@ extension on _StringsEn {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -438354,6 +439067,18 @@ extension on _StringsEn {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -438368,6 +439093,8 @@ extension on _StringsEn {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -438424,6 +439151,10 @@ extension on _StringsEn {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -438455,10 +439186,14 @@ extension on _StringsEn {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -438606,6 +439341,16 @@ extension on _StringsEn {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -459312,6 +460057,9 @@ extension on _StringsAr {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -460240,6 +460988,18 @@ extension on _StringsAr {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -460254,6 +461014,8 @@ extension on _StringsAr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -460310,6 +461072,10 @@ extension on _StringsAr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -460341,10 +461107,14 @@ extension on _StringsAr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -460492,6 +461262,16 @@ extension on _StringsAr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -481254,6 +482034,9 @@ extension on _StringsDe {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -482182,6 +482965,18 @@ extension on _StringsDe {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -482196,6 +482991,8 @@ extension on _StringsDe {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -482252,6 +483049,10 @@ extension on _StringsDe {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -482283,10 +483084,14 @@ extension on _StringsDe {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -482434,6 +483239,16 @@ extension on _StringsDe {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -503200,6 +504015,9 @@ extension on _StringsEs {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -504128,6 +504946,18 @@ extension on _StringsEs {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -504142,6 +504972,8 @@ extension on _StringsEs {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -504198,6 +505030,10 @@ extension on _StringsEs {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -504229,10 +505065,14 @@ extension on _StringsEs {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -504380,6 +505220,16 @@ extension on _StringsEs {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -525157,6 +526007,9 @@ extension on _StringsFr {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -526085,6 +526938,18 @@ extension on _StringsFr {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -526099,6 +526964,8 @@ extension on _StringsFr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -526155,6 +527022,10 @@ extension on _StringsFr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -526186,10 +527057,14 @@ extension on _StringsFr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -526337,6 +527212,16 @@ extension on _StringsFr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -547074,6 +547959,9 @@ extension on _StringsId {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -548002,6 +548890,18 @@ extension on _StringsId {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -548016,6 +548916,8 @@ extension on _StringsId {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -548072,6 +548974,10 @@ extension on _StringsId {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -548103,10 +549009,14 @@ extension on _StringsId {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -548254,6 +549164,16 @@ extension on _StringsId {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -569000,6 +569920,9 @@ extension on _StringsIt {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -569928,6 +570851,18 @@ extension on _StringsIt {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -569942,6 +570877,8 @@ extension on _StringsIt {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -569998,6 +570935,10 @@ extension on _StringsIt {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -570029,10 +570970,14 @@ extension on _StringsIt {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -570180,6 +571125,16 @@ extension on _StringsIt {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -590860,6 +591815,9 @@ extension on _StringsJa {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -591788,6 +592746,18 @@ extension on _StringsJa {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -591802,6 +592772,8 @@ extension on _StringsJa {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -591858,6 +592830,10 @@ extension on _StringsJa {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -591889,10 +592865,14 @@ extension on _StringsJa {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -592040,6 +593020,16 @@ extension on _StringsJa {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -612669,6 +613659,9 @@ extension on _StringsKo {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -613597,6 +614590,18 @@ extension on _StringsKo {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -613611,6 +614616,8 @@ extension on _StringsKo {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -613667,6 +614674,10 @@ extension on _StringsKo {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -613698,10 +614709,14 @@ extension on _StringsKo {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -613849,6 +614864,16 @@ extension on _StringsKo {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -634568,6 +635593,9 @@ extension on _StringsNl {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -635496,6 +636524,18 @@ extension on _StringsNl {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -635510,6 +636550,8 @@ extension on _StringsNl {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -635566,6 +636608,10 @@ extension on _StringsNl {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -635597,10 +636643,14 @@ extension on _StringsNl {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -635748,6 +636798,16 @@ extension on _StringsNl {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -656498,6 +657558,9 @@ extension on _StringsPtBr {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -657426,6 +658489,18 @@ extension on _StringsPtBr {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -657440,6 +658515,8 @@ extension on _StringsPtBr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -657496,6 +658573,10 @@ extension on _StringsPtBr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -657527,10 +658608,14 @@ extension on _StringsPtBr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -657678,6 +658763,16 @@ extension on _StringsPtBr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -678432,6 +679527,9 @@ extension on _StringsRu {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -679360,6 +680458,18 @@ extension on _StringsRu {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -679374,6 +680484,8 @@ extension on _StringsRu {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -679430,6 +680542,10 @@ extension on _StringsRu {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -679461,10 +680577,14 @@ extension on _StringsRu {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -679612,6 +680732,16 @@ extension on _StringsRu {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -700326,6 +701456,9 @@ extension on _StringsTh {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -701254,6 +702387,18 @@ extension on _StringsTh {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -701268,6 +702413,8 @@ extension on _StringsTh {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -701324,6 +702471,10 @@ extension on _StringsTh {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -701355,10 +702506,14 @@ extension on _StringsTh {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -701506,6 +702661,16 @@ extension on _StringsTh {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -722238,6 +723403,9 @@ extension on _StringsTr {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -723166,6 +724334,18 @@ extension on _StringsTr {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -723180,6 +724360,8 @@ extension on _StringsTr {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -723236,6 +724418,10 @@ extension on _StringsTr {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -723267,10 +724453,14 @@ extension on _StringsTr {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -723418,6 +724608,16 @@ extension on _StringsTr {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -744145,6 +745345,9 @@ extension on _StringsVi {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -745073,6 +746276,18 @@ extension on _StringsVi {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -745087,6 +746302,8 @@ extension on _StringsVi {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -745143,6 +746360,10 @@ extension on _StringsVi {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -745174,10 +746395,14 @@ extension on _StringsVi {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -745325,6 +746550,16 @@ extension on _StringsVi {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':
@@ -765867,6 +767102,8 @@ extension on _StringsZhCn {
         return '新建牌组';
       case 'srs_deck_new_child':
         return '新建子牌组';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) => '今天复习较少，新卡增为 ${n} 张';
       case 'srs_deck_new_paused':
         return '今天到期较多，暂停出新卡';
       case 'srs_deck_new_reduced':
@@ -766774,6 +768011,18 @@ extension on _StringsZhCn {
         return '最大间隔（天）';
       case 'srs_settings_max_interval_hint':
         return '任何卡的下次复习都不会超过这么多天';
+      case 'srs_settings_new_load_auto':
+        return '按复习量自动调整新卡';
+      case 'srs_settings_new_load_auto_hint':
+        return '复习预算 = 最近 30 天日均复习数 × 下面的百分比（至少为每日新卡上限的 10 倍）。到期复习超过预算时新卡按比例减少，超过 2 倍预算当天暂停。';
+      case 'srs_settings_new_load_boost':
+        return '复习少时多出新卡（%）';
+      case 'srs_settings_new_load_boost_hint':
+        return '到期复习不到预算一半时，新卡最多增加这么多百分比。0 = 不增加。';
+      case 'srs_settings_new_load_budget':
+        return '复习预算（日均复习数的 %）';
+      case 'srs_settings_new_load_budget_hint':
+        return '调小 = 到期堆积时更早减少新卡。默认 150。';
       case 'srs_settings_new_order':
         return '新卡顺序';
       case 'srs_settings_new_order_frequency':
@@ -766788,6 +768037,8 @@ extension on _StringsZhCn {
         return '每日新卡上限';
       case 'srs_settings_new_per_day_hint':
         return '到期较多时会自动减少新卡';
+      case 'srs_settings_new_plan':
+        return '新卡计划';
       case 'srs_settings_optimize_done':
         return '排程参数已更新';
       case 'srs_settings_optimize_kept':
@@ -766844,6 +768095,10 @@ extension on _StringsZhCn {
             'RWKV 不可用：${error}。在此之前复习按 FSRS-7 存下的到期日排队。';
       case 'srs_settings_rwkv_hint':
         return 'RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。';
+      case 'srs_settings_rwkv_ignore_limit':
+        return '忽略每日复习上限';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return '回忆率降到目标保留率的复习卡全部出，不受每日复习上限截断。';
       case 'srs_settings_rwkv_min_reviews':
         return '每天最少复习数';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -766875,10 +768130,14 @@ extension on _StringsZhCn {
         return '间隔至少几秒';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV 估计的回忆率从你的整体通过率附近开始，而不是从 100% 开始：目标保留率高于这个通过率时卡片几乎马上又会出现，远低于它时复习会很少。';
+      case 'srs_settings_rwkv_steps_note':
+        return 'RWKV 牌组建议把学习步长和重学步长留空：答错的卡直接回到复习队列，由 RWKV 按回忆率决定什么时候再出（当天也会再出）。';
       case 'srs_settings_save':
         return '保存';
       case 'srs_settings_saved':
         return '牌组设置已保存';
+      case 'srs_settings_steps_empty_hint':
+        return '留空 = 不用步长，卡片直接进入复习。';
       case 'srs_settings_steps_hint':
         return '用空格分隔，如 1 10；每一步都要短于一天';
       case 'srs_settings_steps_invalid':
@@ -767026,6 +768285,16 @@ extension on _StringsZhCn {
         return ({required Object n}) => '${n} 次复习';
       case 'srs_stats_reviews_title':
         return '复习量';
+      case 'srs_stats_rwkv_now_avg':
+        return '近 30 天日均复习';
+      case 'srs_stats_rwkv_now_due':
+        return '现在该复习';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV 不预测卡片哪天到期。「现在该复习」= 此刻估计回忆率已降到目标保留率的卡；「接近目标线」= 只比目标高不到 5 个百分点、接下来最先出的卡；「日均」= 过去 30 天你在这些牌组实际复习的张数。';
+      case 'srs_stats_rwkv_now_near':
+        return '接近目标线';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV 此刻';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n} 秒';
       case 'srs_stats_source_anki':
@@ -787572,6 +788841,9 @@ extension on _StringsZhHk {
         return 'New deck';
       case 'srs_deck_new_child':
         return 'New subdeck';
+      case 'srs_deck_new_increased':
+        return ({required Object n}) =>
+            'Few reviews due today, new cards raised to ${n}';
       case 'srs_deck_new_paused':
         return 'Many reviews due today — no new cards today';
       case 'srs_deck_new_reduced':
@@ -788499,6 +789771,18 @@ extension on _StringsZhHk {
         return 'Maximum interval (days)';
       case 'srs_settings_max_interval_hint':
         return 'No card is scheduled further out than this';
+      case 'srs_settings_new_load_auto':
+        return 'Adjust new cards to review load';
+      case 'srs_settings_new_load_auto_hint':
+        return 'Review budget = your average daily reviews over the last 30 days × the percentage below (at least 10× the daily new card limit). Above the budget new cards shrink; above twice the budget they pause for the day.';
+      case 'srs_settings_new_load_boost':
+        return 'Extra new cards on light days (%)';
+      case 'srs_settings_new_load_boost_hint':
+        return 'When due reviews are below half the budget, new cards grow by up to this percentage. 0 = never add.';
+      case 'srs_settings_new_load_budget':
+        return 'Review budget (% of daily average)';
+      case 'srs_settings_new_load_budget_hint':
+        return 'Lower = new cards shrink sooner when reviews pile up. Default 150.';
       case 'srs_settings_new_order':
         return 'New card order';
       case 'srs_settings_new_order_frequency':
@@ -788513,6 +789797,8 @@ extension on _StringsZhHk {
         return 'New cards per day';
       case 'srs_settings_new_per_day_hint':
         return 'When many reviews are due, Fushi automatically shows fewer new cards';
+      case 'srs_settings_new_plan':
+        return 'New card plan';
       case 'srs_settings_optimize_done':
         return 'Scheduling parameters updated';
       case 'srs_settings_optimize_kept':
@@ -788569,6 +789855,10 @@ extension on _StringsZhHk {
             'RWKV is unavailable: ${error}. Reviews follow the due dates stored by FSRS-7 until this is fixed.';
       case 'srs_settings_rwkv_hint':
         return 'RWKV estimates each card\'s recall right now from your whole review history with a neural network; a review card is shown once its estimated recall drops to the desired retention, whatever its due date. Stability, difficulty and the stored due date are still tracked with FSRS-7.';
+      case 'srs_settings_rwkv_ignore_limit':
+        return 'Ignore the daily review limit';
+      case 'srs_settings_rwkv_ignore_limit_hint':
+        return 'Show every review card whose recall has dropped to the target retention, however many there are.';
       case 'srs_settings_rwkv_min_reviews':
         return 'Minimum reviews per day';
       case 'srs_settings_rwkv_min_reviews_hint':
@@ -788600,10 +789890,14 @@ extension on _StringsZhHk {
         return 'Minimum seconds in between';
       case 'srs_settings_rwkv_retention_note':
         return 'RWKV\'s recall estimate starts near your overall pass rate rather than at 100%: a desired retention above that rate brings cards back almost right away, and one well below it shows few reviews.';
+      case 'srs_settings_rwkv_steps_note':
+        return 'For RWKV decks, leave the learning and relearning steps blank: a card you miss goes straight back to the review queue and RWKV decides, by its recall, when to show it again (the same day included).';
       case 'srs_settings_save':
         return 'Save';
       case 'srs_settings_saved':
         return 'Deck settings saved';
+      case 'srs_settings_steps_empty_hint':
+        return 'Leave blank for no steps: cards go straight to review.';
       case 'srs_settings_steps_hint':
         return 'Separate with spaces, e.g. 1 10; each step must be shorter than a day';
       case 'srs_settings_steps_invalid':
@@ -788751,6 +790045,16 @@ extension on _StringsZhHk {
         return ({required Object n}) => '${n} reviews';
       case 'srs_stats_reviews_title':
         return 'Reviews';
+      case 'srs_stats_rwkv_now_avg':
+        return 'Daily reviews (30 days)';
+      case 'srs_stats_rwkv_now_due':
+        return 'Due now';
+      case 'srs_stats_rwkv_now_hint':
+        return 'RWKV does not predict which day a card comes due. Due now: cards whose estimated recall has already dropped to the target retention. Near the target: cards less than 5 points above it, the next to come up. Daily reviews: what you actually reviewed in these decks over the last 30 days.';
+      case 'srs_stats_rwkv_now_near':
+        return 'Near the target';
+      case 'srs_stats_rwkv_now_title':
+        return 'RWKV right now';
       case 'srs_stats_seconds':
         return ({required Object n}) => '${n}s';
       case 'srs_stats_source_anki':

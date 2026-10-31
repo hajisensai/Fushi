@@ -317,7 +317,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     final List<_Section> sections = empty
         ? <_Section>[]
         : <_Section>[
-            _Section(_futureSection(data, colors), 3.2),
+            if (data.rwkvNow case final SrsRwkvNow now)
+              _Section(_rwkvNowSection(now), 1.6),
+            if (data.hasDueDateCards || data.rwkvNow == null)
+              _Section(_futureSection(data, colors), 3.2),
             _Section(_calendarSection(data), 2.6),
             _Section(_reviewsSection(data, colors), 3.6),
             _Section(_cardCountSection(data, colors), 3),
@@ -640,6 +643,28 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     SrsStatsRange.year => 366,
     SrsStatsRange.all => data.furthestDueOffset(),
   };
+
+  /// RWKV 牌组：此刻该复习 / 接近目标线的张数与过去 30 天日均（都是测量，RWKV 不预测到期日）。
+  Widget _rwkvNowSection(SrsRwkvNow now) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return StatSectionCard(
+      key: const ValueKey<String>('srs-stats-rwkv-now'),
+      title: t.srs_stats_rwkv_now_title,
+      icon: FushiIcons.trendingUp,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _statLine(<(String, String)>[
+            (t.srs_stats_rwkv_now_due, '${now.due}'),
+            (t.srs_stats_rwkv_now_near, '${now.near}'),
+            (t.srs_stats_rwkv_now_avg, _decimal(now.dailyAverage)),
+          ]),
+          SizedBox(height: tokens.spacing.gap),
+          Text(t.srs_stats_rwkv_now_hint, style: context.fushiType.bodySmall),
+        ],
+      ),
+    );
+  }
 
   Widget _futureSection(SrsStatsData data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

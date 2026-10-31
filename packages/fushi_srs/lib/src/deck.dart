@@ -76,7 +76,14 @@ class SrsRwkvQueueSettings {
     this.repeatMinReviews = 5,
     this.repeatMinSeconds = 30,
     this.refreshEvery = 1,
+    this.ignoreReviewLimit = false,
   });
+
+  /// 新建牌组写进去的初值（`SrsDbStore.createDeck` / Anki 导入新建的牌组）：忽略每日复习上限开着，
+  /// 其余同缺省。
+  static const SrsRwkvQueueSettings forNewDeck = SrsRwkvQueueSettings(
+    ignoreReviewLimit: true,
+  );
 
   /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
   /// 的复习卡里按回忆率从低到高补足。0 = 不启用。
@@ -93,6 +100,14 @@ class SrsRwkvQueueSettings {
   /// 生效（`SrsRwkvService`）。调大能减少复习时 RWKV 的计算，代价是队列在两次刷新之间用的是
   /// 较旧的估计。最小 1。
   final int refreshEvery;
+
+  /// 忽略每日复习上限（上游 Anki「Ignore review limit」）：R 降到目标保留率的复习卡全部出，
+  /// 不按 [SrsDeckView.reviewsPerDay] 截断；只对 RWKV 牌组生效（规则在 Rust 排队内核
+  /// native/fushi_fsrs/src/store/study.rs，读 `DeckTree::ignores_review_limit`）。
+  ///
+  /// 只有值里明确写了 `ignoreLimit: true` 才算开：加这项设置之前建的牌组没有这个键，读出为关，
+  /// 用户自己设的每日复习上限照旧生效；新建牌组建时写上 [forNewDeck]（上游 RWKV 的推荐设置）。
+  final bool ignoreReviewLimit;
 
   static const int maxMinReviewsPerDay = 9999;
   static const int maxRepeatMinReviews = 999;
@@ -127,6 +142,7 @@ class SrsRwkvQueueSettings {
         1,
         read('refreshEvery', d.refreshEvery, maxRefreshEvery),
       ),
+      ignoreReviewLimit: v['ignoreLimit'] == true,
     );
   }
 
@@ -135,6 +151,7 @@ class SrsRwkvQueueSettings {
     'repeatReviews': repeatMinReviews,
     'repeatSeconds': repeatMinSeconds,
     'refreshEvery': refreshEvery,
+    'ignoreLimit': ignoreReviewLimit,
   };
 
   @override
@@ -143,7 +160,8 @@ class SrsRwkvQueueSettings {
       other.minReviewsPerDay == minReviewsPerDay &&
       other.repeatMinReviews == repeatMinReviews &&
       other.repeatMinSeconds == repeatMinSeconds &&
-      other.refreshEvery == refreshEvery;
+      other.refreshEvery == refreshEvery &&
+      other.ignoreReviewLimit == ignoreReviewLimit;
 
   @override
   int get hashCode => Object.hash(
@@ -151,7 +169,70 @@ class SrsRwkvQueueSettings {
     repeatMinReviews,
     repeatMinSeconds,
     refreshEvery,
+    ignoreReviewLimit,
   );
+}
+
+/// 新卡计划（[SrsFieldKeys.deckNewPlan]）：按复习量自动调整新卡。
+/// 与每日上限一样只看牌组自己的值（不随参数继承）；缺省 = 按复习量只减不增，
+/// 与加这项设置之前的行为相同。
+class SrsNewCardPlan {
+  const SrsNewCardPlan({
+    this.autoLoad = true,
+    this.budgetPercent = defaultBudgetPercent,
+    this.boostPercent = 0,
+  });
+
+  /// 按复习量自动调整新卡（规则在 Rust 排队内核 native/fushi_fsrs/src/store/study.rs
+  /// `new_card_budget`，读牌组视图的 `npl`）。
+  final bool autoLoad;
+
+  /// 复习预算 = 最近 30 天日均复习数 × [budgetPercent]%。
+  final int budgetPercent;
+
+  /// 到期复习不到预算一半时，新卡最多增加的百分比。0 = 不增加。
+  final int boostPercent;
+
+  static const int defaultBudgetPercent = 150;
+  static const int minBudgetPercent = 50;
+  static const int maxBudgetPercent = 1000;
+  static const int maxBoostPercent = 200;
+
+  /// 缺项 / 坏值回落到默认值，越界的夹到合法范围。
+  static SrsNewCardPlan fromValue(Object? v) {
+    const SrsNewCardPlan d = SrsNewCardPlan();
+    if (v is! Map) return d;
+    int read(String key, int fallback, int min, int max) => switch (v[key]) {
+      final int n => n.clamp(min, max),
+      _ => fallback,
+    };
+    return SrsNewCardPlan(
+      autoLoad: v['auto'] != false,
+      budgetPercent: read(
+        'budget',
+        d.budgetPercent,
+        minBudgetPercent,
+        maxBudgetPercent,
+      ),
+      boostPercent: read('boost', d.boostPercent, 0, maxBoostPercent),
+    );
+  }
+
+  Map<String, Object?> toValue() => <String, Object?>{
+    'auto': autoLoad,
+    'budget': budgetPercent,
+    'boost': boostPercent,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsNewCardPlan &&
+      other.autoLoad == autoLoad &&
+      other.budgetPercent == budgetPercent &&
+      other.boostPercent == boostPercent;
+
+  @override
+  int get hashCode => Object.hash(autoLoad, budgetPercent, boostPercent);
 }
 
 /// 物化后的牌组。
@@ -165,6 +246,8 @@ class SrsDeckView {
     required this.reviewsPerDay,
     required this.learnSteps,
     required this.relearnSteps,
+    this.learnStepsSet = true,
+    this.relearnStepsSet = true,
     required this.desiredRetention,
     required this.algorithmWire,
     required this.algorithmAuto,
@@ -176,6 +259,7 @@ class SrsDeckView {
     this.replayQuestionAudio = true,
     this.rwkvQueue = const SrsRwkvQueueSettings(),
     this.newCardOrder = SrsNewCardOrder.frequency,
+    this.newCardPlan = const SrsNewCardPlan(),
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -199,6 +283,22 @@ class SrsDeckView {
   final int reviewsPerDay;
   final List<double> learnSteps;
   final List<double> relearnSteps;
+
+  /// 牌组上写过学习 / 重学步长（[SrsFieldKeys.deckSteps] 里有这一项）。没写过时
+  /// [learnSteps] / [relearnSteps] 是 FSRS 的默认步长，RWKV 牌组改用「不用步长」
+  /// （[learnStepsFor] / [relearnStepsFor]）。
+  final bool learnStepsSet;
+  final bool relearnStepsSet;
+
+  /// 按 [algorithm]（参数归属的 own 祖先的算法）实际用的学习步长：没写过步长的 RWKV 牌组
+  /// 不用步长（上游 RWKV 推荐设置：答错 / 新卡直接进复习队列，由 RWKV 按 R 决定何时再出）。
+  /// Rust 侧同一条规则在 `sync2/config.rs` `DeckTree::config`。
+  List<double> learnStepsFor(SrsAlgorithm algorithm) =>
+      !learnStepsSet && algorithm.usesRwkv ? const <double>[] : learnSteps;
+
+  /// 同 [learnStepsFor]，重学步长。
+  List<double> relearnStepsFor(SrsAlgorithm algorithm) =>
+      !relearnStepsSet && algorithm.usesRwkv ? const <double>[] : relearnSteps;
   final double desiredRetention;
 
   /// 可能是本机不认识的值（原样保留、不改写）。
@@ -237,6 +337,9 @@ class SrsDeckView {
 
   /// 新卡出卡顺序。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
   final SrsNewCardOrder newCardOrder;
+
+  /// 每周新卡任务与按复习量自动调整。牌组自己的值（同 [newPerDay]）。
+  final SrsNewCardPlan newCardPlan;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;
@@ -374,8 +477,8 @@ class SrsDeckTree {
         ? set.params
         : (defaultsOf?.call(alg.memoryAlgorithm) ?? const <double>[]);
     return SrsSchedulingConfig(
-      learnStepsMinutes: self.learnSteps,
-      relearnStepsMinutes: self.relearnSteps,
+      learnStepsMinutes: self.learnStepsFor(alg),
+      relearnStepsMinutes: self.relearnStepsFor(alg),
       desiredRetention: owner.desiredRetention,
       maxIntervalDays: self.maxIntervalDays,
       algorithm: alg,
