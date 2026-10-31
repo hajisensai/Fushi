@@ -103,6 +103,9 @@ class AnkiSyncState {
   final String? message;
 
   /// 上一次同步因服务器限流（HTTP 429）失败时，冷却截止时刻（毫秒）；否则 null。
+  /// 阶段为 [AnkiSyncPhase.failed]（本次运行撞上）或 [AnkiSyncPhase.idle]（重启后从
+  /// 盘上读回、之后还没同步成功过）时带出；**可能已经过期**——界面拿它和当前时刻比，
+  /// 过期了显示「上次被限流、冷却已结束」，不再说「将在某时之后重试」。
   /// 冷却期内自动同步（制卡后 / 启动时）不发请求，到点自动重试一次；用户手动同步
   /// 不受限。界面据此显示「限流、何时自动重试」，而不是 helper 原文。
   final int? rateLimitedUntil;
@@ -223,6 +226,9 @@ class AnkiSyncSession {
   /// 状态轮询不能被它堵住。
   Future<AnkiSyncState> refresh() async {
     final bool signedIn = await account() != null;
+    // 重启后第一次刷新就要把落盘的限流冷却读回来并发布出去：否则在下一次同步之前，
+    // 界面看不到「上次被限流、何时自动重试」，只当一切正常。
+    await _loadRateLimit();
     await _publishWith(
       () => !signedIn
           ? AnkiSyncPhase.signedOut
@@ -702,7 +708,12 @@ class AnkiSyncSession {
       lastError: failing.isEmpty ? null : failing.first.lastError,
       lastSyncAt: _lastSyncAt,
       message: message ?? (next == _state.phase ? _state.message : null),
-      rateLimitedUntil: next == AnkiSyncPhase.failed && _lastFailureRateLimited
+      // 限流记忆在两种阶段都要带出去：本次运行里撞上的是 failed；重启后会话不记得
+      // 「上次失败」，阶段是 idle，但落盘的冷却（`rate_limit.json`）仍说明上一次同步
+      // 被限流、还没成功过。busy / blocked / signedOut 时它与眼前状态无关。
+      rateLimitedUntil:
+          _lastFailureRateLimited &&
+              (next == AnkiSyncPhase.failed || next == AnkiSyncPhase.idle)
           ? _rateLimitedUntil
           : null,
     );

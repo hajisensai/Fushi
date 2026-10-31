@@ -177,6 +177,77 @@ void main() {
     await closeSession(tester);
   });
 
+  /// 「重启」：只有账号与落盘的限流冷却（`rate_limit.json`），会话还没同步过。
+  Future<void> pumpRestartedWithCooldown(
+    WidgetTester tester, {
+    required int until,
+  }) async {
+    File('${root.path}/account.json').writeAsStringSync(
+      '{"server":null,"endpoint":null,"username":"u","hkey":"k"}',
+    );
+    File(
+      '${root.path}/rate_limit.json',
+    ).writeAsStringSync('{"until":$until,"strikes":1}');
+    await pumpSection(tester, enabled: true);
+    // 账号 / 冷却 / 日志读盘都是真文件 IO，续体排在测试的假时钟 zone 里：每一跳都
+    // 让出真实事件循环再泵一帧，直到状态行带出限流说明；之后再多排几轮，让状态事件
+    // 触发的那次账号读盘也走完（否则文件句柄还开着，tearDown 删临时目录会失败）。
+    bool shown() =>
+        find.textContaining('rate-limit').evaluate().isNotEmpty ||
+        find.textContaining('limiting requests').evaluate().isNotEmpty;
+    for (int i = 0; i < 50 && !shown(); i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    for (int i = 0; i < 5; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
+
+  String renderedText(WidgetTester tester) => tester
+      .widgetList<Text>(find.byType(Text))
+      .map((Text w) => w.data ?? w.textSpan?.toPlainText() ?? '')
+      .join(' | ');
+
+  testWidgets('重启后：落盘的限流冷却一打开设置页就显示（不等下一次同步）', (WidgetTester tester) async {
+    final int until = DateTime.now()
+        .add(const Duration(minutes: 10))
+        .millisecondsSinceEpoch;
+    await pumpRestartedWithCooldown(tester, until: until);
+    expect(session.state.phase, AnkiSyncPhase.idle);
+    expect(session.state.rateLimitedUntil, until);
+    expect(
+      find.textContaining('The sync server is limiting requests'),
+      findsOneWidget,
+      reason: renderedText(tester),
+    );
+    await closeSession(tester);
+  });
+
+  testWidgets('冷却已过期：不再说「将在某时之后重试」，改说上次被限流、冷却已结束', (WidgetTester tester) async {
+    final int until = DateTime.now()
+        .subtract(const Duration(minutes: 5))
+        .millisecondsSinceEpoch;
+    await pumpRestartedWithCooldown(tester, until: until);
+    expect(session.state.rateLimitedUntil, until);
+    expect(
+      find.textContaining('The sync server is limiting requests'),
+      findsNothing,
+      reason: renderedText(tester),
+    );
+    expect(
+      find.textContaining('rate-limited the last sync'),
+      findsOneWidget,
+      reason: renderedText(tester),
+    );
+    await closeSession(tester);
+  });
+
   testWidgets('搜索跳到本节开关：折叠着也先展开，落点消费挂点并定位高亮', (WidgetTester tester) async {
     SettingsSearchReveal.pendingItemId = kAnkiSyncClientSearchTargetId;
     await pumpSection(tester, enabled: false);
