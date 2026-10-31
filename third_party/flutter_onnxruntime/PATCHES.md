@@ -298,6 +298,31 @@ the four project deployment targets and the guard test move with it.
       consumer ProGuard rules) — `fushi/android/app/proguard-rules.pro` keeps
       them unchanged. Guard: `fushi/test/ocr/onnxruntime_android_kleidiai_guard_test.dart`.
 
+15. `lib/src/ort_provider.dart` + `lib/src/onnxruntime.dart`:
+    `getAvailableProviders()` no longer throws on a provider name the Dart enum
+    does not know (feedback eEnV5gBn1K).
+
+    - Upstream matched native names against `OrtProvider.name` exactly and threw
+      `ArgumentError('Provider X is not a valid OrtProvider.')` otherwise. Android
+      passes the Java `OrtProvider` enum name through, and since delta #14 the
+      1.28.0 aar's Java enum contains `WEBGPU` (`javap` on
+      `ai/onnxruntime/OrtProvider.class`: CPU, CUDA, DNNL, OPEN_VINO, VITIS_AI,
+      TENSOR_RT, NNAPI, RK_NPU, DIRECT_ML, MI_GRAPH_X, ACL, ROCM, CORE_ML,
+      XNNPACK, AZURE, QNN, WEBGPU). The Dart spelling is `WEB_GPU`, so every
+      Android probe failed and the ASR sheet showed the raw `ArgumentError`.
+    - The Dart enum gains the Java names upstream lacked (`MI_GRAPH_X`,
+      `RK_NPU`, `VITIS_AI`). `ortProviderFromNativeName` is the one normaliser:
+      exact enum name, then aliases for every spelling a native side reports —
+      Java `WEBGPU`, the Windows/Linux tables' `MIGRAPHX`, and raw ORT C names
+      (`XxxExecutionProvider`), which Windows/Linux/Apple pass through when
+      unmapped. Native code is unchanged.
+    - A name with no `OrtProvider` value is left out of the list and logged
+      under `flutter_onnxruntime`: it cannot be requested through
+      `OrtSessionOptions.providers` anyway, so it is correctly absent from the
+      "providers you can request" result rather than an error of the probe.
+    - Test: `fushi/test/onnx/onnxruntime_provider_names_test.dart` (through the
+      real method channel).
+
 Before bumping the bundled Windows core, bump the CUDA plugin EP to the release
 built against the same ORT revision (and its manifest in
 `gpu_runtime_pack.dart`), update the nupkg SHA-256, and keep both runtime DLLs

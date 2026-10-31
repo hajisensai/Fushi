@@ -658,23 +658,26 @@ void main() {
     expect(savedLanguage, 'ja');
   });
 
-  testWidgets('plan 带 probeError：就绪行追加「GPU 探测失败，按 CPU 规划」提示', (
+  testWidgets('plan 带 probeError：就绪行追加可读的 CPU 降级说明，不显示异常原文', (
     WidgetTester tester,
   ) async {
+    // 反馈 eEnV5gBn1K 的原文：用户在面板上直接看到了这句 ArgumentError。
+    const String rawError =
+        'Invalid argument(s): Provider WEBGPU is not a valid OrtProvider.';
     final _FakeService service = _FakeService(
       ready: true,
       jobsDir: tmp,
-      probeError: 'DirectML.dll not found',
+      probeError: rawError,
     );
     await tester.pumpWidget(wrap(service, (String? _) {}));
     await tester.tap(find.byKey(const ValueKey<String>('open')));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining(
-        t.audiobook_transcribe_probe_failed(reason: 'DirectML.dll not found'),
-      ),
+      find.textContaining(t.audiobook_transcribe_probe_failed_hint),
       findsOneWidget,
     );
+    expect(find.textContaining('WEBGPU'), findsNothing);
+    expect(find.textContaining('Invalid argument'), findsNothing);
   });
 
   testWidgets('plan 无 probeError：就绪行不含探测失败提示', (WidgetTester tester) async {
@@ -683,7 +686,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('open')));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining(t.audiobook_transcribe_probe_failed(reason: '')),
+      find.textContaining(t.audiobook_transcribe_probe_failed_hint),
       findsNothing,
     );
   });

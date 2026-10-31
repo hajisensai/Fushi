@@ -1047,7 +1047,7 @@
   "audiobook_transcribe_paused_hint": "Progress is saved. Pick the same audio files later to resume.",
   "audiobook_transcribe_pausing": "Pausing at the next checkpoint…",
   "audiobook_transcribe_preparing": "Loading model…",
-  "audiobook_transcribe_probe_failed": "GPU detection failed, planning for CPU: $reason",
+  "audiobook_transcribe_probe_failed_hint": "Couldn't check this device's GPU acceleration, so transcription runs on the CPU. It's slower, but the result is the same.",
   "audiobook_transcribe_progress": "$done / $total · file $file/$files",
   "audiobook_transcribe_proofread": "AI proofread",
   "audiobook_transcribe_proofread_done": "AI proofreading done: $changed lines changed, $skipped blocks kept as is",

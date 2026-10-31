@@ -1047,7 +1047,7 @@
   "audiobook_transcribe_paused_hint": "進捗は保存されています。後で同じ音声ファイルを選択すると再開できます。",
   "audiobook_transcribe_pausing": "次のチェックポイントで一時停止します…",
   "audiobook_transcribe_preparing": "モデルを読み込み中…",
-  "audiobook_transcribe_probe_failed": "GPU の検出に失敗したため、CPU で計画します：$reason",
+  "audiobook_transcribe_probe_failed_hint": "Couldn't check this device's GPU acceleration, so transcription runs on the CPU. It's slower, but the result is the same.",
   "audiobook_transcribe_progress": "$done / $total · ファイル $file/$files",
   "audiobook_transcribe_proofread": "AI proofread",
   "audiobook_transcribe_proofread_done": "AI proofreading done: $changed lines changed, $skipped blocks kept as is",
