@@ -59,7 +59,7 @@ void main() {
       isMainProcess: false,
     );
     addTearDown(migrated.close);
-    expect(migrated.schemaVersion, 141);
+    expect(migrated.schemaVersion, 142);
 
     Future<Map<String, Object?>?> overridesOf(String uid) async {
       final MangaReaderOverrideRow? row = await migrated.getMangaReaderOverride(

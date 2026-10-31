@@ -1405,6 +1405,18 @@ class SyncDeletionTombstones extends Table {
   /// 已发布到远端的毫秒戳（0 = 尚未发布；发布后置为发布时刻，避免每轮重发）。
   IntColumn get remotePublishedAt => integer().withDefault(const Constant(0))();
 
+  /// v142：这本书在云盘同步根下的书文件夹名（仅 book 墓碑；删除时按**当时的书名**记下
+  /// `sanitizeTtuFilename(title)`，与 `SyncBackend.ensureBookFolder` 建文件夹同一派生）。
+  /// 墓碑键是 bookKey / 对端键，不一定等于文件夹名，所以删云盘文件夹只认这一列。
+  /// null = 不知道（v142 之前写的墓碑、非书资产、删除时拿不到书名）——这种墓碑云通道
+  /// 不删任何文件夹。
+  TextColumn get cloudFolderName => text().nullable()();
+
+  /// v142：云盘书文件夹的处置结论（[TombstoneCloudFolderState.dbValue]）：0 = 未处置
+  /// （含 v142 之前的全部墓碑），1 = 已删掉，2 = 发布时核实云盘上本就没有。云盘书库的
+  /// 远端占位卡只对 1 / 2 停止隐藏——那之后同名文件夹只可能是删除之后重新上传的新书。
+  IntColumn get cloudFolderState => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {mediaType, itemKey};
 }

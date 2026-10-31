@@ -249,6 +249,14 @@ void main() {
       1,
       reason: '只删 host 文件不记墓碑，其它已下载这本书的设备永远不知道它被删了',
     );
+    // host 自己的云通道据此删云盘书文件夹（文件夹名 = sanitizeTtuFilename(书名)，
+    // 不是墓碑键 bookKey）。
+    expect(
+      (await hostDb.getSyncDeletionTombstonesOfType(
+        SyncTombstoneKind.book.dbValue,
+      )).single.cloudFolderName,
+      'Title bk-del',
+    );
 
     // 第三台设备（另一个已配对 peer）拉 host 墓碑清单。
     final List<({String mediaType, String itemKey, int deletedAt})>? pulled =
