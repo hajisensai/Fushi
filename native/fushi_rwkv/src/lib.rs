@@ -25,7 +25,7 @@
 //!   frwkv_model_load / frwkv_model_kind / frwkv_model_free /
 //!   frwkv_runtime_new / frwkv_runtime_free / frwkv_runtime_replay / frwkv_runtime_query /
 //!   frwkv_runtime_next_intervals /
-//!   frwkv_runtime_append / frwkv_runtime_unappend /
+//!   frwkv_runtime_append / frwkv_runtime_unappend / frwkv_runtime_rewind_from /
 //!   frwkv_runtime_scores_clear / frwkv_runtime_scores_lookup / frwkv_runtime_scores_update /
 //!   frwkv_runtime_scores_requery / frwkv_runtime_scores_remove /
 //!   frwkv_runtime_snapshot / frwkv_runtime_restore / frwkv_runtime_reset / frwkv_runtime_stats /
@@ -57,11 +57,12 @@ pub use rwkv::{
 /// `frwkv_runtime_next_intervals`。
 /// 3：撤销日志（`frwkv_runtime_append` / `frwkv_runtime_unappend`）与常驻分数表
 /// （`frwkv_runtime_scores_clear` / `_lookup` / `_update`）。
-pub const ABI_VERSION: i32 = 3;
+pub const ABI_VERSION: i32 = 4;
 
 /// 撤销日志最多留多少字节（小模型一条约 54 KB：卡 / 笔记两份紧凑状态 + 牌组 / 预设 / 全局三份
-/// f32 状态，16 MB 约 300 条）。超出时丢最早的条目；撤得比这更深的由调用方全量重建。
-pub const JOURNAL_MAX_BYTES: usize = 16 << 20;
+/// f32 状态，32 MB 约 600 条）。超出时丢最早的条目；退得比这更深的（[RwkvRuntime::rewind_from]
+/// 返回 None）由调用方从磁盘检查点或全量回放重来。
+pub const JOURNAL_MAX_BYTES: usize = 32 << 20;
 
 /// 分数表的一项：查询时这张卡的「版本」（调用方给，例如最后一条有效日志的 hash）、查询行、
 /// 锚点（这张卡最后一条保留评分的时刻，毫秒；没有 = -1）与 R。查询行与锚点让
@@ -249,10 +250,15 @@ pub struct RwkvRuntime {
     pool: Option<rayon::ThreadPool>,
     /// 回放途中 panic 过：状态可能只更新了一半。
     poisoned: bool,
-    /// 撤销日志（[Self::append] 追加、[Self::unappend] 弹出）：(调用方给的标签, 被覆盖的状态)，
-    /// 最新的在末尾。别的改状态的调用（[Self::replay] / restore / reset）清空它。
-    journal: Vec<(u64, SmallUndo)>,
+    /// 撤销日志（[Self::append] 追加、[Self::unappend] / [Self::rewind_from] 弹出）：(调用方给的标签,
+    /// 评分时刻毫秒, 被覆盖的状态)，最新的在末尾，时刻不递减。别的改状态的调用（[Self::replay] /
+    /// restore / reset）清空它。
+    journal: Vec<(u64, i64, SmallUndo)>,
     journal_bytes: usize,
+    /// 撤销日志之前没有别的行（reset 之后只经 append 改过状态，也没丢过最早的条目）：这时可以一路
+    /// 退到空状态。replay / restore / 丢条目后为 false——日志之前的行时刻未知，只能退到日志里
+    /// 最早一条之后。
+    journal_from_empty: bool,
     /// 常驻分数表：卡 id → 上次查询的 R（[Self::scores_update]）。回放 / 撤回一条复习时，
     /// 同一张卡与同一条笔记的项作废（它们的卡 / 笔记状态变了）；牌组 / 预设 / 全局状态的变化
     /// 不作废别的项——调用方在换日、换设置、同步合并后 [Self::scores_clear] 全量刷新。
@@ -327,6 +333,7 @@ impl RwkvRuntime {
             poisoned: false,
             journal: Vec::new(),
             journal_bytes: 0,
+            journal_from_empty: true,
             scores: HashMap::new(),
         })
     }
@@ -380,6 +387,9 @@ impl RwkvRuntime {
             inputs.push(input);
         }
         self.clear_journal();
+        if !inputs.is_empty() {
+            self.journal_from_empty = false;
+        }
         self.invalidate_scores(inputs.iter().filter(|input| input.ease.is_some()));
         let Self {
             inference,
@@ -565,6 +575,7 @@ impl RwkvRuntime {
         self.inference.restore_snapshot(bytes)?;
         self.poisoned = false;
         self.clear_journal();
+        self.journal_from_empty = false;
         self.scores.clear();
         Ok(())
     }
@@ -574,6 +585,7 @@ impl RwkvRuntime {
         self.inference.reset();
         self.poisoned = false;
         self.clear_journal();
+        self.journal_from_empty = true;
         self.scores.clear();
     }
 
@@ -605,16 +617,27 @@ impl RwkvRuntime {
         self.journal.len()
     }
 
-    /// 按时间顺序追加已答复习，每条记一条撤销日志（标签 `tags[i]`），之后可用 [Self::unappend]
-    /// 原样撤回。状态与 [Self::replay] 同一批输入逐位相同（逐条处理；块边界不改结果）。
+    /// 按时间顺序追加已答复习，每条记一条撤销日志（标签 `tags[i]`、评分时刻 `ats[i]` 毫秒），之后可用
+    /// [Self::unappend] 原样撤回最近一条、用 [Self::rewind_from] 退到某个时刻之前。状态与
+    /// [Self::replay] 同一批输入逐位相同（逐条处理；块边界不改结果）。
     /// 只有小模型支持（大模型返回 [RwkvError::Unsupported]，调用方改用 replay）；每行必须有
-    /// 评分；校验同 [Self::replay]，整批通过才应用。
-    pub fn append(&mut self, reviews: &[ReviewInput], tags: &[u64]) -> Result<(), RwkvError> {
+    /// 评分；时刻不得早于日志里最后一条（日志按时刻有序，[Self::rewind_from] 靠它）；校验同
+    /// [Self::replay]，整批通过才应用。
+    pub fn append(&mut self, reviews: &[ReviewInput], tags: &[u64], ats: &[i64]) -> Result<(), RwkvError> {
         if self.poisoned {
             return Err(RwkvError::Poisoned);
         }
-        if tags.len() != reviews.len() {
-            return Err(RwkvError::Input("tags and reviews differ in length".into()));
+        if tags.len() != reviews.len() || ats.len() != reviews.len() {
+            return Err(RwkvError::Input("tags / ats and reviews differ in length".into()));
+        }
+        let mut last_at = self.journal.last().map_or(i64::MIN, |entry| entry.1);
+        for (index, &at) in ats.iter().enumerate() {
+            if at < last_at {
+                return Err(RwkvError::Input(format!(
+                    "review {index}: at {at} is before the journal's last {last_at}"
+                )));
+            }
+            last_at = at;
         }
         if !matches!(self.inference, Engine::Small(_)) {
             return Err(RwkvError::Unsupported(
@@ -648,10 +671,10 @@ impl RwkvRuntime {
         };
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             install(pool, || -> io::Result<()> {
-                for (input, &tag) in inputs.into_iter().zip(tags) {
+                for ((input, &tag), &at) in inputs.into_iter().zip(tags).zip(ats) {
                     let undo = small.append_journaled(input)?;
                     *journal_bytes += undo.bytes();
-                    journal.push((tag, undo));
+                    journal.push((tag, at, undo));
                 }
                 Ok(())
             })
@@ -672,8 +695,11 @@ impl RwkvRuntime {
     fn trim_journal(&mut self) {
         let mut drop = 0;
         while drop < self.journal.len() && self.journal_bytes > JOURNAL_MAX_BYTES {
-            self.journal_bytes -= self.journal[drop].1.bytes();
+            self.journal_bytes -= self.journal[drop].2.bytes();
             drop += 1;
+        }
+        if drop > 0 {
+            self.journal_from_empty = false;
         }
         self.journal.drain(..drop);
     }
@@ -685,19 +711,54 @@ impl RwkvRuntime {
         if self.poisoned {
             return Err(RwkvError::Poisoned);
         }
-        if self.journal.last().map(|(top, _)| *top) != Some(tag) {
+        if self.journal.last().map(|entry| entry.0) != Some(tag) {
             return Ok(false);
         }
-        let (_, undo) = self.journal.pop().expect("checked above");
-        self.journal_bytes -= undo.bytes();
+        self.pop_journal(1);
+        Ok(true)
+    }
+
+    /// 退到时刻 `at` 之前：按撤销日志从最新一条往回撤，撤掉全部时刻 ≥ `at` 的条目，返回撤了几条。
+    /// 撤完的状态与「只回放过时刻 < `at` 的那些行」逐位相同（日志按时刻有序，见 [Self::append]）。
+    /// 调用方接着把时刻 ≥ `at` 的行（含新插进来的）按时间顺序 [Self::append]，就和全量回放逐位相同。
+    ///
+    /// 退不到（返回 `None`，什么都不改）：日志之前还有别的行（replay / restore 进来的、超出容量丢掉的）
+    /// 而日志里最早一条的时刻已经 ≥ `at`——那些行里可能也有时刻 ≥ `at` 的，撤不掉；或者是大模型。
+    pub fn rewind_from(&mut self, at: i64) -> Result<Option<usize>, RwkvError> {
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        if !matches!(self.inference, Engine::Small(_)) {
+            return Ok(None);
+        }
+        let keep = self.journal.partition_point(|entry| entry.1 < at);
+        if keep == 0 && !self.journal_from_empty {
+            return Ok(None);
+        }
+        let count = self.journal.len() - keep;
+        self.pop_journal(count);
+        Ok(Some(count))
+    }
+
+    /// 从末尾弹出 `count` 条撤销日志并按它们撤回状态，作废涉及的卡与笔记的分数表项。
+    fn pop_journal(&mut self, count: usize) {
         let Engine::Small(small) = &mut self.inference else {
             unreachable!("only the small model journals")
         };
-        let (card, note) = undo.affected();
-        small.rewind(undo);
-        self.scores
-            .retain(|id, entry| *id != card && entry.note_key != note);
-        Ok(true)
+        let mut cards = HashSet::new();
+        let mut notes = HashSet::new();
+        for _ in 0..count {
+            let (_, _, undo) = self.journal.pop().expect("count <= journal length");
+            self.journal_bytes -= undo.bytes();
+            let (card, note) = undo.affected();
+            cards.insert(card);
+            notes.insert(note);
+            small.rewind(undo);
+        }
+        if !cards.is_empty() {
+            self.scores
+                .retain(|id, entry| !cards.contains(id) && !notes.contains(&entry.note_key));
+        }
     }
 
     /// 清空分数表（换日 / 换设置 / 同步合并后全量刷新）。
@@ -1281,22 +1342,25 @@ pub unsafe extern "C" fn frwkv_runtime_query(
 }
 
 /// 按时间顺序追加 `count` 条已答复习，每条记一条撤销日志（标签 `tags[i]`，例如这条日志 id 的
-/// hash），见 [RwkvRuntime::append]。状态与 [frwkv_runtime_replay] 同一批行逐位相同。
+/// hash；评分时刻 `ats[i]` 毫秒，不得早于日志里最后一条），见 [RwkvRuntime::append]。状态与
+/// [frwkv_runtime_replay] 同一批行逐位相同。
 /// 每行必须有评分；不合法 → [FRWKV_ERR_INPUT]（整批不应用）；大模型 → [FRWKV_ERR_UNSUPPORTED]。
 ///
 /// # Safety
-/// `runtime` 有效；`reviews` 指向 `count` 个 [FrwkvReview]；`tags` 指向 `count` 个 u64。
+/// `runtime` 有效；`reviews` 指向 `count` 个 [FrwkvReview]；`tags` / `ats` 各指向 `count` 个 u64 / i64。
 #[no_mangle]
 pub unsafe extern "C" fn frwkv_runtime_append(
     runtime: *mut FrwkvRuntime,
     reviews: *const FrwkvReview,
     tags: *const u64,
+    ats: *const i64,
     count: usize,
 ) -> i32 {
     guarded(|| {
         let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
         let rows = slice_or_empty(reviews, count).ok_or_else(|| argument("null reviews"))?;
         let tags = slice_or_empty(tags, count).ok_or_else(|| argument("null tags"))?;
+        let ats = slice_or_empty(ats, count).ok_or_else(|| argument("null ats"))?;
         let inputs = rows
             .iter()
             .enumerate()
@@ -1309,8 +1373,39 @@ pub unsafe extern "C" fn frwkv_runtime_append(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        runtime.0.append(&inputs, tags).map_err(rwkv_error)
+        runtime.0.append(&inputs, tags, ats).map_err(rwkv_error)
     })
+}
+
+/// 退到时刻 `at_ms` 之前（[RwkvRuntime::rewind_from]）：返回 1 并把撤了几条写进 `out_count`；
+/// 退不到返回 0，状态不变——调用方改从检查点或全量回放重来。
+///
+/// # Safety
+/// `runtime` 有效；`out_count` 可空。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_rewind_from(
+    runtime: *mut FrwkvRuntime,
+    at_ms: i64,
+    out_count: *mut u64,
+) -> i32 {
+    let mut rewound = None;
+    let code = guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        rewound = runtime.0.rewind_from(at_ms).map_err(rwkv_error)?;
+        Ok(())
+    });
+    if code != FRWKV_OK {
+        return code;
+    }
+    match rewound {
+        Some(count) => {
+            if let Some(out) = out_count.as_mut() {
+                *out = count as u64;
+            }
+            1
+        }
+        None => 0,
+    }
 }
 
 /// 撤回最近一条 [frwkv_runtime_append]，仅当它的标签是 `tag`：返回 1；不是（或日志已被 replay /
