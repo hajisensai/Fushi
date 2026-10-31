@@ -1309,7 +1309,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String anki_select_handlebar({required Object field}) =>
       'Select value for ${field}';
   String get anki_settings_label => 'Anki settings';
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb\'s terms only allow the official Anki apps to sync. Fushi identifies itself honestly as Fushi, so AnkiWeb may refuse it or take action on your account. Self-hosted sync servers have no such restriction.';
@@ -17054,7 +17054,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_settings_label => 'إعدادات Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -42607,7 +42607,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki-Einstellungen';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -68527,7 +68527,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_settings_label => 'Configuración de Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -94504,7 +94504,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_settings_label => 'Paramètres Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -120536,7 +120536,7 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_settings_label => 'Pengaturan Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -146250,7 +146250,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_settings_label => 'Impostazioni Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -172044,7 +172044,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 設定';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -196872,7 +196872,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 설정';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -221854,7 +221854,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki-instellingen';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -247684,7 +247684,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_settings_label => 'Configurações do Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -273562,7 +273562,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_settings_label => 'Настройки Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -299368,7 +299368,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_settings_label => 'ตั้งค่า Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -324902,7 +324902,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki ayarları';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -350608,7 +350608,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_settings_label => 'Cài đặt Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -376095,7 +376095,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 设置';
   @override
-  String get anki_sync_client_advanced_hint => '实验性功能，点按展开';
+  String get anki_sync_client_advanced_hint => '高级功能，点按展开';
   @override
   String get anki_sync_client_advanced_title => '高级：Anki 同步客户端';
   @override
@@ -399586,7 +399586,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 設定';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -423624,7 +423624,7 @@ extension on _StringsEn {
       case 'anki_settings_label':
         return 'Anki settings';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -445509,7 +445509,7 @@ extension on _StringsAr {
       case 'anki_settings_label':
         return 'إعدادات Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -467397,7 +467397,7 @@ extension on _StringsDe {
       case 'anki_settings_label':
         return 'Anki-Einstellungen';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -489345,7 +489345,7 @@ extension on _StringsEs {
       case 'anki_settings_label':
         return 'Configuración de Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -511286,7 +511286,7 @@ extension on _StringsFr {
       case 'anki_settings_label':
         return 'Paramètres Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -533234,7 +533234,7 @@ extension on _StringsId {
       case 'anki_settings_label':
         return 'Pengaturan Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -555134,7 +555134,7 @@ extension on _StringsIt {
       case 'anki_settings_label':
         return 'Impostazioni Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -577055,7 +577055,7 @@ extension on _StringsJa {
       case 'anki_settings_label':
         return 'Anki 設定';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -598853,7 +598853,7 @@ extension on _StringsKo {
       case 'anki_settings_label':
         return 'Anki 설정';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -620683,7 +620683,7 @@ extension on _StringsNl {
       case 'anki_settings_label':
         return 'Anki-instellingen';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -642611,7 +642611,7 @@ extension on _StringsPtBr {
       case 'anki_settings_label':
         return 'Configurações do Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -664533,7 +664533,7 @@ extension on _StringsRu {
       case 'anki_settings_label':
         return 'Настройки Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -686452,7 +686452,7 @@ extension on _StringsTh {
       case 'anki_settings_label':
         return 'ตั้งค่า Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -708340,7 +708340,7 @@ extension on _StringsTr {
       case 'anki_settings_label':
         return 'Anki ayarları';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -730250,7 +730250,7 @@ extension on _StringsVi {
       case 'anki_settings_label':
         return 'Cài đặt Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -752114,7 +752114,7 @@ extension on _StringsZhCn {
       case 'anki_settings_label':
         return 'Anki 设置';
       case 'anki_sync_client_advanced_hint':
-        return '实验性功能，点按展开';
+        return '高级功能，点按展开';
       case 'anki_sync_client_advanced_title':
         return '高级：Anki 同步客户端';
       case 'anki_sync_client_ankiweb_body':
@@ -773740,7 +773740,7 @@ extension on _StringsZhHk {
       case 'anki_settings_label':
         return 'Anki 設定';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':

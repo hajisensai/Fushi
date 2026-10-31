@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "Yalnızca AnkiConnect ile kullanılabilir.",
   "anki_select_handlebar": "$field için değer seçin",
   "anki_settings_label": "Anki ayarları",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "AnkiWeb'in koşulları yalnızca resmî Anki uygulamalarının eşitlemesine izin verir. Fushi kendini dürüstçe Fushi olarak tanıtır, bu yüzden AnkiWeb onu reddedebilir veya hesabınıza karşı işlem yapabilir. Kendi barındırdığınız eşitleme sunucularında böyle bir kısıtlama yoktur.",
   "anki_sync_client_ankiweb_confirm": "Yine de AnkiWeb'i kullan",

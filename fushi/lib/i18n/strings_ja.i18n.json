@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "AnkiConnect でのみ利用できます。",
   "anki_select_handlebar": "$field の値を選択",
   "anki_settings_label": "Anki 設定",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "AnkiWeb の利用規約では、同期できるのは公式の Anki アプリのみです。Fushi は正直に Fushi として名乗るため、AnkiWeb に拒否されたり、アカウントに対して措置を取られたりする可能性があります。セルフホストの同期サーバーにはこのような制限はありません。",
   "anki_sync_client_ankiweb_confirm": "それでも AnkiWeb を使う",

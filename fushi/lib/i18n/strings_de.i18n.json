@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "Nur mit AnkiConnect verfügbar.",
   "anki_select_handlebar": "Wert für $field auswählen",
   "anki_settings_label": "Anki-Einstellungen",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "Die Bedingungen von AnkiWeb erlauben nur den offiziellen Anki-Apps die Synchronisierung. Fushi gibt sich ehrlich als Fushi zu erkennen, daher kann AnkiWeb es ablehnen oder Maßnahmen gegen dein Konto ergreifen. Selbst gehostete Sync-Server haben keine solche Einschränkung.",
   "anki_sync_client_ankiweb_confirm": "AnkiWeb trotzdem verwenden",
