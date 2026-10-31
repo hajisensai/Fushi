@@ -95,6 +95,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     if (session == null) return;
     _sub = session.states.listen((AnkiSyncState s) {
       if (mounted) setState(() => _state = s);
+      _armRateLimitExpiry(s.rateLimitedUntil);
       unawaited(_loadAccount());
     });
     unawaited(session.refresh());
@@ -113,8 +114,25 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     });
   }
 
+  /// 状态行里的限流说明按「截止时刻 vs 现在」二选一（[_rateLimitLine]）。会话在冷却
+  /// 到期那一刻不发新状态，所以页面开着跨过截止时刻时要自己在那一刻重建一次，否则
+  /// 「将在 xx 之后自动重试」会一直挂着一个已经过去的时刻。
+  Timer? _rateLimitExpiry;
+
+  void _armRateLimitExpiry(int? until) {
+    _rateLimitExpiry?.cancel();
+    _rateLimitExpiry = null;
+    if (until == null) return;
+    final int remaining = until - DateTime.now().millisecondsSinceEpoch;
+    if (remaining <= 0) return;
+    _rateLimitExpiry = Timer(Duration(milliseconds: remaining), () {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void dispose() {
+    _rateLimitExpiry?.cancel();
     unawaited(_sub?.cancel());
     _server.dispose();
     _username.dispose();
@@ -262,15 +280,16 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
 
   String? _statusDetail(AnkiSyncState? state) {
     if (state == null || _account == null) return null;
+    final String? rateLimit = _rateLimitLine(
+      state.rateLimitedUntil,
+      DateTime.now().millisecondsSinceEpoch,
+    );
     final List<String> lines = <String>[
       switch (state.phase) {
         AnkiSyncPhase.busy => t.anki_sync_client_status_busy,
         AnkiSyncPhase.blocked => t.anki_sync_client_status_blocked,
         // 限流（HTTP 429）给人话与自动重试时刻，不给 helper 的 Rust 原文。
-        AnkiSyncPhase.failed when state.rateLimitedUntil != null =>
-          t.anki_sync_client_status_rate_limited(
-            time: _formatTime(state.rateLimitedUntil!),
-          ),
+        AnkiSyncPhase.failed when rateLimit != null => rateLimit,
         AnkiSyncPhase.failed => t.anki_sync_client_status_failed(
           error: describeAnkiSyncError(state.message ?? ''),
         ),
@@ -279,6 +298,8 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
               ? t.anki_sync_client_status_all_synced
               : t.anki_sync_client_status_unsynced(count: state.unsynced),
       },
+      // 重启后会话从盘上读回冷却，阶段是 idle：限流说明另起一行。
+      if (state.phase == AnkiSyncPhase.idle && rateLimit != null) rateLimit,
       if (state.phase != AnkiSyncPhase.idle && state.unsynced > 0)
         t.anki_sync_client_status_unsynced(count: state.unsynced),
       if (state.failing > 0)
@@ -292,6 +313,17 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
         ),
     ];
     return lines.join('\n');
+  }
+
+  /// 限流说明：冷却还没到期 → 「限流，将在 [until] 之后自动重试」；已经到期（页面
+  /// 开着跨过了截止时刻，或重启后读回的是过期冷却）→ 「上次被限流，冷却已于 [until]
+  /// 结束」——不能再说「将在某个已经过去的时刻之后重试」。
+  static String? _rateLimitLine(int? until, int now) {
+    if (until == null) return null;
+    final String time = _formatTime(until);
+    return until > now
+        ? t.anki_sync_client_status_rate_limited(time: time)
+        : t.anki_sync_client_status_rate_limit_expired(time: time);
   }
 
   static String _formatTime(int ms) {

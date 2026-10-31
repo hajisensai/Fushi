@@ -629,6 +629,13 @@ void main() {
         expect(e.settings.dir, installedDir);
         expect(e.settings.installedAccel, VoicevoxAccel.cpu);
         expect(e.isInstalled, isTrue);
+        // 记录回到旧安装后，新位置下到一半的专属子目录不再有任何记录指向它：
+        // 必须当场清掉，否则就是「删除」也找不到的几个 GB 孤儿。
+        expect(
+          Directory(p.join(second, manifest.installSubdir)).existsSync(),
+          isFalse,
+        );
+        expect(Directory(second).existsSync(), isTrue);
 
         await e.remove(deleteFiles: true);
         expect(Directory(installedDir!).existsSync(), isFalse);

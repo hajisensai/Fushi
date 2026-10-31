@@ -170,7 +170,16 @@ class _VoicevoxLocalPageState extends State<VoicevoxLocalPage> {
   Future<void> _install() async {
     final String? dir = _installDir;
     if (dir == null) return;
-    await _engine.install(installDir: dir);
+    try {
+      await _engine.install(installDir: dir);
+    } on LocalInstallRemoveException catch (error) {
+      // 换位置安装失败、记录回到旧安装后，新位置下到一半的目录清不掉：告诉用户
+      // 是哪个目录、为什么，让他手动删（不然它就是磁盘上没人认领的几个 GB）。
+      FushiToast.show(
+        msg: localInstallRemoveFailureText(error),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<void> _remove() async {

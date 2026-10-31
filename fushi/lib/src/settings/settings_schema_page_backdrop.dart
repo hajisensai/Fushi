@@ -252,8 +252,6 @@ String _presetLabel(PageBackdropPreset preset) => switch (preset) {
   PageBackdropPreset.custom => t.page_backdrop_preset_custom,
 };
 
-/// 横向预设缩略图：每张都是真实的背景层按当前配色缩小画出来；选中项圆角变大 +
-/// 描边 + 勾（M3E 形变）。选「自定义图片」还没有图时直接弹选图。
 /// 预设横排的高度：[_PresetTile] 的缩略图 70 + 间距 6 + 两行 `labelMedium`
 /// （按系统字号缩放后的行高）+ 余量，不低于默认字号下的 112。
 double _presetRowHeight(BuildContext context, ThemeData theme) {
@@ -265,6 +263,8 @@ double _presetRowHeight(BuildContext context, ThemeData theme) {
   return needed > 112 ? needed : 112;
 }
 
+/// 横向预设缩略图：每张都是真实的背景层按当前配色缩小画出来；选中项圆角变大 +
+/// 描边 + 勾（M3E 形变）。选「自定义图片」还没有图时直接弹选图。
 class _PageBackdropPresetPicker extends StatelessWidget {
   const _PageBackdropPresetPicker({required this.settingsContext});
 
