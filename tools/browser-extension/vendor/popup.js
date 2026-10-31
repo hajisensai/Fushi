@@ -6056,16 +6056,39 @@ window.fushiPopupBuildMinePayloadFor = async function(expression, reading) {
         return -1;
     }
 
-    // 把焦点落到下标 index 的词条：切 .entry-current 并滚入视口。index 越界即无操作交由
-    // 调用方（这里只在合法下标调用）。
+    // 把 node 所在的每一层纵向滚动表面滚回顶部。只在弹窗自己的文档 / shadow 树内走：
+    // 遇到 ShadowRoot（扩展里弹窗挂在宿主页的 shadow host 下）就停，绝不去滚宿主网页。
+    function scrollOwnSurfacesToTop(node) {
+        let el = node ? node.parentNode : null;
+        while (el && el.nodeType === 1) {
+            if (el.scrollTop > 0) el.scrollTop = 0;
+            el = el.parentNode;
+        }
+        // el 停在 Document（in-app：整份文档就是弹窗）或 ShadowRoot（扩展）上。只有前者
+        // 才把文档滚动表面也归零。
+        if (el && el.nodeType === 9) {
+            const surface = el.scrollingElement || el.documentElement;
+            if (surface && surface.scrollTop > 0) surface.scrollTop = 0;
+        }
+    }
+
+    // 把焦点落到下标 index 的词条：切 .entry-current 并把词条开头对齐到视口顶部。
+    // 反馈 3LdKiAjwWa：旧实现 scrollIntoView({block:'nearest'})——比视口高的词条只滚最小
+    // 距离，停在上一条释义中间；回到第 0 条也只把它滚进视口，到不了结果区最顶（词条之前
+    // 还有汉字卡等头部）。对齐 Yomitan：切词定位到词条开头（block:'start'，留白由
+    // .entry 的 scroll-margin-top 给），第 0 条直接回到整个结果区最顶。index 越界即无
+    // 操作交由调用方（这里只在合法下标调用）。
     function applyCurrent(entries, index) {
         for (let i = 0; i < entries.length; i++) {
             if (i === index) entries[i].classList.add(CURRENT_CLASS);
             else entries[i].classList.remove(CURRENT_CLASS);
         }
         const target = entries[index];
-        if (target && target.scrollIntoView) {
-            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        if (!target) return;
+        if (index === 0) {
+            scrollOwnSurfacesToTop(target);
+        } else if (target.scrollIntoView) {
+            target.scrollIntoView({ block: 'start', inline: 'nearest' });
         }
     }
 

@@ -799,6 +799,7 @@
   "audio_panel_auto": "Otomatik",
   "audio_panel_pick_new_subtitle": "Yeni altyazı dosyası seç",
   "audio_source_added": "Ses kaynağı eklendi",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Ses kaynağı bağlantısı başarısız: \"${host}\" çözümlenemedi — ağınızı kontrol edin veya bu kaynağı ayarlardan kaldırın",
   "audio_source_edit_target_gone": "Bu ses kaynağı artık mevcut değil — düzenleme iptal edildi",
   "audio_source_edit_url": "Ses kaynağı bağlantısını düzenle",

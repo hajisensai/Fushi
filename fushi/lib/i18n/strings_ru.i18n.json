@@ -799,6 +799,7 @@
   "audio_panel_auto": "Авто",
   "audio_panel_pick_new_subtitle": "Выбрать новый файл субтитров",
   "audio_source_added": "Источник аудио добавлен",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Не удалось подключиться к источнику аудио: невозможно разрешить \"${host}\" — проверьте сеть или удалите этот источник в настройках",
   "audio_source_edit_target_gone": "Этот источник аудио больше не существует — изменение отменено",
   "audio_source_edit_url": "Изменить ссылку источника аудио",

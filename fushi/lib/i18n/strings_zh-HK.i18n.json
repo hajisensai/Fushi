@@ -799,6 +799,7 @@
   "audio_panel_auto": "自動",
   "audio_panel_pick_new_subtitle": "選擇新字幕檔",
   "audio_source_added": "已新增音訊來源",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "音頻來源連線失敗：無法解析 \"${host}\" — 請檢查網絡，或在設定中移除此來源",
   "audio_source_edit_target_gone": "該音頻來源已不存在，編輯已丟棄",
   "audio_source_edit_url": "編輯音頻來源連結",

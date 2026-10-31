@@ -799,6 +799,7 @@
   "audio_panel_auto": "Tự động",
   "audio_panel_pick_new_subtitle": "Chọn tệp phụ đề mới",
   "audio_source_added": "Đã thêm nguồn âm thanh",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Kết nối nguồn âm thanh thất bại: không thể phân giải \"${host}\" — kiểm tra mạng hoặc xóa nguồn này trong cài đặt",
   "audio_source_edit_target_gone": "Nguồn âm thanh đó không còn tồn tại — đã hủy chỉnh sửa",
   "audio_source_edit_url": "Sửa liên kết nguồn âm thanh",

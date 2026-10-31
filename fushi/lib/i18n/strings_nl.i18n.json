@@ -799,6 +799,7 @@
   "audio_panel_auto": "Automatisch",
   "audio_panel_pick_new_subtitle": "Nieuw ondertitelbestand kiezen",
   "audio_source_added": "Audiobron toegevoegd",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Audiobron verbinding mislukt: kan \"${host}\" niet oplossen — controleer uw netwerk of verwijder deze bron in instellingen",
   "audio_source_edit_target_gone": "Die audiobron bestaat niet meer — bewerking verworpen",
   "audio_source_edit_url": "Audiobronlink bewerken",

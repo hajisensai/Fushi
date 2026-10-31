@@ -799,6 +799,7 @@
   "audio_panel_auto": "自动",
   "audio_panel_pick_new_subtitle": "选择新字幕文件",
   "audio_source_added": "已添加音频来源",
+  "audio_source_connection_refused": "音频源拒绝连接：\"${host}\" 上没有服务在监听 — 请确认服务已启动，或在设置中移除此音频源",
   "audio_source_dns_error": "音频源连接失败：无法解析 \"${host}\" — 请检查网络，或在设置中移除此音频源",
   "audio_source_edit_target_gone": "该音频来源已不存在，编辑已丢弃",
   "audio_source_edit_url": "编辑音频来源链接",
