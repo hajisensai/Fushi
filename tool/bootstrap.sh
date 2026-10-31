@@ -13,6 +13,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Prebuilt third-party binaries (libmpv / ANGLE / libplacebo / FFmpegKit / LunaHook / jogamp ...)
+# are not in git: tool/vendored_binaries.json pins them, this restores + verifies them
+# (cached under ~/.cache/fushi/vendored-binaries; honours HTTPS_PROXY).
+echo "==> vendored binaries"
+if command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; then
+  python3 tool/vendored_binaries.py fetch
+else
+  python tool/vendored_binaries.py fetch
+fi
+
 echo "==> flutter pub get (fushi/)"
 (cd fushi && flutter pub get)
 

@@ -40,7 +40,7 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 
 ## 准备 + 构建
 
-`tool/bootstrap.sh`（Windows：`.\tool\bootstrap.ps1`）一条命令完成：`flutter pub get` → `ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样两步。然后：
+`tool/bootstrap.sh`（Windows：`.\tool\bootstrap.ps1`）一条命令完成：取回不入库的预编译二进制（见「vendored 二进制」）→ `flutter pub get` → `ci/apply-patches.sh`。`melos bootstrap` 经 post hook 做同样两步。然后：
 
 > **代理**：`pub get` 只认继承来的 `HTTPS_PROXY`/`HTTP_PROXY`，而 agent 每次工具调用都是新 shell —— 上一条命令里设的代理不会留到下一条，这是「`setup_worktree.ps1` 首跑 socket error、带代理重跑就过」的根因。`bootstrap.ps1` 按 `调用方环境变量 > FUSHI_BOOTSTRAP_PROXY > <主 checkout>/tool/bootstrap.local.env`（gitignore，本机私有，一次配好所有 worktree 通用）取代理，三者都没有也照常直连跑（CI 不受影响），只是会先探一次 pub.dev 并在不通时把配法打在前面——**探测只示警不拦路**（实测单次探测会误报：探测 10s 超时失败的同一时刻，`pub get` 自带重试仍 45s 跑通），真判死刑交给 `pub get` 自己，失败时把同一份配法作为报错抛出。代理地址绝不写进入库脚本。
 
@@ -387,6 +387,60 @@ macOS 32 次、iOS 25 次、linux-server 95 次（此前每个 job 都是 237 �
   `ctest-gcc`（与 `ctest-msvc` 并列），只在 `native/fushidicts/**` 或它读的
   `fushi/assets/transforms/**` 变化时跑。
 
+## vendored 二进制
+
+预编译第三方二进制**不入 git**（2026-11-01 起；此前每次重编 libmpv / FFmpeg 都往历史里塞
+20–45 MB）。它们放在 `hajisensai/Fushi` 的 GitHub release **`vendored-binaries`** 里，按原路径
+gitignore，消费方（Windows CMake 的 MD5 校验、Gradle、podspec / Makefile、galgame / Mihon 脚本、
+单测）一行不改：
+
+- **清单** `tool/vendored_binaries.json`：每项 `path / group / size / sha256 / url`。资产名按内容寻址
+  `<sha256 前 16 位>-<basename>`，同一路径的每个版本各占一个资产，旧提交照样取到自己那份字节。
+  group：`windows`（mpv-dev 7z、ANGLE.7z、libplacebo DLL）、`galgame`（LunaHook/LunaHost DLL）、
+  `mihon`（jogamp 离线 Maven 的两个 jar）、`android`（ffmpeg-kit-next.aar、bluray-menu jar）、
+  `ios`（iOS libmpv tar.gz、FFmpegKit xcframework 里的 22 个 Mach-O）、`macos`（两个 tar.gz）。
+- **取回** `python3 tool/vendored_binaries.py fetch [--group G ...]`（纯标准库，Windows 入口
+  `tool/vendored_binaries.ps1`）：已对上的文件只算一遍 sha256；缺的 / 不一致的先查本机缓存
+  （`FUSHI_VENDORED_CACHE`，默认 `%LOCALAPPDATA%\fushi\vendored-binaries` / `~/.cache/fushi/vendored-binaries`，
+  所有 worktree 共用），再经 `HTTPS_PROXY` 下载；大小或 sha256 不符直接失败，不落盘。只校验不写用 `check`。
+  - **网络重试（外部 CDN，允许的有界例外）**：只重试传输层失败——连不上 / 超时 / body 比自己的
+    `Content-Length` 短（断流）/ HTTP 5xx，共 `DOWNLOAD_ATTEMPTS = 3` 次、退避 2 s × 次数，**每次失败都打一行**
+    `<path>: download attempt N/3 failed (...); retrying in Ns`，用完报错退出。HTTP 4xx 与「完整收到但 size /
+    sha256 不符」**一次都不重试**：那是错的资产或错的清单，立刻红。
+  - **共享缓存并发**：缓存在同一台机器的所有进程间共享（并行 worktree bootstrap、dist_test 的多个 slot），
+    每个缓存项 `<sha256>` 由同目录 `<sha256>.lock` 上的 OS 文件锁（`fcntl.flock` / `msvcrt.locking`，持有者
+    进程退出即由 OS 释放，不会留下死锁）保护：持锁者下载到唯一临时名再 `os.replace` 进位，读者也在锁内把缓存
+    复制成目标旁的唯一临时名，再原子 `os.replace` 到目标——Windows 上不会再有「一边 replace 一边 copy」的
+    共享冲突。等锁超过 `LOCK_TIMEOUT_SECONDS`（30 min）直接报错并点名锁文件，不无限等。`.lock` 文件留在缓存里，
+    别删（删掉正被等待的锁文件会让两个进程各锁一个文件）。回归：`tool/vendored_binaries_test.py`（由
+    `vendored_binaries_manifest_guard_test.dart` 调起：identity 只出 LF、重试策略、多进程同取只下载一次、等锁超时）。
+- **谁会调它**：`tool/bootstrap.ps1` / `tool/bootstrap.sh`（`setup_worktree.ps1 -SkipBootstrap` 不取，
+  之后要构建 / 测试先跑 bootstrap 或 `tool/vendored_binaries.ps1`）；dist_test worker 的
+  `fushi/tool/dist_test/worker_prepare.sh`；CI 用 composite action `.github/actions/fetch-vendored-binaries`
+  （`groups:` 输入），紧跟 checkout：`main.yml` build / unit-tests、`release.yml` build / tests、
+  `build-multiplatform.yml` android / macos / ios / windows、`release-desktop.yml` windows / macos / ios、
+  `ci-config-gate.yml` guards、`native-galgame-gate.yml` guards。新 job 读这些文件就照抄这一步。
+  不挂 `actions/cache`：同机房下载几秒，按 group 缓存每版要吃约 0.5 GB 缓存配额（见上节）。
+  native artifact store 的 Mihon / galgame 名字经 `names.sh` 的 `vendored_identity` 折入清单 sha256
+  （`git ls-tree` 已看不到这些字节）。
+- **从旧分支切回来**：切到仍跟踪这些文件的旧提交再切回，git 会删掉它们，重跑 `fetch` 即可（走缓存，秒级）。
+- **release 规则**：`vendored-binaries` 是 prerelease、**永不 Latest**，tag 指向一个只含 README 的无父提交
+  （不拖住任何历史，历史重写后仍有效）；发布 workflow 的 `release` 触发只认 `v<数字>` tag，
+  `mirror-releases.yml` 不镜像 prerelease。**资产只增不删、不覆盖**——旧提交靠它们构建。
+
+**升级一个二进制**（以 libmpv 为例）：
+
+1. 按原流程构建产物，放到原路径（同时照旧更新它自己的钉值：CMake `LIBMPV` / `LIBMPV_MD5`、
+   `SHA256SUMS`、`VERSION.json`、`sha256.json`、`provenance.json` 等）。
+2. `python3 tool/vendored_binaries.py register --group windows <新路径>`：写入 sha256 / size / url。
+   路径变了（新文件名）就删掉旧条目，并把 `.gitignore` 末尾那段里的旧路径换成新路径。
+3. `python3 tool/vendored_binaries.py publish`（需要 `gh` 已登录、对仓库有写权限）：上传 release 里还没有的
+   资产，再逐个下载回来比 sha256。
+4. 提交清单 + `.gitignore` + 钉值文件，**不提交二进制本身**。守卫
+   `fushi/test/build/vendored_binaries_manifest_guard_test.dart` 会把清单与各消费方钉值逐一对账、要求每条路径
+   被 `.gitignore` 精确排除且不被跟踪、`third_party/` 与 `native/**/third_party/` 下不得再跟踪 >1 MiB 的文件
+   （白名单只有 `m_extension_server/upstream_src` 的上游字体），并钉住上面每个 CI job 的取回步骤。
+
 ## 依赖补丁
 
 Flutter 3.47.6 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：
@@ -399,7 +453,7 @@ Flutter 3.47.6 下部分上游依赖未适配，两种补法并存（对个别�
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
 
-移动端 / Apple 的 libmpv（入库 jar / xcframework 归档）在两个 fork 里构建，**CI 都跑在私有镜像仓**：Android `hajisensai/libmpv-android-video-build` → `hajisensai/libmpv-android-build-fushi`（原 fork 的 Actions 被 GitHub 停用，任何触发回 422），Darwin `hajisensai/libmpv-darwin-build` → `hajisensai/libmpv-darwin-build-fushi`（2026-10-24 DVD 重编起，同一做法）。fork 仓保留源码分支与统一 FFmpeg 的 Release（`unified-ffmpeg-9.0.1-r<N>`），构建在镜像仓手动 dispatch；产物来源记在各自 `provenance.json`，当前 fork 补丁与顺序见 `tool/dvd/forks/README.md`。
+移动端 / Apple 的 libmpv（jar / xcframework 归档；字节在 `vendored-binaries` release，见「vendored 二进制」）在两个 fork 里构建，**CI 都跑在私有镜像仓**：Android `hajisensai/libmpv-android-video-build` → `hajisensai/libmpv-android-build-fushi`（原 fork 的 Actions 被 GitHub 停用，任何触发回 422），Darwin `hajisensai/libmpv-darwin-build` → `hajisensai/libmpv-darwin-build-fushi`（2026-10-24 DVD 重编起，同一做法）。fork 仓保留源码分支与统一 FFmpeg 的 Release（`unified-ffmpeg-9.0.1-r<N>`），构建在镜像仓手动 dispatch；产物来源记在各自 `provenance.json`，当前 fork 补丁与顺序见 `tool/dvd/forks/README.md`。
 
 第三种（native 依赖）：**vcpkg overlay ports**。`native/fushi_torrent/vcpkg-ports/` 是 libtorrent 2.0.11 port 的原样拷贝 + 本仓补丁（DHT 混合代理豁免，P2P 代理混合档依赖它），三个构建脚本（`build_windows_dll.ps1` / `build_android_so.ps1` / `build_android_so.sh`，含 CI）都用 `-DVCPKG_OVERLAY_PORTS` 挂上；overlay 无条件优先于 registry。补丁存在性/引用/挂载由 `fushi/test/torrent/download_http_client_proxy_test.dart` E 组守卫钉住，动机与清理条件见 `native/fushi_torrent/vcpkg-ports/README.md`。
 
