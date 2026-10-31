@@ -137,6 +137,8 @@ Unknown fields are rejected. Dependencies between declarations:
 - `library` and `like` need `login` + `account`.
 - `artistAlbums` / `artistMvs` need `artist`; `artistMvs` needs `mvStream`.
 - `searchBest` needs `search`.
+- `lyricsSearch` ⇔ `lyricsFetch` (declare both). They need nothing else: a lyrics-only plugin declares just these
+  two (plus `network`), needs no `searchTypes`, and shows up only as a lyrics source in Settings, not in browsing.
 
 Permissions: `network` = `fushi.http`; `storage` = `fushi.storage`; `credentials` = `fushi.credentials`
 (encrypted); `webAuth` = the in-app browser login method; `insecureHttp` = allow `http://` URLs (some CDNs
@@ -221,6 +223,8 @@ Throwing an `Error` shows `error.message` to the user.
 | `stream` | `{ id, quality }` — `standard` / `high` / `lossless` / `hires` | `Stream` | Playback (asked right before playing; also for the queued next track) |
 | `mvStream` | `{ id, quality }` | `MvStream` | Music video player (also for `Track.mvId`) |
 | `lyrics` | `{ id }` (track id) | `{ original, translation?, romanization? }` or `null` | Lyrics / karaoke view; cached, `null` re-asked after a day; LRCLIB is the fallback |
+| `lyricsSearch` | `{ query, title, artist?, album?, durationMs? }` — the host's local / server track; it calls you with several `query` variants, so don't add your own fallback rounds | `{ items: [{ title, artist?, durationMs?, ref }] }` — `ref` is your opaque JSON (≤2 KiB serialized), first 20 used; empty = nothing found | Lyrics for tracks from any source (after LRCLIB, in the user's plugin order) |
+| `lyricsFetch` | `{ ref }` — a `ref` from your `lyricsSearch` | `{ original, translation?, romanization? }` or `null` | Same as above; throwing = this source failed (tries the next), `null` = no lyrics (cached) |
 | `home` | `{ refresh? }` — `refresh: true` when the user asks for new picks | `{ sections: Section[] }` (first 12 sections, 50 items each) | Music page › For you |
 | `library` | `{ page, pageSize }` | `{ items: Playlist[], hasMore }` — the account's own + saved playlists, "liked" first; empty page when logged out | Music page › your playlists |
 | `like` | `{ op: 'list' }` / `{ op: 'set', id, liked }` | list → `{ ids: string[], playlist?: Playlist }` or `null` (logged out); set → `null`, throw on failure | Heart button = the platform account's "liked songs" |
