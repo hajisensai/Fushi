@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_word_audio.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -1301,12 +1302,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 词条的「+」并带上覆盖项。只跟制卡模块走——卡组分区所有表面都有，句子 / 音频 /
         // 图片分区由页面的 [buildAdvancedMiningSections] 决定有无。
         onOpenAdvancedMining: cardCreationEnabled
-            ? (int entryIndex, String matched, String expression) =>
+            ? (int entryIndex, String matched, String expression,
+                    String reading) =>
                 _openAdvancedMiningDialog(
                   webViewKey: item.webViewKey,
                   entryIndex: entryIndex,
                   matched: matched,
                   expression: expression,
+                  reading: reading,
                 )
             : null,
       ),
@@ -1357,6 +1360,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required int entryIndex,
     required String matched,
     required String expression,
+    required String reading,
   }) async {
     if (!mounted) return;
     await runWithLookupPopupHidden<void>(() async {
@@ -1374,9 +1378,21 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           matched: matched,
           expression: expression.isEmpty ? null : expression,
           deck: deck,
+          // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
+          wordAudio: expression.isEmpty
+              ? null
+              : buildAdvancedMiningWordAudioSection(
+                  listChoices: () async =>
+                      await webViewKey.currentState?.listWordAudioChoices(
+                        expression,
+                        reading.isEmpty ? expression : reading,
+                      ) ??
+                      const <Map<String, String>>[],
+                ),
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。
-          onConfirm: (MiningRequestOverrides overrides) async =>
+          onConfirm: (MiningRequestOverrides overrides,
+                  {String? wordAudioUrl}) async =>
               await webViewKey.currentState?.mineEntryByIndex(
                     entryIndex,
                     // BUG-2634 第二轮：阅读器的 onMineFromPopup 经制卡串行队列
@@ -1385,6 +1401,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                     // 合成。这条车道退回「等落地」，只是不会再因为宿主慢而误报。
                     releaseWhenPayloadConsumed: false,
                     overrides: overrides,
+                    wordAudioUrl: wordAudioUrl,
                   ) ??
                   false,
         ),

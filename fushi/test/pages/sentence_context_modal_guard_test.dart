@@ -56,7 +56,7 @@ void main() {
   });
 
   group('词条「高级制卡」按钮触发原生对话框（原「调整上下文」）', () {
-    test('popup.js 按钮门控 advancedMiningEnabled，callHandler openAdvancedMining 带 entryIndex+matched+expression', () {
+    test('popup.js 按钮门控 advancedMiningEnabled，callHandler openAdvancedMining 带 entryIndex+matched+expression+reading', () {
       final String js = read('assets/popup/popup.js');
       expect(js.contains('ctx-adjust-button'), isTrue);
       expect(js.contains('window.advancedMiningEnabled === true'), isTrue,
@@ -65,9 +65,9 @@ void main() {
           reason: '按钮必须 callHandler openAdvancedMining 弹宿主原生对话框');
       expect(
           js.contains(
-              '{ entryIndex: idx, matched: matched, expression: expression }'),
+              "{ entryIndex: idx, matched: matched, expression: expression, reading: reading || '' }"),
           isTrue,
-          reason: '参数是对象（BUG-1326），带 entryIndex / matched / expression');
+          reason: '参数是对象（BUG-1326），带 entryIndex / matched / expression / reading');
       // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与回点同源。
       expect(js.contains(':scope > .entry'), isTrue);
       // 提示文案用「高级制卡」那份（宿主注入的 i18nCtx.advancedMining）。
@@ -188,7 +188,9 @@ void main() {
     });
 
     test('确认走注入 onConfirm、取消还原快照', () {
-      expect(src.contains('capabilities.onConfirm(overrides)'), isTrue);
+      // 覆盖项 + 单词音频选择一起交给 onConfirm（单词音频不进覆盖项 wire）。
+      expect(src.contains('widget.capabilities.onConfirm('), isTrue);
+      expect(src.contains('wordAudioUrl: wordAudioUrl'), isTrue);
       expect(src.contains('restoreSentenceSnapshot()'), isTrue);
     });
   });

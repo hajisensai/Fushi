@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 181475 (10675 per locale)
+/// Strings: 181560 (10680 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -9367,6 +9367,15 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get popup_advanced_mining_still_unavailable =>
       'Screenshot unavailable';
   String get popup_advanced_mining_title => 'Advanced mining';
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   String get popup_append_sentence_tooltip => 'Add this sentence to the card';
   String get popup_auto_expand_dictionaries => 'Auto-expand rows';
   String get popup_auto_expand_dictionaries_hint =>
@@ -30945,6 +30954,20 @@ class _StringsAr extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip => 'أضف هذه الجملة إلى البطاقة';
   @override
@@ -57098,6 +57121,20 @@ class _StringsDe extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip =>
       'Diesen Satz zur Karte hinzufügen';
@@ -83394,6 +83431,20 @@ class _StringsEs extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip => 'Añadir esta frase a la tarjeta';
   @override
@@ -109785,6 +109836,20 @@ class _StringsFr extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip => 'Ajouter cette phrase à la carte';
   @override
   String get popup_auto_expand_dictionaries =>
@@ -135980,6 +136045,20 @@ class _StringsId extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip => 'Tambahkan kalimat ini ke kartu';
   @override
   String get popup_auto_expand_dictionaries => 'Perluas baris otomatis';
@@ -162152,6 +162231,20 @@ class _StringsIt extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip =>
       'Aggiungi questa frase alla carta';
   @override
@@ -187746,6 +187839,20 @@ class _StringsJa extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip => 'この文をカードに追加';
   @override
   String get popup_auto_expand_dictionaries => '行を自動展開';
@@ -212959,6 +213066,20 @@ class _StringsKo extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip => '이 문장을 카드에 추가';
   @override
@@ -238801,6 +238922,20 @@ class _StringsNl extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip => 'Deze zin aan de kaart toevoegen';
   @override
@@ -265031,6 +265166,20 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip => 'Adicionar esta frase ao cartão';
   @override
   String get popup_auto_expand_dictionaries =>
@@ -291244,6 +291393,20 @@ class _StringsRu extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip =>
       'Добавить это предложение в карточку';
   @override
@@ -317232,6 +317395,20 @@ class _StringsTh extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip => 'เพิ่มประโยคนี้ลงในการ์ด';
   @override
@@ -343247,6 +343424,20 @@ class _StringsTr extends _StringsEn {
       'Screenshot unavailable';
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
+  @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
   @override
   String get popup_append_sentence_tooltip => 'Bu cümleyi karta ekle';
   @override
@@ -369274,6 +369465,20 @@ class _StringsVi extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip => 'Thêm câu này vào thẻ';
   @override
   String get popup_auto_expand_dictionaries => 'Tự động mở rộng hàng';
@@ -393971,6 +394176,16 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get popup_advanced_mining_title => '高级制卡';
   @override
+  String get popup_advanced_mining_word_audio_default_source => '默认音源';
+  @override
+  String get popup_advanced_mining_word_audio_hint => '点音源即可试听，第一项就是一键制卡用的那条';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed => '这条发音播放失败';
+  @override
+  String get popup_advanced_mining_word_audio_section => '单词音频';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable => '这个词没有可用的发音';
+  @override
   String get popup_append_sentence_tooltip => '加入制卡句子';
   @override
   String get popup_auto_expand_dictionaries => '自动展开行数';
@@ -418167,6 +418382,20 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get popup_advanced_mining_title => 'Advanced mining';
   @override
+  String get popup_advanced_mining_word_audio_default_source =>
+      'Default source';
+  @override
+  String get popup_advanced_mining_word_audio_hint =>
+      'Tap a source to preview it. The first one is what quick mining uses.';
+  @override
+  String get popup_advanced_mining_word_audio_preview_failed =>
+      'Couldn\'t play this audio';
+  @override
+  String get popup_advanced_mining_word_audio_section => 'Word audio';
+  @override
+  String get popup_advanced_mining_word_audio_unavailable =>
+      'No audio for this word';
+  @override
   String get popup_append_sentence_tooltip => '把此句加入卡片';
   @override
   String get popup_auto_expand_dictionaries => '自動展開行數';
@@ -441294,6 +441523,16 @@ extension on _StringsEn {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Add this sentence to the card';
       case 'popup_auto_expand_dictionaries':
@@ -463477,6 +463716,16 @@ extension on _StringsAr {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'أضف هذه الجملة إلى البطاقة';
       case 'popup_auto_expand_dictionaries':
@@ -485714,6 +485963,16 @@ extension on _StringsDe {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Diesen Satz zur Karte hinzufügen';
       case 'popup_auto_expand_dictionaries':
@@ -507956,6 +508215,16 @@ extension on _StringsEs {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Añadir esta frase a la tarjeta';
       case 'popup_auto_expand_dictionaries':
@@ -530210,6 +530479,16 @@ extension on _StringsFr {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Ajouter cette phrase à la carte';
       case 'popup_auto_expand_dictionaries':
@@ -552427,6 +552706,16 @@ extension on _StringsId {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Tambahkan kalimat ini ke kartu';
       case 'popup_auto_expand_dictionaries':
@@ -574648,6 +574937,16 @@ extension on _StringsIt {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Aggiungi questa frase alla carta';
       case 'popup_auto_expand_dictionaries':
@@ -596809,6 +597108,16 @@ extension on _StringsJa {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'この文をカードに追加';
       case 'popup_auto_expand_dictionaries':
@@ -618915,6 +619224,16 @@ extension on _StringsKo {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return '이 문장을 카드에 추가';
       case 'popup_auto_expand_dictionaries':
@@ -641108,6 +641427,16 @@ extension on _StringsNl {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Deze zin aan de kaart toevoegen';
       case 'popup_auto_expand_dictionaries':
@@ -663335,6 +663664,16 @@ extension on _StringsPtBr {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Adicionar esta frase ao cartão';
       case 'popup_auto_expand_dictionaries':
@@ -685566,6 +685905,16 @@ extension on _StringsRu {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Добавить это предложение в карточку';
       case 'popup_auto_expand_dictionaries':
@@ -707759,6 +708108,16 @@ extension on _StringsTh {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'เพิ่มประโยคนี้ลงในการ์ด';
       case 'popup_auto_expand_dictionaries':
@@ -729968,6 +730327,16 @@ extension on _StringsTr {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Bu cümleyi karta ekle';
       case 'popup_auto_expand_dictionaries':
@@ -752170,6 +752539,16 @@ extension on _StringsVi {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return 'Thêm câu này vào thẻ';
       case 'popup_auto_expand_dictionaries':
@@ -774204,6 +774583,16 @@ extension on _StringsZhCn {
         return '截图不可用';
       case 'popup_advanced_mining_title':
         return '高级制卡';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return '默认音源';
+      case 'popup_advanced_mining_word_audio_hint':
+        return '点音源即可试听，第一项就是一键制卡用的那条';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return '这条发音播放失败';
+      case 'popup_advanced_mining_word_audio_section':
+        return '单词音频';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return '这个词没有可用的发音';
       case 'popup_append_sentence_tooltip':
         return '加入制卡句子';
       case 'popup_auto_expand_dictionaries':
@@ -796194,6 +796583,16 @@ extension on _StringsZhHk {
         return 'Screenshot unavailable';
       case 'popup_advanced_mining_title':
         return 'Advanced mining';
+      case 'popup_advanced_mining_word_audio_default_source':
+        return 'Default source';
+      case 'popup_advanced_mining_word_audio_hint':
+        return 'Tap a source to preview it. The first one is what quick mining uses.';
+      case 'popup_advanced_mining_word_audio_preview_failed':
+        return 'Couldn\'t play this audio';
+      case 'popup_advanced_mining_word_audio_section':
+        return 'Word audio';
+      case 'popup_advanced_mining_word_audio_unavailable':
+        return 'No audio for this word';
       case 'popup_append_sentence_tooltip':
         return '把此句加入卡片';
       case 'popup_auto_expand_dictionaries':

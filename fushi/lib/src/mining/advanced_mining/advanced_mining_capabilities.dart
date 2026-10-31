@@ -23,8 +23,17 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 
 /// 对话框确认：把本次覆盖项交给开窗函数去回点弹窗「+」。返回是否真的点到了
 /// 那颗按钮（BUG-2627：没点到要如实提示，不静默关窗）。
+///
+/// [wordAudioUrl]：本次单词音频的选择（[AdvancedMiningWordAudioSection]）。null = 没改，
+/// 按一键「+」现解析默认源；空串 = 不要单词音频；否则是弹窗可播 URL（远端 `http(s)`、
+/// 本地 `data:`），由查词弹窗层在交宿主前改写进制卡 fields 的 `audio`。它不进
+/// [MiningRequestOverrides]：那是要上互联 / 扩展 wire 的契约，而单词音频本来就随
+/// fields 的 `audio` 走，没有第二条通道。
 typedef AdvancedMiningConfirm =
-    Future<bool> Function(MiningRequestOverrides overrides);
+    Future<bool> Function(
+      MiningRequestOverrides overrides, {
+      String? wordAudioUrl,
+    });
 
 /// 卡组分区。
 class AdvancedMiningDeckSection {
@@ -44,6 +53,50 @@ class AdvancedMiningDeckSection {
   /// 「同时设为默认卡组」：持久化到 Anki 设置（走 `AnkiViewModel.selectDeck`）。null =
   /// 该表面不允许改默认（不渲染复选框）。
   final Future<void> Function(String deckName)? setDefaultDeck;
+}
+
+/// 单词音频的一个候选：某个启用音频源解析出的一条（远端列表型源会展开成多个变体）。
+/// 与查词弹窗 ♪「选择音频源」菜单同一份数据（`listWordAudioSources` 桥）。
+class AdvancedMiningWordAudioChoice {
+  const AdvancedMiningWordAudioChoice({
+    required this.name,
+    required this.variant,
+    required this.url,
+  });
+
+  /// 源的显示名（用户起的名字 / host / 「TTS 兜底」）；别的设备给的结果可能为空。
+  final String name;
+
+  /// 同一源下的变体（说话人等）；没有时为空。
+  final String variant;
+
+  /// 弹窗可直接播放的 URL（远端 `http(s)`、本地文件转成的 `data:`）。
+  final String url;
+
+  /// 同一个候选的身份：确认时重新解析后按它找回（远端互联源的 URL 带短时令牌，
+  /// 不能拿打开对话框时的旧 URL 去制卡，见 popup.js 的 TODO-766）。
+  bool sameSourceAs(AdvancedMiningWordAudioChoice other) =>
+      other.name == name && other.variant == variant;
+}
+
+/// 单词音频分区：所有制卡表面都有（与卡组分区一样由开窗函数统一组装）。
+///
+/// 第一项就是一键「+」会用的那条（[listChoices] 与弹窗默认解析共用同一个解析器），
+/// 所以「选第一项」等价于不改。
+class AdvancedMiningWordAudioSection {
+  const AdvancedMiningWordAudioSection({
+    required this.listChoices,
+    required this.preview,
+    required this.stopPreview,
+  });
+
+  /// 当前词每个启用音频源各自解析出的候选（按音频源配置顺序）。空 = 这个词没有发音。
+  final Future<List<AdvancedMiningWordAudioChoice>> Function() listChoices;
+
+  /// 试听一条候选；返回是否真的开始播放。
+  final Future<bool> Function(String url) preview;
+
+  final Future<void> Function() stopPreview;
 }
 
 /// 句子分区：沿用原「调整上下文」对话框的宿主回调（语义不变，见 [MiningSentenceDraft]）。
@@ -257,6 +310,7 @@ class AdvancedMiningCapabilities {
   const AdvancedMiningCapabilities({
     required this.matched,
     this.deck,
+    this.wordAudio,
     required this.sections,
     required this.onConfirm,
     this.expression,
@@ -270,6 +324,9 @@ class AdvancedMiningCapabilities {
 
   /// null = 这个表面不能选卡组（例如手机遥控电脑制卡：卡组由电脑决定）。
   final AdvancedMiningDeckSection? deck;
+
+  /// null = 这个表面选不了单词音频（拿不到候选列表）。
+  final AdvancedMiningWordAudioSection? wordAudio;
   final AdvancedMiningSections sections;
   final AdvancedMiningConfirm onConfirm;
 }
