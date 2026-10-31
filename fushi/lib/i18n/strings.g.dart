@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179061 (10533 per locale)
+/// Strings: 179095 (10535 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -12862,6 +12862,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.';
   String get video_audio_track => 'Audio track';
   String get video_audio_track_empty => 'No switchable audio tracks';
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   String video_audio_track_switched({required Object label}) =>
       'Audio track: ${label}';
   String get video_auto_play_next_cancel => 'Cancel';
@@ -36808,6 +36812,12 @@ class _StringsAr extends _StringsEn {
   String get video_audio_track => 'المسار الصوتي';
   @override
   String get video_audio_track_empty => 'لا توجد مسارات صوتية قابلة للتبديل';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       'المسار الصوتي: ${label}';
@@ -62663,6 +62673,12 @@ class _StringsDe extends _StringsEn {
   String get video_audio_track => 'Tonspur';
   @override
   String get video_audio_track_empty => 'Keine umschaltbaren Audiospuren';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       'Tonspur: ${label}';
@@ -88622,6 +88638,12 @@ class _StringsEs extends _StringsEn {
   String get video_audio_track => 'Pista de audio';
   @override
   String get video_audio_track_empty => 'Sin pistas de audio intercambiables';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       'Pista de audio: ${label}';
@@ -114657,6 +114679,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Aucune piste audio commutable';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Piste audio : ${label}';
   @override
@@ -140431,6 +140459,12 @@ class _StringsId extends _StringsEn {
   @override
   String get video_audio_track_empty =>
       'Tidak ada trek audio yang bisa dialihkan';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       'Trek audio: ${label}';
@@ -166283,6 +166317,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Nessuna traccia audio commutabile';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Traccia audio: ${label}';
   @override
@@ -191321,6 +191361,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_audio_track_empty => '切り替え可能な音声トラックがありません';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       '音声トラック：${label}';
   @override
@@ -216188,6 +216234,12 @@ class _StringsKo extends _StringsEn {
   String get video_audio_track => '오디오 트랙';
   @override
   String get video_audio_track_empty => '전환 가능한 오디오 트랙 없음';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       '오디오 트랙: ${label}';
@@ -241857,6 +241909,12 @@ class _StringsNl extends _StringsEn {
   String get video_audio_track => 'Audiotrack';
   @override
   String get video_audio_track_empty => 'Geen wisselbare audiotracks';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       'Audiotrack: ${label}';
@@ -267727,6 +267785,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Nenhuma faixa de áudio alternável';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Faixa de áudio: ${label}';
   @override
@@ -293570,6 +293634,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Нет переключаемых аудиодорожек';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Аудиодорожка: ${label}';
   @override
@@ -319154,6 +319224,12 @@ class _StringsTh extends _StringsEn {
   String get video_audio_track => 'แทร็กเสียง';
   @override
   String get video_audio_track_empty => 'ไม่มีแทร็กเสียงที่สลับได้';
+  @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   @override
   String video_audio_track_switched({required Object label}) =>
       'แทร็กเสียง: ${label}';
@@ -344838,6 +344914,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Değiştirilebilir ses parçası yok';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Ses izi: ${label}';
   @override
@@ -370492,6 +370574,12 @@ class _StringsVi extends _StringsEn {
   String get video_audio_track_empty =>
       'Không có bản âm thanh có thể chuyển đổi';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Bản âm thanh: ${label}';
   @override
@@ -394341,6 +394429,10 @@ class _StringsZhCn extends _StringsEn {
   String get video_audio_track => '音轨';
   @override
   String get video_audio_track_empty => '没有可切换的音频轨';
+  @override
+  String get video_audio_track_fallback_muxed => '音频流被拒绝，已切换到带声音的兼容流（画质较低）';
+  @override
+  String get video_audio_track_load_failed => '音频流加载失败，当前没有声音（来源拒绝访问），请稍后重试';
   @override
   String video_audio_track_switched({required Object label}) => '音轨: ${label}';
   @override
@@ -418460,6 +418552,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_audio_track_empty => '沒有可切換的音頻軌';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) => '音軌：${label}';
   @override
   String get video_auto_play_next_cancel => '取消';
@@ -440720,6 +440818,10 @@ extension on _StringsEn {
         return 'Audio track';
       case 'video_audio_track_empty':
         return 'No switchable audio tracks';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Audio track: ${label}';
       case 'video_auto_play_next_cancel':
@@ -462600,6 +462702,10 @@ extension on _StringsAr {
         return 'المسار الصوتي';
       case 'video_audio_track_empty':
         return 'لا توجد مسارات صوتية قابلة للتبديل';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'المسار الصوتي: ${label}';
       case 'video_auto_play_next_cancel':
@@ -484550,6 +484656,10 @@ extension on _StringsDe {
         return 'Tonspur';
       case 'video_audio_track_empty':
         return 'Keine umschaltbaren Audiospuren';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Tonspur: ${label}';
       case 'video_auto_play_next_cancel':
@@ -506491,6 +506601,10 @@ extension on _StringsEs {
         return 'Pista de audio';
       case 'video_audio_track_empty':
         return 'Sin pistas de audio intercambiables';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Pista de audio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -528446,6 +528560,10 @@ extension on _StringsFr {
         return 'Piste audio';
       case 'video_audio_track_empty':
         return 'Aucune piste audio commutable';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Piste audio : ${label}';
       case 'video_auto_play_next_cancel':
@@ -550353,6 +550471,10 @@ extension on _StringsId {
         return 'Trek audio';
       case 'video_audio_track_empty':
         return 'Tidak ada trek audio yang bisa dialihkan';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Trek audio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -572286,6 +572408,10 @@ extension on _StringsIt {
         return 'Traccia audio';
       case 'video_audio_track_empty':
         return 'Nessuna traccia audio commutabile';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Traccia audio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -594117,6 +594243,10 @@ extension on _StringsJa {
         return '音声トラック';
       case 'video_audio_track_empty':
         return '切り替え可能な音声トラックがありません';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => '音声トラック：${label}';
       case 'video_auto_play_next_cancel':
@@ -615925,6 +616055,10 @@ extension on _StringsKo {
         return '오디오 트랙';
       case 'video_audio_track_empty':
         return '전환 가능한 오디오 트랙 없음';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => '오디오 트랙: ${label}';
       case 'video_auto_play_next_cancel':
@@ -637836,6 +637970,10 @@ extension on _StringsNl {
         return 'Audiotrack';
       case 'video_audio_track_empty':
         return 'Geen wisselbare audiotracks';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Audiotrack: ${label}';
       case 'video_auto_play_next_cancel':
@@ -659762,6 +659900,10 @@ extension on _StringsPtBr {
         return 'Faixa de áudio';
       case 'video_audio_track_empty':
         return 'Nenhuma faixa de áudio alternável';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Faixa de áudio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -681694,6 +681836,10 @@ extension on _StringsRu {
         return 'Аудиодорожка';
       case 'video_audio_track_empty':
         return 'Нет переключаемых аудиодорожек';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Аудиодорожка: ${label}';
       case 'video_auto_play_next_cancel':
@@ -703583,6 +703729,10 @@ extension on _StringsTh {
         return 'แทร็กเสียง';
       case 'video_audio_track_empty':
         return 'ไม่มีแทร็กเสียงที่สลับได้';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'แทร็กเสียง: ${label}';
       case 'video_auto_play_next_cancel':
@@ -725494,6 +725644,10 @@ extension on _StringsTr {
         return 'Ses izi';
       case 'video_audio_track_empty':
         return 'Değiştirilebilir ses parçası yok';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Ses izi: ${label}';
       case 'video_auto_play_next_cancel':
@@ -747399,6 +747553,10 @@ extension on _StringsVi {
         return 'Bản âm thanh';
       case 'video_audio_track_empty':
         return 'Không có bản âm thanh có thể chuyển đổi';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Bản âm thanh: ${label}';
       case 'video_auto_play_next_cancel':
@@ -769071,6 +769229,10 @@ extension on _StringsZhCn {
         return '音轨';
       case 'video_audio_track_empty':
         return '没有可切换的音频轨';
+      case 'video_audio_track_fallback_muxed':
+        return '音频流被拒绝，已切换到带声音的兼容流（画质较低）';
+      case 'video_audio_track_load_failed':
+        return '音频流加载失败，当前没有声音（来源拒绝访问），请稍后重试';
       case 'video_audio_track_switched':
         return ({required Object label}) => '音轨: ${label}';
       case 'video_auto_play_next_cancel':
@@ -790796,6 +790958,10 @@ extension on _StringsZhHk {
         return '音軌';
       case 'video_audio_track_empty':
         return '沒有可切換的音頻軌';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => '音軌：${label}';
       case 'video_auto_play_next_cancel':
