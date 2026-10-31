@@ -7316,6 +7316,8 @@
   "srs_browse_undo_partial": "$n cards were already reviewed on another device and could not be undone",
   "srs_browse_undone": "Undone",
   "srs_browse_unsuspended": "Cards unsuspended",
+  "srs_card_appearance_blur_translation": "Blur translation until tapped",
+  "srs_card_appearance_blur_translation_desc": "Fushi カードのみ。テンプレートを編集した場合は .fc-translation 要素を残してください",
   "srs_card_appearance_color_app": "Follow app theme",
   "srs_card_appearance_color_custom": "Custom accent",
   "srs_card_appearance_compact_phone": "Compact back on phones (long definitions folded)",

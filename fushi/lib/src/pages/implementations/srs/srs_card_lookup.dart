@@ -39,6 +39,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart'
+    show ReaderSelectionScripts;
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/utils.dart';
 
@@ -639,6 +641,9 @@ const String kSrsCardLookupScript = r'''
     if (!window.fushiSelection) return;
     var el = document.elementFromPoint(x, y);
     if (!el || blocked(el)) return;
+    // 模糊中的例句翻译不取词（srs_card_translation_blur.dart）。
+    if (window.__fushiSrsTranslationBlocksLookup &&
+        window.__fushiSrsTranslationBlocksLookup(x, y)) return;
     window.fushiSelection.selectText(x, y, 400, hover);
   }
   var sx = 0, sy = 0, moved = false, has = false;
@@ -651,6 +656,9 @@ const String kSrsCardLookupScript = r'''
     if (!has) return;
     has = false;
     if (moved) return;
+    // 这一下已归卡面上的点按开关（翻译模糊的显示 / 再模糊，window 捕获阶段先于这里）：
+    // 不取词，也不报点空白。
+    if (window.__fushiSrsTapConsumed) return;
     var g = gate();
     if (!g.tap || g.open) return;
     var sel = window.getSelection ? window.getSelection() : null;
@@ -701,6 +709,18 @@ const String kSrsCardLookupCss = '''
 .fushi-dict-highlight{background-color:color-mix(in srgb,var(--fushi-srs-accent,#3b82f6) 32%,transparent)!important;color:inherit;border-radius:2px;}
 ruby.fushi-selection-ruby-active{background-color:color-mix(in srgb,var(--fushi-srs-accent,#3b82f6) 32%,transparent)!important;border-radius:2px;}
 ''';
+
+/// 宿主侧取词（弹窗 barrier 上的点按、macOS 宿主悬停）的页内调用：落在模糊中的例句翻译上
+/// （srs_card_translation_blur.dart）时不取词，其余同 [ReaderSelectionScripts.selectInvocation]。
+String srsCardSelectInvocation(
+  double x,
+  double y,
+  int maxLength, {
+  required bool fromHover,
+}) =>
+    'if (!(window.__fushiSrsTranslationBlocksLookup && '
+    'window.__fushiSrsTranslationBlocksLookup($x, $y))) '
+    '${ReaderSelectionScripts.selectInvocation(x, y, maxLength, fromHover: fromHover)};';
 
 /// 页内取词门控的下发脚本。
 String srsCardLookupGateScript({
