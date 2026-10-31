@@ -901,8 +901,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   String _ankiBackendLabel(AnkiSettings settings) {
     final bool mobile = Platform.isAndroid || Platform.isIOS;
     if (!mobile || settings.ankiConnectUsableOnMobile) {
-      return 'AnkiConnect'
-          '（${settings.ankiConnectHost}:${settings.ankiConnectPort}）';
+      // 括号是排版（中日用全角、其余语言半角），归 i18n 管，不在代码里写死。
+      return t.onboarding_anki_backend_ankiconnect(
+        address: '${settings.ankiConnectHost}:${settings.ankiConnectPort}',
+      );
     }
     return Platform.isAndroid ? 'AnkiDroid' : 'AnkiMobile';
   }
