@@ -260,7 +260,9 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
         NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateUntrusted,
         NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid,
         NSURLErrorCannotLoadFromNetwork, NSURLErrorInternationalRoamingOff,
-        NSURLErrorDataNotAllowed:
+        NSURLErrorDataNotAllowed,
+        // nsurlsessiond 中途断开（后台会话特有，-997）：传输层故障，与断网同样换下一个镜像。
+        NSURLErrorBackgroundSessionWasDisconnected:
         kind = "connection"
       default:
         break
