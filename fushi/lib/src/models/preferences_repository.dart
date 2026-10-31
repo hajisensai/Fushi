@@ -4578,6 +4578,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 歌词插件来源列表的原始 JSON（解析 / 与已装插件求并见 `lyrics_provider_list.dart`）。
+  String get musicLyricsProvidersRaw =>
+      getPref('music_lyrics_providers', defaultValue: '') as String;
+
+  Future<void> setMusicLyricsProvidersRaw(String value) async {
+    await setPref('music_lyrics_providers', value);
+    notifyListeners();
+  }
+
   /// AcoustID 应用 API key（音乐刮削 §8.1）。本仓不内置任何 key；空 = AcoustID 不可用。
   String get musicAcoustidApiKey =>
       (getPref('music_acoustid_api_key', defaultValue: '') as String?) ?? '';

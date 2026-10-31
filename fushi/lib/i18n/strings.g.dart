@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 180863 (10639 per locale)
+/// Strings: 181033 (10649 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -8226,6 +8226,16 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get music_lyrics_online_hint =>
       'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  String get music_lyrics_providers_move_down => 'Move down';
+  String get music_lyrics_providers_move_up => 'Move up';
+  String get music_lyrics_providers_title => 'Lyrics providers';
   String get music_lyrics_reset_source => 'Use automatic source';
   String get music_lyrics_search_online => 'Search online lyrics';
   String get music_lyrics_show_cover => 'Show cover';
@@ -8314,6 +8324,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get music_plugins_broken =>
       'Plugin files were modified or are incomplete; reinstall it';
   String get music_plugins_cap_lyrics => 'Lyrics';
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
   String get music_plugins_cap_search => 'Search';
   String get music_plugins_cap_stream => 'Playback';
   String get music_plugins_capabilities => 'Provides';
@@ -8329,6 +8340,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Could not install the plugin: ${error}';
   String get music_plugins_install_title => 'Install this plugin?';
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   String get music_plugins_perm_network => 'Network access';
   String get music_plugins_perm_storage => 'Save data on this device';
@@ -28931,6 +28944,24 @@ class _StringsAr extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -29091,6 +29122,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -29117,6 +29150,9 @@ class _StringsAr extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -54970,6 +55006,24 @@ class _StringsDe extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -55130,6 +55184,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -55156,6 +55212,9 @@ class _StringsDe extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -81184,6 +81243,24 @@ class _StringsEs extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -81344,6 +81421,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -81370,6 +81449,9 @@ class _StringsEs extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -107477,6 +107559,24 @@ class _StringsFr extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -107637,6 +107737,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -107663,6 +107765,9 @@ class _StringsFr extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -133606,6 +133711,24 @@ class _StringsId extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -133766,6 +133889,8 @@ class _StringsId extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -133792,6 +133917,9 @@ class _StringsId extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -159686,6 +159814,24 @@ class _StringsIt extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -159846,6 +159992,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -159872,6 +160020,9 @@ class _StringsIt extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -185248,6 +185399,24 @@ class _StringsJa extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -185408,6 +185577,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -185434,6 +185605,9 @@ class _StringsJa extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -210380,6 +210554,24 @@ class _StringsKo extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -210540,6 +210732,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -210566,6 +210760,9 @@ class _StringsKo extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -236082,6 +236279,24 @@ class _StringsNl extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -236242,6 +236457,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -236268,6 +236485,9 @@ class _StringsNl extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -262226,6 +262446,24 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -262386,6 +262624,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -262412,6 +262652,9 @@ class _StringsPtBr extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -288344,6 +288587,24 @@ class _StringsRu extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -288504,6 +288765,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -288530,6 +288793,9 @@ class _StringsRu extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -314273,6 +314539,24 @@ class _StringsTh extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -314433,6 +314717,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -314459,6 +314745,9 @@ class _StringsTh extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -340189,6 +340478,24 @@ class _StringsTr extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -340349,6 +340656,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -340375,6 +340684,9 @@ class _StringsTr extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -366138,6 +366450,24 @@ class _StringsVi extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -366298,6 +366628,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -366324,6 +366656,9 @@ class _StringsVi extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -390904,6 +391239,23 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get music_lyrics_online_title => '在线歌词（LRCLIB）';
   @override
+  String get music_lyrics_providers_builtin_note => '内置，始终第一';
+  @override
+  String get music_lyrics_providers_empty => '尚未安装歌词插件';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      '歌词插件需要从 .fushiplug 文件手动安装，应用不内置任何插件。';
+  @override
+  String get music_lyrics_providers_hint => '先查 LRCLIB，再按此顺序查已启用的插件。';
+  @override
+  String get music_lyrics_providers_install_action => '安装插件';
+  @override
+  String get music_lyrics_providers_move_down => '下移';
+  @override
+  String get music_lyrics_providers_move_up => '上移';
+  @override
+  String get music_lyrics_providers_title => '歌词来源';
+  @override
   String get music_lyrics_reset_source => '恢复自动来源';
   @override
   String get music_lyrics_search_online => '搜索在线歌词';
@@ -391051,6 +391403,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => '歌词';
   @override
+  String get music_plugins_cap_lyrics_search => '歌词来源';
+  @override
   String get music_plugins_cap_search => '搜索';
   @override
   String get music_plugins_cap_stream => '播放';
@@ -391076,6 +391430,9 @@ class _StringsZhCn extends _StringsEn {
   String get music_plugins_install_title => '安装这个插件？';
   @override
   String music_plugins_installed({required Object name}) => '已安装 ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      '作为歌词来源，查歌词时此插件会收到曲目的标题、艺人、专辑与时长，并可能发送到它声明的网络域名。';
   @override
   String get music_plugins_perm_insecure_http => '不加密的 HTTP 连接';
   @override
@@ -414952,6 +415309,24 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get music_lyrics_online_title => 'Online lyrics (LRCLIB)';
   @override
+  String get music_lyrics_providers_builtin_note => 'Built in, always first';
+  @override
+  String get music_lyrics_providers_empty => 'No lyrics plugins installed';
+  @override
+  String get music_lyrics_providers_empty_hint =>
+      'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+  @override
+  String get music_lyrics_providers_hint =>
+      'LRCLIB is always asked first, then your enabled plugins in this order.';
+  @override
+  String get music_lyrics_providers_install_action => 'Install a plugin';
+  @override
+  String get music_lyrics_providers_move_down => 'Move down';
+  @override
+  String get music_lyrics_providers_move_up => 'Move up';
+  @override
+  String get music_lyrics_providers_title => 'Lyrics providers';
+  @override
   String get music_lyrics_reset_source => 'Use automatic source';
   @override
   String get music_lyrics_search_online => 'Search online lyrics';
@@ -415112,6 +415487,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get music_plugins_cap_lyrics => 'Lyrics';
   @override
+  String get music_plugins_cap_lyrics_search => 'Lyrics source';
+  @override
   String get music_plugins_cap_search => 'Search';
   @override
   String get music_plugins_cap_stream => 'Playback';
@@ -415138,6 +415515,9 @@ class _StringsZhHk extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -438199,6 +438579,22 @@ extension on _StringsEn {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -438345,6 +438741,8 @@ extension on _StringsEn {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -438370,6 +438768,8 @@ extension on _StringsEn {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -460308,6 +460708,22 @@ extension on _StringsAr {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -460454,6 +460870,8 @@ extension on _StringsAr {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -460479,6 +460897,8 @@ extension on _StringsAr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -482468,6 +482888,22 @@ extension on _StringsDe {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -482614,6 +483050,8 @@ extension on _StringsDe {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -482639,6 +483077,8 @@ extension on _StringsDe {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -504638,6 +505078,22 @@ extension on _StringsEs {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -504784,6 +505240,8 @@ extension on _StringsEs {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -504809,6 +505267,8 @@ extension on _StringsEs {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -526818,6 +527278,22 @@ extension on _StringsFr {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -526964,6 +527440,8 @@ extension on _StringsFr {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -526989,6 +527467,8 @@ extension on _StringsFr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -548967,6 +549447,22 @@ extension on _StringsId {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -549113,6 +549609,8 @@ extension on _StringsId {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -549138,6 +549636,8 @@ extension on _StringsId {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -571113,6 +571613,22 @@ extension on _StringsIt {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -571259,6 +571775,8 @@ extension on _StringsIt {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -571284,6 +571802,8 @@ extension on _StringsIt {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -593207,6 +593727,22 @@ extension on _StringsJa {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -593353,6 +593889,8 @@ extension on _StringsJa {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -593378,6 +593916,8 @@ extension on _StringsJa {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -615239,6 +615779,22 @@ extension on _StringsKo {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -615385,6 +615941,8 @@ extension on _StringsKo {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -615410,6 +615968,8 @@ extension on _StringsKo {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -637354,6 +637914,22 @@ extension on _StringsNl {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -637500,6 +638076,8 @@ extension on _StringsNl {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -637525,6 +638103,8 @@ extension on _StringsNl {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -659508,6 +660088,22 @@ extension on _StringsPtBr {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -659654,6 +660250,8 @@ extension on _StringsPtBr {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -659679,6 +660277,8 @@ extension on _StringsPtBr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -681666,6 +682266,22 @@ extension on _StringsRu {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -681812,6 +682428,8 @@ extension on _StringsRu {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -681837,6 +682455,8 @@ extension on _StringsRu {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -703789,6 +704409,22 @@ extension on _StringsTh {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -703935,6 +704571,8 @@ extension on _StringsTh {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -703960,6 +704598,8 @@ extension on _StringsTh {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -725925,6 +726565,22 @@ extension on _StringsTr {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -726071,6 +726727,8 @@ extension on _StringsTr {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -726096,6 +726754,8 @@ extension on _StringsTr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -748053,6 +748713,22 @@ extension on _StringsVi {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -748199,6 +748875,8 @@ extension on _StringsVi {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -748224,6 +748902,8 @@ extension on _StringsVi {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -770028,6 +770708,22 @@ extension on _StringsZhCn {
         return '本地没有歌词时，按标题、艺人、专辑与时长在 LRCLIB 精确匹配';
       case 'music_lyrics_online_title':
         return '在线歌词（LRCLIB）';
+      case 'music_lyrics_providers_builtin_note':
+        return '内置，始终第一';
+      case 'music_lyrics_providers_empty':
+        return '尚未安装歌词插件';
+      case 'music_lyrics_providers_empty_hint':
+        return '歌词插件需要从 .fushiplug 文件手动安装，应用不内置任何插件。';
+      case 'music_lyrics_providers_hint':
+        return '先查 LRCLIB，再按此顺序查已启用的插件。';
+      case 'music_lyrics_providers_install_action':
+        return '安装插件';
+      case 'music_lyrics_providers_move_down':
+        return '下移';
+      case 'music_lyrics_providers_move_up':
+        return '上移';
+      case 'music_lyrics_providers_title':
+        return '歌词来源';
       case 'music_lyrics_reset_source':
         return '恢复自动来源';
       case 'music_lyrics_search_online':
@@ -770172,6 +770868,8 @@ extension on _StringsZhCn {
         return '插件文件被改动或不完整，请重新安装';
       case 'music_plugins_cap_lyrics':
         return '歌词';
+      case 'music_plugins_cap_lyrics_search':
+        return '歌词来源';
       case 'music_plugins_cap_search':
         return '搜索';
       case 'music_plugins_cap_stream':
@@ -770196,6 +770894,8 @@ extension on _StringsZhCn {
         return '安装这个插件？';
       case 'music_plugins_installed':
         return ({required Object name}) => '已安装 ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return '作为歌词来源，查歌词时此插件会收到曲目的标题、艺人、专辑与时长，并可能发送到它声明的网络域名。';
       case 'music_plugins_perm_insecure_http':
         return '不加密的 HTTP 连接';
       case 'music_plugins_perm_network':
@@ -791935,6 +792635,22 @@ extension on _StringsZhHk {
         return 'When no local lyrics exist, match title, artist, album and duration on LRCLIB';
       case 'music_lyrics_online_title':
         return 'Online lyrics (LRCLIB)';
+      case 'music_lyrics_providers_builtin_note':
+        return 'Built in, always first';
+      case 'music_lyrics_providers_empty':
+        return 'No lyrics plugins installed';
+      case 'music_lyrics_providers_empty_hint':
+        return 'Lyrics plugins are installed manually from a .fushiplug file; none are bundled.';
+      case 'music_lyrics_providers_hint':
+        return 'LRCLIB is always asked first, then your enabled plugins in this order.';
+      case 'music_lyrics_providers_install_action':
+        return 'Install a plugin';
+      case 'music_lyrics_providers_move_down':
+        return 'Move down';
+      case 'music_lyrics_providers_move_up':
+        return 'Move up';
+      case 'music_lyrics_providers_title':
+        return 'Lyrics providers';
       case 'music_lyrics_reset_source':
         return 'Use automatic source';
       case 'music_lyrics_search_online':
@@ -792081,6 +792797,8 @@ extension on _StringsZhHk {
         return 'Plugin files were modified or are incomplete; reinstall it';
       case 'music_plugins_cap_lyrics':
         return 'Lyrics';
+      case 'music_plugins_cap_lyrics_search':
+        return 'Lyrics source';
       case 'music_plugins_cap_search':
         return 'Search';
       case 'music_plugins_cap_stream':
@@ -792106,6 +792824,8 @@ extension on _StringsZhHk {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':

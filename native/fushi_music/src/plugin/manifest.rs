@@ -22,6 +22,8 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     "mvStream",
     "searchBest",
     "like",
+    "lyricsSearch",
+    "lyricsFetch",
 ];
 
 /// 已知权限名。
@@ -149,6 +151,9 @@ impl Manifest {
         }
         if has_cap("like") && !has_cap("account") {
             return Err("like 能力需要同时声明 login / account（喜欢的音乐属于登录账号）".into());
+        }
+        if has_cap("lyricsSearch") != has_cap("lyricsFetch") {
+            return Err("lyricsSearch 与 lyricsFetch 能力必须同时声明".into());
         }
         if self.network.domains.len() > 32 {
             return Err("network.domains 超过 32 条".into());
@@ -300,6 +305,31 @@ mod tests {
         assert!(
             Manifest::parse(j.to_string().as_bytes()).is_ok(),
             "like 随登录能力声明"
+        );
+        // 歌词插件：lyricsSearch / lyricsFetch 成对声明，可以只声明这两个。
+        for caps in [
+            serde_json::json!(["lyricsSearch"]),
+            serde_json::json!(["lyricsFetch"]),
+            serde_json::json!(["search", "lyricsSearch"]),
+        ] {
+            j["capabilities"] = caps.clone();
+            j["searchTypes"] = serde_json::json!(["song"]);
+            assert!(
+                Manifest::parse(j.to_string().as_bytes()).is_err(),
+                "lyricsSearch / lyricsFetch 必须成对: {caps}"
+            );
+        }
+        j["capabilities"] = serde_json::json!(["lyricsSearch", "lyricsFetch"]);
+        j["searchTypes"] = serde_json::json!([]);
+        assert!(
+            Manifest::parse(j.to_string().as_bytes()).is_ok(),
+            "纯歌词插件只声明这两个能力"
+        );
+        j["capabilities"] = serde_json::json!(["search", "lyricsSearch", "lyricsFetch"]);
+        j["searchTypes"] = serde_json::json!(["song"]);
+        assert!(
+            Manifest::parse(j.to_string().as_bytes()).is_ok(),
+            "歌词能力可与其他能力共存"
         );
         let mut j = base();
         j["unknownField"] = serde_json::json!(1);

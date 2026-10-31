@@ -11,6 +11,8 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
+    show MusicLyricsSource;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -18,6 +20,19 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+
+/// 选来源面板里一份歌词候选的标题：插件来源（标签是插件 id）标出是平台曲目自带歌词
+/// （`lyrics` 能力）还是歌词插件按标题 / 艺人搜到的（`lyricsSearch` 能力）——同一个插件
+/// 两种能力都有时，两份候选靠这个区分。
+String musicLyricsCandidateTitle(String source, String label) {
+  if (MusicLyricsSource.isPlugin(source)) {
+    return '$label · ${musicPluginCapabilityLabel('lyrics')}';
+  }
+  if (MusicLyricsSource.isLyricsPlugin(source)) {
+    return '$label · ${musicPluginCapabilityLabel('lyricsSearch')}';
+  }
+  return label;
+}
 
 /// 能力 → 用户看得懂的名字。
 String musicPluginCapabilityLabel(String capability) => switch (capability) {
@@ -27,6 +42,7 @@ String musicPluginCapabilityLabel(String capability) => switch (capability) {
   'artist' => t.music_section_artists,
   'stream' => t.music_plugins_cap_stream,
   'lyrics' => t.music_plugins_cap_lyrics,
+  'lyricsSearch' || 'lyricsFetch' => t.music_plugins_cap_lyrics_search,
   _ => capability,
 };
 
@@ -42,6 +58,50 @@ String musicPluginPermissionLabel(String permission) => switch (permission) {
 String musicPluginErrorText(Object error) => musicPluginErrorSummary(
   error is MusicPluginException ? error.message : '$error',
 );
+
+/// 选 `.fushiplug` 文件 → 校验并展示清单 / 权限 / 签名 → 用户确认后安装。
+/// 插件音源设置页与歌词来源页共用同一条安装流程。返回是否真的装上了。
+Future<bool> pickAndInstallMusicPlugin(
+  BuildContext context,
+  MusicPluginManager manager,
+) async {
+  final FilePickerResult? picked = await pickFilesByExtensions(
+    context: context,
+    allowedExtensions: const <String>['fushiplug', 'zip'],
+    withData: true,
+  );
+  final PlatformFile? file = picked?.files.firstOrNull;
+  if (file == null) return false;
+  try {
+    final Uint8List bytes = file.bytes ?? await File(file.path!).readAsBytes();
+    final MusicPluginPackageInfo info = await manager.inspect(bytes);
+    final bool signerChanged = await manager.signerChanged(info);
+    if (!context.mounted) return false;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.music_plugins_install_title,
+      icon: FushiIcons.browserExtension,
+      confirmLabel: t.music_plugins_install_action,
+      content: MusicPluginPackageDetails(
+        info: info,
+        signerChanged: signerChanged,
+      ),
+    );
+    if (!ok) return false;
+    await manager.install(bytes, info.digest);
+    FushiToast.show(
+      msg: t.music_plugins_installed(name: info.manifest.name),
+      severity: ToastSeverity.success,
+    );
+    return true;
+  } on Object catch (e) {
+    FushiToast.show(
+      msg: t.music_plugins_install_failed(error: musicPluginErrorText(e)),
+      severity: ToastSeverity.error,
+    );
+    return false;
+  }
+}
 
 class MusicPluginSettingsBody extends StatefulWidget {
   const MusicPluginSettingsBody({super.key, required this.appModel});
@@ -63,42 +123,9 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   });
 
   Future<void> _install() async {
-    final FilePickerResult? picked = await pickFilesByExtensions(
-      context: context,
-      allowedExtensions: const <String>['fushiplug', 'zip'],
-      withData: true,
-    );
-    final PlatformFile? file = picked?.files.firstOrNull;
-    if (file == null) return;
     setState(() => _busy = true);
     try {
-      final Uint8List bytes =
-          file.bytes ?? await File(file.path!).readAsBytes();
-      final MusicPluginPackageInfo info = await _manager.inspect(bytes);
-      final bool signerChanged = await _manager.signerChanged(info);
-      if (!mounted) return;
-      final bool ok = await showFushiConfirmDialog(
-        context: context,
-        title: t.music_plugins_install_title,
-        icon: FushiIcons.browserExtension,
-        confirmLabel: t.music_plugins_install_action,
-        content: MusicPluginPackageDetails(
-          info: info,
-          signerChanged: signerChanged,
-        ),
-      );
-      if (!ok) return;
-      await _manager.install(bytes, info.digest);
-      FushiToast.show(
-        msg: t.music_plugins_installed(name: info.manifest.name),
-        severity: ToastSeverity.success,
-      );
-      _reload();
-    } on Object catch (e) {
-      FushiToast.show(
-        msg: t.music_plugins_install_failed(error: musicPluginErrorText(e)),
-        severity: ToastSeverity.error,
-      );
+      if (await pickAndInstallMusicPlugin(context, _manager)) _reload();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -215,6 +242,9 @@ class _PluginTile extends StatelessWidget {
                   t.music_plugins_version(version: m.version),
                   m.id,
                   if (m.author != null) m.author!,
+                  // 纯歌词插件（没有任何音乐来源能力）标一个小标签。
+                  if (m.providesLyricsSource && !m.providesMusicSource)
+                    t.music_plugins_cap_lyrics_search,
                 ].join(' · '),
           value: plugin.enabled && plugin.info != null,
           onChanged: plugin.info == null ? null : onToggle,
@@ -318,6 +348,23 @@ class MusicPluginPackageDetails extends StatelessWidget {
           Text(t.music_plugins_domains, style: label),
           Text(m.networkDomains.join('\n'), style: body),
         ],
+        // 歌词插件装上即默认启用（mergeLyricsProviders）：这里是启用前最后一道告知——它会收到
+        // 每首查歌词的曲目信息，并可发往上面列出的域名。
+        if (m.providesLyricsSource)
+          Row(
+            key: const ValueKey<String>('music-plugin-lyrics-privacy'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spacing.gap * 0.5,
+            children: <Widget>[
+              const FushiIcon(FushiIcons.info, size: 18),
+              Expanded(
+                child: Text(
+                  t.music_plugins_lyrics_privacy,
+                  style: context.fushiType.bodySmall,
+                ),
+              ),
+            ],
+          ),
         SizedBox(height: tokens.spacing.gap * 0.5),
         Row(
           spacing: tokens.spacing.gap * 0.5,
