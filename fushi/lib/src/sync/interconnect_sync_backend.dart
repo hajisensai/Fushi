@@ -70,16 +70,10 @@ Future<FushiClientUrl> resolveReachableFushiCandidate(
   SyncAuthError? authError;
   for (final FushiClientUrl candidate in candidates) {
     if (!candidate.enabled) continue;
-    final String? token = interconnectTokenFor(candidate, fallbackToken);
-    if (token == null) continue;
-    final String? fp = candidate.fingerprintSha256;
     try {
-      // https 端点（带指纹）的可达性必须用 pinned client 探测——裸 [probe] 会因自签
-      // TLS 握手失败把它误判不可达。明文 http（无指纹）仍走可注入的 [probe] 测试缝。
-      final bool reachable = (fp != null && fp.isNotEmpty)
-          ? await _pinnedReachabilityProbe(candidate.url, token, fp)
-          : await probe(candidate.url, token);
-      if (reachable) return candidate;
+      if (await probeFushiCandidate(candidate, fallbackToken, probe)) {
+        return candidate;
+      }
     } on SyncAuthError catch (e) {
       // 这台拒了我的凭据 —— 记下原因，继续问下一台。
       authError = e;
@@ -89,6 +83,25 @@ Future<FushiClientUrl> resolveReachableFushiCandidate(
   // BUG-1693：类型化，让错误文案层给出「配对设备无法连接（对端可能未运行
   // Fushi）」的可操作提示，而不是裸英文原文上屏。
   throw SyncPeerUnreachableError();
+}
+
+/// 探测**一个**候选地址：用它自己那份凭据（[interconnectTokenFor]），https（带指纹）
+/// 走 pinned client，明文 http 走可注入的 [probe]。可达 → true；拿不出凭据或连不上 →
+/// false；凭据被拒 → 抛 [SyncAuthError]。[resolveReachableFushiCandidate] 的逐候选
+/// 步骤与 [InterconnectSyncBackend.probeHostReachability] 复核已选地址共用这一处。
+Future<bool> probeFushiCandidate(
+  FushiClientUrl candidate,
+  String fallbackToken,
+  FushiProbe probe,
+) async {
+  final String? token = interconnectTokenFor(candidate, fallbackToken);
+  if (token == null) return false;
+  final String? fp = candidate.fingerprintSha256;
+  // https 端点（带指纹）的可达性必须用 pinned client 探测——裸 [probe] 会因自签
+  // TLS 握手失败把它误判不可达。明文 http（无指纹）仍走可注入的 [probe] 测试缝。
+  return (fp != null && fp.isNotEmpty)
+      ? _pinnedReachabilityProbe(candidate.url, token, fp)
+      : probe(candidate.url, token);
 }
 
 /// TODO-961 M1: https 候选地址的固定 pinned 可达性探测（不经可注入的测试缝，因为
@@ -372,6 +385,11 @@ class InterconnectSyncBackend extends SyncBackend
   /// 已选定的那台 host 的身份（[_ensureResolved] 写）。
   String? _activeHostIdentity;
 
+  /// [_ensureResolved] 选中的那个候选（地址 + 指纹 + 自带凭据）。只在
+  /// [_sessionResolved] 为真时有意义：[probeHostReachability] 用它原地复核已选地址，
+  /// 而不是把会话置脏重跑全候选选路。
+  FushiClientUrl? _activeCandidate;
+
   /// 当前会话所连 host 的稳定身份：配对时记下的 hostId（同一台 host 的局域网 / 公网 / P2P
   /// 地址共用它）；老条目没有 hostId 时退到所连地址。复习（SRS）同步按它区分同步目录
   /// （`fushi/lib/src/srs/srs_directory_key.dart`）。
@@ -541,6 +559,7 @@ class InterconnectSyncBackend extends SyncBackend
     }
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _activeHostIdentity = chosen.hostId ?? normalized;
+    _activeCandidate = chosen;
     _sessionResolved = true;
     final SyncRepository? repo = _learnRepo;
     if (repo != null) {
@@ -600,6 +619,7 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <FushiClientUrl>[];
     _token = null;
     _sessionResolved = false;
+    _activeCandidate = null;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
     await repo.updateFushiClientUrls(
@@ -1646,12 +1666,34 @@ class InterconnectSyncBackend extends SyncBackend
   /// 提供，所有者 2026-10-31 拍板）。
   ///
   /// 不信上一次「已解析」的会话：对端可能在会话解析之后才掉线 / 睡眠 / 换网，旧会话
-  /// 要等下一次真实请求失败才会被 [WebDavOps.onConnectivityError] 置脏。这里先把会话
-  /// 置脏再走一遍与所有网络操作相同的选路（[_ensureResolved]：组内并发 ping、核对
-  /// hostId、按候选凭据探测），所以结论与随后那次删除请求打到的是同一台 host。
-  /// 选中的地址没变时不重建连接句柄、不清目录缓存，对正在进行的下载无副作用。
+  /// 要等下一次真实请求失败才会被 [WebDavOps.onConnectivityError] 置脏。所以会话已
+  /// 解析时先**原地复核**已选地址（与选路同一个逐候选探测 [probeFushiCandidate]，
+  /// 真发一次带凭据的请求）：答得上就是可达，会话原封不动——随后那次删除请求打到的
+  /// 正是这台 host。
+  ///
+  /// 复核期间**不**把会话置脏：菜单每打开一次都探一次，置脏会让探测窗口里并发的
+  /// 每个请求（正在跑的同步 / 下载的下一个分片）各自重跑一遍全候选选路，选路结果
+  /// 一换（同一台 host 的局域网 / 公网地址谁先应答）还会重建连接句柄、清目录缓存。
+  /// 只有已选地址确实答不上（或凭据被拒）才置脏，走与所有网络操作相同的选路
+  /// （[_ensureResolved]：组内并发 ping、核对 hostId、按候选凭据探测）换到别的地址
+  /// 或判离线。
   Future<RemoteSourceReachability> probeHostReachability() async {
-    _sessionResolved = false;
+    final FushiClientUrl? active = _sessionResolved ? _activeCandidate : null;
+    if (active != null) {
+      bool alive;
+      try {
+        alive = await probeFushiCandidate(active, _token ?? '', _probe);
+      } on SyncAuthError {
+        // 这台拒了已选地址的凭据：交给下面的全候选选路判定（别的地址可能带着
+        // 另一份有效凭据；全被拒时它抛 SyncAuthError → credentialRejected）。
+        alive = false;
+      }
+      if (alive) return RemoteSourceReachability.reachable;
+      // 复核期间会话可能已被别的操作换到了另一个地址：那份新会话不归这次探测作废。
+      if (_sessionResolved && identical(_activeCandidate, active)) {
+        _sessionResolved = false;
+      }
+    }
     try {
       await _ensureResolved();
       return RemoteSourceReachability.reachable;
