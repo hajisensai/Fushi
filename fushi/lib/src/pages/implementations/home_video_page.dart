@@ -636,6 +636,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       const <String, VideoMetadataWorkRow>{};
   Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
       const <int, List<VideoMetadataImageRow>>{};
+
+  /// 每个本地视频文件绑定的分集与各集刮削图（`episodeId` 归属），只收至少一集
+  /// 带图的文件；主卡按续播点挑集（[_episodeStillProvider]）。
+  Map<String, List<VideoFileEpisodeStills>> _fileEpisodesByBook =
+      const <String, List<VideoFileEpisodeStills>>{};
   Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
   Set<String> _localExtraBookUids = const <String>{};
 
@@ -1309,6 +1314,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         .getAllVideoMetadataImages();
     final Future<List<VideoMetadataEpisodeRow>> metadataEpisodesF = db
         .getAllVideoMetadataEpisodes();
+    final Future<List<VideoMetadataSeasonRow>> metadataSeasonsF = db
+        .getAllVideoMetadataSeasons();
     final Future<List<VideoMetadataExtraRow>> metadataExtrasF = db
         .getAllVideoMetadataExtras();
     final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
@@ -1325,6 +1332,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       metadataWorksF,
       metadataImagesF,
       metadataEpisodesF,
+      metadataSeasonsF,
       metadataExtrasF,
       mediaImagesF,
     ]);
@@ -1384,15 +1392,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         };
     final Map<int, List<VideoMetadataImageRow>> metadataImagesByWork =
         <int, List<VideoMetadataImageRow>>{};
+    final Map<int, List<VideoMetadataImageRow>> metadataImagesByEpisode =
+        <int, List<VideoMetadataImageRow>>{};
     for (final VideoMetadataImageRow image in await metadataImagesF) {
       if (image.workId case final int workId) {
         (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
       }
+      if (image.episodeId case final int episodeId) {
+        (metadataImagesByEpisode[episodeId] ??= <VideoMetadataImageRow>[]).add(
+          image,
+        );
+      }
     }
+    final Map<int, int> seasonNumberById = <int, int>{
+      for (final VideoMetadataSeasonRow season in await metadataSeasonsF)
+        season.id: season.seasonNumber,
+    };
+    // 每个文件绑定的全部分集（含没有剧照的——一文件多集时按片长定位续播点要完整
+    // 的集序），主卡渲染时按续播点挑那一集的剧照（[resumedFileEpisodeStills]）。
+    final Map<String, List<VideoFileEpisodeStills>> fileEpisodesByBook =
+        <String, List<VideoFileEpisodeStills>>{};
     // 一文件多集（v110）时同一文件有多条分集行：时长按集累加。
     final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
     for (final VideoMetadataEpisodeRow episode in await metadataEpisodesF) {
       if (episode.bookUid case final String uid) {
+        (fileEpisodesByBook[uid] ??= <VideoFileEpisodeStills>[]).add(
+          VideoFileEpisodeStills(
+            episodeId: episode.id,
+            seasonNumber: seasonNumberById[episode.seasonId],
+            episodeNumber: episode.episodeNumber,
+            runtimeMinutes: episode.runtimeMinutes,
+            stills:
+                metadataImagesByEpisode[episode.id] ??
+                const <VideoMetadataImageRow>[],
+          ),
+        );
         if (episode.runtimeMinutes case final int minutes) {
           runtimeMinutesByBookUid[uid] =
               (runtimeMinutesByBookUid[uid] ?? 0) + minutes;
@@ -1444,6 +1478,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _metadataWorkByCollection = metadataWorkByCollection;
       _metadataWorkByBook = metadataWorkByBook;
       _metadataImagesByWork = metadataImagesByWork;
+      _fileEpisodesByBook = <String, List<VideoFileEpisodeStills>>{
+        for (final MapEntry<String, List<VideoFileEpisodeStills>> e
+            in fileEpisodesByBook.entries)
+          // 没有任何一集带图的文件不进表：主卡直接走作品图链。
+          if (e.value.any((VideoFileEpisodeStills ep) => ep.stills.isNotEmpty))
+            e.key: e.value,
+      };
       _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
       _localExtraBookUids = localExtraBookUids;
       _subscribedCollectionIds = subscribedCollectionIds;
@@ -1532,6 +1573,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ? const <String>['backdrop', 'landscape', 'thumb']
         : const <String>['landscape', 'thumb', 'backdrop'],
   );
+
+  /// 主卡横图的第一选择：续播点所在那一集自己的刮削剧照（thumb，本地文件优先，
+  /// 其次远程 URL）；一文件多集时按 [resumedFileEpisodeStills] 定位那一集。
+  /// 没有剧照（未刮削 / 刮削源不给）返回 null，由调用方回落到原有选图链。
+  ImageProvider? _episodeStillProvider(VideoBookRow book) {
+    final List<VideoFileEpisodeStills>? episodes =
+        _fileEpisodesByBook[book.bookUid];
+    if (episodes == null) return null;
+    for (final VideoMetadataImageRow row in resumedFileEpisodeStills(
+      episodes,
+      positionMs: book.lastPositionMs,
+    )) {
+      final ImageProvider? local = _localFileCover(row.localPath);
+      if (local != null) return local;
+      if (row.remoteUrl.isNotEmpty) return AppCachedHttpImage(row.remoteUrl);
+    }
+    return null;
+  }
 
   ImageProvider? _canonicalWorkImageProvider(
     VideoMetadataWorkRow? work,
@@ -6173,6 +6232,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
       poster: _bookPosterProvider(book),
       image: ({required bool overlay}) =>
+          _episodeStillProvider(book) ??
           _mediaImageProvider(
             _mediaImagesByBookUid[book.bookUid],
             _heroImageKinds(overlay: overlay),
@@ -6236,6 +6296,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : null,
       poster: _collectionPosterProvider(collection, members, target),
       image: ({required bool overlay}) =>
+          (target.local == null
+              ? null
+              : _episodeStillProvider(target.local!)) ??
           _mediaImageProvider(
             _mediaImagesByCollection[collection.id],
             _heroImageKinds(overlay: overlay),
