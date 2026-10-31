@@ -200,11 +200,7 @@ class _Fixture {
       profileUid: kProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => clock[0],
-        monotonicMs: () => clock[0],
-        bootId: 'b',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => clock[0], bootId: 'b'),
     );
     return _Fixture._(
       store,
@@ -451,7 +447,6 @@ void main() {
       final SrsAnswerPreview preview = await f.store.preview(next!);
       // 这次是按 R 进的队：日志记 rwkv（统计据此区分）；间隔与记忆状态仍是 FSRS-7 算的。
       expect(preview.algorithm, SrsAlgorithm.rwkv);
-      expect(preview.rwkvUnavailable, isFalse);
       expect(preview.params, hasLength(SrsAlgorithm.fsrs7.paramCount));
 
       final SrsReviewLog log = await f.store.answer(next, 3);
@@ -473,7 +468,6 @@ void main() {
       expect(backend.replayedCards, hasLength(3));
       final SrsAnswerPreview again0 = await f.store.preview(next);
       expect(again0.algorithm, SrsAlgorithm.rwkv);
-      expect(again0.rwkvUnavailable, isFalse);
 
       // 关闭存快照；新服务从快照恢复，不重建。
       await service.close();
@@ -546,31 +540,38 @@ void main() {
       await service.close();
     });
 
-    test('权重没下载、下载失败：按存下的到期日排队并标出来，不碰网络', () async {
-      final _Fixture f = await _Fixture.create();
-      final List<String> cards = await f.cards(1);
-      await f.graduate(cards);
-      final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
-      final SrsRwkvService service = f.service(backend, ready: false);
-      f.store.rwkv = service;
-      final SrsAnswerPreview preview = await f.store.preview(cards.single);
-      // 没按 R 排：日志记 FSRS-7。
-      expect(preview.algorithm, SrsAlgorithm.fsrs7);
-      expect(preview.rwkvUnavailable, isTrue);
-      // 还没到 FSRS 的到期日：照到期日排就没有复习卡（RWKV 的 R 再低也用不上）。
-      f.advance(kDay);
-      expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
-      for (int i = 0; i < 500; i++) {
-        if (service.status.phase == SrsRwkvPhase.failed) break;
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-      }
-      expect(service.status.phase, SrsRwkvPhase.failed);
-      expect(backend.queries, 0);
-      // 过了 FSRS 的到期日就照常出。
-      await f.advancePastDue(cards.single);
-      expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
-      await service.close();
-    });
+    test(
+      '权重没下载、下载失败：RWKV 牌组的复习卡不出、标 rwkvPending，绝不退回 FSRS-7 到期日，不碰网络',
+      () async {
+        final _Fixture f = await _Fixture.create();
+        final List<String> cards = await f.cards(1);
+        await f.graduate(cards);
+        final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
+        final SrsRwkvService service = f.service(backend, ready: false);
+        f.store.rwkv = service;
+        // 日志的 alg 只认牌组算法：RWKV 牌组就是 rwkv，不会因为 RWKV 没就绪记成 FSRS-7。
+        final SrsAnswerPreview preview = await f.store.preview(cards.single);
+        expect(preview.algorithm, SrsAlgorithm.rwkv);
+        f.advance(kDay);
+        SrsStudyState? s = await f.store.studyState(f.store.defaultDeckId);
+        expect(s!.next, isNull);
+        expect(s.rwkvPending, isTrue);
+        for (int i = 0; i < 500; i++) {
+          if (service.status.phase == SrsRwkvPhase.failed) break;
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+        expect(service.status.phase, SrsRwkvPhase.failed);
+        expect(backend.queries, 0);
+        // 过了 FSRS 存下的到期日也不出：那是回退到 FSRS-7 排程（#时钟偏差反馈：不可接受）。
+        await f.advancePastDue(cards.single);
+        expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
+        s = await f.store.studyState(f.store.defaultDeckId);
+        expect(s!.next, isNull);
+        expect(s.rwkvPending, isTrue);
+        expect(s.summary.reviewCount, 0);
+        await service.close();
+      },
+    );
 
     test('FSRS 牌组不碰 RWKV', () async {
       final _Fixture f = await _Fixture.create();
@@ -583,7 +584,6 @@ void main() {
       await service.start();
       final SrsAnswerPreview preview = await f.store.preview(cards.single);
       expect(preview.algorithm, SrsAlgorithm.fsrs7);
-      expect(preview.rwkvUnavailable, isFalse);
       await f.advancePastDue(cards.single); // 过了 FSRS 的到期日
       expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
       expect(backend.queries, 0);
@@ -662,7 +662,6 @@ void main() {
       expect(backend.unappends, 1);
       expect(backend.resets, 1);
       expect(backend.scoredRows, scored + 1);
-      expect((await f.store.preview(b)).rwkvUnavailable, isFalse);
 
       // 再撤 a：它现在又是撤销日志的最近一条。
       expect(await f.store.undo(a, la.id), isTrue);

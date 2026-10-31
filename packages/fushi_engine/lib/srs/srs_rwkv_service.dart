@@ -30,8 +30,8 @@
 /// - **取数**：回放行（保留评分、card_type、间隔，规则同上游 kuma3，见 native/fushi_rwkv/README.md）、
 ///   日志指纹与尾巴都由 Rust 在 srs.db 上直读算出（native/fushi_fsrs/src/projection.rs、
 ///   src/store/projections.rs），日志不经 Dart；这里只编排。
-/// - 没准备好（权重没下载 / 正在重建 / 出错）时 [instantRetrievability] 返回 null，调用方按存下的
-///   到期日排队并在界面上说明（`SrsAnswerPreview.rwkvUnavailable`）。
+/// - 没准备好（权重没下载 / 正在重建 / 出错）时 [instantRetrievability] 返回 null，调用方这一次不出 RWKV
+///   牌组的复习卡、等就绪（`SrsStudyState.rwkvPending`），不退回按 FSRS-7 存下的到期日排队。
 ///
 /// 已知近似：卡片换牌组、预设归属变化不触发重建（上游 kuma3 把它们当改写历史）；这类变化在下次
 /// 全量重建（日志指纹变了、快照失效、换模型）时才进入状态。
