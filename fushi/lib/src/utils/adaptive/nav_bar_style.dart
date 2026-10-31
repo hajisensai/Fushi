@@ -4,8 +4,9 @@ enum AdaptiveNavBarStyle {
   flat('flat'),
 
   // 以下两种是「放不下的入口怎么露出来」的交互原型（2026-10-23，设计稿见
-  // fushi/build/bottom_nav_design/divergent.html），只接 MD3 悬浮胶囊；
-  // Apple 胶囊遇到它们按分页滑动画。实现见 `nav_overflow/`。
+  // fushi/build/bottom_nav_design/divergent.html）。MD3 悬浮胶囊与 Apple 胶囊
+  // 都画（Apple 2026-10-30 接上，同一套交互、Apple 配色与 lens；此前 Apple
+  // 回落「分页滑动」，那条回落路径已删）。实现见 `nav_overflow/`。
   //
   // 「分页滑动」（pager）与「圆柱滚筒」（drum）两种 MD3 样式已于 2026-10-25
   // 删除（用户：相机模式条吸收滚筒的宽视野与底标后，两者都砍掉）；落过库的
@@ -18,7 +19,7 @@ enum AdaptiveNavBarStyle {
   /// 多边形 + 底标，放不下时跟手横拨、两端渐隐提示还有更多。
   modeStrip('mode_strip');
 
-  /// 是否是 `nav_overflow/` 里的交互原型之一（只 MD3 悬浮胶囊画）。
+  /// 是否是 `nav_overflow/` 里的交互原型之一（MD3 与 Apple 胶囊都画）。
   bool get isOverflowVariant => switch (this) {
     flat => false,
     dial || modeStrip => true,
@@ -27,7 +28,8 @@ enum AdaptiveNavBarStyle {
   const AdaptiveNavBarStyle(this.prefValue);
 
   /// 出厂默认：相机模式条（2026-10-23 用户拍板「相机模式条作为默认样式」；
-  /// 此前 2026-10-16 起是分页滑动）。Apple 胶囊没接原型，按分页滑动画。
+  /// 此前 2026-10-16 起是分页滑动）。Apple 设计系统同样默认相机模式条
+  /// （2026-10-30 用户拍板）。
   ///
   /// 偏好是「缺省即默认」：从没写过 `nav_bar_style` 的安装（含升级上来的
   /// 老用户）随之变成相机模式条；显式选过的已落库，保持原选择。

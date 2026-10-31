@@ -3,6 +3,8 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
@@ -41,6 +43,14 @@ const double _kDialItemSize = 52;
 /// 转盘打开期间指针对准的项每换一次就轻震一次（按住旋钮横拖、画圈、方向键
 /// 与吸附动画经过的每一格都算）。正对指针的项背后是它专属的 M3E 多边形
 /// （[navShapeOf]），转动时由圆连续形变过去。
+///
+/// Apple 设计系统（2026-10-30）：同一套交互；盘面是 Apple 悬浮面的系统材质
+/// 实色 + 发丝描边，对准项与旋钮中心是强调色实底圆、名字气泡是强调色胶囊，
+/// 不画 M3E 多边形（见 [NavOverflowPalette]）。胶囊里的固定格由宿主的
+/// [NavOverflowSpec.cellBuilder] 画（Apple 即标签栏同款 lens）。
+///
+/// [NavOverflowSpec.focusIdPrefix] 非空时旋钮登记成 `<前缀>-dial` 焦点目标，
+/// 手柄方向键能从固定格走到它（Enter / A 打开转盘）。
 class NavDialBar extends StatefulWidget {
   const NavDialBar({super.key, required this.spec});
 
@@ -368,7 +378,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
   }
 
   Widget _buildKnob(BuildContext context, int pinned) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final NavOverflowPalette palette = NavOverflowPalette.of(context);
     final int slot = _currentSlot;
     // 当前页藏在转盘里（没平铺出来）时，旋钮中心换成当前项图标高亮。
     final AdaptiveNavItem? hiddenCurrent = slot >= pinned
@@ -379,7 +389,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
         MaterialLocalizations.of(context).showMenuTooltip;
     final double dotTurns = slot >= 0 && _count > 0 ? slot / _count : 0;
 
-    return Semantics(
+    final Widget knob = Semantics(
       button: true,
       label: tooltip,
       child: FushiTooltip(
@@ -423,12 +433,12 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                           ),
                     curve: FushiSpringCurve.spatial,
                     child: _KnobFace(
-                      scheme: scheme,
+                      palette: palette,
                       dotTurns: dotTurns,
                       focused: _focused,
                       showDot: slot >= 0 && hiddenCurrent == null,
                       counterTurns: -(nudge + follow),
-                      centerShape: hiddenCurrent == null
+                      centerShape: hiddenCurrent == null || !palette.polygons
                           ? null
                           : navShapeOf(_spec.items, _spec.currentIndex),
                       center: hiddenCurrent == null
@@ -436,7 +446,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                           : FushiIcon(
                               hiddenCurrent.selectedIcon ?? hiddenCurrent.icon,
                               size: 16,
-                              color: scheme.onTertiary,
+                              color: palette.onAccent,
                             ),
                     ),
                   );
@@ -447,13 +457,20 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
         ),
       ),
     );
+    final FushiFocusId? focusId = _spec.dialFocusId;
+    if (focusId == null) return knob;
+    return FushiFocusRegistration(
+      id: focusId,
+      focusNode: _knobFocus,
+      child: knob,
+    );
   }
 
   // ---------------------------------------------------------------------------
   // 上层：遮罩 + 半圆转盘 + 指针 + 名字
 
   Widget _buildOverlay(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final NavOverflowPalette palette = NavOverflowPalette.of(context);
     final Size screen = MediaQuery.sizeOf(context);
     final double outerR = math.min(
       240,
@@ -481,7 +498,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                     behavior: HitTestBehavior.opaque,
                     onTap: _closeDial,
                     child: ColoredBox(
-                      color: scheme.scrim.withValues(alpha: 0.36 * fade),
+                      color: palette.scrim.withValues(alpha: 0.36 * fade),
                     ),
                   ),
                 ),
@@ -499,7 +516,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                         child: Transform.scale(
                           scale: lerpDouble(0.25, 1, rise) ?? 1,
                           child: _buildDial(
-                            scheme: scheme,
+                            palette: palette,
                             outerR: outerR,
                             ringR: ringR,
                             center: center,
@@ -521,7 +538,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                         child: _DialLabel(
                           key: ValueKey<int>(top),
                           label: topItem.label,
-                          scheme: scheme,
+                          palette: palette,
                         ),
                       ),
                     ),
@@ -536,7 +553,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
   }
 
   Widget _buildDial({
-    required ColorScheme scheme,
+    required NavOverflowPalette palette,
     required double outerR,
     required double ringR,
     required Offset center,
@@ -563,10 +580,10 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
           height: _kDialItemSize,
           child: _DialItem(
             item: _spec.item(index),
-            shape: navShapeOf(_spec.items, index),
+            shape: palette.polygons ? navShapeOf(_spec.items, index) : null,
             proximity: proximity,
             current: index == _spec.currentIndex,
-            scheme: scheme,
+            palette: palette,
             onTap: () => _selectSlot(k),
           ),
         ),
@@ -582,7 +599,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
               shape: BoxShape.circle,
               boxShadow: <BoxShadow>[
                 BoxShadow(
-                  color: scheme.shadow.withValues(alpha: 0.22),
+                  color: palette.shadow.withValues(alpha: 0.22),
                   blurRadius: 24,
                   offset: const Offset(0, -2),
                 ),
@@ -604,8 +621,9 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                   Positioned.fill(
                     child: CustomPaint(
                       painter: _DialPlatePainter(
-                        plate: scheme.tertiaryContainer,
-                        tick: scheme.onTertiaryContainer,
+                        plate: palette.plate,
+                        edge: palette.plateEdge,
+                        tick: palette.content,
                         ringR: ringR,
                         tickTurns: -rotation * step / 360,
                       ),
@@ -617,18 +635,18 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
             ),
           ),
         ),
-        // 顶端指针（菱形）。
+        // 顶端指针：MD3 菱形；Apple 一枚强调色圆点。
         Positioned(
           left: outerR - 7,
           top: 3,
           child: Transform.rotate(
-            angle: math.pi / 4,
+            angle: palette.apple ? 0 : math.pi / 4,
             child: Container(
               width: 14,
               height: 14,
               decoration: BoxDecoration(
-                color: scheme.tertiary,
-                borderRadius: BorderRadius.circular(3),
+                color: palette.accent,
+                borderRadius: BorderRadius.circular(palette.apple ? 7 : 3),
               ),
             ),
           ),
@@ -641,7 +659,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
 /// 胶囊里的小旋钮：刻度圆环 + 指示点（+ 当前页藏在转盘里时的中心高亮）。
 class _KnobFace extends StatelessWidget {
   const _KnobFace({
-    required this.scheme,
+    required this.palette,
     required this.dotTurns,
     required this.focused,
     required this.showDot,
@@ -650,7 +668,7 @@ class _KnobFace extends StatelessWidget {
     this.centerShape,
   });
 
-  final ColorScheme scheme;
+  final NavOverflowPalette palette;
 
   /// 指示点所在方位（圈），对应当前页在转盘上的位置。
   final double dotTurns;
@@ -661,7 +679,8 @@ class _KnobFace extends StatelessWidget {
   final double counterTurns;
   final Widget? center;
 
-  /// 中心高亮的形状：当前项的专属多边形（与侧栏、底栏同一套）。
+  /// 中心高亮的形状：当前项的专属多边形（与侧栏、底栏同一套）；null = 圆
+  /// （Apple）。
   final RoundedPolygon? centerShape;
 
   @override
@@ -676,8 +695,8 @@ class _KnobFace extends StatelessWidget {
           Positioned.fill(
             child: CustomPaint(
               painter: _KnobTicksPainter(
-                color: scheme.onTertiaryContainer,
-                focusColor: focused ? scheme.tertiary : null,
+                color: palette.content,
+                focusColor: focused ? palette.accent : null,
               ),
             ),
           ),
@@ -691,7 +710,7 @@ class _KnobFace extends StatelessWidget {
                     width: 9,
                     height: 9,
                     decoration: BoxDecoration(
-                      color: scheme.tertiary,
+                      color: palette.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -706,10 +725,10 @@ class _KnobFace extends StatelessWidget {
                 height: 26,
                 alignment: Alignment.center,
                 decoration: ShapeDecoration(
-                  color: scheme.tertiary,
-                  shape: MaterialShapeBorder(
-                    shape: centerShape ?? MaterialShapes.circle,
-                  ),
+                  color: palette.accent,
+                  shape: centerShape == null
+                      ? const CircleBorder()
+                      : MaterialShapeBorder(shape: centerShape!),
                 ),
                 child: centerGlyph,
               ),
@@ -768,12 +787,16 @@ class _KnobTicksPainter extends CustomPainter {
 class _DialPlatePainter extends CustomPainter {
   const _DialPlatePainter({
     required this.plate,
+    required this.edge,
     required this.tick,
     required this.ringR,
     required this.tickTurns,
   });
 
   final Color plate;
+
+  /// 盘面外沿的发丝描边（Apple 悬浮面同款；MD3 为 null 不画）。
+  final Color? edge;
   final Color tick;
   final double ringR;
   final double tickTurns;
@@ -792,6 +815,17 @@ class _DialPlatePainter extends CustomPainter {
       ..addOval(Rect.fromCircle(center: c, radius: bandInner));
     canvas.drawPath(band, fill);
     canvas.drawCircle(c, hubR, Paint()..color = plate.withValues(alpha: 0.86));
+    final Color? edgeColor = edge;
+    if (edgeColor != null) {
+      canvas.drawCircle(
+        c,
+        outerR - 0.25,
+        Paint()
+          ..color = edgeColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.5,
+      );
+    }
 
     final Paint tickPaint = Paint()
       ..color = tick.withValues(alpha: 0.35)
@@ -814,6 +848,7 @@ class _DialPlatePainter extends CustomPainter {
   @override
   bool shouldRepaint(_DialPlatePainter old) =>
       old.plate != plate ||
+      old.edge != edge ||
       old.tick != tick ||
       old.ringR != ringR ||
       old.tickTurns != tickTurns;
@@ -826,42 +861,47 @@ class _DialItem extends StatelessWidget {
     required this.shape,
     required this.proximity,
     required this.current,
-    required this.scheme,
+    required this.palette,
     required this.onTap,
   });
 
   final AdaptiveNavItem item;
 
-  /// 该项的专属多边形：正对指针时背后画成它，离开时连续形变回圆。
-  final RoundedPolygon shape;
+  /// 该项的专属多边形：正对指针时背后画成它，离开时连续形变回圆。null =
+  /// 恒为圆（Apple）。
+  final RoundedPolygon? shape;
 
   /// 0 = 离指针一格以上，1 = 正对指针。
   final double proximity;
   final bool current;
-  final ColorScheme scheme;
+  final NavOverflowPalette palette;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final double p = FushiMotion.enter.transform(proximity);
+    final Color accent = palette.accent;
     final Color bg =
         Color.lerp(
           current
-              ? scheme.tertiary.withValues(alpha: 0.18)
-              : scheme.tertiary.withValues(alpha: 0),
-          scheme.tertiary,
+              ? accent.withValues(alpha: 0.18)
+              : accent.withValues(alpha: 0),
+          accent,
           p,
         ) ??
-        scheme.tertiary;
+        accent;
     final Color fg =
-        Color.lerp(scheme.onTertiaryContainer, scheme.onTertiary, p) ??
-        scheme.onTertiary;
-    // 离指针越近越接近专属多边形（官方 MaterialShapeBorder 插值，转动即形变）。
-    final ShapeBorder border = OutlinedBorder.lerp(
-      MaterialShapeBorder(shape: MaterialShapes.circle),
-      MaterialShapeBorder(shape: shape),
-      p.clamp(0.0, 1.0),
-    )!;
+        Color.lerp(palette.content, palette.onAccent, p) ?? palette.onAccent;
+    // 离指针越近越接近专属多边形（官方 MaterialShapeBorder 插值，转动即形变）；
+    // Apple 恒为圆。
+    final RoundedPolygon? polygon = shape;
+    final ShapeBorder border = polygon == null
+        ? const CircleBorder()
+        : OutlinedBorder.lerp(
+            MaterialShapeBorder(shape: MaterialShapes.circle),
+            MaterialShapeBorder(shape: polygon),
+            p.clamp(0.0, 1.0),
+          )!;
     return Semantics(
       button: true,
       selected: current,
@@ -891,17 +931,17 @@ class _DialItem extends StatelessWidget {
 
 /// 转盘上方显示指针对准项的名字；换项时淡入 + 轻微上浮。
 class _DialLabel extends StatelessWidget {
-  const _DialLabel({super.key, required this.label, required this.scheme});
+  const _DialLabel({super.key, required this.label, required this.palette});
 
   final String label;
-  final ColorScheme scheme;
+  final NavOverflowPalette palette;
 
   @override
   Widget build(BuildContext context) {
     final TextStyle style =
         (Theme.of(context).textTheme.titleSmall ?? const TextStyle()).copyWith(
-          color: scheme.onTertiary,
-          fontWeight: FontWeight.w700,
+          color: palette.onAccent,
+          fontWeight: palette.apple ? FontWeight.w600 : FontWeight.w700,
         );
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
@@ -915,9 +955,12 @@ class _DialLabel extends StatelessWidget {
         ),
       ),
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: scheme.tertiary,
-          borderRadius: FushiM3eShape.cardRadius,
+        // MD3 卡片圆角；Apple 胶囊（iOS 的 HUD 标签）。
+        decoration: ShapeDecoration(
+          color: palette.accent,
+          shape: palette.apple
+              ? const StadiumBorder()
+              : RoundedRectangleBorder(borderRadius: FushiM3eShape.cardRadius),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

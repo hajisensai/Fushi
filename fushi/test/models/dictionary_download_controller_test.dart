@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 /// BUG-1499 / BUG-1500：词典下载任务所有权与取消语义。
@@ -107,8 +108,11 @@ void main() {
 
           controller.requestCancel();
 
-          expect(job.cancelToken.isCancelled, isTrue,
-              reason: '当前这次 dio.download 必须立刻断流');
+          expect(
+            job.cancelToken.isCancelled,
+            isTrue,
+            reason: '当前这次 dio.download 必须立刻断流',
+          );
           expect(job.isCancelled, isTrue, reason: '批量循环靠它在下一本开始前停下');
           expect(controller.canCancel, isFalse, reason: '取消过一次后按钮要变灰');
           return null;
@@ -126,15 +130,19 @@ void main() {
         body: (DictionaryDownloadJob job) async {
           job.markImportPhase();
 
-          expect(controller.canCancel, isFalse,
-              reason: 'native 导入是一次不可分割的 FFI 调用，C++ 侧零 abort flag');
+          expect(
+            controller.canCancel,
+            isFalse,
+            reason: 'native 导入是一次不可分割的 FFI 调用，C++ 侧零 abort flag',
+          );
 
           controller.requestCancel();
 
           expect(
             job.cancelToken.isCancelled,
             isFalse,
-            reason: '导入内部是「导新到 temp → 删旧 → publish」，'
+            reason:
+                '导入内部是「导新到 temp → 删旧 → publish」，'
                 '中途硬中断能落在「删旧之后」，把用户已有的词典毁掉',
           );
           expect(job.isCancelled, isFalse, reason: '导入期的误点不该连带停掉后面几本');
@@ -200,7 +208,9 @@ void main() {
       expect(
         DictionaryDownloadController.isCancellation(
           DioError(
-              requestOptions: options, type: DioErrorType.connectionTimeout),
+            requestOptions: options,
+            type: DioErrorType.connectionTimeout,
+          ),
         ),
         isFalse,
       );
@@ -221,9 +231,9 @@ void main() {
         initialMessage: 'x',
         body: (DictionaryDownloadJob job) async =>
             const DictionaryDownloadOutcome(
-          message: 'done',
-          severity: ToastSeverity.success,
-        ),
+              message: 'done',
+              severity: ToastSeverity.success,
+            ),
       );
 
       expect(outcomes, hasLength(1));
@@ -263,4 +273,120 @@ void main() {
       expect(controller.progress.value, 0);
     });
   });
+
+  group('BUG-3887 后台保活：任务全程持有下载保活租约', () {
+    test('下载 → 导入全程保活，收尾才撤；收尾复位不再上报', () async {
+      final _RecordingKeepAlive keepAlive = _RecordingKeepAlive();
+      final DictionaryDownloadController controller =
+          DictionaryDownloadController(
+            showOutcome: (_) {},
+            keepAlive: keepAlive,
+          );
+      addTearDown(controller.dispose);
+
+      int updatesBeforeImport = 0;
+      int stopsDuringBody = -1;
+      await controller.run(
+        initialMessage: 'Downloading JMdict…',
+        body: (DictionaryDownloadJob job) async {
+          expect(keepAlive.events, isNotEmpty, reason: '任务一开始就要挂上保活');
+          job.progress.value = 0.42;
+          expect(keepAlive.lastPercent, 42);
+          expect(keepAlive.lastText, 'Downloading JMdict…');
+          updatesBeforeImport = keepAlive.events.length;
+
+          job.markImportPhase();
+          job.message.value = 'Importing…';
+          expect(
+            keepAlive.events.length,
+            greaterThan(updatesBeforeImport),
+            reason: '导入阶段同样要保活：被杀会停在「删旧之后」',
+          );
+          expect(keepAlive.lastPercent, isNull, reason: '导入阶段没有可信进度');
+          expect(keepAlive.lastText, 'Importing…');
+          stopsDuringBody = keepAlive.stops;
+          return null;
+        },
+      );
+
+      expect(stopsDuringBody, 0);
+      expect(keepAlive.events.last, 'stop', reason: '收尾复位不能在 stop 之后再拉起保活');
+      expect(keepAlive.stops, 1);
+    });
+
+    test('body 抛错也撤保活', () async {
+      final _RecordingKeepAlive keepAlive = _RecordingKeepAlive();
+      final DictionaryDownloadController controller =
+          DictionaryDownloadController(
+            showOutcome: (_) {},
+            keepAlive: keepAlive,
+          );
+      addTearDown(controller.dispose);
+
+      await expectLater(
+        controller.run(
+          initialMessage: 'x',
+          body: (DictionaryDownloadJob job) async => throw StateError('boom'),
+        ),
+        throwsStateError,
+      );
+      expect(keepAlive.events.last, 'stop');
+    });
+
+    test('被互斥拒绝的 run 不碰保活', () async {
+      final _RecordingKeepAlive keepAlive = _RecordingKeepAlive();
+      final DictionaryDownloadController controller =
+          DictionaryDownloadController(
+            showOutcome: (_) {},
+            keepAlive: keepAlive,
+          );
+      addTearDown(controller.dispose);
+      final Completer<void> hold = Completer<void>();
+      final Future<bool> first = controller.run(
+        initialMessage: 'first',
+        body: (DictionaryDownloadJob job) async {
+          await hold.future;
+          return null;
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
+      final int before = keepAlive.events.length;
+      expect(
+        await controller.run(
+          initialMessage: 'second',
+          body: (DictionaryDownloadJob job) async => null,
+        ),
+        isFalse,
+      );
+      expect(keepAlive.events.length, before);
+      expect(keepAlive.stops, 0, reason: '第二次 run 撤保活会把正在跑的第一本晾在后台');
+      hold.complete();
+      await first;
+      expect(keepAlive.stops, 1);
+    });
+  });
+}
+
+class _RecordingKeepAlive implements DownloadKeepAlive {
+  final List<String> events = <String>[];
+  int stops = 0;
+  String? lastText;
+  int? lastPercent;
+
+  @override
+  Future<void> update({
+    required String title,
+    required String text,
+    int? percent,
+  }) async {
+    events.add('update');
+    lastText = text;
+    lastPercent = percent;
+  }
+
+  @override
+  Future<void> stop() async {
+    events.add('stop');
+    stops++;
+  }
 }
