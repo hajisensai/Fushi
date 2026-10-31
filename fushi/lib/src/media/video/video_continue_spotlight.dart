@@ -8,12 +8,14 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -295,88 +297,98 @@ class _MainCard extends StatelessWidget {
         ? Colors.white
         : (apple ? appleColorsOf(context).accent : cs.primaryFixedDim);
     final double? v = entry.progress?.clamp(0.0, 1.0);
+    final BorderRadius? radius = eink || apple
+        ? null
+        : FushiM3eShape.containerLargeRadius;
     return FushiHoverLift(
       enabled: entry.onOpen != null,
-      scale: 1.01,
-      builder: (BuildContext _, bool __) => FushiCard(
-        key: entry.cardKey,
-        focusId: entry.focusId,
-        padding: EdgeInsets.zero,
-        borderRadius: eink || apple ? null : FushiM3eShape.containerLargeRadius,
-        onTap: entry.onOpen,
-        onLongPress: entry.onLongPress,
-        onSecondaryTap: entry.onLongPress,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            entry.image,
-            const IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: <Color>[
-                      Color(0xE6120E18),
-                      Color(0x80120E18),
-                      Color(0x00120E18),
-                    ],
-                    stops: <double>[0, 0.42, 0.75],
+      scale: _kMainHoverLiftScale,
+      builder: (BuildContext _, bool lifted) => _StillMaterial(
+        lifted: lifted,
+        radius: radius ?? _kFallbackRadius,
+        card: FushiCard(
+          key: entry.cardKey,
+          focusId: entry.focusId,
+          padding: EdgeInsets.zero,
+          borderRadius: radius,
+          onTap: entry.onOpen,
+          onLongPress: entry.onLongPress,
+          onSecondaryTap: entry.onLongPress,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              entry.image,
+              ..._StillMaterial.layers(lifted),
+              const IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: <Color>[
+                        Color(0xE6120E18),
+                        Color(0x80120E18),
+                        Color(0x00120E18),
+                      ],
+                      stops: <double>[0, 0.42, 0.75],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              left: tokens.spacing.gap * 2.5,
-              right: tokens.spacing.gap * 2.5,
-              bottom: tokens.spacing.gap * 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      if (entry.cloud) ...<Widget>[
-                        FushiIcon(FushiIcons.cloud, size: 14, color: accent),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(
-                          entry.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tokens.type.sectionLabel.copyWith(
-                            color: accent,
+              Positioned(
+                left: tokens.spacing.gap * 2.5,
+                right: tokens.spacing.gap * 2.5,
+                bottom: tokens.spacing.gap * 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        if (entry.cloud) ...<Widget>[
+                          FushiIcon(FushiIcons.cloud, size: 14, color: accent),
+                          const SizedBox(width: 4),
+                        ],
+                        Flexible(
+                          child: Text(
+                            entry.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.sectionLabel.copyWith(
+                              color: accent,
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: (text.titleLarge ?? const TextStyle()).copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                    if (v != null) ...<Widget>[
+                      SizedBox(height: tokens.spacing.gap),
+                      FushiLinearProgressIndicator(
+                        value: v,
+                        minHeight: 4,
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(2),
+                        ),
+                        color: accent,
+                        backgroundColor: Colors.white.withValues(alpha: 0.24),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    entry.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: (text.titleLarge ?? const TextStyle()).copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
-                  ),
-                  if (v != null) ...<Widget>[
-                    SizedBox(height: tokens.spacing.gap),
-                    FushiLinearProgressIndicator(
-                      value: v,
-                      minHeight: 4,
-                      borderRadius: const BorderRadius.all(Radius.circular(2)),
-                      color: accent,
-                      backgroundColor: Colors.white.withValues(alpha: 0.24),
-                    ),
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -395,50 +407,55 @@ class _SideCard extends StatelessWidget {
     final String episode = entry.shortSubtitle ?? entry.subtitle;
     return FushiHoverLift(
       enabled: entry.onOpen != null,
-      builder: (BuildContext _, bool __) => Column(
+      builder: (BuildContext _, bool lifted) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           SizedBox(
             height: imageHeight,
-            child: FushiCard(
-              key: entry.cardKey,
-              focusId: entry.focusId,
-              padding: EdgeInsets.zero,
-              borderRadius: const BorderRadius.all(Radius.circular(16)),
-              onTap: entry.onOpen,
-              onLongPress: entry.onLongPress,
-              onSecondaryTap: entry.onLongPress,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  entry.image,
-                  if (episode.isNotEmpty)
-                    Positioned(
-                      left: 10,
-                      right: 10,
-                      bottom: 10,
-                      child: Text(
-                        episode,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tokens.type.metadata.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          shadows: const <Shadow>[
-                            Shadow(color: Color(0xCC000000), blurRadius: 4),
-                          ],
+            child: _StillMaterial(
+              lifted: lifted,
+              radius: _kSideRadius,
+              card: FushiCard(
+                key: entry.cardKey,
+                focusId: entry.focusId,
+                padding: EdgeInsets.zero,
+                borderRadius: _kSideRadius,
+                onTap: entry.onOpen,
+                onLongPress: entry.onLongPress,
+                onSecondaryTap: entry.onLongPress,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    entry.image,
+                    ..._StillMaterial.layers(lifted),
+                    if (episode.isNotEmpty)
+                      Positioned(
+                        left: 10,
+                        right: 10,
+                        bottom: 10,
+                        child: Text(
+                          episode,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tokens.type.metadata.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            shadows: const <Shadow>[
+                              Shadow(color: Color(0xCC000000), blurRadius: 4),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  if (entry.progress != null)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: CoverProgressStrip(value: entry.progress!),
-                    ),
-                ],
+                    if (entry.progress != null)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: CoverProgressStrip(value: entry.progress!),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -452,6 +469,62 @@ class _SideCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 主卡悬停放大：主卡比小卡大得多，按 [kFushiHoverLiftScale] 放大会顶出版面，
+/// 但 1.01 几乎看不出「抬起」（用户 2026-10-31：视频继续观看缺抬起的金属效果），
+/// 取 1.025 配合投影 / 扫光读出抬升。
+const double _kMainHoverLiftScale = 1.025;
+
+/// 小卡圆角。
+const BorderRadius _kSideRadius = BorderRadius.all(Radius.circular(16));
+
+/// Apple / 墨水屏下主卡不传圆角（[FushiCard] 用系统默认），投影按这个近似圆角画。
+const BorderRadius _kFallbackRadius = BorderRadius.all(Radius.circular(12));
+
+/// 剧照卡的「光面材质」悬停反馈，与库页封面（[ShelfMaterialSurface]）同一套：
+/// 抬升时投影加深下沉、一道柔光从右往左扫过（[ShelfCoverSheen]，触屏按下也扫一遍）、
+/// 3D 倾斜跟随指针（[FushiTilt]）、镜面高光落在指针处（[FushiTiltGlare]）。
+///
+/// 此前剧照直接铺在 [FushiCard] 里、不经封面材质，悬停只有轻微放大，看不出库页
+/// 那种「拿起一张光面卡」的质感。[layers] 画进卡内的裁切区（压在剧照与渐变之上、
+/// 文字之下也无妨——两层都是低透明度白光且点击穿透）；本组件包在卡外负责投影与
+/// 倾斜。墨水屏不画投影（抖动灰），倾斜 / 高光由 [FushiHoverLift] 自行降级。
+class _StillMaterial extends StatelessWidget {
+  const _StillMaterial({
+    required this.lifted,
+    required this.radius,
+    required this.card,
+  });
+
+  final bool lifted;
+  final BorderRadius radius;
+  final Widget card;
+
+  /// 卡内裁切区里的光层：扫光 + 跟指针的镜面高光。
+  static List<Widget> layers(bool lifted) => <Widget>[
+    IgnorePointer(child: ShelfCoverSheen(active: lifted)),
+    const FushiTiltGlare(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final bool eink = isEinkTheme(context);
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return FushiTilt(
+      child: AnimatedContainer(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: eink
+              ? const <BoxShadow>[]
+              : shelfMaterialShadows(dark: dark, lifted: lifted),
+        ),
+        child: card,
       ),
     );
   }
