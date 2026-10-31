@@ -247,6 +247,31 @@ class SrsTodayStats {
   int kind(SrsStatReviewKind k) => byKind[k] ?? 0;
 }
 
+/// RWKV 牌组的复习卡此刻的情况（[SrsStatsData.rwkvNow]）：全是测量，不是预测。
+/// RWKV 不知道一张卡哪天到期（每答一题模型状态都在变），所以这些卡不进 [SrsFutureDue]。
+class SrsRwkvNow {
+  const SrsRwkvNow({
+    required this.total,
+    required this.due,
+    required this.near,
+    required this.dailyAverage,
+  });
+
+  /// 按 R 排队的复习卡（[SrsStatCard.byRecall]，未暂停、归 Fushi 排程）。
+  final int total;
+
+  /// 此刻 R ≤ 所在牌组目标保留率：现在就会出（与出卡同一口径）。
+  final int due;
+
+  /// R 高出目标保留率不到 [nearMargin]：接下来最先出的卡。
+  final int near;
+
+  /// 过去 30 天（含今天）这些卡每天实际复习的张数。
+  final double dailyAverage;
+
+  static const double nearMargin = 0.05;
+}
+
 /// 未来到期预测。
 class SrsFutureDue {
   const SrsFutureDue({
@@ -613,6 +638,60 @@ class SrsStatsData {
       daily: true,
       dailyLoad: load,
       byRecall: byRecall,
+    );
+  }
+
+  /// RWKV 牌组复习卡此刻的情况；范围里没有按 R 排队的复习卡时为 null。
+  SrsRwkvNow? get rwkvNow => _queueShape.rwkvNow;
+
+  /// 有没有按到期日排队、会进 [futureDue] 的卡（学习中的卡、FSRS 牌组的复习卡）。
+  /// 范围里只有 RWKV 复习卡时未来到期图是空的，统计页不显示它。
+  bool get hasDueDateCards => _queueShape.hasDueDateCards;
+
+  /// [rwkvNow] 与 [hasDueDateCards]：一趟遍历卡片、只扫近 30 天的复习，按这份数据记住（统计页每次 build
+  /// 都读它们，以前一次 build 全量扫两遍卡片加一遍复习）。数据是不可变快照，换范围 / 牌组是新对象。
+  late final ({SrsRwkvNow? rwkvNow, bool hasDueDateCards}) _queueShape =
+      _computeQueueShape();
+
+  ({SrsRwkvNow? rwkvNow, bool hasDueDateCards}) _computeQueueShape() {
+    final Set<String> ids = <String>{};
+    int due = 0;
+    int near = 0;
+    bool dueDate = false;
+    for (final SrsStatCard c in cards) {
+      if (!c.fushiScheduled || c.suspended) continue;
+      if (!(c.byRecall && c.isReview)) {
+        if (c.state != SrsStatCardState.newCard) dueDate = true;
+        continue;
+      }
+      ids.add(c.id);
+      final double? r = c.retrievability;
+      if (r == null || !r.isFinite) continue;
+      if (r <= c.desiredRetention) {
+        due++;
+      } else if (r <= c.desiredRetention + SrsRwkvNow.nearMargin) {
+        near++;
+      }
+    }
+    if (ids.isEmpty) return (rwkvNow: null, hasDueDateCards: dueDate);
+    int reviewed = 0;
+    // [reviews] 按时刻升序：从尾部往前扫，远离 30 天窗口就停（日序号按各条作答时的 UTC 偏移算，
+    // 与时刻不严格同序，留两天余量）。
+    for (int i = reviews.length - 1; i >= 0; i--) {
+      final SrsStatReview r = reviews[i];
+      if (r.day <= today - 32) break;
+      if (r.day > today - 30 && r.day <= today && ids.contains(r.cardId)) {
+        reviewed++;
+      }
+    }
+    return (
+      rwkvNow: SrsRwkvNow(
+        total: ids.length,
+        due: due,
+        near: near,
+        dailyAverage: reviewed / 30,
+      ),
+      hasDueDateCards: dueDate,
     );
   }
 
