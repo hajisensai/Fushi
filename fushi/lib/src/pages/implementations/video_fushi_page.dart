@@ -72,6 +72,7 @@ import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -1083,9 +1084,14 @@ class _VideoOsdMessage {
     this.progress,
     this.prominent = false,
     this.severity = ToastSeverity.neutral,
+    this.mineStatus,
   });
 
   final String message;
+
+  /// 非空 = 制卡结果 OSD，画成与底部制卡 toast 同一张 M3E 结果卡
+  /// （[FushiMineNoticeCard]），而不是通用小角标。
+  final MineToastStatus? mineStatus;
   final IconData? icon;
   final double? progress;
 

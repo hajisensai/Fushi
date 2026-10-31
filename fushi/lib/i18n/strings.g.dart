@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179061 (10533 per locale)
+/// Strings: 179163 (10539 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2748,6 +2748,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get card_mined_without_sentence_audio =>
       'Card created without sentence audio (none found for this selection).';
   String get card_mining_pending => 'Adding card…';
+  String get card_notice_title_added => 'Card added';
+  String get card_notice_title_duplicate => 'Card already exists';
+  String get card_notice_title_failed => 'Card not created';
+  String get card_notice_title_overwritten => 'Card overwritten';
+  String get card_notice_title_queued => 'Card queued';
+  String get card_notice_title_warning => 'Card added, something missing';
   String card_overwritten({required Object deck}) =>
       'Card overwritten in 『${deck}』.';
   String get card_source_open => 'Go to source';
@@ -19424,6 +19430,18 @@ class _StringsAr extends _StringsEn {
       'تم إنشاء البطاقة بدون صوت الجملة (لم يُعثر على صوت لهذا التحديد).';
   @override
   String get card_mining_pending => 'جارٍ إضافة البطاقة…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'تمت الكتابة فوق البطاقة في『${deck}』.';
@@ -45006,6 +45024,18 @@ class _StringsDe extends _StringsEn {
       'Karte ohne Satz-Audio erstellt (keines für diese Auswahl gefunden).';
   @override
   String get card_mining_pending => 'Karte wird hinzugefügt…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'Karte in 『${deck}』 überschrieben.';
@@ -70935,6 +70965,18 @@ class _StringsEs extends _StringsEn {
       'Tarjeta creada sin audio de frase (no se encontró para esta selección).';
   @override
   String get card_mining_pending => 'Añadiendo tarjeta…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'Tarjeta sobrescrita en 『${deck}』.';
@@ -96925,6 +96967,18 @@ class _StringsFr extends _StringsEn {
       'Carte créée sans audio de phrase (aucun trouvé pour cette sélection).';
   @override
   String get card_mining_pending => 'Ajout de la carte…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'Carte remplacée dans « ${deck} ».';
@@ -122928,6 +122982,18 @@ class _StringsId extends _StringsEn {
   @override
   String get card_mining_pending => 'Menambah kartu…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Kartu ditimpa di 『${deck}』.';
   @override
@@ -148663,6 +148729,18 @@ class _StringsIt extends _StringsEn {
   @override
   String get card_mining_pending => 'Aggiunta carta…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Carta sovrascritta in『${deck}』.';
   @override
@@ -174394,6 +174472,18 @@ class _StringsJa extends _StringsEn {
   @override
   String get card_mining_pending => 'カードを追加中…';
   @override
+  String get card_notice_title_added => 'カードを追加しました';
+  @override
+  String get card_notice_title_duplicate => 'カードは既に存在します';
+  @override
+  String get card_notice_title_failed => 'カードを作成できませんでした';
+  @override
+  String get card_notice_title_overwritten => 'カードを上書きしました';
+  @override
+  String get card_notice_title_queued => '送信待ちに追加しました';
+  @override
+  String get card_notice_title_warning => 'カードを追加（一部欠落）';
+  @override
   String card_overwritten({required Object deck}) => '『${deck}』のカードを上書きしました。';
   @override
   String get card_source_open => 'Go to source';
@@ -199226,6 +199316,18 @@ class _StringsKo extends _StringsEn {
       '카드를 만들었지만 이번 선택 범위에서 문장 오디오를 찾지 못했습니다.';
   @override
   String get card_mining_pending => '카드 추가 중…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) => '『${deck}』에 카드를 덮어썼습니다.';
   @override
@@ -224271,6 +224373,18 @@ class _StringsNl extends _StringsEn {
       'Kaart aangemaakt zonder zinsaudio (geen gevonden voor deze selectie).';
   @override
   String get card_mining_pending => 'Kaart toevoegen…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'Kaart overschreven in 『${deck}』.';
@@ -250107,6 +250221,18 @@ class _StringsPtBr extends _StringsEn {
       'Cartão criado sem áudio da frase (nenhum encontrado para esta seleção).';
   @override
   String get card_mining_pending => 'Adicionando cartão…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'Cartão sobrescrito em 『${deck}』.';
@@ -275986,6 +276112,18 @@ class _StringsRu extends _StringsEn {
   @override
   String get card_mining_pending => 'Добавление карточки…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Карточка перезаписана в «${deck}».';
   @override
@@ -301772,6 +301910,18 @@ class _StringsTh extends _StringsEn {
   @override
   String get card_mining_pending => 'กำลังเพิ่มบัตร...';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'เขียนทับการ์ดใน『${deck}』แล้ว';
   @override
@@ -327320,6 +327470,18 @@ class _StringsTr extends _StringsEn {
       'Kart cümle sesi olmadan oluşturuldu (bu seçim için bulunamadı).';
   @override
   String get card_mining_pending => 'Kart ekleniyor…';
+  @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
   @override
   String card_overwritten({required Object deck}) =>
       'Kart 『${deck}』 destesinde üzerine yazıldı.';
@@ -353029,6 +353191,18 @@ class _StringsVi extends _StringsEn {
   @override
   String get card_mining_pending => 'Đang thêm thẻ…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Đã ghi đè thẻ trong 『${deck}』.';
   @override
@@ -378298,6 +378472,18 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get card_mining_pending => '制卡中…';
   @override
+  String get card_notice_title_added => '已制卡';
+  @override
+  String get card_notice_title_duplicate => '卡片已存在';
+  @override
+  String get card_notice_title_failed => '制卡失败';
+  @override
+  String get card_notice_title_overwritten => '已覆盖卡片';
+  @override
+  String get card_notice_title_queued => '已存入待发队列';
+  @override
+  String get card_notice_title_warning => '已制卡，有缺失';
+  @override
   String card_overwritten({required Object deck}) => '卡片已覆盖到『${deck}』。';
   @override
   String get card_source_open => '回到出处';
@@ -401919,6 +402105,18 @@ class _StringsZhHk extends _StringsEn {
   String get card_mined_without_sentence_audio => '已製卡，但今次選取範圍找不到例句音訊。';
   @override
   String get card_mining_pending => '製卡中…';
+  @override
+  String get card_notice_title_added => '已製卡';
+  @override
+  String get card_notice_title_duplicate => '卡片已存在';
+  @override
+  String get card_notice_title_failed => '製卡失敗';
+  @override
+  String get card_notice_title_overwritten => '已覆蓋卡片';
+  @override
+  String get card_notice_title_queued => '已存入待發佇列';
+  @override
+  String get card_notice_title_warning => '已製卡，有缺失';
   @override
   String card_overwritten({required Object deck}) => '卡片已覆寫至『${deck}』。';
   @override
@@ -425641,6 +425839,18 @@ extension on _StringsEn {
         return 'Card created without sentence audio (none found for this selection).';
       case 'card_mining_pending':
         return 'Adding card…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Card overwritten in 『${deck}』.';
       case 'card_source_open':
@@ -447528,6 +447738,18 @@ extension on _StringsAr {
         return 'تم إنشاء البطاقة بدون صوت الجملة (لم يُعثر على صوت لهذا التحديد).';
       case 'card_mining_pending':
         return 'جارٍ إضافة البطاقة…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) =>
             'تمت الكتابة فوق البطاقة في『${deck}』.';
@@ -469431,6 +469653,18 @@ extension on _StringsDe {
         return 'Karte ohne Satz-Audio erstellt (keines für diese Auswahl gefunden).';
       case 'card_mining_pending':
         return 'Karte wird hinzugefügt…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Karte in 『${deck}』 überschrieben.';
       case 'card_source_open':
@@ -491383,6 +491617,18 @@ extension on _StringsEs {
         return 'Tarjeta creada sin audio de frase (no se encontró para esta selección).';
       case 'card_mining_pending':
         return 'Añadiendo tarjeta…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Tarjeta sobrescrita en 『${deck}』.';
       case 'card_source_open':
@@ -513327,6 +513573,18 @@ extension on _StringsFr {
         return 'Carte créée sans audio de phrase (aucun trouvé pour cette sélection).';
       case 'card_mining_pending':
         return 'Ajout de la carte…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Carte remplacée dans « ${deck} ».';
       case 'card_source_open':
@@ -535270,6 +535528,18 @@ extension on _StringsId {
         return 'Kartu dibuat tanpa audio kalimat (tidak ditemukan untuk pilihan ini).';
       case 'card_mining_pending':
         return 'Menambah kartu…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Kartu ditimpa di 『${deck}』.';
       case 'card_source_open':
@@ -557177,6 +557447,18 @@ extension on _StringsIt {
         return 'Carta creata senza audio della frase (nessuno trovato per questa selezione).';
       case 'card_mining_pending':
         return 'Aggiunta carta…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Carta sovrascritta in『${deck}』.';
       case 'card_source_open':
@@ -579084,6 +579366,18 @@ extension on _StringsJa {
         return 'カードを作成しましたが、今回の選択範囲では例文の音声が見つかりませんでした。';
       case 'card_mining_pending':
         return 'カードを追加中…';
+      case 'card_notice_title_added':
+        return 'カードを追加しました';
+      case 'card_notice_title_duplicate':
+        return 'カードは既に存在します';
+      case 'card_notice_title_failed':
+        return 'カードを作成できませんでした';
+      case 'card_notice_title_overwritten':
+        return 'カードを上書きしました';
+      case 'card_notice_title_queued':
+        return '送信待ちに追加しました';
+      case 'card_notice_title_warning':
+        return 'カードを追加（一部欠落）';
       case 'card_overwritten':
         return ({required Object deck}) => '『${deck}』のカードを上書きしました。';
       case 'card_source_open':
@@ -600886,6 +601180,18 @@ extension on _StringsKo {
         return '카드를 만들었지만 이번 선택 범위에서 문장 오디오를 찾지 못했습니다.';
       case 'card_mining_pending':
         return '카드 추가 중…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => '『${deck}』에 카드를 덮어썼습니다.';
       case 'card_source_open':
@@ -622732,6 +623038,18 @@ extension on _StringsNl {
         return 'Kaart aangemaakt zonder zinsaudio (geen gevonden voor deze selectie).';
       case 'card_mining_pending':
         return 'Kaart toevoegen…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Kaart overschreven in 『${deck}』.';
       case 'card_source_open':
@@ -644666,6 +644984,18 @@ extension on _StringsPtBr {
         return 'Cartão criado sem áudio da frase (nenhum encontrado para esta seleção).';
       case 'card_mining_pending':
         return 'Adicionando cartão…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Cartão sobrescrito em 『${deck}』.';
       case 'card_source_open':
@@ -666594,6 +666924,18 @@ extension on _StringsRu {
         return 'Карточка создана без аудио предложения (для этого выделения ничего не найдено).';
       case 'card_mining_pending':
         return 'Добавление карточки…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Карточка перезаписана в «${deck}».';
       case 'card_source_open':
@@ -688505,6 +688847,18 @@ extension on _StringsTh {
         return 'สร้างการ์ดโดยไม่มีเสียงประโยค (ไม่พบเสียงสำหรับส่วนที่เลือกนี้)';
       case 'card_mining_pending':
         return 'กำลังเพิ่มบัตร...';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'เขียนทับการ์ดใน『${deck}』แล้ว';
       case 'card_source_open':
@@ -710404,6 +710758,18 @@ extension on _StringsTr {
         return 'Kart cümle sesi olmadan oluşturuldu (bu seçim için bulunamadı).';
       case 'card_mining_pending':
         return 'Kart ekleniyor…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) =>
             'Kart 『${deck}』 destesinde üzerine yazıldı.';
@@ -732312,6 +732678,18 @@ extension on _StringsVi {
         return 'Đã tạo thẻ nhưng không có âm thanh câu (không tìm thấy cho vùng chọn này).';
       case 'card_mining_pending':
         return 'Đang thêm thẻ…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Đã ghi đè thẻ trong 『${deck}』.';
       case 'card_source_open':
@@ -754146,6 +754524,18 @@ extension on _StringsZhCn {
         return '已制卡，但本次选区找不到句子音频。';
       case 'card_mining_pending':
         return '制卡中…';
+      case 'card_notice_title_added':
+        return '已制卡';
+      case 'card_notice_title_duplicate':
+        return '卡片已存在';
+      case 'card_notice_title_failed':
+        return '制卡失败';
+      case 'card_notice_title_overwritten':
+        return '已覆盖卡片';
+      case 'card_notice_title_queued':
+        return '已存入待发队列';
+      case 'card_notice_title_warning':
+        return '已制卡，有缺失';
       case 'card_overwritten':
         return ({required Object deck}) => '卡片已覆盖到『${deck}』。';
       case 'card_source_open':
@@ -775790,6 +776180,18 @@ extension on _StringsZhHk {
         return '已製卡，但今次選取範圍找不到例句音訊。';
       case 'card_mining_pending':
         return '製卡中…';
+      case 'card_notice_title_added':
+        return '已製卡';
+      case 'card_notice_title_duplicate':
+        return '卡片已存在';
+      case 'card_notice_title_failed':
+        return '製卡失敗';
+      case 'card_notice_title_overwritten':
+        return '已覆蓋卡片';
+      case 'card_notice_title_queued':
+        return '已存入待發佇列';
+      case 'card_notice_title_warning':
+        return '已製卡，有缺失';
       case 'card_overwritten':
         return ({required Object deck}) => '卡片已覆寫至『${deck}』。';
       case 'card_source_open':
