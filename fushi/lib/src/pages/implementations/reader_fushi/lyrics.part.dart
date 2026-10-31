@@ -170,14 +170,26 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // 覆盖层期间正文看不见，必须跟着音频走才能替用户记字数——即便用户关了
         // 「跟随音频」（那个开关在歌词模式只管歌词列表自己滚不滚）。
         _audiobookController!.setReaderFollowOverride(true);
-        // 挂上覆盖层：歌词 WebView 在 onWebViewCreated 里装载歌词文档。
+        // 挂上覆盖层。第一次进入：歌词 WebView 在 onWebViewCreated 里装载歌词文档；
+        // 之后（BUG-3913）同一个实例从屏外停放位搬回覆盖层，这里直接重装文档。
+        // 就绪前透明（_lyricsPageReady），上一轮的旧文档不会露出来。两个字段随下面
+        // 这次 _rebuild 一起生效。
+        _lyricsWebViewRetained = true;
+        _lyricsPageReady = false;
         _rebuild(() => _lyricsMode = true);
         // 查词弹窗换成歌词页主题：Apple 深色档当场生效（app 已是深色时宿主主题
         // 不变、不会发布通知）；MD3 封面取色到达后经宿主通知再换一次。
         _syncDictionaryTheme();
+        if (_lyricsWebViewController != null) unawaited(_loadLyricsPage());
         // 书中插图：后台探测尺寸、筛掉外字 / 装饰小图，装好后封面位才开始换图。
         unawaited(_prepareLyricsIllustrations());
       } else {
+        // 停放前量下歌词 WebView 的尺寸（BUG-3913）：停在屏外时按同一尺寸摆。
+        final RenderObject? lyricsBox = _lyricsWebViewKey.currentContext
+            ?.findRenderObject();
+        if (lyricsBox is RenderBox && lyricsBox.hasSize) {
+          _lyricsWebViewParkedSize = lyricsBox.size;
+        }
         _rebuild(() => _lyricsMode = false);
         // 查词弹窗立即回到阅读器主题（不等覆盖层卸载后宿主再发布）。
         _syncDictionaryTheme();
@@ -424,13 +436,13 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     _lyricsIllustrations = null;
     _lyricsReadyFinalizingGeneration = null;
     _lyricsDocumentLoadGeneration = null;
-    // 歌词 WebView 随覆盖层一起卸载，lyrics caret JS 随之消失；复位 surface，
-    // 否则方向键/A 会被误路由到已不存在的 fushiLyricsCaret。
+    // 歌词 WebView 停到屏外（BUG-3913：实例复用，不卸载），[_lyricsController] 随
+    // `_lyricsMode` 置 null；复位 surface，否则方向键/A 会被误路由到停放中的
+    // fushiLyricsCaret。下次进入重装文档，caret 随文档重新注入。
     if (_caretSurface == CaretSurface.lyrics) {
       _rebuild(() => _caretSurface = CaretSurface.none);
     }
     if (isDictionaryShown) clearDictionaryResult();
-    _lyricsController = null;
     _lyricsPageReady = false;
     _pendingLyricsHintOnReady = false;
     _lyricsCueIndexOffset = 0;
@@ -467,10 +479,19 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   // 设计系统外观（Apple Music / MD3 播放页）与按钮回调；**不写任何统计**——覆盖层
   // 上的读数是读阅读器现成的数据（[_ReaderLyricsClock]）。
 
-  /// 覆盖层（非歌词模式时是一个零尺寸占位，保持主 Stack 孩子数恒定）。
+  /// 覆盖层。不在歌词模式时：歌词 WebView 挂上过就停在屏外（BUG-3913，实例复用），
+  /// 否则是一个零尺寸占位——两者都占主 Stack 同一个孩子位，保持孩子数恒定。
   Widget _buildLyricsOverlay() {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (!_lyricsMode || ctrl == null) return const SizedBox.shrink();
+    if (!_lyricsMode || ctrl == null) {
+      if (!_lyricsWebViewRetained) return const SizedBox.shrink();
+      // 同一个 [_lyricsWebViewKey]：进出覆盖层时 Flutter 把整棵 WebView 子树（含
+      // 原生实例）搬过去，不销毁重建。
+      return ParkedWebViewSlot(
+        size: _lyricsWebViewParkedSize,
+        child: _buildLyricsWebView(),
+      );
+    }
     return Positioned.fill(
       // BUG-1692 同款：排在正文 WebView 之后绘制的层自带 RepaintBoundary。
       child: RepaintBoundary(
@@ -1222,7 +1243,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         useShouldOverrideUrlLoading: true,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
-        _lyricsController = controller;
+        // 停放中创建完成（进入后立刻退出 / 停放时 renderer 死亡换代）也记下：实例
+        // 复用（BUG-3913），下次进入由 _toggleLyricsMode 装载文档。
+        _lyricsWebViewController = controller;
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
           callback: (List<dynamic> args) async {
