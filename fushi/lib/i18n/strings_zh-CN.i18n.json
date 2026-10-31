@@ -4597,6 +4597,8 @@
   "lyrics_mode": "歌词模式",
   "lyrics_mode_hint_body": "歌词模式有独立的字号设置，可在 ⚙ 设置 → 排版 中调整。",
   "lyrics_mode_hint_title": "歌词模式",
+  "lyrics_search_empty_hint": "搜索本书的有声书字幕",
+  "lyrics_search_results_truncated": "仅显示前 $n 条（共 $total 条）",
   "lyrics_sentence_replay": "重播当前句",
   "lyrics_skipped_text_show": "显示未朗读的原文",
   "lyrics_skipped_text_show_hint": "朗读者跳过、或字幕没能对上的原文，以灰色小字显示在两句之间",
