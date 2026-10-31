@@ -2,7 +2,10 @@
 ///
 /// 参数：
 /// - `language`（必填）：`AsrLanguage.tag`（`ja` / `en` / `zh` …）；
-/// - `input`（可选）：输入文件名（默认取上传的第一个）；
+/// - `input`（可选）：只转这一个输入文件；缺省时转**全部**输入（上传的 + host 本地
+///   按内容哈希命中的，见 `HostJobContext.hostInputs`），按输入名排序 = 客户端提交
+///   顺序（多文件有声书）。此前缺省只取排序后的第一个，多文件有声书在 host 上只转了
+///   第一个文件；
 /// - `videoId`（可选）：改用 host 库里的视频（经注入的 [resolveVideoPath]）；
 /// - `audioProfile`（可选）：`cleanSpeech`（有声书朗读）/ `mixedAudio`（视频混音）。
 ///   缺省时按输入判：`videoId` 或视频扩展名 → `mixedAudio`，其余 → `cleanSpeech`。
@@ -99,11 +102,12 @@ class AsrHostJobRunner implements HostJobRunner {
   Future<HostJobOutcome> run(HostJobContext ctx) async {
     final asr.AsrLanguage language =
         asr.AsrLanguage.fromBookLanguage(ctx.params['language'].toString())!;
-    final String audioPath = await _resolveAudio(ctx);
+    final _ResolvedAudio audio = await _resolveAudio(ctx);
+    final List<String> audioPaths = audio.paths;
     final asr.AsrAudioProfile profile = asrAudioProfileForJob(
       explicit: ctx.params['audioProfile']?.toString(),
       fromLibraryVideo: (ctx.params['videoId']?.toString() ?? '').isNotEmpty,
-      path: audioPath,
+      path: audioPaths.first,
     );
     final asr.AsrTranscriptionService service = serviceFactory(profile);
     final asr.AsrTranscribePlan plan =
@@ -114,9 +118,15 @@ class AsrHostJobRunner implements HostJobRunner {
         '(run `fushi_server models pull --language ${language.tag}`)',
       );
     }
+    // 输入是 host 库里的文件（库视频 / 按哈希命中的有声书音频）时，转录服务的任务
+    // 目录与 host 自己在本机转这组文件时是同一个（目录哈希按路径算）。那份目录原本
+    // 就在（host 用户自己转过 / 正在转）就不能在结束时删掉，否则把人家的转录稿一起
+    // 删了；只有本任务新建的才当中间产物清掉。
+    final bool keepServiceJobDir = audio.fromHostLibrary &&
+        await (await service.jobDirFor(audioPaths, language)).exists();
     ctx.onProgress(0, 'loading model');
     final asr.AsrRunningTranscription running = await service.start(
-      audioPaths: <String>[audioPath],
+      audioPaths: audioPaths,
       language: language,
       variant: plan.variant,
       preference: preference,
@@ -152,7 +162,7 @@ class AsrHostJobRunner implements HostJobRunner {
     }
     // 成功后中间产物（segments/state）即弃：同一音频再来一次会重新转。取消 /
     // 进程重启时走不到这里，任务目录保留，HostJobManager 重跑同一任务即从断点续。
-    await service.discard(<String>[audioPath], language);
+    if (!keepServiceJobDir) await service.discard(audioPaths, language);
     return HostJobOutcome(
       outputs: outputs,
       primaryOutput: asr.AsrJobFiles.srt,
@@ -160,29 +170,40 @@ class AsrHostJobRunner implements HostJobRunner {
     );
   }
 
-  Future<String> _resolveAudio(HostJobContext ctx) async {
+  Future<_ResolvedAudio> _resolveAudio(HostJobContext ctx) async {
     final String? videoId = ctx.params['videoId']?.toString();
     if (videoId != null && videoId.isNotEmpty) {
       final Future<String?> Function(String)? resolve = resolveVideoPath;
       if (resolve == null) throw const FormatException('asr: videoId not supported on this host');
       final String? path = await resolve(videoId);
       if (path == null) throw FormatException('asr: unknown videoId $videoId');
-      return path;
+      return _ResolvedAudio(<String>[path], fromHostLibrary: true);
     }
     final String? named = ctx.params['input']?.toString();
-    if (named != null && named.isNotEmpty) {
-      final File f = ctx.input(named);
-      if (!await f.exists()) throw FormatException('asr: input "$named" not uploaded');
-      return f.path;
+    final List<String> names = named != null && named.isNotEmpty
+        ? <String>[named]
+        : ctx.inputNames;
+    if (names.isEmpty) throw const FormatException('asr: no input uploaded');
+    final List<String> paths = <String>[];
+    for (final String name in names) {
+      final File f = ctx.input(name);
+      if (!await f.exists()) throw FormatException('asr: input "$name" not uploaded');
+      paths.add(f.path);
     }
-    final List<File> uploaded = ctx.inputsDir
-        .listSync()
-        .whereType<File>()
-        .toList()
-      ..sort((File a, File b) => a.path.compareTo(b.path));
-    if (uploaded.isEmpty) throw const FormatException('asr: no input uploaded');
-    return uploaded.first.path;
+    return _ResolvedAudio(
+      paths,
+      fromHostLibrary: names.any(ctx.isHostInput),
+    );
   }
+}
+
+class _ResolvedAudio {
+  const _ResolvedAudio(this.paths, {required this.fromHostLibrary});
+
+  final List<String> paths;
+
+  /// 至少有一个路径是 host 库里的文件（不在本任务的 inputs 目录里）。
+  final bool fromHostLibrary;
 }
 
 /// `cleanSpeech` / `mixedAudio`（大小写不敏感）→ 枚举；认不出返回 null。
