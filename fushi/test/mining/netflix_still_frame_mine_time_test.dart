@@ -403,8 +403,8 @@ void main() {
       final String decision = body.substring(modeDecl, netflix);
       expect(decision, contains('resolveTargetMiningImageMode('),
           reason: '录片段前必须问目标模板能否承载同步片段（BUG-2869）。');
-      expect(decision, contains('_appModel.videoMiningImageMode'),
-          reason: '偏好必须真读 AppModel，不能写死。');
+      expect(decision, contains('_videoMiningImageMode'),
+          reason: '偏好必须真读 AppModel / 扩展所选配置的视图，不能写死。');
       expect(nf, contains('imageMode: imageMode'),
           reason: '解析静态帧目标与转码都必须用裁决后的生效模式。');
       expect(nf, contains('stillTarget: stillTarget'),

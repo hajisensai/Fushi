@@ -74,7 +74,9 @@ import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
@@ -95,7 +97,10 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
-    show ExtensionDictionaryFont, browserExtensionDictionaryFont;
+    show
+        ExtensionDictionaryFont,
+        browserExtensionDictionaryFont,
+        browserExtensionDictionaryFontForView;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_settings_drift_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -383,6 +388,11 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/sync/browser_extension_test_page.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/extension_profile_api.dart'
+    show ExtensionProfileApi, ExtensionRequestServices;
+import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -1639,18 +1649,27 @@ class AppModel with ChangeNotifier {
   /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
   /// 查词来源语言 [currentLookupLanguage] → 全局默认内容语言；全空为 null（语言未知）。
   /// 本机发给对端的查词也带这个值（[_searchRemoteDictionary]），对端据此判是否中文。
-  String? effectiveLookupLanguage({String? requested}) =>
-      resolveContentLanguage(
-        explicit: (requested?.trim().isNotEmpty ?? false)
-            ? requested
-            : currentLookupLanguage,
-        globalDefault: defaultContentLanguage,
-      );
+  ///
+  /// [prefs]：按哪份偏好取全局默认内容语言；null = App 当前生效的偏好。浏览器扩展所选
+  /// 配置不是激活配置时传它的只读视图（反馈 biLEesNqWb）。
+  String? effectiveLookupLanguage({
+    String? requested,
+    PreferencesRepository? prefs,
+  }) => resolveContentLanguage(
+    explicit: (requested?.trim().isNotEmpty ?? false)
+        ? requested
+        : currentLookupLanguage,
+    globalDefault: prefs?.defaultContentLanguage ?? defaultContentLanguage,
+  );
 
   /// 「按中文处理（开简体 → 繁體回落）」的唯一判据；[requested] 见
   /// [effectiveLookupLanguage]。本机查词传 null，替对端查词传对端声明的语言。
-  bool lookupChineseSimpToTradFor(String? requested) =>
-      isChineseLanguageTag(effectiveLookupLanguage(requested: requested));
+  bool lookupChineseSimpToTradFor(
+    String? requested, {
+    PreferencesRepository? prefs,
+  }) => isChineseLanguageTag(
+    effectiveLookupLanguage(requested: requested, prefs: prefs),
+  );
 
   /// 进入一个游戏时登记查词来源语言：[gameLanguage] 是游戏卡上声明的语言
   /// （`GalgameEntry.language`），未声明 / 不在库里落全局默认。hook 台词没有任何语言
@@ -4869,7 +4888,54 @@ class AppModel with ChangeNotifier {
     final Map<String, String> displayNames = dictionaryDisplayNameOverrides;
     // 词典字体：与 in-app 弹窗同一份「词典字体」设置（按指纹 memo，未变时返回同一实例）。
     final ExtensionDictionaryFont font = browserExtensionDictionaryFont(this);
-    final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
+    return _browserExtensionPopupCss = _popupDictionaryCssReusing(
+      _browserExtensionPopupCss,
+      styles: styles,
+      globalCss: globalCss,
+      customCss: customCss,
+      displayNames: displayNames,
+      font: font,
+    );
+  }
+
+  /// 反馈 biLEesNqWb：[browserExtensionPopupDictionaryCss] 按浏览器扩展所选的**非激活**
+  /// 配置算：可视化样式规则 / 全局与单典自定义 CSS / 词典改名 / 词典字体都取 [view]；
+  /// 词典包自带的 styles.css 是已装词典的文件（全局事实），与 App 共用。按配置各留一份
+  /// 实例，内容不变时 revision 不变，扩展不重复拉。
+  RemotePopupDictionaryCss browserExtensionPopupDictionaryCssForView(
+    ProfileSettingsView view,
+  ) {
+    final List<DictStyleRule> rules = decodeDictStyleRules(
+      view.prefs.dictStyleRulesRaw,
+    );
+    final RemotePopupDictionaryCss css = _popupDictionaryCssReusing(
+      _browserExtensionPopupCssByProfile[view.profileId],
+      styles: FushiDicts.dictionaryStyles,
+      globalCss: mergeGeneratedAndAuthoredCss(
+        buildGlobalDictStyleCss(rules),
+        view.prefs.globalDictCSS,
+      ),
+      customCss: _compileCustomDictCss(rules, view.prefs.customDictCSS),
+      displayNames: dictionaryDisplayNameOverridesOf(view.dictionaries),
+      font: browserExtensionDictionaryFontForView(this, view),
+    );
+    _browserExtensionPopupCssByProfile[view.profileId] = css;
+    return css;
+  }
+
+  /// 按配置 id 留的 [browserExtensionPopupDictionaryCssForView] 实例。
+  final Map<int, RemotePopupDictionaryCss> _browserExtensionPopupCssByProfile =
+      <int, RemotePopupDictionaryCss>{};
+
+  /// 输入与 [cached] 完全相同就复用它（revision 不变），否则建新实例。
+  static RemotePopupDictionaryCss _popupDictionaryCssReusing(
+    RemotePopupDictionaryCss? cached, {
+    required Map<String, String> styles,
+    required String globalCss,
+    required Map<String, String> customCss,
+    required Map<String, String> displayNames,
+    required ExtensionDictionaryFont font,
+  }) {
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
         cached.globalDictCss == globalCss &&
@@ -4879,7 +4945,7 @@ class AppModel with ChangeNotifier {
         cached.dictionaryFontCss == font.css) {
       return cached;
     }
-    return _browserExtensionPopupCss = RemotePopupDictionaryCss(
+    return RemotePopupDictionaryCss(
       dictionaryStyles: styles,
       globalDictCss: globalCss,
       customDictCss: customCss,
@@ -4909,12 +4975,57 @@ class AppModel with ChangeNotifier {
   /// [colorScheme] 是扩展「主题：跟随 / 浅色 / 深色」设置随查词请求体带来的显式明暗
   /// （`'dark'` / `'light'`，已由 `remoteLookupColorSchemeOf` 校验）；null = 跟随 app
   /// 当前明暗。用户覆盖色（[_overrideDictionaryColor]）不随它变，与 in-app 弹窗同律。
-  Map<String, String> browserExtensionThemeColors(String? colorScheme) {
+  Map<String, String> browserExtensionThemeColors(String? colorScheme) =>
+      _browserExtensionThemeColorsFrom(colorScheme, (
+        theme: themeNotifier,
+        dictionaryColumns: popupDictionaryColumns,
+        dictionaryFontSize: dictionaryFontSize,
+        popupSize: extensionPopupEffectiveSize,
+        swipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+        wheelSpeed: popupWheelSpeed,
+        instantScroll: popupInstantScroll,
+        instantScrollWheelStep: popupInstantScrollWheelStep,
+        dedupPitch: deduplicatePitchAccents,
+        einkMode: einkMode,
+      ));
+
+  /// 反馈 biLEesNqWb：[browserExtensionThemeColors] 按浏览器扩展所选的**非激活**配置算
+  /// ——主题、弹窗列数 / 字号 / 尺寸 / 滚动 / 滑动关闭 / 音调去重都取 [view]；墨水屏是设备
+  /// 设置（不随配置走），视图里就是 live 值。
+  Map<String, String> browserExtensionThemeColorsForView(
+    ProfileSettingsView view,
+    String? colorScheme,
+  ) {
+    final PreferencesRepository p = view.prefs;
+    final ThemeNotifier theme = ThemeNotifier.profileView(
+      themeNotifier,
+      view.prefsMap,
+    );
+    return _browserExtensionThemeColorsFrom(colorScheme, (
+      theme: theme,
+      dictionaryColumns: popupDictionaryColumnsIn(p),
+      dictionaryFontSize: p.dictionaryFontSize,
+      popupSize: extensionPopupEffectiveSizeIn(p),
+      swipeToClose: ReaderFushiSource.instance.enableSwipeToCloseIn(
+        view.prefsMap,
+      ),
+      wheelSpeed: p.popupWheelSpeed,
+      instantScroll: p.popupInstantScroll,
+      instantScrollWheelStep: p.popupInstantScrollWheelStep,
+      dedupPitch: p.deduplicatePitchAccents,
+      einkMode: theme.einkMode,
+    ));
+  }
+
+  Map<String, String> _browserExtensionThemeColorsFrom(
+    String? colorScheme,
+    _PopupAppearanceInputs inputs,
+  ) {
     // 显式 'dark' / 'light' 优先；其它（null）跟随 app 当前明暗。
     final bool dark =
         colorScheme == 'dark' ||
-        (colorScheme != 'light' && themeNotifier.isDarkMode);
-    final ColorScheme s = themeNotifier.buildColorScheme(
+        (colorScheme != 'light' && inputs.theme.isDarkMode);
+    final ColorScheme s = inputs.theme.buildColorScheme(
       dark ? Brightness.dark : Brightness.light,
     );
     // 卡面底色跟随主题 scheme.surface（popupCardSurface 单一真源），
@@ -4931,13 +5042,13 @@ class AppModel with ChangeNotifier {
       scheme: s,
       backgroundColor: bgColor,
       surfaceContainerHigh: _overrideDictionaryColor ?? s.surfaceContainerHigh,
-      dictionaryColumns: popupDictionaryColumns,
+      dictionaryColumns: inputs.dictionaryColumns,
     );
     // BUG-688：浏览器浮动弹窗只跟「词典字号」，**不叠加** app 的「界面大小」(appUiScale)。
     // 叠加 appUiScale 会把弹窗放大到 1.5×+ → 浮在网页上盖住大半屏、需滚动条，且大 zoom 作用于
     // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
     // 是页面根 documentElement，无此问题；扩展只能缩放浮层嵌套容器）。要更大在词典字号设置里调。
-    final double rawZoom = dictionaryFontSize / 16.0;
+    final double rawZoom = inputs.dictionaryFontSize / 16.0;
     final double zoom = (rawZoom.isFinite && rawZoom > 0)
         ? rawZoom.clamp(0.3, 8.0)
         : 1.0;
@@ -4992,59 +5103,55 @@ class AppModel with ChangeNotifier {
       '--md-on-error': cssRgb(s.onError),
       '--md-error-container': cssRgb(s.errorContainer),
       '--md-on-error-container': cssRgb(s.onErrorContainer),
-      if (themeNotifier.activeSeedColor != null)
-        '--fushi-theme-seed': cssRgb(themeNotifier.activeSeedColor!),
-      '--fushi-theme-variant': themeNotifier.activeSchemeVariant.name,
+      if (inputs.theme.activeSeedColor != null)
+        '--fushi-theme-seed': cssRgb(inputs.theme.activeSeedColor!),
+      '--fushi-theme-variant': inputs.theme.activeSchemeVariant.name,
       // 系统取色：方案直接由强调色 fromSeed 生成，不走自定义 / 预设的无彩度中性派生。
-      '--fushi-theme-system': themeNotifier.appThemeKey == 'system-theme'
+      '--fushi-theme-system': inputs.theme.appThemeKey == 'system-theme'
           ? '1'
           : '0',
       // Android 完整壁纸调色板不能从单一主色派生另一明暗；只按同源 identity
       // 复用已下发的准确镜像，换壁纸后淘汰另一明暗的旧缓存（HBK-AUDIT-030）。
-      if (themeNotifier.activeSystemPaletteIdentity != null)
-        '--fushi-theme-palette-id': themeNotifier.activeSystemPaletteIdentity!,
-      '--fushi-theme-neutral': themeNotifier.activeCustomThemeNeutralDerived
+      if (inputs.theme.activeSystemPaletteIdentity != null)
+        '--fushi-theme-palette-id': inputs.theme.activeSystemPaletteIdentity!,
+      '--fushi-theme-neutral': inputs.theme.activeCustomThemeNeutralDerived
           ? '1'
           : '0',
-      '--fushi-pure-black': themeNotifier.pureBlackDark ? '1' : '0',
+      '--fushi-pure-black': inputs.theme.pureBlackDark ? '1' : '0',
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
       '--fushi-radius-card': vars['--fushi-radius-card']!,
       // 弹窗尺寸精细化：扩展弹窗默认跟随 app 内 popupMaxWidth/Height，用户显式
       // 解锁「浏览器扩展独立尺寸」后改用扩展自己的键（extensionPopupEffectiveSize）。
-      '--fushi-popup-max-width':
-          '${extensionPopupEffectiveSize.width.round()}px',
-      '--fushi-popup-max-height':
-          '${extensionPopupEffectiveSize.height.round()}px',
+      '--fushi-popup-max-width': '${inputs.popupSize.width.round()}px',
+      '--fushi-popup-max-height': '${inputs.popupSize.height.round()}px',
       '--fushi-popup-zoom': zoom.toStringAsFixed(4),
-      '--dict-columns': '$popupDictionaryColumns',
+      '--dict-columns': '${inputs.dictionaryColumns}',
       // 「滑动关闭查词弹窗」偏好（enableSwipeToClose）下发给扩展 content.js：非 CSS 变量、
       // 仅 JS 消费（content.js 据此决定是否给浮动弹窗启用水平拖关手势）。走 theme 传输通道
       // 与 --fushi-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
-      '--fushi-swipe-close': ReaderFushiSource.instance.enableSwipeToClose
-          ? '1'
-          : '0',
+      '--fushi-swipe-close': inputs.swipeToClose ? '1' : '0',
       // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
-      '--fushi-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
+      '--fushi-wheel-speed': inputs.wheelSpeed.toStringAsFixed(3),
       // BUG-2284：墨水屏「瞬时滚动」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
       // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
       // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
-      '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
+      '--fushi-instant-scroll': inputs.instantScroll ? '1' : '0',
       // 瞬时滚动的滚轮步长（占视口比例）同通道下发；content.js 设
       // window.__fushiPopupInstantScrollWheelStep。触摸半边扩展侧不挂监听，不下发。
-      '--fushi-instant-scroll-wheel-step': popupInstantScrollWheelStep
+      '--fushi-instant-scroll-wheel-step': inputs.instantScrollWheelStep
           .toStringAsFixed(3),
       // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
       // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
       // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
-      '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
+      '--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',
       // 浏览器扩展的唯一材质是液态玻璃（不再跟随 app 设计系统，用户 2026-10-04 拍板）；
       // 这条只剩墨水屏开关：墨水屏下发 '0'，content.js 让浮动弹窗保持不透明（非 CSS 变量、
       // 仅 content.js 消费）。
-      '--fushi-glass': einkMode ? '0' : '1',
+      '--fushi-glass': inputs.einkMode ? '0' : '1',
     };
   }
 
@@ -8619,6 +8726,7 @@ class AppModel with ChangeNotifier {
     bool allowRemoteLookup = true,
     String? lookupLanguage,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    ProfileSettingsView? profileView,
   }) async {
     final String rawSearchTerm = searchTerm;
     searchTerm = normalizeSearchTerm(
@@ -8658,6 +8766,7 @@ class AppModel with ChangeNotifier {
       useCache: useCache,
       lookupLanguage: lookupLanguage,
       rubySpans: rubySpans,
+      profileView: profileView,
     );
     if (remote != null) {
       final DictionarySearchResult? remoteResult = await remote;
@@ -8707,19 +8816,27 @@ class AppModel with ChangeNotifier {
   /// 汉字桶与 term 索引正交（TODO-094 S4）：单个汉字（[isSingleKanji]）时后台顺带
   /// 查汉字桶，结果经 `withKanjiResults(...)` 挂在词条结果上；没有词条命中时返回
   /// 带 `kanjiResults: kanjiResults` 的纯汉字结果，照常缓存。
+  ///
+  /// [profileView]（反馈 biLEesNqWb）：按某个非激活配置查——词典过滤 / 顺序、简繁回落
+  /// 的默认内容语言都取它，缓存键带它的命名空间；null = App 当前生效的设置（键不变）。
   Future<_LocalDictionaryLookup> _searchLocalDictionary({
     required String searchTerm,
     required int effectiveMaxTerms,
     required bool useCache,
     String? lookupLanguage,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    ProfileSettingsView? profileView,
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
-    final bool simpToTrad = lookupChineseSimpToTradFor(lookupLanguage);
+    final bool simpToTrad = lookupChineseSimpToTradFor(
+      lookupLanguage,
+      prefs: profileView?.prefs,
+    );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
     final String cacheKey =
+        (profileView?.lookupCacheNamespace ?? '') +
         buildSearchCacheKey(
           term: searchTerm,
           maxTerms: effectiveMaxTerms,
@@ -8736,7 +8853,8 @@ class AppModel with ChangeNotifier {
       return const _LocalDictionaryLookup.finalEmpty();
     }
 
-    final DictionaryLookupFilters filters = dictRepo.lookupFilters;
+    final DictionaryLookupFilters filters =
+        profileView?.lookupFilters ?? dictRepo.lookupFilters;
     // 查询在飞期间词典集合可能变了、缓存已清：回来时代次不同就不写缓存。
     final int cacheEpoch = dictRepo.resultsCacheEpoch;
     final FushiLookupOutcome? outcome = await FushiDicts.instance
@@ -9627,6 +9745,17 @@ class AppModel with ChangeNotifier {
     sharedHeight: popupMaxHeight,
   );
 
+  /// [extensionPopupEffectiveSize] 按给定偏好算（同 [popupDictionaryColumnsIn]）。
+  static LookupSize extensionPopupEffectiveSizeIn(
+    PreferencesRepository prefs,
+  ) => effectiveLookupSize(
+    independent: prefs.extensionPopupIndependentSize,
+    sceneWidth: prefs.extensionPopupMaxWidth,
+    sceneHeight: prefs.extensionPopupMaxHeight,
+    sharedWidth: prefs.popupMaxWidth,
+    sharedHeight: prefs.popupMaxHeight,
+  );
+
   /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
   /// 扩展 ↔ app bridge（POST `/api/extension/popup-size`）回写最终基准最大宽高，由
   /// [FushiApiServer] 的 `onExtensionPopupSize` sink 调到这里。先 clamp 到与设置页两滑杆
@@ -10183,11 +10312,7 @@ class AppModel with ChangeNotifier {
   SrsMiningDestination get srsMiningDestination {
     final PreferencesRepository? prefs = _prefsRepo;
     if (prefs == null) return const SrsMiningDestination();
-    return SrsMiningDestination(
-      deckId: prefs.srsMiningDeckId,
-      noteTypeId: prefs.srsMiningNoteTypeId,
-      fieldMappingsByType: prefs.srsMiningFieldMappings,
-    );
+    return srsMiningDestinationIn(prefs);
   }
 
   Future<void> setSrsMiningDeckId(String id) =>
@@ -10330,13 +10455,17 @@ class AppModel with ChangeNotifier {
   /// 故默认统一放宽到 3（宽屏 / 宽屏手机铺满、窄屏自动收回，不再硬塞挤爆）。所有
   /// `--dict-columns` 注入点（app_model / dictionary_popup_webview /
   /// popup_settings_injection）都读本 getter，平台默认在此单点收口。
-  int get popupDictionaryColumns => resolvePopupDesktopDefault(
-    hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
-    stored: prefsRepo.popupDictionaryColumns,
-    isDesktop: isDesktopPlatform,
-    desktopDefault: 3,
-    mobileDefault: 3,
-  );
+  int get popupDictionaryColumns => popupDictionaryColumnsIn(prefsRepo);
+
+  /// [popupDictionaryColumns] 按给定偏好算（浏览器扩展所选配置的只读视图用）。
+  int popupDictionaryColumnsIn(PreferencesRepository prefs) =>
+      resolvePopupDesktopDefault(
+        hasExplicit: prefs.hasExplicitPopupDictionaryColumns,
+        stored: prefs.popupDictionaryColumns,
+        isDesktop: isDesktopPlatform,
+        desktopDefault: 3,
+        mobileDefault: 3,
+      );
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
@@ -10652,20 +10781,7 @@ class AppModel with ChangeNotifier {
         mapEquals(cached.authored, authored)) {
       return cached.css;
     }
-    final Set<String> names = <String>{
-      ...authored.keys,
-      ...dictionariesWithStyleRules(rules),
-    };
-    final Map<String, String> out = <String, String>{};
-    for (final String name in names) {
-      final String merged = mergeGeneratedAndAuthoredCss(
-        buildPerDictionaryStyleCss(rules, name),
-        authored[name] ?? '',
-      );
-      if (merged.trim().isEmpty) continue;
-      out[name] = merged;
-    }
-    final Map<String, String> css = Map<String, String>.unmodifiable(out);
+    final Map<String, String> css = _compileCustomDictCss(rules, authored);
     _effectiveCustomDictCssMemo = (
       rules: rules,
       authored: Map<String, String>.unmodifiable(authored),
@@ -10681,6 +10797,28 @@ class AppModel with ChangeNotifier {
   })?
   _effectiveCustomDictCssMemo;
 
+  /// 单典 CSS 的编译本身（可视化产物 + 手写，逐本合并）：[effectiveCustomDictCSS] 与
+  /// 浏览器扩展所选配置的视图（[browserExtensionPopupDictionaryCssForView]）共用。
+  static Map<String, String> _compileCustomDictCss(
+    List<DictStyleRule> rules,
+    Map<String, String> authored,
+  ) {
+    final Set<String> names = <String>{
+      ...authored.keys,
+      ...dictionariesWithStyleRules(rules),
+    };
+    final Map<String, String> out = <String, String>{};
+    for (final String name in names) {
+      final String merged = mergeGeneratedAndAuthoredCss(
+        buildPerDictionaryStyleCss(rules, name),
+        authored[name] ?? '',
+      );
+      if (merged.trim().isEmpty) continue;
+      out[name] = merged;
+    }
+    return Map<String, String>.unmodifiable(out);
+  }
+
   // ── audio sources (delegated) ────────────────────────────────────────
 
   /// Anki 本地音频服务器（5050）内置预设 URL 的镜像，供 UI（重置默认）引用。
@@ -10689,8 +10827,15 @@ class AppModel with ChangeNotifier {
 
   List<String> get audioSources => prefsRepo.audioSources;
 
-  List<AudioSourceConfig> get audioSourceConfigs {
-    final List<AudioSourceConfig> saved = prefsRepo.audioSourceConfigs;
+  List<AudioSourceConfig> get audioSourceConfigs =>
+      audioSourceConfigsFrom(prefsRepo.audioSourceConfigs);
+
+  /// [audioSourceConfigs] 的合成本身：[saved] 是某份偏好里存的音频源配置（App 当前的，
+  /// 或浏览器扩展所选配置的只读视图里的），本地音频库条目（本机已装的库，全局事实）按
+  /// 路径合进去。
+  List<AudioSourceConfig> audioSourceConfigsFrom(
+    List<AudioSourceConfig> saved,
+  ) {
     final Map<String, LocalAudioDbEntry> localByPath =
         <String, LocalAudioDbEntry>{
           for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
@@ -10728,8 +10873,15 @@ class AppModel with ChangeNotifier {
       .where((AudioSourceConfig source) => source.enabled)
       .toList(growable: false);
 
-  List<String> get enabledAudioSources {
-    final List<AudioSourceConfig> configs = enabledAudioSourceConfigs;
+  List<String> get enabledAudioSources =>
+      enabledAudioSourcesFrom(enabledAudioSourceConfigs, audioSources);
+
+  /// [enabledAudioSources] 的推导：[configs] 是已启用的音频源配置，[legacySources] 是
+  /// 旧版纯 URL 列表（typed 配置为空时的回退）。
+  List<String> enabledAudioSourcesFrom(
+    List<AudioSourceConfig> configs,
+    List<String> legacySources,
+  ) {
     if (configs.isNotEmpty) {
       return configs
           .map((AudioSourceConfig source) {
@@ -10745,7 +10897,7 @@ class AppModel with ChangeNotifier {
           .where((String source) => source.isNotEmpty)
           .toList(growable: false);
     }
-    final List<String> sources = audioSources
+    final List<String> sources = legacySources
         .where((source) => source != WordAudioResolver.localAudioUrl)
         .toList(growable: false);
     // 删了 master 总开关后，本地音频是否参与 legacy 回退路径，
@@ -11058,9 +11210,6 @@ class AppModel with ChangeNotifier {
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。
       onExtensionSeen: () => _browserExtensionLastSeenAt = DateTime.now(),
-      // TODO-2936：扩展查词/制卡端点命中 → 应用「浏览器」媒体类型的 Profile 绑定
-      // （委托由 main.dart 在容器建好后注入；未注入/未绑定时为 no-op）。
-      onLookupActivity: _onBrowserLookupActivity,
       // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」。
       // 记到 ValueNotifier 供扩展管理页与内置指纹比对：不一致 = 扩展自更新未生效
       // （用户从别的目录加载 / reload 失败），页面显示更新警示条。
@@ -11080,6 +11229,9 @@ class AppModel with ChangeNotifier {
       fontApi: _browserExtensionFontCatalog,
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
+      // 反馈 biLEesNqWb：扩展手动选配置 + 「浏览器」媒体类型绑定——按解析出的配置的只读
+      // 设置视图处理扩展请求，不切换 App 的激活配置。
+      profileApi: browserExtensionProfileApi,
       // 上面四个扩展端点依赖的同一份核心：server 与 app 内浏览器共用一个实例。
       extensionApiCore: extensionApiCore,
       tokenizer: JapaneseLanguage.instance.textsToWordsWithReadingsInBackground,
@@ -11099,11 +11251,127 @@ class AppModel with ChangeNotifier {
         sentence: request.sentence,
       );
 
-  /// TODO-2936：「浏览器」媒体类型 Profile 绑定的应用委托。AppModel 不在
-  /// Riverpod 图里，无法直接触达 [ProfileViewModel]，由 main.dart 在根容器建好
-  /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser,
-  /// restoreFallback: false)`：查词不回退到绑定前的配置）。
-  Future<void> Function()? browserLookupProfileApplier;
+  /// 反馈 biLEesNqWb：浏览器扩展选配置的 app 侧实现（列配置 + 解析扩展请求按哪份配置
+  /// 处理：扩展所选 > 「浏览器」媒体类型绑定 > 跟随 App，都不切换 App）。由 main.dart 在
+  /// initialise() 之前注入（server 在 initialise 内启动）；未注入时扩展的配置列表端点
+  /// 404、请求头被忽略，所有扩展请求按 App 当前生效的设置处理。
+  ExtensionProfileApi? browserExtensionProfileApi;
+
+  /// 反馈 biLEesNqWb：按 [view]（某个**非激活**配置的只读设置视图）处理一次浏览器扩展
+  /// 请求的服务组。查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开，以及随查词响应下发的
+  /// 弹窗设置（主题 / 列数 / 字号 / 尺寸 / 自动朗读 / 统一样式 / 词典 CSS 与字体 / 音频源）
+  /// 全部从 [view] 读；App 的激活配置、全局偏好与缓存里 App 自己的条目一概不动。
+  ExtensionRequestServices extensionRequestServicesForView(
+    ProfileSettingsView view,
+  ) {
+    final _AppModelRemoteLookupService service = _AppModelRemoteLookupService(
+      this,
+      view,
+    );
+    return ExtensionRequestServices(
+      lookup: service,
+      mining: service,
+      themeColorsProvider: (String? colorScheme) =>
+          browserExtensionThemeColorsForView(view, colorScheme),
+      audioSourcesProvider: () => enabledAudioSourcesFrom(
+        audioSourceConfigsFrom(view.prefs.audioSourceConfigs)
+            .where((AudioSourceConfig source) => source.enabled)
+            .toList(growable: false),
+        view.prefs.audioSources,
+      ),
+      autoReadOnLookupProvider: () =>
+          ReaderFushiSource.instance.autoReadOnLookupIn(view.prefsMap),
+      dictionaryUnifiedStyleProvider: () => view.prefs.dictionaryUnifiedStyle,
+      popupDictionaryCssProvider: () =>
+          browserExtensionPopupDictionaryCssForView(view),
+      srsApiProvider: () => extensionSrsApiForView(view),
+    );
+  }
+
+  /// 浏览器扩展所选的非激活配置启用过的词典字体路径（规范化）。扩展按路径取字体字节
+  /// （`/api/extension/fonts/dictionary`）时，白名单在 App 当前配置的字体之外也认它们。
+  final Set<String> extensionProfileViewDictionaryFontPaths = <String>{};
+
+  /// 按 [view] 替浏览器扩展制卡 / 查重 / 在 Anki 中打开用的仓库：同一个本机 Anki 后端，
+  /// 设置（牌组 / 笔记类型 / 字段映射 / 标签 / 查重范围）读 [view] 的只读存储。
+  ///
+  /// 与 [hostMiningAnkiRepository] 一样不套待发队列（扩展自己有队列）。[view] 的挖词目标是
+  /// Fushi 复习（且复习模块开着，模块开关是整台设备的）时，与 `hostMiningAnkiRepositoryProvider`
+  /// 同形地包一层 [SrsMiningAnkiRepository]：制卡 / 查重 / 同词反查 / 在复习里打开都走**那份
+  /// 配置**的复习副本（[extensionSrsMinerForView]），不碰 App 激活配置的复习、也不改发 Anki。
+  BaseAnkiRepository hostMiningRepositoryForView(ProfileSettingsView view) {
+    final BaseAnkiRepository inner = platformServices.createAnkiRepository(
+      settingsStore: view.ankiSettingsStore,
+    );
+    if (!moduleVisibility.isEnabled(ModuleId.srs) ||
+        SrsMiningTarget.fromWire(view.prefs.srsMiningTarget) !=
+            SrsMiningTarget.srs) {
+      return inner;
+    }
+    return SrsMiningAnkiRepository(
+      inner: inner,
+      miner: () => extensionSrsMinerForView(view),
+      openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
+    );
+  }
+
+  /// 读 `srsProfileStoresProvider` 的委托（各配置的复习副本登记处）。AppModel 不在 Riverpod
+  /// 图里，由 main.dart 在根容器建好后注入；未注入（测试 / 弹窗进程）时按「复习不可用」处理。
+  SrsProfileStores Function()? srsProfileStoresReader;
+
+  /// 在复习里打开某份配置的一条笔记（编辑页套那份配置的副本，见 `srsPushNoteEditor`）。
+  /// 由 main.dart 注入；未注入时打不开（回 false）。
+  Future<bool> Function(SrsMiner miner, String noteId)? srsProfileNoteOpener;
+
+  /// [prefs] 里的复习制卡落点（牌组 / 笔记类型 / 字段映射）。
+  static SrsMiningDestination srsMiningDestinationIn(
+    PreferencesRepository prefs,
+  ) => SrsMiningDestination(
+    deckId: prefs.srsMiningDeckId,
+    noteTypeId: prefs.srsMiningNoteTypeId,
+    fieldMappingsByType: prefs.srsMiningFieldMappings,
+  );
+
+  /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
+  /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
+  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。
+  Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null) return null;
+    try {
+      return await reader().minerFor(
+        profileUid: await database.profileUidOf(view.profileId),
+        destination: srsMiningDestinationIn(view.prefs),
+        fallbackRolloverHour: () => view.prefs.statDayResetHour,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('extensionSrsMinerForView', e, stack);
+      return null;
+    }
+  }
+
+  /// 在复习里打开 [view] 那份配置的笔记 [noteId]。
+  Future<bool> extensionSrsOpenNote(
+    ProfileSettingsView view,
+    String noteId,
+  ) async {
+    final Future<bool> Function(SrsMiner, String)? open = srsProfileNoteOpener;
+    if (open == null) return false;
+    final SrsMiner? miner = await extensionSrsMinerForView(view);
+    return miner != null && await open(miner, noteId);
+  }
+
+  /// 浏览器扩展复习标记（`/api/srs/*`）按 [view] 那份配置的复习处理：词状态读它的副本，点标记
+  /// 打开它的笔记。复习模块关着时为 null（端点 404，与激活配置同一判据：[SrsAppHost.current]）。
+  SrsExtensionApi? extensionSrsApiForView(ProfileSettingsView view) {
+    if (SrsAppHost.current == null) return null;
+    return SrsAppHost(
+      readStore: () async => (await extensionSrsMinerForView(view))?.store,
+      openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
+      // 扩展不经这个入口打开浏览页。
+      openBrowse: () async => false,
+    );
+  }
 
   /// 读 `ankiRepositoryProvider` 的委托（待发队列 / 自动重排 / 转发互联主机都在那条
   /// 装饰器链里）。AppModel 不在 Riverpod 图里，由 main.dart 在根容器建好后注入。
@@ -11127,19 +11395,6 @@ class AppModel with ChangeNotifier {
   BaseAnkiRepository get hostMiningAnkiRepository =>
       hostMiningRepositoryReader?.call() ??
       platformServices.createAnkiRepository();
-
-  // TODO-2936：扩展查词请求可能成串到达（termEntries + tokenize + mine），一趟
-  // 在途时后续命中直接跳过——绑定应用本身幂等，重复趟次只是浪费快照/应用开销。
-  bool _browserProfileApplyInFlight = false;
-
-  void _onBrowserLookupActivity() {
-    final Future<void> Function()? applier = browserLookupProfileApplier;
-    if (applier == null || _browserProfileApplyInFlight) return;
-    _browserProfileApplyInFlight = true;
-    unawaited(
-      applier().whenComplete(() => _browserProfileApplyInFlight = false),
-    );
-  }
 
   // BUG-726：内置扩展指纹缓存（refreshBrowserExtensionCopy 启动时填充）。
   String? _browserExtensionBuild;
@@ -11955,9 +12210,36 @@ class _AppModelRemoteLookupService
         FushiRemoteMiningService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
-  const _AppModelRemoteLookupService(this._appModel);
+  const _AppModelRemoteLookupService(this._appModel, [this._view]);
 
   final AppModel _appModel;
+
+  /// 反馈 biLEesNqWb：浏览器扩展所选的非激活配置的只读设置视图；null = 按 App 当前
+  /// 生效的设置（互联对端 / 未选配置的扩展请求，行为与引入前一致）。
+  final ProfileSettingsView? _view;
+
+  /// 替对端 / 扩展制卡、查重、读写出处笔记、在 Anki 中打开用的仓库。
+  BaseAnkiRepository get _miningRepository {
+    final ProfileSettingsView? view = _view;
+    return view == null
+        ? _appModel.hostMiningAnkiRepository
+        : _appModel.hostMiningRepositoryForView(view);
+  }
+
+  // 制卡媒体偏好：有视图读视图，否则走 AppModel 的公开 getter（测试替身覆写的面）。
+  MiningAnimatedFormat get _videoMiningAnimatedFormat =>
+      _view?.prefs.videoMiningAnimatedFormat ??
+      _appModel.videoMiningAnimatedFormat;
+  int get _miningImageQuality =>
+      _view?.prefs.miningImageQuality ?? _appModel.miningImageQuality;
+  int get _miningAudioQuality =>
+      _view?.prefs.miningAudioQuality ?? _appModel.miningAudioQuality;
+  VideoMiningImageMode get _videoMiningImageMode =>
+      _view?.prefs.videoMiningImageMode ?? _appModel.videoMiningImageMode;
+  MiningStillFormat get _videoMiningStillFormat =>
+      _view?.prefs.videoMiningStillFormat ?? _appModel.videoMiningStillFormat;
+  MiningClipFormat get _videoMiningClipFormat =>
+      _view?.prefs.videoMiningClipFormat ?? _appModel.videoMiningClipFormat;
 
   @override
   Future<RemoteMineResult> mineEntry({
@@ -11970,7 +12252,7 @@ class _AppModelRemoteLookupService
     // 这一步 → repo 读不到缓存 → 外字永远退化成 alt 文本。与本地入口同一步骤。
     await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
     // 替对端制卡：遵守本机挖词目标（目标 = Fushi 复习时落复习，不写 Anki）。
-    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
+    final BaseAnkiRepository repo = _miningRepository;
     final MineOutcome outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),
@@ -12005,16 +12287,13 @@ class _AppModelRemoteLookupService
 
   @override
   Future<AnkiSourceNote?> readSourceNote(String sourceId) =>
-      _appModel.hostMiningAnkiRepository.readSourceNote(sourceId);
+      _miningRepository.readSourceNote(sourceId);
 
   @override
   Future<void> patchSourceNote({
     required AnkiSourceNote original,
     required Map<String, String> fields,
-  }) => _appModel.hostMiningAnkiRepository.patchSourceNote(
-    original: original,
-    fields: fields,
-  );
+  }) => _miningRepository.patchSourceNote(original: original, fields: fields);
 
   @override
   Future<Map<String, String>> prepareForwardedSourceNote(
@@ -12037,7 +12316,7 @@ class _AppModelRemoteLookupService
     )
     action,
   ) {
-    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
+    final BaseAnkiRepository repo = _miningRepository;
     return withMaterializedMiningContext<T>(
       payload,
       (String raw, AnkiMiningContext context) => action(repo, raw, context),
@@ -12106,7 +12385,8 @@ class _AppModelRemoteLookupService
   }) async {
     // TODO-1176：与 app 内 dictionary_page_mixin.checkDuplicate 走同一 repo.isDuplicate
     // 路径（AnkiConnect findNotes / AnkiDroid findDuplicateNotes），repo 内部已 fail-soft。
-    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
+    // 按视图处理、挖词目标 = Fushi 复习时查的是那份配置的复习（[AppModel.hostMiningRepositoryForView]）。
+    final BaseAnkiRepository repo = _miningRepository;
     return repo.isDuplicate(expression, reading);
   }
 
@@ -12118,7 +12398,7 @@ class _AppModelRemoteLookupService
     // Issue #1409：与 app 内 openInAnki 桥（_handleOpenInAnkiBridge）同一
     // repo.openWordInAnki；抛出一律按 failed（弹窗提示打不开，绝不静默）。
     try {
-      final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
+      final BaseAnkiRepository repo = _miningRepository;
       return await repo.openWordInAnki(expression, reading);
     } catch (e, st) {
       ErrorLogService.instance.log('Anki.openWordInAnki.extension', e, st);
@@ -12128,17 +12408,29 @@ class _AppModelRemoteLookupService
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
+    final ProfileSettingsView? view = _view;
+    if (view == null) return _mineImmersion(payload);
+    // 动图「只播一次」由引擎 IO 层经进程级读取器取偏好；按视图制卡时用 zone 值把视图里的
+    // 那一项带下去（[kMiningAnimatedPlayOnceZoneKey]），不改进程级读取器。
+    return runZoned(
+      () => _mineImmersion(payload),
+      zoneValues: <Object, Object>{
+        kMiningAnimatedPlayOnceZoneKey: view.prefs.miningAnimatedPlayOnce,
+      },
+    );
+  }
+
+  Future<RemoteMineResult> _mineImmersion(ImmersionMinePayload payload) async {
     // BUG-2190：同 [mineEntry]——外字字节先落缓存，三条沉浸分支最终都走 repo 渲染。
     await writeDictionaryMediaCache(payload.fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
+    final BaseAnkiRepository repo = _miningRepository;
     // 远端制卡（浏览器扩展的 YouTube / Netflix）语义上就是视频制卡，读同一条动图格式
     // 偏好。BUG-1330：这里过去既不传 format 给 resolve、也不传 animatedFormat 给引擎，
     // 用户拍板的 AVIF 默认在扩展这条链路上完全没落地（恒出 GIF）。
-    final MiningAnimatedFormat animatedFormat =
-        _appModel.videoMiningAnimatedFormat;
+    final MiningAnimatedFormat animatedFormat = _videoMiningAnimatedFormat;
     final MiningMediaCompression compression = MiningMediaCompression.resolve(
-      imageTier: _appModel.miningImageQuality,
-      audioTier: _appModel.miningAudioQuality,
+      imageTier: _miningImageQuality,
+      audioTier: _miningAudioQuality,
       // 顶格档的动图参数随格式变（AVIF 24fps/1440px、GIF/WebP 12fps/960px）。format 与
       // 下面透传给编码侧的格式**必须是同一个值**：只传其一就是「格式与参数不成对」——
       // 把 AVIF 的顶格档参数喂给 GIF 编码器正是 BUG-1039。
@@ -12204,12 +12496,12 @@ class _AppModelRemoteLookupService
           // tryStartFrame（immersion_mining_engine.dart:311-318 的排列本就互为兜底）
           // → 静态模式根本不进 extractAnimatedClipWithFallback，不存在 BUG-1039 那种
           // 「格式与编码参数不成对」的风险：静态帧压根不吃 gifFps/gifWidth。
-          imageMode: _appModel.videoMiningImageMode,
+          imageMode: _videoMiningImageMode,
           // 静图编码格式（默认 JPG）：服务端路径的两种静态档都落到引擎
           // tryStartFrame，抽帧按它选编码器与扩展名，失败退回 JPG。
-          stillFormat: _appModel.videoMiningStillFormat,
+          stillFormat: _videoMiningStillFormat,
           // 音画同步片段格式：远端画面流 + 本地裁好的句子音频合成一个片段。
-          clipFormat: _appModel.videoMiningClipFormat,
+          clipFormat: _videoMiningClipFormat,
         ),
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -12344,7 +12636,7 @@ class _AppModelRemoteLookupService
           // stillFormat 相反，**必须**留着：providedCoverBytes 那条短路会按它
           // 归一化编码（immersion_mining_engine.dart 的 cardScreenshotEncodingFor），
           // 用户选的静图格式在这条路上是真生效的。
-          stillFormat: _appModel.videoMiningStillFormat,
+          stillFormat: _videoMiningStillFormat,
         ),
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -12370,11 +12662,8 @@ class _AppModelRemoteLookupService
     // 渲染图片字段时同步片段卡什么都显示不出来。必须在下面的转码之前求值；没录到
     // 片段的来源出不了同步片段，不必问模板。
     final VideoMiningImageMode imageMode = payload.clipBytes == null
-        ? _appModel.videoMiningImageMode
-        : await resolveTargetMiningImageMode(
-            _appModel.videoMiningImageMode,
-            repo: repo,
-          );
+        ? _videoMiningImageMode
+        : await resolveTargetMiningImageMode(_videoMiningImageMode, repo: repo);
     ImmersionCaptureResult cap = const ImmersionCaptureResult(error: 'skip');
     if (payload.clipBytes != null) {
       // Netflix 批量录制的片段边界即句子边界（seek 到句首 → 录到字幕变化停），整段转码 [0,时长]。
@@ -12412,10 +12701,10 @@ class _AppModelRemoteLookupService
         format: animatedFormat,
         // 静帧档的编码格式（默认 JPG）：同样选编码器 + 输出扩展名 + 降级链，
         // 实际产出格式经 ImmersionCaptureResult.stillFormat 回传给封面文件名。
-        stillFormat: _appModel.videoMiningStillFormat,
+        stillFormat: _videoMiningStillFormat,
         // 音画同步片段格式（片段模式时）：实际产出格式经 ImmersionCaptureResult.clipFormat
         // 回传给封面文件名，扩展名决定卡片上内嵌还是原生播放。
-        clipFormat: _appModel.videoMiningClipFormat,
+        clipFormat: _videoMiningClipFormat,
         stillTarget: stillTarget,
         // BUG-2192：裁掉录屏片段四周的播放器黑底（扩展按 <video> 几何给的比例矩形）。
         crop: payload.clipCrop,
@@ -12538,7 +12827,11 @@ class _AppModelRemoteLookupService
     // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
     // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
     // 不带语言的旧请求仍走公开的 [AppModel.searchDictionary]（行为与此前逐字相同）。
-    final DictionarySearchResult source = language == null && rubySpans.isEmpty
+    // 按配置视图查（反馈 biLEesNqWb）一律走 [_searchDictionaryInLanguage]：公开的
+    // searchDictionary 只认 App 当前生效的设置。
+    final ProfileSettingsView? view = _view;
+    final DictionarySearchResult source =
+        language == null && rubySpans.isEmpty && view == null
         ? await _appModel.searchDictionary(
             searchTerm: term,
             searchWithWildcards: wildcards,
@@ -12554,6 +12847,7 @@ class _AppModelRemoteLookupService
             allowRemoteLookup: false,
             lookupLanguage: language,
             rubySpans: rubySpans,
+            profileView: view,
           );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
@@ -12669,9 +12963,15 @@ class _AppModelRemoteLookupService
       }
       if (searchTerm.trim().isEmpty) return null;
 
-      final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(language);
-      // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）。
+      final ProfileSettingsView? view = _view;
+      final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(
+        language,
+        prefs: view?.prefs,
+      );
+      // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
+      // 按配置视图查时带它的命名空间（App 自己的键不变）。
       final String searchCacheKey =
+          (view?.lookupCacheNamespace ?? '') +
           buildSearchCacheKey(
             term: searchTerm,
             maxTerms: maximumTerms,
@@ -12719,7 +13019,8 @@ class _AppModelRemoteLookupService
       if (!FushiDicts.isInitialized) return null;
       // 后台查词 isolate 只做 popupOnly：原始结果（后台缓存键带上限 maximumTerms，
       // BUG-1307）→ buildPopupJsonFromLookup，不物化 DictionaryEntry（BUG-1525）。
-      final DictionaryLookupFilters filters = _appModel.dictRepo.lookupFilters;
+      final DictionaryLookupFilters filters =
+          view?.lookupFilters ?? _appModel.dictRepo.lookupFilters;
       final int cacheEpoch = _appModel.dictRepo.resultsCacheEpoch;
       final FushiLookupOutcome? outcome = await FushiDicts.instance
           .lookupInBackground(
@@ -12775,6 +13076,7 @@ class _AppModelRemoteLookupService
       _appModel,
       expression,
       reading,
+      profileView: _view,
     );
     return remoteAudioLookupFromResolvedUrl(
       resolved,
@@ -12801,6 +13103,7 @@ class _AppModelRemoteLookupService
           _appModel,
           expression,
           reading,
+          profileView: _view,
         )).take(12).toList(growable: false);
     final List<RemoteAudioLookup?> audios =
         await Future.wait(<Future<RemoteAudioLookup?>>[
@@ -12848,3 +13151,18 @@ class _AppModelRemoteLookupService
     }
   }
 }
+
+/// [AppModel.browserExtensionThemeColors] 的全部设置输入：App 当前生效的一份，或浏览器
+/// 扩展所选配置的只读视图（反馈 biLEesNqWb）。两条路走同一个变量表构造，不各写一份。
+typedef _PopupAppearanceInputs = ({
+  ThemeNotifier theme,
+  int dictionaryColumns,
+  double dictionaryFontSize,
+  LookupSize popupSize,
+  bool swipeToClose,
+  double wheelSpeed,
+  bool instantScroll,
+  double instantScrollWheelStep,
+  bool dedupPitch,
+  bool einkMode,
+});

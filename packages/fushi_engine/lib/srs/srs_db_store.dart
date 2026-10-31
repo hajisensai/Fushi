@@ -251,6 +251,13 @@ class SrsPurgeChunk {
   final Set<String> mediaRefs;
 }
 
+/// 套在 [SrsDbStore.runExclusive] 外面的锁：几个 profile 的副本共用同一条 Rust 写连接，App 当前 profile 的
+/// 副本的数据库事务跨多个 await，别的 profile 的副本（浏览器扩展按所选配置制卡）的写入不能插进去。外层锁就是
+/// App 当前副本自己的 [SrsDbStore.runExclusive]，由装配处给出（随当前 profile 变）。
+abstract interface class SrsExclusiveOuter {
+  Future<T> run<T>(Future<T> Function() body);
+}
+
 class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
     required this.db,
@@ -261,10 +268,15 @@ class SrsDbStore implements SrsSync2Host {
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
     this.styles,
+    SrsExclusiveOuter? exclusiveOuter,
   }) : _trusted = trustedClock,
-       _fallbackRollover = fallbackRolloverHour;
+       _fallbackRollover = fallbackRolloverHour,
+       _exclusiveOuter = exclusiveOuter;
 
   /// 打开（或首次初始化）某 profile 的 SRS 副本。
+  ///
+  /// [exclusiveOuter]：同一条连接上同时开着别的 profile 的副本（App 当前 profile 的那份）时，本副本的
+  /// 独占区要套在它外面的那把锁里（见 [SrsExclusiveOuter]）；null = 只用本副本自己的锁。
   static Future<SrsDbStore> open({
     required SrsDatabase db,
     required SrsCore core,
@@ -274,6 +286,7 @@ class SrsDbStore implements SrsSync2Host {
     SrsTrustedClock? trustedClock,
     int Function()? fallbackRolloverHour,
     SrsStyleStore? styles,
+    SrsExclusiveOuter? exclusiveOuter,
   }) async {
     final SrsDbStore s = SrsDbStore._(
       db: db,
@@ -285,6 +298,7 @@ class SrsDbStore implements SrsSync2Host {
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
       styles: styles,
+      exclusiveOuter: exclusiveOuter,
     );
     final bool hadLocalState = await s._loadLocal();
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
@@ -458,10 +472,19 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。在外面先开了数据库事务、再在事务里调
   /// 写方法的调用方（按时间点恢复）必须先进独占区再开事务，否则与排队等锁的写入互相等待。
+  ///
+  /// 有 [_exclusiveOuter] 时整段先进外层锁、再进本副本的锁：同一条连接上 App 当前 profile 的副本的写入
+  /// （它的数据库事务跨多个 await）与本副本的写入不会交错。
   Future<T> runExclusive<T>(Future<T> Function() body) async {
     final StateError? unusable = _unusable;
     if (unusable != null) throw unusable;
     if (identical(Zone.current[_writeZoneKey], this)) return body();
+    final SrsExclusiveOuter? outer = _exclusiveOuter;
+    if (outer != null) return outer.run(() => _runExclusiveOwn(body));
+    return _runExclusiveOwn(body);
+  }
+
+  Future<T> _runExclusiveOwn<T>(Future<T> Function() body) async {
     final Future<void>? prev = _writeTail;
     final Completer<void> mine = Completer<void>();
     _writeTail = mine.future;
@@ -487,15 +510,19 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 这个 profile 被删除：等本副本在途的写入做完，在独占区里跑 [body]（删它的数据），之后本副本作废——
   /// 还排着的、以后再来的写入一律明确失败（[_unusable]），不会把行写回一个已删的 uid。[body] 失败也作废。
-  Future<T> retire<T>(Future<T> Function() body) => runExclusive(() async {
-    try {
-      return await body();
-    } finally {
-      _unusable ??= StateError(
-        'SRS store is unusable: profile $profileUid was deleted',
-      );
-    }
-  });
+  ///
+  /// [reason]：作废原因（写进之后写入的报错）；缺省是「profile 被删除」。
+  Future<T> retire<T>(Future<T> Function() body, {String? reason}) =>
+      runExclusive(() async {
+        try {
+          return await body();
+        } finally {
+          _unusable ??= StateError(
+            'SRS store is unusable: '
+            '${reason ?? 'profile $profileUid was deleted'}',
+          );
+        }
+      });
 
   /// 大批量写入（Anki 迁移 / .apkg 导入 / 同步收段）期间把这条连接的 WAL 自动 checkpoint 阈值调到
   /// [_bulkWalAutocheckpointPages]，结束后 checkpoint 一次再恢复原值。
@@ -551,6 +578,9 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 排在最后的写入完成时完成（只会正常完成）。
   Future<void>? _writeTail;
+
+  /// 见 [open] 的 exclusiveOuter。
+  final SrsExclusiveOuter? _exclusiveOuter;
 
   /// 每个副本一把锁（嵌套打开的另一个副本不会误认成持锁）。
   final Object _writeZoneKey = Object();
@@ -4275,6 +4305,9 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 写失败后重读本机状态也失败时置上（见 [_transactionOrReload]）；之后进独占区的写入都抛它。
   StateError? _unusable;
+
+  /// 副本还能写（没有被 [retire]、也没有因重读失败作废）。
+  bool get isUsable => _unusable == null;
 
   Future<List<SrsEvent>> exportAll() async {
     final List<SrsEvent> out = await exportEntitiesAndEdits();

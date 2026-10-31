@@ -56,7 +56,7 @@ AppModel _desktopModel(_CapturingAnkiRepo repo) => AppModel(
         clipboard: DesktopClipboardService(),
         permission: DesktopPermissionService(),
         deviceInfo: DesktopDeviceInfoService(),
-        createAnkiRepository: () => repo,
+        createAnkiRepository: ({AnkiSettingsStore? settingsStore}) => repo,
       ),
     );
 

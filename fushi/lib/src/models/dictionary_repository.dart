@@ -125,16 +125,34 @@ class DictionaryRepository {
   /// 被关掉的词典与管理页「显示 / 隐藏」开关同一个判据：
   /// `isHidden(JapaneseLanguage.instance)`（与 `AppModel.hiddenDictionaryNames` 一致）。
   DictionaryLookupFilters get lookupFilters =>
-      _lookupFilters ??= DictionaryLookupFilters(
-        hiddenDictionaryNames: Set<String>.unmodifiable(<String>{
-          for (final Dictionary d in _dictionariesCache)
-            if (d.isHidden(JapaneseLanguage.instance)) d.name,
-        }),
-        termDictionaryOrder: List<String>.unmodifiable(<String>[
-          for (final Dictionary d in _dictionariesCache)
-            if (d.type == DictionaryType.term) d.name,
-        ]),
-      );
+      _lookupFilters ??= lookupFiltersOf(_dictionariesCache);
+
+  /// [lookupFilters] 的推导本身：[dictionaries] 须已按管理页顺序（`order`）排好。
+  /// 反馈 biLEesNqWb：按某个非激活配置的词典元数据查词（浏览器扩展所选配置）与
+  /// App 自己查词共用这一份判据，不各写一套。
+  static DictionaryLookupFilters lookupFiltersOf(
+    List<Dictionary> dictionaries,
+  ) => DictionaryLookupFilters(
+    hiddenDictionaryNames: Set<String>.unmodifiable(<String>{
+      for (final Dictionary d in dictionaries)
+        if (d.isHidden(JapaneseLanguage.instance)) d.name,
+    }),
+    termDictionaryOrder: List<String>.unmodifiable(<String>[
+      for (final Dictionary d in dictionaries)
+        if (d.type == DictionaryType.term) d.name,
+    ]),
+  );
+
+  /// `dictionary_metadata` 行 → 按管理页顺序排好的 [Dictionary] 列表（与
+  /// [_applyMetadataRows] 装缓存同一套转换），供只读配置视图用。
+  static List<Dictionary> dictionariesFromRows(List<DictionaryMetaRow> rows) =>
+      (List<DictionaryMetaRow>.of(rows)..sort(
+            (DictionaryMetaRow a, DictionaryMetaRow b) =>
+                a.name.compareTo(b.name),
+          ))
+          .map(_rowToDictionary)
+          .toList()
+        ..sort((Dictionary a, Dictionary b) => a.order.compareTo(b.order));
 
   /// 见 [_resultsCacheEpoch]。
   int get resultsCacheEpoch => _resultsCacheEpoch;

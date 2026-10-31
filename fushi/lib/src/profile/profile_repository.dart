@@ -9,9 +9,11 @@ import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey;
+import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -163,54 +165,13 @@ class ProfileRepository {
     // Ids are always >= 1, so guard the sentinel instead of nuking prefs.
     if (profileId <= 0) return;
 
-    final rows = await _db.getProfileSettings(profileId);
-
-    final ankiMap = <String, String>{};
-    final prefMap = <String, String>{};
-    // TODO-1077: snapshot rows for the dictionary_metadata table. `hasDictMeta`
-    // distinguishes "profile has no dictionary_meta snapshot at all" (old
-    // snapshot, pre-TODO-1077) from "profile intentionally has zero
-    // dictionaries". Only the latter may prune the live table; the former MUST
-    // be left untouched so a switch never wipes the shared dictionary config.
+    final _DecodedProfileSnapshot snapshot =
+        _decodeSnapshot(await _db.getProfileSettings(profileId));
+    final Map<String, String> ankiMap = snapshot.ankiMap;
+    final Map<String, String> prefMap = snapshot.prefMap;
     final Map<String, DictionaryMetadataCompanion> dictMetaMap =
-        <String, DictionaryMetadataCompanion>{};
-    bool hasDictMeta = false;
-    for (final row in rows) {
-      switch (row.category) {
-        case ProfileKeys.categoryAnki:
-          ankiMap[row.key] = row.value;
-        case ProfileKeys.categoryPref:
-          prefMap[row.key] = row.value;
-        case ProfileKeys.categoryDictionaryMeta:
-          hasDictMeta = true;
-          final DictionaryMetadataCompanion? companion =
-              _decodeDictionaryMeta(row.key, row.value);
-          // Defensive: a single corrupt row degrades gracefully (skipped)
-          // instead of aborting the whole profile-apply (mirrors the Anki
-          // fieldMappings try/catch, HBK-AUDIT-043).
-          if (companion != null) dictMetaMap[row.key] = companion;
-        // Legacy categories from old snapshots
-        case ProfileKeys.categoryDictionary:
-          prefMap[row.key] = row.value;
-        case ProfileKeys.categoryReader:
-          // 旧快照里 reader 偏好按 MediaSource 命名空间还原；用单一真相编码器
-          // 而非硬编码 `src:reader_fushi:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
-          prefMap[dbSourcePrefKey(kReaderSourcePersistedKey, row.key)] =
-              row.value;
-        default:
-          break;
-      }
-    }
-
-    // BUG-1019: old snapshots (taken before a key entered the exclusion list,
-    // e.g. audiobook_pos_* / audiobook_speed_* / override_title://*) may still
-    // carry excluded keys. Apply must neither restore those stale values (a
-    // months-old speed/position overwriting the live one) nor delete the live
-    // rows (the prune loop below already skips excluded keys) — so drop them
-    // from the restore map here. Same single source of truth as snapshot/prune:
-    // [ProfileKeys.isExcludedPref].
-    prefMap
-        .removeWhere((String key, String _) => ProfileKeys.isExcludedPref(key));
+        snapshot.dictMetaMap;
+    final bool hasDictMeta = snapshot.hasDictMeta;
 
     // Wrap DB writes in transaction for consistency
     await _db.transaction(() async {
@@ -578,6 +539,138 @@ class ProfileRepository {
 
   // ── TODO-1077 dictionary_metadata snapshot serialization ────────────
 
+  /// [applyProfile] 与 [loadSettingsView] 共用的快照解码：按类别拆成 Anki / 偏好 /
+  /// 词典元数据三份，旧类别（legacy dictionary / reader）并进偏好。
+  _DecodedProfileSnapshot _decodeSnapshot(List<ProfileSettingRow> rows) {
+    final ankiMap = <String, String>{};
+    final prefMap = <String, String>{};
+    // TODO-1077: snapshot rows for the dictionary_metadata table. `hasDictMeta`
+    // distinguishes "profile has no dictionary_meta snapshot at all" (old
+    // snapshot, pre-TODO-1077) from "profile intentionally has zero
+    // dictionaries". Only the latter may prune the live table; the former MUST
+    // be left untouched so a switch never wipes the shared dictionary config.
+    final Map<String, DictionaryMetadataCompanion> dictMetaMap =
+        <String, DictionaryMetadataCompanion>{};
+    bool hasDictMeta = false;
+    for (final row in rows) {
+      switch (row.category) {
+        case ProfileKeys.categoryAnki:
+          ankiMap[row.key] = row.value;
+        case ProfileKeys.categoryPref:
+          prefMap[row.key] = row.value;
+        case ProfileKeys.categoryDictionaryMeta:
+          hasDictMeta = true;
+          final DictionaryMetadataCompanion? companion =
+              _decodeDictionaryMeta(row.key, row.value);
+          // Defensive: a single corrupt row degrades gracefully (skipped)
+          // instead of aborting the whole profile-apply (mirrors the Anki
+          // fieldMappings try/catch, HBK-AUDIT-043).
+          if (companion != null) dictMetaMap[row.key] = companion;
+        // Legacy categories from old snapshots
+        case ProfileKeys.categoryDictionary:
+          prefMap[row.key] = row.value;
+        case ProfileKeys.categoryReader:
+          // 旧快照里 reader 偏好按 MediaSource 命名空间还原；用单一真相编码器
+          // 而非硬编码 `src:reader_fushi:` 猜下层私有 key 格式（[dbSourcePrefKey]）。
+          prefMap[dbSourcePrefKey(kReaderSourcePersistedKey, row.key)] =
+              row.value;
+        default:
+          break;
+      }
+    }
+
+    // BUG-1019: old snapshots (taken before a key entered the exclusion list,
+    // e.g. audiobook_pos_* / audiobook_speed_* / override_title://*) may still
+    // carry excluded keys. Apply must neither restore those stale values (a
+    // months-old speed/position overwriting the live one) nor delete the live
+    // rows (the prune loop below already skips excluded keys) — so drop them
+    // from the restore map here. Same single source of truth as snapshot/prune:
+    // [ProfileKeys.isExcludedPref].
+    prefMap
+        .removeWhere((String key, String _) => ProfileKeys.isExcludedPref(key));
+    return (
+      ankiMap: ankiMap,
+      prefMap: prefMap,
+      dictMetaMap: dictMetaMap,
+      hasDictMeta: hasDictMeta,
+    );
+  }
+
+  /// 反馈 biLEesNqWb：**只读**解析 [profileId] 的快照，得到「现在切到它会生效的整份
+  /// 设置」（[ProfileSettingsView]），不写任何表、不动激活配置。配置不存在返回 null。
+  ///
+  /// 合成规则逐条对齐 [applyProfile]（两者共用 [_decodeSnapshot]）：
+  /// * 偏好：live 里设备本地键（[ProfileKeys.isExcludedPref]）保留，其余键只取快照——
+  ///   [applyProfile] 正是「删掉快照里没有的非排除键、写入快照键」；
+  /// * 词典：live 行为底，快照里有同名行时换上配置拥有的列（顺序 / 隐藏 / 折叠 / 展开 /
+  ///   语言覆盖 / 混合词典汉字部分开关）；没有 dictionary_meta 快照的老配置保持 live。
+  ///   [applyProfile] 对「快照有、库里没有但磁盘还在」的行会自愈回插，视图不做——
+  ///   App 自己的词典列表里也没有那一行，引擎加载的词典集合与之一致；
+  /// * Anki：快照有 Anki 字段时 [ProfileKeys.mapToAnkiSettings] 叠在 live 设置上。
+  ///
+  /// 调用方若发现 [profileId] 就是激活配置，应直接用 live 状态：激活配置的快照只在
+  /// 切走时才刷新，比 live 旧。
+  Future<ProfileSettingsView?> loadSettingsView(int profileId) async {
+    if (profileId <= 0) return null;
+    final ProfileRow? profile = await _db.getProfileById(profileId);
+    if (profile == null) return null;
+    final _DecodedProfileSnapshot snapshot =
+        _decodeSnapshot(await _db.getProfileSettings(profileId));
+
+    final Map<String, String> prefs = <String, String>{
+      for (final MapEntry<String, String> e in (await _db.getAllPrefs()).entries)
+        if (ProfileKeys.isExcludedPref(e.key)) e.key: e.value,
+      ...snapshot.prefMap,
+    };
+
+    final List<DictionaryMetaRow> liveRows =
+        await _db.getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> rows = !snapshot.hasDictMeta
+        ? liveRows
+        : <DictionaryMetaRow>[
+            for (final DictionaryMetaRow live in liveRows)
+              _withProfileDictionaryColumns(
+                live,
+                snapshot.dictMetaMap[live.name],
+              ),
+          ];
+
+    final AnkiSettings liveAnki = await _ankiRepo.loadSettings();
+    final AnkiSettings anki = snapshot.ankiMap.isEmpty
+        ? liveAnki
+        : ProfileKeys.mapToAnkiSettings(snapshot.ankiMap, liveAnki);
+
+    return ProfileSettingsView(
+      profileId: profile.id,
+      profileName: profile.name,
+      prefsMap: prefs,
+      prefs: PreferencesRepository.readOnlySnapshot(_db, prefs),
+      ankiSettings: anki,
+      dictionaries: DictionaryRepository.dictionariesFromRows(rows),
+    );
+  }
+
+  /// [live] 行换上快照 [companion] 里配置拥有的列（与 [applyProfile] 的
+  /// `applyDictionaryMetaProfileColumns` 同一组列）；没有快照行时原样返回。
+  static DictionaryMetaRow _withProfileDictionaryColumns(
+    DictionaryMetaRow live,
+    DictionaryMetadataCompanion? companion,
+  ) {
+    if (companion == null) return live;
+    return live.copyWith(
+      order: companion.order.value,
+      hiddenLanguagesJson: companion.hiddenLanguagesJson.value,
+      collapsedLanguagesJson: companion.collapsedLanguagesJson.value,
+      expandedLanguagesJson: companion.expandedLanguagesJson.value,
+      languageOverride: Value<String?>(companion.languageOverride.value),
+      metadataJson: _metadataWithProfileKanjiPartSettings(
+            live.metadataJson,
+            companion.metadataJson.value,
+          ) ??
+          live.metadataJson,
+    );
+  }
+
   /// Serialize one `dictionary_metadata` row into the JSON value stored in a
   /// profile_settings row (key = dictionary name). Carries every profile-owned
   /// column: order, formatKey (source), type, and the language-visibility /
@@ -704,3 +797,11 @@ class ProfileRepository {
     }
   }
 }
+
+/// [ProfileRepository._decodeSnapshot] 的结果。
+typedef _DecodedProfileSnapshot = ({
+  Map<String, String> ankiMap,
+  Map<String, String> prefMap,
+  Map<String, DictionaryMetadataCompanion> dictMetaMap,
+  bool hasDictMeta,
+});

@@ -138,14 +138,14 @@ void main() {
 
   // 源码守卫：旁路入口必须显式传 restoreFallback: false。参数是 required 的，编译
   // 已经逼每个入口表态；这里钉的是「表态的值对不对」。Tests run with CWD = `fushi/`.
-  test('浏览器查词与附着外部窗口两个旁路入口不回退', () {
+  test('附着外部窗口旁路入口不回退；浏览器绑定不再切换 App', () {
+    // 反馈 biLEesNqWb：「浏览器」绑定只决定扩展请求读哪份配置的只读视图，不再
+    // autoApplyBinding 切 App——main.dart 不得再出现这条旁路切换。
     final String main = File('lib/main.dart').readAsStringSync();
     expect(
-      RegExp(
-        r'mediaType: ProfileMediaKind\.browser,\s*restoreFallback: false',
-      ).hasMatch(main),
-      isTrue,
-      reason: 'main.dart 注入的浏览器查词 applier 必须 restoreFallback: false',
+      main.contains('mediaType: ProfileMediaKind.browser'),
+      isFalse,
+      reason: '浏览器查词不得再切换 App 的激活配置',
     );
 
     final String texthooker = File(
