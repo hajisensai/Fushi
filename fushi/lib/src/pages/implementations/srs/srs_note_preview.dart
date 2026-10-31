@@ -466,7 +466,10 @@ Future<void> showSrsNotePreviewSheet(
   List<String> tags = const <String>[],
 }) => adaptiveModalSheet<void>(
   context: context,
-  builder: (BuildContext context) => FushiModalSheetFrame(
+  // 沿用调用方的复习作用域（媒体目录随笔记所属配置，见 srsInheritProviderScope）。
+  builder: (BuildContext sheetContext) => UncontrolledProviderScope(
+    container: ProviderScope.containerOf(context, listen: false),
+    child: FushiModalSheetFrame(
     key: const ValueKey<String>('srs-note-preview-sheet'),
     title: t.srs_note_types_preview,
     leadingIcon: FushiIcons.visibility,
@@ -476,7 +479,11 @@ Future<void> showSrsNotePreviewSheet(
       expand: expand,
       tags: tags,
       showTitle: false,
-      height: (MediaQuery.sizeOf(context).height * 0.55).clamp(240.0, 640.0),
+      height: (MediaQuery.sizeOf(sheetContext).height * 0.55).clamp(
+        240.0,
+        640.0,
+      ),
     ),
+  ),
   ),
 );

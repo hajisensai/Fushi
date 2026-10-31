@@ -73,7 +73,9 @@ import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
@@ -10209,11 +10211,7 @@ class AppModel with ChangeNotifier {
   SrsMiningDestination get srsMiningDestination {
     final PreferencesRepository? prefs = _prefsRepo;
     if (prefs == null) return const SrsMiningDestination();
-    return SrsMiningDestination(
-      deckId: prefs.srsMiningDeckId,
-      noteTypeId: prefs.srsMiningNoteTypeId,
-      fieldMappingsByType: prefs.srsMiningFieldMappings,
-    );
+    return srsMiningDestinationIn(prefs);
   }
 
   Future<void> setSrsMiningDeckId(String id) =>
@@ -11185,6 +11183,7 @@ class AppModel with ChangeNotifier {
       dictionaryUnifiedStyleProvider: () => view.prefs.dictionaryUnifiedStyle,
       popupDictionaryCssProvider: () =>
           browserExtensionPopupDictionaryCssForView(view),
+      srsApiProvider: () => extensionSrsApiForView(view),
     );
   }
 
@@ -11195,27 +11194,82 @@ class AppModel with ChangeNotifier {
   /// 按 [view] 替浏览器扩展制卡 / 查重 / 在 Anki 中打开用的仓库：同一个本机 Anki 后端，
   /// 设置（牌组 / 笔记类型 / 字段映射 / 标签 / 查重范围）读 [view] 的只读存储。
   ///
-  /// 与 [hostMiningAnkiRepository] 一样不套待发队列（扩展自己有队列）。挖词目标为 Fushi
-  /// 复习的情况由 [extensionSrsMiningUnavailableReason] 拦在调用方。
-  BaseAnkiRepository hostMiningRepositoryForView(ProfileSettingsView view) =>
-      platformServices.createAnkiRepository(
-        settingsStore: view.ankiSettingsStore,
-      );
+  /// 与 [hostMiningAnkiRepository] 一样不套待发队列（扩展自己有队列）。[view] 的挖词目标是
+  /// Fushi 复习（且复习模块开着，模块开关是整台设备的）时，与 `hostMiningAnkiRepositoryProvider`
+  /// 同形地包一层 [SrsMiningAnkiRepository]：制卡 / 查重 / 同词反查 / 在复习里打开都走**那份
+  /// 配置**的复习副本（[extensionSrsMinerForView]），不碰 App 激活配置的复习、也不改发 Anki。
+  BaseAnkiRepository hostMiningRepositoryForView(ProfileSettingsView view) {
+    final BaseAnkiRepository inner = platformServices.createAnkiRepository(
+      settingsStore: view.ankiSettingsStore,
+    );
+    if (!moduleVisibility.isEnabled(ModuleId.srs) ||
+        SrsMiningTarget.fromWire(view.prefs.srsMiningTarget) !=
+            SrsMiningTarget.srs) {
+      return inner;
+    }
+    return SrsMiningAnkiRepository(
+      inner: inner,
+      miner: () => extensionSrsMinerForView(view),
+      openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
+    );
+  }
 
-  /// [view] 的挖词目标是 Fushi 复习（且复习模块开着）时的拒绝原因；否则 null。
-  ///
-  /// 复习库按配置隔离，App 只为**激活**配置打开它（`srsStoreProvider`）；为一次扩展请求
-  /// 再给另一个配置并发打开同一个复习内核，会让两个实例同时写同步身份与本机状态。所以
-  /// 这里明确拒绝并说清原因，绝不悄悄改写进激活配置的复习库、也不悄悄改发 Anki。
-  String? extensionSrsMiningUnavailableReason(ProfileSettingsView view) {
-    if (!moduleVisibility.isEnabled(ModuleId.srs)) return null;
-    if (SrsMiningTarget.fromWire(view.prefs.srsMiningTarget) !=
-        SrsMiningTarget.srs) {
+  /// 读 `srsProfileStoresProvider` 的委托（各配置的复习副本登记处）。AppModel 不在 Riverpod
+  /// 图里，由 main.dart 在根容器建好后注入；未注入（测试 / 弹窗进程）时按「复习不可用」处理。
+  SrsProfileStores Function()? srsProfileStoresReader;
+
+  /// 在复习里打开某份配置的一条笔记（编辑页套那份配置的副本，见 `srsPushNoteEditor`）。
+  /// 由 main.dart 注入；未注入时打不开（回 false）。
+  Future<bool> Function(SrsMiner miner, String noteId)? srsProfileNoteOpener;
+
+  /// [prefs] 里的复习制卡落点（牌组 / 笔记类型 / 字段映射）。
+  static SrsMiningDestination srsMiningDestinationIn(
+    PreferencesRepository prefs,
+  ) => SrsMiningDestination(
+    deckId: prefs.srsMiningDeckId,
+    noteTypeId: prefs.srsMiningNoteTypeId,
+    fieldMappingsByType: prefs.srsMiningFieldMappings,
+  );
+
+  /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
+  /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
+  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。
+  Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null) return null;
+    try {
+      return await reader().minerFor(
+        profileUid: await database.profileUidOf(view.profileId),
+        destination: srsMiningDestinationIn(view.prefs),
+        fallbackRolloverHour: () => view.prefs.statDayResetHour,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('extensionSrsMinerForView', e, stack);
       return null;
     }
-    return '浏览器扩展所选配置「${view.profileName}」的挖词目标是 Fushi 复习，'
-        '而复习库只对 App 当前激活的配置开放。请在 App 里切到该配置，'
-        '或在扩展里改选「跟随 Fushi」后再制卡';
+  }
+
+  /// 在复习里打开 [view] 那份配置的笔记 [noteId]。
+  Future<bool> extensionSrsOpenNote(
+    ProfileSettingsView view,
+    String noteId,
+  ) async {
+    final Future<bool> Function(SrsMiner, String)? open = srsProfileNoteOpener;
+    if (open == null) return false;
+    final SrsMiner? miner = await extensionSrsMinerForView(view);
+    return miner != null && await open(miner, noteId);
+  }
+
+  /// 浏览器扩展复习标记（`/api/srs/*`）按 [view] 那份配置的复习处理：词状态读它的副本，点标记
+  /// 打开它的笔记。复习模块关着时为 null（端点 404，与激活配置同一判据：[SrsAppHost.current]）。
+  SrsExtensionApi? extensionSrsApiForView(ProfileSettingsView view) {
+    if (SrsAppHost.current == null) return null;
+    return SrsAppHost(
+      readStore: () async => (await extensionSrsMinerForView(view))?.store,
+      openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
+      // 扩展不经这个入口打开浏览页。
+      openBrowse: () async => false,
+    );
   }
 
   /// 读 `ankiRepositoryProvider` 的委托（待发队列 / 自动重排 / 转发互联主机都在那条
@@ -12071,18 +12125,6 @@ class _AppModelRemoteLookupService
         : _appModel.hostMiningRepositoryForView(view);
   }
 
-  /// 按视图处理且它的挖词目标落不了地时的原因（见
-  /// [AppModel.extensionSrsMiningUnavailableReason]）。
-  String? get _srsUnavailable {
-    final ProfileSettingsView? view = _view;
-    return view == null
-        ? null
-        : _appModel.extensionSrsMiningUnavailableReason(view);
-  }
-
-  RemoteMineResult _srsUnavailableResult(String reason) =>
-      remoteMineError('Anki.mine.extensionProfile', reason);
-
   // 制卡媒体偏好：有视图读视图，否则走 AppModel 的公开 getter（测试替身覆写的面）。
   MiningAnimatedFormat get _videoMiningAnimatedFormat =>
       _view?.prefs.videoMiningAnimatedFormat ??
@@ -12107,8 +12149,6 @@ class _AppModelRemoteLookupService
     // 并渲染成 <img src="fushi_dict_N.ext">；app 内制卡入口（dictionary_popup_webview /
     // overlay_bridge_handlers）制卡前都先把字节落进 Anki 媒体缓存，远程这条路此前漏了
     // 这一步 → repo 读不到缓存 → 外字永远退化成 alt 文本。与本地入口同一步骤。
-    final String? srsUnavailable = _srsUnavailable;
-    if (srsUnavailable != null) return _srsUnavailableResult(srsUnavailable);
     await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
     // 替对端制卡：遵守本机挖词目标（目标 = Fushi 复习时落复习，不写 Anki）。
     final BaseAnkiRepository repo = _miningRepository;
@@ -12122,8 +12162,6 @@ class _AppModelRemoteLookupService
 
   @override
   Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload) async {
-    final String? srsUnavailable = _srsUnavailable;
-    if (srsUnavailable != null) return _srsUnavailableResult(srsUnavailable);
     try {
       return await _withForwardedMiningContext<RemoteMineResult>(
         payload,
@@ -12177,8 +12215,6 @@ class _AppModelRemoteLookupService
     )
     action,
   ) {
-    final String? srsUnavailable = _srsUnavailable;
-    if (srsUnavailable != null) throw StateError(srsUnavailable);
     final BaseAnkiRepository repo = _miningRepository;
     return withMaterializedMiningContext<T>(
       payload,
@@ -12248,10 +12284,7 @@ class _AppModelRemoteLookupService
   }) async {
     // TODO-1176：与 app 内 dictionary_page_mixin.checkDuplicate 走同一 repo.isDuplicate
     // 路径（AnkiConnect findNotes / AnkiDroid findDuplicateNotes），repo 内部已 fail-soft。
-    // 按视图处理而挖词目标落不了地：查重也无从查起，抛出（server 回 500，扩展显示查重
-    // 失败），不拿激活配置的复习库冒充。
-    final String? srsUnavailable = _srsUnavailable;
-    if (srsUnavailable != null) throw StateError(srsUnavailable);
+    // 按视图处理、挖词目标 = Fushi 复习时查的是那份配置的复习（[AppModel.hostMiningRepositoryForView]）。
     final BaseAnkiRepository repo = _miningRepository;
     return repo.isDuplicate(expression, reading);
   }
@@ -12264,8 +12297,6 @@ class _AppModelRemoteLookupService
     // Issue #1409：与 app 内 openInAnki 桥（_handleOpenInAnkiBridge）同一
     // repo.openWordInAnki；抛出一律按 failed（弹窗提示打不开，绝不静默）。
     try {
-      final String? srsUnavailable = _srsUnavailable;
-      if (srsUnavailable != null) throw StateError(srsUnavailable);
       final BaseAnkiRepository repo = _miningRepository;
       return await repo.openWordInAnki(expression, reading);
     } catch (e, st) {
@@ -12278,8 +12309,6 @@ class _AppModelRemoteLookupService
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     final ProfileSettingsView? view = _view;
     if (view == null) return _mineImmersion(payload);
-    final String? srsUnavailable = _srsUnavailable;
-    if (srsUnavailable != null) return _srsUnavailableResult(srsUnavailable);
     // 动图「只播一次」由引擎 IO 层经进程级读取器取偏好；按视图制卡时用 zone 值把视图里的
     // 那一项带下去（[kMiningAnimatedPlayOnceZoneKey]），不改进程级读取器。
     return runZoned(

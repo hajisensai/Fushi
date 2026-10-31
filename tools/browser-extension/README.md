@@ -101,15 +101,18 @@ YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitl
 
 - 工具栏菜单的「Fushi 配置」下拉：首项「跟随 Fushi（当前激活配置名）」= 不存选择、请求不带配置（与本功能
   引入前完全一致）；其余每项是 app 里的一个配置。选中存 `chrome.storage.local.fushiProfileSelection = {id, name}`。
-- 查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开（`fetchWithAutoConfigRetry` 的工厂多拿一个 `profileId`，这些端点用
-  `profileHeaders()`）带请求头 `X-Fushi-Profile-Id`；字幕 / 字体 / 统计 / 复习状态等与配置无关的端点不带。
+- 查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开 / 复习标记（词状态、点标记打开笔记）（`fetchWithAutoConfigRetry` 的
+  工厂多拿一个 `profileId`，这些端点用 `profileHeaders()`）带请求头 `X-Fushi-Profile-Id`；字幕 / 字体 / 统计 / 收藏等
+  与配置无关的端点不带。
 - **只影响扩展**：app 收到带头的请求时从该配置的 `profile_settings` 快照组出一份只读设置视图（词典启用 / 顺序 /
   隐藏、弹窗外观、Anki 牌组 / 模板 / 字段映射、音频源等），这条请求的全部设置都从这份视图读；App 的激活配置与
   全局偏好一概不动。查词缓存按配置分区。响应头 `X-Fushi-Profile-Active` 回报实际生效的配置。
 - 与 app 里「浏览器」媒体类型绑定的关系：扩展手动选择 > 「浏览器」绑定 > 跟随 App；三者都只决定扩展请求读哪份
   设置，都不切换 App。
-- 所选配置的挖词目标是 Fushi 复习（SRS）且模块开着、而它不是 App 当前激活配置时，制卡 / 查重 / 在 Anki 中打开会
-  明确报错：复习库只为激活配置打开，不为扩展另开一份。
+- 所选配置的挖词目标是 Fushi 复习（SRS）且模块开着时，卡制进**那份配置**的复习（不是 App 当前激活配置的）；查重、
+  同词反查、「在复习里打开」、复习标记的词状态也都按那份配置的复习判。复习数据在同一个 `srs.db` 里按配置 uid 分区，
+  app 在同一个句柄上为那个配置开一份副本（不开第二个库），写入排在激活配置副本的写入之后；用户之后切到那份配置，
+  这些卡照常出现在复习里，同步 v2 的操作也记在那份配置名下。
 - 所选配置在 app 里被删：app 按「浏览器」绑定 / App 激活配置回退处理该请求并回响应头 `X-Fushi-Profile-Missing`，扩展回退到「跟随
   Fushi」并写 `fushiProfileNotice`（工具栏菜单显示提示行）。改名：打开工具栏菜单列配置时更新保存的名字并提示。
 - 「按网址自动匹配配置」（yomitan 式）**不做**（所有者决定）。

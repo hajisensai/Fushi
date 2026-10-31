@@ -4,7 +4,7 @@
 // 数据流：
 //   工具栏菜单 → background `fushiProfiles` → POST /api/extension/profiles 列出配置；
 //   用户选中 → chrome.storage.local.fushiProfileSelection = {id, name}（「跟随 Fushi」= 删键）；
-//   查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开 → 请求头 X-Fushi-Profile-Id；
+//   查词 / 制卡 / 查重 / 单词音频 / 在 Anki 中打开 / 复习标记（词状态、打开笔记）→ 请求头 X-Fushi-Profile-Id；
 //   app 按该配置的只读设置视图处理这条请求，不切换 App 的激活配置（见 fushi/lib/src/sync/extension_profile_api.dart），
 //   响应头 X-Fushi-Profile-Missing = 所选配置已被删 → 回退到「跟随 Fushi」并留提示；
 //   列配置时发现改名 → 更新保存的名字并留提示。
