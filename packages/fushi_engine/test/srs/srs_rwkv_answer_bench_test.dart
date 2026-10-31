@@ -28,6 +28,10 @@ class _Worker implements SrsRwkvBackend {
   @override
   Future<void> restore(Uint8List snapshot) => worker.restore(snapshot);
   @override
+  Future<void> snapshotToFile(String path) => worker.snapshotToFile(path);
+  @override
+  Future<void> restoreFromFile(String path) => worker.restoreFromFile(path);
+  @override
   Future<void> reset() => worker.reset();
   @override
   Future<void> close() => worker.close();

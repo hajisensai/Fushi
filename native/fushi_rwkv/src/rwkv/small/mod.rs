@@ -19,7 +19,7 @@ use std::io;
 use std::sync::Arc;
 
 use super::{
-    read_runtime_feature_state, Cursor, FeatureState, ReviewInput, RwkvStats, StatePrecision,
+    read_runtime_feature_state, SnapshotReader, FeatureState, ReviewInput, RwkvStats, StatePrecision,
     CARD_FEATURES, ID_PLACEHOLDER,
 };
 pub use model::SmallHeads;
@@ -477,24 +477,47 @@ impl SmallInference {
         Some(self.features.first_day_offset? + self.features.previous_day_offset?)
     }
 
-    fn feature_cache(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(b"ARWKVPROCSTATE2".len() + self.features.cache_state_len() + 4);
-        out.extend_from_slice(b"ARWKVPROCSTATE2");
-        self.features
-            .write_cache_state_to(&mut out)
-            .expect("writing to a Vec should not fail");
-        out.extend_from_slice(&0u32.to_le_bytes());
-        out
-    }
-
     /// `FRWKVSMALL1\0`, precision byte (0 / 8 / 4), weight fingerprint (u64),
     /// then per stream (card, deck, note, preset, user): slot length (u32),
     /// count (u32), states by ascending id (i64 id + slot bytes); then u32
     /// length + the `ARWKVPROCSTATE2` feature cache. Lossless.
     pub fn snapshot(&self) -> Vec<u8> {
         let state_bytes: usize = self.stores.iter().map(|s| s.len() * (8 + s.slot_len())).sum();
-        let feature_cache = self.feature_cache();
-        let mut out = Vec::with_capacity(64 + state_bytes + feature_cache.len());
+        let feature_len = b"ARWKVPROCSTATE2".len() + self.features.cache_state_len() + 4;
+        let mut out = Vec::with_capacity(64 + state_bytes + feature_len);
+        self.write_snapshot(&mut out).expect("writing to a Vec should not fail");
+        out
+    }
+
+    /// Writes the lossless byte snapshot format without a whole-file buffer.
+    pub fn write_snapshot(&self, out: &mut impl io::Write) -> io::Result<()> {
+        out.write_all(SNAPSHOT_MAGIC)?;
+        out.write_all(&[super::precision_code(self.precision)])?;
+        out.write_all(&self.model.fingerprint.to_le_bytes())?;
+        for store in &self.stores {
+            super::write_snapshot_u32(out, store.slot_len())?;
+            let ids = store.ids();
+            super::write_snapshot_u32(out, ids.len())?;
+            for id in ids {
+                out.write_all(&id.to_le_bytes())?;
+                out.write_all(store.get(id).unwrap())?;
+            }
+        }
+        let feature_len = b"ARWKVPROCSTATE2".len() + self.features.cache_state_len() + 4;
+        super::write_snapshot_u32(out, feature_len)?;
+        out.write_all(b"ARWKVPROCSTATE2")?;
+        self.features.write_cache_state_to(out)?;
+        out.write_all(&0u32.to_le_bytes())
+    }
+
+    // Previous whole-buffer encoder, used only to pin the on-disk format.
+    #[cfg(test)]
+    pub(crate) fn legacy_snapshot(&self) -> Vec<u8> {
+        let mut features = Vec::new();
+        features.extend_from_slice(b"ARWKVPROCSTATE2");
+        self.features.write_cache_state_to(&mut features).unwrap();
+        features.extend_from_slice(&0u32.to_le_bytes());
+        let mut out = Vec::new();
         out.extend_from_slice(SNAPSHOT_MAGIC);
         out.push(super::precision_code(self.precision));
         out.extend_from_slice(&self.model.fingerprint.to_le_bytes());
@@ -507,15 +530,20 @@ impl SmallInference {
                 out.extend_from_slice(store.get(id).unwrap());
             }
         }
-        out.extend_from_slice(&(feature_cache.len() as u32).to_le_bytes());
-        out.extend_from_slice(&feature_cache);
+        out.extend_from_slice(&(features.len() as u32).to_le_bytes());
+        out.extend_from_slice(&features);
         out
     }
 
     /// Replaces the state with a [Self::snapshot]; nothing changes on error.
     pub fn restore_snapshot(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.read_snapshot(&mut io::Cursor::new(bytes), bytes.len() as u64)
+    }
+
+    /// Bounded decoder shared with the byte API. Errors preserve the old state.
+    pub fn read_snapshot(&mut self, input: &mut impl io::Read, len: u64) -> io::Result<()> {
         let invalid = |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
-        let mut cursor = Cursor::new(bytes);
+        let mut cursor = SnapshotReader::new(input, len);
         cursor.expect_magic(SNAPSHOT_MAGIC).map_err(|_| {
             invalid("not a small-model RWKV snapshot (a big-model snapshot or damaged bytes)")
         })?;

@@ -140,6 +140,14 @@ class _CountingBackend implements SrsRwkvBackend {
   Future<void> restore(Uint8List snapshot) async {}
 
   @override
+  Future<void> snapshotToFile(String path) async {
+    await File(path).writeAsBytes(const <int>[], flush: true);
+  }
+
+  @override
+  Future<void> restoreFromFile(String path) async {}
+
+  @override
   Future<void> reset() async => rows = 0;
 
   @override

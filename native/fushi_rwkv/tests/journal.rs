@@ -303,7 +303,7 @@ fn c_abi_round_trip() {
     let rows = |inputs: &[ReviewInput]| -> Vec<FrwkvReview> {
         inputs.iter().map(FrwkvReview::from_input).collect()
     };
-    assert_eq!(frwkv_abi_version(), 3);
+    assert_eq!(frwkv_abi_version(), ABI_VERSION);
     unsafe {
         let model = frwkv_model_load(bytes.as_ptr(), bytes.len());
         let runtime = frwkv_runtime_new(model, FRWKV_PRECISION_INT4, 1);

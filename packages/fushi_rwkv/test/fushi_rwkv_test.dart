@@ -104,6 +104,124 @@ void main() {
 
   for (final String which in <String>['small', 'large']) {
     test(
+      '$which model: streaming snapshots preserve bytes across native and worker APIs',
+      () async {
+        final Directory directory = Directory.systemTemp.createTempSync(
+          'fushi_rwkv_stream_',
+        );
+        addTearDown(() => directory.deleteSync(recursive: true));
+        final File weights = which == 'small'
+            ? _smallWeights()
+            : _modelFile('RWKV_trained_on_5000_10000.bin');
+        if (which == 'small') {
+          addTearDown(() => weights.parent.deleteSync(recursive: true));
+        }
+        final RwkvNativeModel model = RwkvNativeModel.load(
+          weights.readAsBytesSync(),
+        );
+        final RwkvNativeRuntime runtime = RwkvNativeRuntime.create(
+          model,
+          threads: 2,
+        );
+        addTearDown(runtime.dispose);
+        final RwkvWorker worker = await RwkvWorker.spawn(
+          modelPath: weights.path,
+          threads: 2,
+        );
+        addTearDown(worker.close);
+        final (RwkvRows history, RwkvRows answer) = _history();
+        runtime.replay(history);
+        final Uint8List expected = runtime.snapshot();
+        final Float32List predictions = runtime.query(answer);
+        final File streamed = File('${directory.path}/中文 状态.rwkv');
+        runtime.snapshotToFile(streamed.path);
+        expect(streamed.readAsBytesSync(), expected);
+
+        // 新文件由旧字节接口恢复，旧快照文件由新流式接口恢复。
+        await worker.restore(streamed.readAsBytesSync());
+        expect(await worker.query(answer), predictions);
+        final File legacy = File('${directory.path}/旧格式.rwkv')
+          ..writeAsBytesSync(expected);
+        await worker.reset();
+        await worker.restoreFromFile(legacy.path);
+        expect(await worker.snapshot(), expected);
+        expect(await worker.query(answer), predictions);
+
+        final File workerFile = File('${directory.path}/后台保存.rwkv');
+        await worker.snapshotToFile(workerFile.path);
+        expect(workerFile.readAsBytesSync(), expected);
+        runtime.reset();
+        runtime.restoreFromFile(workerFile.path);
+        expect(runtime.snapshot(), expected);
+        expect(runtime.query(answer), predictions);
+
+        // 文件读错、截断或多出尾字节都不得留下部分恢复的状态。
+        final File truncated = File('${directory.path}/截断.rwkv')
+          ..writeAsBytesSync(expected.sublist(0, expected.length - 1));
+        final File trailing = File('${directory.path}/尾部损坏.rwkv')
+          ..writeAsBytesSync(<int>[...expected, 1]);
+        // 当前状态与损坏文件的有效前缀不同，能发现原地恢复造成的部分覆盖。
+        final RwkvRows newer = RwkvRows()
+          ..add(
+            cardId: 100,
+            noteId: 500,
+            deckId: 1,
+            presetId: 1,
+            ease: 3,
+            dayOffset: 60,
+            cardType: 2,
+            elapsedDays: 5,
+            elapsedSeconds: 5 * 86400,
+          );
+        runtime.replay(newer);
+        await worker.replay(newer);
+        final Uint8List protectedState = runtime.snapshot();
+        expect(protectedState, isNot(expected));
+        expect(await worker.snapshot(), protectedState);
+        final List<String> invalidPaths = <String>[
+          '${directory.path}/不存在.rwkv',
+          truncated.path,
+          trailing.path,
+          '${legacy.path}\u0000ignored',
+        ];
+        for (final String path in invalidPaths) {
+          expect(
+            () => runtime.restoreFromFile(path),
+            throwsA(isA<RwkvNativeException>()),
+          );
+          expect(runtime.snapshot(), protectedState);
+          await expectLater(
+            worker.restoreFromFile(path),
+            throwsA(isA<RwkvNativeException>()),
+          );
+          expect(await worker.snapshot(), protectedState);
+        }
+        expect(
+          () => runtime.snapshotToFile('${workerFile.path}\u0000ignored'),
+          throwsA(isA<RwkvNativeException>()),
+        );
+        await expectLater(
+          worker.snapshotToFile('${workerFile.path}\u0000ignored'),
+          throwsA(isA<RwkvNativeException>()),
+        );
+        expect(workerFile.readAsBytesSync(), expected);
+
+        runtime.dispose();
+        expect(() => runtime.snapshotToFile(streamed.path), throwsStateError);
+        expect(() => runtime.restoreFromFile(streamed.path), throwsStateError);
+        await worker.close();
+        await expectLater(
+          worker.snapshotToFile(streamed.path),
+          throwsStateError,
+        );
+        await expectLater(
+          worker.restoreFromFile(streamed.path),
+          throwsStateError,
+        );
+      },
+    );
+
+    test(
       '$which model: worker replays, queries, schedules and snapshots',
       () async {
         final File weights = which == 'small'
