@@ -65,7 +65,20 @@ mixin _FushiDbAiAgent
   );
 
   /// v140 迁移：归属不明（空串）的存量会话归到当前激活 Profile。
+  ///
+  /// 没有待回填的行就不去解析激活 Profile：迁移阶梯上 `preferences` / `profiles`
+  /// 未必存在（只建了部分表的旧库），解析它们只该在真有存量会话要归属时发生。
   Future<void> _backfillAiAgentSessionProfiles() async {
+    final TypedResult? pending =
+        await (selectOnly(aiAgentSessions)
+              ..addColumns(<Expression<Object>>[aiAgentSessions.id])
+              ..where(aiAgentSessions.profileUid.equals(''))
+              ..limit(1))
+            .getSingleOrNull();
+    if (pending == null) return;
+    if (!await _tableExists('preferences') || !await _tableExists('profiles')) {
+      return;
+    }
     final String uid = await resolveActiveProfileUid();
     if (uid.isEmpty) return;
     await (update(aiAgentSessions)
