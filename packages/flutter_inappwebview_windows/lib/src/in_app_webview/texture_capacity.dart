@@ -4,8 +4,9 @@ import 'dart:math' as math;
 /// 只占左上角 `ceil(布局尺寸 × 栅格倍率)` 那一块。
 typedef TextureCapacity = ({int width, int height});
 
-/// 容量取整步长（物理像素）。吸收滚动条出现 / 消失、DPI 取整、侧栏开合这类几十像素
-/// 的来回抖动：同一档内改尺寸不重新分配任何显存。
+/// 扩容时的取整步长（物理像素）。吸收滚动条出现 / 消失、DPI 取整、侧栏开合这类几十
+/// 像素的来回抖动：扩过一次容之后，同一档内改尺寸不重新分配任何显存。首份分配不取整
+/// （见 [nextTextureCapacity]）。
 const int kTextureCapacityStep = 256;
 
 /// 已有容量放不下时的几何增长倍率。拖动窗口边框一路放大时，按 1.5 倍跳档而不是每帧
@@ -23,11 +24,15 @@ const double kTextureCapacityGrowth = 1.5;
 ///
 /// 规则：
 /// - 两维都放得下（[current] ≥ [needed]）：原样返回，不重新分配；
-/// - 首次（当前为 0）：贴 [needed] 取整到 [kTextureCapacityStep]；
-/// - 增长（任一维放不下）：两维都取 `max(needed, current × 1.5)` 再取整，但**不超过
-///   显示器尺寸**，也不低于当前容量——内容放得进显示器时，一路放大最终停在显示器
-///   尺寸上，此后任何改尺寸都在容量内；内容本身大过显示器（多屏跨屏、屏外大窗口）
-///   时不设上限，只取整。
+/// - 首次（当前为 0）：**贴身**，正好是 [needed]，不取整、不放大。多数 WebView（查词
+///   弹窗、歌词层、正文）一辈子不改尺寸，首份分配就是它全部的显存；取整到 256 档会让
+///   每个实例白占约 18%（2576×1892 → 2816×2048），而每新建一个 WebView 那一份都会
+///   被引擎 / 系统侧留下，等于把每实例的残留一起放大；
+/// - 增长（任一维放不下）：两维都取 `max(needed, current × 1.5)` 再取整到
+///   [kTextureCapacityStep]，但**不超过显示器尺寸**，也不低于当前容量——真在改尺寸的
+///   WebView 从第一次扩容起就进入「取整 + 几何增长」，一路放大最终停在显示器尺寸上，
+///   此后任何改尺寸都在容量内；内容本身大过显示器（多屏跨屏、屏外大窗口）时不设
+///   上限，只取整。
 ///
 /// 返回值任一维都 ≥ [needed]。[display] 为 0 表示拿不到显示器尺寸（无上限）。
 TextureCapacity nextTextureCapacity({
@@ -47,9 +52,9 @@ TextureCapacity nextTextureCapacity({
 }
 
 int _nextDimension(int current, int needed, int display) {
-  final int grown = current <= 0
-      ? needed
-      : math.max(needed, (current * kTextureCapacityGrowth).ceil());
+  // 首份分配贴身（见 [nextTextureCapacity]）：只有扩容才取整、才几何增长。
+  if (current <= 0) return needed;
+  final int grown = math.max(needed, (current * kTextureCapacityGrowth).ceil());
   final int rounded = _roundUp(grown);
   final int capped = display <= 0 || needed > display
       ? rounded

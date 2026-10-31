@@ -97,6 +97,8 @@ namespace flutter_inappwebview_plugin
         requested_surface_size_ = { width, height };
         requested_scale_factor_ = scale_factor;
         capacity_ = capacity;
+        // 无着色器桥：捕获倍率恒等于设备倍率（回调里两个倍率传同一个值）。
+        capture_scale_ratio_ = 1.0f;
         callback = surface_size_changed_;
       }
       if (callback) {
@@ -127,6 +129,11 @@ namespace flutter_inappwebview_plugin
     float requested_scale_factor_ = 0.0f;
     // BUG-3913：纹理 / 帧池容量（物理像素），见 SetOutputSize。
     Size capacity_ = { 0, 0 };
+    // 捕获倍率 / 设备倍率（0, 1]。capacity_ 是设备倍率下的物理像素（共享目标纹理按它
+    // 分配），而 WGC 捕获的是 WebView2 按捕获倍率栅格化的 visual：着色器链开着时捕获
+    // 倍率 = 设备倍率 / 2，捕获源只有容量的一半宽高。帧池按「容量 × 本比值」分配，
+    // 不能直接拿设备倍率的容量（那是 4 倍面积的空帧池缓冲）。
+    float capture_scale_ratio_ = 1.0f;
     std::atomic<bool> needs_update_ = false;
     winrt::com_ptr<ID3D11Texture2D> last_frame_;
     // last_frame_ 里有效内容的尺寸（WGC 帧的 ContentSize）。帧池按容量分配后帧纹理
@@ -155,7 +162,7 @@ namespace flutter_inappwebview_plugin
     // 回 true = 真的退役并重建了帧池（本轮 pump 不再取帧）；当前帧池放得下捕获源
     // 与容量时原样保留、回 false。
     bool RecreateFramePoolLocked();
-    // BUG-3913：帧池尺寸 = 捕获源尺寸与容量逐维取大。
+    // BUG-3913：帧池尺寸 = 捕获源尺寸与「捕获倍率下的容量」逐维取大。
     ABI::Windows::Graphics::SizeInt32 FramePoolSizeFor(
       ABI::Windows::Graphics::SizeInt32 item_size) const;
     bool StartPumpLocked(const std::shared_ptr<WgcFramePoolLifetime>& lifetime);
