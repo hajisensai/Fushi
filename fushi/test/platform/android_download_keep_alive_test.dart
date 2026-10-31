@@ -78,7 +78,7 @@ void main() {
     });
   });
 
-  group('AndroidDownloadKeepAlive 通道契约', () {
+  group('ChannelDownloadKeepAlive 通道契约', () {
     late List<MethodCall> calls;
 
     setUp(() {
@@ -96,7 +96,7 @@ void main() {
     });
 
     test('update 参数形状；stop 发出；未保活时 stop 不发', () async {
-      final AndroidDownloadKeepAlive keepAlive = AndroidDownloadKeepAlive();
+      final ChannelDownloadKeepAlive keepAlive = ChannelDownloadKeepAlive();
       await keepAlive.stop();
       expect(calls, isEmpty);
 
@@ -111,7 +111,7 @@ void main() {
     });
 
     test('null 进度以 -1 发出', () async {
-      final AndroidDownloadKeepAlive keepAlive = AndroidDownloadKeepAlive();
+      final ChannelDownloadKeepAlive keepAlive = ChannelDownloadKeepAlive();
       await keepAlive.update(title: 't', text: 'x');
       expect((calls.single.arguments as Map<Object?, Object?>)['progress'], -1);
     });
@@ -119,7 +119,7 @@ void main() {
     test('同状态去重、节流并补发最新状态、stop 取消补发', () {
       fakeAsync((FakeAsync async) {
         final DateTime start = DateTime(2026, 9, 26);
-        final AndroidDownloadKeepAlive keepAlive = AndroidDownloadKeepAlive(
+        final ChannelDownloadKeepAlive keepAlive = ChannelDownloadKeepAlive(
           now: () => start.add(async.elapsed),
         );
 
@@ -176,7 +176,7 @@ void main() {
     test('通道未注册 / 原生抛错不向外传播', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
-      final AndroidDownloadKeepAlive missing = AndroidDownloadKeepAlive();
+      final ChannelDownloadKeepAlive missing = ChannelDownloadKeepAlive();
       await missing.update(title: 't', text: 'x', percent: 1);
       await missing.stop();
 
@@ -185,7 +185,7 @@ void main() {
         calls.add(call);
         throw PlatformException(code: 'boom');
       });
-      final AndroidDownloadKeepAlive failing = AndroidDownloadKeepAlive();
+      final ChannelDownloadKeepAlive failing = ChannelDownloadKeepAlive();
       await failing.update(title: 't', text: 'x', percent: 1);
       await failing.stop();
       expect(calls.map((MethodCall c) => c.method), <String>['update', 'stop']);
