@@ -17,19 +17,35 @@ class FushiRubySpan {
     required this.reading,
   });
 
+  /// [listFromWire] 最多收的区间数。查词串本身只有十几个字（取词扫描窗），合法的 ruby
+  /// 区间互不重叠、每段至少一个码元，远够用；wire 来自远端对端 / 网页脚本，属不可信输入，
+  /// 不设上限就能用一个超长数组让下游（缓存键拼接、FFI 封送、引擎逐段比对）白干活。
+  static const int maxWireSpans = 64;
+
+  /// [listFromWire] 收的单段读音最大长度（UTF-16 码元）：一个基字的 `<rt>` 读音不会
+  /// 超过这个量级，超长的按畸形项丢弃。
+  static const int maxWireReadingLength = 64;
+
   /// 从 wire 形态 `{s, e, r}`（取词脚本 / 远端查词请求）读一组区间，丢掉畸形项；
-  /// 读音去首尾空白，空读音 / 空区间 / 负偏移丢弃。
+  /// 读音去首尾空白，空读音 / 超长读音 / 空区间 / 负偏移丢弃；最多收 [maxWireSpans] 段，
+  /// 也最多看 [maxWireSpans] × 4 个原始项（畸形项刷不满上限也不会无界遍历）。
   static List<FushiRubySpan> listFromWire(Object? raw) {
     if (raw is! List) return const <FushiRubySpan>[];
     final List<FushiRubySpan> spans = <FushiRubySpan>[];
+    int examined = 0;
     for (final Object? item in raw) {
+      if (spans.length >= maxWireSpans || examined >= maxWireSpans * 4) break;
+      examined++;
       if (item is! Map) continue;
       final Object? start = item['s'];
       final Object? end = item['e'];
       final Object? reading = item['r'];
       if (start is! num || end is! num || reading is! String) continue;
       final String trimmed = reading.trim();
-      if (trimmed.isEmpty || start < 0 || end.toInt() <= start.toInt()) {
+      if (trimmed.isEmpty ||
+          trimmed.length > maxWireReadingLength ||
+          start < 0 ||
+          end.toInt() <= start.toInt()) {
         continue;
       }
       spans.add(

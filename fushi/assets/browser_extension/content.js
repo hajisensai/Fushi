@@ -52,11 +52,14 @@ try {
 let fushiCssLink = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
-let fushiLastTerm = '';
+//
+// 「同词」= 同一个查词身份 [fushiLookupKey]（词 + 原文振假名）：同样写作「忙しい」，一处
+// ruby 标「せわ」、一处没有 / 标别的读音，引擎排出的候选顺序不同，必须当作两次不同的查词。
+let fushiLastLookupKey = '';
 let fushiLastAutoLookupKey = '';
-// 当前在场弹窗渲染的是哪个词（fushiRender 成功后置、关窗清空）。与 fushiLastTerm 分开：
-// 后者在**发起**时就写、失败也不回退，拿它判「已经显示着」会把上一次失败的词当成在场。
-let fushiShownTerm = '';
+// 当前在场弹窗渲染的是哪个查词身份（fushiRender 成功后置、关窗清空）。与 fushiLastLookupKey
+// 分开：后者在**发起**时就写、失败也不回退，拿它判「已经显示着」会把上一次失败的词当成在场。
+let fushiShownLookupKey = '';
 let fushiLastX = -1;
 let fushiLastY = -1;
 let fushiPending = false;
@@ -2263,11 +2266,11 @@ function fushiRemoveContainer() {
   fushiCancelPendingReveal();
   fushiHost = null;
   fushiContainer = null;
-  fushiShownTerm = '';
+  fushiShownLookupKey = '';
   // Shift 悬停的同词去重只在「那个词的弹窗还开着」时成立。关窗后按住 Shift 回到同一个词必须能
   // 再查（再暂停）——否则悬停离开续播之后，指针回到刚才那个词上毫无反应，只能松开 Shift 重按。
   // 在途期间被吞的那次取词也随关窗作废：关窗是用户的意图，别再补查弹出来。
-  fushiLastTerm = '';
+  fushiLastLookupKey = '';
   fushiDeferredScan = null;
   // 在途 link 门控随窗作废：waiters 里的 reveal 绑的是被销毁的容器，留引用只会在
   // settle 时对孤儿节点写 visibility（无害但无意义）；置 null 让新弹窗登记新门。
@@ -2382,12 +2385,12 @@ function fushiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   // 松开 Shift 复位，下次可重查同词；在途期间被吞的那次取词也随之作废（用户已不在扫词）。
-  if (!e[FUSHI_MOD]) { fushiLastTerm = ''; fushiDeferShiftScan(null); return; }
+  if (!e[FUSHI_MOD]) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
   // 宿主模式：网页正文的 Shift 悬停由宿主自己的取词脚本负责（两边都扫会弹两次），这里只管
   // 扩展自绘的字幕覆盖层。
   if (fushiHostAdapter() && !fushiOwnPageUiTarget(e.target)) return;
   // 用户关掉了 Shift 悬停查词：整条入口不动，连原生选区清理也不做（Shift+拖选照常是浏览器的）。
-  if (!fushiShiftHoverLookup) { fushiLastTerm = ''; fushiDeferShiftScan(null); return; }
+  if (!fushiShiftHoverLookup) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
   // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
   // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
   // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
@@ -2448,8 +2451,10 @@ function fushiShiftScanAt(x, y) {
   } catch (_) { fushiAnchorRect = null; }
   try { document.documentElement.dataset.fushiTerm = term || ''; } catch (_) {}
   if (!term || !term.trim()) return;
-  if (term === fushiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
-  fushiLastTerm = term;
+  // 同词去重：还在同一个词（连同原文振假名）上就不重复查/重渲染。
+  const lookupKey = fushiLookupKey(term, termRuby);
+  if (lookupKey === fushiLastLookupKey) return;
+  fushiLastLookupKey = lookupKey;
   fushiSendLookup(term, fushiAnchorRect, null, false, hit, true, termRuby);
 }
 // 在途结果回来后补查被在途闸吞掉的最后一次悬停取词。补查照走各自入口的全部门控（Shift 总开关、
@@ -2556,6 +2561,15 @@ function fushiAlignLookupRuby(raw, term, ruby) {
   return out.length ? out : null;
 }
 window.fushiAlignLookupRuby = fushiAlignLookupRuby;
+// 查词身份：词 + 已对齐到它的原文振假名。只用来源自带的 ruby 做区分，不推断读音。
+function fushiLookupKey(term, ruby) {
+  const base = String(term || '');
+  if (!Array.isArray(ruby) || !ruby.length) return base;
+  return base + '\u0000' + ruby.map(function (span) {
+    return String(span.s) + ',' + String(span.e) + ',' + String(span.r);
+  }).join(';');
+}
+window.fushiLookupKey = fushiLookupKey;
 // 刚由 selectFromPosition 选出的词的原文振假名（对齐到 [term]）；没有 / 结构异常 → null。
 // 必须紧跟 selectFromPosition 同步读：之后并发的 selectText / clearSelection 会换掉 selection。
 function fushiSelectionRuby(term) {
@@ -2598,7 +2612,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
     fushiPending = false;
     fushiLookupOpenedByHover = false;
     fushiHostLookupOpen = true;
-    fushiShownTerm = term;
+    fushiShownLookupKey = fushiLookupKey(term, ruby);
     fushiHighlightTermLen = 0;
     fushiClearHighlightOverlay(); // 换词：上一个词的高亮等新词命中再画
     const seq = ++fushiHostLookupSeq;
@@ -2623,7 +2637,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
       });
     } catch (_) {
       fushiHostLookupOpen = false;
-      fushiShownTerm = '';
+      fushiShownLookupKey = '';
       fushiAbandonLookupWithoutPopup();
     }
     return;
@@ -2726,7 +2740,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
       // popup.js 读取的全局上——不落这一步 mdx 词典的自带样式在扩展里全失效。
       applyFushiPopupCss(resp.data);
       fushiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
-      fushiShownTerm = term;
+      fushiShownLookupKey = fushiLookupKey(term, ruby);
       fushiArmHoverLeaveAfterRender();
       // 查词后自动朗读：开关是 app 的全局偏好（随响应下发），解析与播放都走点 ♪ 的同一条
       // 路径。扩展曾是唯一没接这条线的表面（app 内弹窗 / app 外浮窗 / 剪贴板面板都有）。
@@ -2781,22 +2795,23 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   // 悬浮字幕自动查词后点、面板行连点）不该重发请求重渲染：弹窗闪一下、「查词时暂停」再
   // 走一轮、词典服务白跑一趟。同词且弹窗在场 = no-op；同词还在途也不再发第二笔。弹窗关了
   // 或换了词照常查。
-  if (term && (fushiHost || fushiHostLookupOpen) && term === fushiShownTerm) {
+  const lookupKey = fushiLookupKey(term, termRuby);
+  if (term && (fushiHost || fushiHostLookupOpen) && lookupKey === fushiShownLookupKey) {
     // 悬停会话里显式点了同一个词 = 「停在这儿看」：降级成点击会话，之后不再自动关窗续播。
     if (!autoLookup) fushiHoldLookupSession();
     return;
   }
-  if (term && fushiPending && term === fushiLastTerm &&
+  if (term && fushiPending && lookupKey === fushiLastLookupKey &&
       Date.now() - fushiPendingSince < FUSHI_PENDING_TIMEOUT_MS) return;
   if (autoLookup) {
     const cueKey = cueWindow
       ? String(cueWindow.startMs) + ':' + String(cueWindow.endMs) + ':' + String(cueWindow.text || '')
       : '';
-    const lookupKey = String(term || '') + '\0' + cueKey;
-    if (lookupKey === fushiLastAutoLookupKey) return;
-    fushiLastAutoLookupKey = lookupKey;
+    const autoKey = lookupKey + '\0' + cueKey;
+    if (autoKey === fushiLastAutoLookupKey) return;
+    fushiLastAutoLookupKey = autoKey;
   }
-  fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
+  fushiLastLookupKey = term ? lookupKey : ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
   fushiSendLookup(term, anchorRect, cueWindow, false, hit, autoLookup, termRuby); // TODO-1219 P3：面板行传入精确窗；auto=悬浮字幕自动查词=悬停会话
 };
 // 原生 Side Panel 自己请求并渲染词典，视频页只保留精确 cue 窗（制卡媒体）以及可选的

@@ -438,6 +438,47 @@ test('Shift 悬停：选区带 rubyReadings 时 lookup 消息携带 ruby（对�
   assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups[0].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
 });
 
+// 同词去重的「同词」= 词 + 原文振假名：同写作「忙しい」，一处 ruby 标「せわ」、一处没有，
+// 引擎排出的候选不同，不能被当成「还在同一个词上」吞掉。
+test('Shift 悬停同词去重把 ruby 算进身份：同字不同 ruby 重查，同字同 ruby 仍去重', () => {
+  const options = {
+    selection: { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] },
+  };
+  const h = loadContentAndFireShift(options);
+  const lookups = () => h.sent.filter((m) => m && m.type === 'lookup');
+  const hover = (x) => {
+    for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: x, clientY: 400 });
+  };
+  hover(300);
+  assert.strictEqual(lookups().length, 1);
+
+  // 同一个字、同一组 ruby：仍是同一个查词身份，不重发。
+  hover(340);
+  assert.strictEqual(lookups().length, 1, '同字同 ruby 必须继续去重');
+
+  // 移到另一处没有 ruby 的「忙しい」：查词身份变了，必须重查。
+  options.selection = { text: '忙しい' };
+  hover(380);
+  assert.strictEqual(lookups().length, 2, '同字不同 ruby 被当成同词吞掉，读音排序失效');
+  assert.ok(!('ruby' in lookups()[1]));
+
+  // 再回到带「せわ」的那处：又换了身份，照样重查。
+  options.selection = { text: '忙しい', rubyReadings: [{ s: 0, e: 1, r: 'せわ' }] };
+  hover(420);
+  assert.strictEqual(lookups().length, 3);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(lookups()[2].ruby)), [{ s: 0, e: 1, r: 'せわ' }]);
+});
+
+test('fushiLookupKey：无 ruby 时等于词本身（旧去重语义不变），有 ruby 时带上区间与读音', () => {
+  const { windowObj } = loadContentAndFireShift();
+  assert.strictEqual(windowObj.fushiLookupKey('忙しい', null), '忙しい');
+  assert.strictEqual(windowObj.fushiLookupKey('忙しい', []), '忙しい');
+  assert.notStrictEqual(
+    windowObj.fushiLookupKey('忙しい', [{ s: 0, e: 1, r: 'せわ' }]),
+    windowObj.fushiLookupKey('忙しい', [{ s: 0, e: 1, r: 'いそが' }]),
+  );
+});
+
 test('没有 rubyReadings / 空数组 时 lookup 消息不带 ruby 字段（旧消息形态不变）', () => {
   for (const selection of [{ text: '忙しい' }, { text: '忙しい', rubyReadings: [] }]) {
     const h = loadContentAndFireShift({ selection });

@@ -1412,6 +1412,7 @@ mixin DictionaryPageMixin {
       reuseWarmSlot: reuseWarmSlot,
       replaceStack: replaceStack,
       visible: revealWhileSearching,
+      rubySpans: trimmedRuby,
       // 搜索期占位用与热槽 seed / DictionaryPopupLayer 兜底**同一个**单例：
       // 不传时 entry.result 为 null → 本帧 WebView 的 widget.result 落到
       // `result ?? kPopupSearchingPlaceholderResult` 兜底，但热槽停驻期的 seed
@@ -1555,12 +1556,15 @@ mixin DictionaryPageMixin {
     final int current = entry.result!.headwordCount;
     final int newMax = current + mixinAppModel.maximumTerms;
     final String term = entry.searchTerm;
+    // 续查是同一个查询扩大上限：带着首查那组来源振假名，读音排序才不会在整份替换时丢掉。
+    final List<FushiRubySpan> rubySpans = entry.rubySpans;
     final int generation = entry.lookupGeneration;
     setState(() => entry.isSearching = true);
     try {
       final DictionarySearchResult result = await searchPopupDictionary(
         term: term,
         maximumTerms: newMax,
+        rubySpans: rubySpans,
       );
       // 原地跳转 / 后退 / 前进 / 热槽换词都会在同一个 entry 上换词：会话代次变了
       // （或词变了）就丢弃这批续查结果。
