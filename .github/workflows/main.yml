@@ -367,6 +367,9 @@ jobs:
     # ran this verify 48 times with 0 failures while it cost ~14 min per PR run
     # (build job ~20 -> ~6 min without it). develop pushes still build the
     # release-signed APK through R8 in release.yml, so nothing ships unverified.
+    # tool/vendored_binaries.(json|py) count as native: the FFmpegKit AAR and the
+    # bluray-menu jars live in the vendored-binaries release, so a bump changes
+    # only the manifest (guard: vendored_binaries_manifest_guard_test.dart).
     # If the diff cannot be computed, the verify runs (fail safe).
     - name: Decide whether the Android release verify build is needed
       id: r8
@@ -381,7 +384,7 @@ jobs:
           echo "::warning title=R8 verify gate::could not diff against $BASE_SHA; running the verify build"
           exit 0
         fi
-        pattern='^(fushi/android/|native/|third_party/|ci/|packages/[^/]+/android/|packages/[^/]+/pubspec\.yaml$|fushi/pubspec\.yaml$|pubspec\.yaml$|pubspec\.lock$|\.github/workflows/main\.yml$|\.github/actions/)'
+        pattern='^(fushi/android/|native/|third_party/|ci/|packages/[^/]+/android/|packages/[^/]+/pubspec\.yaml$|fushi/pubspec\.yaml$|pubspec\.yaml$|pubspec\.lock$|tool/vendored_binaries\.(json|py)$|\.github/workflows/main\.yml$|\.github/actions/)'
         if grep -qE "$pattern" <<< "$changed"; then
           echo "needed=true" >> "$GITHUB_OUTPUT"
         else
