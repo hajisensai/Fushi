@@ -1,12 +1,12 @@
 // 测试用：在 node:vm 沙箱里真 importScripts 装载 background.js 的公共壳（各 *.test.js 共用，
 // 不再每个测试文件各抄一份 chrome.runtime 桩 / 沙箱全局 / importScripts 装载器）。
-// 放在 scripts/ 下：sync-mirrors.mjs 不把本目录同步进 app 资源包。
+// 文件名取 *.test.js：sync-mirrors.mjs 按该后缀排除、不进 app 资源包；node --test 跑到它时是零用例。
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const EXT_DIR = path.join(__dirname, '..');
+const EXT_DIR = __dirname;
 
 /** 任意深度属性访问 / 调用都不抛的 chrome.* 桩（调用一律 resolve {}）。 */
 function permissive() {

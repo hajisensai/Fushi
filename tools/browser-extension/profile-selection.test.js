@@ -7,7 +7,7 @@ const path = require('node:path');
 
 globalThis.fushiT = require('./scripts/i18n-fixture.js').makeFushiT();
 const P = require('./profile-selection.js');
-const { permissive, runtimeMock, bootBackground, sendToBackground } = require('./scripts/background-harness.js');
+const { permissive, runtimeMock, bootBackground, sendToBackground } = require('./background-harness.test.js');
 
 // ── 纯逻辑 ──
 

@@ -42,7 +42,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器�
 | `icons.js` | 隔离 + 扩展页 | Material Symbols Rounded 图标子集（内联 SVG 路径表，不加载图标字体）：`fushiIcon(name)` / 静态页 `data-fushi-icon` 槽位；只收录界面真用到的字形 |
 | `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛 + 只作用于浏览器的词典字号覆盖 `popupFontSize`（缺省跟随 Fushi 下发的 zoom）；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
-| `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步）、`i18n-fixture.js` / `background-harness.js`（测试共用壳：译文装载 / vm 里装载 background.js） |
+| `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步）、`i18n-fixture.js`（测试共用壳：译文装载） |
 
 ## 三份镜像与同步（改代码必读）
 

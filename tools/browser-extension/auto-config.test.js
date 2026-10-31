@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const AC = require('./auto-config.js');
-const { permissive, runtimeMock, bootBackground, sendToBackground } = require('./scripts/background-harness.js');
+const { permissive, runtimeMock, bootBackground, sendToBackground } = require('./background-harness.test.js');
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 async function settle() { for (let i = 0; i < 20; i++) await flush(); }
