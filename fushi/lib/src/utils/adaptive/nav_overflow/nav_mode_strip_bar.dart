@@ -1,7 +1,10 @@
+import 'dart:async' show scheduleMicrotask;
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
@@ -30,6 +33,13 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 /// 一项轻震一次，松手才吸附并跳转。高亮在两项之间移动是液态墨滴（前沿先走、
 /// 后沿后到，拉长时收细），落定后由圆变形成目标项的多边形。点邻居直接切过去。
 /// 墨水屏 / 减弱动态效果下高亮直接落位、不做墨滴与变形。
+///
+/// Apple 设计系统（2026-10-30）：同一套交互，高亮换成 Apple 标签栏同款的
+/// 圆形中性 lens、选中图标着强调色，不画 M3E 多边形（见 [NavOverflowPalette]）。
+///
+/// 键盘 / 手柄：[NavOverflowSpec.focusIdPrefix] 非空时每一项登记成
+/// `<前缀>-<序号>` 焦点目标（Enter / A 切过去）；焦点停到藏在胶囊外的项时
+/// 条带先滚过去露出它，焦点离开条带后滚回当前项。
 class NavModeStripBar extends StatefulWidget {
   const NavModeStripBar({super.key, required this.spec});
 
@@ -51,11 +61,6 @@ const double _kIconSize = 24;
 
 /// 高亮多边形（与墨滴）的边长：比格子小一圈，留出相邻多边形之间的呼吸。
 const double _kShapeSize = 46;
-
-/// 底标（高亮下方的短横，沿用圆柱滚筒的底标）的尺寸与离胶囊底边的距离。
-const double _kMarkerWidth = 16;
-const double _kMarkerHeight = 3;
-const double _kMarkerBottom = 2;
 
 /// 两端渐隐带占胶囊宽度的比例（只在那一侧还有藏着的项时画）。
 const double _kEdgeFade = 0.16;
@@ -109,6 +114,9 @@ class _NavModeStripBarState extends State<NavModeStripBar>
 
   bool _dragging = false;
   double _liveDrag = 0;
+
+  /// 键盘 / 手柄焦点此刻停在哪一格（null = 不在条带里）。
+  int? _focusedPos;
 
   static const Curve _spring = FushiSpringCurve.spatialFast;
 
@@ -244,6 +252,26 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     return target.clamp(0, spec.indices.length - 1).toInt();
   }
 
+  /// 焦点进 / 出第 [pos] 格：进来时条带滚到它（不切页），焦点离开整条后滚回
+  /// 已提交的当前项。焦点在两格之间移动时先报旧格失焦、再报新格得焦，所以
+  /// 「离开整条」放到微任务里判。
+  void _onItemFocusChange(int pos, bool focused) {
+    if (focused) {
+      // 同一格重复报得焦（选中后整条重建、焦点节点换新时会再报一次）不是
+      // 「焦点走进来」：再滚一次会把刚点选的当前项从条带中间拽回焦点格。
+      if (_focusedPos == pos) return;
+      _focusedPos = pos;
+      if (!_dragging) _startMove(pos.toDouble());
+      return;
+    }
+    if (_focusedPos != pos) return;
+    _focusedPos = null;
+    scheduleMicrotask(() {
+      if (!mounted || _focusedPos != null || _dragging) return;
+      if (_toSel != _committed.toDouble()) _startMove(_committed.toDouble());
+    });
+  }
+
   void _onDragStart(DragStartDetails details) {
     final double sel = _visualSel;
     final double drag = _visualDrag;
@@ -369,7 +397,7 @@ class _NavModeStripBarState extends State<NavModeStripBar>
   }
 
   Widget _buildTrack(BuildContext context, double offset) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final NavOverflowPalette palette = NavOverflowPalette.of(context);
     final int count = spec.indices.length;
     final double slot = _slot;
     final double sel = _visualSel;
@@ -377,9 +405,6 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     final double presence = _presence.value.clamp(0.0, 1.0).toDouble();
 
     final double top = (spec.height - _kItemHeight) / 2;
-    // 底标跟着高亮的视觉位置走（墨滴流动时一起滑，过冲同步）。
-    final double markerCenter = offset + hl * slot + slot / 2;
-
     // 流动中画液态墨滴；落定后由目标项的多边形接手（圆 → 多边形）。
     final Rect blob = _liquidRect(
       _shapeRect(_hlFrom, top),
@@ -402,7 +427,9 @@ class _NavModeStripBarState extends State<NavModeStripBar>
                 opacity: presence,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: scheme.tertiary,
+                    color: palette.highlight,
+                    border: palette.highlightRim,
+                    boxShadow: palette.highlightShadows,
                     borderRadius: BorderRadius.circular(
                       math.min(blob.width, blob.height) / 2,
                     ),
@@ -416,29 +443,27 @@ class _NavModeStripBarState extends State<NavModeStripBar>
           child: IgnorePointer(
             child: Opacity(
               opacity: presence,
-              child: NavMorphShape(
-                shape: navShapeOf(spec.items, spec.indices[_hlTarget]),
-                visible: !_flowing && presence > 0,
-                color: scheme.tertiary,
-                size: _kShapeSize,
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          left: markerCenter - _kMarkerWidth / 2,
-          bottom: _kMarkerBottom,
-          width: _kMarkerWidth,
-          height: _kMarkerHeight,
-          child: IgnorePointer(
-            child: Opacity(
-              opacity: presence,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.onTertiaryContainer.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+              child: palette.polygons
+                  ? NavMorphShape(
+                      shape: navShapeOf(spec.items, spec.indices[_hlTarget]),
+                      visible: !_flowing && presence > 0,
+                      color: palette.highlight,
+                      size: _kShapeSize,
+                    )
+                  // Apple：落定后就是墨滴静止时的那枚圆 lens（与平铺标签栏
+                  // 同款），不再变形。
+                  : Visibility.maintain(
+                      visible: !_flowing && presence > 0,
+                      child: DecoratedBox(
+                        key: const ValueKey<String>('nav-mode-strip-lens'),
+                        decoration: BoxDecoration(
+                          color: palette.highlight,
+                          shape: BoxShape.circle,
+                          border: palette.highlightRim,
+                          boxShadow: palette.highlightShadows,
+                        ),
+                      ),
+                    ),
             ),
           ),
         ),
@@ -455,7 +480,7 @@ class _NavModeStripBarState extends State<NavModeStripBar>
               expand:
                   (1 - (hl - p).abs()).clamp(0.0, 1.0).toDouble() * presence,
               distance: (sel - _visualDrag / slot - p).abs(),
-              scheme: scheme,
+              palette: palette,
             ),
           ),
       ],
@@ -487,11 +512,11 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     required AdaptiveNavItem item,
     required double expand,
     required double distance,
-    required ColorScheme scheme,
+    required NavOverflowPalette palette,
   }) {
     final Color color = Color.lerp(
-      scheme.onTertiaryContainer,
-      scheme.onTertiary,
+      palette.content,
+      palette.onHighlight,
       expand,
     )!;
     // 邻居缩到 0.9、按离当前项的距离轻微渐淡（铺满整条，远处也看得清；
@@ -503,7 +528,7 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     final bool selected =
         position == _committed && spec.currentIndex == spec.indices[position];
 
-    final Widget content = Opacity(
+    final Widget glyph = Opacity(
       opacity: math.max(opacity, expand),
       child: Transform.scale(
         scale: scale,
@@ -518,10 +543,39 @@ class _NavModeStripBarState extends State<NavModeStripBar>
       ),
     );
 
+    // 焦点框包住与高亮同大的方块（不是只包 24 的图标）。
+    Widget content = SizedBox.square(
+      dimension: _kShapeSize,
+      child: Center(child: glyph),
+    );
+    final FushiFocusId? focusId = spec.focusIdOf(spec.indices[position]);
+    if (focusId != null) {
+      // ActivateIntent 必须挂在焦点节点之上（手柄 / 键盘从主焦点往上找 Actions）。
+      content = Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (bool focused) => _onItemFocusChange(position, focused),
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (ActivateIntent intent) {
+                _select(position);
+                return null;
+              },
+            ),
+          },
+          child: FushiFocusTarget(id: focusId, child: content),
+        ),
+      );
+    }
+
+    // excludeSemantics 会连带吞掉下层 GestureDetector 的点按动作，读屏点不动：
+    // 点按动作挂在这一层。
     return Semantics(
       label: item.label,
       button: true,
       selected: selected,
+      onTap: () => _select(position),
       excludeSemantics: true,
       child: FushiTooltip(
         message: item.label,
