@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -384,7 +385,8 @@ final class SrsCore {
   /// 本对象负责关闭（[fromAddress] 包出来的不负责）。
   final bool owned;
 
-  /// 打开 / 新建 [path]（`<数据库目录>/srs.db`）。
+  /// 在当前 isolate 同步打开 / 新建 [path]（`<数据库目录>/srs.db`）。可能整段做格式升级：只给测试与已在
+  /// 后台 isolate 里的代码用，app 走 [openInBackground]（守卫 fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart）。
   static SrsCore open(String path, {String? libraryPath}) {
     final SrsCoreBindings b = SrsCoreBindings.load(libraryPath: libraryPath);
     return using((Arena arena) {
@@ -397,6 +399,33 @@ final class SrsCore {
       return SrsCore._(b, out.value, owned: true);
     });
   }
+
+  /// 在后台 isolate 打开 / 新建 [path]，返回的句柄归调用方拥有（[close] 关库）。产品代码一律走这里。
+  ///
+  /// 打开会把库升级到当前格式（store/schema.rs `migrate`：整表重建、单事务），库大时要几分钟。
+  /// Android / iOS 上 UI isolate 跑在平台主线程，在那里同步 [open] 就是整段升级期间主线程被占：
+  /// 一帧都出不来、系统启动画面撤不掉（3.1.0 白屏）。后台 isolate 打开后只把句柄号（原生句柄表里的编号，
+  /// 进程内通用）带回来。
+  static Future<SrsCore> openInBackground(
+    String path, {
+    String? libraryPath,
+  }) async {
+    final SrsCoreBindings b = SrsCoreBindings.load(libraryPath: libraryPath);
+    final String? resolvedLibraryPath = b.libraryPath;
+    final int address = await Isolate.run(
+      () => _openAddress(path, resolvedLibraryPath),
+      debugName: 'srs-store-open',
+    );
+    return SrsCore._(
+      b,
+      ffi.Pointer<ffi.Void>.fromAddress(address),
+      owned: true,
+    );
+  }
+
+  /// [openInBackground] 的后台一半（顶层签名只带可发送的参数，闭包不捕获 [SrsCoreBindings]）。
+  static int _openAddress(String path, String? libraryPath) =>
+      open(path, libraryPath: libraryPath).address;
 
   /// 包装别的 isolate 打开的同一个句柄（不拥有，[close] 不关）。
   static SrsCore fromAddress(int address, {String? libraryPath}) => SrsCore._(

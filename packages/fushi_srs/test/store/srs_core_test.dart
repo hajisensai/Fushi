@@ -112,6 +112,27 @@ void main() {
     expect(() => core.legacyImported, throwsStateError);
   });
 
+  // 3.1.0 安卓白屏：app 打开 srs.db（含整表重建的格式升级）必须在后台 isolate，句柄回到调用方并归它拥有。
+  test('openInBackground hands the caller an owned, usable handle', () async {
+    final String path = '${dir.path}${Platform.pathSeparator}srs.db';
+    final SrsCore core = await SrsCore.openInBackground(path);
+    expect(core.owned, isTrue);
+    expect(core.legacyImported, isFalse);
+    expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
+    core.close();
+    expect(() => core.legacyImported, throwsStateError);
+    // 关闭返回时库文件已没有打开的句柄（后台 isolate 没留下第二个拥有者）。
+    File(path).deleteSync();
+  });
+
+  test('openInBackground rethrows the open failure as SrsCoreException', () {
+    // 路径是个目录：SQLite 打不开。错误要以原类型回到调用方（打开页按类型区分「空间不够」等）。
+    expect(
+      SrsCore.openInBackground(dir.path),
+      throwsA(isA<SrsCoreException>()),
+    );
+  });
+
   // 回归（2026-10-25 CI SIGABRT）：拥有者关库时，后台 isolate 经 fromAddress 拿着同一个句柄还在
   // 跑命令。原来 ffsrs_store_close 直接释放结构体，那边 use-after-free（`free(): invalid
   // pointer`）。现在关闭等在途命令跑完；之后经旧地址的命令报「已关闭」而不是崩。

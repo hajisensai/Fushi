@@ -1,0 +1,6 @@
+## BUG-3892 · android-white-screen-srs-upgrade-on-ui-thread
+- **报告**：2026-10-31（用户：Xiaomi 23116PN5BC / Android 16，3.1.0-debug.22315 启动白屏，3.0.1-debug.21889 同机同数据正常；SRS 库约 20 GB）
+- **真实性**：✅ 真 bug（沿代码路径确认，无设备复现）。根因 `packages/fushi_engine/lib/srs/srs_storage.dart:43`：`SrsStorage.open` 在**调用方 isolate 同步**调 `SrsCore.open` → `ffsrs_store_open`（`native/fushi_fsrs/src/store/ffi.rs:158`）→ `schema::migrate`（`native/fushi_fsrs/src/store/schema.rs:392`）。3.0.1 的 srs.db 是 schema 8，3.1.0 要升到 18，其中 v17 ID 编码、v18 瘦 JSON 都是单事务整表重建，大库要几分钟。Flutter 3.29+ 在 Android 上 UI isolate 合并跑在平台主线程，于是首次需要 SRS 时整段升级占住主线程：Dart 已打完 `init: DONE`，但首帧永远出不来、`FlutterActivity` 的 OnPreDraw 一直返回 false、系统 splash 撤不掉——即报告里「主线程 R 态 39% CPU（IO 型）、raster/io 全闲、SurfaceView 0 帧、无异常无 ANR」。每次被强停都回滚事务，所以重启多少次都白屏。报告里怀疑的 Impeller/Vulkan、Adreno gralloc 报错（3.0.1 同样有）与双引擎都不是原因。
+- **[x] ① 已修复** — 新增 `SrsCore.openInBackground`（`packages/fushi_srs/lib/src/store/srs_core.dart`）：后台 isolate 跑打开 + 升级，只把句柄号（原生句柄表编号，进程内通用）带回、由调用方拥有；`SrsStorage.open` 一律走它（含备份恢复里 `inline` 的打开）。
+- **[x] ② 已加自动化测试** — `packages/fushi_srs/test/store/srs_core_test.dart`（openInBackground 返回拥有的可用句柄、关闭后文件可删、打开失败以 `SrsCoreException` 原类型回到调用方）；守卫 `fushi/test/build/srs_store_open_off_ui_isolate_guard_test.dart`（app 的 lib 代码不许同步 `SrsCore.open(`）。
+- **备注**：修复后大库升级期间 app 正常出帧，复习相关页面在 `SrsStorageHost.acquire` 完成前处于加载态。未在报告机型真机复测（无设备）。

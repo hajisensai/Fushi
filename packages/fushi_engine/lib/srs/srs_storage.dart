@@ -34,13 +34,14 @@ class SrsStorage {
       '$dbDirectory${Platform.pathSeparator}$kSrsDatabaseFileName';
 
   /// 打开（不存在就建）；[legacy] 给了就先把主库里残留的旧 SRS 表搬进来（只有主进程传）。
-  /// [inline] 时 Drift 执行器跑在当前 isolate（测试）。
+  /// [inline] 时 Drift 执行器跑在当前 isolate（测试）。打开本身（含格式升级）一律在后台 isolate：
+  /// 见 [SrsCore.openInBackground]。
   static Future<SrsStorage> open({
     required String path,
     FushiDatabase? legacy,
     bool inline = false,
   }) async {
-    final SrsCore core = SrsCore.open(path);
+    final SrsCore core = await SrsCore.openInBackground(path);
     try {
       if (legacy != null) {
         await srsMigrateLegacyStore(db: legacy, core: core);
