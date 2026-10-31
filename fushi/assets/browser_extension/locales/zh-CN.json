@@ -259,7 +259,7 @@
   "mine_already_queued": "已在制卡队列中",
   "mine_queued_n": "已加入制卡队列（{n}）",
   "mine_already_queued_n": "已在制卡队列中（{n}）",
-  "mine_queued_generate_later": "看完后一次生成全部",
+  "mine_queued_generate_later": "点击扩展中的制卡按钮后统一生成",
   "mine_no_cue": "没找到当前字幕，稍候再试",
   "mine_enqueue_failed": "入队失败",
   "mine_failed": "制卡失败",

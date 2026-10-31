@@ -269,7 +269,7 @@
   mine_already_queued: 'Already in the mining queue',
   mine_queued_n: 'Added to the mining queue ({n})',
   mine_already_queued_n: 'Already in the mining queue ({n})',
-  mine_queued_generate_later: 'Generate them all after watching',
+  mine_queued_generate_later: 'Click the mining button in the extension to generate them all',
   mine_no_cue: 'No current subtitle line found, try again in a moment',
   mine_enqueue_failed: 'Could not add to the queue',
   mine_failed: 'Mining failed',

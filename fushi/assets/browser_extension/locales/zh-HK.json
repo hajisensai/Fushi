@@ -259,7 +259,7 @@
   "mine_already_queued": "已在製卡佇列中",
   "mine_queued_n": "已加入製卡佇列（{n}）",
   "mine_already_queued_n": "已在製卡佇列中（{n}）",
-  "mine_queued_generate_later": "看完後一次過全部產生",
+  "mine_queued_generate_later": "點擊擴充功能中的製卡按鈕後統一產生",
   "mine_no_cue": "找不到目前字幕句，請稍後再試",
   "mine_enqueue_failed": "無法加入佇列",
   "mine_failed": "製卡失敗",

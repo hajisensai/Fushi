@@ -259,7 +259,7 @@
   "mine_already_queued": "Já está na fila de mineração",
   "mine_queued_n": "Adicionado à fila de mineração ({n})",
   "mine_already_queued_n": "Já está na fila de mineração ({n})",
-  "mine_queued_generate_later": "Gere todos depois de assistir",
+  "mine_queued_generate_later": "Clique no botão de mineração da extensão para gerar todos",
   "mine_no_cue": "Nenhuma linha de legenda atual encontrada, tente de novo em instantes",
   "mine_enqueue_failed": "Não foi possível adicionar à fila",
   "mine_failed": "Falha na mineração",

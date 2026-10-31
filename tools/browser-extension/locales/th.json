@@ -259,7 +259,7 @@
   "mine_already_queued": "อยู่ในคิวทำการ์ดแล้ว",
   "mine_queued_n": "เพิ่มเข้าคิวทำการ์ดแล้ว ({n})",
   "mine_already_queued_n": "อยู่ในคิวทำการ์ดแล้ว ({n})",
-  "mine_queued_generate_later": "สร้างทั้งหมดหลังดูจบ",
+  "mine_queued_generate_later": "คลิกปุ่มทำการ์ดในส่วนขยายเพื่อสร้างทั้งหมด",
   "mine_no_cue": "ไม่พบบรรทัดซับไตเติลปัจจุบัน ลองอีกครั้งสักครู่",
   "mine_enqueue_failed": "เพิ่มเข้าคิวไม่สำเร็จ",
   "mine_failed": "ทำการ์ดไม่สำเร็จ",

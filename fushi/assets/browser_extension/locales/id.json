@@ -259,7 +259,7 @@
   "mine_already_queued": "Sudah ada di antrean penambangan",
   "mine_queued_n": "Ditambahkan ke antrean penambangan ({n})",
   "mine_already_queued_n": "Sudah ada di antrean penambangan ({n})",
-  "mine_queued_generate_later": "Buat semuanya setelah selesai menonton",
+  "mine_queued_generate_later": "Klik tombol penambangan di ekstensi untuk membuat semuanya",
   "mine_no_cue": "Baris subtitel saat ini tidak ditemukan, coba lagi sebentar lagi",
   "mine_enqueue_failed": "Tidak dapat menambahkan ke antrean",
   "mine_failed": "Penambangan gagal",

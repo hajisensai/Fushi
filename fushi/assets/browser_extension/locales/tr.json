@@ -259,7 +259,7 @@
   "mine_already_queued": "Zaten kart çıkarma kuyruğunda",
   "mine_queued_n": "Kart çıkarma kuyruğuna eklendi ({n})",
   "mine_already_queued_n": "Zaten kart çıkarma kuyruğunda ({n})",
-  "mine_queued_generate_later": "İzledikten sonra hepsini oluşturun",
+  "mine_queued_generate_later": "Hepsini oluşturmak için uzantıdaki kart çıkarma düğmesine tıklayın",
   "mine_no_cue": "Geçerli altyazı satırı bulunamadı, birazdan yeniden deneyin",
   "mine_enqueue_failed": "Kuyruğa eklenemedi",
   "mine_failed": "Kart çıkarma başarısız",

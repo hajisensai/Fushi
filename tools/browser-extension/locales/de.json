@@ -259,7 +259,7 @@
   "mine_already_queued": "Bereits in der Mining-Warteschlange",
   "mine_queued_n": "Zur Mining-Warteschlange hinzugefügt ({n})",
   "mine_already_queued_n": "Bereits in der Mining-Warteschlange ({n})",
-  "mine_queued_generate_later": "Nach dem Schauen alle auf einmal erzeugen",
+  "mine_queued_generate_later": "Im Erweiterungsmenü auf die Mining-Schaltfläche klicken, um alle zu erzeugen",
   "mine_no_cue": "Keine aktuelle Untertitelzeile gefunden, versuche es gleich noch einmal",
   "mine_enqueue_failed": "Konnte nicht zur Warteschlange hinzugefügt werden",
   "mine_failed": "Mining fehlgeschlagen",

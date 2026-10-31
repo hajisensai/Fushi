@@ -259,7 +259,7 @@
   "mine_already_queued": "すでにマイニングキューにあります",
   "mine_queued_n": "マイニングキューに追加しました（{n}）",
   "mine_already_queued_n": "すでにマイニングキューにあります（{n}）",
-  "mine_queued_generate_later": "視聴後にまとめて生成",
+  "mine_queued_generate_later": "拡張機能のマイニングボタンを押すとまとめて生成します",
   "mine_no_cue": "現在の字幕行が見つかりません。少し待ってから再試行してください",
   "mine_enqueue_failed": "キューに追加できませんでした",
   "mine_failed": "マイニングに失敗しました",

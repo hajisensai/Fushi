@@ -2386,30 +2386,64 @@ document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   // 松开 Shift 复位，下次可重查同词；在途期间被吞的那次取词也随之作废（用户已不在扫词）。
   if (!e[FUSHI_MOD]) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
+  fushiShiftHoverAt(e.clientX, e.clientY, e.target, e.buttons === 0, false);
+});
+// Shift 悬停的共同入口：mousemove（指针在动）与 keydown（指针静止时按下 Shift）都走这里。
+// keydown 入口没有新的指针位移，bypassMoveThreshold=true 跳过 4px 位移阈值——否则鼠标停在词上
+// 按 Shift 永远被「几乎没动」挡掉（反馈 pBDjgW3T4v，对齐 Yomitan / Hachidori）。
+function fushiShiftHoverAt(x, y, target, clearNativeSelection, bypassMoveThreshold) {
   // 宿主模式：网页正文的 Shift 悬停由宿主自己的取词脚本负责（两边都扫会弹两次），这里只管
   // 扩展自绘的字幕覆盖层。
-  if (fushiHostAdapter() && !fushiOwnPageUiTarget(e.target)) return;
+  if (fushiHostAdapter() && !fushiOwnPageUiTarget(target)) return;
   // 用户关掉了 Shift 悬停查词：整条入口不动，连原生选区清理也不做（Shift+拖选照常是浏览器的）。
   if (!fushiShiftHoverLookup) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
   // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
   // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
   // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
   // 高亮；用户手动按住键拖拽划选复制（e.buttons!==0）不清，保住其复制能力。
-  if (e.buttons === 0) fushiClearNativeSelection();
+  if (clearNativeSelection) fushiClearNativeSelection();
   // 位移阈值：几乎没动就跳过（同一像素反复 mousemove 不重复取词）。
-  if (Math.abs(e.clientX - fushiLastX) < 4 && Math.abs(e.clientY - fushiLastY) < 4) return;
-  fushiLastX = e.clientX;
-  fushiLastY = e.clientY;
+  if (!bypassMoveThreshold && Math.abs(x - fushiLastX) < 4 && Math.abs(y - fushiLastY) < 4) return;
+  fushiLastX = x;
+  fushiLastY = y;
   // 在途闸：上一次查词还没回来就不发新请求（防洪）。BUG-1024：带截止时间——超时视为
   // 上一次已废弃（回调被杀死的 worker 吞掉），放行本次，避免永久卡死。被吞的这一次记下来，
   // 在途结果回来后补查（fushiReplayDeferredScan）——闸只防洪，不能丢掉指针最终停下的词。
   if (fushiLookupInFlight()) {
-    fushiDeferShiftScan({ auto: false, x: e.clientX, y: e.clientY });
+    fushiDeferShiftScan({ auto: false, x, y });
     return;
   }
   fushiDeferShiftScan(null);
-  fushiShiftScanAt(e.clientX, e.clientY);
-});
+  fushiShiftScanAt(x, y);
+}
+// 鼠标静止时按下 Shift：用最后已知的指针位置（window 捕获阶段 mousemove 记下的
+// fushiHoverPointerX/Y）立即扫一次。边界：
+// - 只认首次按下（e.repeat 的自动连发不重复扫）；组合键里的 Shift（Ctrl/Alt/Meta 同按）不算查词；
+// - 焦点在输入框 / contenteditable 里：Shift 是在打大写或扩选，不查词；
+// - 还没见过指针、或指针已移出文档：没有可信坐标，不扫；
+// - 不清原生选区：单按 Shift 不会扩选（那要指针移动），清了反而毁掉用户正要 Shift+点击 / Shift+方向键扩的选区；
+// - 其余门控（批量录制、宿主模式、总开关、在途闸、同词去重）与 mousemove 入口完全相同。
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Shift' || e.repeat) return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (fushiNfBatchRunning) return;
+  if (fushiHoverPointerX < 0 || fushiHoverPointerY < 0 || fushiPointerOutsideDocument) return;
+  if (fushiNodeInEditable(e.target) || fushiNodeInEditable(document.activeElement)) return;
+  let target = null;
+  try {
+    target = typeof document.elementFromPoint === 'function'
+      ? document.elementFromPoint(fushiHoverPointerX, fushiHoverPointerY)
+      : null;
+  } catch (_) { target = null; }
+  fushiShiftHoverAt(fushiHoverPointerX, fushiHoverPointerY, target, false, true);
+}, true);
+// 松开 Shift：与「不按 Shift 的 mousemove」同样复位同词去重与待补查——否则鼠标不动、松开再按
+// Shift 查同一个词会被去重吞掉。
+document.addEventListener('keyup', (e) => {
+  if (e.key !== 'Shift') return;
+  fushiLastLookupKey = '';
+  fushiDeferShiftScan(null);
+}, true);
 // Shift 悬停只改写「Shift 那一路」的待补查；悬浮字幕自动查词那一路由覆盖层自己的进出管。
 function fushiDeferShiftScan(scan) {
   if (scan || (fushiDeferredScan && !fushiDeferredScan.auto)) fushiDeferredScan = scan;

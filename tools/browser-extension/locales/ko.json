@@ -259,7 +259,7 @@
   "mine_already_queued": "이미 마이닝 대기열에 있음",
   "mine_queued_n": "마이닝 대기열에 추가됨({n})",
   "mine_already_queued_n": "이미 마이닝 대기열에 있음({n})",
-  "mine_queued_generate_later": "시청 후 한꺼번에 생성하세요",
+  "mine_queued_generate_later": "확장 프로그램의 마이닝 버튼을 누르면 한꺼번에 생성됩니다",
   "mine_no_cue": "현재 자막 줄을 찾지 못했습니다. 잠시 후 다시 시도하세요",
   "mine_enqueue_failed": "대기열에 추가할 수 없습니다",
   "mine_failed": "마이닝 실패",
