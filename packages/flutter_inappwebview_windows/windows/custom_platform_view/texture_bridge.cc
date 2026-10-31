@@ -384,7 +384,7 @@ namespace flutter_inappwebview_plugin
   ABI::Windows::Graphics::SizeInt32 TextureBridge::FramePoolSizeFor(
     ABI::Windows::Graphics::SizeInt32 item_size) const
   {
-    // BUG-3895：每 Close 一个帧池、再按新尺寸 CreateFreeThreaded 一个，系统侧都留下
+    // BUG-3913：每 Close 一个帧池、再按新尺寸 CreateFreeThreaded 一个，系统侧都留下
     // 约一份帧池缓冲永不归还（帧池已 Close、注册表已回收，插件侧无引用）。所以帧池
     // 按容量分配：容量内改尺寸时 WGC 照常交付 ContentSize 变化的帧（内容在帧纹理
     // 左上角），帧池本身不动。
@@ -456,7 +456,7 @@ namespace flutter_inappwebview_plugin
     const auto lifetime = frame_pool_lifetime_;
     if (capture_item_ && SUCCEEDED(capture_item_->get_Size(&current_size)) &&
       lifetime && lifetime->frame_pool) {
-      // BUG-3895：放得下就不重建（旧判据是「尺寸完全相等」，于是每次改尺寸都重建）。
+      // BUG-3913：放得下就不重建（旧判据是「尺寸完全相等」，于是每次改尺寸都重建）。
       const auto wanted = FramePoolSizeFor(current_size);
       if (wanted.Width <= lifetime->size.Width &&
         wanted.Height <= lifetime->size.Height) {

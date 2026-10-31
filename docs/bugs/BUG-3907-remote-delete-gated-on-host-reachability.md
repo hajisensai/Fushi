@@ -1,4 +1,4 @@
-## BUG-3893 · 库页远端条目缺「从远端删除」（云盘来源没有、互联来源不看对端是否在线）
+## BUG-3907 · 库页远端条目缺「从远端删除」（云盘来源没有、互联来源不看对端是否在线）
 - **报告**：2026-10-31（反馈 R8duEiqRuy：「少了把远端的东西也删掉的按钮吧」，截图里书架上一本「远端 · 未下载」的小说，右键菜单只有「仅从本机移除」。所有者确认那本书来自**云盘备份**）
 - **真实性**：✅ 真缺口。沿真实代码路径核对：
   1. 云盘备份来源（`CloudRemoteBookClient`）按类型隐藏了远端删除（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart` `_showRemoteBookDialog`，旧判据 `client is InterconnectSyncBackend`），理由写的是「云盘后端没有删除接口」——**不成立**：六种云盘后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）的 `deleteAsset(id, isFolder: true)` 都是递归删、404 视为已删，缺的只是「按书删除」这一层编排。用户截图正是这种情况。

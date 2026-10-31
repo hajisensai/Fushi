@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview_windows/src/in_app_webview/texture_capacity.dart';
 
-/// BUG-3895：WebView 纹理容量策略。
+/// BUG-3913：WebView 纹理容量策略。
 ///
 /// native 每换一次共享目标纹理 / 重建一次 WGC 帧池就在引擎与系统侧留下一份永不归还
 /// 的显存，所以容量必须：只增不减、容量内的尺寸变化零重新分配、一路放大时扩容次数
@@ -106,7 +106,7 @@ void main() {
     );
   });
 
-  test('BUG-3895 复现序列：4K 窗口反复改尺寸 24 次只在首次分配', () {
+  test('BUG-3913 复现序列：4K 窗口反复改尺寸 24 次只在首次分配', () {
     final List<TextureCapacity> sizes = <TextureCapacity>[
       for (int i = 0; i < 24; i++)
         i.isEven

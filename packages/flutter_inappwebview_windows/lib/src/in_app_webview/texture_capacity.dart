@@ -12,7 +12,7 @@ const int kTextureCapacityStep = 256;
 /// 贴身分配，从半屏拖到满屏只扩 2～3 次；封顶见 [nextTextureCapacity] 的显示器上限。
 const double kTextureCapacityGrowth = 1.5;
 
-/// BUG-3895：算 WebView 纹理的下一份容量。
+/// BUG-3913：算 WebView 纹理的下一份容量。
 ///
 /// 背景：Windows 上每换一次共享目标纹理（新尺寸 = 新 DXGI 共享句柄），Flutter 引擎
 /// （`external_texture_d3d.cc` → ANGLE `eglCreatePbufferFromClientBuffer`）为旧句柄打开的
@@ -71,7 +71,7 @@ TextureCapacity textureCapacityNeeded(
   height: (logicalHeight * scaleFactor).ceil(),
 );
 
-/// [Texture] 的摆放：native 纹理容量与算它时的栅格倍率（BUG-3895）。
+/// [Texture] 的摆放：native 纹理容量与算它时的栅格倍率（BUG-3913）。
 class TextureLayout {
   const TextureLayout({required this.capacity, required this.scaleFactor});
 

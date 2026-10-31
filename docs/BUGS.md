@@ -33,61 +33,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3496 条。点号进各自文件。
+> 共 3517 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3892](bugs/BUG-3892-android-white-screen-srs-upgrade-on-ui-thread.md) | ✅ | ✅ | android-white-screen-srs-upgrade-on-ui-thread |
-| [BUG-3893](bugs/BUG-3893-download-keepalive-no-wakelock.md) | ✅ | ✅ | download-keepalive-no-wakelock |
-| [BUG-3894](bugs/BUG-3894-macos-storage-shared-caches.md) | ✅ | ✅ | macos-storage-shared-caches |
-| [BUG-3893](bugs/BUG-3893-airing-today-blocked-by-week-fetch.md) | ✅ | ✅ | 发现页「今日放送」冷启动等整周放送表拉完才显示 |
-| [BUG-3892](bugs/BUG-3892-home-stats-stale-after-profile-switch.md) | ✅ | ✅ | 切换配置后首页统计不刷新，仍显示上一个配置的数据 |
-> 共 3498 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3894](bugs/BUG-3894-asr-sheet-dismiss-interrupts-transcription.md) | ✅ | ✅ | 移动端转录弹层点外部或下拉即关闭并中断转录 |
-| [BUG-3893](bugs/BUG-3893-segmented-equal-width-truncates-longest.md) | ✅ | ✅ | 分段选择器强制等宽把最长段截成省略号 |
-| [BUG-3892](bugs/BUG-3892-toolbar-disabled-icon-not-dimmed.md) | ✅ | ✅ | 顶栏禁用按钮外观与可用态相同 |
-| [BUG-3892](bugs/BUG-3892-browser-ext-shift-keydown-lookup.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词要晃一下鼠标才触发 |
-> 共 3499 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3913](bugs/BUG-3913-webview-resize-vram-leak.md) | ✅ | ✅ | webview-resize-vram-leak |
+| [BUG-3912](bugs/BUG-3912-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
+| [BUG-3911](bugs/BUG-3911-anki-sync-429-no-cooldown.md) | ✅ | ✅ | Anki 直连同步被 AnkiWeb 429 限流后无冷却，错误显示 Rust 原文 |
+| [BUG-3910](bugs/BUG-3910-asr-sheet-dismiss-interrupts-transcription.md) | ✅ | ✅ | 移动端转录弹层点外部或下拉即关闭并中断转录 |
+| [BUG-3909](bugs/BUG-3909-lookup-token-start-cjk-bracket.md) | ✅ | ✅ | 点〖tempering〗的 t，高亮却从〖开始 |
+| [BUG-3908](bugs/BUG-3908-youtube-separated-audio-403-silent.md) | ✅ | ✅ | YouTube 分离音频流 403 后有画面无声，无回退无提示 |
+| [BUG-3907](bugs/BUG-3907-remote-delete-gated-on-host-reachability.md) | ✅ | ✅ | 库页远端条目缺「从远端删除」（云盘来源没有、互联来源不看对端是否在线） |
+| [BUG-3906](bugs/BUG-3906-mined-card-dialog-pops-wrong-route.md) | ✅ | ✅ | 已制过卡对话框与「未适配视频」提示叠栈后两个都关不掉 |
+| [BUG-3905](bugs/BUG-3905-segmented-equal-width-truncates-longest.md) | ✅ | ✅ | 分段选择器强制等宽把最长段截成省略号 |
+| [BUG-3904](bugs/BUG-3904-airing-today-blocked-by-week-fetch.md) | ✅ | ✅ | 发现页「今日放送」冷启动等整周放送表拉完才显示 |
+| [BUG-3903](bugs/BUG-3903-popup-entry-nav-scroll-to-entry-start.md) | ✅ | ✅ | 查词弹窗 Alt+滚轮切词停在释义中间、切回第一条不回顶 |
+| [BUG-3902](bugs/BUG-3902-video-keyboard-prev-cue-degrades.md) | ✅ | ✅ | 桌面键盘「上一句」几乎总退化成回退 3 秒 |
+| [BUG-3901](bugs/BUG-3901-delete-scope-subtitle-contradiction.md) | ✅ | ✅ | 「从所有设备删除」不勾时副标题写「其他设备保留」，读成自相矛盾 |
+| [BUG-3900](bugs/BUG-3900-srs-trusted-clock-ahead-rwkv-fallback.md) | ✅ | ✅ | srs-trusted-clock-ahead-rwkv-fallback |
+| [BUG-3899](bugs/BUG-3899-pending-send-all-skips-failed.md) | ✅ | ✅ | 待发卡片「全部发送」跳过失败卡，提示 0/0/0 |
+| [BUG-3898](bugs/BUG-3898-browser-ext-shift-keydown-lookup.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词要晃一下鼠标才触发 |
+| [BUG-3897](bugs/BUG-3897-toolbar-disabled-icon-not-dimmed.md) | ✅ | ✅ | 顶栏禁用按钮外观与可用态相同 |
+| [BUG-3896](bugs/BUG-3896-home-stats-stale-after-profile-switch.md) | ✅ | ✅ | 切换配置后首页统计不刷新，仍显示上一个配置的数据 |
 | [BUG-3895](bugs/BUG-3895-log-upload-body-over-limit.md) | ✅ | ✅ | 日志上传截断只截日志原文，请求体仍超接收端上限 →「日志过大，无法上传」 |
-| [BUG-3894](bugs/BUG-3894-anki-sync-429-no-cooldown.md) | ✅ | ✅ | Anki 直连同步被 AnkiWeb 429 限流后无冷却，错误显示 Rust 原文 |
-| [BUG-3893](bugs/BUG-3893-mined-card-dialog-pops-wrong-route.md) | ✅ | ✅ | 已制过卡对话框与「未适配视频」提示叠栈后两个都关不掉 |
-| [BUG-3892](bugs/BUG-3892-pending-send-all-skips-failed.md) | ✅ | ✅ | 待发卡片「全部发送」跳过失败卡，提示 0/0/0 |
-| [BUG-3892](bugs/BUG-3892-srs-trusted-clock-ahead-rwkv-fallback.md) | ✅ | ✅ | srs-trusted-clock-ahead-rwkv-fallback |
-> 共 3497 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3893](bugs/BUG-3893-remote-delete-gated-on-host-reachability.md) | ✅ | ✅ | 库页远端条目缺「从远端删除」（云盘来源没有、互联来源不看对端是否在线） |
-| [BUG-3892](bugs/BUG-3892-delete-scope-subtitle-contradiction.md) | ✅ | ✅ | 「从所有设备删除」不勾时副标题写「其他设备保留」，读成自相矛盾 |
-> 共 3497 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3893](bugs/BUG-3893-youtube-separated-audio-403-silent.md) | ✅ | ✅ | YouTube 分离音频流 403 后有画面无声，无回退无提示 |
-| [BUG-3892](bugs/BUG-3892-video-keyboard-prev-cue-degrades.md) | ✅ | ✅ | 桌面键盘「上一句」几乎总退化成回退 3 秒 |
-> 共 3498 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3894](bugs/BUG-3894-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
-| [BUG-3893](bugs/BUG-3893-lookup-token-start-cjk-bracket.md) | ✅ | ✅ | 点〖tempering〗的 t，高亮却从〖开始 |
-| [BUG-3892](bugs/BUG-3892-popup-entry-nav-scroll-to-entry-start.md) | ✅ | ✅ | 查词弹窗 Alt+滚轮切词停在释义中间、切回第一条不回顶 |
+| [BUG-3894](bugs/BUG-3894-macos-storage-shared-caches.md) | ✅ | ✅ | macos-storage-shared-caches |
+| [BUG-3893](bugs/BUG-3893-download-keepalive-no-wakelock.md) | ✅ | ✅ | download-keepalive-no-wakelock |
+| [BUG-3892](bugs/BUG-3892-android-white-screen-srs-upgrade-on-ui-thread.md) | ✅ | ✅ | android-white-screen-srs-upgrade-on-ui-thread |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
 | [BUG-3889](bugs/BUG-3889-popup-headword-drag-copy.md) | ✅ | ✅ | 查词弹窗拖选词头后 Ctrl+C 复制不了 |
 | [BUG-3888](bugs/BUG-3888-video-subtitle-list-toggle-jank.md) | ✅ | ✅ | video-subtitle-list-toggle-jank |
 | [BUG-3887](bugs/BUG-3887-dictionary-download-background-keep-alive.md) | ✅ | ✅ | 推荐词典下载 / 词典自动更新切到后台就停（Android + iOS） |
-> 共 3491 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3895](bugs/BUG-3895-webview-resize-vram-leak.md) | ✅ | ✅ | webview-resize-vram-leak |
 | [BUG-3886](bugs/BUG-3886-eink-highlight-line-clipped-at-ruby-emphasis.md) | ✅ | ✅ | 墨水屏跟读线在注音 / 着重号处断开、字形被切（VN） |
 | [BUG-3885](bugs/BUG-3885-music-player-no-volume-and-bar-close.md) | ✅ | ✅ | music-player-no-volume-and-bar-close |
 | [BUG-3884](bugs/BUG-3884-maximize-button-hover-hides-caption.md) | ✅ | ✅ | maximize-button-hover-hides-caption |

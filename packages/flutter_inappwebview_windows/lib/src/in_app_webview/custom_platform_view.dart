@@ -245,7 +245,7 @@ class CustomPlatformViewController
   // 的无谓重复下发，避免 native 端每帧重建 WGC 帧池。判定逻辑见 SetSizeDedup。
   final SetSizeDedup _setSizeDedup = SetSizeDedup();
 
-  /// BUG-3895：native 共享目标纹理 / WGC 帧池的容量（物理像素）与算它时的栅格倍率。
+  /// BUG-3913：native 共享目标纹理 / WGC 帧池的容量（物理像素）与算它时的栅格倍率。
   /// 只增不减（[nextTextureCapacity]），布局在容量内变化时 native 不换纹理、不重建帧池；
   /// widget 按它把 [Texture] 摆成「容量 / 倍率」逻辑尺寸并裁到自身大小，纹理与屏幕像素
   /// 1:1、只露出左上角的可见内容。null = 还没下发过尺寸（native 也还没有纹理）。
@@ -754,7 +754,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
                 : const SizedBox()));
   }
 
-  /// BUG-3895：native 纹理按容量分配（≥ 可见内容），内容在左上角。引擎把整张纹理画满
+  /// BUG-3913：native 纹理按容量分配（≥ 可见内容），内容在左上角。引擎把整张纹理画满
   /// [Texture] 的盒子，所以盒子必须正好是「容量 / 倍率」，再裁回 widget 自身大小——
   /// 纹理像素与屏幕像素 1:1，容量里多出来的部分被裁掉，不拉伸、不错位。
   Widget _buildTextureLayout(

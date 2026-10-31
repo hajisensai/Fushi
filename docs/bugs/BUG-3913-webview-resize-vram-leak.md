@@ -1,4 +1,4 @@
-## BUG-3895 · webview-resize-vram-leak
+## BUG-3913 · webview-resize-vram-leak
 - **报告**：2026-10-31（用户：所有者——「歌词模式占我 7GB 显存」，4K、200% 缩放）
 - **真实性**：✅ 真 bug。Release 构建屏外起实例、开有声书《無職転生 21》，窗口 3856 宽来回改尺寸 24 次，按进程采样 `\GPU Process Memory(pid_*)\Dedicated Usage`：fushi.exe 736.6 → 3912.9 MB（每次约 +132 MB），静置不回落；持续播放 / 逐字扫过 / 跨章都不涨，设置页（无 WebView）改尺寸不涨，msedgewebview2.exe 平稳。每次 WebView 改尺寸都重建两样东西，都在系统 / 引擎侧留下永不归还的显存：
   - A. 交给 Flutter 的共享目标纹理：`packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge_gpu.cc` `EnsureSurface`（旧 :190-215，尺寸不等就 `CreateTexture2D(MISC_SHARED)` + 新共享句柄）；引擎 `external_texture_d3d.cc:84-102` 换句柄时 `ReleaseImage` 后对新句柄 `eglCreatePbufferFromClientBuffer`，旧句柄打开的资源不归还（插件侧引用计数平衡、D3D 调试层存活对象不增）。

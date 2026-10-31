@@ -207,7 +207,7 @@ namespace flutter_inappwebview_plugin
     D3D11_TEXTURE2D_DESC desc;
     src_texture->GetDesc(&desc);
 
-    // BUG-3895：帧池按容量分配后 WGC 帧纹理比内容大，有效内容是左上角的
+    // BUG-3913：帧池按容量分配后 WGC 帧纹理比内容大，有效内容是左上角的
     // ContentSize（不超过帧纹理本身）。
     Size content = { desc.Width, desc.Height };
     if (last_frame_content_size_.Width > 0 &&
@@ -402,7 +402,7 @@ namespace flutter_inappwebview_plugin
       return nullptr;
     }
 
-    // 引擎传进来的是 Texture 盒子的尺寸（TextureLayer paint bounds）。BUG-3895 起 Dart
+    // 引擎传进来的是 Texture 盒子的尺寸（TextureLayer paint bounds）。BUG-3913 起 Dart
     // 把盒子摆成「容量 / 倍率」，它不再等于可见内容，也就不能再拿来校正 output_size_
     // （旧代码在这里把它当物理目标尺寸写回 output_size_）；它只用于判断这一帧画的是
     // 哪份容量（SelectSurfaceSize）。

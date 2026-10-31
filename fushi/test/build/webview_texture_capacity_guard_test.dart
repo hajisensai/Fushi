@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3895 源码守卫：Windows WebView 的共享目标纹理与 WGC 帧池按容量分配。
+/// BUG-3913 源码守卫：Windows WebView 的共享目标纹理与 WGC 帧池按容量分配。
 ///
 /// 背景：每换一次交给 Flutter 的共享纹理句柄，引擎（ANGLE 打开的共享资源）就留下
 /// 一份显存不归还；每重建一次 WGC 帧池，系统侧也留下一份帧池缓冲。旧实现两者都
@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 编译面上，本仓也没有 Windows 原生单测框架；`packages/flutter_inappwebview_windows`
 /// 的包测试（含容量策略单测 `test/texture_capacity_test.dart`）被 CI 的包测试循环
 /// 当作 vendored fork 跳过。这里钉住「回到逐尺寸重建」会必然删掉的那几处结构，
-/// 显存数字本身的回归只能真机按 docs/bugs/BUG-3895 的采样法复测。
+/// 显存数字本身的回归只能真机按 docs/bugs/BUG-3913 的采样法复测。
 final Directory _repoRoot = Directory.current.parent;
 
 String _read(String relative) => File(

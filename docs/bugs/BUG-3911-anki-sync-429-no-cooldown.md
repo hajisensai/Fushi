@@ -1,4 +1,4 @@
-## BUG-3894 · Anki 直连同步被 AnkiWeb 429 限流后无冷却，错误显示 Rust 原文
+## BUG-3911 · Anki 直连同步被 AnkiWeb 429 限流后无冷却，错误显示 Rust 原文
 - **报告**：2026-10-28（用户：反馈 PT6NCk7Pbo、4k7x0-1MHe，Windows）
 - **真实性**：✅ 真 bug。`packages/fushi_engine/lib/anki_sync/anki_sync_session.dart:371-375`（`scheduleSync` / `_syncQuietly`）与 `:426-431`（`syncNow` 的 catch 把 helper 的 Rust Debug 原文写进 failed 状态）：不识别 429、没有冷却；每次制卡后 `scheduleSync()`、每次启动（`fushi/lib/main.dart:1203`）都会再撞一次，限流窗口越拖越长；设置页显示 `FushiAnkiSyncException: NetworkError { ... 429 Too Many Requests ... }`。
 - **[x] ① 已修复** — `FushiAnkiSyncException.isRateLimited`（认 `Too Many Requests` 状态行）；会话在 `_guard` 统一出口识别限流进入冷却（`ankiSyncRateLimitCooldown`：10 min 起、冷却过后再撞翻倍、封顶 4 h；冷却期内手动再撞不翻倍），落盘 `<root>/rate_limit.json`、重启不清零，同步成功清零。冷却期内自动同步不发请求、改排到冷却结束自动补一次；手动「立即同步」不受限。`AnkiSyncState.rateLimitedUntil` → 设置页显示新文案 `anki_sync_client_status_rate_limited`（限流 + 自动重试时刻），控制通道 JSON 带 `rateLimitedUntil`。提交 d633c28275（PR pr/fb-mining）。

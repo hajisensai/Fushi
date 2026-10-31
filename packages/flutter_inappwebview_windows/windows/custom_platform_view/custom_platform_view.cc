@@ -103,7 +103,7 @@ namespace flutter_inappwebview_plugin
   }
 
   // setSize: [width, height, scale_factor] 或带容量的
-  // [width, height, scale_factor, capacity_width, capacity_height]（BUG-3895）。
+  // [width, height, scale_factor, capacity_width, capacity_height]（BUG-3913）。
   // 容量缺省 = 0x0（旧协议，纹理贴身分配）。
   static std::optional<std::tuple<double, double, double, double, double>>
     GetSetSizeArgs(const flutter::EncodableValue* args)
