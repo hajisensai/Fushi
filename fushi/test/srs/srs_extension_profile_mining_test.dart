@@ -2,6 +2,7 @@
 // Fushi 复习时，卡进 **B 的复习**（App 激活配置 A 的复习里没有），查重按 B 判，同步 v2 的操作记在 B 名下；
 // 用户之后切到 B，卡照常在复习里。全程真实 srs.db + Rust 内核，同一个句柄上按 uid 开副本
 // （SrsProfileStores），不 mock 复习。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -248,5 +249,59 @@ void main() {
       expect(await hasTerm(storeB, e, r), isTrue, reason: 'B: $e');
       expect(await hasTerm(storeA, e, r), isFalse, reason: 'A 不该有 $e');
     }
+  });
+
+  test('A 有在途写入时切到 B、扩展再选 A：旧激活副本排空后作废，A 只有一份活副本，操作序号不撞', () async {
+    final _InnerAnki inner = _InnerAnki();
+    final Completer<void> gate = Completer<void>();
+    // 在途写入：占着 A 的独占区，切换发起时还没写完。
+    final Future<String> inflight = storeA.runExclusive(() async {
+      await gate.future;
+      return storeA.createDeck('在途');
+    });
+    // 切换发起前已排在 A 上的写入。
+    final Future<String> queued = storeA.createDeck('排队');
+    final Future<SrsDbStore> activating = openActive(_uidB);
+    // 交接进行中扩展选 A：要等旧激活副本交出去，再开 A 的新副本。
+    final Future<MineOutcome> mined = repoFor(_uidA, inner).mineEntry(
+      rawPayloadJson: _payload('鳥', 'とり'),
+      context: const AnkiMiningContext(sentence: '鳥だ。'),
+    );
+    await pumpEventQueue();
+    expect(storeA.isUsable, isTrue, reason: '在途写入写完前不作废');
+
+    gate.complete();
+    await inflight;
+    await queued;
+    final SrsDbStore activeB = await activating;
+    expect(activeB.profileUid, _uidB);
+    expect(storeA.isUsable, isFalse, reason: '旧激活副本交出去后作废，不留第二份 A 的活副本');
+    expect((await mined).result, MineResult.success);
+
+    final SrsDbStore foreignA = await foreignStoreOf(_uidA);
+    expect(identical(foreignA, storeA), isFalse);
+    expect(await hasTerm(foreignA, '鳥', 'とり'), isTrue);
+    // 旧副本再写明确失败：不会在过期的 HLC / 序号上和新副本各写各的。
+    await expectLater(storeA.createDeck('过期'), throwsA(isA<StateError>()));
+    await foreignA.createDeck('之后');
+
+    final List<int> seqs =
+        (await storage.db
+                .customSelect(
+                  'SELECT seq FROM sync2_ops WHERE profile_uid = ? ORDER BY seq',
+                  variables: <Variable<Object>>[
+                    Variable<String>(_uidA, srsIdType),
+                  ],
+                )
+                .get())
+            .map((QueryRow r) => r.read<int>('seq'))
+            .toList();
+    expect(seqs, isNotEmpty);
+    expect(seqs.toSet().length, seqs.length, reason: '同一写入者序号不重复');
+    expect(
+      seqs.last - seqs.first + 1,
+      seqs.length,
+      reason: '序号连续：两份副本没有各自从同一处往下分配',
+    );
   });
 }

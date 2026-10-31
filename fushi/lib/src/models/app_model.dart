@@ -69,6 +69,7 @@ import 'package:fushi/src/media/collections/collection_ai_order.dart'
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
@@ -77,6 +78,7 @@ import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -286,6 +288,9 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
+import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
+import 'package:fushi_engine/sync/host_jobs/host_audiobook_inputs.dart';
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -313,11 +318,13 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_routing_backend.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -327,7 +334,8 @@ import 'package:fushi/src/media/music/music_library_scanner.dart'
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
-import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
+import 'package:fushi_music/fushi_music.dart'
+    show InstalledMusicPlugin, MusicPluginManager;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
@@ -760,6 +768,18 @@ class AppModel with ChangeNotifier {
   /// HomePage（弹窗词典 / 悬浮词典入口）。
   VideoScrapeRuntime? videoScrapeRuntime;
 
+  /// 本机文件内容哈希（SHA-256）缓存：把有声书转录交给互联 host 时，客户端侧给待
+  /// 上传音频算哈希、host 侧给库里候选音频算哈希，都按 `(路径, 大小, 修改时刻)` 复用，
+  /// 同一文件不重算（见 `FileContentHashCache`）。
+  ///
+  /// 纯派生缓存（按绝对路径记，换设备 / 换数据位置后全部失效），落平台缓存目录
+  /// （[contentHashCacheFile]）：不进数据根，就不会被「更改数据位置」整树搬走，也不在
+  /// 备份的打包范围里；系统 / 用户清缓存只意味着下次重算。
+  late final FileContentHashCache contentHashCache = FileContentHashCache(
+    locateStore: () async =>
+        contentHashCacheFile(await AppPaths.appCacheRootDirectory()),
+  );
+
   /// 手机字幕遥控器的播放器适配宿主：当前视频页登记 / 注销播放绑定，互联服务端
   /// 经 [syncServerController] 把它注入为 `videoRemoteControlV1` 能力。
   late final VideoRemoteHost videoRemoteHost = VideoRemoteHost(
@@ -815,6 +835,11 @@ class AppModel with ChangeNotifier {
     hostJobsFactory: () async {
       final HostJobManager jobs = HostJobManager(
         jobRoot: Directory(path.join(databaseDirectory.path, 'host_jobs')),
+        // 对端交来的有声书转录：本机有声书库里已有内容相同的音频就不必上传。
+        inputMatcher: HostInputMatcher(
+          candidates: () => hostAudiobookInputCandidates(database),
+          cache: contentHashCache,
+        ),
         runners: <HostJobRunner>[
           AsrHostJobRunner(
             serviceFactory: (AsrAudioProfile profile) =>
@@ -1766,13 +1791,21 @@ class AppModel with ChangeNotifier {
         ),
       );
     }
+    // 由专用后端播放的曲目（托管播放，如 MusicKit）；其余走默认链路。目前还没有专用后端，
+    // 路由层原样转发（docs/specs/2026-10-31-apple-music-musickit.md §3.3）。
+    const List<MusicBackendRoute> backendRoutes = <MusicBackendRoute>[];
     final MusicPlayerEngine engine = MusicPlayerEngine(
-      // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
-      // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
-      backendFactory: () => MusicCrossfadeBackend(
-        instanceFactory: MpvMusicOutputBackend.new,
-        platform: musicOutputPlatformOfHost(),
+      backendFactory: () => MusicRoutingBackend(
+        routes: backendRoutes,
+        // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
+        // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
+        fallback: () => MusicCrossfadeBackend(
+          instanceFactory: MpvMusicOutputBackend.new,
+          platform: musicOutputPlatformOfHost(),
+        ),
       ),
+      capabilitiesOf: (MusicPlayItem item) =>
+          musicBackendCapabilitiesFor(backendRoutes, item),
       gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
       replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
       baseSettings: _musicBaseOutputSettings,
@@ -1904,6 +1937,40 @@ class AppModel with ChangeNotifier {
     pluginLyrics: isMusicPluginSourcesAvailable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
+        : null,
+    pluginSearch: isMusicPluginSourcesAvailable
+        ? (
+            String pluginId,
+            String title, {
+            String? artist,
+            String? album,
+            int? durationMs,
+            String? query,
+          }) => musicPluginManager
+              .source(pluginId)
+              .lyricsSearch(
+                title,
+                artist: artist,
+                album: album,
+                durationMs: durationMs,
+                query: query,
+              )
+        : null,
+    pluginFetch: isMusicPluginSourcesAvailable
+        ? (String pluginId, Object ref) =>
+              musicPluginManager.source(pluginId).lyricsFetch(ref)
+        : null,
+    providers: isMusicPluginSourcesAvailable
+        ? () async => enabledLyricsProviderIds(
+            mergeLyricsProviders(
+              parseLyricsProviders(prefsRepo.musicLyricsProvidersRaw),
+              <String>[
+                for (final InstalledMusicPlugin p
+                    in await musicPluginManager.list())
+                  if (p.isLyricsSource) p.id,
+              ],
+            ),
+          )
         : null,
   );
 
@@ -4396,15 +4463,29 @@ class AppModel with ChangeNotifier {
       }
       // TODO-861③：启动 check-due 词典自动更新（前台、静默、不弹错）。fire-and-forget，
       // 失败自吞 + 记日志，绝不阻塞 / 中断 app init（守卫见 maybeAutoUpdateDictionaries）。
-      unawaited(
-        maybeAutoUpdateDictionaries().catchError((Object e, StackTrace s) {
+      //
+      // BUG-3887 续：先接手上一个进程留下的在途词典下载（iOS 进程被系统回收），再跑
+      // 自动更新——两者共用 controller 的互斥锁，自动更新先抢到锁会让接手白等一轮。
+      unawaited(() async {
+        try {
+          await resumeInterruptedDictionaryDownloads();
+        } catch (e, s) {
+          ErrorLogService.instance.log(
+            'AppModel.resumeInterruptedDictionaryDownloads',
+            e,
+            s,
+          );
+        }
+        try {
+          await maybeAutoUpdateDictionaries();
+        } catch (e, s) {
           ErrorLogService.instance.log(
             'AppModel.maybeAutoUpdateDictionaries',
             e,
             s,
           );
-        }),
-      );
+        }
+      }());
       // 番剧下载：启动 qb 完成监听 + 自动入库（fire-and-forget；未配置 qb 时每
       // tick 直接返回，无网络开销，绝不阻塞/中断 init）。
       // 模块门（downloads）：番剧下载完成监听是「下载中心」专属后台（计划仓储 +
@@ -8386,11 +8467,22 @@ class AppModel with ChangeNotifier {
       job.markDownloadPhase();
       job.progress.value = 0;
       job.message.value = t.dict_update_updating(name: dictionary.name);
+      final Map<String, String> sourceOverride = remote.updatedSourceMetadata(
+        localDownloadUrl: dictionary.downloadUrl,
+        localIndexUrl: dictionary.indexUrl,
+      );
       final File zipFile = await DictionaryDownloader.download(
         url: remote.resolveDownloadUrl(dictionary.downloadUrl),
         tempDir: tempDir,
         progressNotifier: job.progress,
         cancelToken: job.cancelToken,
+        // BUG-3887 续：iOS 进程被回收后新进程据此接着下、按同一配方重导。
+        handoffPayload: DictionaryImportRecipe.update(
+          name: dictionary.effectiveDisplayName,
+          replaceTargetName: dictionary.name,
+          sourceOverride: sourceOverride,
+          forceReplaceExisting: true,
+        ).toPayload(),
       );
       job.markImportPhase();
       job.progress.value = 0;
@@ -8402,14 +8494,65 @@ class AppModel with ChangeNotifier {
         // BUG-1595：自动更新替换的就是这本——远端包哪怕改了标题（title 携带版本
         // 号等）也不允许按 title 误判成新增、旧本残留。
         replaceTarget: dictionary,
-        sourceOverride: remote.updatedSourceMetadata(
-          localDownloadUrl: dictionary.downloadUrl,
-          localIndexUrl: dictionary.indexUrl,
-        ),
+        sourceOverride: sourceOverride,
       );
     } finally {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     }
+  }
+
+  /// BUG-3887 续：接手上一个进程留下的在途词典下载（iOS 系统后台会话；其余平台没有
+  /// [dictionaryDownloadRecovery]，直接返回）。
+  ///
+  /// 进程是被系统回收的，传输却还在守护进程里跑（或已经下完落盘）：在这里接回来，
+  /// 按随下载持久化的 [DictionaryImportRecipe] 走与原流程同一条 [importDictionary]。
+  /// 导入要等 app 回到前台再跑——系统把 app 唤醒到后台只给几十秒，导入「导新 → 删旧
+  /// → publish」中途被杀会把旧词典删掉。
+  Future<void> resumeInterruptedDictionaryDownloads() async {
+    final DictionaryDownloadRecovery? recovery = dictionaryDownloadRecovery;
+    if (recovery == null) return;
+    final List<AdoptedDictionaryDownload> adopted = await recovery();
+    if (adopted.isEmpty) return;
+    await _untilAppResumed();
+    await dictionaryDownloadController.resumeAdoptedDownloads(
+      adopted: adopted,
+      resolve: (DictionaryDownloadHandoff handoff) =>
+          resumableDictionaryImportFor(
+            handoff: handoff,
+            installed: dictionaries,
+            importer:
+                ({
+                  required File file,
+                  required ValueNotifier<String> progressNotifier,
+                  required DictionaryImportRecipe recipe,
+                  required Dictionary? replaceTarget,
+                }) => importDictionary(
+                  file: file,
+                  progressNotifier: progressNotifier,
+                  onImportSuccess: () {},
+                  forceReplaceExisting: recipe.forceReplaceExisting,
+                  sourceOverride: recipe.sourceOverride,
+                  replaceTarget: replaceTarget,
+                ),
+          ),
+    );
+  }
+
+  /// 等 app 处于前台（已在前台立即返回）。
+  static Future<void> _untilAppResumed() {
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) {
+      return Future<void>.value();
+    }
+    final Completer<void> resumed = Completer<void>();
+    late final AppLifecycleListener listener;
+    listener = AppLifecycleListener(
+      onResume: () {
+        listener.dispose();
+        if (!resumed.isCompleted) resumed.complete();
+      },
+    );
+    return resumed.future;
   }
 
   /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
@@ -10170,6 +10313,11 @@ class AppModel with ChangeNotifier {
       SrsReviewReplayButton.fromWire(_prefsRepo?.srsReviewReplayButton);
   Future<void> setSrsReviewReplayButton(SrsReviewReplayButton value) =>
       prefsRepo.setSrsReviewReplayButton(value.wire);
+  // 复习页卡面手势映射（透传 prefsRepo）。可空读：prefs 未装配 / 值读不出 = 默认映射。
+  SrsReviewGestureMap get srsReviewGestures =>
+      SrsReviewGestureMap.decode(_prefsRepo?.srsReviewGestures ?? '');
+  Future<void> setSrsReviewGestures(SrsReviewGestureMap value) =>
+      prefsRepo.setSrsReviewGestures(value.encode());
   // 复习卡面图片大小（透传 prefsRepo）。可空读：prefs 未装配 = 原样。
   SrsReviewImageSize get srsReviewImageSize =>
       SrsReviewImageSize.fromWire(_prefsRepo?.srsReviewImageSize);

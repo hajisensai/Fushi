@@ -119,6 +119,15 @@ declare namespace Fushi {
     romanization?: LyricText;
   }
 
+  /** One `lyricsSearch` hit. Entries without `title` / `ref` are dropped; the host keeps the first 20. */
+  interface LyricsCandidate {
+    title: string;
+    artist?: string;
+    durationMs?: number;
+    /** Your own opaque JSON (id, mid, id + accesskey, ...), at most 2 KiB serialized; passed back verbatim to `lyricsFetch`. */
+    ref: unknown;
+  }
+
   type Section =
     | { id: string; title: string; subtitle?: string; kind: 'tracks'; items: Track[] }
     | { id: string; title: string; subtitle?: string; kind: 'playlists'; items: Playlist[] }
@@ -194,6 +203,15 @@ declare namespace Fushi {
     stream(args: { id: string; quality: Quality }): Awaitable<Stream>;
     mvStream(args: { id: string; quality: Quality }): Awaitable<MvStream>;
     lyrics(args: { id: string }): Awaitable<Lyrics | null>;
+    /**
+     * Lyrics source for any track (local / media server): search candidates by title + artist.
+     * Declare together with `lyricsFetch`; a lyrics-only plugin declares just these two.
+     * The host calls it with several `query` variants per track, so do not retry with fallbacks yourself.
+     * Empty `items` = nothing found; throwing = this source failed.
+     */
+    lyricsSearch(args: { query: string; title: string; artist?: string; album?: string; durationMs?: number }): Awaitable<{ items: LyricsCandidate[] } | null>;
+    /** Lyrics for the `ref` of the candidate the host picked from `lyricsSearch`; null = no usable lyrics. */
+    lyricsFetch(args: { ref: unknown }): Awaitable<Lyrics | null>;
     /** refresh = the user pressed "refresh"; swap replaceable sections. */
     home(args: { refresh?: boolean }): Awaitable<{ sections: Section[] }>;
     library(args: { page: number; pageSize: number }): Awaitable<Page<Playlist>>;

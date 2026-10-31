@@ -137,6 +137,8 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // 撤销载荷快照，不是供重开的路径引用，数据根迁移不改写。
   PathRebaseColumn('AiAgentSessions', 'payloadJson', PathRebaseKind.notAPath,
       '整场对话 JSON 快照，历史记录，无路径引用。'),
+  PathRebaseColumn('AiAgentSessions', 'profileUid', PathRebaseKind.notAPath,
+      'v141 会话所属 Profile 的全局身份（profiles.uid），不是路径。'),
   PathRebaseColumn('AiAgentActions', 'argsJson', PathRebaseKind.notAPath,
       '操作参数 JSON 快照（记录当时调用了什么），不是路径引用。'),
   PathRebaseColumn('AiAgentActions', 'undoPayloadJson',

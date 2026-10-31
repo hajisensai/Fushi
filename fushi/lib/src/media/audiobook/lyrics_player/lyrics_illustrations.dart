@@ -283,9 +283,49 @@ int lastReachedLyricsIllustration(
 // 状态机
 // ---------------------------------------------------------------------------
 
+/// 歌词模式播放走过插图时怎么提示（偏好 `lyrics_illustration_cue`）。
+enum LyricsIllustrationCue {
+  /// 弹出插图卡并停留（默认，2026-10-31 用户拍板）：播放顺着走过插图时卡片自动
+  /// 弹出，音频按「图片暂停」秒数（`imagePauseSec`）暂停，到点自动收起并继续。
+  popup('popup'),
+
+  /// 红点：封面位换成插图缩略图 + 提示点，不弹卡、不暂停（旧行为的轻量版）。
+  dot('dot');
+
+  const LyricsIllustrationCue(this.wire);
+
+  /// 持久化值（冻结）。
+  final String wire;
+
+  /// 偏好值 → 提示方式；未知值 / 空串回落到默认 [popup]。
+  static LyricsIllustrationCue fromWire(String? value) {
+    for (final LyricsIllustrationCue cue in values) {
+      if (cue.wire == value) return cue;
+    }
+    return popup;
+  }
+}
+
 /// 两次观测之间音频前进不超过这么久，才算「顺着播过去」：拖进度条 / 跳章
 /// 一下跨过好几张插图不该一张张弹出来，只静默更新「已听到」的范围。
 const Duration kLyricsIllustrationNaturalAdvance = Duration(seconds: 90);
+
+/// 「弹出停留」的连续播放判据（纯函数）：两次观测之间是否是顺着播过去的。
+///
+/// 只认控制器登记的显式跳转标记（`AudiobookPlayerController.playbackJumpSerial`）：
+/// 两次观测之间序号变了（[previousJumpSerial] != [currentJumpSerial]）就是跳过去的
+/// ——拖进度条、±10 秒、上一句 / 下一句 / 点行跳转都在控制器里登记——不停留。
+/// 另外须 [playing]，且音频没有往回走（[audioDeltaMs] < 0）。不拿墙钟与音频进度的
+/// 差值去猜（调度抖动、倍速、后台节流都会让那种判据误判）。
+bool isContinuousLyricsPlayback({
+  required bool playing,
+  required int previousJumpSerial,
+  required int currentJumpSerial,
+  required int audioDeltaMs,
+}) {
+  if (!playing || previousJumpSerial != currentJumpSerial) return false;
+  return audioDeltaMs >= 0;
+}
 
 /// 歌词模式插图状态。
 ///
@@ -300,6 +340,27 @@ class LyricsIllustrationController extends ChangeNotifier {
   int _reached = -1;
   int? _shown;
   int? _lastAudioMs;
+  bool _cardOpen = false;
+  bool _rightToLeft = false;
+
+  /// 顺着播放走过插图时是否自动弹出插图卡（[cardVisible]）。true = 「弹出停留」
+  /// （偏好 `lyrics_illustration_cue` = popup，默认）；false = 「红点」：插图位只
+  /// 换成缩略图 + 提示点，不弹卡。只影响**之后**的自动弹出，不收起已弹出的卡。
+  bool autoOpenCard = true;
+
+  /// 书按竖排从右往左读（阅读器 `writing_mode == vertical-rl`）：插图卡的翻页热区 /
+  /// 箭头、大图浏览的滑动方向与 ← / → 键整体镜像——点左 = 下一张、点右 = 上一张，
+  /// 与阅读器翻页一致（反馈 KhrrCkFteH）。
+  bool get rightToLeft => _rightToLeft;
+  set rightToLeft(bool value) {
+    if (_rightToLeft == value) return;
+    _rightToLeft = value;
+    notifyListeners();
+  }
+
+  /// 插图卡（窄屏 / 新版宽屏缩略图上方的弹出卡）此刻是否显示：插图位有图且卡
+  /// 没被收起。
+  bool get cardVisible => _shown != null && _cardOpen;
 
   /// 插图表（按书中顺序）。
   List<LyricsIllustration> get items => _items;
@@ -337,6 +398,7 @@ class LyricsIllustrationController extends ChangeNotifier {
         ? -1
         : lastReachedLyricsIllustration(_items, position);
     _shown = null;
+    _cardOpen = false;
     // 没有基线位置（进歌词模式时当前 cue 还解析不出来）时，第一次观测只当基线、
     // 不弹出：否则第一次 observe 会把书里第一张插图当成「刚走过」盖住封面。
     _lastAudioMs = position == null ? null : audioPosition?.inMilliseconds;
@@ -349,32 +411,53 @@ class LyricsIllustrationController extends ChangeNotifier {
   /// 插图位换成新走过的**第一张**（连续几张彩页一起走过时从第一张看起，后面的
   /// 用「下一张」翻）。跳跃式的 seek 只更新已听到范围；往回 seek 把超出范围的
   /// 插图收回封面。
-  void observe(LyricsBookPosition position, {required Duration audioPosition}) {
+  ///
+  /// 返回 true = 这一次是「顺着播新走过插图」并换上了它（[autoOpenCard] 时卡已
+  /// 弹出）——调用方据此决定要不要停留。同一张插图一次经过只返回一次 true。
+  bool observe(LyricsBookPosition position, {required Duration audioPosition}) {
     final int audioMs = audioPosition.inMilliseconds;
     final int? lastMs = _lastAudioMs;
     _lastAudioMs = audioMs;
-    if (_items.isEmpty) return;
+    if (_items.isEmpty) return false;
     final int next = lastReachedLyricsIllustration(_items, position);
-    if (next == _reached) return;
+    if (next == _reached) return false;
     final bool natural =
         lastMs != null &&
         audioMs >= lastMs &&
         audioMs - lastMs <= kLyricsIllustrationNaturalAdvance.inMilliseconds;
     final int previous = _reached;
     _reached = next;
+    bool revealed = false;
     if (next > previous) {
-      if (natural) _shown = previous + 1;
+      if (natural) {
+        _shown = previous + 1;
+        _cardOpen = autoOpenCard;
+        revealed = true;
+      }
     } else {
       final int? shown = _shown;
-      if (shown != null && shown > next) _shown = null;
+      if (shown != null && shown > next) {
+        _shown = null;
+        _cardOpen = false;
+      }
     }
+    notifyListeners();
+    return revealed;
+  }
+
+  /// 回到封面（插图卡一起收起）。
+  void dismiss() {
+    if (_shown == null && !_cardOpen) return;
+    _shown = null;
+    _cardOpen = false;
     notifyListeners();
   }
 
-  /// 回到封面。
-  void dismiss() {
-    if (_shown == null) return;
-    _shown = null;
+  /// 只收起插图卡，插图位仍是这张插图的缩略图（带提示点，点它还能看大图）。
+  /// 「弹出停留」到点自动收起走这里。
+  void closeCard() {
+    if (!_cardOpen) return;
+    _cardOpen = false;
     notifyListeners();
   }
 

@@ -245,6 +245,15 @@ async function cmdSmoke(dir, flags) {
     }
     if (caps.has('mvStream') && typeof seen.track.mvId === 'string') await call(runner, 'mvStream', { id: seen.track.mvId, quality: 'high' }, opt);
   } else if (caps.has('stream')) warn('no track found to test stream / lyrics (declare search type "song", or return tracks from album / playlist / home)');
+  if (caps.has('lyricsSearch')) {
+    const s = await call(runner, 'lyricsSearch', { query: q, title: q }, opt);
+    const hit = Array.isArray(s?.items) ? s.items.find((x) => typeof x?.title === 'string' && x.ref !== undefined && x.ref !== null) : undefined;
+    if (!hit) warn(`lyricsSearch for "${q}" returned no usable candidates (try --query)`);
+    else if (caps.has('lyricsFetch')) {
+      const l = await call(runner, 'lyricsFetch', { ref: hit.ref }, opt);
+      if (l === null) console.log(c.dim('      (lyricsFetch returned null for the first candidate)'));
+    }
+  }
   if (caps.has('library')) await call(runner, 'library', { page: 0, pageSize: 50 }, opt);
   if (caps.has('like')) await call(runner, 'like', { op: 'list' }, opt);
   if (caps.has('login')) await call(runner, 'login', { op: 'methods', platform: 'windows' }, opt);

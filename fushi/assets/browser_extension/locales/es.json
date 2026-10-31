@@ -259,7 +259,7 @@
   "mine_already_queued": "Ya está en la cola de minado",
   "mine_queued_n": "Añadido a la cola de minado ({n})",
   "mine_already_queued_n": "Ya está en la cola de minado ({n})",
-  "mine_queued_generate_later": "Genéralos todos al terminar de ver",
+  "mine_queued_generate_later": "Pulsa el botón de minado de la extensión para generarlas todas",
   "mine_no_cue": "No se encontró la línea de subtítulo actual, inténtalo en un momento",
   "mine_enqueue_failed": "No se pudo añadir a la cola",
   "mine_failed": "Error al minar",

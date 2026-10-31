@@ -85,3 +85,33 @@ verified at runtime on this machine.
   and could not see this; evidence comes from the real-mouse mode of
   `fushi/integration_test/web_browser_youtube_menu_probe_itest.dart`.
   Test: `test/composition_host_child_window_test.dart`.
+
+## Capacity-sized shared texture and WGC frame pool (BUG-3913, 2026-10-31)
+
+- `texture_bridge_gpu.cc` / `texture_bridge.cc`: upstream recreated both the
+  WGC capture frame pool (`RecreateFramePoolLocked`, exact-size compare) and the
+  shared destination texture handed to Flutter (`EnsureSurface`, exact-size
+  compare) on every WebView resize. Neither is reclaimed: the Flutter engine /
+  ANGLE keeps what it opened for each retired DXGI share handle, and every
+  closed frame pool leaves roughly one pool buffer behind in the system. At 4K
+  200% every resize cost ~130 MB of fushi.exe dedicated VRAM, forever.
+- Dart (`texture_capacity.dart`) now computes a grow-only capacity (256 px
+  steps, ×1.5 growth, capped at the display size) and sends it as the 4th/5th
+  `setSize` argument. The frame pool is created at `max(capture size,
+  capacity)` and only recreated when that no longer fits; frames carry their
+  `ContentSize`. The shared texture is allocated at the capacity, the content is
+  copied into its top-left corner (`CopySubresourceRegion`), and the rest is
+  cleared to transparent whenever the content size changes.
+- The engine always maps the whole texture onto the `Texture` widget's box
+  (`visible_width` is not a crop), so `CustomPlatformView` lays the `Texture`
+  out at `capacity / scale` inside `ClipRect` + top-left `OverflowBox`: texels
+  stay 1:1 with physical pixels and only the visible content shows.
+  `SelectSurfaceSize` keeps serving the old-capacity texture while the engine
+  still paints a frame laid out for it (the request size it passes is the
+  `Texture` box), so a capacity switch never draws one stretched frame.
+- `GetSurfaceDescriptor` no longer rewrites `output_size_` from the engine
+  request: that request is the capacity box now, not the visible size.
+- Shader chains (libplacebo) render into private, non-shared intermediates and
+  are then copied into the shared texture.
+- Tests: `test/texture_capacity_test.dart` (policy), source guard
+  `fushi/test/build/webview_texture_capacity_guard_test.dart`.

@@ -259,7 +259,7 @@
   "mine_already_queued": "موجود بالفعل في طابور التعدين",
   "mine_queued_n": "أُضيف إلى طابور التعدين ({n})",
   "mine_already_queued_n": "موجود بالفعل في طابور التعدين ({n})",
-  "mine_queued_generate_later": "أنشئها كلها بعد المشاهدة",
+  "mine_queued_generate_later": "انقر زر التعدين في الإضافة لإنشائها كلها",
   "mine_no_cue": "لم يُعثر على سطر ترجمة حالي، حاول بعد لحظة",
   "mine_enqueue_failed": "تعذّرت الإضافة إلى الطابور",
   "mine_failed": "فشل التعدين",

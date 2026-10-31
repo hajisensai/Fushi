@@ -57,6 +57,7 @@ mixin _FushiDbWebBrowser on _$FushiDatabase {
       itemKey: itemKey,
       deletedAt: deletedAt,
       remotePublishedAt: 0,
+      cloudFolderState: TombstoneCloudFolderState.pending.dbValue,
     ),
   );
 

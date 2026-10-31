@@ -41,6 +41,7 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -122,6 +123,14 @@ final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
     appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
   ),
 );
+
+/// 复习页卡面手势映射（按 profile 偏好，默认 = 点空白切换顶栏、其余不绑）。
+final Provider<SrsReviewGestureMap> srsReviewGesturesProvider =
+    Provider<SrsReviewGestureMap>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsReviewGestures),
+      ),
+    );
 
 /// 复习页底部操作行一端的重播音频键（按 profile 偏好，默认不放）。
 final Provider<SrsReviewReplayButton> srsReviewReplayButtonProvider =
@@ -553,10 +562,17 @@ class SrsDeckListData {
   /// 今天还有没有可复习的卡（三种计数任一非零）。
   bool get hasWorkToday => todayNew + todayLearn + todayReview > 0;
 
-  /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡的顶层牌组；没有时为 null。
+  /// 有顶层牌组的到期数因 RWKV 还没准备好而不全（[SrsDeckSummary.rwkvPending]）：[todayReview] 的 0 不代表
+  /// 「今天复习完了」，首页显示「准备中」。
+  bool get rwkvPending =>
+      decks.any((SrsDeckSummary d) => d.depth == 0 && d.rwkvPending);
+
+  /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡（或到期数在等 RWKV）的顶层牌组；没有时为
+  /// null。等 RWKV 的牌组进复习页会看到准备进度，就绪后自动出卡。
   SrsDeckSummary? get firstRootWithWork {
     for (final SrsDeckSummary d in decks) {
-      if (d.depth == 0 && d.newCount + d.learnCount + d.reviewCount > 0) {
+      if (d.depth == 0 &&
+          (d.newCount + d.learnCount + d.reviewCount > 0 || d.rwkvPending)) {
         return d;
       }
     }
@@ -604,18 +620,33 @@ List<SrsDeckSummary> srsVisibleDecks(
 /// 只读牌组行：同步冲突数是另一个 provider（[srsConflictCountProvider]）。以前两者合在一个
 /// Future 里，新建 / 改名牌组后列表要等冲突扫描（读回并解析全部修改记录）跑完才换成新数据，
 /// 新牌组迟迟不出现（BUG-3548）。
-final FutureProvider<SrsDeckListData?> srsDeckListProvider =
-    FutureProvider<SrsDeckListData?>((Ref ref) async {
-      ref.watch(srsRevisionProvider);
-      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
-      if (store == null) return null;
-      final int revision = store.revision;
-      final List<SrsDeckSummary> decks = srsVisibleDecks(
-        await store.deckSummaries(),
-        defaultDeckId: store.defaultDeckId,
-      );
-      return SrsDeckListData(store: store, decks: decks, revision: revision);
-    });
+final FutureProvider<SrsDeckListData?>
+srsDeckListProvider = FutureProvider<SrsDeckListData?>((Ref ref) async {
+  ref.watch(srsRevisionProvider);
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return null;
+  final int revision = store.revision;
+  Future<List<SrsDeckSummary>> load() async => srsVisibleDecks(
+    await store.deckSummaries(),
+    defaultDeckId: store.defaultDeckId,
+  );
+  List<SrsDeckSummary> decks = await load();
+  // RWKV 牌组的到期数在等 RWKV（[SrsDeckSummary.rwkvPending]）：RWKV 就绪不是 store 的写入，不推进
+  // [srsRevisionProvider]，这里自己等它就绪再重读，列表 / 首页的「准备中」才会换成真实计数。
+  // 只在确有 pending 时取服务：pending 意味着 store 已装配了 RWKV（[srsRwkvServiceProvider] 已建好）。
+  if (decks.any((SrsDeckSummary d) => d.rwkvPending)) {
+    final SrsRwkvService? rwkv = await ref.read(srsRwkvServiceProvider.future);
+    if (rwkv != null) {
+      final StreamSubscription<SrsRwkvStatus> sub = rwkv.statusChanges
+          .where((SrsRwkvStatus s) => s.phase == SrsRwkvPhase.ready)
+          .listen((_) => ref.invalidateSelf());
+      ref.onDispose(sub.cancel);
+      // 计数途中就已就绪（事件在订阅之前发过了）：当场重读一次。
+      if (rwkv.ready) decks = await load();
+    }
+  }
+  return SrsDeckListData(store: store, decks: decks, revision: revision);
+});
 
 /// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
 const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';

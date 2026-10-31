@@ -271,6 +271,25 @@ void main() {
       c.dispose();
     });
 
+    test('BUG-3891：默认关，从关往上调一档直接到 5 秒，往下逐秒减到关', () {
+      expect(AudiobookPlayerController.imagePauseOnSec, 5);
+      // 步进器从 0 报 1：打开即 5 秒。
+      expect(AudiobookPlayerController.imagePauseStepped(0, 1), 5);
+      // 开着时照常 ±1。
+      expect(AudiobookPlayerController.imagePauseStepped(5, 6), 6);
+      expect(AudiobookPlayerController.imagePauseStepped(5, 4), 4);
+      expect(AudiobookPlayerController.imagePauseStepped(1, 0), 0);
+      // 关着往下仍是关。
+      expect(AudiobookPlayerController.imagePauseStepped(0, 0), 0);
+    });
+
+    test('新建控制器（没载入过书）插图停留是关', () {
+      _installFakeAudioPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+      expect(c.imagePauseSec.value, 0);
+      c.dispose();
+    });
+
     test('看不见时同 DOM 插图不停留：照常播放', () async {
       final AudiobookPlayerController c = await _playingController();
       c.setImagePauseSec(5);

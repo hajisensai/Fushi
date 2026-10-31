@@ -271,7 +271,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 | D2 | 提供商不支持 tool calling 时 | 降级成「只回一个 JSON 动作」协议，同一管线；不拒用 |
 | D3 | 撤销记录保留多久 | 推荐 30 天（与软删回收站同期），过期只删记录和快照，不动已生效的改动 |
 | D4 | 入口放哪 | **悬浮球已拍板**（§6.4）。其余推荐：① 首页 dashboard 一张「AI 助手」卡 ② 桌面全局快捷键（如 Ctrl+K）呼出同一个浮层 ③ 各页顶栏「问 AI」（带当前页面上下文，走 `adaptiveOverflow`）。不新增主导航页签。**2026-10-29 所有者拍板砍掉 ③**：各页顶栏按钮与首页 / 悬浮球重复，只留 ①② 与悬浮球（悬浮球本就按当前场景带上下文） |
-| D5 | 对话历史保存 | 本机保存最近 30 天，不同步、不备份（与 AI 配置同为设备本地） |
+| D5 | 对话历史保存 | 本机保存最近 30 天，不同步、不备份（与 AI 配置同为设备本地）。**2026-10-31 多会话（反馈 uILXKiYRhl）**：会话按 Profile 归属（v140 `ai_agent_sessions.profile_uid`），会话列表可随时新建 / 切换续接 / 重命名 / 删除，见 §12.5 |
 | D6 | iOS | 页面保留；工具集按 `StoreRestrictedCapability` 过滤（扩展、在线源、下载中心对 AI 不可见），判据只认那一处 |
 | D7 | 控制通道目录从 `platform/desktop/ctl/` 搬到 `ops/` | 搬；一次性机械改名，单独一个 PR，先于 P1 合入，避免长期双份路径 |
 | D8 | 补 CLI 的范围是否包括 `fushi_server ctl` 对齐 | 本期只补 `fushi_cli`；服务端在 P3 用同一 `FushiOp` 描述自己的 admin 操作，不追求两边命令一一对应 |
@@ -282,7 +282,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 - AI 生成代码、脚本并执行；AI 直接写 SQL 或偏好键（只能经设置 schema）。
 - AI 读写凭据类设置。
 - 让模型自己决定某个不可逆操作「这次不用确认了」：要不要确认只由操作描述（有没有 undo）决定。
-- 用 MCP 对外暴露这份目录。以后可以加（`OpCatalog` 很容易导出成 MCP tools），但本期只服务 app 内 AI 和 CLI。
+- ~~用 MCP 对外暴露这份目录。~~ 已于 2026-10-31 加上（反馈 uILXKiYRhl，所有者要求做完），见 §12.5。
 
 ## 11. 风险
 
@@ -323,7 +323,61 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 ### 12.3 顺带修掉的问题
 BUG-3783（字幕补全把已存在的同名字幕报成「已安装」）、BUG-3784（并发 `ensureDefaultProfile` 撞唯一约束；`_copyProfile` 找不到时回退成源 Profile）、BUG-3785（删音乐扫描根留下孤儿曲目）、BUG-3786（LNReader 卸载静默删除插件登录态）；`PUT /api/admin/ai/providers/:id` 现在认显式空串。
 
+
 ### 12.4 已知缺口
 - 没有真机 / 模拟器端到端验证（焦点驱动集成测试的三条脚本未跑）；验证靠单测、路由测试与撤销往返测试。
 - 设置里的字体下载、应用更新下载等也返回任务 id（`/api/admin/tasks/:id`），但没标 `longRunning`，AI 不会自动盯它们（`downloads.job.add` 已标）。
 - 撤销载荷里存的是旧值快照：换存储位置后撤销一个「路径类」设置会写回旧路径。
+
+### 12.5 外部 AI 接入（MCP，2026-10-31）
+
+接入说明：[`docs/mcp-external-ai.md`](../mcp-external-ai.md)。
+
+| 部分 | 位置 |
+|---|---|
+| 协议层（JSON-RPC、`initialize` / `tools/list` / `tools/call`）、目录 → 工具生成 | `packages/fushi_cli/lib/src/mcp/mcp_server.dart`（`McpServer`、`mcpToolOf`） |
+| Streamable HTTP 传输 | `mcp_http.dart`（`McpHttpEndpoint`），挂在桌面控制通道 `CtlServer` 的 `/mcp` 上 |
+| stdio 传输 | `fushi_cli mcp`（`mcp_stdio_bridge.dart`）：stdin 每行 → `POST /mcp`，每条消息现读发现文件 |
+| app 侧适配 | `fushi/lib/src/ai/mcp/`：`AiMcpToolHost`（经 `AiAgentToolbox` 执行 / 记账 / 撤销）、app 内确认弹窗、开关与配对令牌 |
+
+取舍：
+
+- **复用控制通道的监听，不另起服务**：控制通道已经只绑 127.0.0.1、拒带 `Origin` 的请求、
+  有跨平台的发现文件。另开固定端口要处理端口占用和第二套发现机制，收益只有「HTTP 客户端
+  能写死 URL」，而主流客户端（Claude Desktop）本来就只拉起 stdio 进程。所以 HTTP 端点
+  随控制通道随机端口，客户端配置一律走 `fushi_cli mcp` 这个 stdio 桥。
+- **不复用控制通道 token**：控制通道 token 等于用户本人（`fushi_cli` 能敲 `--yes` 等表态
+  flag），且每次启动都换。MCP 用用户在设置页亲手生成的配对令牌（只存 SHA-256、设备本地），
+  `/mcp` 只认它，其它路由只认控制通道 token，两者互不通用。
+- **外部调用一律按模型身份**（`OpCaller.model`）：与 app 内 AI 助手同一条执行管线
+  （`AiAgentToolbox`），所以表态参数注入、凭据脱敏、`fromModel` 拒写凭据地址 / 机密值 /
+  授权开关、记账与撤销全部沿用，不另写一份规则。
+- **需要确认的操作在 app 内弹框**：MCP 有 elicitation，但那是让**客户端**问用户，等于把
+  确认交给调用方，违背「外部调用方不能绕过」。确认框由 app 画、在本机点；2 秒防误按、
+  2 分钟无人回答按拒绝、多个确认排队。
+- **工具清单全量列出**（约 300 个，每次 `tools/list` 现算可用性），不像 app 内 AI 那样做
+  「常驻 + `ops.search`」两级：MCP 客户端（Claude Code 等）自己会对大量工具做检索 / 延迟
+  加载，全量列出最贴近「清单由目录生成」；进程内专有（`nav.open`）与结果含一次性凭据的
+  操作不对外。另加一个 `undo_action`（只撤调用方**这条连接自己**的记录：记录的会话 id
+  必须等于 `mcp:<当前会话>`；无会话 / 会话失效的调用共用 `mcp:anonymous`）。
+- **可用性只有一个判据**：`AiAgentToolbox.execute` 自己在记账前按 `currentAvailability`
+  拒绝不可用的操作（`rejected`，不进操作记录），与常驻工具 / `describeTool` / MCP
+  `tools/list` 同一谓词；所以清单里藏起来的操作按名字也调不动，入口不必各写一遍。
+- **取消**：服务端按（传输层会话 id，请求 id）登记在途的 `tools/call`；收到
+  `notifications/cancelled` 就触发该调用的取消信号——排队中的确认不再弹、已弹出的关掉、
+  还没执行的不执行，被取消的请求不再应答（HTTP 202）。已执行完的不回滚。`DELETE /mcp`
+  结束会话时其在途调用一并取消。
+- **信任边界**：上述限制只约束纯 MCP 通道。同一系统用户下能读文件 / 跑 shell 的程序可以读
+  控制通道发现文件、以「用户本人」身份调 `/api/admin/...`，不受 MCP 限制；接入文档里写明。
+- **会话只用来记客户端身份**：`initialize` 开 `Mcp-Session-Id`，用于确认框显示请求方、
+  操作记录按 `mcp:<会话>` 分组；不认识的会话 id（app 重启过）不报 404，按匿名客户端处理，
+  鉴权每个请求都做，不依赖会话。
+- 只做桌面：控制通道只在桌面开；手机上没有可让本机 MCP 客户端连接的场景。
+
+### 12.6 多会话（2026-10-31，反馈 uILXKiYRhl）
+
+- **数据结构**：一行 `ai_agent_sessions` = 一场会话，消息（条目 + 模型历史 + 用量）整场序列化在 `payload_json` 里随会话存取——本来就撑得起多会话，缺的是归属与标题语义。v141 加 `profile_uid`（所属 Profile 的全局身份；用 uid 不用自增 id，因为本表设备本地、覆盖恢复后原样回灌而 `profiles` 随备份恢复），存量存档按迁移时的激活 Profile 回填，解析不出 uid 的留空串（对所有 Profile 可见）。操作记录仍不分 Profile。
+- **写入口唯一**：本机 AI 页与互联 host 替远端跑的会话都走 `saveAiAgentSessionArchive` → `FushiDatabase.saveAiAgentSessionSnapshot`。首次落库定标题（首条用户消息摘要，空白折叠、60 码点截断）、归属与创建时刻；之后整场重存只更新场景 / 内容 / 用量 / `updated_at`，用户重命名的标题不会被下一轮对话冲掉，中途切 Profile 也不改换门庭。
+- **会话库**：`AiAgentController` 实现 `AiAgentSessionLibrary`（`ai_agent_conversation_controller.dart`）：列表只投影元数据列（不读 `payload_json`），不列互联 host 替已配对设备跑的远端会话（场景 `remote`，`kAiAgentLocalLibraryExcludedScenes`；那些会话属于发起的设备，「AI 操作记录」页仍按全部会话配标题），切换前先存好当前这场，删除当前这场换成新对话、在途一轮的收尾存档不写回已删会话；切过 Profile 后再打开 AI 助手，手上属于别的 Profile 的那场换成新对话。远端会话（`RemoteAiAgentSession`）没有本机存档，`sessionLibrary` 为 null，不出会话入口。
+- **界面**：`ai_agent_sessions.dart` 的 `AiAgentSessionList`：宽屏整页常驻对话左侧，窄屏整页与浮层 / 侧栏顶栏点「会话」按钮弹出；删除先确认，确认文案说明操作记录保留、仍可在「AI 操作记录」撤销。
+

@@ -42,6 +42,20 @@ bool audiobookCuesUseWholeBookForChapter(List<AudioCue> allCues) {
       );
 }
 
+/// 正文 WebView 的 cue 推进跨过插图时，是否把视口滚到插图停住（JS
+/// `__fushiImagePauseAdvance` 的 `pauseEnabled`，纯函数）。
+///
+/// * 「图片暂停」关着（[imagePauseSec] = 0）：绝不滚图（TODO-724）。
+/// * 歌词模式：一律不滚。插图停留归歌词插图状态机（`lyrics.part.dart`
+///   `_observeLyricsIllustrations`，「弹出停留」与「红点」两种提示都在那里），正文
+///   WebView 的 `onImageDetected` 在歌词模式下没有消费者；若仍放开，隐藏的正文视口会
+///   停在插图上而不是当前句，退出歌词模式时正文就落在那张图上。
+@visibleForTesting
+bool audiobookTextImagePauseEnabled({
+  required int imagePauseSec,
+  required bool lyricsMode,
+}) => imagePauseSec > 0 && !lyricsMode;
+
 /// TODO-807　SRT 被动跨章导航目标决策（纯函数）。
 ///
 /// `_srtCueChapterMap` 的 value 是 [CuesToEpub.splitChapters] 的人工切章序号，
@@ -827,8 +841,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // TODO-724：仅当图片暂停开启（imagePauseSec>0）时，cue 推进跨过插图才把视口
     // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
     // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
-    final bool pauseEnabled =
-        !_lyricsMode && controller.imagePauseSec.value > 0;
+    // 歌词模式一律不放开：插图停留归歌词插图状态机（见 [audiobookTextImagePauseEnabled]）。
+    final bool pauseEnabled = audiobookTextImagePauseEnabled(
+      imagePauseSec: controller.imagePauseSec.value,
+      lyricsMode: _lyricsMode,
+    );
     // TODO-825：cue 权威驱动视口跟随时（reveal=true）AudiobookBridge.highlight 会经 JS
     // scrollToTarget 用 behavior:'smooth' 平滑滚动到当前句。这条程序化跟随滚动必须武装 B-3
     // settle 保护窗（与 恢复/缩放/换样式 三条 reanchor commit 同机制，见 eaa151581）：smooth
