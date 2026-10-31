@@ -42,7 +42,7 @@ export function musicKitConfig(env) {
 /** 签一枚 developer token；有效期过半之前复用缓存。返回 { token, expiresAt }（expiresAt 为毫秒）。 */
 export async function musicKitDeveloperToken(cfg, now) {
   const cacheKey = `${cfg.teamId}:${cfg.keyId}`;
-  if (cached && cached.cacheKey === cacheKey && now >= cached.issuedAt
+  if (cached?.cacheKey === cacheKey && now >= cached.issuedAt
       && now - cached.issuedAt < MUSICKIT_LIMITS.tokenTtlMs / 2) {
     return { token: cached.token, expiresAt: cached.expiresAt };
   }
