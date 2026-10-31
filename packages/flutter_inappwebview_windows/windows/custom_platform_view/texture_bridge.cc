@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <initializer_list>
 #include <iostream>
@@ -388,12 +389,26 @@ namespace flutter_inappwebview_plugin
     // 约一份帧池缓冲永不归还（帧池已 Close、注册表已回收，插件侧无引用）。所以帧池
     // 按容量分配：容量内改尺寸时 WGC 照常交付 ContentSize 变化的帧（内容在帧纹理
     // 左上角），帧池本身不动。
+    //
+    // 容量是设备倍率下的物理像素；捕获源按捕获倍率栅格化（着色器链开着时只有设备
+    // 倍率的一半），帧池要的是「捕获倍率下的容量」。直接拿设备倍率的容量会让着色器
+    // 路径的帧池白占 4 倍面积。向上取整：捕获源 = 布局 × 捕获倍率，而容量 ≥
+    // ceil(布局 × 设备倍率)，所以 ceil(容量 × 比值) 一定盖得住捕获源。
+    const double ratio = capture_scale_ratio_ > 0.0f && capture_scale_ratio_ < 1.0f
+      ? static_cast<double>(capture_scale_ratio_)
+      : 1.0;
+    const auto capture_capacity = [ratio](size_t device_pixels) -> size_t {
+      return static_cast<size_t>(
+        std::ceil(static_cast<double>(device_pixels) * ratio));
+      };
+    const size_t capacity_width = capture_capacity(capacity_.width);
+    const size_t capacity_height = capture_capacity(capacity_.height);
     ABI::Windows::Graphics::SizeInt32 size = item_size;
-    if (capacity_.width > static_cast<size_t>((std::max)(size.Width, 0))) {
-      size.Width = static_cast<int32_t>(capacity_.width);
+    if (capacity_width > static_cast<size_t>((std::max)(size.Width, 0))) {
+      size.Width = static_cast<int32_t>(capacity_width);
     }
-    if (capacity_.height > static_cast<size_t>((std::max)(size.Height, 0))) {
-      size.Height = static_cast<int32_t>(capacity_.height);
+    if (capacity_height > static_cast<size_t>((std::max)(size.Height, 0))) {
+      size.Height = static_cast<int32_t>(capacity_height);
     }
     return size;
   }

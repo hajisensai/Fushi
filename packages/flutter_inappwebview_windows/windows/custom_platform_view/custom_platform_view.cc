@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <string>
 
 #ifdef HAVE_FLUTTER_D3D_TEXTURE
@@ -18,6 +19,23 @@
 
 namespace flutter_inappwebview_plugin
 {
+  // BUG-3913：引擎在栅格线程调纹理回调，user_data 是 flutter_texture_ 内部的对象。
+  // UnregisterTexture 是异步的：引擎先在平台线程登记注销，再往栅格线程投递「从注册表
+  // 摘掉 ExternalTextureD3d」。在那之前栅格线程上一帧（还画着这个 Texture 的旧图层树）
+  // 仍可能回调——旧实现析构里传 nullptr 回调、随即连同 flutter_texture_ 和桥一起释放，
+  // 这个窗口里的回调落在已释放的内存上；引擎读回来的描述符也指向桥的成员。
+  //
+  // 回调经这个落点找桥：析构先在锁内把桥摘掉（之后回调只回 nullptr，引擎当这一帧无图），
+  // 描述符拷进落点自己的存储（引擎在锁外读它）；落点与 flutter_texture_ 一起活到
+  // 注销完成回调。共享纹理本身靠描述符的 AddRef / release_callback 保活，与桥无关。
+  struct CustomPlatformView::TextureEndpoint {
+    std::mutex mutex;
+#ifdef HAVE_FLUTTER_D3D_TEXTURE
+    TextureBridgeGpu* bridge = nullptr;
+    FlutterDesktopGpuSurfaceDescriptor descriptor = {};
+#endif
+  };
+
   constexpr auto kErrorInvalidArgs = "invalidArguments";
 
   constexpr auto kMethodSetSize = "setSize";
@@ -198,15 +216,29 @@ namespace flutter_inappwebview_plugin
 #ifdef HAVE_FLUTTER_D3D_TEXTURE
       texture_bridge_ =
         std::make_unique<TextureBridgeGpu>(graphics_context, view->surface());
+      d3d_device_context_.copy_from(graphics_context->d3d_device_context());
 
+      texture_endpoint_ = std::make_shared<TextureEndpoint>();
+      texture_endpoint_->bridge =
+        static_cast<TextureBridgeGpu*>(texture_bridge_.get());
       flutter_texture_ =
         std::make_unique<flutter::TextureVariant>(flutter::GpuSurfaceTexture(
           kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle,
-          [bridge = static_cast<TextureBridgeGpu*>(texture_bridge_.get())](
+          [endpoint = texture_endpoint_](
             size_t width,
             size_t height) -> const FlutterDesktopGpuSurfaceDescriptor*
           {
-            return bridge->GetSurfaceDescriptor(width, height);
+            const std::lock_guard<std::mutex> lock(endpoint->mutex);
+            if (!endpoint->bridge) {
+              return nullptr;
+            }
+            const FlutterDesktopGpuSurfaceDescriptor* descriptor =
+              endpoint->bridge->GetSurfaceDescriptor(width, height);
+            if (!descriptor) {
+              return nullptr;
+            }
+            endpoint->descriptor = *descriptor;
+            return &endpoint->descriptor;
           }));
 #else
       texture_bridge_ = std::make_unique<TextureBridgeFallback>(
@@ -301,6 +333,14 @@ namespace flutter_inappwebview_plugin
     // Timer pump callback 里的 frame_available_ 守卫直接短路，任何迟到 tick
     // 都不再触碰 registrar。先切断、再 Stop（WGC 销毁序见 texture_bridge.cc）、最后
     // 注销 texture——三步单调缩小 teardown 竞态窗口。
+    if (texture_endpoint_) {
+#ifdef HAVE_FLUTTER_D3D_TEXTURE
+      // 先摘桥（见 TextureEndpoint）：此后栅格线程的纹理回调只回 nullptr，桥可以在
+      // 本析构里照常释放。
+      const std::lock_guard<std::mutex> lock(texture_endpoint_->mutex);
+      texture_endpoint_->bridge = nullptr;
+#endif
+    }
     if (texture_bridge_) {
       texture_bridge_->SetOnFrameAvailable(nullptr);
       WgcLog::Write("stop-start", nullptr,
@@ -311,7 +351,26 @@ namespace flutter_inappwebview_plugin
     }
     WgcLog::Write("unregister-start", nullptr,
       CpvDetail(texture_id_, texture_bridge_.get()));
-    texture_registrar_->UnregisterTexture(texture_id_, nullptr);
+    // 引擎侧的 ExternalTexture 在栅格线程上摘掉之后才调这个回调：flutter_texture_
+    // （引擎回调的 user_data）与落点活到那一刻。回调本身也在栅格线程——插件设备的
+    // 立即上下文正是在那里被各个桥拷帧时使用，在这里 Flush 不与它们并发。
+    //
+    // Flush：D3D11 延迟销毁——Release 掉的资源要等立即上下文下一次 Flush 才真正归还
+    // （ID3D11DeviceContext::Flush 文档）。本实例的共享目标纹理、RTV 与 WGC 帧池缓冲
+    // 都分配在插件自己的设备上，Stop() 已全部 Release；不 Flush 的话它们只能等别的
+    // WebView 恰好来一帧（CopyIntoSurface 末尾的 Flush）才释放，界面静止时一直占着。
+    std::shared_ptr<flutter::TextureVariant> retired_texture(
+      std::move(flutter_texture_));
+    texture_registrar_->UnregisterTexture(texture_id_,
+      [retired_texture, endpoint = texture_endpoint_,
+        device_context = d3d_device_context_]() mutable
+      {
+        retired_texture.reset();
+        endpoint.reset();
+        if (device_context) {
+          device_context->Flush();
+        }
+      });
     WgcLog::Write("unregister-done", nullptr,
       CpvDetail(texture_id_, texture_bridge_.get()));
     WgcLog::Write("cpv-dtor-exit", nullptr,
