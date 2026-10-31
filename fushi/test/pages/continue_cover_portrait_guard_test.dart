@@ -83,7 +83,7 @@ void main() {
     );
     expect(cover, contains('_coverImage('));
     expect(containsIdentifierCall(cover, 'Image'), isFalse);
-    expect(source, contains('HomeCoverOrientationProbe('));
+    expect(source, contains('orientationImage: image'));
   });
 
   test('视频首页横滚行/主卡：封面都走槽向自适应组件（BUG-1299 血缘）', () {

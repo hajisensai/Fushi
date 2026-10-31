@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -333,6 +334,9 @@ class FushiContinueEntry {
     this.progressLabel,
     this.progressKey,
     this.onLongPress,
+    this.orientationImage,
+    this.landscapeCover,
+    this.subtitleIcon,
   });
 
   /// 卡键（主卡 = 整卡，封面行 = 封面那张卡）。
@@ -376,8 +380,91 @@ class FushiContinueEntry {
   /// 长按 / 右键：条目菜单或详情。
   final VoidCallback? onLongPress;
 
+  /// 封面方向要等图解码才知道时（首页「继续」混排的视频：作品海报是竖图，
+  /// 回落到的每集截图 / 横版画面是横图，用户 2026-10-14「卡片比例跟着实际用到的
+  /// 图走」）给它：解码出横图后条目按 16:9 剧照画、封面换成 [landscapeCover]；
+  /// 解码前 / 失败 / 竖图按 [coverAspectRatio]。与封面渲染共用同一个 provider。
+  final ImageProvider? orientationImage;
+
+  /// 探测为横图时用的封面（横槽渲染）；null = 仍用 [cover]。
+  final Widget? landscapeCover;
+
+  /// 封面行副标题前的小图标（视频看到的时间点前的 ▶）。
+  final IconData? subtitleIcon;
+
   /// 横图剧照。
   bool get still => coverAspectRatio > 1;
+
+  /// 按探测结果定型：横图 → 16:9 剧照 + [landscapeCover]；否则原样。
+  FushiContinueEntry _oriented(bool landscape) => !landscape
+      ? this
+      : FushiContinueEntry(
+          key: key,
+          focusId: focusId,
+          cover: landscapeCover ?? cover,
+          coverAspectRatio: 16 / 9,
+          frameCover: frameCover,
+          material: material,
+          title: title,
+          eyebrow: eyebrow,
+          metaLines: metaLines,
+          metaIcon: metaIcon,
+          subtitle: subtitle,
+          subtitleIcon: subtitleIcon,
+          progress: progress,
+          progressLabel: progressLabel,
+          progressKey: progressKey,
+          onOpen: onOpen,
+          onLongPress: onLongPress,
+        );
+}
+
+/// 按 [FushiContinueEntry.orientationImage] 的真实宽高比给条目定型再建子树；没给
+/// 探测图时直接原样。
+class _OrientedEntry extends StatelessWidget {
+  const _OrientedEntry({required this.entry, required this.builder});
+
+  final FushiContinueEntry entry;
+  final Widget Function(FushiContinueEntry entry) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? image = entry.orientationImage;
+    if (image == null) return builder(entry);
+    return _EntryAspectProbe(image: image, entry: entry, builder: builder);
+  }
+}
+
+class _EntryAspectProbe extends StatefulWidget {
+  const _EntryAspectProbe({
+    required this.image,
+    required this.entry,
+    required this.builder,
+  });
+
+  final ImageProvider image;
+  final FushiContinueEntry entry;
+  final Widget Function(FushiContinueEntry entry) builder;
+
+  @override
+  State<_EntryAspectProbe> createState() => _EntryAspectProbeState();
+}
+
+class _EntryAspectProbeState extends State<_EntryAspectProbe>
+    with CoverAspectProbe<_EntryAspectProbe> {
+  @override
+  ImageProvider probedImageOf(_EntryAspectProbe widget) => widget.image;
+
+  /// 只回答横竖，一个像素都不画：不需要主色底采样。
+  @override
+  bool needsBackdropSeed(double aspect) => false;
+
+  @override
+  Widget build(BuildContext context) {
+    final double? aspect = coverAspect;
+    final bool landscape = !coverFailed && aspect != null && aspect > 1;
+    return widget.builder(widget.entry._oriented(landscape));
+  }
 }
 
 /// 所有库页与首页的「继续」区（2026-10-31 合一：书架 / 漫画 / 游戏 / 音乐 /
@@ -400,6 +487,7 @@ class FushiContinueSpotlight extends StatelessWidget {
     this.soloCoverHeight,
     this.soloWidthCap,
     this.showSideWhenNarrow = false,
+    this.narrowSideCoverHeight,
     this.sideRowKey = const ValueKey<String>('fushi-continue-side-row'),
     super.key,
   });
@@ -418,6 +506,9 @@ class FushiContinueSpotlight extends StatelessWidget {
   /// [FushiContinueHero.maxWidth]。
   final double? soloWidthCap;
   final bool showSideWhenNarrow;
+
+  /// 窄屏封面行里竖封面的高；null = 132（全剧照行恒为 16:9 宽 168）。
+  final double? narrowSideCoverHeight;
   final Key sideRowKey;
 
   /// 内容宽 ≥ 它时主卡与封面行左右并排。
@@ -483,10 +574,13 @@ class FushiContinueSpotlight extends StatelessWidget {
     );
     Widget tile(int i) => FushiStaggeredEntrance(
       index: i + 1,
-      child: _ContinueSideTile(
+      child: _OrientedEntry(
         entry: side[i],
-        coverHeight: coverHeight,
-        metaHeight: metaHeight,
+        builder: (FushiContinueEntry e) => FushiContinueSideTile(
+          entry: e,
+          coverHeight: coverHeight,
+          metaHeight: metaHeight,
+        ),
       ),
     );
     return SizedBox(
@@ -525,7 +619,11 @@ class FushiContinueSpotlight extends StatelessWidget {
   }
 
   /// 竖封面主卡（[FushiContinueHero]）。
-  Widget _coverMain({double? coverHeight, double? widthCap}) {
+  Widget _coverMain(
+    FushiContinueEntry main, {
+    double? coverHeight,
+    double? widthCap,
+  }) {
     final ShelfCoverMaterial? material = main.material;
     return FushiContinueHero(
       cardKey: main.key,
@@ -549,11 +647,16 @@ class FushiContinueSpotlight extends StatelessWidget {
     );
   }
 
-  Widget _stillMain() =>
+  Widget _stillMain(FushiContinueEntry main) =>
       FushiStaggeredEntrance(index: 0, child: _StillMainCard(entry: main));
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _OrientedEntry(
+    entry: main,
+    builder: (FushiContinueEntry m) => _layout(context, m),
+  );
+
+  Widget _layout(BuildContext context, FushiContinueEntry main) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = _gap(tokens.spacing.gap);
     return LayoutBuilder(
@@ -567,9 +670,9 @@ class FushiContinueSpotlight extends StatelessWidget {
             final Size s = _wideStillSize(width);
             mainWidth = s.width;
             mainHeight = s.height;
-            mainCard = SizedBox.fromSize(size: s, child: _stillMain());
+            mainCard = SizedBox.fromSize(size: s, child: _stillMain(main));
           } else if (side.isEmpty) {
-            return _coverMain(coverHeight: soloCoverHeight);
+            return _coverMain(main, coverHeight: soloCoverHeight);
           } else {
             mainWidth = (width * 0.42).clamp(440.0, 640.0);
             mainHeight = FushiContinueHero.heightFor(
@@ -579,6 +682,7 @@ class FushiContinueSpotlight extends StatelessWidget {
             mainCard = SizedBox(
               width: mainWidth,
               child: _coverMain(
+                main,
                 coverHeight: heroCoverHeight,
                 widthCap: mainWidth,
               ),
@@ -601,12 +705,14 @@ class FushiContinueSpotlight extends StatelessWidget {
         final Widget mainCard = main.still
             ? SizedBox(
                 height: math.min(width * 9 / 16, _narrowStillMaxHeight),
-                child: _stillMain(),
+                child: _stillMain(main),
               )
-            : _coverMain(coverHeight: soloCoverHeight);
+            : _coverMain(main, coverHeight: soloCoverHeight);
         if (!showSideWhenNarrow || side.isEmpty) return mainCard;
         final bool allStill = side.every((FushiContinueEntry e) => e.still);
-        final double coverHeight = allStill ? 168 * 9 / 16 : 132;
+        final double coverHeight = allStill
+            ? 168 * 9 / 16
+            : (narrowSideCoverHeight ?? 132);
         final double tileHeight =
             coverHeight + ShelfCardMeta.heightFor(context);
         return Column(
@@ -751,8 +857,9 @@ class _StillMainCard extends StatelessWidget {
 /// 封面行里的一张：封面按行高定宽（竖封面 / 剧照混排顶底对齐），下面挂库页同款
 /// 文字块（[ShelfCardMeta]）。剧照的集数压在图左下、进度贴图底边；竖封面的
 /// 副标题与进度在文字块里。
-class _ContinueSideTile extends StatelessWidget {
-  const _ContinueSideTile({
+class FushiContinueSideTile extends StatelessWidget {
+  const FushiContinueSideTile({
+    super.key,
     required this.entry,
     required this.coverHeight,
     required this.metaHeight,
@@ -847,14 +954,21 @@ class _ContinueSideTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SizedBox(width: width, height: coverHeight, child: cover),
-                SizedBox(
-                  height: metaHeight,
-                  child: ShelfCardMeta(
-                    title: entry.title,
-                    subtitle: entry.still ? null : subtitle,
-                    progress: entry.still
-                        ? null
-                        : entry.progress?.clamp(0.0, 1.0),
+                // 文字块也是点按面（封面那张卡只盖封面）。
+                GestureDetector(
+                  key: const ValueKey<String>('fushi-continue-tile-meta'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: entry.onOpen,
+                  child: SizedBox(
+                    height: metaHeight,
+                    child: ShelfCardMeta(
+                      title: entry.title,
+                      subtitle: entry.still ? null : subtitle,
+                      leadingIcon: entry.still ? null : entry.subtitleIcon,
+                      progress: entry.still
+                          ? null
+                          : entry.progress?.clamp(0.0, 1.0),
+                    ),
                   ),
                 ),
               ],
