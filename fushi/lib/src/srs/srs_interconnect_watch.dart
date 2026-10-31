@@ -124,7 +124,17 @@ class SrsInterconnectWatcher {
   }
 }
 
-/// 本机变动后的去抖推送：[trigger] 每次本机复习数据变动调一次，静默 [debounce] 后跑 [push] 一次。
+/// 不在复习页时本机变动后的去抖（设计 §6.2：防抖 10 s）。
+const Duration kSrsLocalPushDebounce = Duration(seconds: 10);
+
+/// 复习中本机推送的最长等待（审查 S-8）：复习页开着时不按「静默多久」去抖（几乎每答一张卡就跑一轮：新开一个
+/// 1 条操作的小段、写 head、唤醒对端、对端 ack 变了又写 head 回唤醒），而是第一次变动起最多等这么久推一次，期间的
+/// 变动并进这一次；离开复习页 / app 进后台立即推（[SrsLocalPush.flush]）。取 45 s：对端在复习时看到进度的延迟可接受，
+/// 一组复习（常见 10~20 分钟）只推十几轮。只在这里定义。
+const Duration kSrsLocalPushMaxWait = Duration(seconds: 45);
+
+/// 本机变动后的推送：[trigger] 每次本机复习数据变动调一次。平时静默 [debounce] 后跑 [push] 一次；[batching] 为真
+/// （在复习页）时改为第一次变动起最长等 [maxWait] 再推（之后的变动不顺延），[flush] 立即推掉待推的。
 ///
 /// **失败退避**（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：[push] 返回 false 或抛错 = 这次没推成（host 不可达
 /// 等）。之后的触发至少等到退避期满才推：[backoffBase] 起每次失败翻倍、封顶 [maxBackoff]；期间的触发合并成到期
@@ -135,15 +145,22 @@ class SrsInterconnectWatcher {
 class SrsLocalPush {
   SrsLocalPush({
     required Future<bool> Function() push,
-    this.debounce = const Duration(seconds: 5),
+    this.debounce = kSrsLocalPushDebounce,
+    this.maxWait = kSrsLocalPushMaxWait,
+    bool Function()? batching,
     this.backoffBase = const Duration(seconds: 30),
     this.maxBackoff = const Duration(minutes: 10),
     DateTime Function()? clock,
   }) : _push = push,
+       _batching = batching,
        _clock = clock ?? DateTime.now;
 
   final Future<bool> Function() _push;
+  final bool Function()? _batching;
   final Duration debounce;
+
+  /// [batching] 为真时，第一次变动到推送的最长等待。
+  final Duration maxWait;
   final Duration backoffBase;
   final Duration maxBackoff;
   final DateTime Function() _clock;
@@ -151,6 +168,9 @@ class SrsLocalPush {
   bool _disposed = false;
   bool _running = false;
   bool _again = false;
+
+  /// 跑的时候来了 [flush]：这一次结束后立即再推，不再等。
+  bool _againNow = false;
   int _failures = 0;
   DateTime? _blockedUntil;
 
@@ -160,13 +180,28 @@ class SrsLocalPush {
   /// 退避到期时刻；null = 没在退避。
   DateTime? get blockedUntil => _blockedUntil;
 
+  /// 有排着、还没推的变动。
+  bool get pending => _timer != null || _again;
+
   void trigger() {
     if (_disposed) return;
     if (_running) {
       _again = true;
       return;
     }
+    if ((_batching?.call() ?? false) && _timer != null) return;
     _schedule();
+  }
+
+  /// 离开复习页 / app 进后台：有待推的就立即推（退避期内照旧等到期，不去敲刚失败过的地址）。
+  void flush() {
+    if (_disposed || !pending) return;
+    if (_running) {
+      _again = true;
+      _againNow = true;
+      return;
+    }
+    _schedule(now: true);
   }
 
   /// 网络恢复 / 用户手动同步：清掉退避；有待推的就按普通去抖重新排。
@@ -176,9 +211,13 @@ class SrsLocalPush {
     if (_timer != null && !_disposed) _schedule();
   }
 
-  void _schedule() {
+  void _schedule({bool now = false}) {
     _timer?.cancel();
-    Duration delay = debounce;
+    Duration delay = now
+        ? Duration.zero
+        : (_batching?.call() ?? false)
+        ? maxWait
+        : debounce;
     final DateTime? until = _blockedUntil;
     if (until != null) {
       final Duration left = until.difference(_clock());
@@ -213,7 +252,9 @@ class SrsLocalPush {
     }
     if (_again && !_disposed) {
       _again = false;
-      _schedule();
+      final bool now = _againNow;
+      _againNow = false;
+      _schedule(now: now);
     }
   }
 

@@ -47,8 +47,18 @@ typedef SrsChangeNoteTypeFlow =
 /// 宽屏分栏（列表 + 预览）的最小宽度。
 const double kSrsBrowseSplitMinWidth = 840;
 
-/// 一次重算的结果：列表 + 搜索错误（null = 查询合法）。
-typedef _QueryResult = ({List<SrsBrowseItem> items, String? error});
+/// 一次重算的结果：结果（null = 查询不合法）+ 搜索错误 + 字段下拉的选项，以及选中项 / 当前行 / 锚点
+/// 在新结果里还剩的部分（行号由原生会话按 id 查出）。
+typedef _QueryResult = ({
+  SrsBrowseResult? result,
+  String? error,
+  List<String> fieldNames,
+  Set<String> selected,
+  String? currentId,
+  int currentAt,
+  String? anchorId,
+  int anchorAt,
+});
 
 /// 本页撤销栈的一步（会话级，不同步——与复习页同一约定）。
 class _UndoEntry {
@@ -103,8 +113,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   bool _loading = true;
   bool _canSchedule = true;
-  SrsBrowseSnapshot? _snapshot;
-  List<SrsBrowseItem> _items = const <SrsBrowseItem>[];
+
+  /// 原生侧的常驻浏览会话（搜索语料与列数据在 Rust 里，随写入增量更新；本页只取可见行）。
+  SrsBrowseSession? _session;
+  SrsBrowseResult? _result;
+  List<String> _fieldNames = const <String>[];
   String? _searchError;
 
   SrsBrowseMode _mode = SrsBrowseMode.cards;
@@ -115,9 +128,13 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   /// 当前行（预览目标 / 键盘位置）的 ID；见 [_idOf]。
   late String? _currentId = widget.initialCardId;
+
+  /// [_currentId] 在 [_result] 里的行号（-1 = 不在结果里）。
+  int _currentAt = -1;
   final Set<String> _selected = <String>{};
   bool _selectMode = false;
   String? _anchorId;
+  int _anchorAt = -1;
   bool _showAnswer = false;
   int _revision = 0;
   bool _busy = false;
@@ -126,12 +143,14 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   @override
   void initState() {
     super.initState();
-    unawaited(_reload());
+    unawaited(_refresh());
   }
 
   @override
   void dispose() {
-    _snapshot?.dispose();
+    // 原生侧的会话（字段文本可达几百 MB）随页面关掉释放。
+    final SrsBrowseSession? session = _session;
+    if (session != null) srsRunLogged('SrsBrowse.close', session.close);
     _debounce?.cancel();
     _query.dispose();
     _queryFocus.dispose();
@@ -150,14 +169,12 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   bool get _selecting => _selectMode || _selected.isNotEmpty;
 
-  String _idOf(SrsBrowseItem item) =>
-      _mode == SrsBrowseMode.cards ? item.cardId : item.noteId;
+  int get _length => _result?.length ?? 0;
 
-  int get _currentIndex {
-    final String? id = _currentId;
-    if (id == null) return -1;
-    return _items.indexWhere((SrsBrowseItem i) => _idOf(i) == id);
-  }
+  int get _currentIndex => _currentId == null ? -1 : _currentAt;
+
+  /// 有批量操作的目标（选中项，或当前行）。
+  bool get _hasTargets => _selected.isNotEmpty || _currentIndex >= 0;
 
   String get _effectiveQuery {
     final String? field = _searchField;
@@ -166,34 +183,27 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         : srsFieldContainsQuery(field, _query.text);
   }
 
-  /// 每次装载快照的序号：先发起、后装完的旧装载作废（不覆盖新快照）。
-  int _loadGeneration = 0;
+  /// 每次重算的序号：慢的旧查询算完时若已有新查询，结果作废。
+  int _queryGeneration = 0;
 
-  Future<void> _reload() async {
+  /// 按当前查询 / 排序 / 模式重算（原生会话先按 id 重读写过的行，不整份重读）。[reuse]：条件没变且之后没有
+  /// 写入时原生侧直接给回上次的结果（预览返回之类不写库的刷新，零重算）。
+  Future<void> _refresh({bool reuse = false}) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
-    final int load = ++_loadGeneration;
-    // 快照只装列表要显示的列；字段原文等搜索 / 按字段排序真用到时才分页读（见 SrsBrowseSnapshot）。
-    final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(store);
-    final int generation = ++_queryGeneration;
-    final _QueryResult result = await _compute(snap);
-    if (!mounted || load != _loadGeneration) {
-      snap.dispose();
-      return;
+    if (store == null || !mounted) return;
+    SrsBrowseSession? session = _session;
+    if (session == null || !identical(session.store, store)) {
+      session = _session = SrsBrowseSession(store);
     }
-    final SrsBrowseSnapshot? previous = _snapshot;
-    final bool first = previous == null;
-    final bool current = generation == _queryGeneration;
+    final bool first = _result == null && _loading;
+    final int generation = ++_queryGeneration;
+    final _QueryResult result = await _compute(session, reuse: reuse);
+    if (!mounted || generation != _queryGeneration) return;
     setState(() {
-      _snapshot = snap;
       _canSchedule = store.canSchedule;
       _loading = false;
-      if (current) _apply(result);
+      _apply(result);
     });
-    // 旧快照的搜索语料（原生侧可能有几百 MB 字段文本）不等 GC，换下来就释放。
-    previous?.dispose();
-    // 算的期间查询 / 排序 / 模式又变了：在新快照上按最新的条件重算。
-    if (!current) _requery();
     // 带着 initialCardId 打开：列表首次出现后把这一行滚进视口。
     if (first && widget.initialCardId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -204,50 +214,86 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     }
   }
 
-  /// 按当前查询 / 排序 / 模式在 [snap] 上算列表（字段文本按需分页读进原生内核、按字段排序的值
-  /// 按需读，都是异步的）。查询不合法 / 不支持时给出原因、列表为空。
-  Future<_QueryResult> _compute(SrsBrowseSnapshot snap) async {
+  /// 按当前查询 / 排序 / 模式在原生会话上查（筛选、排序都在 Rust 里），再查出选中项 / 当前行 / 锚点在新结果里的
+  /// 行号，取好首屏与当前行那一页。查询不合法 / 不支持时给出原因、列表为空。
+  Future<_QueryResult> _compute(
+    SrsBrowseSession session, {
+    required bool reuse,
+  }) async {
+    final List<String> fieldNames = srsBrowseFieldNames(
+      await session.store.noteTypes(),
+    );
+    final List<String> keep = _selected.toList();
+    final String? current = _currentId;
+    final String? anchor = _anchorId;
     try {
+      final SrsBrowseResult r = await session.query(
+        query: _effectiveQuery,
+        sort: _sort,
+        mode: _mode,
+        reuse: reuse,
+      );
+      final List<int> at = await r.indicesOf(<String>[
+        current ?? '',
+        anchor ?? '',
+        ...keep,
+      ]);
+      int currentAt = current == null ? -1 : at[0];
+      String? currentId = currentAt < 0 ? null : current;
+      final int anchorAt = anchor == null ? -1 : at[1];
+      if (currentId == null && r.length > 0) {
+        await r.ensure(0, 1);
+        currentId = r.idOf(r.rowAt(0)!);
+        currentAt = 0;
+      }
+      await r.ensure(0, kSrsBrowsePage);
+      if (currentAt >= kSrsBrowsePage) await r.ensure(currentAt, currentAt + 1);
       return (
-        items: await snap.query(
-          query: _effectiveQuery,
-          sort: _sort,
-          mode: _mode,
-        ),
+        result: r,
         error: null,
+        fieldNames: fieldNames,
+        selected: <String>{
+          for (int i = 0; i < keep.length; i++)
+            if (at[i + 2] >= 0) keep[i],
+        },
+        currentId: currentId,
+        currentAt: currentAt,
+        anchorId: anchorAt < 0 ? null : anchor,
+        anchorAt: anchorAt,
       );
     } on SrsSearchUnsupported catch (e) {
-      return (items: const <SrsBrowseItem>[], error: e.reason);
+      return (
+        result: null,
+        error: e.reason,
+        fieldNames: fieldNames,
+        selected: const <String>{},
+        currentId: null,
+        currentAt: -1,
+        anchorId: null,
+        anchorAt: -1,
+      );
+    } on SrsBrowseResultGone {
+      // 刚查出的结果被并发的另一条查询（控制通道）挤掉：再查一次。
+      return _compute(session, reuse: false);
     }
   }
 
   /// 换上一次重算的结果（调用方负责 setState）。
   void _apply(_QueryResult result) {
-    _items = result.items;
+    _result = result.result;
     _searchError = result.error;
-    final Set<String> ids = <String>{
-      for (final SrsBrowseItem i in _items) _idOf(i),
-    };
-    _selected.retainWhere(ids.contains);
-    if (_currentId != null && !ids.contains(_currentId)) _currentId = null;
-    _currentId ??= _items.isEmpty ? null : _idOf(_items.first);
+    _fieldNames = result.fieldNames;
+    _selected
+      ..clear()
+      ..addAll(result.selected);
+    _currentId = result.currentId;
+    _currentAt = result.currentAt;
+    _anchorId = result.anchorId;
+    _anchorAt = result.anchorAt;
   }
-
-  /// 每次重算的序号：慢的旧查询算完时若已有新查询，结果作废。
-  int _queryGeneration = 0;
 
   /// 按当前查询 / 排序 / 模式重算。
-  void _requery() => unawaited(_runQuery());
-
-  Future<void> _runQuery() async {
-    final SrsBrowseSnapshot? snap = _snapshot;
-    if (snap == null) return;
-    final int generation = ++_queryGeneration;
-    final _QueryResult result = await _compute(snap);
-    if (!mounted || generation != _queryGeneration) return;
-    if (!identical(snap, _snapshot)) return;
-    setState(() => _apply(result));
-  }
+  void _requery() => unawaited(_refresh());
 
   void _onQueryChanged(String _) {
     _debounce?.cancel();
@@ -256,58 +302,119 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     });
   }
 
-  /// 批量操作的目标：有选中项用选中项，否则用当前行。
-  List<SrsBrowseItem> get _targets {
-    if (_selected.isNotEmpty) {
-      return <SrsBrowseItem>[
-        for (final SrsBrowseItem i in _items)
-          if (_selected.contains(_idOf(i))) i,
-      ];
+  /// 取第 [index] 行所在的那一页，取到后重画；结果已被换掉时重新查询。
+  void _loadRow(SrsBrowseResult r, int index) {
+    unawaited(
+      r
+          .ensure(index, index + 1)
+          .then(
+            (_) {
+              if (mounted && identical(r, _result)) setState(() {});
+            },
+            onError: (Object e, StackTrace stack) {
+              if (e is SrsBrowseResultGone) {
+                if (mounted && identical(r, _result)) _requery();
+                return;
+              }
+              ErrorLogService.instance.log('SrsBrowse.rows', e, stack);
+            },
+          ),
+    );
+  }
+
+  /// 批量操作的目标：有选中项用选中项，否则用当前行（原生会话按列表顺序展开成卡 / 笔记 id）。
+  Future<SrsBrowseTargets?> _loadTargets() async {
+    final SrsBrowseResult? r = _result;
+    final String? current = _currentIndex >= 0 ? _currentId : null;
+    if (r == null) return null;
+    final List<String> ids = _selected.isNotEmpty
+        ? _selected.toList()
+        : <String>[?current];
+    if (ids.isEmpty) return null;
+    try {
+      return await r.targets(ids);
+    } on SrsBrowseResultGone {
+      _requery();
+      return null;
     }
-    final int i = _currentIndex;
-    return i < 0 ? const <SrsBrowseItem>[] : <SrsBrowseItem>[_items[i]];
   }
 
   // ------------------------------------------------------------------ 选择
 
-  void _setCurrent(int index, {bool extend = false}) {
-    if (index < 0 || index >= _items.length) return;
-    final String id = _idOf(_items[index]);
+  Future<void> _setCurrent(int index, {bool extend = false}) async {
+    final SrsBrowseResult? r = _result;
+    if (r == null || index < 0 || index >= r.length) return;
+    try {
+      await r.ensure(index, index + 1);
+    } on SrsBrowseResultGone {
+      _requery();
+      return;
+    }
+    final SrsBrowseRow? row = r.rowAt(index);
+    if (!mounted || row == null || !identical(r, _result)) return;
+    final String id = r.idOf(row);
+    if (extend) {
+      await _selectRange(
+        _anchorAt >= 0
+            ? _anchorAt
+            : (_currentIndex >= 0 ? _currentIndex : index),
+        index,
+      );
+      if (!mounted || !identical(r, _result)) return;
+    }
     setState(() {
-      if (extend) {
-        _selectRange(_anchorId ?? _currentId ?? id, id);
-      } else {
+      if (!extend) {
         _anchorId = id;
+        _anchorAt = index;
       }
       if (_currentId != id) _showAnswer = false;
       _currentId = id;
+      _currentAt = index;
     });
     _scrollToIndex(index);
   }
 
-  void _selectRange(String fromId, String toId) {
-    final int a = _items.indexWhere((SrsBrowseItem i) => _idOf(i) == fromId);
-    final int b = _items.indexWhere((SrsBrowseItem i) => _idOf(i) == toId);
-    if (a < 0 || b < 0) return;
-    for (int i = math.min(a, b); i <= math.max(a, b); i++) {
-      _selected.add(_idOf(_items[i]));
+  /// 把第 [a]..[b] 行（含两端）加进选中（行 id 由原生会话按行号给出，不必先取那几页）。
+  Future<void> _selectRange(int a, int b) async {
+    final SrsBrowseResult? r = _result;
+    if (r == null || a < 0 || b < 0) return;
+    final List<String> ids;
+    try {
+      ids = await r.ids(math.min(a, b), math.max(a, b) + 1);
+    } on SrsBrowseResultGone {
+      _requery();
+      return;
     }
+    if (!mounted || !identical(r, _result)) return;
+    setState(() => _selected.addAll(ids));
   }
 
-  void _toggle(String id) {
+  void _toggle(String id, int index) {
     setState(() {
       if (!_selected.remove(id)) _selected.add(id);
       _anchorId = id;
+      _anchorAt = index;
       _currentId = id;
+      _currentAt = index;
     });
   }
 
-  void _selectAll() {
+  Future<void> _selectAll() async {
+    final SrsBrowseResult? r = _result;
+    if (r == null) return;
+    final List<String> ids;
+    try {
+      ids = await r.ids();
+    } on SrsBrowseResultGone {
+      _requery();
+      return;
+    }
+    if (!mounted || !identical(r, _result)) return;
     setState(() {
       _selectMode = true;
       _selected
         ..clear()
-        ..addAll(_items.map(_idOf));
+        ..addAll(ids);
     });
   }
 
@@ -318,32 +425,38 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     });
   }
 
-  void _onRowTap(int index, {required bool wide}) {
-    final String id = _idOf(_items[index]);
+  void _onRowTap(String id, int index, {required bool wide}) {
     final HardwareKeyboard kb = HardwareKeyboard.instance;
     if (kb.isShiftPressed) {
+      final int from = _anchorAt >= 0
+          ? _anchorAt
+          : (_currentIndex >= 0 ? _currentIndex : index);
       setState(() {
         _selectMode = true;
-        _selectRange(_anchorId ?? _currentId ?? id, id);
         _currentId = id;
+        _currentAt = index;
       });
+      unawaited(_selectRange(from, index));
       return;
     }
     if (kb.isControlPressed || kb.isMetaPressed || _selecting) {
-      _toggle(id);
+      _toggle(id, index);
       return;
     }
     if (wide) {
-      _setCurrent(index);
+      unawaited(_setCurrent(index));
     } else {
-      setState(() => _currentId = id);
+      setState(() {
+        _currentId = id;
+        _currentAt = index;
+      });
       unawaited(_openPreviewPage(index));
     }
   }
 
-  void _onRowLongPress(int index) {
+  void _onRowLongPress(String id, int index) {
     setState(() => _selectMode = true);
-    _toggle(_idOf(_items[index]));
+    _toggle(id, index);
   }
 
   void _scrollToIndex(int index) {
@@ -374,14 +487,13 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       () => Navigator.of(context).push<void>(
         adaptivePageRoute<void>(
           context: context,
-          builder: (_) => SrsBrowsePreviewPage(
-            items: List<SrsBrowseItem>.of(_items),
-            initialIndex: index,
-          ),
+          builder: (_) =>
+              SrsBrowsePreviewPage(result: _result!, initialIndex: index),
         ),
       ),
     );
-    if (mounted) await _reload();
+    // 预览只读（编辑会写库）：没有写入时原生侧直接给回同一份结果，不重算。
+    if (mounted) await _refresh(reuse: true);
   }
 
   Future<void> _editNote(String noteId) async {
@@ -396,7 +508,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     if (!mounted) return;
     bumpSrsRevision(ref);
     _revision++;
-    await _reload();
+    await _refresh();
   }
 
   void _onPreviewCommand(SrsPreviewCommand c) {
@@ -404,9 +516,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       case SrsPreviewCommand.flip:
         setState(() => _showAnswer = !_showAnswer);
       case SrsPreviewCommand.previous:
-        _setCurrent(_currentIndex - 1);
+        unawaited(_setCurrent(_currentIndex - 1));
       case SrsPreviewCommand.next:
-        _setCurrent(_currentIndex + 1);
+        unawaited(_setCurrent(_currentIndex + 1));
       case SrsPreviewCommand.undo:
         _undoLast();
       case SrsPreviewCommand.escape:
@@ -432,7 +544,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   ];
 
   Future<void> _openBatchMenu() async {
-    if (_targets.isEmpty) return;
+    if (!_hasTargets) return;
     final SrsBrowseBatchAction? a = await _focusOwnership.guardOverlay(
       () => pickSrsBrowseBatchAction(
         context,
@@ -447,34 +559,28 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   }
 
   Future<void> _runBatch(SrsBrowseBatchAction action) async {
-    final List<SrsBrowseItem> targets = _targets;
-    if (targets.isEmpty || _busy) return;
+    if (!_hasTargets || _busy) return;
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null || !mounted) return;
-    final List<SrsCardSearchSubject> cards = <SrsCardSearchSubject>[
-      for (final SrsBrowseItem i in targets) ...i.cards,
-    ];
-    final List<String> cardIds = <String>[
-      for (final SrsCardSearchSubject c in cards) c.card.id,
-    ];
-    final List<String> noteIds = <String>{
-      for (final SrsBrowseItem i in targets) i.noteId,
-    }.toList();
+    final SrsBrowseTargets? targets = await _loadTargets();
+    if (targets == null || targets.isEmpty || !mounted) return;
+    final List<String> cardIds = targets.cardIds;
+    final List<String> noteIds = targets.noteIds;
 
     Future<SrsBatchOutcome> Function()? run;
     String? doneMessage;
     switch (action) {
       case SrsBrowseBatchAction.toggleSuspend:
-        final bool suspend = !cards.every((c) => c.isSuspended);
+        final bool suspend = !targets.allSuspended;
         run = () => srsBatchSetSuspended(store, cardIds, suspended: suspend);
         doneMessage = suspend
             ? t.srs_browse_suspended
             : t.srs_browse_unsuspended;
       case SrsBrowseBatchAction.toggleBury:
-        final bool bury = !cards.every((c) => c.isBuried);
+        final bool bury = !targets.allBuried;
         run = () => srsBatchSetBuried(store, cardIds, buried: bury);
       case SrsBrowseBatchAction.flag:
-        final Set<int> flags = <int>{for (final c in cards) c.flag};
+        final Set<int> flags = targets.flags;
         final int? flag = await _focusOwnership.guardOverlay(
           () => pickSrsFlag(
             context,
@@ -486,9 +592,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       case SrsBrowseBatchAction.move:
         final List<SrsDeckSummary> decks = await store.deckSummaries();
         if (!mounted) return;
-        final Set<String> current = <String>{
-          for (final c in cards) c.card.deckId,
-        };
+        final Set<String> current = targets.deckIds;
         final String? deck = await _focusOwnership.guardOverlay(
           () => pickSrsDeck(
             context,
@@ -575,7 +679,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         if (!mounted) return;
         bumpSrsRevision(ref);
         _revision++;
-        await _reload();
+        await _refresh();
         return;
     }
     if (!mounted) return;
@@ -591,7 +695,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       }
       bumpSrsRevision(ref);
       _revision++;
-      await _reload();
+      // 原生会话按 id 重读这次写过的行（增量），再按同样的条件重算。
+      await _refresh();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.batch.${action.name}', e, stack);
       FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
@@ -618,7 +723,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         if (!mounted) return;
         bumpSrsRevision(ref);
         _revision++;
-        await _reload();
+        await _refresh();
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -652,7 +757,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return KeyEventResult.handled;
     }
     if (ctrl && key == LogicalKeyboardKey.keyA) {
-      _selectAll();
+      unawaited(_selectAll());
       return KeyEventResult.handled;
     }
     if (ctrl || kb.isAltPressed) return KeyEventResult.ignored;
@@ -660,10 +765,20 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         MediaQuery.sizeOf(context).width >= kSrsBrowseSplitMinWidth;
     switch (key) {
       case LogicalKeyboardKey.arrowDown:
-        _setCurrent(math.max(0, _currentIndex + 1), extend: kb.isShiftPressed);
+        unawaited(
+          _setCurrent(
+            math.max(0, _currentIndex + 1),
+            extend: kb.isShiftPressed,
+          ),
+        );
         return KeyEventResult.handled;
       case LogicalKeyboardKey.arrowUp:
-        _setCurrent(math.max(0, _currentIndex - 1), extend: kb.isShiftPressed);
+        unawaited(
+          _setCurrent(
+            math.max(0, _currentIndex - 1),
+            extend: kb.isShiftPressed,
+          ),
+        );
         return KeyEventResult.handled;
       case LogicalKeyboardKey.enter ||
           LogicalKeyboardKey.numpadEnter ||
@@ -681,7 +796,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         _clearSelection();
         return KeyEventResult.handled;
       case LogicalKeyboardKey.delete:
-        if (_targets.isEmpty) return KeyEventResult.ignored;
+        if (!_hasTargets) return KeyEventResult.ignored;
         unawaited(_runBatch(SrsBrowseBatchAction.delete));
         return KeyEventResult.handled;
     }
@@ -691,8 +806,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   // ------------------------------------------------------------------ 界面
 
   String get _countText => _mode == SrsBrowseMode.cards
-      ? t.srs_browse_count_cards(n: _items.length)
-      : t.srs_browse_count(n: _items.length);
+      ? t.srs_browse_count_cards(n: _length)
+      : t.srs_browse_count(n: _length);
 
   List<FushiToolbarItem> _toolbarItems() => <FushiToolbarItem>[
     FushiToolbarItem(
@@ -708,7 +823,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         icon: FushiIcons.selectAll,
         label: t.srs_browse_select_all,
         tooltip: '${t.srs_browse_select_all} (Ctrl+A)',
-        onPressed: _selectAll,
+        onPressed: () => unawaited(_selectAll()),
       ),
       FushiToolbarItem(
         key: const ValueKey<String>('srs_browse_batch'),
@@ -740,7 +855,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     FushiToolbarItem(
       icon: FushiIcons.refresh,
       label: t.refresh,
-      onPressed: () => unawaited(_reload()),
+      onPressed: () => unawaited(_refresh()),
     ),
   ];
 
@@ -822,7 +937,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   Widget _buildControls(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? field = _searchField;
-    final List<String> fieldNames = _snapshot?.fieldNames ?? const <String>[];
+    final List<String> fieldNames = _fieldNames;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -935,7 +1050,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   Widget _buildSplit(BuildContext context, Widget list) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int index = _currentIndex;
-    final SrsBrowseItem? item = index < 0 ? null : _items[index];
+    final SrsBrowseRow? item = index < 0 ? null : _result?.rowAt(index);
     final EdgeInsets inset = MediaQuery.paddingOf(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -961,9 +1076,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                     cardId: item.cardId,
                     revision: _revision,
                     showAnswer: _showAnswer,
-                    position: '${index + 1} / ${_items.length}',
+                    position: '${index + 1} / $_length',
                     hasPrevious: index > 0,
-                    hasNext: index < _items.length - 1,
+                    hasNext: index < _length - 1,
                     onCommand: _onPreviewCommand,
                     onEdit: () => srsRunLogged(
                       'SrsBrowse.edit',
@@ -997,7 +1112,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
     final int offset = controls == null ? 0 : 1;
-    if (_items.isEmpty) {
+    final SrsBrowseResult? result = _result;
+    if (result == null || result.length == 0) {
       return ListView(
         padding: padding,
         children: <Widget>[
@@ -1015,7 +1131,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       child: ListView.builder(
         controller: _scroll,
         padding: padding,
-        itemCount: _items.length + offset,
+        itemCount: result.length + offset,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           if (controls != null && i == 0) {
             return Padding(
@@ -1031,19 +1147,27 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   }
 
   Widget _buildRow(BuildContext context, int index, {required bool wide}) {
-    final SrsBrowseItem item = _items[index];
-    final SrsCardSearchSubject c = item.primary;
-    final String id = _idOf(item);
+    final SrsBrowseResult r = _result!;
+    final SrsBrowseRow? c = r.rowAt(index);
+    if (c == null) {
+      // 这一页还没取：先占一行高度，取到后重画。
+      _loadRow(r, index);
+      return SizedBox(
+        key: ValueKey<String>('srs-browse-row-pending-$index'),
+        height: 72,
+      );
+    }
+    final String id = r.idOf(c);
     final bool selected = _selected.contains(id);
     final bool current = id == _currentId && (wide || _selecting);
     final bool cardsMode = _mode == SrsBrowseMode.cards;
     final String subtitleText = <String>[
       if (c.deckName.isNotEmpty) c.deckName,
-      c.noteType.name,
+      c.noteTypeName,
       if (cardsMode) ...<String>[
         if (c.templateName.isNotEmpty) c.templateName,
       ] else
-        t.srs_browse_count_cards(n: item.cards.length),
+        t.srs_browse_count_cards(n: c.cardCount),
     ].join(' · ');
     // 卡片状态（新卡 / 已暂停 / 到期…）放在副标题行首的小标签里：拼在末尾时手机上
     // 牌组名 + 类型 + 模板就把一行占满，状态整个被省略号吃掉（截图巡检）。
@@ -1068,15 +1192,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           )
         : Text(subtitleText, maxLines: 1);
     final Color? flag = srsFlagColor(c.flag);
-    final bool pending = c.note.hasPendingDecision;
+    final bool pending = c.hasPendingDecision;
     return FushiPressScale(
       child: FushiGroupedListItem(
         key: ValueKey<String>('srs-browse-row-$id'),
         index: index,
-        count: _items.length,
+        count: r.length,
         selected: current || selected,
-        onTap: () => _onRowTap(index, wide: wide),
-        onLongPress: () => _onRowLongPress(index),
+        onTap: () => _onRowTap(id, index, wide: wide),
+        onLongPress: () => _onRowLongPress(id, index),
         onSecondaryTap: () {
           if (!_selected.contains(id)) {
             setState(() {
@@ -1084,6 +1208,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                 ..clear()
                 ..add(id);
               _currentId = id;
+              _currentAt = index;
             });
           }
           srsRunLogged('SrsBrowse.contextMenu', _openBatchMenu);
@@ -1095,7 +1220,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
               ? FushiCheckbox(
                   key: ValueKey<String>('srs-browse-check-$id'),
                   value: selected,
-                  onChanged: (_) => _toggle(id),
+                  onChanged: (_) => _toggle(id, index),
                 )
               : FushiListLeadingIcon(
                   pending ? FushiIcons.warning : FushiIcons.ankiCard,
@@ -1131,10 +1256,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                       srsRunLogged('SrsBrowse.rowMenu', () async {
                         switch (v) {
                           case 0:
-                            await _editNote(item.noteId);
+                            await _editNote(c.noteId);
                           case 1:
                             if (wide) {
-                              _setCurrent(index);
+                              await _setCurrent(index);
                             } else {
                               await _openPreviewPage(index);
                             }
@@ -1143,6 +1268,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                               _selectMode = true;
                               _selected.add(id);
                               _currentId = id;
+                              _currentAt = index;
                             });
                         }
                       }),

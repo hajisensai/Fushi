@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179333 (10549 per locale)
+/// Strings: 179350 (10550 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1309,7 +1309,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String anki_select_handlebar({required Object field}) =>
       'Select value for ${field}';
   String get anki_settings_label => 'Anki settings';
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   String get anki_sync_client_ankiweb_body =>
       'AnkiWeb\'s terms only allow the official Anki apps to sync. Fushi identifies itself honestly as Fushi, so AnkiWeb may refuse it or take action on your account. Self-hosted sync servers have no such restriction.';
@@ -11501,6 +11501,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_status_review_by_recall => 'In review (RWKV)';
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   String get srs_status_suspended => 'Suspended';
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   String get srs_sync_auto => 'Auto-sync review data';
   String get srs_sync_auto_hint =>
       'Sync review data in the background after each regular sync, when a paired device has new review data, and shortly after you review. When off, review data only syncs when you tap Sync now in the deck list or open the Review tab (at most once a minute). Book and video progress sync is not affected';
@@ -17080,7 +17082,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_settings_label => 'إعدادات Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -34468,6 +34470,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -42676,7 +42681,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki-Einstellungen';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -60334,6 +60339,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -68639,7 +68647,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_settings_label => 'Configuración de Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -86322,6 +86330,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -94659,7 +94670,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_settings_label => 'Paramètres Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -112398,6 +112409,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -120734,7 +120748,7 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_settings_label => 'Pengaturan Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -138238,6 +138252,9 @@ class _StringsId extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -146491,7 +146508,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_settings_label => 'Impostazioni Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -164119,6 +164136,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -172328,7 +172348,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 設定';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -189290,6 +189310,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -197199,7 +197222,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 설정';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -214196,6 +214219,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -222224,7 +222250,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki-instellingen';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -239809,6 +239835,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -248097,7 +248126,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_settings_label => 'Configurações do Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -265722,6 +265751,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -274018,7 +274050,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_settings_label => 'Настройки Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -291612,6 +291644,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -299867,7 +299902,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_settings_label => 'ตั้งค่า Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -317254,6 +317289,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -325444,7 +325482,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki ayarları';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -342961,6 +342999,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -351193,7 +351234,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_settings_label => 'Cài đặt Anki';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -368663,6 +368704,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -376723,7 +376767,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 设置';
   @override
-  String get anki_sync_client_advanced_hint => '实验性功能，点按展开';
+  String get anki_sync_client_advanced_hint => '高级功能，点按展开';
   @override
   String get anki_sync_client_advanced_title => '高级：Anki 同步客户端';
   @override
@@ -392759,6 +392803,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_status_suspended => '已暂停';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      '磁盘空间不足，无法升级复习数据库。请至少再腾出 ${size} 后重试（数据没有任何改动）。';
+  @override
   String get srs_sync_auto => '自动同步复习数据';
   @override
   String get srs_sync_auto_hint =>
@@ -400253,7 +400300,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_settings_label => 'Anki 設定';
   @override
-  String get anki_sync_client_advanced_hint => 'Experimental. Tap to expand.';
+  String get anki_sync_client_advanced_hint => 'Advanced. Tap to expand.';
   @override
   String get anki_sync_client_advanced_title => 'Advanced: Anki sync client';
   @override
@@ -416843,6 +416890,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -424334,7 +424384,7 @@ extension on _StringsEn {
       case 'anki_settings_label':
         return 'Anki settings';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -439328,6 +439378,9 @@ extension on _StringsEn {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -446254,7 +446307,7 @@ extension on _StringsAr {
       case 'anki_settings_label':
         return 'إعدادات Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -461243,6 +461296,9 @@ extension on _StringsAr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -468177,7 +468233,7 @@ extension on _StringsDe {
       case 'anki_settings_label':
         return 'Anki-Einstellungen';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -483214,6 +483270,9 @@ extension on _StringsDe {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -490160,7 +490219,7 @@ extension on _StringsEs {
       case 'anki_settings_label':
         return 'Configuración de Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -505189,6 +505248,9 @@ extension on _StringsEs {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -512136,7 +512198,7 @@ extension on _StringsFr {
       case 'anki_settings_label':
         return 'Paramètres Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -527175,6 +527237,9 @@ extension on _StringsFr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -534119,7 +534184,7 @@ extension on _StringsId {
       case 'anki_settings_label':
         return 'Pengaturan Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -549121,6 +549186,9 @@ extension on _StringsId {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -556054,7 +556122,7 @@ extension on _StringsIt {
       case 'anki_settings_label':
         return 'Impostazioni Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -571076,6 +571144,9 @@ extension on _StringsIt {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -578010,7 +578081,7 @@ extension on _StringsJa {
       case 'anki_settings_label':
         return 'Anki 設定';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -592965,6 +593036,9 @@ extension on _StringsJa {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -599843,7 +599917,7 @@ extension on _StringsKo {
       case 'anki_settings_label':
         return 'Anki 설정';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -614803,6 +614877,9 @@ extension on _StringsKo {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -621708,7 +621785,7 @@ extension on _StringsNl {
       case 'anki_settings_label':
         return 'Anki-instellingen';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -636731,6 +636808,9 @@ extension on _StringsNl {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -643671,7 +643751,7 @@ extension on _StringsPtBr {
       case 'anki_settings_label':
         return 'Configurações do Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -658690,6 +658770,9 @@ extension on _StringsPtBr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -665628,7 +665711,7 @@ extension on _StringsRu {
       case 'anki_settings_label':
         return 'Настройки Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -680653,6 +680736,9 @@ extension on _StringsRu {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -687582,7 +687668,7 @@ extension on _StringsTh {
       case 'anki_settings_label':
         return 'ตั้งค่า Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -702576,6 +702662,9 @@ extension on _StringsTh {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -709505,7 +709594,7 @@ extension on _StringsTr {
       case 'anki_settings_label':
         return 'Anki ayarları';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -724517,6 +724606,9 @@ extension on _StringsTr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -731450,7 +731542,7 @@ extension on _StringsVi {
       case 'anki_settings_label':
         return 'Cài đặt Anki';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -746453,6 +746545,9 @@ extension on _StringsVi {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -753349,7 +753444,7 @@ extension on _StringsZhCn {
       case 'anki_settings_label':
         return 'Anki 设置';
       case 'anki_sync_client_advanced_hint':
-        return '实验性功能，点按展开';
+        return '高级功能，点按展开';
       case 'anki_sync_client_advanced_title':
         return '高级：Anki 同步客户端';
       case 'anki_sync_client_ankiweb_body':
@@ -768182,6 +768277,9 @@ extension on _StringsZhCn {
         return ({required Object n}) => '复习中 · ${n}天后';
       case 'srs_status_suspended':
         return '已暂停';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            '磁盘空间不足，无法升级复习数据库。请至少再腾出 ${size} 后重试（数据没有任何改动）。';
       case 'srs_sync_auto':
         return '自动同步复习数据';
       case 'srs_sync_auto_hint':
@@ -775009,7 +775107,7 @@ extension on _StringsZhHk {
       case 'anki_settings_label':
         return 'Anki 設定';
       case 'anki_sync_client_advanced_hint':
-        return 'Experimental. Tap to expand.';
+        return 'Advanced. Tap to expand.';
       case 'anki_sync_client_advanced_title':
         return 'Advanced: Anki sync client';
       case 'anki_sync_client_ankiweb_body':
@@ -789936,6 +790034,9 @@ extension on _StringsZhHk {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':

@@ -55,7 +55,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
-import 'package:fushi_core/fushi_core.dart' show FushiDatabase, SrsDatabase;
+import 'package:fushi_core/fushi_core.dart'
+    show FushiDatabase, SrsDatabase, srsIdType;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show SrsBackupSource;
@@ -473,7 +474,9 @@ Future<_MergePlan> _plan(
                 .customSelect(
                   'SELECT id, note_id, template_id, cloze_ord FROM '
                   'srs_cards_cache WHERE profile_uid = ? ORDER BY id',
-                  variables: <Variable<Object>>[Variable<String>(oldUid)],
+                  variables: <Variable<Object>>[
+                    Variable<String>(oldUid, srsIdType),
+                  ],
                 )
                 .get())
           (
@@ -807,8 +810,8 @@ Future<Set<String>> _presentIn(
     );
     final String marks = List<String>.filled(chunk.length, '?').join(', ');
     final List<Variable<Object>> vars = <Variable<Object>>[
-      Variable<String>(profileUid),
-      for (final String id in chunk) Variable<String>(id),
+      Variable<String>(profileUid, srsIdType),
+      for (final String id in chunk) Variable<String>(id, srsIdType),
     ];
     for (final (String table, String col) in const <(String, String)>[
       ('srs_entities', 'id'),
@@ -846,7 +849,9 @@ Future<Set<String>> _eventIds(SrsDatabase db, String profileUid) async {
         in await db
             .customSelect(
               'SELECT id FROM $table WHERE profile_uid = ?',
-              variables: <Variable<Object>>[Variable<String>(profileUid)],
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid, srsIdType),
+              ],
             )
             .get()) {
       out.add(r.read<String>('id'));
@@ -864,7 +869,9 @@ Future<Map<String, int>> _serverTimes(
           .customSelect(
             'SELECT event_id, server_time FROM srs_event_local '
             'WHERE profile_uid = ? AND server_time IS NOT NULL',
-            variables: <Variable<Object>>[Variable<String>(profileUid)],
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid, srsIdType),
+            ],
           )
           .get())
     r.read<String>('event_id'): r.read<int>('server_time'),
@@ -885,9 +892,10 @@ Future<void> _deleteProfile(SrsDatabase db, String uid) async {
       r.read<String>('n'),
   ];
   for (final String t in tables) {
-    await db.customStatement('DELETE FROM "$t" WHERE profile_uid = ?', <Object>[
-      uid,
-    ]);
+    await db.customStatement(
+      'DELETE FROM "$t" WHERE profile_uid = srs_id(?)',
+      <Object>[uid],
+    );
   }
   await db.customStatement('DELETE FROM srs_meta WHERE key IN (?, ?)', <Object>[
     'sync2_migrating/$uid',

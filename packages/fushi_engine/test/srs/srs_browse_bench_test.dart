@@ -1,9 +1,13 @@
-// 浏览快照在较大规模上的装载耗时与内存（手动跑；默认跳过）。
+// 浏览页在较大规模上的耗时与内存（手动跑；默认跳过）。
 //
-// FUSHI_SRS_BROWSE_BENCH=<笔记数> dart test test/srs/srs_browse_bench_test.dart
+// 合成库：FUSHI_SRS_BROWSE_BENCH=<笔记数> dart test test/srs/srs_browse_bench_test.dart
+// 真库副本：FUSHI_SRS_BROWSE_BENCH_DB=<srs.db 副本> dart test test/srs/srs_browse_bench_test.dart
+//   （会写一次旗标再改回去；别指向在用的库）
 //
-// 库开在临时文件上、走 createInBackground（与 app 同一种连接）。每条笔记两张卡，第二个字段是
-// 约 1.5 KB 的释义 HTML（接近真实挖词卡的体量）。RSS 含后台 drift isolate，只看差值。
+// 合成库开在临时文件上、走 createInBackground（与 app 同一种连接）。每条笔记两张卡，第二个字段是
+// 约 1.5 KB 的释义 HTML（接近真实挖词卡的体量）。量的是浏览页的真实调用序列：打开（查询 + 取首屏
+// 一页行）、改旗标后的刷新、预览返回（没写入）、搜索、排序。RSS 含后台 drift isolate 与原生会话；
+// peak 是进程峰值。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -80,93 +84,131 @@ int _rssMb() => ProcessInfo.currentRss >> 20;
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   final String? n = Platform.environment['FUSHI_SRS_BROWSE_BENCH'];
+  final String? dbPath = Platform.environment['FUSHI_SRS_BROWSE_BENCH_DB'];
 
   test(
-    '浏览快照装载 / 搜索 / 排序',
+    '浏览页：打开 / 改旗标刷新 / 预览返回 / 搜索 / 排序',
     () async {
-      final int notes = int.parse(n!);
-      final Directory tmp = Directory.systemTemp.createTempSync('srs_browse_');
-      addTearDown(() {
-        try {
-          tmp.deleteSync(recursive: true);
-        } on FileSystemException {
-          // 句柄晚释放。
-        }
-      });
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/b.db',
-        interceptor: CountingInterceptor(),
-        inline: false,
-      );
-      final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
-        core: srs.core,
-        profileUid: '01928c3e-0000-7000-8000-0000000be4c7',
-        deviceId: 'bench',
-        engine: const FakeFsrsEngine(),
-        fallbackRolloverHour: () => 4,
-      );
-      await importAnkiPackage(
-        store: store,
-        bytes: _apkg(notes),
-        storeMedia: (String name, Uint8List b) async => name,
-        options: kFullOptions,
-        zstdDecompress: (Uint8List b) => null,
-      );
+      final SrsDbStore store;
+      final List<String> searches;
+      if (dbPath != null) {
+        final TestSrs srs = await openTestSrsAt(dbPath, inline: false);
+        final String profileUid =
+            (await srs.db
+                    .customSelect(
+                      'SELECT profile_uid FROM srs_cards_cache LIMIT 1',
+                    )
+                    .getSingle())
+                .read<String>('profile_uid');
+        store = await SrsDbStore.open(
+          db: srs.db,
+          core: srs.core,
+          profileUid: profileUid,
+          deviceId: 'bench',
+          engine: const FakeFsrsEngine(),
+        );
+        searches = <String>['is:due', 'の', 'tag:*', 'edited:7'];
+      } else {
+        final int notes = int.parse(n!);
+        final Directory tmp = Directory.systemTemp.createTempSync(
+          'srs_browse_',
+        );
+        addTearDown(() {
+          try {
+            tmp.deleteSync(recursive: true);
+          } on FileSystemException {
+            // 句柄晚释放。
+          }
+        });
+        final TestSrs srs = await openTestSrsAt(
+          '${tmp.path}/b.db',
+          interceptor: CountingInterceptor(),
+          inline: false,
+        );
+        store = await SrsDbStore.open(
+          db: srs.db,
+          core: srs.core,
+          profileUid: '01928c3e-0000-7000-8000-0000000be4c7',
+          deviceId: 'bench',
+          engine: const FakeFsrsEngine(),
+          fallbackRolloverHour: () => 4,
+        );
+        await importAnkiPackage(
+          store: store,
+          bytes: _apkg(notes),
+          storeMedia: (String name, Uint8List b) async => name,
+          options: kFullOptions,
+          zstdDecompress: (Uint8List b) => null,
+        );
+        searches = <String>[
+          'tag:even is:due',
+          'Back:*例文その12*',
+          '例文その123',
+          'edited:1',
+        ];
+      }
+      final List<String> fields = srsBrowseFieldNames(await store.noteTypes());
+      final String sortField = fields.length > 1 ? fields[1] : fields.first;
       final List<String> lines = <String>[];
       final int rss0 = _rssMb();
-      final Stopwatch sw = Stopwatch()..start();
-      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(store);
-      lines.add(
-        'load=${sw.elapsedMilliseconds}ms cards=${snap.cards.length} '
-        'rss+${_rssMb() - rss0}MB',
-      );
-      Future<void> step(String label, Future<int> Function() run) async {
-        sw.reset();
-        final int hits = await run();
+      final Stopwatch sw = Stopwatch();
+      Future<SrsBrowseResult> step(
+        String label,
+        Future<SrsBrowseResult> Function() run,
+      ) async {
+        sw
+          ..reset()
+          ..start();
+        final SrsBrowseResult r = await run();
+        // 浏览页每次重算都取首屏那一页。
+        await r.ensure(0, kSrsBrowsePage);
         lines.add(
-          '$label=${sw.elapsedMilliseconds}ms hits=$hits '
-          'rss+${_rssMb() - rss0}MB',
+          '${label.padRight(28)} ${sw.elapsedMilliseconds.toString().padLeft(6)}ms '
+          'hits=${r.length} rss+${_rssMb() - rss0}MB '
+          'peak=${ProcessInfo.maxRss >> 20}MB',
         );
+        return r;
       }
 
-      await step('query("")', () async => (await snap.query()).length);
-      await step('query(tag:even is:due)', () async {
-        await snap.prepare('tag:even is:due');
-        return (await snap.query(query: 'tag:even is:due')).length;
-      });
-      await step('query(Back:*例文その12*)', () async {
-        await snap.prepare('Back:*例文その12*');
-        return (await snap.query(query: 'Back:*例文その12*')).length;
-      });
-      await step('query(例文その123)', () async {
-        await snap.prepare('例文その123');
-        return (await snap.query(query: '例文その123')).length;
-      });
-      await step('query(edited:1)', () async {
-        await snap.prepare('edited:1');
-        return (await snap.query(query: 'edited:1')).length;
-      });
+      final SrsBrowseSession session = SrsBrowseSession(store);
+      final SrsBrowseResult opened = await step(
+        'open (query "")',
+        session.query,
+      );
+      await step('requery "" (no write)', session.query);
+      await step('preview return (reuse)', () => session.query(reuse: true));
+      final String card = (await opened.rows(0, 1)).single.cardId;
+      final int flag0 = (await opened.rows(0, 1)).single.flag;
+      await store.setFlag(card, flag0 == 3 ? 4 : 3);
+      await step('flag change -> refresh', session.query);
+      await store.setFlag(card, flag0);
+      await step('flag back -> refresh', session.query);
+      for (final String q in searches) {
+        await step('search $q', () => session.query(query: q));
+      }
       await step(
         'sort(modified)',
-        () async => (await snap.query(
+        () => session.query(
           sort: const SrsBrowseSort(column: SrsBrowseSortColumn.modified),
-        )).length,
+        ),
       );
       await step(
-        'sort(field Back)',
-        () async => (await snap.query(
-          sort: const SrsBrowseSort(
+        'sort(field $sortField)',
+        () => session.query(
+          sort: SrsBrowseSort(
             column: SrsBrowseSortColumn.field,
-            fieldName: 'Back',
+            fieldName: sortField,
           ),
-        )).length,
+        ),
       );
-      snap.dispose();
+      await step('notes mode', () => session.query(mode: SrsBrowseMode.notes));
+      await session.close();
       // ignore: avoid_print
-      print('BENCH notes=$notes\n  ${lines.join('\n  ')}');
+      print('BENCH ${dbPath ?? 'notes=$n'}\n  ${lines.join('\n  ')}');
     },
-    skip: n == null ? 'set FUSHI_SRS_BROWSE_BENCH' : false,
+    skip: n == null && dbPath == null
+        ? 'set FUSHI_SRS_BROWSE_BENCH or FUSHI_SRS_BROWSE_BENCH_DB'
+        : false,
     timeout: const Timeout(Duration(hours: 1)),
   );
 }

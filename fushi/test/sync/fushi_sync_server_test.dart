@@ -178,6 +178,57 @@ void main() {
       client.close();
     });
 
+    test('PUT 写到一半：目标仍是旧内容、PROPFIND 不列临时文件；写完原子替换', () async {
+      // SRS 迁移按「新根上已有同名」判断新副本已在、随后删原件：host 的 PUT 不能让半截文件被看见。
+      await server.start();
+      final Directory book = Directory(
+          '${tempDir.path}/sync-data/$kSyncRootFolderName/TestBook');
+      final File target = File('${book.path}/seg.bin')
+        ..writeAsStringSync('old');
+      final String auth =
+          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+      final HttpClient client = HttpClient();
+      final HttpClientRequest put = await client.openUrl(
+        'PUT',
+        Uri.parse(
+            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/seg.bin'),
+      );
+      put.headers.set('Authorization', auth);
+      put.contentLength = 6;
+      put.add(utf8.encode('new'));
+      await put.flush();
+      bool tempSeen = false;
+      for (int i = 0; i < 250 && !tempSeen; i++) {
+        tempSeen = book
+            .listSync()
+            .any((FileSystemEntity e) => e.path.contains('.fushi-put-'));
+        if (!tempSeen) await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(tempSeen, isTrue, reason: '请求体在写同目录的临时文件');
+      expect(target.readAsStringSync(), 'old');
+      final HttpClientRequest find = await client.openUrl(
+        'PROPFIND',
+        Uri.parse(
+            'http://localhost:${server.port}/$kSyncRootFolderName/TestBook/'),
+      );
+      find.headers.set('Authorization', auth);
+      find.headers.set('Depth', '1');
+      final HttpClientResponse listed = await find.close();
+      final String xml = await listed.transform(utf8.decoder).join();
+      expect(xml, contains('seg.bin'));
+      expect(xml, isNot(contains('.fushi-put-')));
+      put.add(utf8.encode('!!!'));
+      final HttpClientResponse done = await put.close();
+      await done.drain<void>();
+      expect(done.statusCode, 204);
+      expect(target.readAsStringSync(), 'new!!!');
+      expect(
+        book.listSync().where((FileSystemEntity e) => e.path.contains('.fushi-put-')),
+        isEmpty,
+      );
+      client.close();
+    });
+
     test('DELETE removes file', () async {
       await server.start();
       final testFile = File(

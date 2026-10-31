@@ -206,12 +206,23 @@ class SrsAppRuntime {
 
   /// 本机变动后去抖推送：连着互联 host 就同步那条通道；本机自己是 host 就跑本机目录（唤醒连它的设备）。
   /// 推送失败按指数退避（[SrsLocalPush]），不再每答一张卡就探测一轮死地址。
-  late final SrsLocalPush localPush = SrsLocalPush(push: _pushInterconnect);
+  /// 复习页开着时按最长等待批量推（[kSrsLocalPushMaxWait]，审查 S-8），离开复习页 / 进后台立即推。
+  late final SrsLocalPush localPush = SrsLocalPush(
+    push: _pushInterconnect,
+    batching: () => srsActiveReviewSessions.value > 0,
+  );
 
-  Future<bool> _interconnectReady() async {
+  /// 下一次推送是 app 正要进后台时的那一次（[_onLifecycle]）：放过前台检查，只这一次。
+  bool _pushOnLeave = false;
+
+  Future<bool> _interconnectReady({bool allowBackground = false}) async {
     if (!app.isInitialised || !app.srsSync2MergeConfirmed) return false;
     final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
-    if (state != null && state != AppLifecycleState.resumed) return false;
+    if (!allowBackground &&
+        state != null &&
+        state != AppLifecycleState.resumed) {
+      return false;
+    }
     final SyncRepository repo = SyncRepository(app.database);
     if (!await repo.isInterconnectEnabled()) return false;
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
@@ -221,9 +232,11 @@ class SrsAppRuntime {
 
   /// 返回互联这一步是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
   Future<bool> _pushInterconnect() async {
+    final bool leaving = _pushOnLeave;
+    _pushOnLeave = false;
     try {
       return await sync.autoPush(
-        () async => await _interconnectReady()
+        () async => await _interconnectReady(allowBackground: leaving)
             ? InterconnectSyncBackend.instance
             : null,
         exclusive: runExclusiveWithSync,
@@ -345,6 +358,13 @@ class SrsAppRuntime {
     if (identical(app.srsAnkiConnectEndpoint, _endpoint)) {
       app.srsAnkiConnectEndpoint = null;
     }
+    if (_endpoint case final SrsAnkiConnectEndpoint endpoint) {
+      unawaited(
+        endpoint.handler.close().catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('SrsAnkiConnect.close', e, stack);
+        }),
+      );
+    }
     _endpoint = null;
     if (fushiAnkiConnectCompatInstanceId == instanceId) {
       fushiAnkiConnectCompatInstanceId = null;
@@ -409,10 +429,19 @@ class SrsAppRuntime {
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
+    // 离开复习页：复习中攒着的变动立即推（审查 S-8）。
+    if (now == 0) localPush.flush();
   }
 
   void _onLifecycle(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) optimizer.cancel();
+    // 正在进后台：待推的立即推（之后前台检查会挡住推送，后台也可能很快被挂起）。
+    if ((state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.hidden) &&
+        localPush.pending) {
+      _pushOnLeave = true;
+      localPush.flush();
+    }
     // 回到前台：快速通道马上重新挂上（不等空闲重查的间隔）。
     if (state == AppLifecycleState.resumed) interconnectWatch.nudge();
   }

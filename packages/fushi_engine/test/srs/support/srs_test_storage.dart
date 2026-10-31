@@ -4,6 +4,7 @@ import 'package:drift/drift.dart'
     show
         ApplyInterceptor,
         ApplyInterceptorConnection,
+        BooleanExpressionOperators,
         DatabaseConnection,
         QueryExecutor,
         QueryInterceptor,
@@ -11,8 +12,10 @@ import 'package:drift/drift.dart'
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, SrsDatabase, kLegacySrsTableDdl;
 import 'package:fushi_engine/srs/srs_database_executor.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsCore, SrsEntityKind, SrsNoteView;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -92,4 +95,22 @@ Future<void> copySrsRowsToLegacyTables(
       );
     }
   }
+}
+
+/// [s] 的 profile 里有身份记录的全部笔记（含已删除），按 id 分块物化。只给测试用：生产代码没有整库物化
+/// 笔记的入口（AnkiConnect / 统计 / 浏览都走原生命令）。
+Future<List<SrsNoteView>> allNotesOf(SrsDbStore s) async {
+  final List<String> ids = <String>[
+    for (final r
+        in await (s.db.select(s.db.srsEntities)..where(
+              (t) =>
+                  t.profileUid.equals(s.profileUid) &
+                  t.kind.equals(SrsEntityKind.note.wire),
+            ))
+            .get())
+      r.id,
+  ];
+  return <SrsNoteView>[
+    for (final SrsNoteView? n in (await s.notes(ids)).values) ?n,
+  ];
 }

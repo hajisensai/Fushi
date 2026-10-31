@@ -35,6 +35,51 @@ final class SrsCoreException implements Exception {
   String toString() => 'SrsCoreException($code): $message';
 }
 
+/// 打开时 srs.db 要升级格式，而所在卷的空闲空间不够（store/ffi.rs `STORE_NO_SPACE`）：升级没开始，库一个字节没动；
+/// 腾出 [neededBytes] - [freeBytes] 以上的空间后重试即可。
+final class SrsUpgradeNoSpaceException extends SrsCoreException {
+  const SrsUpgradeNoSpaceException(
+    super.code,
+    super.message, {
+    required this.neededBytes,
+    required this.freeBytes,
+  });
+
+  /// store/ffi.rs 的状态码。
+  static const int statusCode = -3;
+
+  /// Rust 侧错误文本的前缀（store/schema.rs `UPGRADE_NO_SPACE`），后面是 `{"need","free","from","to"}`。
+  static const String prefix = 'srs.db upgrade needs more free disk space: ';
+
+  final int neededBytes;
+  final int freeBytes;
+
+  /// 按 [statusCode] 的错误文本解析；文本不是约定的形状为 null（照一般错误报）。
+  static SrsUpgradeNoSpaceException? tryParse(int code, String message) {
+    if (code != statusCode || !message.startsWith(prefix)) return null;
+    try {
+      final Object? j = jsonDecode(message.substring(prefix.length));
+      if (j is! Map) return null;
+      final Object? need = j['need'];
+      final Object? free = j['free'];
+      if (need is! int || free is! int) return null;
+      return SrsUpgradeNoSpaceException(
+        code,
+        message,
+        neededBytes: need,
+        freeBytes: free,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  @override
+  String toString() =>
+      'SrsUpgradeNoSpaceException: upgrading srs.db needs $neededBytes bytes '
+      'free on its volume, only $freeBytes available';
+}
+
 typedef _OpenC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Uint8>,
@@ -461,10 +506,20 @@ final class SrsCore {
     ];
   });
 
-  /// 在写连接上执行一条语句（Drift 执行器后端，见 fushi_engine `srs_database_executor.dart`）。
-  /// [select] 时返回「列名行 + 结果行」，否则返回一行 `[变更行数, last_insert_rowid]`；都是
-  /// [srsDecodeRows] 的页。
+  /// 在写连接上执行一条语句（Drift 执行器的写语句与 `runCustom` 后端，见 fushi_engine
+  /// `srs_database_executor.dart`）。[select] 时返回「列名行 + 结果行」，否则返回一行
+  /// `[变更行数, last_insert_rowid]`；都是 [srsDecodeRows] 的页。事务控制语句（BEGIN / COMMIT /
+  /// SAVEPOINT）必须走这里：内核据此知道 Drift 事务是否开着（[execQuery] 的选路）。
   Uint8List exec(String sql, List<Object?> params, {required bool select}) =>
+      _exec(sql, params, select ? 1 : 0);
+
+  /// Drift 的查询（`runSelect`）：Drift 事务开着时在写连接上跑（看得见事务里未提交的行），否则只读查询走
+  /// 内核的读连接快照、不排写锁（native/fushi_fsrs/src/store/mod.rs `SrsCore::select`）。返回页同 [exec] 的查询。
+  Uint8List execQuery(String sql, List<Object?> params) =>
+      _exec(sql, params, 2);
+
+  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询（ffi.rs `ffsrs_store_exec`）。
+  Uint8List _exec(String sql, List<Object?> params, int mode) =>
       using((Arena arena) {
         final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
         final Uint8List encoded = params.isEmpty
@@ -477,17 +532,7 @@ final class SrsCore {
         err.value = ffi.nullptr;
         _check(
           _b,
-          _b.exec(
-            _h,
-            s,
-            sn,
-            pp,
-            encoded.length,
-            select ? 1 : 0,
-            out,
-            outLen,
-            err,
-          ),
+          _b.exec(_h, s, sn, pp, encoded.length, mode, out, outLen, err),
           err,
         );
         final int len = outLen.value;
@@ -542,13 +587,15 @@ final class SrsCore {
       arena,
       jsonEncode(request),
     );
-    final Uint8List framed = srsSync2Frames(blobs);
-    final ffi.Pointer<ffi.Uint8> bp = _copy(arena, framed);
+    // 段直接分帧写进原生缓冲（不先拼一份 Dart 侧的帧再整份拷过去；审查 S-9）。
+    final int framedLen = srsSync2FramesLength(blobs);
+    final ffi.Pointer<ffi.Uint8> bp = arena(framedLen == 0 ? 1 : framedLen);
+    srsSync2FramesInto(bp.asTypedListOutOfLine(framedLen), blobs);
     final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
     final ffi.Pointer<ffi.Size> outLen = arena();
     final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
     err.value = ffi.nullptr;
-    _check(_b, _b.sync2(_h, rq, rqn, bp, framed.length, out, outLen, err), err);
+    _check(_b, _b.sync2(_h, rq, rqn, bp, framedLen, out, outLen, err), err);
     final int len = outLen.value;
     final Uint8List bytes = Uint8List.fromList(
       out.value.asTypedListOutOfLine(len),
@@ -759,7 +806,8 @@ final class SrsCore {
       message = err.value.cast<Utf8>().toDartString();
       b._freeString(err.value);
     }
-    throw SrsCoreException(rc, message);
+    throw SrsUpgradeNoSpaceException.tryParse(rc, message) ??
+        SrsCoreException(rc, message);
   }
 }
 
@@ -812,7 +860,8 @@ final class SrsSync2Result {
 
   Map<String, Object?> get map => (json! as Map).cast<String, Object?>();
 
-  /// `u32 json_len + JSON`，再 `u32 n` 与 n 组分帧的 `(路径, 字节)`（小端）。
+  /// `u32 json_len + JSON`，再 `u32 n` 与 n 组分帧的 `(路径, 字节)`（小端）。各文件是 [b] 上的视图（不逐个复制；
+  /// 审查 S-9），[b] 由调用方交出、之后不再改。
   static SrsSync2Result decode(Uint8List b) {
     final ByteData d = ByteData.sublistView(b);
     int at = 0;
@@ -833,7 +882,7 @@ final class SrsSync2Result {
     final List<(String, Uint8List)> files = <(String, Uint8List)>[];
     for (int i = 0; i < n; i++) {
       final String path = utf8.decode(take(u32()));
-      files.add((path, Uint8List.fromList(take(u32()))));
+      files.add((path, take(u32())));
     }
     return SrsSync2Result(json, files);
   }
@@ -841,12 +890,24 @@ final class SrsSync2Result {
 
 /// 分帧：`u32 n`，再 n 个 `u32 len + 字节`（小端）。空列表 = 0 字节。
 Uint8List srsSync2Frames(List<Uint8List> blobs) {
-  if (blobs.isEmpty) return Uint8List(0);
+  final Uint8List out = Uint8List(srsSync2FramesLength(blobs));
+  srsSync2FramesInto(out, blobs);
+  return out;
+}
+
+/// [srsSync2Frames] 的总字节数。
+int srsSync2FramesLength(List<Uint8List> blobs) {
+  if (blobs.isEmpty) return 0;
   int total = 4;
   for (final Uint8List x in blobs) {
     total += 4 + x.length;
   }
-  final Uint8List out = Uint8List(total);
+  return total;
+}
+
+/// 把 [blobs] 分帧写进 [out]（长度必须是 [srsSync2FramesLength]）：调用方给原生缓冲的视图，段只拷这一次。
+void srsSync2FramesInto(Uint8List out, List<Uint8List> blobs) {
+  if (blobs.isEmpty) return;
   final ByteData d = ByteData.sublistView(out);
   d.setUint32(0, blobs.length, Endian.little);
   int at = 4;
@@ -856,5 +917,4 @@ Uint8List srsSync2Frames(List<Uint8List> blobs) {
     out.setRange(at, at + x.length, x);
     at += x.length;
   }
-  return out;
 }

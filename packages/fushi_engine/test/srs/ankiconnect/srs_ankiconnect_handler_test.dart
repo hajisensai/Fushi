@@ -604,7 +604,7 @@ void main() {
         expect(r['result'], isNull, reason: q);
         expect(r['error'], startsWith('unsupported search syntax'), reason: q);
       }
-      // 浏览页补上的语法与浏览页同一份求值（SrsCardSearchSubject）。
+      // 浏览页补上的语法与浏览页同一份求值（原生浏览会话 store/browse.rs）。
       expect(
         await h.ok('findNotes', <String, Object?>{'query': 'prop:ivl=0'}),
         hasLength(1),

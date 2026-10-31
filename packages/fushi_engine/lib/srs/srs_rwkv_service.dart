@@ -496,9 +496,16 @@ class SrsRwkvService implements SrsRwkvScheduling {
     await debugAfterRebuildFingerprint?.call();
     final SrsDayContext day = await store.dayContext();
     final SrsDeckTree tree = await store.deckTree();
+    // 只要三列：内核列式结果（[SrsDbStore.cardColumns]），不再整行读回全部缓存列再映射。
+    final SrsColumns keys = await store.cardColumns(
+      fields: const <String>['id', 'note_id', 'deck_id'],
+    );
+    final SrsStringColumn keyId = keys.strings('id');
+    final SrsStringColumn keyNote = keys.strings('note_id');
+    final SrsStringColumn keyDeck = keys.strings('deck_id');
     final List<_CardKey> cards = <_CardKey>[
-      for (final SrsCardCacheRow c in await store.allCardRows())
-        (id: c.id, noteId: c.noteId, deckId: c.deckId),
+      for (int i = 0; i < keys.rows; i++)
+        (id: keyId[i], noteId: keyNote[i], deckId: keyDeck[i]),
     ]..sort((_CardKey a, _CardKey b) => a.id.compareTo(b.id));
     // 回放行与指纹出自同一个快照：列卡之后用户还在答题也对得上，之后对齐不会把已回放的再追加、也不会因
     // 「比已回放的最后一条更早」再重建。唯一要补的是列卡之后才新建（并已作答）的卡：Rust 把它们当

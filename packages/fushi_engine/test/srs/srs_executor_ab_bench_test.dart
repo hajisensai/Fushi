@@ -4,6 +4,8 @@
 // FUSHI_SRS_EXEC_AB=<日志行数> dart test test/srs/srs_executor_ab_bench_test.dart
 //
 // 两份是不同的文件：Dart 的 SQLite 只开它自己那份副本（docs/specs/2026-10-23-srs-rust-store.md §1）。
+// srs.db v18 起 `json` 是调 Rust SQL 函数的生成列，Dart 自带的 SQLite 读不了：Dart 那份读日志会报
+// `no such function: srs_log_json`，本 A/B 只在 v18 之前的库上有意义。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -29,18 +31,12 @@ void main() {
           '"note":"${'あ' * 120}"}';
       await rust.db.batch((Batch b) {
         for (int i = 0; i < rows; i++) {
-          b.insert(
-            rust.db.srsReviewLogs,
-            SrsReviewLogsCompanion.insert(
-              id: 'log$i',
-              profileUid: 'p',
-              cardId: 'card${i ~/ 10}',
-              kind: 'review',
-              occurredAt: i,
-              reviewType: 'review',
-              origin: 'fushi',
-              json: payload,
-            ),
+          // `json` 是生成列（srs.db v18）：原文写进 `jslim`（不瘦也合法）。
+          b.customStatement(
+            'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, '
+            'occurred_at, review_type, origin, jslim) '
+            "VALUES (?, 'p', ?, 'review', ?, 'review', 'fushi', ?)",
+            <Object?>['log$i', 'card${i ~/ 10}', i, payload],
           );
         }
       });

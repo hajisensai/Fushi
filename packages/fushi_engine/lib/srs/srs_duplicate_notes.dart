@@ -74,8 +74,8 @@ extension SrsDuplicateNotes on SrsDbStore {
           'AND g.reading_key = n.reading_key '
           'WHERE n.profile_uid = ? AND n.deleted_at IS NULL',
           variables: <Variable<Object>>[
-            Variable<String>(profileUid),
-            Variable<String>(profileUid),
+            Variable<String>(profileUid, srsIdType),
+            Variable<String>(profileUid, srsIdType),
           ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             db.srsNotesCache,

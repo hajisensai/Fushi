@@ -65,10 +65,15 @@ void main() {
       'open',
       'status',
       'media_known',
+      'media_hash',
       'conflicts',
       'checkpoints',
       'history',
       'digest',
+      // 读连接列摘要桶（审查 S-7）；媒体文件到文件的流式封 / 解，不碰库（审查 S-9）。
+      'digest_buckets',
+      'seal_file',
+      'open_file',
     });
     for (final String op in <String>[
       'identity',
@@ -78,6 +83,8 @@ void main() {
       'head',
       'ingest_begin',
       'media_record',
+      'media_scan',
+      'media_landed',
     ]) {
       expect(SrsDbStore.kSrsSync2LockFreeOps, isNot(contains(op)));
     }

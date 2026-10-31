@@ -19,9 +19,9 @@ type LogsByCard = HashMap<String, Vec<(String, Option<i64>)>>;
 pub(super) fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
     let mut logs: LogsByCard = HashMap::with_capacity(cards.len());
     for chunk in cards.chunks(500) {
-        let marks = vec!["?"; chunk.len()].join(", ");
+        let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l \
+            "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
              LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks}) ORDER BY l.rowid"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
@@ -36,6 +36,26 @@ pub(super) fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard
         }
     }
     Ok(logs)
+}
+
+/// 每份历史的完整血统：调用方给的卡（第一张是这份历史的卡；Dart 只给它自己）连同它的全部前身
+/// （store/caches.rs `lineage_ids`），给过的顺序在前、补上的按血统顺序接在后面。
+fn expand_lineages(r: &Connection, groups: &[Vec<String>]) -> Result<Vec<Vec<String>>, String> {
+    let seeds: Vec<String> = groups.iter().filter_map(|g| g.first().cloned()).collect();
+    let mut full = crate::store::caches::lineage_ids(r, &seeds)?.into_iter();
+    let mut out = Vec::with_capacity(groups.len());
+    for g in groups {
+        let mut l = g.clone();
+        if !g.is_empty() {
+            for id in full.next().unwrap_or_default() {
+                if !l.contains(&id) {
+                    l.push(id);
+                }
+            }
+        }
+        out.push(l);
+    }
+    Ok(out)
 }
 
 /// 血统里出现过的卡（去重，保序）。
@@ -100,7 +120,8 @@ impl SrsCore {
         Ok(out)
     }
 
-    /// 优化器训练集（`srsPrepareOptimization`）：`groups[g]` 是一张卡的血统，`card_ids[g]` 是它的 53 位数字 id。
+    /// 优化器训练集（`srsPrepareOptimization`）：`groups[g]` 是一张卡（调用方只给卡自己即可，全部前身由
+    /// [expand_lineages] 在同一个快照里补齐），`card_ids[g]` 是它的 53 位数字 id。
     ///
     /// 输出（小端，全部 8 字节字）：`[n_seq, n_reviews, n_items]`、`seq_start × (n_seq + 1)`、`seq_card × n_seq`、
     /// `rating × n_reviews`、`delta(f64) × n_reviews`、`(seq, len) × n_items`。序列 = 一张进训练集的卡的完整评审，
@@ -109,7 +130,11 @@ impl SrsCore {
         if card_ids.len() != groups.len() {
             return Err("optimizer: card id count differs from group count".into());
         }
-        let logs = self.read_snapshot(|r| fetch_logs(r, &wanted_cards(groups)))?;
+        let (groups, logs) = self.read_snapshot(|r| {
+            let groups = expand_lineages(r, groups)?;
+            let logs = fetch_logs(r, &wanted_cards(&groups))?;
+            Ok((groups, logs))
+        })?;
         let mut seq_start: Vec<i64> = vec![0];
         let mut seq_card: Vec<i64> = Vec::new();
         let mut ratings: Vec<i64> = Vec::new();
@@ -157,7 +182,11 @@ impl SrsCore {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
-        let logs = self.read_snapshot(|r| fetch_logs(r, &wanted_cards(groups)))?;
+        let (groups, logs) = self.read_snapshot(|r| {
+            let groups = expand_lineages(r, groups)?;
+            let logs = fetch_logs(r, &wanted_cards(&groups))?;
+            Ok((groups, logs))
+        })?;
         let mut head = Vec::with_capacity(8 + groups.len() * 48);
         let mut rows = Vec::new();
         let mut kept_ids: Vec<String> = Vec::new();
@@ -200,17 +229,18 @@ impl SrsCore {
         if ids.len() != groups.len() * 4 {
             return Err("rwkv: id count differs from 4 × group count".into());
         }
-        let mut member: HashMap<&str, Vec<usize>> = HashMap::new();
-        for (g, lineage) in groups.iter().enumerate() {
-            for c in lineage {
-                member.entry(c.as_str()).or_default().push(g);
+        let (groups, count, max_rowid, logs, strays) = self.read_snapshot(|r| {
+            let groups = expand_lineages(r, groups)?;
+            let mut member: HashMap<String, Vec<usize>> = HashMap::new();
+            for (g, lineage) in groups.iter().enumerate() {
+                for c in lineage {
+                    member.entry(c.clone()).or_default().push(g);
+                }
             }
-        }
-        let (count, max_rowid, logs, strays) = self.read_snapshot(|r| {
             let mut stmt = r
                 .prepare_cached(
-                    "SELECT l.rowid, l.card_id, l.json, e.server_time FROM srs_review_logs l \
-                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = ?1 ORDER BY l.rowid",
+                    "SELECT l.rowid, srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
+                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
                 )
                 .map_err(|e| e.to_string())?;
             let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
@@ -234,7 +264,8 @@ impl SrsCore {
                 let st: Option<i64> = row.get(3).map_err(|e| e.to_string())?;
                 logs.entry(card).or_default().push((json, st));
             }
-            Ok((count, max_rowid, logs, strays))
+            drop(q);
+            Ok((groups, count, max_rowid, logs, strays))
         })?;
         // (时刻, 行)：按加入顺序收集，稳定排序。
         let mut entries: Vec<(i64, [u8; RWKV_ROW])> = Vec::new();
@@ -287,7 +318,7 @@ impl SrsCore {
                 let (c, m): (i64, i64) = r
                     .query_row(
                         "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = ?1",
+                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
                         rusqlite::params![profile, since],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
@@ -296,7 +327,7 @@ impl SrsCore {
             } else {
                 r.query_row(
                     "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
-                     FROM srs_review_logs WHERE profile_uid = ?1",
+                     FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
                     rusqlite::params![profile, since],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
@@ -306,8 +337,8 @@ impl SrsCore {
             if with_rows {
                 let mut stmt = r
                     .prepare_cached(
-                        "SELECT id, card_id, kind, occurred_at, json FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = ?1 ORDER BY occurred_at, rowid",
+                        "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
+                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
                     )
                     .map_err(|e| e.to_string())?;
                 let mut q = stmt.query(rusqlite::params![profile, since]).map_err(|e| e.to_string())?;
@@ -362,8 +393,8 @@ mod tests {
 
     fn insert(c: &SrsCore, id: &str, card: &str, kind: &str, at: i64, json: &str) {
         c.exec(
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (?1, 'p', ?2, ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
+             VALUES (srs_id(?1), 'p', srs_id(?2), ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
             &[
                 Value::Text(id.into()),
                 Value::Text(card.into()),

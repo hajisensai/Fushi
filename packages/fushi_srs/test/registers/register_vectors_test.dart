@@ -5,7 +5,8 @@
 // 笔记 / 笔记类型（含内置默认值）/ 牌组 / profile 的修改记录集（并发、支配、不连续 dot、同 ID 重复与
 // 同 ID 异内容、服务器时刻钳位、删除与删除并发、内联样式与引用行、代理对 writerId 的 UTF-16 序、
 // int 与 double / -0.0、坏类型）→ 寄存器、删除时刻、与删除并发的修改、物化视图、no-op 判定；
-// 卡片血统（成环、缺失前身、historyFrom 值不为 true）→ 血统与继承后的标志；落库支配裁剪；
+// 卡片血统（成环、缺失前身、historyFrom 值不为 true）→ 血统与继承后的标志（Dart 包装 `srsCardLineages` 已删，
+// 这 300 个用例搬到 native/fushi_fsrs/tests/fixtures/card_lineage_vectors.json、由 Rust 测试对拍）；落库支配裁剪；
 // Anki 导入判重；卡片历史的钳位标记；坏数据。全部要求与旧实现逐条一致。
 //
 // 要真实原生库（FUSHI_FSRS_LIB，缺省本仓 prebuilt/）；库加载失败直接判红，不 skip。
@@ -184,14 +185,6 @@ Map<String, Object?> _deckJson(SrsDeckView d) => <String, Object?>{
   'deletedAt': d.deletedAt,
   'builtinKey': d.builtinKey,
   'createdAt': d.createdAt,
-};
-
-Map<String, Object?> _flagsJson(SrsCardFlags f) => <String, Object?>{
-  'deckId': f.deckId,
-  'suspended': f.suspended,
-  'buriedUntilDay': f.buriedUntilDay,
-  'flag': f.flag,
-  'newPosition': f.newPosition,
 };
 
 SrsBuiltinNoteType _builtinOf(Map<String, Object?> b) => SrsBuiltinNoteType(
@@ -391,42 +384,6 @@ void main() {
       expect(_regs(built), e['regs']);
       expect(built.deletedAt, e['deletedAt']);
     }
-  });
-
-  test('卡片：血统与继承后的标志与旧实现逐条一致', () {
-    int multi = 0;
-    for (final Map<String, Object?> v in ofKind(<String>{'card'})) {
-      final Map<String, Object?> e = _map(v['expect']);
-      final Map<String, Object?> server = _map(v['server']);
-      final Map<String, List<SrsEditItem>> cards = <String, List<SrsEditItem>>{
-        for (final MapEntry<String, Object?> c in _map(v['cards']).entries)
-          c.key: _items(c.value, server),
-      };
-      SrsCardLineages run() => srsCardLineages(cards, <SrsCardWant>[
-        SrsCardWant(
-          v['card']! as String,
-          noteDeckId: v['noteDeckId'] as String?,
-          fallbackDeckId: v['fallbackDeckId']! as String,
-        ),
-      ]);
-      if (_isError(e)) {
-        expect(run, throwsFormatException, reason: jsonEncode(v));
-        continue;
-      }
-      final SrsCardLineages got = run();
-      expect(got.wants.single.lineage, e['lineage'], reason: jsonEncode(v));
-      expect(
-        _flagsJson(got.wants.single.flags),
-        e['flags'],
-        reason: jsonEncode(v),
-      );
-      expect(<String, Object?>{
-        for (final MapEntry<String, SrsEntityEdits> c in got.edits.entries)
-          c.key: _regs(c.value),
-      }, e['regs']);
-      if ((e['lineage']! as List).length > 1) multi++;
-    }
-    expect(multi, greaterThan(60));
   });
 
   test('落库支配裁剪与旧实现逐条一致', () {

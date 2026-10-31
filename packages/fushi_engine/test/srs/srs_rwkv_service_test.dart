@@ -1100,15 +1100,21 @@ void main() {
       expect(c0.byRecall, isTrue);
       expect(c0.retrievability, closeTo(0.42, 1e-6));
 
-      final SrsBrowseSnapshot browse = await SrsBrowseSnapshot.load(f.store);
-      final Map<String, SrsCardSearchSubject> byId =
-          <String, SrsCardSearchSubject>{
-            for (final SrsCardSearchSubject c in browse.cards) c.card.id: c,
-          };
-      expect(byId[cards[0]]!.isDue, isTrue);
-      expect(byId[cards[1]]!.isDue, isFalse);
+      final SrsBrowseSession browse = SrsBrowseSession(f.store);
+      final Set<String> dueIds = <String>{
+        for (final SrsBrowseRow r in await (await browse.query(
+          query: 'is:due',
+        )).all())
+          r.cardId,
+      };
+      expect(dueIds, contains(cards[0]));
+      expect(dueIds, isNot(contains(cards[1])));
+      final Map<String, SrsBrowseRow> byId = <String, SrsBrowseRow>{
+        for (final SrsBrowseRow r in await (await browse.query()).all())
+          r.cardId: r,
+      };
       expect(byId[cards[0]]!.dueInDays, isNull);
-      browse.dispose();
+      await browse.close();
 
       final Map<String, SrsTermStatus> term = await f.store.lookupTermStatus(
         const <SrsTermQuery>[SrsTermQuery('w0', null)],
