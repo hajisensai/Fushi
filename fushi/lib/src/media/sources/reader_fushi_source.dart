@@ -29,6 +29,7 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
@@ -1104,6 +1105,13 @@ class ReaderFushiSource extends ReaderMediaSource {
           ? InterconnectMangaCatalog.peerBookKeyOf(bookRow?.sourceMetadata) ??
                 await db.syncDeletionBookKeyOf(bookKey)
           : bookKey;
+      // 这本书在云盘同步根下的书文件夹名：与 `SyncBackend.ensureBookFolder` 同一派生
+      // （sanitizeTtuFilename(书名)）。墓碑键可能是对端键 / 别名，云通道删云盘文件夹
+      // 只认这个名字——也必须删行前按当时的书名取。
+      final String? syncTombstoneCloudFolderName =
+          scope == DeleteScope.syncEverywhere && bookRow != null
+          ? sanitizeTtuFilename(bookRow.title)
+          : null;
 
       // TODO-1195 part B: a user shelf delete records a tombstone so a later
       // backup MERGE import never resurrects this book from an old backup.
@@ -1119,6 +1127,7 @@ class ReaderFushiSource extends ReaderMediaSource {
             'book',
             syncTombstoneKey,
             DateTime.now().millisecondsSinceEpoch,
+            cloudFolderName: syncTombstoneCloudFolderName,
           );
         } catch (_) {
           // best-effort：删除墓碑记账失败不影响书已删。

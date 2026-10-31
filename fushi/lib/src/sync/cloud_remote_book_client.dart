@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, SyncTombstoneKind;
+    show FushiDatabase, SyncTombstoneKind, TombstoneCloudFolderState;
 import 'package:fushi_engine/sync/deletion_propagation.dart'
     show
         deletionTombstoneAssetName,
@@ -231,7 +231,8 @@ class CloudRemoteBookClient implements RemoteBookClient {
   ///    据此：本机还有这本的弹确认是否一并删除；自动同步不再把它推回云盘
   ///    （`SyncOrchestrator` 云通道的推送否决）。墓碑写失败就整体失败，什么都不删。
   /// 2. **再删书文件夹**（各后端的递归删除；六种云盘后端都支持，404 视为已删）。
-  ///    文件夹删失败时墓碑已在：意图不丢，用户可以重试（重试幂等）。
+  ///    文件夹删失败时墓碑已在、文件夹处置状态仍是未处置：意图不丢，书架继续藏这本，
+  ///    用户可以重试（重试幂等），云通道下一轮同步也会按记下的文件夹名重试。
   /// 3. 逐出书名→folderId 缓存并写回持久层（BUG-202：陈旧映射会让下次上传打向
   ///    已删的文件夹）。
   ///
@@ -256,13 +257,25 @@ class CloudRemoteBookClient implements RemoteBookClient {
       deletionTombstoneAssetName(mediaType, itemKey),
       deletionTombstoneJson(mediaType, itemKey, deletedAt),
     );
-    await db.writeSyncDeletionTombstone(mediaType, itemKey, deletedAt);
+    // 文件夹名就是墓碑键（云盘条目的身份本来就是文件夹名）；记下它，删文件夹失败时
+    // 云通道下一轮按它重试（`SyncOrchestrator` 墓碑扫描）。
+    await db.writeSyncDeletionTombstone(
+      mediaType,
+      itemKey,
+      deletedAt,
+      cloudFolderName: itemKey,
+    );
     await db.markSyncDeletionPublished(mediaType, itemKey, deletedAt);
 
     await deleteCloudBookFolder(
       backend: backend,
       db: db,
       folderId: book.downloadId,
+    );
+    await db.markSyncDeletionCloudFolderState(
+      mediaType,
+      itemKey,
+      TombstoneCloudFolderState.deleted,
     );
   }
 

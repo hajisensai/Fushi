@@ -16,17 +16,24 @@ Future<Set<String>> loadPendingRemoteDeletionKeys(
   SyncTombstoneKind kind, {
   required String remoteLibrarySourceId,
 }) async {
-  // 云盘书库的书：发布「从所有设备删除」墓碑时云通道会把书文件夹一起删掉（发布成功
-  // ⇔ 文件夹已删，见 `SyncOrchestrator` 墓碑扫描；书架「同时从远端删除」同理）。所以
-  // 已发布的墓碑之后云盘上再出现同名书文件夹，只能是删除之后重新导入、重新上传的新书
-  // ——不能再藏，否则别的设备重新导入的书在本机永远看不见。只藏还没发布（文件夹还
-  // 没删）的那些残留。
+  // 云盘书库的书：墓碑记着这本书云盘文件夹的处置结论（v142 `cloudFolderState`）。
+  // 文件夹已经删掉、或处置时核实云盘上本就没有，之后同名书文件夹只可能是删除之后
+  // 重新导入、重新上传的新书——不能再藏，否则别的设备重新导入的书在本机永远看不见。
+  // 其余（未处置）一律藏：文件夹可能还在。**不能拿「已发布」代替「文件夹已删」**：
+  // v142 之前的版本发布「从所有设备删除」墓碑时从不删云盘文件夹，那些墓碑全是已发布
+  // + 未处置，残留还在云盘上，放出来就是把用户删过的书全部送回远端书架。
+  //
+  // 藏的键：墓碑键（bookKey / 对端键）+ 删除时记下的云盘文件夹名——书架按
+  // `sanitizeTtuFilename(远端书名)` = 文件夹名比对，墓碑键是对端键 / 别名时只有后者
+  // 命得中。
   if (kind == SyncTombstoneKind.book &&
       remoteLibrarySourceId.startsWith(kCloudRemoteLibrarySourceIdPrefix)) {
     return <String>{
       for (final SyncDeletionTombstoneRow row
           in await db.getSyncDeletionTombstonesOfType(kind.dbValue))
-        if (row.remotePublishedAt == 0) row.itemKey,
+        if (!TombstoneCloudFolderState.fromDb(
+          row.cloudFolderState,
+        ).resolved) ...<String>[row.itemKey, ?row.cloudFolderName],
     };
   }
   final Map<String, int> deletedAtByKey = await db

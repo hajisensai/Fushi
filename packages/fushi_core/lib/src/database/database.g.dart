@@ -20798,12 +20798,37 @@ class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _cloudFolderNameMeta = const VerificationMeta(
+    'cloudFolderName',
+  );
+  @override
+  late final GeneratedColumn<String> cloudFolderName = GeneratedColumn<String>(
+    'cloud_folder_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cloudFolderStateMeta = const VerificationMeta(
+    'cloudFolderState',
+  );
+  @override
+  late final GeneratedColumn<int> cloudFolderState = GeneratedColumn<int>(
+    'cloud_folder_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     mediaType,
     itemKey,
     deletedAt,
     remotePublishedAt,
+    cloudFolderName,
+    cloudFolderState,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -20850,6 +20875,24 @@ class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
         ),
       );
     }
+    if (data.containsKey('cloud_folder_name')) {
+      context.handle(
+        _cloudFolderNameMeta,
+        cloudFolderName.isAcceptableOrUnknown(
+          data['cloud_folder_name']!,
+          _cloudFolderNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cloud_folder_state')) {
+      context.handle(
+        _cloudFolderStateMeta,
+        cloudFolderState.isAcceptableOrUnknown(
+          data['cloud_folder_state']!,
+          _cloudFolderStateMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -20878,6 +20921,14 @@ class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
         DriftSqlType.int,
         data['${effectivePrefix}remote_published_at'],
       )!,
+      cloudFolderName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cloud_folder_name'],
+      ),
+      cloudFolderState: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cloud_folder_state'],
+      )!,
     );
   }
 
@@ -20901,11 +20952,25 @@ class SyncDeletionTombstoneRow extends DataClass
 
   /// 已发布到远端的毫秒戳（0 = 尚未发布；发布后置为发布时刻，避免每轮重发）。
   final int remotePublishedAt;
+
+  /// v142：这本书在云盘同步根下的书文件夹名（仅 book 墓碑；删除时按**当时的书名**记下
+  /// `sanitizeTtuFilename(title)`，与 `SyncBackend.ensureBookFolder` 建文件夹同一派生）。
+  /// 墓碑键是 bookKey / 对端键，不一定等于文件夹名，所以删云盘文件夹只认这一列。
+  /// null = 不知道（v142 之前写的墓碑、非书资产、删除时拿不到书名）——这种墓碑云通道
+  /// 不删任何文件夹。
+  final String? cloudFolderName;
+
+  /// v142：云盘书文件夹的处置结论（[TombstoneCloudFolderState.dbValue]）：0 = 未处置
+  /// （含 v142 之前的全部墓碑），1 = 已删掉，2 = 发布时核实云盘上本就没有。云盘书库的
+  /// 远端占位卡只对 1 / 2 停止隐藏——那之后同名文件夹只可能是删除之后重新上传的新书。
+  final int cloudFolderState;
   const SyncDeletionTombstoneRow({
     required this.mediaType,
     required this.itemKey,
     required this.deletedAt,
     required this.remotePublishedAt,
+    this.cloudFolderName,
+    required this.cloudFolderState,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -20914,6 +20979,10 @@ class SyncDeletionTombstoneRow extends DataClass
     map['item_key'] = Variable<String>(itemKey);
     map['deleted_at'] = Variable<int>(deletedAt);
     map['remote_published_at'] = Variable<int>(remotePublishedAt);
+    if (!nullToAbsent || cloudFolderName != null) {
+      map['cloud_folder_name'] = Variable<String>(cloudFolderName);
+    }
+    map['cloud_folder_state'] = Variable<int>(cloudFolderState);
     return map;
   }
 
@@ -20923,6 +20992,10 @@ class SyncDeletionTombstoneRow extends DataClass
       itemKey: Value(itemKey),
       deletedAt: Value(deletedAt),
       remotePublishedAt: Value(remotePublishedAt),
+      cloudFolderName: cloudFolderName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cloudFolderName),
+      cloudFolderState: Value(cloudFolderState),
     );
   }
 
@@ -20936,6 +21009,8 @@ class SyncDeletionTombstoneRow extends DataClass
       itemKey: serializer.fromJson<String>(json['itemKey']),
       deletedAt: serializer.fromJson<int>(json['deletedAt']),
       remotePublishedAt: serializer.fromJson<int>(json['remotePublishedAt']),
+      cloudFolderName: serializer.fromJson<String?>(json['cloudFolderName']),
+      cloudFolderState: serializer.fromJson<int>(json['cloudFolderState']),
     );
   }
   @override
@@ -20946,6 +21021,8 @@ class SyncDeletionTombstoneRow extends DataClass
       'itemKey': serializer.toJson<String>(itemKey),
       'deletedAt': serializer.toJson<int>(deletedAt),
       'remotePublishedAt': serializer.toJson<int>(remotePublishedAt),
+      'cloudFolderName': serializer.toJson<String?>(cloudFolderName),
+      'cloudFolderState': serializer.toJson<int>(cloudFolderState),
     };
   }
 
@@ -20954,11 +21031,17 @@ class SyncDeletionTombstoneRow extends DataClass
     String? itemKey,
     int? deletedAt,
     int? remotePublishedAt,
+    Value<String?> cloudFolderName = const Value.absent(),
+    int? cloudFolderState,
   }) => SyncDeletionTombstoneRow(
     mediaType: mediaType ?? this.mediaType,
     itemKey: itemKey ?? this.itemKey,
     deletedAt: deletedAt ?? this.deletedAt,
     remotePublishedAt: remotePublishedAt ?? this.remotePublishedAt,
+    cloudFolderName: cloudFolderName.present
+        ? cloudFolderName.value
+        : this.cloudFolderName,
+    cloudFolderState: cloudFolderState ?? this.cloudFolderState,
   );
   SyncDeletionTombstoneRow copyWithCompanion(
     SyncDeletionTombstonesCompanion data,
@@ -20970,6 +21053,12 @@ class SyncDeletionTombstoneRow extends DataClass
       remotePublishedAt: data.remotePublishedAt.present
           ? data.remotePublishedAt.value
           : this.remotePublishedAt,
+      cloudFolderName: data.cloudFolderName.present
+          ? data.cloudFolderName.value
+          : this.cloudFolderName,
+      cloudFolderState: data.cloudFolderState.present
+          ? data.cloudFolderState.value
+          : this.cloudFolderState,
     );
   }
 
@@ -20979,14 +21068,22 @@ class SyncDeletionTombstoneRow extends DataClass
           ..write('mediaType: $mediaType, ')
           ..write('itemKey: $itemKey, ')
           ..write('deletedAt: $deletedAt, ')
-          ..write('remotePublishedAt: $remotePublishedAt')
+          ..write('remotePublishedAt: $remotePublishedAt, ')
+          ..write('cloudFolderName: $cloudFolderName, ')
+          ..write('cloudFolderState: $cloudFolderState')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(mediaType, itemKey, deletedAt, remotePublishedAt);
+  int get hashCode => Object.hash(
+    mediaType,
+    itemKey,
+    deletedAt,
+    remotePublishedAt,
+    cloudFolderName,
+    cloudFolderState,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -20994,7 +21091,9 @@ class SyncDeletionTombstoneRow extends DataClass
           other.mediaType == this.mediaType &&
           other.itemKey == this.itemKey &&
           other.deletedAt == this.deletedAt &&
-          other.remotePublishedAt == this.remotePublishedAt);
+          other.remotePublishedAt == this.remotePublishedAt &&
+          other.cloudFolderName == this.cloudFolderName &&
+          other.cloudFolderState == this.cloudFolderState);
 }
 
 class SyncDeletionTombstonesCompanion
@@ -21003,12 +21102,16 @@ class SyncDeletionTombstonesCompanion
   final Value<String> itemKey;
   final Value<int> deletedAt;
   final Value<int> remotePublishedAt;
+  final Value<String?> cloudFolderName;
+  final Value<int> cloudFolderState;
   final Value<int> rowid;
   const SyncDeletionTombstonesCompanion({
     this.mediaType = const Value.absent(),
     this.itemKey = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.remotePublishedAt = const Value.absent(),
+    this.cloudFolderName = const Value.absent(),
+    this.cloudFolderState = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SyncDeletionTombstonesCompanion.insert({
@@ -21016,6 +21119,8 @@ class SyncDeletionTombstonesCompanion
     required String itemKey,
     required int deletedAt,
     this.remotePublishedAt = const Value.absent(),
+    this.cloudFolderName = const Value.absent(),
+    this.cloudFolderState = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : mediaType = Value(mediaType),
        itemKey = Value(itemKey),
@@ -21025,6 +21130,8 @@ class SyncDeletionTombstonesCompanion
     Expression<String>? itemKey,
     Expression<int>? deletedAt,
     Expression<int>? remotePublishedAt,
+    Expression<String>? cloudFolderName,
+    Expression<int>? cloudFolderState,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -21032,6 +21139,8 @@ class SyncDeletionTombstonesCompanion
       if (itemKey != null) 'item_key': itemKey,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (remotePublishedAt != null) 'remote_published_at': remotePublishedAt,
+      if (cloudFolderName != null) 'cloud_folder_name': cloudFolderName,
+      if (cloudFolderState != null) 'cloud_folder_state': cloudFolderState,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -21041,6 +21150,8 @@ class SyncDeletionTombstonesCompanion
     Value<String>? itemKey,
     Value<int>? deletedAt,
     Value<int>? remotePublishedAt,
+    Value<String?>? cloudFolderName,
+    Value<int>? cloudFolderState,
     Value<int>? rowid,
   }) {
     return SyncDeletionTombstonesCompanion(
@@ -21048,6 +21159,8 @@ class SyncDeletionTombstonesCompanion
       itemKey: itemKey ?? this.itemKey,
       deletedAt: deletedAt ?? this.deletedAt,
       remotePublishedAt: remotePublishedAt ?? this.remotePublishedAt,
+      cloudFolderName: cloudFolderName ?? this.cloudFolderName,
+      cloudFolderState: cloudFolderState ?? this.cloudFolderState,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -21067,6 +21180,12 @@ class SyncDeletionTombstonesCompanion
     if (remotePublishedAt.present) {
       map['remote_published_at'] = Variable<int>(remotePublishedAt.value);
     }
+    if (cloudFolderName.present) {
+      map['cloud_folder_name'] = Variable<String>(cloudFolderName.value);
+    }
+    if (cloudFolderState.present) {
+      map['cloud_folder_state'] = Variable<int>(cloudFolderState.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -21080,6 +21199,8 @@ class SyncDeletionTombstonesCompanion
           ..write('itemKey: $itemKey, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('remotePublishedAt: $remotePublishedAt, ')
+          ..write('cloudFolderName: $cloudFolderName, ')
+          ..write('cloudFolderState: $cloudFolderState, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -90715,6 +90836,8 @@ typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder =
       required String itemKey,
       required int deletedAt,
       Value<int> remotePublishedAt,
+      Value<String?> cloudFolderName,
+      Value<int> cloudFolderState,
       Value<int> rowid,
     });
 typedef $$SyncDeletionTombstonesTableUpdateCompanionBuilder =
@@ -90723,6 +90846,8 @@ typedef $$SyncDeletionTombstonesTableUpdateCompanionBuilder =
       Value<String> itemKey,
       Value<int> deletedAt,
       Value<int> remotePublishedAt,
+      Value<String?> cloudFolderName,
+      Value<int> cloudFolderState,
       Value<int> rowid,
     });
 
@@ -90752,6 +90877,16 @@ class $$SyncDeletionTombstonesTableFilterComposer
 
   ColumnFilters<int> get remotePublishedAt => $composableBuilder(
     column: $table.remotePublishedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cloudFolderName => $composableBuilder(
+    column: $table.cloudFolderName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cloudFolderState => $composableBuilder(
+    column: $table.cloudFolderState,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -90784,6 +90919,16 @@ class $$SyncDeletionTombstonesTableOrderingComposer
     column: $table.remotePublishedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get cloudFolderName => $composableBuilder(
+    column: $table.cloudFolderName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cloudFolderState => $composableBuilder(
+    column: $table.cloudFolderState,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SyncDeletionTombstonesTableAnnotationComposer
@@ -90806,6 +90951,16 @@ class $$SyncDeletionTombstonesTableAnnotationComposer
 
   GeneratedColumn<int> get remotePublishedAt => $composableBuilder(
     column: $table.remotePublishedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cloudFolderName => $composableBuilder(
+    column: $table.cloudFolderName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get cloudFolderState => $composableBuilder(
+    column: $table.cloudFolderState,
     builder: (column) => column,
   );
 }
@@ -90860,12 +91015,16 @@ class $$SyncDeletionTombstonesTableTableManager
                 Value<String> itemKey = const Value.absent(),
                 Value<int> deletedAt = const Value.absent(),
                 Value<int> remotePublishedAt = const Value.absent(),
+                Value<String?> cloudFolderName = const Value.absent(),
+                Value<int> cloudFolderState = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncDeletionTombstonesCompanion(
                 mediaType: mediaType,
                 itemKey: itemKey,
                 deletedAt: deletedAt,
                 remotePublishedAt: remotePublishedAt,
+                cloudFolderName: cloudFolderName,
+                cloudFolderState: cloudFolderState,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -90874,12 +91033,16 @@ class $$SyncDeletionTombstonesTableTableManager
                 required String itemKey,
                 required int deletedAt,
                 Value<int> remotePublishedAt = const Value.absent(),
+                Value<String?> cloudFolderName = const Value.absent(),
+                Value<int> cloudFolderState = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncDeletionTombstonesCompanion.insert(
                 mediaType: mediaType,
                 itemKey: itemKey,
                 deletedAt: deletedAt,
                 remotePublishedAt: remotePublishedAt,
+                cloudFolderName: cloudFolderName,
+                cloudFolderState: cloudFolderState,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

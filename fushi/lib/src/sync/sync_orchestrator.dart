@@ -1363,7 +1363,7 @@ class SyncOrchestrator {
           .getSyncDeletionTombstones();
       final List<SyncDeletionTombstoneRow> ownRows =
           <SyncDeletionTombstoneRow>[];
-      // 云盘书文件夹清单，有书墓碑要发布时才列一次。
+      // 云盘书文件夹清单，有书文件夹要处置时才列一次（本轮删掉的随手移出）。
       List<SyncFileRef>? cloudBookFolders;
       for (final SyncDeletionTombstoneRow row in localRows) {
         // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
@@ -1375,44 +1375,74 @@ class SyncOrchestrator {
           continue;
         }
         ownRows.add(row);
-        if (row.remotePublishedAt != 0) continue;
-        await _backend.putJsonAsset(
-          ns,
-          deletionTombstoneAssetName(row.mediaType, row.itemKey),
-          deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
-        );
+        final bool needsPublish = row.remotePublishedAt == 0;
         // 「从所有设备删除」一本书：墓碑写上之后，把云盘上它的书文件夹也删掉（所有者
         // 2026-10-31 拍板，不再只写墓碑留残留；顺序与失败语义同「同时从远端删除」）。
-        // 书文件夹名 = sanitizeTtuFilename(书名) = 墓碑键（本机 bookKey / 对端键）。
-        // 删失败就不标「已发布」：下一轮重写同一条墓碑（幂等）并重试删文件夹；在那
-        // 之前书架照旧藏着这份残留（`loadPendingRemoteDeletionKeys`）。
-        if (row.mediaType == SyncTombstoneKind.book.dbValue) {
+        // 文件夹只按删除时记下的文件夹名找（v142 `cloudFolderName` =
+        // sanitizeTtuFilename(当时的书名)）：墓碑键是 bookKey / 对端键 / 别名，不一定
+        // 等于文件夹名，拿它去比会静默找不到。没记下文件夹名的（v142 之前的墓碑）不碰
+        // 任何文件夹，状态保持未处置、书架继续藏。已发布但文件夹还没处置的（书架直删时
+        // 删文件夹失败）也在这里重试。
+        final String? folderName = row.cloudFolderName;
+        final bool needsFolder =
+            row.mediaType == SyncTombstoneKind.book.dbValue &&
+            folderName != null &&
+            !TombstoneCloudFolderState.fromDb(row.cloudFolderState).resolved;
+        if (!needsPublish && !needsFolder) continue;
+        if (needsPublish) {
+          await _backend.putJsonAsset(
+            ns,
+            deletionTombstoneAssetName(row.mediaType, row.itemKey),
+            deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
+          );
+        }
+        if (needsFolder) {
+          // 删失败就什么都不标：下一轮重写同一条墓碑（幂等）并重试删文件夹；在那之前
+          // 书架照旧藏着这份残留（`loadPendingRemoteDeletionKeys`）。
           try {
-            cloudBookFolders ??= await _backend.listBooks(
-              await _backend.findOrCreateRootFolder(),
-            );
-            for (final SyncFileRef f in cloudBookFolders) {
-              if (f.name != row.itemKey) continue;
+            final List<SyncFileRef> folders = cloudBookFolders ??=
+                List<SyncFileRef>.of(
+                  await _backend.listBooks(
+                    await _backend.findOrCreateRootFolder(),
+                  ),
+                );
+            final List<SyncFileRef> matches = <SyncFileRef>[
+              for (final SyncFileRef f in folders)
+                if (f.name == folderName) f,
+            ];
+            for (final SyncFileRef f in matches) {
               await deleteCloudBookFolder(
                 backend: _backend,
                 db: _db,
                 folderId: f.id,
               );
+              folders.remove(f);
             }
+            // 明确区分「删掉了」与「云盘上本就没有」：后者没删任何东西，但同样说明
+            // 此后出现的同名文件夹是新上传的。
+            await _db.markSyncDeletionCloudFolderState(
+              row.mediaType,
+              row.itemKey,
+              matches.isEmpty
+                  ? TombstoneCloudFolderState.absent
+                  : TombstoneCloudFolderState.deleted,
+            );
           } catch (err) {
             report.noteError(
-              'deletion tombstone: cloud book folder "${row.itemKey}" '
+              'deletion tombstone: cloud book folder "$folderName" '
               'not deleted, retried next sync',
               err,
             );
             continue;
           }
         }
-        await _db.markSyncDeletionPublished(
-          row.mediaType,
-          row.itemKey,
-          nextBaseline,
-        );
+        if (needsPublish) {
+          await _db.markSyncDeletionPublished(
+            row.mediaType,
+            row.itemKey,
+            nextBaseline,
+          );
+        }
       }
 
       // ── 消费：读合并清单 + 未被清单覆盖的逐条标记 → deleteLocal 候选（过基线守卫）──
