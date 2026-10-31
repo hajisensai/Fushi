@@ -8,6 +8,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -74,6 +75,7 @@ class SrsCountTriple extends StatelessWidget {
     required this.newCount,
     required this.learnCount,
     required this.reviewCount,
+    this.reviewPending = false,
     this.dense = false,
     this.tight = false,
   });
@@ -81,6 +83,10 @@ class SrsCountTriple extends StatelessWidget {
   final int newCount;
   final int learnCount;
   final int reviewCount;
+
+  /// RWKV 还没准备好，RWKV 牌组的复习卡没算进 [reviewCount]（[SrsDeckSummary.rwkvPending]）：到期一格显示
+  /// 「准备中」（沙漏），不把 0 显示成「今天没有到期」；有别的（FSRS）牌组的到期时数字照旧、后面跟沙漏。
+  final bool reviewPending;
   final bool dense;
 
   /// 手机竖屏牌组列表：数字列收窄（最小 20）、列间距减半，三个数合成一小块，
@@ -119,10 +125,47 @@ class SrsCountTriple extends StatelessWidget {
         ),
       ),
     );
+    Widget pendingReviewCell() => FushiTooltip(
+      message: t.srs_review_rwkv_pending,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minWidth: tight
+              ? 20
+              : dense
+              ? 24
+              : 32,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: <Widget>[
+            if (reviewCount > 0)
+              Text(
+                '$reviewCount',
+                style: base.copyWith(
+                  color: colors.review,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            FushiIcon(
+              FushiIcons.pending,
+              key: const ValueKey<String>('srs-count-review-pending'),
+              size: (base.fontSize ?? 14) * 1.05,
+              color: colors.review,
+            ),
+          ],
+        ),
+      ),
+    );
+    final String reviewLabel = reviewPending
+        ? '${t.srs_count_review} '
+              '${reviewCount > 0 ? '$reviewCount, ' : ''}'
+              '${t.srs_settings_rwkv_preparing_start}'
+        : '${t.srs_count_review} $reviewCount';
     return Semantics(
       label:
           '${t.srs_count_new} $newCount, ${t.srs_count_learn} $learnCount, '
-          '${t.srs_count_review} $reviewCount',
+          '$reviewLabel',
       child: ExcludeSemantics(
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -130,7 +173,10 @@ class SrsCountTriple extends StatelessWidget {
           children: <Widget>[
             cell(newCount, colors.fresh, t.srs_count_new),
             cell(learnCount, colors.learn, t.srs_count_learn),
-            cell(reviewCount, colors.review, t.srs_count_review),
+            if (reviewPending)
+              pendingReviewCell()
+            else
+              cell(reviewCount, colors.review, t.srs_count_review),
           ],
         ),
       ),
