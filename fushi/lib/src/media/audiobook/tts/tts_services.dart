@@ -9,9 +9,11 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
+import 'package:fushi_engine/tts/local/voicevox_local_engine.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_builtin_providers.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -38,6 +40,19 @@ class TtsServices {
         // uv 自己出网（PyPI / PyTorch / Python 发行包）：经本机中继走 app 代理。
         childProxyEnvironment: () async =>
             appNativeProxyEnvironment(await ensureAppNativeProxyEndpoint()),
+      ),
+      localVoicevox = VoicevoxLocalEngine(
+        prefs: prefs,
+        httpClientFactory: createAppHttpClient,
+        manifest: kVoicevoxManifest,
+      ),
+      localAivisSpeech = VoicevoxLocalEngine(
+        prefs: prefs,
+        httpClientFactory: createAppHttpClient,
+        manifest: kAivisSpeechManifest,
+        // AivisSpeech 首次启动会从 AivisHub 下默认模型：经本机中继走 app 代理。
+        childProxyEnvironment: () async =>
+            appNativeProxyEnvironment(await ensureAppNativeProxyEndpoint()),
       ) {
     registry = TtsProviderRegistry(<TtsProviderDescriptor>[
       for (final TtsProviderDescriptor d in kBuiltinTtsProviders)
@@ -47,6 +62,11 @@ class TtsServices {
         // 官方 Irodori-TTS-Server 同理（本机部署的服务朗读时自动拉起）。
         else if (d is IrodoriServerTtsDescriptor)
           AutoStartIrodoriServerTtsDescriptor(localIrodori)
+        // 本机一键部署的 VOICEVOX / AivisSpeech 同理。
+        else if (d is VoicevoxTtsDescriptor)
+          AutoStartVoicevoxTtsDescriptor(localVoicevox)
+        else if (d is AivisSpeechTtsDescriptor)
+          AutoStartAivisSpeechTtsDescriptor(localAivisSpeech)
         else
           d,
       const SystemTtsDescriptor(),
@@ -75,6 +95,20 @@ class TtsServices {
 
   /// 本机一键部署的官方 Irodori-TTS-Server（桌面三端；服务进程随 app 退出终止）。
   final IrodoriLocalEngine localIrodori;
+
+  /// 本机一键部署的 VOICEVOX ENGINE（桌面三端；服务进程随 app 退出终止）。
+  final VoicevoxLocalEngine localVoicevox;
+
+  /// 本机一键部署的 AivisSpeech Engine（同上）。
+  final VoicevoxLocalEngine localAivisSpeech;
+
+  /// [providerId] 对应的本机一键部署引擎（VOICEVOX / AivisSpeech）；其它引擎 null。
+  VoicevoxLocalEngine? voicevoxLocalFor(String providerId) =>
+      switch (providerId) {
+        VoicevoxTtsDescriptor.providerId => localVoicevox,
+        AivisSpeechTtsDescriptor.providerId => localAivisSpeech,
+        _ => null,
+      };
 
   late final TtsProviderRegistry registry;
 

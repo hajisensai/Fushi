@@ -14,12 +14,16 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_package.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart'
+    show LocalInstallRemoveException;
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart'
+    show localInstallRemoveFailureText;
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -180,7 +184,14 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
       destructive: deleteFiles,
     );
     if (!confirmed) return;
-    await _engine.remove(deleteFiles: deleteFiles);
+    try {
+      await _engine.remove(deleteFiles: deleteFiles);
+    } on LocalInstallRemoveException catch (error) {
+      FushiToast.show(
+        msg: localInstallRemoveFailureText(error),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<void> _showLog() async {
