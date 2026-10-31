@@ -1,10 +1,12 @@
 name: Generate i18n
 description: >-
   Generates fushi/lib/i18n/strings.g.dart (slang + dart format) from the i18n json via
-  fushi/tool/gen_i18n.dart. The file is not tracked in git, so every job that analyzes,
-  tests or builds the app (or resolves the workspace with `flutter pub get` in fushi/)
-  calls this right after "Apply pub cache patches". Needs Flutter on PATH and a finished
-  pub get; uses the Flutter SDK's own dart so the formatter matches the pinned SDK.
+  fushi/tool/gen_i18n.dart. The file is not tracked in git, so every job that builds the
+  app or runs `flutter|dart analyze|test|run` under fushi/ calls this right after
+  "Apply pub cache patches"; jobs that only build / test the headless server or other
+  packages do not (nothing outside fushi/ imports package:fushi). Needs Flutter on PATH
+  and a finished pub get; uses the Flutter SDK's own dart so the formatter matches the
+  pinned SDK.
   Guard: fushi/test/build/strings_g_dart_untracked_guard_test.dart.
 runs:
   using: composite
