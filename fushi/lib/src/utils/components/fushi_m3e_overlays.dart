@@ -307,6 +307,9 @@ class FushiDialogRoute<T> extends DialogRoute<T> {
 /// 宽于此（逻辑像素）时 adaptiveModalSheet 不再从底部抽出，而是居中浮动面板。
 const double kFushiSheetWideBreakpoint = 600;
 
+/// 窗口高度低于此（横屏手机）时，宽屏浮动面板把竖向留白收紧，给内容多留高度。
+const double kFushiSheetShortWindowHeight = 500;
+
 /// 窄屏两档高度：半屏档占屏高比例。
 const double kFushiSheetHalfFraction = 0.55;
 
@@ -446,6 +449,10 @@ class FushiM3eFloatingSheet extends StatelessWidget {
     final MediaQueryData media = MediaQuery.of(context);
     final bool eink = isEinkTheme(context);
     const BorderRadius radius = BorderRadius.all(Radius.circular(28));
+    // 横屏手机弹出软键盘后整窗只剩 ~180dp：上下各 24 的留白再吃掉 48，面板就几乎
+    // 没有可用高度。矮窗口把竖向留白收到 8。
+    final double verticalMargin =
+        media.size.height < kFushiSheetShortWindowHeight ? 8 : 24;
     final Widget content = Material(
       type: MaterialType.transparency,
       child: FushiDialogScope(child: child),
@@ -473,7 +480,7 @@ class FushiM3eFloatingSheet extends StatelessWidget {
         curve: FushiMotion.standard,
         padding:
             media.viewInsets +
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            EdgeInsets.symmetric(horizontal: 24, vertical: verticalMargin),
         child: MediaQuery.removeViewInsets(
           context: context,
           removeLeft: true,
