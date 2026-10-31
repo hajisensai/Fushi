@@ -2080,6 +2080,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Automatic",
   "dict_language_description": "Decides which font renders this dictionary's text. Automatic uses the language the dictionary declares.",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "Dictionary content language",
   "dict_language_tooltip": "Content language",
   "dict_manager_summary": "$n dictionaries · $m enabled",

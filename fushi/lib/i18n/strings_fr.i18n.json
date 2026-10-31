@@ -2080,6 +2080,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "Automatique",
   "dict_language_description": "Détermine quelle police affiche le texte de ce dictionnaire. Automatique utilise la langue déclarée par le dictionnaire.",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "Langue du contenu du dictionnaire",
   "dict_language_tooltip": "Langue du contenu",
   "dict_manager_summary": "$n dictionaries · $m enabled",

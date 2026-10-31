@@ -2080,6 +2080,8 @@
   "dict_keep_alive_title": "Dictionary download",
   "dict_language_auto": "تلقائي",
   "dict_language_description": "تحدد الخط المستخدم لعرض نص هذا القاموس. التلقائي يستخدم اللغة التي يعلنها القاموس.",
+  "dict_language_group_title": "$language · $n",
+  "dict_language_group_unset": "Language not set",
   "dict_language_title": "لغة محتوى القاموس",
   "dict_language_tooltip": "لغة المحتوى",
   "dict_manager_summary": "$n dictionaries · $m enabled",
