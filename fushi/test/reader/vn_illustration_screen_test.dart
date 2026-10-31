@@ -81,7 +81,7 @@ void main() {
         );
         expect(
           result.stdout,
-          contains('PASS 5 VN illustration/sentence screens'),
+          contains('PASS 6 VN illustration/sentence screens'),
         );
       } finally {
         temp.deleteSync(recursive: true);

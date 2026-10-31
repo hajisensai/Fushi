@@ -195,7 +195,8 @@ void main() {
       expect(
         inMiniWindow(mini, revealed: false),
         isFalse,
-        reason: '小窗常态只剩画面 + 字幕 + 底部细线；hover 不是本函数的输入，'
+        reason:
+            '小窗常态只剩画面 + 字幕 + 底部细线；hover 不是本函数的输入，'
             '鼠标扫过不该弹出一层按钮',
       );
     });
@@ -233,4 +234,129 @@ void main() {
       expect(inMiniWindow(pip, revealed: true), isFalse);
     });
   });
+
+  // 字幕列表开 / 关卡顿：侧栏宽度动画每帧都改播放区宽度，controls 子树不能跟着
+  // 每帧重建，只有换档才重建。
+  group('VideoControlsDensityBuilder', () {
+    Widget host({
+      required double width,
+      required ValueNotifier<VideoMiniSurface> surface,
+      required List<VideoControlsDensity> builds,
+      Color color = const Color(0xFF000000),
+    }) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: width,
+            height: 400,
+            child: ColoredBox(
+              color: color,
+              child: VideoControlsDensityBuilder(
+                surface: surface,
+                builder: (BuildContext _, VideoControlsDensitySpec spec) {
+                  builds.add(spec.density);
+                  return const SizedBox.expand();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('宽度连续变化但档位不变时不重建子树', (WidgetTester tester) async {
+      final ValueNotifier<VideoMiniSurface> surface =
+          ValueNotifier<VideoMiniSurface>(VideoMiniSurface.none);
+      addTearDown(surface.dispose);
+      final List<VideoControlsDensity> builds = <VideoControlsDensity>[];
+      final ValueNotifier<double> width = ValueNotifier<double>(1400);
+      addTearDown(width.dispose);
+      await tester.pumpWidget(
+        ValueListenableBuilder<double>(
+          valueListenable: width,
+          builder: (BuildContext _, double w, __) => Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: w,
+                height: 400,
+                child: _Inner(surface: surface, builds: builds),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(builds, <VideoControlsDensity>[VideoControlsDensity.full]);
+      // 模拟侧栏挤窄动画：1400 → 900 逐帧收窄，全程 full 档。
+      for (double w = 1380; w >= 900; w -= 20) {
+        width.value = w;
+        await tester.pump();
+      }
+      expect(builds, <VideoControlsDensity>[VideoControlsDensity.full]);
+      // 跨过 compact 阈值才重建一次。
+      width.value = kVideoControlsCompactWidth - 1;
+      await tester.pump();
+      width.value = kVideoControlsCompactWidth - 40;
+      await tester.pump();
+      expect(builds, <VideoControlsDensity>[
+        VideoControlsDensity.full,
+        VideoControlsDensity.compact,
+      ]);
+    });
+
+    testWidgets('父级重建与小窗表面变化照常刷到子树', (WidgetTester tester) async {
+      final ValueNotifier<VideoMiniSurface> surface =
+          ValueNotifier<VideoMiniSurface>(VideoMiniSurface.none);
+      addTearDown(surface.dispose);
+      final List<VideoControlsDensity> builds = <VideoControlsDensity>[];
+      await tester.pumpWidget(
+        host(width: 1400, surface: surface, builds: builds),
+      );
+      // 父级换了新的 widget（外层状态变化）：必须重建，不能吃缓存。
+      await tester.pumpWidget(
+        host(
+          width: 1400,
+          surface: surface,
+          builds: builds,
+          color: const Color(0xFF111111),
+        ),
+      );
+      expect(builds, <VideoControlsDensity>[
+        VideoControlsDensity.full,
+        VideoControlsDensity.full,
+      ]);
+      // 只改小窗表面、尺寸不变：重新解档并重建。
+      surface.value = VideoMiniSurface.desktopMiniWindow;
+      await tester.pump();
+      expect(builds.last, VideoControlsDensity.mini);
+    });
+  });
+}
+
+/// 只把 [VideoControlsDensityBuilder] 建一次：外层只改宽度时它收不到新配置，
+/// 单纯验证「约束变化」这一条路径。
+class _Inner extends StatefulWidget {
+  const _Inner({required this.surface, required this.builds});
+
+  final ValueNotifier<VideoMiniSurface> surface;
+  final List<VideoControlsDensity> builds;
+
+  @override
+  State<_Inner> createState() => _InnerState();
+}
+
+class _InnerState extends State<_Inner> {
+  late final Widget _child = VideoControlsDensityBuilder(
+    surface: widget.surface,
+    builder: (BuildContext _, VideoControlsDensitySpec spec) {
+      widget.builds.add(spec.density);
+      return const SizedBox.expand();
+    },
+  );
+
+  @override
+  Widget build(BuildContext context) => _child;
 }
