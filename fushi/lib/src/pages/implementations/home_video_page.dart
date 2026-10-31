@@ -150,6 +150,7 @@ import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
+import 'package:fushi/src/sync/remote_delete_availability.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_disc_share.dart';
 import 'package:fushi/src/sync/remote_disc_host_open.dart';
@@ -8323,7 +8324,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 动作：
   /// * 「下载」→ 复用 [_downloadRemote]（与封面下载按钮同一入口，内部已去重）。
   /// * 「信息」→ 弹基本元数据（标题 + 是否含字幕）。
-  /// * 「删除」→ 仅互联后端（[InterconnectSyncBackend]，有 deleteRemoteVideo）才显示；
+  /// * 「删除」→ 仅互联后端（[InterconnectSyncBackend]，有 deleteRemoteVideo）才显示，
+  ///   且只在对端此刻在线、可达时可点（[RemoteDeleteAvailabilityBuilder]）；
   ///   云盘后端（[CloudRemoteVideoClient]）无此能力，按类型门控隐藏，与远端书卡
   ///   [_showRemoteBookDialog] 同一纪律。
   ///
@@ -8331,7 +8333,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// （host `VideoDeletionHost` + `DELETE /api/library/videos/<id>` + client 方法四层）。
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
     final RemoteVideoClient? client = _remoteVideoClient;
-    final bool canDelete = client is InterconnectSyncBackend;
+    final InterconnectSyncBackend? deleter = client is InterconnectSyncBackend
+        ? client
+        : null;
     // 这一集的互联下载任务（反馈 _sZllpFQWm / BUG-3698）：在跑 / 暂停 / 失败时，
     // 「下载」换成暂停 / 继续 / 取消——就在发起下载的同一张卡上，任何平台都可达，
     // 不依赖「浏览 → 下载」。
@@ -8349,105 +8353,111 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ?.streamingClient();
     showMediaItemActions<void>(
       context: context,
-      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
-        cover: _buildRemoteVideoCover(video),
-        coverBackdrop: _remoteCoverProvider(video),
-        coverMaterial: ShelfCoverMaterial.glossyPoster,
-        title: video.title,
-        showLaunchAction: false,
-        quickActions: <DialogQuickAction>[
-          if (cloudStream != null)
-            DialogQuickAction(
-              label: t.remote_video_stream_play,
-              icon: Icons.play_circle_outline,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                unawaited(_openRemote(video, streamClient: cloudStream));
-              },
-            ),
-          if (task == null)
-            DialogQuickAction(
-              label: t.remote_video_download,
-              icon: Icons.download_outlined,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _downloadRemote(video);
-              },
-            ),
-          if (task != null && downloads.canPause(task.id))
-            DialogQuickAction(
-              label: t.download_task_pause,
-              icon: Icons.pause_outlined,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                downloads.pause(task.id);
-              },
-            ),
-          if (task != null && downloads.canRestart(task.id))
-            DialogQuickAction(
-              label: t.download_task_resume,
-              icon: Icons.play_arrow_outlined,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                unawaited(downloads.resume(task.id));
-              },
-            ),
-          if (task != null && downloads.canCancel(task.id))
-            DialogQuickAction(
-              label: t.interconnect_download_cancel,
-              icon: Icons.close,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                unawaited(downloads.cancel(task.id));
-              },
-            ),
-          if (task != null)
-            DialogQuickAction(
-              label: t.interconnect_download_tasks_title,
-              icon: Icons.download_for_offline_outlined,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                unawaited(openInterconnectDownloadTasksPage(context));
-              },
-            ),
-          DialogQuickAction(
-            label: t.remote_video_info,
-            icon: Icons.info_outline,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _showRemoteVideoInfo(video);
-            },
-          ),
-          // 媒体服务器（Jellyfin / Emby）条目：手动标记已看 / 未看并同步到服务器。
-          if (_remoteVideoSource is RemoteVideoPlayedMark)
-            DialogQuickAction(
-              label: video.completedAt != null
-                  ? t.video_mark_unwatched
-                  : t.video_mark_watched,
-              icon: video.completedAt != null
-                  ? FushiIcons.visibilityOff
-                  : FushiIcons.check,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                unawaited(
-                  _markWatched(
-                    watched: video.completedAt == null,
-                    remoteIds: <String>[video.id],
+      // 远端删除只在对端此刻在线、可达时可用（反馈 R8duEiqRuy，与远端书卡同规则）。
+      builder: (BuildContext dialogContext) => RemoteDeleteAvailabilityBuilder(
+        probe: deleter?.probeHostReachability,
+        builder: (BuildContext _, String? deleteDisabledReason) =>
+            MediaItemDialogFrame(
+              cover: _buildRemoteVideoCover(video),
+              coverBackdrop: _remoteCoverProvider(video),
+              coverMaterial: ShelfCoverMaterial.glossyPoster,
+              title: video.title,
+              showLaunchAction: false,
+              quickActions: <DialogQuickAction>[
+                if (cloudStream != null)
+                  DialogQuickAction(
+                    label: t.remote_video_stream_play,
+                    icon: Icons.play_circle_outline,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      unawaited(_openRemote(video, streamClient: cloudStream));
+                    },
                   ),
-                );
-              },
+                if (task == null)
+                  DialogQuickAction(
+                    label: t.remote_video_download,
+                    icon: Icons.download_outlined,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _downloadRemote(video);
+                    },
+                  ),
+                if (task != null && downloads.canPause(task.id))
+                  DialogQuickAction(
+                    label: t.download_task_pause,
+                    icon: Icons.pause_outlined,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      downloads.pause(task.id);
+                    },
+                  ),
+                if (task != null && downloads.canRestart(task.id))
+                  DialogQuickAction(
+                    label: t.download_task_resume,
+                    icon: Icons.play_arrow_outlined,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      unawaited(downloads.resume(task.id));
+                    },
+                  ),
+                if (task != null && downloads.canCancel(task.id))
+                  DialogQuickAction(
+                    label: t.interconnect_download_cancel,
+                    icon: Icons.close,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      unawaited(downloads.cancel(task.id));
+                    },
+                  ),
+                if (task != null)
+                  DialogQuickAction(
+                    label: t.interconnect_download_tasks_title,
+                    icon: Icons.download_for_offline_outlined,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      unawaited(openInterconnectDownloadTasksPage(context));
+                    },
+                  ),
+                DialogQuickAction(
+                  label: t.remote_video_info,
+                  icon: Icons.info_outline,
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _showRemoteVideoInfo(video);
+                  },
+                ),
+                // 媒体服务器（Jellyfin / Emby）条目：手动标记已看 / 未看并同步到服务器。
+                if (_remoteVideoSource is RemoteVideoPlayedMark)
+                  DialogQuickAction(
+                    label: video.completedAt != null
+                        ? t.video_mark_unwatched
+                        : t.video_mark_watched,
+                    icon: video.completedAt != null
+                        ? FushiIcons.visibilityOff
+                        : FushiIcons.check,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      unawaited(
+                        _markWatched(
+                          watched: video.completedAt == null,
+                          remoteIds: <String>[video.id],
+                        ),
+                      );
+                    },
+                  ),
+              ],
+              dangerActions: <DialogDangerAction>[
+                if (deleter != null)
+                  DialogDangerAction(
+                    label: t.dialog_delete,
+                    disabledReason: deleteDisabledReason,
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _confirmDeleteRemoteVideo(video, deleter);
+                    },
+                  ),
+              ],
             ),
-        ],
-        dangerActions: <DialogDangerAction>[
-          if (canDelete)
-            DialogDangerAction(
-              label: t.dialog_delete,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                _confirmDeleteRemoteVideo(video, client);
-              },
-            ),
-        ],
       ),
     );
   }

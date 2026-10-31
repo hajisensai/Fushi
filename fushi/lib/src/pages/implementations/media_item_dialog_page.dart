@@ -90,8 +90,38 @@ final class DialogDangerAction extends DialogAction {
     required super.onPressed,
     super.icon = FushiIcons.delete,
     this.muted = false,
+    this.disabledReason,
   });
   final bool muted;
+
+  /// 非 null = 这一项此刻不可用：照常画出来（让用户知道有这个动作），但点不了，
+  /// 并在旁边写明原因（例：对端离线时的「同时从远端删除」，反馈 R8duEiqRuy）。
+  /// 原因必须写出来，不能只靠灰掉——触屏上没有悬停 tooltip。
+  final String? disabledReason;
+
+  bool get enabled => disabledReason == null;
+}
+
+/// 删除类动作不可用时写在按钮 / 菜单行下方的原因说明。
+class _DangerActionDisabledNote extends StatelessWidget {
+  const _DangerActionDisabledNote({required this.action});
+
+  final DialogDangerAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        action.disabledReason!,
+        key: ValueKey<String>('dialog_danger_disabled_reason_${action.label}'),
+        style: (theme.textTheme.bodySmall ?? const TextStyle()).copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -841,7 +871,9 @@ class MediaItemDialogFrame extends StatelessWidget {
                     if (i > 0) SizedBox(width: tokens.spacing.gap),
                     Expanded(
                       child: FushiOutlinedButton.icon(
-                        onPressed: dangerActions[i].onPressed,
+                        onPressed: dangerActions[i].enabled
+                            ? dangerActions[i].onPressed
+                            : null,
                         destructive: !dangerActions[i].muted,
                         icon: FushiIcon(dangerActions[i].icon, size: 18),
                         label: Text(
@@ -854,6 +886,8 @@ class MediaItemDialogFrame extends StatelessWidget {
                   ],
                 ],
               ),
+              for (final DialogDangerAction action in dangerActions)
+                if (!action.enabled) _DangerActionDisabledNote(action: action),
             ],
           ],
         ),
@@ -967,9 +1001,9 @@ class MediaItemDialogFrame extends StatelessWidget {
           ],
           if (dangerActions.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.card),
-            for (final DialogDangerAction action in dangerActions)
+            for (final DialogDangerAction action in dangerActions) ...<Widget>[
               FushiTextButton.icon(
-                onPressed: action.onPressed,
+                onPressed: action.enabled ? action.onPressed : null,
                 destructive: !action.muted,
                 icon: FushiIcon(action.icon, size: 18),
                 label: Text(
@@ -978,6 +1012,8 @@ class MediaItemDialogFrame extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (!action.enabled) _DangerActionDisabledNote(action: action),
+            ],
           ],
         ],
       ),
@@ -1601,12 +1637,14 @@ class _ContextMenuPanel extends StatelessWidget {
         for (final DialogDangerAction action in frame.dangerActions)
           FushiStaggeredEntrance(
             index: index++,
-            child: _ContextMenuRow(
-              icon: action.icon,
-              label: action.label,
-              onPressed: action.onPressed,
-              destructive: !action.muted,
-            ),
+            child: action.enabled
+                ? _ContextMenuRow(
+                    icon: action.icon,
+                    label: action.label,
+                    onPressed: action.onPressed,
+                    destructive: !action.muted,
+                  )
+                : _ContextMenuDisabledRow(action: action),
           ),
       ],
     ];
@@ -1797,6 +1835,56 @@ class _MenuIconBar extends StatelessWidget {
 
 /// 右键菜单的一行：MD3 行高 40、圆角 12、悬停 / 聚焦铺 secondaryContainer；
 /// Apple 走 [_AppleMenuRow]（macOS 菜单口径）。
+/// 右键菜单里此刻不可用的删除类动作：灰掉、不可点、不进焦点链，第二行写明原因
+/// （[DialogDangerAction.disabledReason]）。两套设计系统共用——灰色语义一致。
+class _ContextMenuDisabledRow extends StatelessWidget {
+  const _ContextMenuDisabledRow({required this.action});
+
+  final DialogDangerAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color disabled = theme.colorScheme.onSurface.withValues(alpha: 0.38);
+    return Semantics(
+      enabled: false,
+      button: true,
+      label: action.label,
+      hint: action.disabledReason,
+      excludeSemantics: true,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              FushiIcon(action.icon, size: 20, color: disabled),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      action.label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: (theme.textTheme.bodyMedium ?? const TextStyle())
+                          .copyWith(color: disabled),
+                    ),
+                    _DangerActionDisabledNote(action: action),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ContextMenuRow extends StatelessWidget {
   const _ContextMenuRow({
     required this.icon,
