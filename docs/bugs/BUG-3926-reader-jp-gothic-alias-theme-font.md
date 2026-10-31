@@ -1,4 +1,4 @@
-## BUG-3892 · 電書協书的章标题在换了主题字体的 Android 机上竖排叠字
+## BUG-3926 · 電書協书的章标题在换了主题字体的 Android 机上竖排叠字
 - **报告**：2026-10-31（反馈 KFtRi4FjnO，小米 23116PN5BC / Android SDK 36 / 3.0.1-debug.21021：「阅读あそびのかんけい时每一章的标题文字都会重叠，导致无法识别」；补充：1～3 卷与 BOOK☆WALKER 特典都这样，手机上出现、Windows 正常，翻页模式，只在阅读界面，目录正常）
 - **真实性**：✅ 真 bug。用户截图放大后标题是一款**毛笔字体**、竖排时逐字叠成一团，正文明朝体正常。
   - 书是電書協 / KADOKAWA 模板：标题 `<div class="start-3em gfont bold"><p><span class="font-1em30">【閑話　…】`，`style-standard.css:499` 给 `.gfont` 的是 `font-family: sans-serif-ja, sans-serif`。`sans-serif-ja` / `sans-serif-ja-v` 是规范留给阅读系统定义的别名，书里不带 `@font-face`，阅读器以前也没定义 → 标题落进 generic `sans-serif`。
