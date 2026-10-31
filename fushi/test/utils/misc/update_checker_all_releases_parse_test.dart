@@ -87,7 +87,7 @@ void main() {
           'tag_name': 'flutter-engine-3.47.6-hdr-output-4',
           'prerelease': true,
         },
-        <String, dynamic>{'tag_name': 'v0.11.1-debug.6650+sha6650'},
+        <String, dynamic>{'tag_name': 'v0.11.1-debug.6650+2dbaf86956'},
         <String, dynamic>{'tag_name': 'manga-ocr-kv-onnx-v1'},
         <String, dynamic>{'tag_name': 'vendor-libmpv'},
         <String, dynamic>{'tag_name': 'fushi-debug-rolling'},
@@ -102,7 +102,7 @@ void main() {
           body,
         ).map((Map<String, dynamic> r) => r['tag_name']),
         <String>[
-          'v0.11.1-debug.6650+sha6650',
+          'v0.11.1-debug.6650+2dbaf86956',
           'v0.11.0',
           '1.4.2-beta',
           '2.1-preview',
@@ -117,7 +117,7 @@ void main() {
         <String, dynamic>{'tag_name': 'v1.2.0', 'prerelease': false},
         <String, dynamic>{'tag_name': 'v0.11.1-beta.12', 'prerelease': true},
         <String, dynamic>{
-          'tag_name': 'v0.11.1-debug.6650+sha6650',
+          'tag_name': 'v0.11.1-debug.6650+2dbaf86956',
           'prerelease': true,
         },
       ]) {
