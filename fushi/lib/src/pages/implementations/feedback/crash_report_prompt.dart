@@ -19,7 +19,13 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart'
     show kLeaderboardDefaultBaseUrl;
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
     show openFeedbackTicket;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiCard;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiFilledButton, FushiTextButton;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiSnackBar;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -133,19 +139,19 @@ class _CrashReportPromptCardState extends State<CrashReportPromptCard> {
         alignment: WrapAlignment.end,
         spacing: 4,
         children: <Widget>[
-          TextButton(
+          FushiTextButton(
             key: const ValueKey<String>('crash-report-decline'),
             style: buttonStyle,
             onPressed: widget.onDecline,
             child: Text(t.feedback_crash_prompt_decline),
           ),
-          TextButton(
+          FushiTextButton(
             key: const ValueKey<String>('crash-report-always'),
             style: buttonStyle,
             onPressed: () => unawaited(_send(true)),
             child: Text(t.feedback_crash_prompt_always),
           ),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             key: const ValueKey<String>('crash-report-send'),
             style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: () => unawaited(_send(false)),
@@ -159,7 +165,7 @@ class _CrashReportPromptCardState extends State<CrashReportPromptCard> {
         children: <Widget>[
           const SizedBox.square(
             dimension: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 12),
           Text(
@@ -183,13 +189,13 @@ class _CrashReportPromptCardState extends State<CrashReportPromptCard> {
             spacing: 4,
             children: <Widget>[
               if (widget.onSkip != null)
-                TextButton(
+                FushiTextButton(
                   key: const ValueKey<String>('crash-report-skip'),
                   style: buttonStyle,
                   onPressed: widget.onSkip,
                   child: Text(t.feedback_crash_prompt_skip),
                 ),
-              FilledButton.tonal(
+              FushiFilledButton.tonal(
                 key: const ValueKey<String>('crash-report-retry'),
                 style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
                 onPressed: () => unawaited(_send(_lastAlways)),
@@ -231,7 +237,7 @@ class _CrashReportPromptCardState extends State<CrashReportPromptCard> {
         const SizedBox(height: 8),
         AnimatedSize(
           duration: motion,
-          curve: Curves.easeOutCubic,
+          curve: context.fushiMotion.spatialFast.curve,
           alignment: Alignment.topCenter,
           child: AnimatedSwitcher(duration: motion, child: actions),
         ),
@@ -443,7 +449,6 @@ class _CrashReportStartupPromptState extends State<CrashReportStartupPrompt> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final Duration motion = fushiMotionDuration(context, FushiMotion.medium);
     return SafeArea(
       child: Align(
@@ -451,16 +456,15 @@ class _CrashReportStartupPromptState extends State<CrashReportStartupPrompt> {
         child: AnimatedSlide(
           offset: _shown ? Offset.zero : const Offset(0, 0.3),
           duration: motion,
-          curve: Curves.easeOutCubic,
+          curve: context.fushiMotion.spatialDefault.curve,
           child: AnimatedOpacity(
             opacity: _shown ? 1 : 0,
             duration: motion,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
-              child: Card(
+              child: FushiCard(
                 key: const ValueKey<String>('crash-report-startup-prompt'),
                 margin: const EdgeInsets.all(16),
-                color: theme.colorScheme.surfaceContainerHigh,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
                   child: CrashReportPromptCard(
