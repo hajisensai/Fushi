@@ -2497,6 +2497,11 @@ class SrsDbStore implements SrsSync2Host {
             SrsFieldKeys.name: trimmed,
             if (parentId != null) SrsFieldKeys.deckParent: parentId,
             if (current.deletedAt != null) SrsFieldKeys.deleted: null,
+            // 新建牌组的 RWKV 排队设置初值：忽略每日复习上限开着（上游 RWKV 推荐）。只在牌组从没写过
+            // 这一项时写——复活的旧牌组保留原值；没有这个键的旧牌组读出为关（[SrsRwkvQueueSettings]）。
+            if (current[SrsFieldKeys.deckRwkvQueue] == null)
+              SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck
+                  .toValue(),
           }, current: current),
         ]),
       );
