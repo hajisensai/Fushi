@@ -3,9 +3,12 @@
 ///
 /// - 状态由后台 isolate 里的原生 runtime 持有（[RwkvWorker]）；本类只发粗粒度命令。
 /// - **增量**：本机作答后追加这一条（[onAnswered]），原生侧同时记一条撤销日志；撤销最近的作答
-///   （复习页 Ctrl+Z）按撤销日志原样撤回（与没回放过它逐位相同），不全量重建、也不在重建期间
-///   退回 FSRS-7。对端同步来的新评分若都在已回放的最后一条之后，也只追加。其余变化（撤销更早的
-///   作答、重置、学习序列重启、插进历史中间的旧日志）→ 后台全量重建。
+///   （复习页 Ctrl+Z）按撤销日志原样撤回（与没回放过它逐位相同），不全量重建。对端同步来的新评分
+///   只要不落在已回放的最后一条**之前的日子**（同一天里早几秒、几分钟——设备之间的时钟差——照样追加），
+///   也只追加。其余变化（撤销更早的作答、重置、学习序列重启、插进更早日子的旧日志）→ 全量重建。
+/// - **重建不停服**：已就绪之后的全量重建在另开的 runtime 里回放，建好再整体换上（[_rebuildInBackground]）；
+///   期间 RWKV 一直就绪，用旧状态与旧分数表照常排队，最多晚一些跟上。只有本机还没有任何 RWKV 状态（权重
+///   没下载 / 第一次回放）或准备失败时才「未就绪」，那时 RWKV 牌组的复习卡等它（不退回 FSRS-7 的到期日）。
 /// - **常驻分数表**（上游 JSchoreels/anki 的 per-deck 分数表 + 预测记忆化，状态在原生侧）：排队时
 ///   每张候选卡的 R 按（卡、最后一条有效日志、牌组、预设）记在原生分数表里，省掉的是「读历史、
 ///   建查询行」；原生侧作答 / 撤销只作废同一张卡与同一条笔记的项。
@@ -311,21 +314,11 @@ class SrsRwkvService implements SrsRwkvScheduling {
   /// 时等同 [start]（force）。
   Future<void> rebuild() async {
     if (_closed) return;
-    final SrsRwkvBackend? backend = _backend;
-    if (backend == null || _current.phase != SrsRwkvPhase.ready) {
+    if (_backend == null || _current.phase != SrsRwkvPhase.ready) {
       await start(force: true);
       return;
     }
-    _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
-    await (_preparing ??= () async {
-      try {
-        await _rebuild(backend);
-        _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
-      } catch (error, stack) {
-        _log('RWKV rebuild failed: $error\n$stack');
-        _fail(error);
-      }
-    }().whenComplete(() => _preparing = null));
+    await _rebuildInBackground(force: true);
   }
 
   static const Duration _retryAfter = Duration(minutes: 10);
@@ -481,7 +474,12 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _snapshotTimer?.cancel();
     _snapshotTimer = Timer(_snapshotIdle, () {
       _snapshotTimer = null;
-      if (_closed || _appendsSinceSnapshot == 0) return;
+      // 后台重建已换上新 runtime：旧的状态不能配新的指纹写进快照。
+      if (_closed ||
+          _appendsSinceSnapshot == 0 ||
+          !identical(backend, _backend)) {
+        return;
+      }
       unawaited(
         _serial(() => _saveSnapshot(backend)).catchError((Object error) {
           _log('RWKV snapshot save failed: $error');
@@ -490,8 +488,106 @@ class SrsRwkvService implements SrsRwkvScheduling {
     });
   }
 
-  /// 全量重建：全部卡的保留评分行由 Rust 一次取出、排好序（[SrsDbStore.rwkvReplay]），按时间回放。
+  /// 第一次准备（没有可恢复的快照）：在正在用的 runtime 上全量回放，期间「准备中」。
   Future<void> _rebuild(SrsRwkvBackend backend) async {
+    final ({_LogPrint print, int? lastAt}) built = await _replayAll(
+      backend,
+      serial: _serial,
+      onProgress: (int done, int total) =>
+          _set(SrsRwkvStatus(SrsRwkvPhase.preparing, done: done, total: total)),
+    );
+    await _serial(() async {
+      _replayed = built.print;
+      _lastAt = built.lastAt;
+      await _saveSnapshot(backend);
+    });
+  }
+
+  /// 后台重建正在跑（[_rebuildInBackground]）。
+  Future<void>? _rebuilding;
+
+  /// 测试用：正在跑的后台重建结束（没有时立即完成）。
+  @visibleForTesting
+  Future<void> get debugRebuildDone => _rebuilding ?? Future<void>.value();
+  DateTime? _rebuildFailedAt;
+
+  /// 已就绪时的全量重建（日志被改写、设置里「重建」）：另开一个 runtime 回放全部历史，建好后在 [_serial]
+  /// 里整体换上（状态、指纹、最后评分时刻、分数表一起换），再关掉旧的。期间 RWKV 一直就绪，旧 runtime
+  /// 照常排队、照常追加（追加的行在新状态的指纹之后，换上后会再追加进新状态）。以前重建期间退回「准备中」，
+  /// RWKV 牌组的复习卡就出不来。失败时留着旧状态继续用，[_retryAfter] 后（或设置里「重建」）再试。
+  Future<void> _rebuildInBackground({bool force = false}) {
+    final Future<void>? running = _rebuilding;
+    if (running != null) return running;
+    final DateTime? failedAt = _rebuildFailedAt;
+    if (_closed ||
+        (!force &&
+            failedAt != null &&
+            DateTime.now().difference(failedAt) < _retryAfter)) {
+      return Future<void>.value();
+    }
+    return _rebuilding = () async {
+      SrsRwkvBackend? fresh;
+      try {
+        final SrsRwkvBackend next = fresh = await _open(models.weightsFile);
+        // 新 runtime 只有这里在用：原生调用不必排进旧 runtime 的串行队列（排进去会挡住排队查询）。
+        final ({_LogPrint print, int? lastAt}) built = await _replayAll(
+          next,
+          serial: (Future<void> Function() task) => task(),
+          onProgress: (int done, int total) =>
+              _set(SrsRwkvStatus(SrsRwkvPhase.ready, done: done, total: total)),
+        );
+        if (_closed) return;
+        final SrsRwkvBackend? old = await _serial(() async {
+          final SrsRwkvBackend? previous = _backend;
+          _backend = next;
+          _replayed = built.print;
+          _lastAt = built.lastAt;
+          _checkedRevision = null;
+          // 分数表在旧 runtime 里：新的一张空表，下次排队整表重算。
+          _scoresClearKey = null;
+          _scoresRequeryKey = null;
+          _scoresToday = null;
+          _stateChangesSinceRequery = 0;
+          _appendsSinceSnapshot = 0;
+          await _saveSnapshot(next);
+          return previous;
+        });
+        fresh = null;
+        _rebuildFailedAt = null;
+        _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
+        if (old != null && !identical(old, next)) {
+          // 排在已入队的旧 runtime 任务之后关。
+          unawaited(
+            _serial(old.close).catchError((Object error) {
+              _log('RWKV old runtime close failed: $error');
+            }),
+          );
+        }
+      } catch (error, stack) {
+        _rebuildFailedAt = DateTime.now();
+        _log(
+          'RWKV background rebuild failed (keeping the current state): $error\n$stack',
+        );
+        if (!_closed) _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
+      } finally {
+        if (fresh != null) {
+          try {
+            await fresh.close();
+          } catch (error) {
+            _log('RWKV rebuild runtime close failed: $error');
+          }
+        }
+      }
+    }().whenComplete(() => _rebuilding = null);
+  }
+
+  /// 全量回放：全部卡的保留评分行由 Rust 一次取出、排好序（[SrsDbStore.rwkvReplay]），按时间回放进 [backend]。
+  /// 返回回放到的日志指纹与最后一条评分时刻，由调用方记下。[serial] 包住对 [backend] 的原生调用。
+  Future<({_LogPrint print, int? lastAt})> _replayAll(
+    SrsRwkvBackend backend, {
+    required Future<void> Function(Future<void> Function() task) serial,
+    required void Function(int done, int total) onProgress,
+  }) async {
     _LogPrint fingerprint = await _fingerprint();
     await debugAfterRebuildFingerprint?.call();
     final SrsDayContext day = await store.dayContext();
@@ -537,8 +633,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
     }
     fingerprint = (count: replay.count, maxRowId: replay.maxRowId);
     final RwkvRows rows = replay.rows;
-    _set(SrsRwkvStatus(SrsRwkvPhase.preparing, done: 0, total: rows.length));
-    await _serial(() async {
+    onProgress(0, rows.length);
+    await serial(() async {
       await backend.reset();
       const int block = 65536;
       final Uint8List bytes = rows.bytes;
@@ -555,14 +651,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
             ),
           ),
         );
-        _set(
-          SrsRwkvStatus(SrsRwkvPhase.preparing, done: end, total: rows.length),
-        );
+        onProgress(end, rows.length);
       }
-      _replayed = fingerprint;
-      _lastAt = replay.lastAt;
-      await _saveSnapshot(backend);
     });
+    return (print: fingerprint, lastAt: replay.lastAt);
   }
 
   /// 卡 → 数字身份（53 位 hash，与 Anki 导出同一套），每卡 4 个：卡 / 笔记 / 牌组 / 预设（= 参数归属牌组）。
@@ -584,9 +676,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
     }
   }
 
-  /// 对齐日志：只多了能追加的新评分 → 追加，返回 true（状态是最新的）；需要全量重建时在后台
-  /// 启动重建并返回 false（调用方这次不用 RWKV，不等几秒到几十秒的重建）。串行：作答与预览可能
-  /// 同时调用，同一条日志只能追加一次。
+  /// 对齐日志：只多了能追加的新评分 → 追加。需要全量重建时在后台另开 runtime 重建
+  /// （[_rebuildInBackground]），这次照旧用当前状态。返回 false 只在 RWKV 还没有可用状态（未就绪 / 已关闭）时。
+  /// 串行：作答与预览可能同时调用，同一条日志只能追加一次。
   Future<bool> refresh() {
     final Future<bool> result = _refreshQueue.then((_) => _refreshOnce());
     _refreshQueue = result.then<void>((_) {}, onError: (_) {});
@@ -594,14 +686,14 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   Future<bool> _refreshOnce() async {
-    final SrsRwkvBackend? backend = _backend;
-    final _LogPrint? replayed = _replayed;
     if (_closed ||
-        backend == null ||
-        replayed == null ||
+        _backend == null ||
+        _replayed == null ||
         _current.phase != SrsRwkvPhase.ready) {
       return false;
     }
+    // 后台重建期间旧状态照常用；新评分等换上新状态后再对齐（新状态的指纹在它们之前，会追加进去）。
+    if (_rebuilding != null) return true;
     // 先比 store 的内存修订号（零成本）：没变就不必扫日志表（每张卡出题都会走到这里）。
     final String revision = await store.changeFingerprint();
     if (revision == _checkedRevision) return true;
@@ -609,6 +701,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     // 一题，读到的日志就比指纹新。这时按新指纹再对一次，而不是当成「历史被改写」去全量重建
     // ——连续答题时那样会一直退回「RWKV 还没准备好」。
     for (int attempt = 0; attempt < 10; attempt++) {
+      final SrsRwkvBackend backend = _backend!;
       final _LogPrint done = _replayed!;
       final (_LogPrint now, int newRows, _) = await _tailAfter(done.maxRowId);
       if (now == done) {
@@ -626,17 +719,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
       _checkedRevision = revision;
       return true;
     }
-    _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
-    _preparing ??= () async {
-      try {
-        await _rebuild(backend);
-        _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
-      } catch (error, stack) {
-        _log('RWKV rebuild failed: $error\n$stack');
-        _fail(error);
-      }
-    }().whenComplete(() => _preparing = null);
-    return false;
+    unawaited(_rebuildInBackground());
+    return true;
   }
 
   /// Rust 给出的日志尾巴 → [_NewLog]（kind 与撤销目标都由 `ffsrs_store_rwkv_log_tail` 直接给出）。
@@ -645,8 +729,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
       (id: l.id, cardId: l.cardId, kind: l.kind, at: l.at, revokes: l.revokes),
   ];
 
-  /// rowid 之后的新日志若只有评分与撤销、评分都不早于已回放的最后一条且各是其卡末尾的保留评分、
-  /// 撤销撤的都是撤销日志里最近的那几条（复习页的 Ctrl+Z），就按时间顺序追加 / 撤回并返回 true；
+  /// rowid 之后的新日志若只有评分与撤销、评分都不落在已回放的最后一条之前的日子（按日序，见下）且各是其卡末尾的
+  /// 保留评分、撤销撤的都是撤销日志里最近的那几条（复习页的 Ctrl+Z），就按日志顺序追加 / 撤回并返回 true；
   /// 否则返回 false（调用方全量重建；中途失败时状态可能已改了一半，重建会先 reset）。读的途中
   /// 日志表又变了（指纹不再是 [now]）返回 null，调用方按新指纹重来。
   Future<bool?> _appendNew(
@@ -684,8 +768,15 @@ class SrsRwkvService implements SrsRwkvScheduling {
       for (final _NewLog r in rows)
         if (r.kind == SrsLogKind.review) r,
     ];
-    if (ratings.any((_NewLog r) => _lastAt != null && r.at < _lastAt!)) {
-      return false;
+    // RWKV 的时间轴是日序（day_offset），原生侧只要求它不倒退。以前只要有一条评分早于已回放的最后一条
+    // （哪怕同一天里早几秒：对端设备时钟慢一点就会这样）就全量重建，每次同步都可能重算整个库。现在只有落在
+    // 更早日子的评分（离线多天的设备同步上来）才重建；同一天内的按日志顺序追加。
+    final SrsDayContext day = await store.dayContext();
+    int? lastDay = _lastAt == null ? null : day.dayIndexOf(_lastAt!);
+    for (final _NewLog r in ratings) {
+      final int d = day.dayIndexOf(r.at);
+      if (lastDay != null && d < lastDay) return false;
+      lastDay = d;
     }
     // 同一张卡可能来了多条（两次对齐之间学习步「重来」后又答了一次）：按卡一次算出它末尾这几条
     // 的行，再按全局时间顺序拼。以前一见到同卡多条就全量重建，复习中会反复退回「RWKV 还没准备好」。
@@ -693,7 +784,6 @@ class SrsRwkvService implements SrsRwkvScheduling {
     for (final _NewLog r in ratings) {
       (idsByCard[r.cardId] ??= <String>[]).add(r.id);
     }
-    final SrsDayContext day = await store.dayContext();
     final SrsDeckTree tree = await store.deckTree();
     final List<_CardKey> cardKeys = <_CardKey>[];
     for (final String cardId in idsByCard.keys) {
@@ -722,6 +812,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
       for (final _NewLog r in rows) r.revokes ?? r.id,
     ]);
     return _serial(() async {
+      // 排队期间后台重建换上了新 runtime：这批行属于新状态的指纹之后，按新状态重来。
+      if (!identical(backend, _backend)) return null;
       List<RwkvRows> pending = <RwkvRows>[];
       List<int> pendingTags = <int>[];
       Future<void> flush() async {
@@ -747,7 +839,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
       await flush();
       _stateChangesSinceRequery += rows.length;
       _replayed = now;
-      if (ratings.isNotEmpty) _lastAt = ratings.last.at;
+      for (final _NewLog r in ratings) {
+        if (_lastAt == null || r.at > _lastAt!) _lastAt = r.at;
+      }
       _appendsSinceSnapshot += fetched.length;
       if (fetched.isNotEmpty) _scheduleSnapshot(backend);
       return true;
@@ -835,7 +929,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
       if (requeryAfterThis) _requeryInBackground(backend, today, nowMs);
       return <double>[for (final double v in scores) v];
     } catch (error, stack) {
-      // 例如本机时钟早于已回放的最后一条评分（对端设备时钟超前）：这一次按到期日排。
+      // 例如后台重建刚换下的旧 runtime 已关：这一次 RWKV 牌组的复习卡先不出，下次排队用新状态。
       _log('RWKV instant retrievability unavailable: $error\n$stack');
       return null;
     }
