@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 176358 (10374 per locale)
+/// Strings: 176392 (10376 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -10567,8 +10567,18 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_import_options_title => 'Import options';
   String get srs_import_pick_title => 'Import Anki package';
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
   String srs_import_report_default_fsrs({required Object preset}) =>
@@ -32637,8 +32647,20 @@ class _StringsAr extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -58075,8 +58097,20 @@ class _StringsDe extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -83635,8 +83669,20 @@ class _StringsEs extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -109283,8 +109329,20 @@ class _StringsFr extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -134695,8 +134753,20 @@ class _StringsId extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -160148,8 +160218,20 @@ class _StringsIt extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -184891,8 +184973,20 @@ class _StringsJa extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -209369,8 +209463,20 @@ class _StringsKo extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -234554,8 +234660,20 @@ class _StringsNl extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -260039,8 +260157,20 @@ class _StringsPtBr extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -285501,8 +285631,20 @@ class _StringsRu extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -310715,8 +310857,20 @@ class _StringsTh extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -335994,8 +336148,20 @@ class _StringsTr extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -361268,8 +361434,20 @@ class _StringsVi extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -385046,8 +385224,19 @@ class _StringsZhCn extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => '新增卡片：${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '有 ${n} 条笔记因笔记类型冲突未导入';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) => '${n} 条「${name}」类型的笔记被跳过：Fushi 里对应的笔记类型种类不同（普通与填空）';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} 条笔记被跳过：包里缺少它们的笔记类型';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} 条「${name}」类型的笔记被跳过：Fushi 里已有同一批笔记，但属于另一个笔记类型。要导入它们，先在浏览里用「更改笔记类型」把这些笔记改成「${name}」，再重新导入';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       '预设「${preset}」在 Anki 里没有 FSRS 参数（SM-2 或没优化过），对应牌组改用 Fushi 默认的 RWKV';
@@ -408622,8 +408811,20 @@ class _StringsZhHk extends _StringsEn {
   @override
   String srs_import_report_cards({required Object n}) => 'Cards added: ${n}';
   @override
-  String srs_import_report_conflicts({required Object n}) =>
-      '${n} notes were not imported because their note type conflicts';
+  String srs_import_report_conflicts_kind_mismatch({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+  @override
+  String srs_import_report_conflicts_missing_type({required Object n}) =>
+      '${n} notes were skipped because their note type is missing from the package';
+  @override
+  String srs_import_report_conflicts_type_changed({
+    required Object n,
+    required Object name,
+  }) =>
+      '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
   @override
   String srs_import_report_default_algorithm({required Object preset}) =>
       'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -430888,9 +431089,15 @@ extension on _StringsEn {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -452440,9 +452647,15 @@ extension on _StringsAr {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -474048,9 +474261,15 @@ extension on _StringsDe {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -495660,9 +495879,15 @@ extension on _StringsEs {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -517283,9 +517508,15 @@ extension on _StringsFr {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -538866,9 +539097,15 @@ extension on _StringsId {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -560458,9 +560695,15 @@ extension on _StringsIt {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -581984,9 +582227,15 @@ extension on _StringsJa {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -603459,9 +603708,15 @@ extension on _StringsKo {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -625024,9 +625279,15 @@ extension on _StringsNl {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -646620,9 +646881,15 @@ extension on _StringsPtBr {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -668220,9 +668487,15 @@ extension on _StringsRu {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -689780,9 +690053,15 @@ extension on _StringsTh {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -711358,9 +711637,15 @@ extension on _StringsTr {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -732931,9 +733216,15 @@ extension on _StringsVi {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';
@@ -754320,8 +754611,14 @@ extension on _StringsZhCn {
         return '导入 Anki 包';
       case 'srs_import_report_cards':
         return ({required Object n}) => '新增卡片：${n}';
-      case 'srs_import_report_conflicts':
-        return ({required Object n}) => '有 ${n} 条笔记因笔记类型冲突未导入';
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} 条「${name}」类型的笔记被跳过：Fushi 里对应的笔记类型种类不同（普通与填空）';
+      case 'srs_import_report_conflicts_missing_type':
+        return ({required Object n}) => '${n} 条笔记被跳过：包里缺少它们的笔记类型';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} 条「${name}」类型的笔记被跳过：Fushi 里已有同一批笔记，但属于另一个笔记类型。要导入它们，先在浏览里用「更改笔记类型」把这些笔记改成「${name}」，再重新导入';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             '预设「${preset}」在 Anki 里没有 FSRS 参数（SM-2 或没优化过），对应牌组改用 Fushi 默认的 RWKV';
@@ -775694,9 +775991,15 @@ extension on _StringsZhHk {
         return 'Import Anki package';
       case 'srs_import_report_cards':
         return ({required Object n}) => 'Cards added: ${n}';
-      case 'srs_import_report_conflicts':
+      case 'srs_import_report_conflicts_kind_mismatch':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)';
+      case 'srs_import_report_conflicts_missing_type':
         return ({required Object n}) =>
-            '${n} notes were not imported because their note type conflicts';
+            '${n} notes were skipped because their note type is missing from the package';
+      case 'srs_import_report_conflicts_type_changed':
+        return ({required Object n, required Object name}) =>
+            '${n} notes of note type "${name}" were skipped: they already exist in Fushi under a different note type. To import them, use Change note type in Browse to switch those notes to "${name}", then import again';
       case 'srs_import_report_default_algorithm':
         return ({required Object preset}) =>
             'Preset "${preset}" had no FSRS parameters in Anki (SM-2 or never optimized), so its decks use Fushi\'s default, RWKV';

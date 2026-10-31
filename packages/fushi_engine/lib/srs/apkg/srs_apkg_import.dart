@@ -1563,6 +1563,7 @@ class _Importer {
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
 
     final bool isNew = existing == null;
+    final bool noteDeleted = existing != null && existing.deletedAt != null;
     // 先前导入过、后来在本机被删：重新导入即恢复（与牌组同一条规则，见 [_importDecks]；Anki
     // 里删掉的笔记不留身份，再导入就是新加）。以前按「已存在、较新时更新」走，本机内容的
     // 修改时刻晚于来源 mod → 记为未改动，删除标记永远不清：牌组复活了、笔记仍是删除态，
@@ -1571,8 +1572,12 @@ class _Importer {
     // 笔记类型这次被恢复的，它的笔记同样算恢复：删笔记类型时它们一并被删（[SrsNoteTypeStoreOps.deleteNoteType]），
     // 先前的导入只清了笔记的删除标记、笔记类型仍是删除态，笔记还在、却因笔记类型已删全部隐藏（再导入时
     // 「较新时更新」又算成已更新）——这些也要回到来源内容、卡片回到来源牌组。
-    final bool noteDeleted = existing != null && existing.deletedAt != null;
+    //
+    // 本机已删的笔记连笔记类型也回到来源：Anki 里删掉的笔记不留身份，来源换过笔记类型（Anki「更改
+    // 笔记类型」不换 guid）再导入就是按新类型新加。以前「本机笔记类型不同 → 冲突跳过」排在恢复
+    // 之前，删了的笔记照样被拦，用户删光重导也永远导不回来（BUG-3887）。
     final bool restored = existing != null && (noteDeleted || nt.restored);
+    final bool retype = noteDeleted && existing?.noteTypeId != nt.id;
     final List<(_SrcCard, String)> cardIds = _cardIdsOf(nt, noteId, cards);
     bool update = false;
     if (isNew) {
@@ -1590,7 +1595,7 @@ class _Importer {
         ),
       );
       _pendingNewNotes.add((noteId, cards.length));
-    } else if (existing.noteTypeId != nt.id) {
+    } else if (existing.noteTypeId != nt.id && !retype) {
       report.conflictNotes.add(
         SrsImportNoteIssue(
           guid: guid,
@@ -1615,6 +1620,7 @@ class _Importer {
       // 比较牌组用）要在它落库之后重读才是真值（没有自己牌组记录的卡跟着笔记走）。
       await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
         if (noteDeleted) SrsFieldKeys.deleted: null,
+        if (retype) SrsFieldKeys.noteType: nt.id,
         for (final MapEntry<String, String> f in fields.entries)
           if (existing.field(f.key) != f.value)
             SrsFieldKeys.noteField(f.key): f.value,
