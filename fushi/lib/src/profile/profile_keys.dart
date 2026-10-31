@@ -15,6 +15,8 @@ import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show kPageBackdropDeviceLocalPrefKeys;
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
@@ -62,6 +64,8 @@ class ProfileKeys {
     //
     // 键名从 [ModuleId.devicePrefKeys] 生成（开关 + 底栏顺序），不手抄——加模块时这里自动跟上。
     ...ModuleId.devicePrefKeys,
+    // 页面背景图片的本机文件路径与取色缓存：换 Profile 不该换掉这台设备上的文件。
+    ...kPageBackdropDeviceLocalPrefKeys,
     'active_profile_id',
     // 绑定临时切换前用户自己选的配置 id：与 active_profile_id 同族。
     'profile_fallback_id',
