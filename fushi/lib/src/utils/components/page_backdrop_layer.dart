@@ -131,7 +131,7 @@ class _PageBackdropLayerState extends State<PageBackdropLayer>
     };
     if (_spins || t == 0) return content;
     // 漂移：极慢平移 + 轻微放大（放大量盖住平移露出的边）。
-    final double e = Curves.easeInOut.transform(t);
+    final double e = FushiMotion.ambient.transform(t);
     return Transform.translate(
       offset: Offset(-0.019 * size.width * e, 0.0175 * size.height * e),
       child: Transform.scale(scale: 1.04 + 0.02 * e, child: content),

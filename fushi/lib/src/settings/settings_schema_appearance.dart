@@ -224,7 +224,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.page_backdrop',
             title: t.page_backdrop_title,
             subtitle: t.page_backdrop_hint,
-            icon: Icons.wallpaper_outlined,
+            icon: FushiIcons.pageBackdrop,
             child: buildPageBackdropDestination,
           ),
           // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再

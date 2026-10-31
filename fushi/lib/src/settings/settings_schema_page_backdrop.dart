@@ -9,6 +9,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
@@ -16,6 +18,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
 import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 
 /// 「外观 › 页面背景」子页（2026-10-30）：预设缩略图选择器 + 按预设出现的调节行。
 /// 选「自定义图片」时换成图片 / 竖屏图 / 模糊 / 遮罩浓度 / 从图片取色几行。
@@ -24,7 +28,7 @@ SettingsDestination buildPageBackdropDestination() {
     id: SettingsDestinationId.appearance,
     title: t.page_backdrop_title,
     summary: t.page_backdrop_hint,
-    icon: Icons.wallpaper_outlined,
+    icon: FushiIcons.pageBackdrop,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'appearance.page_backdrop.section.style',
@@ -35,7 +39,7 @@ SettingsDestination buildPageBackdropDestination() {
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'appearance.page_backdrop.preset',
-            icon: Icons.wallpaper_outlined,
+            icon: FushiIcons.pageBackdrop,
             searchTitle: t.page_backdrop_style,
             builder: (SettingsContext settingsContext) =>
                 _PageBackdropPresetPicker(settingsContext: settingsContext),
@@ -44,7 +48,7 @@ SettingsDestination buildPageBackdropDestination() {
             id: 'appearance.page_backdrop.strength',
             title: t.page_backdrop_strength,
             subtitle: t.page_backdrop_strength_hint,
-            icon: Icons.opacity_outlined,
+            icon: FushiIcons.opacity,
             visible: (SettingsContext c) => _isShapePreset(_theme(c)),
             options: <SettingsSegmentOption<PageBackdropStrength>>[
               SettingsSegmentOption<PageBackdropStrength>(
@@ -83,7 +87,7 @@ SettingsDestination buildPageBackdropDestination() {
                 pageBackdropSettings.value.landscapeImagePath == null
                 ? t.page_backdrop_image_empty
                 : t.page_backdrop_image_set,
-            icon: Icons.image_outlined,
+            icon: FushiIcons.image,
             onTap: (SettingsContext c) =>
                 pickPageBackdropImage(c, portrait: false),
           ),
@@ -94,7 +98,7 @@ SettingsDestination buildPageBackdropDestination() {
                 pageBackdropSettings.value.portraitImagePath == null
                 ? t.page_backdrop_portrait_image_shared
                 : t.page_backdrop_image_set,
-            icon: Icons.stay_current_portrait_outlined,
+            icon: FushiIcons.portraitImage,
             visible: (_) => pageBackdropSettings.value.hasCustomImage,
             onTap: (SettingsContext c) =>
                 pickPageBackdropImage(c, portrait: true),
@@ -102,7 +106,7 @@ SettingsDestination buildPageBackdropDestination() {
           SettingsNavigationItem(
             id: 'appearance.page_backdrop.portrait_image_clear',
             title: t.page_backdrop_portrait_image_clear,
-            icon: Icons.restart_alt_outlined,
+            icon: FushiIcons.restart,
             visible: (_) =>
                 pageBackdropSettings.value.hasCustomImage &&
                 pageBackdropSettings.value.portraitImagePath != null,
@@ -114,7 +118,7 @@ SettingsDestination buildPageBackdropDestination() {
           SettingsSegmentedItem<PageBackdropBlur>(
             id: 'appearance.page_backdrop.blur',
             title: t.page_backdrop_blur,
-            icon: Icons.blur_on_outlined,
+            icon: FushiIcons.blur,
             visible: (_) => pageBackdropSettings.value.hasCustomImage,
             options: <SettingsSegmentOption<PageBackdropBlur>>[
               SettingsSegmentOption<PageBackdropBlur>(
@@ -139,7 +143,7 @@ SettingsDestination buildPageBackdropDestination() {
             id: 'appearance.page_backdrop.scrim',
             title: t.page_backdrop_scrim,
             subtitle: t.page_backdrop_scrim_hint,
-            icon: Icons.gradient_outlined,
+            icon: FushiIcons.scrim,
             visible: (_) => pageBackdropSettings.value.hasCustomImage,
             min: kPageBackdropScrimMin,
             max: kPageBackdropScrimMax,
@@ -167,7 +171,7 @@ SettingsDestination buildPageBackdropDestination() {
           ),
           SettingsCustomItem(
             id: 'appearance.page_backdrop.accent_candidates',
-            icon: Icons.palette_outlined,
+            icon: FushiIcons.appearance,
             searchTitle: t.page_backdrop_accent_candidates,
             visible: (SettingsContext c) =>
                 pageBackdropSettings.value.hasCustomImage &&
@@ -190,7 +194,7 @@ SettingsDestination buildPageBackdropDestination() {
             id: 'appearance.page_backdrop.motion',
             title: t.page_backdrop_motion,
             subtitle: t.page_backdrop_motion_hint,
-            icon: Icons.motion_photos_on_outlined,
+            icon: FushiIcons.ambientMotion,
             value: (SettingsContext c) => _theme(c).pageBackdropMotion,
             onChanged: (SettingsContext c, bool value) =>
                 _theme(c).setPageBackdropMotion(value),
@@ -265,21 +269,24 @@ class _PageBackdropPresetPicker extends StatelessWidget {
                 children: <Widget>[
                   SizedBox(
                     height: 112,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      itemCount: PageBackdropPreset.values.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 12),
-                      itemBuilder: (BuildContext context, int index) {
-                        final PageBackdropPreset preset =
-                            PageBackdropPreset.values[index];
-                        return _PresetTile(
-                          preset: preset,
-                          settings: settings,
-                          selected: settings.preset == preset,
-                          onTap: () => _select(preset, settings),
-                        );
-                      },
+                    // 桌面鼠标按住横拖也要能滚（默认 dragDevices 不含鼠标）。
+                    child: HorizontalDragScrollable(
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        itemCount: PageBackdropPreset.values.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 12),
+                        itemBuilder: (BuildContext context, int index) {
+                          final PageBackdropPreset preset =
+                              PageBackdropPreset.values[index];
+                          return _PresetTile(
+                            preset: preset,
+                            settings: settings,
+                            selected: settings.preset == preset,
+                            onTap: () => _select(preset, settings),
+                          );
+                        },
+                      ),
                     ),
                   ),
                   if (apple)
@@ -335,6 +342,10 @@ class _PresetTile extends StatelessWidget {
         preset == PageBackdropPreset.custom &&
         settings.landscapeImagePath == null;
     final String label = _presetLabel(preset);
+    // M3E 选中形变：小件圆角 → 卡片圆角（取形状分级 token，不手写数字）。
+    final BorderRadius radius = selected
+        ? FushiM3eShape.cardRadius
+        : FushiM3eShape.smallRadius;
     return Semantics(
       button: true,
       selected: selected,
@@ -342,7 +353,7 @@ class _PresetTile extends StatelessWidget {
       child: FushiPressScale(
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: radius,
           child: SizedBox(
             width: 112,
             child: Column(
@@ -355,7 +366,7 @@ class _PresetTile extends StatelessWidget {
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
                     color: cs.surface,
-                    borderRadius: BorderRadius.circular(selected ? 22 : 14),
+                    borderRadius: radius,
                     border: Border.all(
                       color: selected ? cs.primary : cs.outlineVariant,
                       width: selected ? 3 : 1,
@@ -365,10 +376,7 @@ class _PresetTile extends StatelessWidget {
                     fit: StackFit.expand,
                     children: <Widget>[
                       if (needsImage)
-                        Icon(
-                          Icons.add_photo_alternate_outlined,
-                          color: cs.onSurfaceVariant,
-                        )
+                        Icon(FushiIcons.addImage, color: cs.onSurfaceVariant)
                       else
                         PageBackdropLayer(
                           settings: settings.copyWith(preset: preset),
@@ -389,7 +397,7 @@ class _PresetTile extends StatelessWidget {
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              Icons.check,
+                              FushiIcons.check,
                               size: 14,
                               color: cs.onPrimary,
                             ),
