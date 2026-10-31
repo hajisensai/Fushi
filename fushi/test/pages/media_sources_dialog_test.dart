@@ -19,7 +19,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
-import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';
@@ -48,7 +47,6 @@ Future<void> _pumpDialog(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((ref) => appModel),
-        platformServicesProvider.overrideWithValue(testPlatformServices()),
       ],
       child: MaterialApp(
         // 固定窄窗，避免 master-detail 宽窗分支（既往测试教训）。
@@ -294,10 +292,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          platformServicesProvider.overrideWithValue(testPlatformServices()),
-        ],
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
         child: MaterialApp(
           home: MediaQuery(
             data: const MediaQueryData(size: Size(420, 800)),

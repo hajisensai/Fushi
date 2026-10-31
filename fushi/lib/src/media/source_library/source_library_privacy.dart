@@ -12,6 +12,8 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -77,11 +79,12 @@ Future<SourceLibraryPrivacyResult> setSourceLibraryPrivate({
 }
 
 /// 打开来源 [source] 的隐私开关对话框；返回最终是否私密（null = 没改过）。
+/// [withdrawFromLeaderboard] 只给测试注入，省略 = 对话框自己取排行榜服务。
 Future<bool?> showSourceLibraryPrivacyDialog(
   BuildContext context, {
   required FushiDatabase db,
   required SourceLibraryRow source,
-  required Future<bool> Function() withdrawFromLeaderboard,
+  Future<bool> Function()? withdrawFromLeaderboard,
 }) => showAppDialog<bool>(
   context: context,
   builder: (BuildContext dialogContext) => SourceLibraryPrivacyDialog(
@@ -91,26 +94,40 @@ Future<bool?> showSourceLibraryPrivacyDialog(
   ),
 );
 
-class SourceLibraryPrivacyDialog extends StatefulWidget {
+class SourceLibraryPrivacyDialog extends ConsumerStatefulWidget {
   const SourceLibraryPrivacyDialog({
     super.key,
     required this.db,
     required this.source,
-    required this.withdrawFromLeaderboard,
+    this.withdrawFromLeaderboard,
   });
 
   final FushiDatabase db;
   final SourceLibraryRow source;
-  final Future<bool> Function() withdrawFromLeaderboard;
+
+  /// 打开开关后撤下已上报条目；null = 用 `LeaderboardService.syncAfterPrivacyChange`。
+  final Future<bool> Function()? withdrawFromLeaderboard;
 
   @override
-  State<SourceLibraryPrivacyDialog> createState() =>
+  ConsumerState<SourceLibraryPrivacyDialog> createState() =>
       _SourceLibraryPrivacyDialogState();
 }
 
 class _SourceLibraryPrivacyDialogState
-    extends State<SourceLibraryPrivacyDialog> {
+    extends ConsumerState<SourceLibraryPrivacyDialog> {
   late bool _private = widget.source.isPrivate;
+
+  /// 在 initState（ProviderScope 必然存活）取一次，写库的 async gap 之后不再
+  /// `ref.read`（BUG-513 同一约定）。
+  late final Future<bool> Function() _withdraw;
+
+  @override
+  void initState() {
+    super.initState();
+    _withdraw =
+        widget.withdrawFromLeaderboard ??
+        ref.read(leaderboardServiceProvider).syncAfterPrivacyChange;
+  }
 
   /// 本对话框里改过（关闭时回传给列表刷新）。
   bool _changed = false;
@@ -123,7 +140,7 @@ class _SourceLibraryPrivacyDialogState
         db: widget.db,
         sourceId: widget.source.id,
         isPrivate: value,
-        withdrawFromLeaderboard: widget.withdrawFromLeaderboard,
+        withdrawFromLeaderboard: _withdraw,
       );
       if (mounted) {
         setState(() {
