@@ -12,6 +12,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:meta/meta.dart';
@@ -30,6 +31,15 @@ class HostJobConflict implements Exception {
   String toString() => 'HostJobConflict($reason)';
 }
 
+/// host 本地输入内容变了；`toString` 即 wire 上的 error（[kHostInputChangedError] 前缀）。
+class _HostInputChanged implements Exception {
+  const _HostInputChanged(this.names);
+  final List<String> names;
+
+  @override
+  String toString() => '$kHostInputChangedError: ${names.join(', ')}';
+}
+
 class HostJobManager {
   HostJobManager({
     required Directory jobRoot,
@@ -37,7 +47,9 @@ class HostJobManager {
     DateTime Function()? now,
     Duration jobTtl = const Duration(hours: 24),
     Random? random,
+    HostInputMatcher? inputMatcher,
   })  : _jobRoot = jobRoot,
+        _inputMatcher = inputMatcher,
         _runners = <String, HostJobRunner>{
           for (final HostJobRunner r in runners) r.kind: r,
         },
@@ -46,6 +58,9 @@ class HostJobManager {
         _random = random ?? Random.secure();
 
   final Directory _jobRoot;
+
+  /// 「host 本地已有同内容文件就不必上传」；null = 不提供（能力位不宣告 inputMatch）。
+  final HostInputMatcher? _inputMatcher;
   final Map<String, HostJobRunner> _runners;
   final DateTime Function() _now;
   final Duration _jobTtl;
@@ -76,6 +91,7 @@ class HostJobManager {
     }
     return <String, Object?>{
       'kinds': _runners.keys.toList(growable: false),
+      if (_inputMatcher != null) 'inputMatch': kHostInputMatchAlgorithm,
       ...perKind,
     };
   }
@@ -162,10 +178,42 @@ class HostJobManager {
       await sink.close();
     }
     if (!rec.inputs.contains(safe)) rec.inputs.add(safe);
+    // 上传优先：同名之前按哈希命中过 host 文件，以这次上传的为准。
+    rec.hostInputs.remove(safe);
     rec
       ..state = HostJobState.uploading
       ..updatedAt = _now();
     await _persist(rec);
+  }
+
+  /// 按内容哈希找 host 本地已有的输入（`POST /api/jobs/<id>/inputs/match`）。命中
+  /// 的名字记进 [HostJobRecord.hostInputs]，客户端就不必上传它们；返回命中的名字。
+  /// 已经上传过的名字不再匹配。host 没配 [HostInputMatcher] 时恒返回空。
+  Future<List<String>> matchInputs(
+    String id,
+    List<HostInputWanted> wanted,
+  ) async {
+    final HostJobRecord rec = get(id);
+    if (rec.state != HostJobState.pending && rec.state != HostJobState.uploading) {
+      throw HostJobConflict('job ${rec.state.name}, inputs are sealed');
+    }
+    final HostInputMatcher? matcher = _inputMatcher;
+    if (matcher == null) return const <String>[];
+    final List<HostInputWanted> pending = <HostInputWanted>[
+      for (final HostInputWanted w in wanted)
+        if (!rec.inputs.contains(hostJobInputName(w.name)))
+          HostInputWanted(
+            name: hostJobInputName(w.name),
+            sha256: w.sha256,
+            size: w.size,
+          ),
+    ];
+    final Map<String, HostInputRef> matched = await matcher.match(pending);
+    if (matched.isEmpty) return const <String>[];
+    rec.hostInputs.addAll(matched);
+    rec.updatedAt = _now();
+    await _persist(rec);
+    return matched.keys.toList(growable: false);
   }
 
   Future<void> start(String id) async {
@@ -264,6 +312,14 @@ class HostJobManager {
     final HostJobCancelToken cancel = _cancels[rec.id] ?? HostJobCancelToken();
     final Directory dir = dirFor(rec.id);
     try {
+      // host 本地输入：排队期间可能被改 / 删，开跑前按缓存核对一次（stat 变了就重算）。
+      final List<String> changedBefore = await _changedHostInputs(
+        rec,
+        force: false,
+      );
+      if (changedBefore.isNotEmpty) {
+        throw _HostInputChanged(changedBefore);
+      }
       final HostJobOutcome outcome = await runner.run(HostJobContext(
         jobId: rec.id,
         params: rec.params,
@@ -276,7 +332,19 @@ class HostJobManager {
             ..updatedAt = _now();
         },
         cancel: cancel,
+        hostInputs: <String, String>{
+          for (final MapEntry<String, HostInputRef> e in rec.hostInputs.entries)
+            e.key: e.value.path,
+        },
       ));
+      // 跑完整份重读核对：转录途中被改过，产物就是拿错内容算的，不能交出去。
+      if (!cancel.isCancelled) {
+        final List<String> changedAfter = await _changedHostInputs(
+          rec,
+          force: true,
+        );
+        if (changedAfter.isNotEmpty) throw _HostInputChanged(changedAfter);
+      }
       if (cancel.isCancelled) {
         rec.state = HostJobState.cancelled;
       } else {
@@ -291,6 +359,10 @@ class HostJobManager {
       }
     } on HostJobCancelledException {
       rec.state = HostJobState.cancelled;
+    } on _HostInputChanged catch (e) {
+      rec
+        ..state = cancel.isCancelled ? HostJobState.cancelled : HostJobState.error
+        ..error = '$e';
     } catch (e, stack) {
       engineLog.log('HostJobManager.run(${rec.kind}/${rec.id})', e, stack);
       if (cancel.isCancelled) {
@@ -336,10 +408,20 @@ class HostJobManager {
 
   /// 输入名只允许一段文件名：去路径、去 `..`、空则给默认名。
   @visibleForTesting
-  static String safeName(String raw) {
-    final String base = p.basename(raw.replaceAll('\\', '/')).trim();
-    final String cleaned = base.replaceAll(RegExp(r'[^\w.\-() ]'), '_');
-    if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') return 'input';
-    return cleaned;
+  static String safeName(String raw) => hostJobInputName(raw);
+
+  /// host 本地输入现在还是不是匹配时那份内容；返回变了（或没法核对）的名字。
+  Future<List<String>> _changedHostInputs(
+    HostJobRecord rec, {
+    required bool force,
+  }) async {
+    final HostInputMatcher? matcher = _inputMatcher;
+    final List<String> changed = <String>[];
+    for (final MapEntry<String, HostInputRef> e in rec.hostInputs.entries) {
+      if (matcher == null || !await matcher.stillMatches(e.value, force: force)) {
+        changed.add(e.key);
+      }
+    }
+    return changed;
   }
 }
