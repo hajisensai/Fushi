@@ -256,6 +256,39 @@ void main() {
     expect(find.byType(FushiM3eFloatingSheet), findsOneWidget);
   });
 
+  testWidgets('宽屏浮动面板：矮窗口（横屏手机）竖向留白收到 8，常规窗口 24', (WidgetTester tester) async {
+    Future<EdgeInsets> marginFor(Size size) async {
+      final BuildContext context = await pumpHost(tester, size: size);
+      adaptiveModalSheet<void>(
+        context: context,
+        builder: (_) => const Text('sheet body'),
+      );
+      await tester.pumpAndSettle();
+      final AnimatedPadding padding = tester.widget<AnimatedPadding>(
+        find
+            .descendant(
+              of: find.byType(FushiM3eFloatingSheet),
+              matching: find.byType(AnimatedPadding),
+            )
+            .first,
+      );
+      final EdgeInsets resolved = padding.padding.resolve(TextDirection.ltr);
+      Navigator.of(tester.element(find.text('sheet body'))).pop();
+      await tester.pumpAndSettle();
+      return resolved;
+    }
+
+    final EdgeInsets short = await marginFor(
+      const Size(800, kFushiSheetShortWindowHeight - 140),
+    );
+    expect(short.top, 8);
+    expect(short.bottom, 8);
+    expect(short.left, 24);
+    final EdgeInsets tall = await marginFor(const Size(1600, 900));
+    expect(tall.top, 24);
+    expect(tall.bottom, 24);
+  });
+
   testWidgets('底部弹层两档：点拖动条在半屏与 92% 之间切换', (WidgetTester tester) async {
     final BuildContext context = await pumpHost(tester);
     adaptiveModalSheet<void>(
