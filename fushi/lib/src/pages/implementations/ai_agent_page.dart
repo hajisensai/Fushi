@@ -118,7 +118,10 @@ Future<AiAgentConversationController?> _resolveAiAgentConversation(
 ) async {
   final AiAgentController? local = AiAgentController.instanceOrNull;
   if (local == null) return null;
-  if (local.hasProvider) return local;
+  if (local.hasProvider) {
+    await local.syncWithActiveProfile();
+    return local;
+  }
   final opContext = appOpContext;
   final String url =
       opContext?.appModel.prefsRepo.downloadExecutionHostUrl ?? '';
