@@ -9,13 +9,12 @@ ShelfSortKey _key({
   String title = '',
   int importedAt = 0,
   String tieKey = '',
-}) =>
-    ShelfSortKey(
-      recentScore: recentScore,
-      title: title,
-      importedAt: importedAt,
-      tieKey: tieKey,
-    );
+}) => ShelfSortKey(
+  recentScore: recentScore,
+  title: title,
+  importedAt: importedAt,
+  tieKey: tieKey,
+);
 
 void main() {
   group('naturalCompare', () {
@@ -60,13 +59,7 @@ void main() {
         '志乃と恋 ２',
         '志乃と恋　10',
       ]..sort(naturalCompare);
-      expect(titles, <String>[
-        '志乃と恋',
-        '志乃と恋 ２',
-        '志乃と恋 3',
-        '志乃と恋 ４',
-        '志乃と恋　10',
-      ]);
+      expect(titles, <String>['志乃と恋', '志乃と恋 ２', '志乃と恋 3', '志乃と恋 ４', '志乃と恋　10']);
       expect(naturalCompare('第２卷', '第10卷'), lessThan(0));
       expect(naturalCompare('ＡＢＣ', 'abd'), lessThan(0), reason: '全角字母同样折半角');
     });
@@ -80,13 +73,20 @@ void main() {
     ).readAsStringSync();
     final int start = source.indexOf('ShelfSortKey _shelfGroupSortKey(');
     expect(start, isNonNegative);
-    final String titleOf = source.substring(
-      source.indexOf('String titleOf(', start),
-      source.indexOf('int recentOf(', start),
+    final int end = source.indexOf('void _toggleFilter(', start);
+    expect(end, greaterThan(start));
+    // 排序键与卡片同取 [_slotDisplayTitle]（BUG-3915 抽成顶层函数，合集卷号判据也读它）。
+    final String sortKey = source.substring(start, end);
+    expect(sortKey, contains('title: _slotDisplayTitle(it.payload)'));
+    expect(sortKey, isNot(contains('.epub?.title')));
+    expect(sortKey, isNot(contains('.srt?.title')));
+    final int helperStart = source.indexOf('String _slotDisplayTitle(');
+    expect(helperStart, isNonNegative);
+    final String helper = source.substring(
+      helperStart,
+      source.indexOf('class _ShelfBookSlot', helperStart),
     );
-    expect(titleOf, contains('displayTitleForBook('));
-    expect(titleOf, isNot(contains('s.epub?.title')));
-    expect(titleOf, isNot(contains('s.srt?.title')));
+    expect(helper, contains('displayTitleForBook('));
   });
 
   group('compareShelfSortKeys', () {
@@ -172,12 +172,8 @@ void main() {
   group('手动排序（排序模式拖出来的顺序）', () {
     test('有名次按名次升序；没名次的排在前面、彼此按导入时间倒序', () {
       final Map<String, int> ranks = <String, int>{'b': 0, 'a': 1};
-      int cmp(ShelfSortKey x, ShelfSortKey y) => compareShelfSortKeys(
-            x,
-            y,
-            ShelfSortMode.manual,
-            manualRanks: ranks,
-          );
+      int cmp(ShelfSortKey x, ShelfSortKey y) =>
+          compareShelfSortKeys(x, y, ShelfSortMode.manual, manualRanks: ranks);
       expect(cmp(_key(tieKey: 'b'), _key(tieKey: 'a')), lessThan(0));
       expect(
         cmp(_key(tieKey: 'new', importedAt: 1), _key(tieKey: 'b')),
@@ -195,8 +191,9 @@ void main() {
 
     test('持久化往返保序，tieKey 里的逗号不切断', () {
       const List<String> order = <String>['c1', 'a,b|x', 'k'];
-      final Map<String, int> ranks =
-          decodeShelfManualOrder(encodeShelfManualOrder(order));
+      final Map<String, int> ranks = decodeShelfManualOrder(
+        encodeShelfManualOrder(order),
+      );
       expect(ranks, <String, int>{'c1': 0, 'a,b|x': 1, 'k': 2});
       expect(decodeShelfManualOrder(''), isEmpty);
     });
@@ -246,8 +243,7 @@ void main() {
       int position,
       int duration, {
       int lastReadAt = 0,
-    }) =>
-        (position: position, duration: duration, lastReadAt: lastReadAt);
+    }) => (position: position, duration: duration, lastReadAt: lastReadAt);
 
     test('分类：读完 / 在读 / 无进度维度(duration<=0)跳过 / 未开始(position=0)不计', () {
       final tally = tallyShelfProgress(
@@ -273,9 +269,9 @@ void main() {
       // 修复后有声书在候选里，按 lastReadAt 胜出。
       final List<({int position, int duration, int lastReadAt})> allEpubBacked =
           <({int position, int duration, int lastReadAt})>[
-        item(10, 100, lastReadAt: 100), // 纯 EPUB，较早读
-        item(40, 100, lastReadAt: 500), // 有声书，刚听完（最近）
-      ];
+            item(10, 100, lastReadAt: 100), // 纯 EPUB，较早读
+            item(40, 100, lastReadAt: 500), // 有声书，刚听完（最近）
+          ];
       final tally = tallyShelfProgress(
         allEpubBacked,
         (it) => it.position,
@@ -307,10 +303,10 @@ void main() {
       // 用户诉求：跳过后记/附录进度停在 99% 的书，手动标记后必须计入 Completed。
       final List<({int position, int duration, int lastReadAt})> books =
           <({int position, int duration, int lastReadAt})>[
-        item(99, 100, lastReadAt: 5), // 99%，若被标记完成 → 读完（否则在读）
-        item(30, 100), // 在读、未标记
-        item(0, 100), // 未开始，但被标记完成 → 仍计读完
-      ];
+            item(99, 100, lastReadAt: 5), // 99%，若被标记完成 → 读完（否则在读）
+            item(30, 100), // 在读、未标记
+            item(0, 100), // 未开始，但被标记完成 → 仍计读完
+          ];
       final tally = tallyShelfProgress(
         books,
         (it) => it.position,
@@ -320,8 +316,11 @@ void main() {
       );
       expect(tally.finished, 2, reason: '两本标记完成的都计读完（含 position=0）');
       expect(tally.reading, 1, reason: '只有未标记的 30% 那本在读');
-      expect(tally.inProgress.single.position, 30,
-          reason: '标记完成的不进在读候选，即使进度 99%');
+      expect(
+        tally.inProgress.single.position,
+        30,
+        reason: '标记完成的不进在读候选，即使进度 99%',
+      );
     });
 
     test('isCompleted 为 null → 退回纯进度派生（旧行为向后兼容）', () {
