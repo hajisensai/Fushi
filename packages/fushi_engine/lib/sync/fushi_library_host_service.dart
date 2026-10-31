@@ -1393,9 +1393,10 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 /// 差任意多，「host importedAt 晚于本端 deletedAt 就当新书」在 host 时钟超前时会让
 /// 刚删的书立刻复活，落后时会把真正重新导入的书永久藏掉）：
 ///
-/// - [sourceAppliesDeletions] = false（云盘书库 / 媒体服务器）：这些来源从不执行
-///   Fushi 的删除墓碑（云通道只写 `__tombstones__` 标记，书文件夹原样留着），清单里
-///   那份只可能是被删的那本的残留——墓碑在就一直藏，本机重新导入时墓碑随之清除。
+/// - [sourceAppliesDeletions] = false（媒体服务器等）：这些来源从不执行 Fushi 的删除
+///   墓碑，清单里那份只可能是被删的那本的残留——墓碑在就一直藏，本机重新导入时墓碑
+///   随之清除。（云盘书库的**书**不走这里：发布墓碑时云通道会把书文件夹一起删掉，
+///   只藏未发布的，见 app 侧 `loadPendingRemoteDeletionKeys`。）
 /// - [sourceAppliesDeletions] = true（互联 host）：墓碑推给 host 后 host 会真删并写
 ///   它自己的墓碑，host 之后重新导入同一本时会清掉它的墓碑。所以只藏**还没送达**的
 ///   墓碑：`deletedAt > deliveredThroughMs`，[deliveredThroughMs] = 本端互联推送基线

@@ -8,6 +8,12 @@
 // 「切到后台仍在下」的证据在宿主侧：本测试在大文件下载过程中打印 `BG_DL_GO_BACKGROUND`，
 // 宿主脚本据此把别的 app 拉到前台、过一段时间再切回来，然后按服务器逐秒发送字节日志
 // 判断后台窗口里传输有没有停。本测试只断言下载最终完整落盘、各失败形态的归因正确。
+//
+// 进程重启（BUG-3887 续，只对 native 有意义）：`BG_DL_PHASE=restart-start` 带接管描述
+// 发起大文件下载，下到一段后打印 `BG_DL_KILL_ME`，宿主脚本 `kill -9` 掉 app 进程（等同
+// 系统内存回收，不是用户划掉）；再以 `BG_DL_PHASE=restart-resume` 重新拉起，新进程经
+// `recover()` 接回同一个任务、等它完整落盘。宿主脚本：`ios_background_download_host.sh
+// <udid> restart`。
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -29,9 +35,19 @@ const int _bigBytes = int.fromEnvironment(
   'BG_DL_BIG_BYTES',
   defaultValue: 60 * 1024 * 1024,
 );
+const String _phase = String.fromEnvironment('BG_DL_PHASE');
+
+/// 进程重启用例的接管描述 payload 标记（新进程据此认出自己的任务）。
+const Map<String, Object?> _restartPayload = <String, Object?>{
+  'kind': 'bgDlItestRestart',
+};
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  if (_phase.isNotEmpty) {
+    _restartMain();
+    return;
+  }
 
   late Directory tempDir;
   late DictionaryDownloadTransport transport;
@@ -126,6 +142,91 @@ void main() {
     ).timeout(const Duration(minutes: 10));
     debugPrint('BG_DL_BIG_DONE ms=${watch.elapsedMilliseconds}');
     expect(File(dest).lengthSync(), _bigBytes);
+  }, timeout: const Timeout(Duration(minutes: 12)));
+}
+
+/// 进程重启用例（两段，各自一次 `flutter test` 进程）。
+void _restartMain() {
+  late IosBackgroundDownloadTransport transport;
+  late String dest;
+
+  setUpAll(() async {
+    expect(_base, isNotEmpty, reason: '--dart-define=BG_DL_BASE 必填');
+    final Directory support = await getApplicationSupportDirectory();
+    final Directory dir = Directory('${support.path}/bg_dl_itest_restart')
+      ..createSync(recursive: true);
+    dest = '${dir.path}/big.bin';
+    transport = IosBackgroundDownloadTransport(
+      proxy: () => IosBackgroundDownloadProxy.system,
+    );
+    debugPrint('BG_DL_PHASE=$_phase');
+  });
+
+  if (_phase == 'restart-start') {
+    testWidgets('第一段：带接管描述发起大文件下载，下到一段后等宿主杀进程', (WidgetTester tester) async {
+      final File stale = File(dest);
+      if (stale.existsSync()) stale.deleteSync();
+      bool announced = false;
+      final Future<void> download = transport.download(
+        url: '$_base/big.bin',
+        destPath: dest,
+        onReceiveProgress: (int received, int total) {
+          if (!announced && received > 8 * 1024 * 1024) {
+            announced = true;
+            // 宿主脚本盯这一行，看到就 kill -9 本进程。
+            debugPrint('BG_DL_KILL_ME received=$received');
+          }
+        },
+        handoff: DictionaryDownloadHandoff(
+          url: '$_base/big.bin',
+          candidates: const <String>['$_base/big.bin'],
+          candidateIndex: 0,
+          destPath: dest,
+          payload: _restartPayload,
+        ),
+      );
+      // 正常情况下进程在下完前就被杀；真下完了说明宿主没杀到，判失败。
+      await download.timeout(const Duration(minutes: 10));
+      fail('download finished before the host killed the process');
+    }, timeout: const Timeout(Duration(minutes: 12)));
+    return;
+  }
+
+  testWidgets('第二段：新进程接回上一进程的任务，完整落盘（不是从头再下）', (WidgetTester tester) async {
+    final List<AdoptedDictionaryDownload> adopted = await transport.recover();
+    final List<AdoptedDictionaryDownload> mine = adopted
+        .where(
+          (AdoptedDictionaryDownload a) =>
+              a.handoff.payload['kind'] == _restartPayload['kind'],
+        )
+        .toList();
+    debugPrint('BG_DL_RECOVERED count=${mine.length}');
+    expect(mine, hasLength(1), reason: '上一进程的任务必须还在注册表里');
+    int firstReceived = -1;
+    final Stopwatch watch = Stopwatch()..start();
+    await mine.single
+        .wait(
+          onReceiveProgress: (int received, int total) {
+            if (firstReceived < 0) {
+              firstReceived = received;
+              // 宿主脚本据此确认接上的是断点而不是从 0 开始。
+              debugPrint('BG_DL_RESUMED_AT received=$received');
+            }
+          },
+        )
+        .timeout(const Duration(minutes: 10));
+    debugPrint('BG_DL_RESUMED_DONE ms=${watch.elapsedMilliseconds}');
+    expect(File(dest).lengthSync(), _bigBytes);
+    // 记录释放后再 recover 不应再看到它。
+    final List<AdoptedDictionaryDownload> again = await transport.recover();
+    expect(
+      again.where(
+        (AdoptedDictionaryDownload a) =>
+            a.handoff.payload['kind'] == _restartPayload['kind'],
+      ),
+      isEmpty,
+    );
+    File(dest).deleteSync();
   }, timeout: const Timeout(Duration(minutes: 12)));
 }
 

@@ -294,6 +294,12 @@ android {
                 storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
                 storePassword keystoreProperties['storePassword']
             }
+            // minSdk 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
+            // 安装器 / 安全检测会因没有 JAR（v1）签名报「无证书」并拒装或标可疑（反馈 j3ChbSpKgJ），
+            // 显式补上 v1，并同时签 v3 便于日后密钥轮换。
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
         }
     }
 

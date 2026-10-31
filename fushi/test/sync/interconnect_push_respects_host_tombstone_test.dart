@@ -250,6 +250,48 @@ void main() {
     expect((await _hostTombstones(hostDb)).containsKey('book|BookD'), isFalse);
   });
 
+  test('删后重新导入的那份：经 /api/tombstones 拉到旧墓碑也不产删除候选，旧副本照常产', () async {
+    // host 墓碑还在（重新导入的书还没推上去 / 另一台设备刚下载了新书）。
+    final InterconnectSyncBackend backend = await _clientBackend(base, token);
+    final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
+      ..createSync();
+
+    final FushiDatabase readded = _memDb();
+    addTearDown(readded.close);
+    await _seedBook(
+      db: readded,
+      title: 'BookD',
+      extractDir: p.join(work.path, 'readd_D'),
+    ); // localAddedAt = 导入时刻（now）> _deletedAt
+    final SyncRunReport fresh = SyncRunReport();
+    await orchestrator(
+      readded,
+      tmp,
+    ).syncDeletionTombstonesLiveForTest(fresh, backend);
+    expect(fresh.errors, isEmpty, reason: '${fresh.errors}');
+    expect(fresh.deletionCandidates, isEmpty, reason: '重新导入的是新书，不许被旧墓碑删');
+
+    final FushiDatabase oldCopy = _memDb();
+    addTearDown(oldCopy.close);
+    await _seedBook(
+      db: oldCopy,
+      title: 'BookD',
+      extractDir: p.join(work.path, 'old_D'),
+      localAddedAt: _deletedAt - 60000,
+    );
+    final SyncRunReport old = SyncRunReport();
+    await orchestrator(
+      oldCopy,
+      tmp,
+    ).syncDeletionTombstonesLiveForTest(old, backend);
+    expect(
+      old.deletionCandidates.map(
+        (DeletionPropagationCandidate c) => (c.mediaType, c.itemKey),
+      ),
+      <(String, String)>[('book', 'BookD')],
+    );
+  });
+
   group('host 闸门（旧版 client 不报存在起始时刻）', () {
     late InterconnectSyncBackend backend;
     late File payload;

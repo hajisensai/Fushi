@@ -7,6 +7,10 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
+    show LyricsIllustrationCue;
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart'
+    show LyricsControlsStyle;
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
@@ -19,6 +23,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/lyrics_cue_search.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
@@ -136,6 +141,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onSideSheetTabChanged,
     this.expandedTocParents,
     this.volumeSwitch,
+    this.lyricsCueSearch,
     this.initialSubPage,
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
@@ -274,6 +280,11 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 点别的卷的章才真正切书。null = 不在多卷合集里，目录区与从前一样。
   final ReaderTocVolumeSwitch? volumeSwitch;
 
+  /// 歌词模式导航侧板的「搜索字幕」接线（[ReaderLyricsCueSearch]）。非 null 时
+  /// 「搜索」页搜的是音频 cue 文本、点结果跳句；null = 不提供（非歌词模式走书内
+  /// 正文搜索 [onSearchJump]）。
+  final ReaderLyricsCueSearch? lyricsCueSearch;
+
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
   /// 之后由用户导航自行覆盖。
@@ -307,6 +318,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _charJumpController = TextEditingController();
   List<BookSearchResult> _searchResults = const [];
+
+  /// 歌词模式「搜索字幕」的结果（[ReaderQuickSettingsSheet.lyricsCueSearch]）。
+  LyricsCueTextSearch _cueSearchResult = LyricsCueTextSearch.empty;
   String _searchResultsQuery = '';
   int _searchGeneration = 0;
   bool _isSearching = false;
@@ -344,6 +358,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   /// 目录区当前查看的卷（初值 = 当前卷）。只影响列表内容，不影响阅读器。
   late int _viewedVolume = widget.volumeSwitch?.currentIndex ?? 0;
+
+  /// 卷 chip 行「打开即把当前卷滚到中央」只做一次（之后由用户自己滚）。
+  bool _volumeChipsCentered = false;
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
@@ -649,13 +666,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       widget.onClose ?? () => Navigator.of(context).maybePop();
 
   /// 导航侧板此次出现的分页：目录（有目录 / 多卷时）/ 收藏（恒在，空时给空态）/
-  /// 搜索（书内搜索或按字数跳转可用时；歌词模式两者都不传，整页不出现）。
+  /// 搜索（书内搜索或按字数跳转可用时；歌词模式两者都不传，改由字幕搜索
+  /// [ReaderQuickSettingsSheet.lyricsCueSearch] 撑起这一页）。
   late final List<_ReaderNavTab> _navTabs = <_ReaderNavTab>[
     if (widget.toc.isNotEmpty || widget.volumeSwitch != null)
       _ReaderNavTab.contents,
     _ReaderNavTab.favorites,
     if ((widget.epubBook != null && widget.onSearchJump != null) ||
-        widget.onJumpToCharOffset != null)
+        widget.onJumpToCharOffset != null ||
+        widget.lyricsCueSearch != null)
       _ReaderNavTab.search,
   ];
 
@@ -971,11 +990,19 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     ].join(' · ');
   }
 
-  /// 搜索页：书内搜索（结果带上下文）+ 按字数跳转；还没搜过时给一句用法提示。
+  /// 歌词模式：搜索页搜的是字幕（音频 cue），不是正文。
+  bool get _cueSearchActive => widget.lyricsCueSearch != null;
+
+  /// 搜索页：书内搜索（结果带上下文）+ 按字数跳转；歌词模式下是字幕搜索。还没搜
+  /// 过时给一句用法提示。
   Widget _buildNavSearchPage(ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool canSearch =
-        widget.epubBook != null && widget.onSearchJump != null;
+        _cueSearchActive ||
+        (widget.epubBook != null && widget.onSearchJump != null);
+    final bool hasResults = _cueSearchActive
+        ? _cueSearchResult.hits.isNotEmpty
+        : _searchResults.isNotEmpty;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -983,12 +1010,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         if (canSearch) _buildSearchSection(theme),
         if (canSearch &&
             !_isSearching &&
-            _searchResults.isEmpty &&
+            !hasResults &&
             !_searchFailed &&
             _searchController.text.trim().isEmpty)
           ReaderPanelEmpty(
             icon: FushiIcons.manageSearch,
-            message: t.reader_nav_search_empty_hint,
+            message: _cueSearchActive
+                ? t.lyrics_search_empty_hint
+                : t.reader_nav_search_empty_hint,
           ),
         if (widget.onJumpToCharOffset != null) ...<Widget>[
           SizedBox(height: tokens.spacing.gap * 2),
@@ -1287,8 +1316,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       AdaptiveSettingsSection(
         key: const ValueKey<String>('reader_panel_lyrics_listening'),
         title: t.reader_panel_lyrics_section_listening,
-        children: <Widget>[_lyricsBlurRow()],
+        children: <Widget>[
+          _lyricsBlurRow(),
+          // 插图提示方式 + 停留秒数（「图片暂停」与有声书页是同一个设置）。
+          _lyricsIllustrationCueRow(),
+          if (widget.controller != null)
+            _buildImagePauseSection(widget.controller!),
+        ],
       ),
+      // 播放控件布局只作用于 MD3：Apple 设计系统的歌词页不读它，隐藏免得切了
+      // 没反应。
+      if (!isGlassDesign(context))
+        AdaptiveSettingsSection(
+          key: const ValueKey<String>('reader_panel_lyrics_controls'),
+          children: <Widget>[_lyricsControlsStyleRow()],
+        ),
       if (widget.onOpenLyricsControlLayout != null)
         AdaptiveSettingsSection(
           children: <Widget>[
@@ -1740,6 +1782,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       _searchFailed = false;
     });
     try {
+      final ReaderLyricsCueSearch? cueSearch = widget.lyricsCueSearch;
+      if (cueSearch != null) {
+        final LyricsCueTextSearch found = await cueSearch.search(query);
+        if (!mounted || gen != _searchGeneration) return;
+        setState(() {
+          _cueSearchResult = found;
+          _searchResultsQuery = query;
+          _isSearching = false;
+        });
+        return;
+      }
       final List<BookSearchResult> results = widget.epubBook != null
           ? await AudiobookBridge.searchBook(widget.epubBook!, query)
           : const <BookSearchResult>[];
@@ -1755,6 +1808,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       if (!mounted || gen != _searchGeneration) return;
       setState(() {
         _searchResults = const [];
+        _cueSearchResult = LyricsCueTextSearch.empty;
         _searchResultsQuery = '';
         _isSearching = false;
         _searchFailed = true;
@@ -1838,7 +1892,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ),
           ],
         ),
-        if (_searchResults.isNotEmpty) ...[
+        if (_cueSearchActive && _cueSearchResult.hits.isNotEmpty)
+          ..._buildCueSearchResults(theme, navPanel: navPanel)
+        else if (!_cueSearchActive && _searchResults.isNotEmpty) ...[
           SizedBox(height: tokens.spacing.gap * 2),
           ReaderPanelSectionLabel(
             t.book_search_results(n: _searchResults.length),
@@ -1915,6 +1971,70 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         ],
       ],
     );
+  }
+
+  /// 字幕搜索结果：与书内搜索同一结果行（[_InBookSearchResultRow]：上标所属章节 ·
+  /// 时间戳、命中词高亮），错峰进场；命中超过上限时提示只列了前 N 条。点结果 =
+  /// 先关面板再跳句（与书内搜索点结果同一顺序）。
+  List<Widget> _buildCueSearchResults(
+    ThemeData theme, {
+    required bool navPanel,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ReaderLyricsCueSearch cueSearch = widget.lyricsCueSearch!;
+    final LyricsCueTextSearch found = _cueSearchResult;
+    return <Widget>[
+      SizedBox(height: tokens.spacing.gap * 2),
+      ReaderPanelSectionLabel(
+        t.book_search_results(n: found.total),
+        trailing: '「$_searchResultsQuery」',
+      ),
+      if (found.truncated)
+        Padding(
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+          child: Text(
+            t.lyrics_search_results_truncated(
+              n: found.hits.length,
+              total: found.total,
+            ),
+            key: const ValueKey<String>('lyrics_search_truncated'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: fushiNeutralSecondaryForeground(context),
+            ),
+          ),
+        ),
+      ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: navPanel ? double.infinity : 280,
+        ),
+        child: ListView.separated(
+          key: const ValueKey<String>('lyrics_search_results'),
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          physics: navPanel ? const NeverScrollableScrollPhysics() : null,
+          itemCount: found.hits.length,
+          separatorBuilder: (_, __) => SizedBox(height: tokens.spacing.gap),
+          itemBuilder: (_, int i) {
+            final LyricsCueTextHit hit = found.hits[i];
+            final AudioCue cue = cueSearch.cues[hit.cueIndex];
+            return FushiStaggeredEntrance(
+              index: i,
+              child: _InBookSearchResultRow(
+                key: ValueKey<String>('lyrics_search_result_$i'),
+                chapterLabel: cueSearch.locationLabel(cue),
+                text: cue.text,
+                matchStart: hit.matchStart,
+                matchEnd: hit.matchEnd,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await cueSearch.onJump(cue);
+                },
+              ),
+            );
+          },
+        ),
+      ),
+    ];
   }
 
   Widget _buildCharJumpSection(ThemeData theme) {
@@ -2034,36 +2154,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// 卷 chip 行：当前卷带勾；点别的卷只换下方列表（无感查看），不切书。
+  /// 卷 chip 行：当前卷带书本图标；点别的卷只换下方列表（无感查看），不切书。
+  /// 首次出现时把当前卷滚到行中央（[_ReaderVolumeChipRow]）。
   Widget _buildVolumeChips(ThemeData theme, ReaderTocVolumeSwitch volumes) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return SizedBox(
-      height: 40,
-      child: HorizontalDragScrollable(
-        child: ListView.separated(
-          key: const ValueKey<String>('reader-toc-volume-chips'),
-          scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap / 2),
-          itemCount: volumes.labels.length,
-          separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap),
-          itemBuilder: (BuildContext context, int i) => FushiChoiceChip(
-            key: ValueKey<String>('reader-toc-volume-chip-$i'),
-            label: Text(
-              volumes.labels[i],
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            avatar: i == volumes.currentIndex
-                ? const FushiIcon(FushiIcons.books, size: 16)
-                : null,
-            selected: i == _viewedVolume,
-            onSelected: (bool _) {
-              if (i == _viewedVolume) return;
-              setState(() => _viewedVolume = i);
-            },
-          ),
-        ),
-      ),
+    return _ReaderVolumeChipRow(
+      labels: volumes.labels,
+      currentIndex: volumes.currentIndex,
+      viewedIndex: _viewedVolume,
+      gap: tokens.spacing.gap,
+      centerCurrent: !_volumeChipsCentered,
+      onCentered: () => _volumeChipsCentered = true,
+      onSelected: (int i) {
+        if (i == _viewedVolume) return;
+        setState(() => _viewedVolume = i);
+      },
     );
   }
 
@@ -2395,7 +2500,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   /// 插图停留秒数：步进器（0 = 关，1 秒一档，上限
   /// [AudiobookPlayerController.maxImagePauseSec]）。原先只给 0/5/10/15 四档分段，
-  /// 所有者要求能自定义停留多少秒（BUG-3891）。
+  /// 所有者要求能自定义停留多少秒（BUG-3891）。默认关；从关往上调一档直接到
+  /// [AudiobookPlayerController.imagePauseOnSec]（5 秒）。
   Widget _buildImagePauseSection(AudiobookPlayerController ctrl) {
     return ValueListenableBuilder<int>(
       valueListenable: ctrl.imagePauseSec,
@@ -2410,7 +2516,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           max: AudiobookPlayerController.maxImagePauseSec.toDouble(),
           format: (double v) =>
               v.round() == 0 ? t.image_pause_off : '${v.round()}s',
-          onChanged: (double v) => ctrl.setImagePauseSec(v.round()),
+          onChanged: (double v) => ctrl.setImagePauseSec(
+            AudiobookPlayerController.imagePauseStepped(sec, v.round()),
+          ),
         );
       },
     );
@@ -2798,6 +2906,60 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
+  /// MD3 歌词模式播放控件布局：新版（默认）/ 经典（`lyrics_controls_style`）。
+  /// 纯 Flutter 覆盖层布局，写偏好后 source 经 chrome 重建通道让覆盖层重排。
+  Widget _lyricsControlsStyleRow() {
+    return AdaptiveSettingsSegmentedRow<LyricsControlsStyle>(
+      key: const ValueKey<String>('reader_lyrics_controls_style'),
+      title: t.lyrics_controls_style,
+      subtitle: t.lyrics_controls_style_hint,
+      icon: FushiIcons.dashboardCustomize,
+      controlBelow: true,
+      segments: <ButtonSegment<LyricsControlsStyle>>[
+        ButtonSegment<LyricsControlsStyle>(
+          value: LyricsControlsStyle.modern,
+          label: Text(t.lyrics_controls_style_modern),
+        ),
+        ButtonSegment<LyricsControlsStyle>(
+          value: LyricsControlsStyle.classic,
+          label: Text(t.lyrics_controls_style_classic),
+        ),
+      ],
+      selected: _src.lyricsControlsStyle,
+      onChanged: (LyricsControlsStyle style) async {
+        await _src.setLyricsControlsStyle(style);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// 歌词模式播放走过插图时的提示方式：弹出停留（默认）/ 红点
+  /// （`lyrics_illustration_cue`）。停留秒数复用「图片暂停」。
+  Widget _lyricsIllustrationCueRow() {
+    return AdaptiveSettingsSegmentedRow<LyricsIllustrationCue>(
+      key: const ValueKey<String>('reader_lyrics_illustration_cue'),
+      title: t.lyrics_illustration_cue,
+      subtitle: t.lyrics_illustration_cue_hint,
+      icon: FushiIcons.collections,
+      controlBelow: true,
+      segments: <ButtonSegment<LyricsIllustrationCue>>[
+        ButtonSegment<LyricsIllustrationCue>(
+          value: LyricsIllustrationCue.popup,
+          label: Text(t.lyrics_illustration_cue_popup),
+        ),
+        ButtonSegment<LyricsIllustrationCue>(
+          value: LyricsIllustrationCue.dot,
+          label: Text(t.lyrics_illustration_cue_dot),
+        ),
+      ],
+      selected: _src.lyricsIllustrationCue,
+      onChanged: (LyricsIllustrationCue cue) async {
+        await _src.setLyricsIllustrationCue(cue);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   /// 歌词模式「显示未朗读的原文」（`lyrics_show_skipped_text`，默认开）：两句之间
   /// 没被任何字幕认领的原文以灰色小字显示。live 维度：写偏好 →
   /// `_updateLyricsStyleLive` 换 body class，不重建歌词页。
@@ -3155,6 +3317,7 @@ class _InBookTocRow extends StatelessWidget {
 
 class _InBookSearchResultRow extends StatelessWidget {
   const _InBookSearchResultRow({
+    super.key,
     required this.chapterLabel,
     required this.text,
     required this.matchStart,
@@ -3503,6 +3666,106 @@ class AudiobookVolumeRow extends StatelessWidget {
 
 /// 导航侧板的分页（目录 / 收藏 / 搜索）。
 enum _ReaderNavTab { contents, favorites, search }
+
+/// 目录区的卷 chip 行（BUG-2521）。
+///
+/// 用户实报：合集十几卷时当前卷（带书本图标）在行尾、要自己横滚才找得到。打开时
+/// 把当前卷 chip 滚到行中央（两端不够时 [ScrollPosition.ensureVisible] 自然贴边），
+/// 只做一次（[centerCurrent] 由面板会话记着），之后由用户自己滚。chip 宽度随卷名
+/// 而变，所以不按像素算，而是首帧布局后量当前 chip 的渲染对象；卷数是个位到几十，
+/// 整行一次建完（不用懒构建的 ListView——视口外的 chip 没有渲染对象就量不到）。
+/// 只对最近这层横向滚动视图对齐：[Scrollable.ensureVisible] 会连带外层纵向页面和
+/// TabBarView 一起对齐。时长走 [fushiMotionDuration]（减弱动态效果直接落位）。
+class _ReaderVolumeChipRow extends StatefulWidget {
+  const _ReaderVolumeChipRow({
+    required this.labels,
+    required this.currentIndex,
+    required this.viewedIndex,
+    required this.gap,
+    required this.centerCurrent,
+    required this.onCentered,
+    required this.onSelected,
+  });
+
+  final List<String> labels;
+  final int currentIndex;
+  final int viewedIndex;
+  final double gap;
+  final bool centerCurrent;
+  final VoidCallback onCentered;
+  final ValueChanged<int> onSelected;
+
+  @override
+  State<_ReaderVolumeChipRow> createState() => _ReaderVolumeChipRowState();
+}
+
+class _ReaderVolumeChipRowState extends State<_ReaderVolumeChipRow> {
+  final GlobalKey _currentChipKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.centerCurrent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _centerCurrent());
+    }
+  }
+
+  void _centerCurrent() {
+    if (!mounted) return;
+    final BuildContext? chipContext = _currentChipKey.currentContext;
+    final RenderObject? chip = chipContext?.findRenderObject();
+    final ScrollableState? scrollable = chipContext == null
+        ? null
+        : Scrollable.maybeOf(chipContext);
+    if (chip == null || scrollable == null) return;
+    widget.onCentered();
+    unawaited(
+      scrollable.position.ensureVisible(
+        chip,
+        alignment: 0.5,
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          key: const ValueKey<String>('reader-toc-volume-chips'),
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: widget.gap / 2),
+          child: Row(
+            children: <Widget>[
+              for (int i = 0; i < widget.labels.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(width: widget.gap),
+                KeyedSubtree(
+                  key: i == widget.currentIndex ? _currentChipKey : null,
+                  child: FushiChoiceChip(
+                    key: ValueKey<String>('reader-toc-volume-chip-$i'),
+                    label: Text(
+                      widget.labels[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    avatar: i == widget.currentIndex
+                        ? const FushiIcon(FushiIcons.books, size: 16)
+                        : null,
+                    selected: i == widget.viewedIndex,
+                    onSelected: (bool _) => widget.onSelected(i),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 导航面板「收藏」页的分段：书签 / 收藏句子。
 enum _ReaderFavoritesSegment { bookmarks, favorites }

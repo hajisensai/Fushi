@@ -63,6 +63,9 @@ enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
 /// `SettingsCustomItem.rows` 逐行渲染（每行一个 [AnkiSettingsBody]，与同组的子页
 /// 入口行同一分段规则）；哪些行出现由 schema 侧的 `ankiSectionRowsFor` 决定。
 enum AnkiSectionRow {
+  /// 「制卡到 Fushi 互联服务端」：与互联设置里那一项同一个偏好。开着时卡片落在
+  /// 服务端的 Anki，本机的牌组 / 笔记类型不参与——所以排在「Anki」分组第一行。
+  mineToServer,
   profile,
   fetch,
   createLapis,
@@ -77,14 +80,28 @@ enum AnkiSectionRow {
   queueUndelivered,
   pendingLanding,
   pendingMines,
+
+  // 两种目标都生效的分组（「卡片内容」「制卡提示」「默认标签」）：排在「Anki」分组
+  // 之后，由 schema 各自成组。
+  allowDuplicates,
+  overwriteScope,
+  compactGlossaries,
+  noticeSuccess,
+  noticeDuplicate,
+  globalTags,
+  tags,
+  tagIncludeFushi,
+  tagIncludeCategory,
+  tagBookName,
+  tagCharPosition,
 }
 
-/// 设置 › 制卡的正文（2026-10-16 重做）：Fushi 复习是主路径，正文依次是
-/// 「Fushi 复习」分组（目标行 + 复习牌组 / 笔记类型 / 字段映射 / 卡面入口）、两边都
-/// 生效的「卡片内容」与「默认标签」；Anki 的目标切换与全部 Anki 专属设置收在 schema
-/// 的「Anki」折叠分组（当前发往 Anki 时默认展开）。
+/// 设置 › 制卡的正文：只有挖词目标切换条与「Fushi 复习」分组（目标为复习时）。
+/// 当前目标的 Anki 配置、以及两种目标都生效的「卡片内容」「制卡提示」「默认标签」
+/// 都是 schema 分组（settings_schema_card_creation.dart），Anki 分组紧跟在正文之后
+/// （2026-10-31 重排：此前通用分组在正文里、排在 Anki 配置前面）。
 ///
-/// [panel] 非空 = 子页正文；[row] 非空 = 「Anki」分组里的一行。
+/// [panel] 非空 = 子页正文；[row] 非空 = schema 分组里的一行（见 [AnkiSectionRow]）。
 /// 正文自身不滚动，由设置宿主或子页提供滚动容器。
 class AnkiSettingsBody extends ConsumerStatefulWidget {
   const AnkiSettingsBody({super.key, this.panel, this.row})
@@ -204,7 +221,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget build(BuildContext context) {
     final uiState = ref.watch(ankiViewModelProvider);
     final vm = ref.read(ankiViewModelProvider.notifier);
-    final settings = uiState.settings;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     if (widget.panel != null) {
@@ -290,125 +306,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 ],
               ),
             ),
-          // 两种目标都生效的卡片内容项（SRS 制卡复用 AnkiNoteComposer：查重放行、
-          // ✓ 覆写范围、紧凑释义都读同一份设置）。只对 Anki 成立的「查重范围」在
-          // 「Anki」分组。
-          enter(
-            'card_section_content',
-            AdaptiveSettingsSection(
-              title: t.card_creation_section_content,
-              children: [
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.allow_duplicates',
-                  child: _buildAllowDuplicatesRow(settings, vm),
-                ),
-                // TODO-614：「覆写已制卡片」范围——再点 ✓ 时改旧卡还是建新卡；复习
-                // 覆写同样按它（全部 = 按查重找到的笔记都能覆写）。
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.overwrite_scope',
-                  child: _buildOverwriteScopePicker(settings, vm),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.compact_glossaries',
-                  child: _buildCompactGlossariesRow(settings, vm),
-                ),
-              ],
-            ),
-          ),
-          // 制卡提示：制卡结果 toast 的开关组，两种目标都生效（toast 出口只有
-          // FushiToast.showMine 一处）。失败与「成功但缺音频」不受开关影响。
-          enter(
-            'card_section_notices',
-            AdaptiveSettingsSection(
-              title: t.card_creation_section_notices,
-              children: <Widget>[
-                SettingsSearchTarget(
-                  id: 'card_creation.notice.success',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.card_creation_notice_success,
-                    subtitle: t.card_creation_notice_success_hint,
-                    value: appModel.mineNoticeSuccess,
-                    onChanged: (bool value) async {
-                      await appModel.setMineNoticeSuccess(value);
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.notice.duplicate',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.card_creation_notice_duplicate,
-                    subtitle: t.card_creation_notice_duplicate_hint,
-                    value: appModel.mineNoticeDuplicate,
-                    onChanged: (bool value) async {
-                      await appModel.setMineNoticeDuplicate(value);
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 默认标签区（TODO-135）：「自动给卡片加什么标签」的开关并到一处，与目标
-          // 无关——SRS 制卡同样经 buildNoteTags 打这些标签。
-          enter(
-            'anki_section_tags',
-            AdaptiveSettingsSection(
-              title: t.anki_tag_default_section,
-              children: [
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.global_tags',
-                  child: _buildGlobalTagsInput(settings, vm),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tags',
-                  child: _buildTagsInput(settings, vm),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tag_include_hibiki',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.anki_tag_include_fushi,
-                    subtitle: t.anki_tag_include_fushi_hint,
-                    value: settings.tagIncludeHibiki,
-                    onChanged: vm.updateTagIncludeHibiki,
-                  ),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tag_include_category',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.anki_tag_include_category,
-                    subtitle: t.anki_tag_include_category_hint,
-                    value: settings.tagIncludeCategory,
-                    onChanged: vm.updateTagIncludeCategory,
-                  ),
-                ),
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.tag_book_name',
-                  child: AdaptiveSettingsSwitchRow(
-                    title: t.auto_add_book_name_to_tags,
-                    icon: FushiIcons.tag,
-                    value: appModel.autoAddBookNameToTags,
-                    onChanged: (bool value) {
-                      appModel.toggleAutoAddBookNameToTags();
-                      setState(() {});
-                    },
-                  ),
-                ),
-                // 制卡所在字符数标签（`chars_12345`）：只有小说阅读器会注入，但开关与
-                // 其余标签开关同区——用户找「卡片带哪些标签」只会来这里找。
-                AdaptiveSettingsSwitchRow(
-                  title: t.auto_add_char_position_to_tags,
-                  subtitle: t.auto_add_char_position_to_tags_hint,
-                  icon: FushiIcons.pin,
-                  value: appModel.autoAddCharPositionToTags,
-                  onChanged: (bool value) {
-                    appModel.toggleAutoAddCharPositionToTags();
-                    setState(() {});
-                  },
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -476,6 +373,21 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) {
     final AnkiSettings settings = uiState.settings;
     return switch (row) {
+      // 与互联设置里的同一个开关（id 不同：那边是 interconnect.mine_to_server）。
+      AnkiSectionRow.mineToServer => SettingsSearchTarget(
+        id: 'card_creation.anki.mine_to_server',
+        child: AdaptiveSettingsSwitchRow(
+          icon: FushiIcons.devices,
+          showIcon: true,
+          title: t.anki_mine_to_server,
+          subtitle: t.anki_mine_to_server_hint,
+          value: appModel.mineToServerEnabled,
+          onChanged: (bool value) async {
+            await appModel.setMineToServer(value);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
       // showIcon 与同组的刷新 / Lapis 行一致，左栏图标对齐。
       AnkiSectionRow.profile => SettingsSearchTarget(
         id: 'card_creation.anki.profile',
@@ -569,6 +481,102 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           hideWhenEmpty:
               !settings.batchMiningEnabled &&
               !settings.queueUndeliveredMinesEnabled,
+        ),
+      ),
+      // 「卡片内容」：两种目标都生效（SRS 制卡复用 AnkiNoteComposer：查重放行、✓ 覆写
+      // 范围、紧凑释义都读同一份设置）。只对 Anki 成立的「查重范围」在「Anki」分组。
+      AnkiSectionRow.allowDuplicates => SettingsSearchTarget(
+        id: 'card_creation.anki.allow_duplicates',
+        child: _buildAllowDuplicatesRow(settings, vm),
+      ),
+      // TODO-614：「覆写已制卡片」范围——再点 ✓ 时改旧卡还是建新卡；复习覆写同样按它
+      // （全部 = 按查重找到的笔记都能覆写）。
+      AnkiSectionRow.overwriteScope => SettingsSearchTarget(
+        id: 'card_creation.anki.overwrite_scope',
+        child: _buildOverwriteScopePicker(settings, vm),
+      ),
+      AnkiSectionRow.compactGlossaries => SettingsSearchTarget(
+        id: 'card_creation.anki.compact_glossaries',
+        child: _buildCompactGlossariesRow(settings, vm),
+      ),
+      // 「制卡提示」：制卡结果 toast 的开关组，两种目标都生效（toast 出口只有
+      // FushiToast.showMine 一处）。失败与「成功但缺音频」不受开关影响。
+      AnkiSectionRow.noticeSuccess => SettingsSearchTarget(
+        id: 'card_creation.notice.success',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.card_creation_notice_success,
+          subtitle: t.card_creation_notice_success_hint,
+          value: appModel.mineNoticeSuccess,
+          onChanged: (bool value) async {
+            await appModel.setMineNoticeSuccess(value);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+      AnkiSectionRow.noticeDuplicate => SettingsSearchTarget(
+        id: 'card_creation.notice.duplicate',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.card_creation_notice_duplicate,
+          subtitle: t.card_creation_notice_duplicate_hint,
+          value: appModel.mineNoticeDuplicate,
+          onChanged: (bool value) async {
+            await appModel.setMineNoticeDuplicate(value);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+      // 「默认标签」（TODO-135）：与目标无关——SRS 制卡同样经 buildNoteTags 打这些标签。
+      AnkiSectionRow.globalTags => SettingsSearchTarget(
+        id: 'card_creation.anki.global_tags',
+        child: _buildGlobalTagsInput(settings, vm),
+      ),
+      AnkiSectionRow.tags => SettingsSearchTarget(
+        id: 'card_creation.anki.tags',
+        child: _buildTagsInput(settings, vm),
+      ),
+      AnkiSectionRow.tagIncludeFushi => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_include_hibiki',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_tag_include_fushi,
+          subtitle: t.anki_tag_include_fushi_hint,
+          value: settings.tagIncludeHibiki,
+          onChanged: vm.updateTagIncludeHibiki,
+        ),
+      ),
+      AnkiSectionRow.tagIncludeCategory => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_include_category',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_tag_include_category,
+          subtitle: t.anki_tag_include_category_hint,
+          value: settings.tagIncludeCategory,
+          onChanged: vm.updateTagIncludeCategory,
+        ),
+      ),
+      AnkiSectionRow.tagBookName => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_book_name',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.auto_add_book_name_to_tags,
+          icon: FushiIcons.tag,
+          value: appModel.autoAddBookNameToTags,
+          onChanged: (bool value) {
+            appModel.toggleAutoAddBookNameToTags();
+            setState(() {});
+          },
+        ),
+      ),
+      // 制卡所在字符数标签（`chars_12345`）：只有小说阅读器会注入，但开关与其余标签
+      // 开关同区——用户找「卡片带哪些标签」只会来这里找。
+      AnkiSectionRow.tagCharPosition => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_char_position',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.auto_add_char_position_to_tags,
+          subtitle: t.auto_add_char_position_to_tags_hint,
+          icon: FushiIcons.pin,
+          value: appModel.autoAddCharPositionToTags,
+          onChanged: (bool value) {
+            appModel.toggleAutoAddCharPositionToTags();
+            setState(() {});
+          },
         ),
       ),
     };
@@ -777,10 +785,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 不装 Anki、由 Fushi 直接同步到 AnkiWeb / 自建服务器；本机没带
+        // 常用的 AnkiConnect 配置在最上面；不装 Anki、由 Fushi 直接同步到 AnkiWeb /
+        // 自建服务器的高级功能（默认折叠、启用前警告）排在后面。本机没带
         // fushi-anki-sync 时这一节不渲染。
-        const AnkiSyncClientSection(),
         _buildAnkiConnectSection(uiState, vm, settings),
+        const AnkiSyncClientSection(),
       ],
     );
   }

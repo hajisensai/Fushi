@@ -2615,6 +2615,41 @@ void main() {
     expect(avatarLabel(), 'Bob', reason: '切换激活 Profile 后头像要跟着变');
   });
 
+  testWidgets('切换激活 Profile 后首页统计立即换成新配置的（反馈 FH1toxJJxz）', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    final int alice = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
+    );
+    final int bob = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Bob', createdAt: 0, updatedAt: 0),
+    );
+    await db.setPref('active_profile_id', '$alice');
+    // 今天 800 字只属于 Alice（legacy 统计归属 Alice，Bob 看不见）。
+    await db.setPref(kStatLegacyProfileIdPrefKey, '$alice');
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(find.text(formatStatChars(800)), findsOneWidget);
+
+    // 只改激活 Profile（不碰任何统计表）：首页在屏上也要换成 Bob 的统计。
+    await db.setPref('active_profile_id', '$bob');
+    await pumpDashboard(tester);
+    await pumpDashboard(tester);
+    expect(
+      find.text(formatStatChars(800)),
+      findsNothing,
+      reason: '切到 Bob 后不能还显示 Alice 的今日字数',
+    );
+
+    await db.setPref('active_profile_id', '$alice');
+    await pumpDashboard(tester);
+    await pumpDashboard(tester);
+    expect(find.text(formatStatChars(800)), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('浮动工具栏：Tab 可达五颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();

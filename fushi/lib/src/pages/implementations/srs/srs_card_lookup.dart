@@ -39,6 +39,9 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart'
+    show ReaderSelectionScripts;
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/utils.dart';
 
@@ -602,24 +605,51 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
   }
 }
 
-// ------------------------------------------------------------------ WebView 卡面
+/// ------------------------------------------------------------------ WebView 卡面
 
-/// 卡面 WebView 的取词脚本（依赖 `window.fushiSelection`，即阅读器同一份选区脚本
-/// [ReaderSelectionScripts.source]）。
+/// 页内点按位移门（CSS 像素）：越过即「拖动」，不算点按（拖动滚动不误触）。
+const int kSrsCardTapSlop = 12;
+
+/// 页内长按时长（毫秒），与 Flutter 的 [kLongPressTimeout] 一致。
+const int kSrsCardLongPressMs = 500;
+
+/// 页内双击：两次点按的最长间隔（毫秒）与最远距离（CSS 像素），与 Flutter 的
+/// [kDoubleTapTimeout] / [kDoubleTapSlop] 一致。
+const int kSrsCardDoubleTapMs = 300;
+const int kSrsCardDoubleTapSlop = 100;
+
+/// 卡面 WebView 的指针脚本：取词 + 卡面手势（依赖 `window.fushiSelection`，即阅读器同一份
+/// 选区脚本 [ReaderSelectionScripts.source]）。一条指针流水线、一个归属判定，不另挂第二套
+/// 监听抢同一次点按。
 ///
-/// - 点按：原始 pointerup / touchend + 12px 位移门（拖动滚动不误触；不依赖合成
-///   click，与歌词模式 BUG-280 同理）。点在链接、按钮、表单、`onclick` / `role=button`、
-///   `cursor:pointer` 的元素上不取词——卡片模板自己的点击操作（展开释义、切换注音、
-///   播放按钮）照旧；拖选出非空原生选区时也不取词。
+/// - 点按：原始 pointerup / touchend + [kSrsCardTapSlop] 位移门（拖动滚动不误触；不依赖
+///   合成 click，与歌词模式 BUG-280 同理）。点在链接、按钮、表单、`onclick` /
+///   `role=button`、`cursor:pointer` 的元素上不取词——卡片模板自己的点击操作（展开释义、
+///   切换注音、播放按钮、点按显示翻译）照旧；拖选出非空原生选区时也不取词。
 /// - 悬停：按住 Shift 或开了「悬停即查词」，鼠标越过 8px 即取词（与阅读器 JS 腿同阈值）；
 ///   宿主侧接管悬停的平台（macOS，BUG-2508）由 `hostHover` 关掉本腿。
 /// - 门控 `window.__fushiSrsLookup = {tap, hover, hostHover, open}` 由 Dart 下发；弹窗
 ///   打开期间（`open`）点按交给 Flutter 的 dismiss barrier 统一处置，页内不再取词。
-const String kSrsCardLookupScript = r'''
+/// - 卡面手势（门控 `window.__fushiSrsGestures`，见 [srsCardGestureGateScript]；没下发时
+///   走上面的旧路径，网页浏览器标签页共用本脚本、行为不变）：点按先分归属——可点元素归页面
+///   自己，点在字上（选区脚本 `getCharacterAtPoint` / 隐藏注音）归取词，其余才是「点空白」，
+///   回报 `{t:'tap'}`（复习页按分区执行）。开了双击才为等第二击推迟单击；长按只在空白、
+///   只认触屏 / 触控笔；滑动只认触屏 / 触控笔、要在长按时限内起动，越过位移门时按主轴锁定，
+///   该轴没绑手势、或落点所在的可滚动容器还能往这个方向滚（那是滚动）、或正在拖选时不接管；
+///   接管后逐帧回报 `{t:'drag'}`、松手回报 `{t:'release'}` 带速度，期间那条轴上真的滚了
+///   就回报 `{t:'cancel'}`。坐标一律是页面 CSS 像素并附视口尺寸（`vw` / `vh`），Dart 侧换算。
+const String kSrsCardLookupScript =
+    '''
 (function(){
   if (window.__fushiSrsLookupInstalled) return;
   window.__fushiSrsLookupInstalled = true;
+  var SLOP = $kSrsCardTapSlop, LONG_MS = $kSrsCardLongPressMs;
+  var DBL_MS = $kSrsCardDoubleTapMs, DBL_SLOP = $kSrsCardDoubleTapSlop;
   function gate(){ return window.__fushiSrsLookup || {}; }
+  function gest(){
+    var g = window.__fushiSrsGestures;
+    return g && g.on ? g : null;
+  }
   function blocked(el){
     for (var n = el; n && n.nodeType === 1 && n !== document.body &&
         n !== document.documentElement; n = n.parentElement) {
@@ -639,28 +669,221 @@ const String kSrsCardLookupScript = r'''
     if (!window.fushiSelection) return;
     var el = document.elementFromPoint(x, y);
     if (!el || blocked(el)) return;
+    // 模糊中的例句翻译不取词（srs_card_translation_blur.dart）。
+    if (window.__fushiSrsTranslationBlocksLookup &&
+        window.__fushiSrsTranslationBlocksLookup(x, y)) return;
     window.fushiSelection.selectText(x, y, 400, hover);
   }
-  var sx = 0, sy = 0, moved = false, has = false;
-  function start(x, y){ sx = x; sy = y; moved = false; has = true; }
+  function hasSelection(){
+    var sel = window.getSelection ? window.getSelection() : null;
+    return !!(sel && !sel.isCollapsed && String(sel).length > 0);
+  }
+  // 点在字上（与取词同一判据：选区脚本的逐字命中；隐藏注音点了是揭示）。
+  function hitsText(x, y){
+    var s = window.fushiSelection;
+    if (!s) return false;
+    try {
+      if (s._hiddenFuriganaRubyAt && s._hiddenFuriganaRubyAt(x, y)) return true;
+      return !!(s.getCharacterAtPoint && s.getCharacterAtPoint(x, y));
+    } catch (e) { return false; }
+  }
+  // 从这些元素上起手的拖动归它们自己（输入框拖选、滑块、媒体控件）。
+  function ownsDrag(el){
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      var tag = n.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+          tag === 'AUDIO' || tag === 'VIDEO' || n.isContentEditable) return true;
+    }
+    return false;
+  }
+  // 落点所在的可滚动容器（含页面本身）在 axis 上的滚动位置快照。
+  function scrollers(el, axis){
+    var out = [];
+    var root = document.scrollingElement || document.documentElement;
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      if (n === root || n === document.body || n === document.documentElement) continue;
+      var ov = '';
+      try {
+        var cs = window.getComputedStyle(n);
+        ov = axis === 'x' ? cs.overflowX : cs.overflowY;
+      } catch (e) {}
+      if (ov === 'auto' || ov === 'scroll') out.push(n);
+    }
+    if (root) out.push(root);
+    return out;
+  }
+  function pos(n, axis){ return axis === 'x' ? n.scrollLeft : n.scrollTop; }
+  function maxPos(n, axis){
+    return axis === 'x' ? n.scrollWidth - n.clientWidth : n.scrollHeight - n.clientHeight;
+  }
+  // 手指沿 axis 移动 d（>0 向右 / 向下）时，有没有容器会跟着滚（内容朝反方向走）。
+  function canScroll(list, axis, d){
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i], p = pos(n, axis), m = maxPos(n, axis);
+      if (m <= 1) continue;
+      if (d < 0 && p < m - 1) return true;
+      if (d > 0 && p > 1) return true;
+    }
+    return false;
+  }
+  function scrolled(q){
+    for (var i = 0; i < q.snap.length; i++) {
+      if (Math.abs(pos(q.snap[i][0], q.axis) - q.snap[i][1]) > 1) return true;
+    }
+    return false;
+  }
+  function send(o){
+    o.vw = window.innerWidth; o.vh = window.innerHeight;
+    try { window.flutter_inappwebview.callHandler('$kSrsGestureHandler', JSON.stringify(o)); } catch (e) {}
+  }
+  function nowMs(){ return Date.now(); }
+  var cur = null;      // 当前这一次按下
+  var pending = null;  // 开了双击时，等第二击的第一下空白点按 {x, y, timer}
+  // 第二击没成双击：补发第一下的单击。
+  function flushFirst(q){
+    if (!q.first) return;
+    var f = q.first; q.first = null;
+    send({t: 'tap', x: f.x, y: f.y});
+  }
+  function velocity(q){
+    var s = q.samples, last = s[s.length - 1], i = 0;
+    while (i < s.length - 2 && last[2] - s[i][2] > 100) i++;
+    var first = s[i], dt = last[2] - first[2];
+    if (dt < 1) return [0, 0];
+    return [(last[0] - first[0]) * 1000 / dt, (last[1] - first[1]) * 1000 / dt];
+  }
+  function start(x, y, target, touch){
+    var g = gest();
+    cur = {sx: x, sy: y, x: x, y: y, t0: nowMs(), moved: false, drag: false,
+      axis: null, snap: null, long: false, timer: null, raf: 0, el: target,
+      touch: touch, first: null, samples: [[x, y, nowMs()]]};
+    if (!g) return;
+    if (pending) {
+      var p0 = pending;
+      pending = null;
+      clearTimeout(p0.timer);
+      if (Math.abs(x - p0.x) <= DBL_SLOP && Math.abs(y - p0.y) <= DBL_SLOP) {
+        cur.first = p0;
+      } else {
+        // 第二下离得太远：第一下就是单击，先报出去。
+        send({t: 'tap', x: p0.x, y: p0.y});
+      }
+    }
+    if (g.longPress && touch && !blocked(target) && !hitsText(x, y)) {
+      var q = cur;
+      q.timer = setTimeout(function(){
+        if (cur !== q || q.moved) return;
+        q.long = true;
+        flushFirst(q);
+        send({t: 'longPress', x: q.x, y: q.y});
+      }, LONG_MS);
+    }
+  }
+  function cancelDrag(q){
+    if (!q.drag) return;
+    q.drag = false;
+    if (q.raf) { cancelAnimationFrame(q.raf); q.raf = 0; }
+    send({t: 'cancel'});
+  }
   function move(x, y){
-    if (!has) return;
-    if (Math.abs(x - sx) > 12 || Math.abs(y - sy) > 12) moved = true;
+    var q = cur;
+    if (!q) return;
+    q.x = x; q.y = y;
+    var t = nowMs();
+    q.samples.push([x, y, t]);
+    while (q.samples.length > 2 && t - q.samples[0][2] > 150) q.samples.shift();
+    var dx = x - q.sx, dy = y - q.sy;
+    if (!q.moved && (Math.abs(dx) > SLOP || Math.abs(dy) > SLOP)) {
+      q.moved = true;
+      if (q.timer) { clearTimeout(q.timer); q.timer = null; }
+      var g = gest();
+      if (g && q.touch && !q.long && t - q.t0 < LONG_MS && !ownsDrag(q.el) &&
+          !hasSelection()) {
+        var axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+        var list = scrollers(q.el, axis);
+        if ((axis === 'x' ? g.swipeX : g.swipeY) &&
+            !canScroll(list, axis, axis === 'x' ? dx : dy)) {
+          q.drag = true;
+          q.axis = axis;
+          q.snap = list.map(function(n){ return [n, pos(n, axis)]; });
+        }
+      }
+    }
+    if (!q.drag) return;
+    if (hasSelection() || scrolled(q)) { cancelDrag(q); return; }
+    if (!q.raf) {
+      q.raf = requestAnimationFrame(function(){
+        q.raf = 0;
+        if (q.drag) send({t: 'drag', dx: q.x - q.sx, dy: q.y - q.sy});
+      });
+    }
   }
   function end(x, y){
-    if (!has) return;
-    has = false;
-    if (moved) return;
-    var g = gate();
-    if (!g.tap || g.open) return;
-    var sel = window.getSelection ? window.getSelection() : null;
-    if (sel && !sel.isCollapsed && String(sel).length > 0) return;
-    selectAt(x, y, false);
+    var q = cur;
+    cur = null;
+    if (!q) return;
+    if (q.timer) { clearTimeout(q.timer); q.timer = null; }
+    if (q.long) return;
+    var g = gest();
+    if (q.drag) {
+      if (q.raf) { cancelAnimationFrame(q.raf); q.raf = 0; }
+      q.x = x; q.y = y;
+      q.samples.push([x, y, nowMs()]);
+      if (hasSelection() || scrolled(q)) { cancelDrag(q); return; }
+      var v = velocity(q);
+      send({t: 'release', dx: x - q.sx, dy: y - q.sy, vx: v[0], vy: v[1]});
+      return;
+    }
+    // 这一下已归卡面上的点按开关（翻译模糊的显示 / 再模糊，window 捕获阶段先于这里）：
+    // 不取词，也不当作卡面手势的点按。
+    if (window.__fushiSrsTapConsumed) { flushFirst(q); return; }
+    var lg = gate();
+    if (!g) {
+      // 没有卡面手势：旧路径（取词；空白由选区脚本回报 onTapEmpty）。
+      if (q.moved) return;
+      if (!lg.tap || lg.open) return;
+      if (hasSelection()) return;
+      selectAt(x, y, false);
+      return;
+    }
+    if (q.moved || lg.open || hasSelection()) { flushFirst(q); return; }
+    var el = document.elementFromPoint(x, y);
+    if (!el || blocked(el)) { flushFirst(q); return; }
+    if (hitsText(x, y)) {
+      flushFirst(q);
+      if (lg.tap) selectAt(x, y, false);
+      return;
+    }
+    if (q.first) {
+      var f = q.first;
+      q.first = null;
+      send({t: 'doubleTap', x: f.x, y: f.y});
+      return;
+    }
+    if (g.doubleTap) {
+      var pt = {x: x, y: y, timer: null};
+      pt.timer = setTimeout(function(){
+        if (pending !== pt) return;
+        pending = null;
+        send({t: 'tap', x: pt.x, y: pt.y});
+      }, DBL_MS);
+      pending = pt;
+      return;
+    }
+    send({t: 'tap', x: x, y: y});
+  }
+  function abort(){
+    var q = cur;
+    cur = null;
+    if (!q) return;
+    if (q.timer) clearTimeout(q.timer);
+    cancelDrag(q);
+    flushFirst(q);
   }
   window.__fushiSrsLookupTap = end;
   document.addEventListener('touchstart', function(e){
-    if (e.touches.length !== 1) { has = false; return; }
-    var t = e.touches[0]; start(t.clientX, t.clientY);
+    if (e.touches.length !== 1) { abort(); return; }
+    var t = e.touches[0]; start(t.clientX, t.clientY, e.target, true);
   }, {passive: true});
   document.addEventListener('touchmove', function(e){
     var t = e.touches[0]; if (t) move(t.clientX, t.clientY);
@@ -668,10 +891,10 @@ const String kSrsCardLookupScript = r'''
   document.addEventListener('touchend', function(e){
     var t = e.changedTouches[0]; if (t) end(t.clientX, t.clientY);
   }, {passive: true});
-  document.addEventListener('touchcancel', function(){ has = false; });
+  document.addEventListener('touchcancel', abort);
   document.addEventListener('pointerdown', function(e){
     if (e.pointerType === 'touch' || e.button !== 0) return;
-    start(e.clientX, e.clientY);
+    start(e.clientX, e.clientY, e.target, e.pointerType === 'pen');
   }, {passive: true});
   document.addEventListener('pointermove', function(e){
     if (e.pointerType === 'touch') return;
@@ -681,6 +904,10 @@ const String kSrsCardLookupScript = r'''
     if (e.pointerType === 'touch' || e.button !== 0) return;
     end(e.clientX, e.clientY);
   }, {passive: true});
+  document.addEventListener('pointercancel', function(e){
+    if (e.pointerType === 'touch') return;
+    abort();
+  });
   var hx = -1, hy = -1;
   document.addEventListener('mousemove', function(e){
     var g = gate();
@@ -694,13 +921,30 @@ const String kSrsCardLookupScript = r'''
 })();
 ''';
 
-/// 卡面上被查词的高亮（阅读器选区脚本的 CSS Highlight / 包裹 span）。颜色取卡面主题的
+/// 卡面手势门控（`window.__fushiSrsGestures`）。null = 不接管手势（旧路径）。
+String srsCardGestureGateScript(SrsCardGestureArming? arming) =>
+    'window.__fushiSrsGestures = '
+    '${arming == null ? 'null' : jsonEncode(arming.toJson())};';
+
+// 卡面上被查词的高亮（阅读器选区脚本的 CSS Highlight / 包裹 span）。颜色取卡面主题的
 /// 强调色；高亮只改底色，不动排版。
 const String kSrsCardLookupCss = '''
 ::highlight(fushi-selection){background-color:color-mix(in srgb,var(--fushi-srs-accent,#3b82f6) 32%,transparent);color:inherit;}
 .fushi-dict-highlight{background-color:color-mix(in srgb,var(--fushi-srs-accent,#3b82f6) 32%,transparent)!important;color:inherit;border-radius:2px;}
 ruby.fushi-selection-ruby-active{background-color:color-mix(in srgb,var(--fushi-srs-accent,#3b82f6) 32%,transparent)!important;border-radius:2px;}
 ''';
+
+/// 宿主侧取词（弹窗 barrier 上的点按、macOS 宿主悬停）的页内调用：落在模糊中的例句翻译上
+/// （srs_card_translation_blur.dart）时不取词，其余同 [ReaderSelectionScripts.selectInvocation]。
+String srsCardSelectInvocation(
+  double x,
+  double y,
+  int maxLength, {
+  required bool fromHover,
+}) =>
+    'if (!(window.__fushiSrsTranslationBlocksLookup && '
+    'window.__fushiSrsTranslationBlocksLookup($x, $y))) '
+    '${ReaderSelectionScripts.selectInvocation(x, y, maxLength, fromHover: fromHover)};';
 
 /// 页内取词门控的下发脚本。
 String srsCardLookupGateScript({
@@ -1060,109 +1304,345 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
   }
 }
 
-/// [SrsBlankTapRegion.excluded] 在命中路径上留下的标记。
-const Object _kSrsBlankTapExcluded = Object();
+/// [SrsCardGestureRegion.excluded] 在命中路径上留下的标记。
+const Object _kSrsCardGestureExcluded = Object();
 
-/// 原生卡面上的「点空白」：一次没有拖动的主键点按，落点上没有取词命中、没有带点击 /
-/// 长按处理的子控件（按钮、图片、来源链接、例句注音切换），也不在 [excluded] 圈出的
-/// 子树上（释义 WebView：那里的空白由页内取词脚本回报 `onTapEmpty`）——满足才调
-/// [onTapEmpty]。复习页据此切换悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同口径）。
+/// 按下点落在什么上（只看本区域以内的命中）。
+enum _SrsCardHit {
+  /// 空白（可以算点空白 / 长按空白）。
+  blank,
+
+  /// 自己处理点按的子控件（按钮、图片、来源链接、例句注音 / 翻译切换）。
+  target,
+
+  /// [SrsCardGestureRegion.excluded] 圈出的子树（释义 WebView：那里的手势归页内脚本）。
+  excluded,
+}
+
+/// 原生卡面上的卡面手势（与 WebView 卡面页内脚本 [kSrsCardLookupScript] 同一套判据）：
 ///
-/// 只旁观指针（Listener），不进手势竞技场：卡面的拖选、点按、滚动一概不受影响。命中
-/// 在按下时判（抬起时可滚动的卡面正处在拖动活动里，子树暂不参与命中测试）。必须包在
+/// - **点按空白**：一次没有拖动的主键点按，落点上没有取词命中、没有带点击 / 长按处理的
+///   子控件（按钮、图片、来源链接、例句注音切换、点按显示翻译），也不在 [excluded] 圈出的
+///   子树上——满足才回报 [SrsCardGestureKind.tap]（复习页按分区执行；默认切换悬浮顶栏）。
+///   [SrsCardGestureArming.doubleTap] 开着时第一下先等 [kDoubleTapTimeout]，第二下落在
+///   [kDoubleTapSlop] 以内且同为空白点按就回报双击；没开就不等。
+/// - **长按空白**（只认触屏 / 触控笔，[SrsCardGestureArming.longPress] 开着时）：按住
+///   [kLongPressTimeout] 没动、且没按在字上（字上的长按归 [SelectionArea] 选词）。
+/// - **滑动**（只认触屏 / 触控笔，对应轴开着时）：在长按时限内越过 [kTouchSlop] 时按主轴
+///   锁定；竖直方向上卡面滚动（[scrollController]）还能往这个方向滚就是滚动、不接管；
+///   接管后每次移动回报 [SrsCardGestureKind.drag]，松手回报 [SrsCardGestureKind.release]
+///   带速度，由复习页判定（[srsClassifySwipe]）；途中那条轴上内容真的滚了（嵌套滚动）就
+///   回报 [SrsCardGestureKind.cancel]。
+///
+/// 只旁观指针（Listener），不进手势竞技场：卡面的拖选、点按、滚动一概不受影响。命中在按下
+/// 时判（抬起时可滚动的卡面正处在拖动活动里，子树暂不参与命中测试）。必须包在
 /// [SrsNativeLookupRegion] **外面**：同一次抬起时取词区先处理，[tapTookLookup] 才已定。
-class SrsBlankTapRegion extends StatefulWidget {
-  const SrsBlankTapRegion({
+class SrsCardGestureRegion extends StatefulWidget {
+  const SrsCardGestureRegion({
     super.key,
-    required this.onTapEmpty,
+    required this.onGesture,
     required this.tapTookLookup,
     required this.child,
+    this.arming = SrsCardGestureArming.none,
+    this.scrollController,
   });
 
-  /// 圈出一块「点按不归原生区判空白」的子树。
+  /// 圈出一块「手势不归原生区判定」的子树。
   static Widget excluded({required Widget child}) =>
-      MetaData(metaData: _kSrsBlankTapExcluded, child: child);
+      MetaData(metaData: _kSrsCardGestureExcluded, child: child);
 
-  final VoidCallback? onTapEmpty;
+  /// null = 不识别任何手势（外观页预览等）。
+  final void Function(SrsCardGestureEvent event)? onGesture;
+
+  /// 这一面开着的识别器。
+  final SrsCardGestureArming arming;
 
   /// 这一下点按是否已被原生取词用掉。
   final bool Function() tapTookLookup;
+
+  /// 卡面的竖直滚动：竖直滑动与滚动的分界（还能往手指方向滚 = 滚动）。
+  final ScrollController? scrollController;
   final Widget child;
 
   @override
-  State<SrsBlankTapRegion> createState() => _SrsBlankTapRegionState();
+  State<SrsCardGestureRegion> createState() => _SrsCardGestureRegionState();
 }
 
-class _SrsBlankTapRegionState extends State<SrsBlankTapRegion> {
+class _SrsCardGestureRegionState extends State<SrsCardGestureRegion> {
   int? _pointer;
-  Offset? _down;
+  Offset _down = Offset.zero;
+  Duration _downAt = Duration.zero;
+  bool _touchLike = false;
+  _SrsCardHit _hit = _SrsCardHit.blank;
   bool _moved = false;
+  bool _long = false;
+  bool _drag = false;
+  Axis? _axis;
+  Timer? _longTimer;
+  VelocityTracker? _tracker;
 
-  /// 按下点 [global] 是否落在某个自己处理点按的子控件上（只看本区域以内的命中）。
-  bool _hitsTapTarget(Offset global) {
+  /// 开着双击时等第二击的第一下空白点按。
+  ({Offset position, Timer timer})? _pending;
+
+  /// 这一次按下是第二击：第一下的落点（没成双击时补发单击）。
+  Offset? _first;
+
+  @override
+  void didUpdateWidget(SrsCardGestureRegion old) {
+    super.didUpdateWidget(old);
+    // 换面后不再开双击：挂着的第一下立即按单击发出，不让它晚 300ms。
+    if (old.arming.doubleTap && !widget.arming.doubleTap) _flushPending();
+  }
+
+  @override
+  void dispose() {
+    _longTimer?.cancel();
+    _pending?.timer.cancel();
+    super.dispose();
+  }
+
+  void _emit(SrsCardGestureEvent event) {
+    if (mounted) widget.onGesture?.call(event);
+  }
+
+  void _flushPending() {
+    final ({Offset position, Timer timer})? p = _pending;
+    if (p == null) return;
+    _pending = null;
+    p.timer.cancel();
+    _emit(SrsCardGestureEvent(SrsCardGestureKind.tap, position: p.position));
+  }
+
+  /// 第二击没成双击：补发第一下的单击。
+  void _flushFirst() {
+    final Offset? first = _first;
+    if (first == null) return;
+    _first = null;
+    _emit(SrsCardGestureEvent(SrsCardGestureKind.tap, position: first));
+  }
+
+  /// 按下点 [global] 落在什么上；顺带判是不是按在字上。
+  ({_SrsCardHit hit, bool text}) _classify(Offset global) {
     final RenderObject? self = context.findRenderObject();
-    if (self == null) return true;
+    if (self == null) return (hit: _SrsCardHit.target, text: false);
     final HitTestResult result = HitTestResult();
     WidgetsBinding.instance.hitTestInView(
       result,
       global,
       View.of(context).viewId,
     );
+    bool text = false;
     for (final HitTestEntry entry in result.path) {
       final HitTestTarget target = entry.target;
-      if (identical(target, self)) return false;
+      if (identical(target, self)) {
+        return (hit: _SrsCardHit.blank, text: text);
+      }
+      if (target is RenderParagraph) text = true;
+      if (target is RenderMetaData &&
+          identical(target.metaData, _kSrsCardGestureExcluded)) {
+        return (hit: _SrsCardHit.excluded, text: text);
+      }
       if (target is RenderSemanticsGestureHandler &&
           (target.onTap != null || target.onLongPress != null)) {
-        return true;
+        return (hit: _SrsCardHit.target, text: text);
       }
       // 自报可点的控件：图标按钮（[FushiIconButton] 内层 InkWell 不进语义，命中路径上只有
       // 外层的 `Semantics(button: true)`）、视频片段画面等。不认它们，点按钮 / 点视频会
       // 被当成点空白，顺带切换悬浮顶栏。
       if (target is RenderSemanticsAnnotations) {
         final SemanticsProperties p = target.properties;
-        if (p.button == true || p.link == true || p.onTap != null) return true;
-      }
-      if (target is RenderMetaData &&
-          identical(target.metaData, _kSrsBlankTapExcluded)) {
-        return true;
+        if (p.button == true || p.link == true || p.onTap != null) {
+          return (hit: _SrsCardHit.target, text: text);
+        }
       }
     }
-    return true;
+    return (hit: _SrsCardHit.target, text: text);
+  }
+
+  void _reset() {
+    _pointer = null;
+    _longTimer?.cancel();
+    _longTimer = null;
+    _tracker = null;
   }
 
   void _onDown(PointerDownEvent e) {
-    _pointer = null;
-    if (widget.onTapEmpty == null) return;
+    if (widget.onGesture == null) return;
+    if (_pointer != null) {
+      // 第二根手指：这次不是单指手势。
+      _abort();
+      return;
+    }
     final bool primary =
         e.kind != PointerDeviceKind.mouse || e.buttons == kPrimaryButton;
-    // 查词弹窗开着时这一下是关弹窗，不切换顶栏。
+    // 查词弹窗开着时这一下是关弹窗（barrier 处置），卡面不再算手势。
     final bool lookupOpen = SrsCardLookupScope.of(context)?.isOpen ?? false;
-    if (!primary || lookupOpen || _hitsTapTarget(e.position)) return;
+    if (!primary || lookupOpen) return;
+    final ({_SrsCardHit hit, bool text}) c = _classify(e.position);
+    if (c.hit == _SrsCardHit.excluded) {
+      _flushPending();
+      return;
+    }
     _pointer = e.pointer;
     _down = e.position;
+    _downAt = e.timeStamp;
+    _hit = c.hit;
     _moved = false;
+    _long = false;
+    _drag = false;
+    _axis = null;
+    _touchLike =
+        e.kind == PointerDeviceKind.touch ||
+        e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
+    _tracker = VelocityTracker.withKind(e.kind)
+      ..addPosition(e.timeStamp, e.position);
+    final ({Offset position, Timer timer})? p = _pending;
+    if (p != null) {
+      if ((e.position - p.position).distance <= kDoubleTapSlop) {
+        p.timer.cancel();
+        _pending = null;
+        _first = p.position;
+      } else {
+        _flushPending();
+      }
+    }
+    if (widget.arming.longPress &&
+        _touchLike &&
+        c.hit == _SrsCardHit.blank &&
+        !c.text) {
+      final int pointer = e.pointer;
+      _longTimer = Timer(kLongPressTimeout, () {
+        if (_pointer != pointer || _moved) return;
+        _long = true;
+        _flushFirst();
+        _emit(
+          SrsCardGestureEvent(SrsCardGestureKind.longPress, position: _down),
+        );
+      });
+    }
+  }
+
+  /// 手指沿竖直方向移动 [dy] 时卡面滚动会不会跟着滚。
+  bool _canScrollVertically(double dy) {
+    final ScrollController? sc = widget.scrollController;
+    if (sc == null || !sc.hasClients) return false;
+    for (final ScrollPosition pos in sc.positions) {
+      if (!pos.hasContentDimensions || !pos.hasPixels) continue;
+      if (dy < 0 && pos.pixels < pos.maxScrollExtent - 0.5) return true;
+      if (dy > 0 && pos.pixels > pos.minScrollExtent + 0.5) return true;
+    }
+    return false;
   }
 
   void _onMove(PointerMoveEvent e) {
-    final Offset? d = _down;
-    if (e.pointer == _pointer && d != null) {
-      if ((e.position - d).distance > kTouchSlop) _moved = true;
+    if (e.pointer != _pointer) return;
+    _tracker?.addPosition(e.timeStamp, e.position);
+    final Offset delta = e.position - _down;
+    if (!_moved && delta.distance > kTouchSlop) {
+      _moved = true;
+      _longTimer?.cancel();
+      _longTimer = null;
+      final SrsCardGestureArming arming = widget.arming;
+      if (_touchLike &&
+          !_long &&
+          arming.anySwipe &&
+          e.timeStamp - _downAt < kLongPressTimeout) {
+        final Axis axis = delta.dx.abs() >= delta.dy.abs()
+            ? Axis.horizontal
+            : Axis.vertical;
+        final bool armed = axis == Axis.horizontal
+            ? arming.swipeHorizontal
+            : arming.swipeVertical;
+        if (armed &&
+            !(axis == Axis.vertical && _canScrollVertically(delta.dy))) {
+          _drag = true;
+          _axis = axis;
+        }
+      }
+    }
+    if (_drag) {
+      _emit(SrsCardGestureEvent(SrsCardGestureKind.drag, delta: delta));
     }
   }
 
   void _onUp(PointerUpEvent e) {
     if (e.pointer != _pointer) return;
-    _pointer = null;
-    if (_moved || widget.tapTookLookup()) return;
-    widget.onTapEmpty?.call();
+    _tracker?.addPosition(e.timeStamp, e.position);
+    final VelocityTracker? tracker = _tracker;
+    _reset();
+    if (_long) return;
+    if (_drag) {
+      _drag = false;
+      _emit(
+        SrsCardGestureEvent(
+          SrsCardGestureKind.release,
+          position: e.position,
+          delta: e.position - _down,
+          velocity: tracker?.getVelocity().pixelsPerSecond ?? Offset.zero,
+        ),
+      );
+      return;
+    }
+    if (_moved || _hit != _SrsCardHit.blank || widget.tapTookLookup()) {
+      _flushFirst();
+      return;
+    }
+    final Offset? first = _first;
+    if (first != null) {
+      _first = null;
+      _emit(SrsCardGestureEvent(SrsCardGestureKind.doubleTap, position: first));
+      return;
+    }
+    if (widget.arming.doubleTap) {
+      final Offset at = _down;
+      late final ({Offset position, Timer timer}) entry;
+      entry = (
+        position: at,
+        timer: Timer(kDoubleTapTimeout, () {
+          if (!identical(_pending, entry)) return;
+          _pending = null;
+          _emit(SrsCardGestureEvent(SrsCardGestureKind.tap, position: at));
+        }),
+      );
+      _pending = entry;
+      return;
+    }
+    _emit(SrsCardGestureEvent(SrsCardGestureKind.tap, position: _down));
+  }
+
+  void _abort() {
+    final bool dragging = _drag;
+    _drag = false;
+    _reset();
+    if (dragging) _emit(const SrsCardGestureEvent(SrsCardGestureKind.cancel));
+    _flushFirst();
+  }
+
+  /// 拖动途中那条轴上内容真的滚了（嵌套的可滚动区）：是滚动，不是滑动。越界回弹不算。
+  bool _onScroll(ScrollUpdateNotification n) {
+    if (_drag &&
+        n.metrics.axis == _axis &&
+        (n.scrollDelta ?? 0) != 0 &&
+        !n.metrics.outOfRange) {
+      _drag = false;
+      _emit(const SrsCardGestureEvent(SrsCardGestureKind.cancel));
+    }
+    return false;
   }
 
   @override
-  Widget build(BuildContext context) => Listener(
-    onPointerDown: _onDown,
-    onPointerMove: _onMove,
-    onPointerUp: _onUp,
-    onPointerCancel: (_) => _pointer = null,
-    child: widget.child,
-  );
+  Widget build(BuildContext context) =>
+      NotificationListener<ScrollUpdateNotification>(
+        onNotification: _onScroll,
+        child: Listener(
+          onPointerDown: _onDown,
+          onPointerMove: _onMove,
+          onPointerUp: _onUp,
+          onPointerCancel: (PointerCancelEvent e) {
+            if (e.pointer == _pointer) _abort();
+          },
+          child: widget.child,
+        ),
+      );
 }

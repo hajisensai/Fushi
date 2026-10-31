@@ -40,6 +40,15 @@ String airingCacheSignature({
   return '$weekStartEpochSeconds|ids:${sorted.join(',')}';
 }
 
+/// 单日窗口的缓存签名（纯函数）：`day:<当日 00:00 epoch 秒>|all` 等。带 `day:`
+/// 前缀，周一的单日窗口与整周窗口起点相同也不会撞签名。
+String airingDayCacheSignature({
+  required int dayStartEpochSeconds,
+  required List<int>? mediaIds,
+}) {
+  return 'day:${airingCacheSignature(weekStartEpochSeconds: dayStartEpochSeconds, mediaIds: mediaIds)}';
+}
+
 /// 编码成偏好 JSON 字符串（与 [decodeAiringScheduleCache] 往返，纯函数）。
 String encodeAiringScheduleCache(AiringScheduleCache cache) {
   return jsonEncode(<String, dynamic>{
@@ -86,19 +95,21 @@ AiringScheduleCache? decodeAiringScheduleCache(
       final dynamic episode = e['episode'];
       final dynamic airingAt = e['airingAt'];
       if (mediaId is! int || episode is! int || airingAt is! int) continue;
-      out.add(AniListAiringEpisode(
-        mediaId: mediaId,
-        episode: episode,
-        airingAtSeconds: airingAt,
-        media: AniListMedia(
-          id: mediaId,
-          romaji: e['romaji'] as String?,
-          english: e['english'] as String?,
-          native: e['native'] as String?,
-          coverUrl: e['cover'] as String?,
-          format: e['format'] as String?,
+      out.add(
+        AniListAiringEpisode(
+          mediaId: mediaId,
+          episode: episode,
+          airingAtSeconds: airingAt,
+          media: AniListMedia(
+            id: mediaId,
+            romaji: e['romaji'] as String?,
+            english: e['english'] as String?,
+            native: e['native'] as String?,
+            coverUrl: e['cover'] as String?,
+            format: e['format'] as String?,
+          ),
         ),
-      ));
+      );
     }
     return AiringScheduleCache(
       fetchedAtMs: fetchedAtMs,

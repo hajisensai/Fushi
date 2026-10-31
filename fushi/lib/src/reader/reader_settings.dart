@@ -287,6 +287,26 @@ class ReaderSettings {
   Future<void> setLyricsPanelMirrored(bool v) =>
       _set<bool>('lyrics_panel_mirrored', v);
 
+  /// MD3 歌词模式播放控件布局（`LyricsControlsStyle.wire`）：`modern` = 新版
+  /// （默认，2026-10-31 用户拍板）/ `classic` = 经典布局。
+  String get lyricsControlsStyle =>
+      _get<String>('lyrics_controls_style', 'modern');
+  Future<void> setLyricsControlsStyle(String v) =>
+      _set<String>('lyrics_controls_style', v);
+
+  /// 新版窄屏播放卡展开 / 收起（默认 `false` = 收起成迷你条，之后记住上次状态）。
+  bool get lyricsControlsExpanded =>
+      _get<bool>('lyrics_controls_expanded', false);
+  Future<void> setLyricsControlsExpanded(bool v) =>
+      _set<bool>('lyrics_controls_expanded', v);
+
+  /// 歌词模式播放走过插图时的提示方式：`popup` = 弹出插图卡并按「图片暂停」秒数
+  /// 停留（默认）/ `dot` = 只把封面位换成缩略图 + 红点，不弹、不停。
+  String get lyricsIllustrationCue =>
+      _get<String>('lyrics_illustration_cue', 'popup');
+  Future<void> setLyricsIllustrationCue(String v) =>
+      _set<String>('lyrics_illustration_cue', v);
+
   /// 歌词模式次要按钮布局 JSON（`LyricsControlLayout`）：宽屏 / 窄屏各一份，
   /// 空串 = 出厂布局。
   String get lyricsControlLayout => _get<String>('lyrics_control_layout', '');

@@ -72,3 +72,33 @@ enum SyncTombstoneKind {
     return null;
   }
 }
+
+/// 书墓碑对应的云盘书文件夹处置结论（`sync_deletion_tombstones.cloud_folder_state`，
+/// v142）。落库存 [dbValue]；未知值按 [pending] 读（宁可继续藏远端占位卡，也不把
+/// 没核实过的残留放出来）。
+enum TombstoneCloudFolderState {
+  /// 未处置：文件夹可能还在云盘上（v142 之前的墓碑一律是这个状态）。
+  pending(0),
+
+  /// 云通道 / 书架「同时从远端删除」已删掉这本书的云盘文件夹。
+  deleted(1),
+
+  /// 处置时核实：云盘同步根下没有这个文件夹（这本书从没上传过），无可删。
+  absent(2);
+
+  const TombstoneCloudFolderState(this.dbValue);
+
+  /// 落库整数值。
+  final int dbValue;
+
+  /// 解析落库值；未知值 → [pending]。
+  static TombstoneCloudFolderState fromDb(int value) {
+    for (final TombstoneCloudFolderState s in values) {
+      if (s.dbValue == value) return s;
+    }
+    return pending;
+  }
+
+  /// 文件夹已处置（删掉或本就没有）：此后云盘上同名文件夹只可能是新上传的。
+  bool get resolved => this != pending;
+}

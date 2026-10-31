@@ -107,7 +107,8 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       }
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
-        // 与词典管理页 `_reorderDictionaries` 同语义：同类型分区内移动后整组改 order。
+        // 与词典管理页 `_reorderDictionaries` 同语义：position 是在本分区**语言组**
+        // 里的位置（D_Nz5R4vSH），组内移动后整个分区按新顺序改 order。
         // 「汉字」分区还含混合词典的汉字部分（BUG-3573），位置要按该分区数、写入
         // 走分区专用的 updateKanjiSectionOrder，否则纯 kanji 词典的 order 与混合
         // 词典的 kanjiOrder 各排各的。
@@ -131,6 +132,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       }
       if (kanjiPosition != null) {
         // 「汉字」分区重排同一入口：混合词典只写 kanjiOrder，纯 kanji 词典写 order。
+        // 位置同样按「汉字」分区里的语言组算。
         final Dictionary current = resolveCtlDictionary(
           model.dictionaries,
           target.name,
@@ -990,6 +992,8 @@ Map<String, Object?> _ankiSyncStateJson(AnkiSyncState state) =>
       if (state.lastSyncAt != null) 'lastSyncAt': state.lastSyncAt,
       if (state.lastError != null) 'lastError': state.lastError,
       if (state.message != null) 'message': state.message,
+      if (state.rateLimitedUntil != null)
+        'rateLimitedUntil': state.rateLimitedUntil,
     };
 
 /// 拉 Anki 实时配置（与设置页「刷新」同一个 fetchConfiguration）；不可用抛 422。

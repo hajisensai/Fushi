@@ -681,6 +681,33 @@ void main() {
       expect(termOrder(), <String>['JMdict', 'Meikyo', 'Daijirin']);
     });
 
+    test('dict.set：position 按语言组算，撤销回组内原位 (D_Nz5R4vSH)', () async {
+      app.stored.add(
+        Dictionary(
+          name: 'OALD',
+          formatKey: 'yomichan',
+          order: 1,
+          languageOverride: 'en',
+          hiddenLanguages: <String>[],
+        ),
+      );
+      byName()['Daijirin']!.order = 2;
+      byName()['Meikyo']!.order = 3;
+      expect(termOrder(), <String>['JMdict', 'OALD', 'Daijirin', 'Meikyo']);
+      final OpUndoRecord r = await run('dict.set', <String, Object?>{
+        'name': 'Meikyo',
+        'position': 1,
+      });
+      // 未标注语言组（JMdict / Daijirin / Meikyo）内第 1 位。分区写回规范顺序
+      // （`concatenateLanguageGroups`：已标注组在前、未标注组在后，首尾相接），
+      // 旧数据里 OALD 夹在未标注组中间的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
+      expect(termOrder(), <String>['OALD', 'Meikyo', 'JMdict', 'Daijirin']);
+      expect(await undo('dict.set', r), OpUndoStatus.done);
+      // 撤销回**组内**原位（未标注组第 3 位）；撤销同样走 PUT，写回的仍是规范顺序，
+      // 不会再造出跨组交错。
+      expect(termOrder(), <String>['OALD', 'JMdict', 'Daijirin', 'Meikyo']);
+    });
+
     test('dict.import：撤销删掉刚导入的那本', () async {
       final Directory dir = Directory.systemTemp.createTempSync('fushi_dict_');
       addTearDown(() => dir.deleteSync(recursive: true));

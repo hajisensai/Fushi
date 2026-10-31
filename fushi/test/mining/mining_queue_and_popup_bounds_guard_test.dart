@@ -200,12 +200,17 @@ void main() {
       // extensionPopupEffectiveSize 解析——用户解锁「扩展独立尺寸」用扩展自己的键，
       // 否则回退 app 内 popupMaxWidth/Height（effectiveLookupSize 纯函数）。守卫仍
       // 咬「弹窗尺寸变量源自用户配置、非硬编码 400×360」，只把符号更到有效尺寸解析入口。
-      expect(src.contains('extensionPopupEffectiveSize.width.round()'), isTrue,
+      // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置（extensionPopupEffectiveSize）与扩展
+      // 所选配置的只读视图（extensionPopupEffectiveSizeIn）两路填，构建函数读 inputs.popupSize。
+      expect(src.contains('popupSize: extensionPopupEffectiveSize,'), isTrue,
           reason:
-              'app_model 未经 extensionPopupEffectiveSize 生成弹窗宽度变量（应源自用户配置尺寸）');
-      expect(src.contains('extensionPopupEffectiveSize.height.round()'), isTrue,
-          reason:
-              'app_model 未经 extensionPopupEffectiveSize 生成弹窗高度变量（应源自用户配置尺寸）');
+              'app_model 未经 extensionPopupEffectiveSize 生成弹窗尺寸变量（应源自用户配置尺寸）');
+      expect(src.contains('popupSize: extensionPopupEffectiveSizeIn(p),'), isTrue,
+          reason: '扩展所选配置的视图也必须经同一套有效尺寸解析');
+      expect(src.contains('inputs.popupSize.width.round()'), isTrue,
+          reason: '弹窗宽度变量必须取有效尺寸');
+      expect(src.contains('inputs.popupSize.height.round()'), isTrue,
+          reason: '弹窗高度变量必须取有效尺寸');
     });
 
     for (final File content in <File>[assetsContent, toolsContent]) {
