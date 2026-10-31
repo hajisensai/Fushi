@@ -836,6 +836,25 @@ function searchTerm(q) {
 }
 
 /**
+ * 开发者回复 / 改状态的写库语句，每条带自己的参数。devUpdate 与 scripts/feedback.mjs reply 执行同一份 SQL。
+ * @param {{id: string, devId: string, reply: string, timelineStatus: string | null, status: string, now: number}} p
+ *   reply 可为空串（只改状态）；timelineStatus = 时间线里记的新状态（没改状态为 null）；status = 改后的状态。
+ * @returns {Array<[string, Array<string | number | null>]>}
+ */
+export function devReplyStatements({ id, devId, reply, timelineStatus, status, now }) {
+  return [
+    [`INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
+      VALUES (?1, 'dev', ?2, ?3, ?4, ?5)`, [id, devId, reply, timelineStatus, now]],
+    ['UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1', [id, status, now]],
+  ];
+}
+
+/** 开发者回复正文的唯一清洗口径（接口与 CLI 共用）：剥伪装字符、限长；空白 → ''。 */
+export function cleanDevReply(value) {
+  return cleanText(value, FEEDBACK_LIMITS.replyMax, 'reply');
+}
+
+/**
  * 开发者处理：改状态和 / 或回复（两者至少一个）。写库之后在后台（[ctx].waitUntil）给反馈人的
  * iOS 设备发 APNs 推送（通用文案，不带正文），结案的顺带清掉推送令牌——见 feedback_push.js。
  * App 处理台（routeFeedback）与网页处理台（devconsole.js）都走这里，推送不会漏掉任一路径。
@@ -844,17 +863,13 @@ export async function devUpdate(env, dev, row, body, now, ctx = null) {
   const status = body && body.status !== undefined && body.status !== null && body.status !== ''
     ? body.status : null;
   if (status !== null && !STATUSES.includes(status)) throw new HttpError(400, 'bad_status');
-  const reply = cleanText(body && body.reply, FEEDBACK_LIMITS.replyMax, 'reply');
+  const reply = cleanDevReply(body && body.reply);
   const changed = status !== null && status !== row.status;
   if (!changed && !reply) throw new HttpError(400, 'nothing_to_update');
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
-       VALUES (?1, 'dev', ?2, ?3, ?4, ?5)`,
-    ).bind(row.id, dev.id, reply, changed ? status : null, now),
-    env.DB.prepare('UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1')
-      .bind(row.id, changed ? status : row.status, now),
-  ]);
+  const statements = devReplyStatements({
+    id: row.id, devId: dev.id, reply, timelineStatus: changed ? status : null, status: changed ? status : row.status, now,
+  });
+  await env.DB.batch(statements.map(([sql, args]) => env.DB.prepare(sql).bind(...args)));
   const after = changed ? status : row.status;
   await background(ctx, notifyFeedbackUpdate(env, row.id, {
     kind: reply ? 'reply' : 'status',
