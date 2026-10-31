@@ -132,7 +132,7 @@ final class FushiBackgroundDownload: NSObject, URLSessionDownloadDelegate {
         shared.whenScanned {
           let list: [[String: Any]] = shared.records
             .filter { !shared.startedHere.contains($0.key) }
-            .map { id, record in ["id": id, "meta": record.meta] }
+            .map { id, record -> [String: Any] in ["id": id, "meta": record.meta] }
           DispatchQueue.main.async { result(list) }
         }
       case "attach":
