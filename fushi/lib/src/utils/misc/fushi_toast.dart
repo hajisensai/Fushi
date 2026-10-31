@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
@@ -212,7 +213,8 @@ double _toastBottomOffset(BuildContext context) {
 
 /// MD3 下语义图标的颜色。浮条是 inverseSurface（与页面明暗相反），所以语义色
 /// 按浮条自身明暗取 MD3 基线色阶：深底取 tone 80、浅底取 tone 40，保证图标在
-/// 浮条上对比达标；info 用 inversePrimary（MD3 在 inverse 表面上的强调色槽位）。
+/// 浮条上对比达标；info 取与浮条明暗相反的那档主色（inverse 浮条上就是
+/// inversePrimary；视频 OSD 这类非反色浮条上取 primary）。
 /// 墨水屏一律前景色——灰阶下颜色塌掉，靠图标形状区分。
 Color? _md3SeverityColor(
   BuildContext context,
@@ -227,7 +229,11 @@ Color? _md3SeverityColor(
     case ToastSeverity.neutral:
       return null;
     case ToastSeverity.info:
-      return Theme.of(context).colorScheme.inversePrimary;
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      final bool darkScheme = cs.brightness == Brightness.dark;
+      // 深底要浅色主色（tone 80）、浅底要深色主色（tone 40）：深色方案的 primary
+      // 是 tone 80，浅色方案的 inversePrimary 是 tone 80。
+      return darkSurface == darkScheme ? cs.primary : cs.inversePrimary;
     case ToastSeverity.success:
       return darkSurface ? const Color(0xFF7DDC8C) : const Color(0xFF1E6B30);
     case ToastSeverity.warning:
@@ -413,77 +419,12 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   Widget _buildMaterial(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool eink = isEinkTheme(context);
-    final Color surface = widget.backgroundColor ?? cs.inverseSurface;
-    final Color foreground = widget.textColor ?? cs.onInverseSurface;
-    final Color? semantic = _md3SeverityColor(
-      context,
-      widget.severity,
-      surface,
-      foreground,
-    );
-    final IconData? icon = widget.icon;
-    // M3E：反色全胶囊（单行 48 高时圆角 24 = 半高），语义图标落在同色 20% 的圆形
-    // 色块里（图标本身仍是语义色）；多行退成 24 圆角块。
-    final Widget content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (icon != null) ...<Widget>[
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: ShapeDecoration(
-              shape: const CircleBorder(),
-              color: eink
-                  ? Colors.transparent
-                  : (semantic ?? foreground).withValues(alpha: 0.2),
-            ),
-            child: FushiIcon(icon, color: semantic ?? foreground, size: 20),
-          ),
-          const SizedBox(width: 12),
-        ],
-        Flexible(
-          child: Text(
-            widget.msg,
-            textAlign: icon == null ? TextAlign.center : TextAlign.start,
-            style: tokens.type.controlLabel.copyWith(color: foreground),
-          ),
-        ),
-      ],
-    );
-    return Container(
-      constraints: const BoxConstraints(minHeight: 48, maxWidth: 440),
-      padding: EdgeInsetsDirectional.only(
-        start: icon != null ? 8 : 24,
-        end: 24,
-        top: 8,
-        bottom: 8,
-      ),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: const BorderRadius.all(_kMd3ToastCorner),
-        // 墨水屏不画阴影（灰阶抖动成脏边），改一圈前景色细边界定浮条。
-        border: eink ? Border.all(color: foreground) : null,
-        boxShadow: eink
-            ? null
-            : <BoxShadow>[
-                // M3 elevation level 3。
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.18),
-                  blurRadius: 8,
-                  spreadRadius: 3,
-                  offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.24),
-                  blurRadius: 3,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-      ),
-      child: content,
+    return FushiToastCapsule(
+      message: widget.msg,
+      icon: widget.icon,
+      severity: widget.severity,
+      surfaceColor: widget.backgroundColor ?? cs.inverseSurface,
+      foregroundColor: widget.textColor ?? cs.onInverseSurface,
     );
   }
 
@@ -542,6 +483,134 @@ class _FushiToastViewState extends State<_FushiToastView>
               )
             : ColoredBox(color: fill, child: content),
       ),
+    );
+  }
+}
+
+/// M3E 通知胶囊的本体（无定位、无进退场），全应用短时通知同一副长相：
+/// 底部 [FushiToast] 与视频页左上角 OSD 共用（视频页传播放器浮层的表面色）。
+///
+/// 全胶囊（单行 48 高时圆角 24 = 半高），多行退成 24 圆角块；语义图标落在同色
+/// 20% 的圆形色块里（图标本身是语义色，见 [ToastSeverity]），不整块铺饱和色；
+/// elevation 3 档阴影，墨水屏改一圈前景色细边。[progress] 非空时在文字下方画
+/// 一条细进度条（视频页下载 / 加载进度 OSD）。
+class FushiToastCapsule extends StatelessWidget {
+  const FushiToastCapsule({
+    super.key,
+    required this.message,
+    required this.surfaceColor,
+    required this.foregroundColor,
+    this.icon,
+    this.severity = ToastSeverity.neutral,
+    this.progress,
+    this.maxWidth = 440,
+  });
+
+  final String message;
+  final Color surfaceColor;
+  final Color foregroundColor;
+  final IconData? icon;
+  final ToastSeverity severity;
+
+  /// 0..1；null 不画进度条。
+  final double? progress;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
+    final Color foreground = foregroundColor;
+    final Color? semantic = _md3SeverityColor(
+      context,
+      severity,
+      surfaceColor,
+      foreground,
+    );
+    final IconData? icon = this.icon;
+    final double? progress = this.progress;
+    final Widget label = Text(
+      message,
+      textAlign: icon == null && progress == null
+          ? TextAlign.center
+          : TextAlign.start,
+      style: tokens.type.controlLabel.copyWith(color: foreground),
+    );
+    final Widget content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (icon != null) ...<Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: ShapeDecoration(
+              shape: const CircleBorder(),
+              color: eink
+                  ? Colors.transparent
+                  : (semantic ?? foreground).withValues(alpha: 0.2),
+            ),
+            child: FushiIcon(icon, color: semantic ?? foreground, size: 20),
+          ),
+          const SizedBox(width: 12),
+        ],
+        Flexible(
+          child: progress == null
+              ? label
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    label,
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: 112,
+                      child: FushiLinearProgressIndicator(
+                        value: progress,
+                        minHeight: 4,
+                        backgroundColor: foreground.withValues(alpha: 0.25),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          semantic ?? foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
+    return Container(
+      constraints: BoxConstraints(minHeight: 48, maxWidth: maxWidth),
+      padding: EdgeInsetsDirectional.only(
+        start: icon != null ? 8 : 24,
+        end: 24,
+        top: 8,
+        bottom: 8,
+      ),
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: const BorderRadius.all(_kMd3ToastCorner),
+        // 墨水屏不画阴影（灰阶抖动成脏边），改一圈前景色细边界定浮条。
+        border: eink ? Border.all(color: foreground) : null,
+        boxShadow: eink
+            ? null
+            : <BoxShadow>[
+                // M3 elevation level 3。
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  spreadRadius: 3,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: cs.shadow.withValues(alpha: 0.24),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+      ),
+      child: content,
     );
   }
 }
