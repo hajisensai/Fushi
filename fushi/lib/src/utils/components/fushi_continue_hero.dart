@@ -4,7 +4,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -465,7 +467,7 @@ class _EntryAspectProbeState extends State<_EntryAspectProbe>
     final bool landscape = !coverFailed && aspect != null && aspect > 1;
     // 冷启动时探测图还没解码，先按竖版排；解出横图后整块换成剧照几何，高度
     // 渐变过去而不是一帧跳变。不裁切：悬停放大与投影要能溢出这块。
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.standard,
       alignment: AlignmentDirectional.topStart,
@@ -980,22 +982,25 @@ class FushiContinueSideTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SizedBox(width: width, height: coverHeight, child: cover),
-                // 文字块也是点按面（封面那张卡只盖封面）。
-                GestureDetector(
-                  key: const ValueKey<String>('fushi-continue-tile-meta'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: entry.onOpen,
-                  onLongPress: entry.onLongPress,
-                  onSecondaryTap: entry.onLongPress,
-                  child: SizedBox(
-                    height: metaHeight,
-                    child: ShelfCardMeta(
-                      title: entry.title,
-                      subtitle: entry.still ? null : subtitle,
-                      leadingIcon: entry.still ? null : entry.subtitleIcon,
-                      progress: entry.still
-                          ? null
-                          : entry.progress?.clamp(0.0, 1.0),
+                // 文字块也是点按面（封面那张卡只盖封面）。右键走绑定表
+                // （ContextMenuTrigger），不硬绑次按钮。
+                ContextMenuTrigger(
+                  onInvoke: contextMenuInvoker(entry.onLongPress),
+                  child: GestureDetector(
+                    key: const ValueKey<String>('fushi-continue-tile-meta'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: entry.onOpen,
+                    onLongPress: entry.onLongPress,
+                    child: SizedBox(
+                      height: metaHeight,
+                      child: ShelfCardMeta(
+                        title: entry.title,
+                        subtitle: entry.still ? null : subtitle,
+                        leadingIcon: entry.still ? null : entry.subtitleIcon,
+                        progress: entry.still
+                            ? null
+                            : entry.progress?.clamp(0.0, 1.0),
+                      ),
                     ),
                   ),
                 ),
