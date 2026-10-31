@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
+import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart'
+    show FushiAnkiSyncException;
 
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_client_actions.dart';
@@ -15,6 +17,23 @@ import 'package:fushi/utils.dart';
 /// 本节启用开关的设置搜索落点 id（与 settings_schema_card_creation.dart 的
 /// `SettingsBodySearchEntry` 同一个）。
 const String kAnkiSyncClientSearchTargetId = 'card_creation.anki.sync_client';
+
+/// 把 helper 的报错（rslib 错误的 Debug 原文）翻成用户能照着改的一句；认不出的
+/// 原样给出（去掉异常类名前缀）。
+///
+/// `missing original size`：服务器回了 200 却没带 `anki-original-size` 头——回话的
+/// 不是 Anki 同步服务（地址指到了网页 / 反代的别的站点 / 反代剥了这个头 / 不支持
+/// 当前协议的旧第三方服务器）。原文照样附在后面，排查时用得上。
+@visibleForTesting
+String describeAnkiSyncError(Object error) {
+  final String raw = error is FushiAnkiSyncException
+      ? error.message
+      : '$error'.replaceFirst('FushiAnkiSyncException: ', '');
+  if (raw.contains('missing original size')) {
+    return t.anki_sync_client_error_not_sync_server(detail: raw);
+  }
+  return raw;
+}
 
 /// 「Anki 同步（无需安装 Anki）」设置节：选后端、登录同步服务器、看同步状态。
 ///
@@ -253,7 +272,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
             time: _formatTime(state.rateLimitedUntil!),
           ),
         AnkiSyncPhase.failed => t.anki_sync_client_status_failed(
-          error: state.message ?? '',
+          error: describeAnkiSyncError(state.message ?? ''),
         ),
         _ =>
           state.unsynced == 0
@@ -315,7 +334,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     } on AnkiSyncHasUnsyncedNotes catch (e) {
       _toast(t.anki_sync_client_has_unsynced(count: e.count));
     } catch (e) {
-      _toast(t.anki_sync_client_sign_in_failed(error: '$e'));
+      _toast(
+        t.anki_sync_client_sign_in_failed(error: describeAnkiSyncError(e)),
+      );
     }
   }
 

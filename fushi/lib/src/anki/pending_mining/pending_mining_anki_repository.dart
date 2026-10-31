@@ -25,6 +25,8 @@ class PendingFlushReport {
     this.unreachable = false,
     this.skipped = false,
     this.awaitingConfirmation = false,
+    this.stopOutcome,
+    this.failureOutcome,
   });
 
   /// 送进 Anki（或 Anki 说已经有了）的张数。
@@ -44,6 +46,14 @@ class PendingFlushReport {
 
   /// 已拉起 AnkiMobile，正等它加完卡回跳确认（那张仍在队列里）。
   final bool awaitingConfirmation;
+
+  /// [unreachable] 时让这一轮停下的那张卡的结果（连不上互联服务端 / 连不上 Anki /
+  /// Anki 未配置……）。此前只有一个 bool，界面只能笼统报「连不上 Anki」，用户看不出
+  /// 其实是没连上 Fushi 互联服务端。
+  final MineOutcome? stopOutcome;
+
+  /// 这一轮第一张被拒收（[failed]）的卡的结果，界面据此说明为什么失败。
+  final MineOutcome? failureOutcome;
 }
 
 /// 这次失败是不是「确定没送到」——只有这种才能放心入队、之后原样重发。
@@ -221,7 +231,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
                 (inner.switchesAppPerNote || await _batchHoldsAutoFlush()))) {
           return const PendingFlushReport(skipped: true);
         }
-        final _SendResult result = await _sendOne(row);
+        final (_SendResult result, MineOutcome? outcome) = await _sendOne(row);
         final int remaining = (await _store.sendable()).length;
         return switch (result) {
           _SendResult.delivered => PendingFlushReport(
@@ -231,10 +241,12 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
           _SendResult.failed => PendingFlushReport(
             failed: 1,
             remaining: remaining,
+            failureOutcome: outcome,
           ),
           _SendResult.unreachable => PendingFlushReport(
             remaining: remaining,
             unreachable: true,
+            stopOutcome: outcome,
           ),
           _SendResult.opened => PendingFlushReport(
             remaining: remaining,
@@ -289,15 +301,18 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
     }
     int delivered = 0;
     int failed = 0;
+    MineOutcome? firstFailure;
     final List<PendingMineRow> batch = includeFailed
         ? await _store.sendableIncludingFailed()
         : await _store.sendable();
     for (final PendingMineRow row in batch) {
-      switch (await _sendOne(row)) {
+      final (_SendResult result, MineOutcome? outcome) = await _sendOne(row);
+      switch (result) {
         case _SendResult.delivered:
           delivered++;
         case _SendResult.failed:
           failed++;
+          firstFailure ??= outcome;
         case _SendResult.opened:
           // 只有 switchesAppPerNote 的后端会「只拉起、未确认」，不走这条路。
           break;
@@ -309,6 +324,8 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
             failed: failed,
             remaining: (await _store.sendable()).length,
             unreachable: true,
+            stopOutcome: outcome,
+            failureOutcome: firstFailure,
           );
       }
     }
@@ -316,6 +333,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
       delivered: delivered,
       failed: failed,
       remaining: (await _store.sendable()).length,
+      failureOutcome: firstFailure,
     );
   }
 
@@ -339,13 +357,16 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 按顺序找下一张能拉起的卡拉起它（行停在 `sending` 等回跳）。
   Future<PendingFlushReport> _sendNextToAnkiMobile() async {
     int failed = 0;
+    MineOutcome? firstFailure;
     for (final PendingMineRow row in await _store.sendable()) {
-      switch (await _sendOne(row)) {
+      final (_SendResult result, MineOutcome? outcome) = await _sendOne(row);
+      switch (result) {
         case _SendResult.opened:
           return PendingFlushReport(
             failed: failed,
             remaining: (await _store.sendable()).length,
             awaitingConfirmation: true,
+            failureOutcome: firstFailure,
           );
         case _SendResult.delivered:
         case _SendResult.skipped:
@@ -353,28 +374,32 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
           continue;
         case _SendResult.failed:
           failed++;
+          firstFailure ??= outcome;
         case _SendResult.unreachable:
           return PendingFlushReport(
             failed: failed,
             remaining: (await _store.sendable()).length,
             unreachable: true,
+            stopOutcome: outcome,
+            failureOutcome: firstFailure,
           );
       }
     }
-    return PendingFlushReport(failed: failed);
+    return PendingFlushReport(failed: failed, failureOutcome: firstFailure);
   }
 
   /// 送一张。永不抛：任何意外（读不到载荷、落文件失败、后端违约抛异常）都把这张
   /// 标成 failed 让用户处理，而不是当成「不可达」——那样它会永远挡在队首。
-  Future<_SendResult> _sendOne(PendingMineRow row) async {
+  Future<_Sent> _sendOne(PendingMineRow row) async {
     try {
       // 快照可能已过期：这期间跨设备中转把它交给了落地设备（BUG-2778），本机
       // 就不再补发。
-      if (!await _store.markSending(row.id)) return _SendResult.skipped;
+      if (!await _store.markSending(row.id)) return (_SendResult.skipped, null);
       final ForwardedMinePayload? payload = await _store.readPayload(row.id);
       if (payload == null) {
-        await _store.markFailed(row.id, 'The saved card data is missing.');
-        return _SendResult.failed;
+        const String detail = 'The saved card data is missing.';
+        await _store.markFailed(row.id, detail);
+        return (_SendResult.failed, MineOutcome.failure(detail));
       }
       final MineOutcome outcome = await withMaterializedMiningContext(
         payload,
@@ -383,12 +408,15 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
         // 其他设备经中转发来的卡：只认随附的媒体字节，不跟随对端给的本地路径 / URL。
         bundledMediaOnly: row.originDeviceId != null,
       );
-      return await _record(row, outcome);
-    } catch (e) {
+      return (await _record(row, outcome), outcome);
+    } catch (e, st) {
       try {
         await _store.markFailed(row.id, '$e');
       } catch (_) {}
-      return _SendResult.failed;
+      return (
+        _SendResult.failed,
+        MineOutcome.failure('$e', error: e, stackTrace: st),
+      );
     }
   }
 
@@ -425,3 +453,6 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
 /// [opened]：每张卡都切 app 的后端已拉起、等回跳确认（行仍在队列里）。
 /// [skipped]：这张已不归本机补发（已上传给落地设备 / 已落地 / 已删）。
 enum _SendResult { delivered, opened, failed, unreachable, skipped }
+
+/// [PendingMiningAnkiRepository._sendOne] 的结果与那张卡的制卡结果（跳过时为 null）。
+typedef _Sent = (_SendResult, MineOutcome?);
