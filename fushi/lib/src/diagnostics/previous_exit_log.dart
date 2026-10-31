@@ -147,6 +147,7 @@ class PreviousSession {
     required this.lifecycleAt,
     required this.clean,
     this.initialised = true,
+    this.awaitingCrashReportDecision = false,
     this.memoryPressureAt,
     this.memoryPressureCount = 0,
   });
@@ -161,6 +162,11 @@ class PreviousSession {
   /// 上次进程走到过「初始化完成、首页出来」（[SessionMarker.recordInitialised]）。旧版本
   /// 写的标记没有这个字段，按 true 处理（不知道就不当成启动即闪退）。
   final bool initialised;
+
+  /// 上次进程没的时候停在启动前的闪退报告提示上、等用户选择
+  /// （[SessionMarker.recordAwaitingCrashReportDecision]）：那时初始化还没开始跑，
+  /// 没了多半是用户直接关掉 / 杀掉了 app，不是又一次启动即闪退。
+  final bool awaitingCrashReportDecision;
   final int? memoryPressureAt;
   final int memoryPressureCount;
 
@@ -183,6 +189,8 @@ class PreviousSession {
         lifecycleAt: asInt(decoded['lifecycleAt']),
         clean: decoded['clean'] == true,
         initialised: decoded['initialised'] != false,
+        awaitingCrashReportDecision:
+            decoded['awaitingCrashReportDecision'] == true,
         memoryPressureAt: decoded['memoryPressureAt'] is int
             ? decoded['memoryPressureAt'] as int
             : null,
@@ -207,6 +215,7 @@ class SessionMarker {
   int _lifecycleAt = 0;
   bool _clean = false;
   bool _initialised = false;
+  bool _awaitingCrashReportDecision = false;
   int? _memoryPressureAt;
   int _memoryPressureCount = 0;
 
@@ -240,6 +249,13 @@ class SessionMarker {
     _write();
   }
 
+  /// 启动前的闪退报告提示出现（true）/ 用户选完（false）。停在提示上没了 = 用户结束。
+  void recordAwaitingCrashReportDecision(bool awaiting) {
+    if (_awaitingCrashReportDecision == awaiting) return;
+    _awaitingCrashReportDecision = awaiting;
+    _write();
+  }
+
   void recordMemoryPressure({required int nowMs}) {
     _memoryPressureAt = nowMs;
     _memoryPressureCount++;
@@ -264,6 +280,7 @@ class SessionMarker {
           'lifecycleAt': _lifecycleAt,
           'clean': _clean,
           'initialised': _initialised,
+          'awaitingCrashReportDecision': _awaitingCrashReportDecision,
           'memoryPressureAt': _memoryPressureAt,
           'memoryPressureCount': _memoryPressureCount,
         }),
@@ -292,6 +309,21 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
     );
   }
   if (!previous.initialised) b.write(' 启动初始化未完成');
+  if (previous.awaitingCrashReportDecision) {
+    // 停在闪退报告提示上（初始化还没开始跑）时没了：用户直接关掉 / 杀掉了 app。
+    // 平台另有崩溃证据（Windows 摘要、Android CRASH…）时由 [classifyPreviousExit] 按
+    // 优先级压过这条。
+    b.write('（停在闪退报告提示上等用户选择时没了，按用户结束处理）');
+    return ExitReportEntry(
+      kPreviousExitUncleanSource,
+      b.toString(),
+      severe: false,
+      kind: PreviousExitKind.userStopped,
+      foreground: previous.diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: previous.lifecycleAt,
+    );
+  }
   b.write(previous.diedInForeground ? '（停在前台时没了，疑似闪退）' : '（停在后台时没了，多半是系统回收）');
   return ExitReportEntry(
     kPreviousExitUncleanSource,
@@ -832,6 +864,11 @@ abstract final class PreviousExitLog {
 
   /// 本次启动初始化完成（首页出来了）时调用：之后再没了不算「启动即闪退」。
   static void markInitialised() => _marker?.recordInitialised();
+
+  /// 启动前的闪退报告提示出现（true）/ 用户选完（false）时调用：停在提示上没了的那次
+  /// 下次启动按用户结束处理，不算又一次启动即闪退。
+  static void markAwaitingCrashReportDecision(bool awaiting) =>
+      _marker?.recordAwaitingCrashReportDecision(awaiting);
 
   /// 正常退出路径（`exitApp` / 重启）在退进程前调用：本次会话标 clean。
   static void markCleanExit() {
