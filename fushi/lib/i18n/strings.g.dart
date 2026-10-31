@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179537 (10561 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -300,8 +300,21 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_agent_screen_text_unavailable =>
       'Text recognition isn\'t available on this device';
   String get ai_agent_send => 'Send';
+  String get ai_agent_session_current => 'Current';
+  String get ai_agent_session_delete => 'Delete';
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  String get ai_agent_session_more => 'Conversation options';
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  String get ai_agent_session_rename => 'Rename';
+  String get ai_agent_session_rename_title => 'Rename conversation';
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  String get ai_agent_sessions_title => 'Conversations';
   String get ai_agent_stop => 'Stop';
   String get ai_agent_stop_cancelled => 'Stopped.';
   String ai_agent_stop_llm_error({required Object reason}) =>
@@ -15433,8 +15446,32 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -41003,8 +41040,32 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -66965,8 +67026,32 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -92983,8 +93068,32 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -119082,8 +119191,32 @@ class _StringsId extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -144836,8 +144969,32 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -170753,8 +170910,32 @@ class _StringsJa extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -195632,8 +195813,32 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -220578,8 +220783,32 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -246445,8 +246674,32 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -272380,8 +272633,32 @@ class _StringsRu extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -298260,8 +298537,32 @@ class _StringsTh extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -323818,8 +324119,32 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -349580,8 +349905,32 @@ class _StringsVi extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -375256,7 +375605,30 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get ai_agent_send => '发送';
   @override
+  String get ai_agent_session_current => '当前';
+  @override
+  String get ai_agent_session_delete => '删除';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '「${title}」将从本机删除。助手做过的改动仍留在「AI 操作记录」里，可以在那里撤销。';
+  @override
+  String get ai_agent_session_delete_title => '删除这个会话？';
+  @override
+  String get ai_agent_session_more => '会话选项';
+  @override
+  String get ai_agent_session_open_failed => '无法打开这个会话';
+  @override
+  String get ai_agent_session_rename => '重命名';
+  @override
+  String get ai_agent_session_rename_title => '重命名会话';
+  @override
   String ai_agent_session_summary({required Object n}) => '本次对话做了 ${n} 处改动';
+  @override
+  String get ai_agent_sessions_empty => '还没有历史会话';
+  @override
+  String get ai_agent_sessions_retention_hint => '会话只保存在本机，保留 30 天';
+  @override
+  String get ai_agent_sessions_title => '会话';
   @override
   String get ai_agent_stop => '停止';
   @override
@@ -398767,8 +399139,32 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -422998,8 +423394,31 @@ extension on _StringsEn {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -444920,8 +445339,31 @@ extension on _StringsAr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -466836,8 +467278,31 @@ extension on _StringsDe {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -488828,8 +489293,31 @@ extension on _StringsEs {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -510802,8 +511290,31 @@ extension on _StringsFr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -532794,8 +533305,31 @@ extension on _StringsId {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -554730,8 +555264,31 @@ extension on _StringsIt {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -576702,8 +577259,31 @@ extension on _StringsJa {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -598539,8 +599119,31 @@ extension on _StringsKo {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -620392,8 +620995,31 @@ extension on _StringsNl {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -642359,8 +642985,31 @@ extension on _StringsPtBr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -664318,8 +664967,31 @@ extension on _StringsRu {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -686282,8 +686954,31 @@ extension on _StringsTh {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -708202,8 +708897,31 @@ extension on _StringsTr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -730153,8 +730871,31 @@ extension on _StringsVi {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -752084,8 +752825,31 @@ extension on _StringsZhCn {
         return '本机的文字识别不可用';
       case 'ai_agent_send':
         return '发送';
+      case 'ai_agent_session_current':
+        return '当前';
+      case 'ai_agent_session_delete':
+        return '删除';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '「${title}」将从本机删除。助手做过的改动仍留在「AI 操作记录」里，可以在那里撤销。';
+      case 'ai_agent_session_delete_title':
+        return '删除这个会话？';
+      case 'ai_agent_session_more':
+        return '会话选项';
+      case 'ai_agent_session_open_failed':
+        return '无法打开这个会话';
+      case 'ai_agent_session_rename':
+        return '重命名';
+      case 'ai_agent_session_rename_title':
+        return '重命名会话';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '本次对话做了 ${n} 处改动';
+      case 'ai_agent_sessions_empty':
+        return '还没有历史会话';
+      case 'ai_agent_sessions_retention_hint':
+        return '会话只保存在本机，保留 30 天';
+      case 'ai_agent_sessions_title':
+        return '会话';
       case 'ai_agent_stop':
         return '停止';
       case 'ai_agent_stop_cancelled':
@@ -773745,8 +774509,31 @@ extension on _StringsZhHk {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
