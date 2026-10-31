@@ -21,11 +21,13 @@ class DictionaryImportRecipe {
        forceReplaceExisting = false;
 
   /// 以已装词典 [replaceTargetName]（`Dictionary.name`）为替换目标重导。
+  /// [forceReplaceExisting] 照抄原流程那次 `importDictionary` 调用（手动更新不传 = false，
+  /// 自动更新传 true）。
   const DictionaryImportRecipe.update({
     required this.name,
     required String this.replaceTargetName,
     required this.sourceOverride,
-    required this.forceReplaceExisting,
+    this.forceReplaceExisting = false,
   });
 
   static const String _kind = 'dictionaryImport';
