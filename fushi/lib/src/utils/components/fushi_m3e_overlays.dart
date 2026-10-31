@@ -321,11 +321,16 @@ class FushiM3eSheetBody extends StatefulWidget {
     required this.child,
     this.showDragHandle = true,
     this.expandable = false,
+    this.dragToDismiss = true,
   });
 
   final Widget child;
   final bool showDragHandle;
   final bool expandable;
+
+  /// 拖动条在收起档下拉是否关闭弹层（`adaptiveModalSheet` 的 isDismissible）；
+  /// false 时下拉只收回展开档，不关闭。
+  final bool dragToDismiss;
 
   @override
   State<FushiM3eSheetBody> createState() => _FushiM3eSheetBodyState();
@@ -344,7 +349,7 @@ class _FushiM3eSheetBodyState extends State<FushiM3eSheetBody> {
     } else if (dy > 40 || velocity > 600) {
       if (_expanded) {
         setState(() => _expanded = false);
-      } else {
+      } else if (widget.dragToDismiss) {
         Navigator.of(context).maybePop();
       }
     }

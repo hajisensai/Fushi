@@ -146,9 +146,13 @@ Future<String?> showAsrTranscribeSheet({
       ),
     );
   }
+  // 与桌面 barrierDismissible: false 对齐：转录 / 模型下载一跑就是十来分钟，
+  // 关闭弹层会在下一个检查点暂停并释放会话，误触遮罩或下拉不能把它打断
+  // （反馈 NrRPRDTprI）。关闭只走弹层里的按钮与系统返回。
   return adaptiveModalSheet<String>(
     context: context,
     showDragHandle: true,
+    isDismissible: false,
     builder: build,
   );
 }

@@ -309,6 +309,28 @@ class FushiFloatingPill extends StatelessWidget {
   }
 }
 
+/// 工具栏按钮禁用态的前景不透明度（MD3 禁用内容 38%；Apple 分支同样以
+/// 自身字形色降透明度表达不可用）。
+const double kFushiToolbarDisabledForegroundOpacity = 0.38;
+
+/// 工具栏按钮图标 / 文字的前景色：选中取 [selectedForeground]，否则
+/// [foreground]；`onPressed == null`（禁用）时在其上叠 38% 不透明度。
+///
+/// 三种按钮形态都把图标显式染色（[FushiIcon.color]），显式色会盖掉
+/// IconButton / InkWell 自带的禁用前景，所以禁用色必须在这里算进去，
+/// 否则禁用按钮与可用按钮外观完全相同（反馈 5JA3m7P9BP）。
+Color fushiToolbarItemForeground(
+  FushiToolbarItem item, {
+  required Color foreground,
+  required Color selectedForeground,
+}) {
+  final Color base = item.selected ? selectedForeground : foreground;
+  if (item.onPressed != null) return base;
+  return base.withValues(
+    alpha: base.a * kFushiToolbarDisabledForegroundOpacity,
+  );
+}
+
 /// 工具栏里的一颗按钮：无标签 = M3E 图标按钮（按压变形由
 /// [FushiIconButtonControl] 自带）；有标签 = 等宽格（图标 + labelSmall），按压
 /// 走 [FushiPressScale] 同款缩放。选中态画 secondaryContainer 胶囊底。
@@ -337,7 +359,11 @@ class FushiToolbarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color fg = item.selected ? selectedForeground : foreground;
+    final Color fg = fushiToolbarItemForeground(
+      item,
+      foreground: foreground,
+      selectedForeground: selectedForeground,
+    );
     final Widget button;
     if (inlineLabel) {
       button = _buildInline(context, fg);
