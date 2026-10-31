@@ -623,9 +623,6 @@ void main() {
     );
     expect(moveButton().enabled, isFalse);
 
-    // 第六行在语言组标题之下，可能落在首屏之外：先滚进视口再点。
-    await tester.ensureVisible(find.text('Dict 6'));
-    await _settle(tester);
     await tester.tap(find.text('Dict 6'));
     await _settle(tester);
     expect(moveButton().enabled, isTrue);
@@ -686,6 +683,35 @@ void main() {
       expect(ja < en && en < none, isTrue);
       // 大辞林 紧跟 JMdict 在日语组里：组内序号 2，而不是全局第 3。
       expect(tester.getTopLeft(find.text('大辞林')).dy, lessThan(en));
+    });
+
+    testWidgets('a single language group shows no group header', (
+      WidgetTester tester,
+    ) async {
+      // 全部未标注语言（一组）。
+      await _pumpPage(tester, size: const Size(1280, 800));
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('Language not set'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('dict-language-group-')),
+        findsNothing,
+      );
+      // 全部日语（也是一组）。
+      await _pumpPage(
+        tester,
+        size: const Size(1280, 800),
+        dictionaries: <Dictionary>[
+          for (final Dictionary d in mixedLanguages())
+            if (d.name != 'OALDPE' && d.name != 'local-pack') d,
+        ],
+      );
+      expect(find.textContaining('日本語 (ja)'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('dict-language-group-ja')),
+        findsNothing,
+      );
+      expect(find.text('JMdict'), findsOneWidget);
+      expect(find.text('大辞林'), findsOneWidget);
     });
 
     testWidgets('Alt+Down only moves inside the language group', (

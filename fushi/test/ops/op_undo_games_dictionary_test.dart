@@ -681,6 +681,29 @@ void main() {
       expect(termOrder(), <String>['JMdict', 'Meikyo', 'Daijirin']);
     });
 
+    test('dict.set：position 按语言组算，撤销回组内原位 (D_Nz5R4vSH)', () async {
+      app.stored.add(
+        Dictionary(
+          name: 'OALD',
+          formatKey: 'yomichan',
+          order: 1,
+          languageOverride: 'en',
+          hiddenLanguages: <String>[],
+        ),
+      );
+      byName()['Daijirin']!.order = 2;
+      byName()['Meikyo']!.order = 3;
+      expect(termOrder(), <String>['JMdict', 'OALD', 'Daijirin', 'Meikyo']);
+      final OpUndoRecord r = await run('dict.set', <String, Object?>{
+        'name': 'Meikyo',
+        'position': 1,
+      });
+      // 未标注语言组（JMdict / Daijirin / Meikyo）内第 1 位；英语组的 OALD 槽位不动。
+      expect(termOrder(), <String>['Meikyo', 'OALD', 'JMdict', 'Daijirin']);
+      expect(await undo('dict.set', r), OpUndoStatus.done);
+      expect(termOrder(), <String>['JMdict', 'OALD', 'Daijirin', 'Meikyo']);
+    });
+
     test('dict.import：撤销删掉刚导入的那本', () async {
       final Directory dir = Directory.systemTemp.createTempSync('fushi_dict_');
       addTearDown(() => dir.deleteSync(recursive: true));
