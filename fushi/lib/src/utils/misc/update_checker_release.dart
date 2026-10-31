@@ -1834,15 +1834,26 @@ String? normalizeReleaseVersionTag(String tag) {
   return _stripBuildMetadata(normalized);
 }
 
+/// 是否为**应用版本** release：tag 能被 [normalizeReleaseVersionTag] 解析成版本号、且不是草稿。
+///
+/// 与 [releaseMatchesUpdateChannel] 的第一道闸是同一条判据（它在此之上再分通道）。同一个
+/// GitHub 仓库里还挂着只放资产、不是 app 版本的 release——`vendored-binaries`（预编译第三方
+/// 二进制，`tool/vendored_binaries.json`）、`flutter-engine-*`（引擎补丁产物）、模型 onnx、
+/// rolling 等——它们的 tag 不是版本号，检查更新从不会选中它们，「查看更新日志」页也不能列出。
+bool isAppVersionRelease(Map<String, dynamic> release) {
+  if (release['draft'] == true) return false;
+  final Object? tag = release['tag_name'];
+  return tag is String && normalizeReleaseVersionTag(tag) != null;
+}
+
 @visibleForTesting
 bool releaseMatchesUpdateChannel(
   Map<String, dynamic> release,
   UpdateChannel channel,
 ) {
-  if (release['draft'] == true) return false;
-  final String tag = release['tag_name'] as String? ?? '';
-  final String? version = normalizeReleaseVersionTag(tag);
-  if (version == null) return false;
+  if (!isAppVersionRelease(release)) return false;
+  final String tag = release['tag_name'] as String;
+  final String version = normalizeReleaseVersionTag(tag)!;
   final bool prerelease = release['prerelease'] == true;
   return switch (channel) {
     UpdateChannel.stable => !prerelease && _prereleasePart(version) == null,
