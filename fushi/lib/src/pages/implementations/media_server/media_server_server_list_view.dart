@@ -69,9 +69,6 @@ class MediaServerListView extends StatefulWidget {
 class _MediaServerListViewState extends State<MediaServerListView> {
   late Future<List<MediaServerEntry>> _future = widget.loadServers();
 
-  /// 单台直进只做一次：用户从首页按返回回到列表时，列表就该老实待着。
-  bool _autoEntered = false;
-
   /// 最近一次取回的服务器清单：首页页头的「切换服务器」菜单从这里取。
   List<MediaServerEntry> _servers = const <MediaServerEntry>[];
 
@@ -103,8 +100,11 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     );
   }
 
+  /// 进服务器 = 打开二级页面（根 Navigator，2026-10-30 用户「点击进去媒体服务器
+  /// 应该要是二级界面」）：首页 / 网格 / 搜索都在这一页之上叠，自带返回，不再
+  /// 压在库页顶栏与分区页签底下。
   void _openServer(MediaServerEntry entry) {
-    Navigator.of(context).push<void>(
+    Navigator.of(context, rootNavigator: true).push<void>(
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => _homeFor(entry),
@@ -112,8 +112,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     );
   }
 
-  /// 首页页头切到另一台：退回本列表再压那台的首页（返回仍回到本列表），不留
-  /// 上一台的首页 / 网格 / 详情层。
+  /// 首页页头切到另一台：把当前这台的首页换成那台的（返回仍回到本列表）。
   void _switchServer(MediaServerBrowser browser) {
     MediaServerEntry? target;
     for (final MediaServerEntry entry in _servers) {
@@ -121,9 +120,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     }
     if (target == null) return;
     final MediaServerEntry entry = target;
-    final NavigatorState nav = Navigator.of(context);
-    nav.popUntil((Route<dynamic> route) => route.isFirst);
-    nav.push<void>(
+    Navigator.of(context, rootNavigator: true).pushReplacement<void, void>(
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => _homeFor(entry),
@@ -131,25 +128,14 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     );
   }
 
-  void _maybeAutoEnter(List<MediaServerEntry> servers) {
-    if (_autoEntered || servers.length != 1) return;
-    _autoEntered = true;
-    // 在 build 里不能 push；等这一帧画完再压首页上去。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _openServer(servers.single);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    // 本视图是嵌套 Navigator 里的一条路由：页面外壳自带 Scaffold（Material 祖先）
-    // 与 M3E 悬浮页头（随滚动收起）。分区页签归外层浏览页（画在嵌套 Navigator
-    // 之上），这里与首页 / 网格同构，只出本层的紧凑页头。
+    // 本视图是分区里的一级列表，就在库页分区页签下方：页头不再是悬浮胶囊
+    // （2026-10-30 用户「底部就不该显示胶囊了」），只是一行平铺的小标题 +
+    // 动作按钮。点进某台服务器才是带悬浮页头的二级页面（见 [_openServer]）。
     return MediaServerPageFrame(
-      header: FushiPageHeader(
+      header: _PlainListHeader(
         title: t.media_server_servers_title,
-        compact: true,
         actions: <Widget>[
           // 多台服务器时才有「搜索所有服务器」：与列表同一份清单（同一个 future），
           // 清单回来后这里随之出现。
@@ -232,7 +218,6 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                       if (servers.isEmpty) {
                         child = _buildEmpty(top);
                       } else {
-                        _maybeAutoEnter(servers);
                         child = _buildList(servers, top);
                       }
                     }
@@ -617,6 +602,43 @@ class _AddServerRow extends StatelessWidget {
               style: tokens.type.listTitle.copyWith(color: accent),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 服务器列表的平铺页头：左边一枚小标题，右边一排普通图标按钮，没有悬浮胶囊。
+class _PlainListHeader extends StatelessWidget {
+  const _PlainListHeader({required this.title, required this.actions});
+
+  final String title;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.page + tokens.spacing.gap,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ),
+          ...actions,
         ],
       ),
     );

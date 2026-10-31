@@ -5142,6 +5142,7 @@ $liveConfigJs
     String searchTerm,
     Rect selectionRect, {
     LookupOrigin origin = LookupOrigin.explicit,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     prunePopupStack(0);
     final int highlightCount = await searchDictionaryResult(
@@ -5149,6 +5150,7 @@ $liveConfigJs
       selectionRect: selectionRect,
       deferDisplay: true,
       origin: origin,
+      rubySpans: rubySpans,
     );
     await _highlightAndShowPopup(highlightCount, selectionRect);
   }

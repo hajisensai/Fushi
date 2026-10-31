@@ -138,6 +138,23 @@ final class FushiRemotePush {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  /// 后台 URLSession 下完（app 已挂起 / 被回收）时系统把 app 唤醒到后台交付，
+  /// 见 FushiBackgroundDownload.swift。
+  override func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    if FushiBackgroundDownload.shared.handleEvents(
+      identifier: identifier, completionHandler: completionHandler)
+    {
+      return
+    }
+    super.application(
+      application, handleEventsForBackgroundURLSession: identifier,
+      completionHandler: completionHandler)
+  }
+
   override func application(
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -230,6 +247,9 @@ final class FushiRemotePush {
     FushiFloatingBall.register(binaryMessenger: binaryMessenger)
     // 音乐输出：AVAudioSession 首选采样率（Dart 契约 music_platform_output.dart）。
     MusicOutputChannel.register(binaryMessenger: binaryMessenger)
+    // 词典包后台下载（系统后台 URLSession）+ 下载保活（beginBackgroundTask），BUG-3887。
+    FushiBackgroundDownload.register(binaryMessenger: binaryMessenger)
+    FushiDownloadKeepAlive.register(binaryMessenger: binaryMessenger)
     // 反馈回复的 APNs 远程推送（见文件顶部 FushiRemotePush）。
     FushiRemotePush.shared.install(binaryMessenger: binaryMessenger)
     // 查词输入框的输入法语言。install 必须在任何输入框成为第一响应者之前完成——

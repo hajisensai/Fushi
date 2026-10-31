@@ -20,6 +20,7 @@
 //   无歧义，不需要这层保险。
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 
 /// 一段注音：`ruby` 注在纯文本 [RubyMarkupText.text] 的 `[start, start+length)` 上方。
 /// 下标单位是 UTF-16 code unit（与 Dart `String` 下标、DirectWrite `textPosition` 同单位）。
@@ -348,4 +349,28 @@ RubyMarkupText parseRubyMarkup(String raw) {
   // 注意不能在 spans 为空时直接返回 raw：`<ruby>` 里 `<rt>` 为空这类输入会剥掉标记
   // 却不产生注音，此时 out 已经与 raw 不同，返回 raw 等于把标记又塞回正文。
   return RubyMarkupText(text: String.fromCharCodes(out), spans: spans);
+}
+
+/// 把整行 [spans]（坐标系 = 整行文本）换成查询串 `[queryStart, queryStart+queryLength)`
+/// 的 [FushiRubySpan]（坐标系 = 查询串）。基字必须完整落在查询串内，被查询起点或
+/// 终点截断的丢弃；空读音丢弃。只搬运来源自带的读音，不推断。
+List<FushiRubySpan> rubySpansForQuery(
+  List<RubySpan> spans,
+  int queryStart,
+  int queryLength,
+) {
+  if (spans.isEmpty || queryLength <= 0) return const <FushiRubySpan>[];
+  final int queryEnd = queryStart + queryLength;
+  return <FushiRubySpan>[
+    for (final RubySpan s in spans)
+      if (s.length > 0 &&
+          s.start >= queryStart &&
+          s.end <= queryEnd &&
+          s.ruby.trim().isNotEmpty)
+        FushiRubySpan(
+          start: s.start - queryStart,
+          end: s.end - queryStart,
+          reading: s.ruby.trim(),
+        ),
+  ];
 }

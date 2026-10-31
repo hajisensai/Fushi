@@ -90,3 +90,63 @@ Future<int?> extractIconSeedArgb(Uint8List encoded) async {
     image.dispose();
   }
 }
+
+/// 一张图的多个候选种子色（ARGB，按适合程度排序，最多 [desired] 个）：给「页面
+/// 背景图取色」让用户挑。与 [iconSeedFromRgba] 同一套量化 + [Score]（Score 自带
+/// 色相间距筛选，候选之间不会是同一种颜色的深浅）；整张图都是灰阶时退回占比最高
+/// 的那一个灰。没有可用像素返回空表。
+Future<List<int>> seedCandidatesFromRgba(Uint8List rgba, int desired) async {
+  final List<int> pixels = <int>[];
+  for (int i = 0; i + 3 < rgba.length; i += 4) {
+    if (rgba[i + 3] < kIconSeedMinAlpha) continue;
+    pixels.add(0xFF000000 | (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
+  }
+  if (pixels.isEmpty) return const <int>[];
+  final QuantizerResult quantized = await QuantizerCelebi().quantize(
+    pixels,
+    kIconSeedQuantizeColors,
+  );
+  const int noneSentinel = 0x00000000;
+  final List<int> scored = Score.score(
+    quantized.colorToCount,
+    desired: desired,
+    fallbackColorARGB: noneSentinel,
+  ).where((int argb) => argb != noneSentinel).toList();
+  if (scored.isNotEmpty) return scored;
+  final int? gray = await iconSeedFromRgba(rgba);
+  return gray == null ? const <int>[] : <int>[gray];
+}
+
+/// 解码图片字节（按 [kIconSeedDecodeWidth] 缩小）并在后台 isolate 取最多
+/// [desired] 个候选种子色；解不出来返回空表。
+Future<List<int>> extractImageSeedCandidates(
+  Uint8List encoded, {
+  required int desired,
+}) async {
+  final ui.Codec codec = await ui.instantiateImageCodec(
+    encoded,
+    targetWidth: kIconSeedDecodeWidth,
+  );
+  final ui.Image image;
+  try {
+    image = (await codec.getNextFrame()).image;
+  } finally {
+    codec.dispose();
+  }
+  try {
+    final ByteData? raw = await image.toByteData(
+      format: ui.ImageByteFormat.rawStraightRgba,
+    );
+    if (raw == null) return const <int>[];
+    final Uint8List rgba = raw.buffer.asUint8List(
+      raw.offsetInBytes,
+      raw.lengthInBytes,
+    );
+    return await compute(
+      (Uint8List bytes) => seedCandidatesFromRgba(bytes, desired),
+      rgba,
+    );
+  } finally {
+    image.dispose();
+  }
+}

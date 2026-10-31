@@ -74,7 +74,9 @@ Write-Host "installed $w\shim (runs with $bash)"
 $limits = Join-Path $w 'limits'
 if (-not (Test-Path -LiteralPath $limits)) {
     $text = "# dist_test worker limits (KEY=number). Edit freely; the requester cannot.`n" +
-        "MAX_SLOTS=1`n# MAX_CONCURRENCY=4`nMIN_FREE_MEM_MB=4096`nMIN_FREE_DISK_GB=20`n"
+        "MAX_SLOTS=1`n# MAX_CONCURRENCY=4`nMIN_FREE_MEM_MB=4096`nMIN_FREE_DISK_GB=20`n" +
+        "# Compile checks (Android / desktop builds whose output never leaves this`n" +
+        "# machine); 0 turns them off.`n# ALLOW_BUILD=0`n"
     [IO.File]::WriteAllText($limits, $text, (New-Object Text.ASCIIEncoding))
     Write-Host "wrote $limits"
 }

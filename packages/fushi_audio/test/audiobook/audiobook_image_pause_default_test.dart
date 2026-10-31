@@ -3,7 +3,7 @@ import 'package:fushi_audio/src/audiobook/audiobook_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:test/test.dart';
 
-/// BUG-3887：插图停留默认 2 秒（所有者 2026-10-31 拍板，原为 0 = 关）。
+/// BUG-3891：插图停留默认 2 秒（所有者 2026-10-31 拍板，原为 0 = 关）。
 ///
 /// 默认值只能落在「从未设置过」的书上：偏好表没有这本书的行 → 2；用户显式设成 0
 /// 会落一行（PrefCodec 编码 `i:0`），必须仍读出 0（保持关闭），不能被新默认值顶掉。

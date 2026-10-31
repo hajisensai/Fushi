@@ -267,6 +267,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
         data.text,
         selectionRect,
         origin: _lookupOriginOf(data),
+        rubySpans: data.rubySpans,
       );
       _checkFavoriteStatus();
       return;
@@ -297,6 +298,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
       data.text,
       selectionRect,
       origin: _lookupOriginOf(data),
+      rubySpans: data.rubySpans,
     );
     _cacheMatchableSelection(data);
     if (data.normalizedOffset != null && data.normalizedLength != null) {

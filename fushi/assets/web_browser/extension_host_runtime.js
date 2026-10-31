@@ -174,17 +174,20 @@ var fetch = function (input, init) {
 // ── content.js 的宿主适配口 ─────────────────────────────────────────────────
 var __fushiExtLookupMatched = {};
 var __fushiHostAdapter = {
-  // req: {term, sentence, rect:{x,y,width,height}|null, fromHover, fromSidePanel}
+  // req: {term, sentence, rect:{x,y,width,height}|null, fromHover, fromSidePanel,
+  //       ruby:[{s,e,r}]|null（term 上的原文振假名）}
   lookup: function (req, onMatched) {
     var id = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
     __fushiExtLookupMatched = {};
     if (typeof onMatched === 'function') __fushiExtLookupMatched[id] = onMatched;
-    __fushiExtSend('lookup', {
+    // 即发即忘：命中长度经 lookupMatched 回调回来，这里不等 Dart 回执。
+    void __fushiExtSend('lookup', {
       id: id,
       term: String(req && req.term || ''),
       sentence: String(req && req.sentence || ''),
       rect: req && req.rect ? req.rect : null,
       fromHover: !!(req && req.fromHover),
+      ruby: req && Array.isArray(req.ruby) && req.ruby.length ? req.ruby : null,
     });
     return id;
   },

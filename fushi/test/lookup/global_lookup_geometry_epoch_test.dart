@@ -96,8 +96,9 @@ void main() {
         '_resetGeometryHandshakeForLookup();',
         lookupStart,
       );
+      // 根查词带原文振假名时走 searchDictionaryWithRuby，同一个 await 点。
       final int search = source.indexOf(
-        'await model.searchDictionary(',
+        RegExp(r'await model\.searchDictionary(WithRuby)?\('),
         lookupStart,
       );
       expect(reset, greaterThan(lookupStart));

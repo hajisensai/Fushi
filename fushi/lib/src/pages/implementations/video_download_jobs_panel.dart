@@ -34,9 +34,7 @@ import 'package:fushi/utils.dart';
 export 'package:fushi/src/media/downloads/download_task_delete_confirm.dart'
     show showDownloadTaskDeleteConfirm;
 
-typedef VideoDownloadJobAction = Future<void> Function(
-  VideoDownloadJobRow job,
-);
+typedef VideoDownloadJobAction = Future<void> Function(VideoDownloadJobRow job);
 
 /// 能否重试：只有真失败 / 需要处理的任务能重跑；legacy 导入报告不是可重跑任务。
 bool videoDownloadJobCanRetry(VideoDownloadJobRow job) =>
@@ -60,24 +58,20 @@ bool videoDownloadJobCanSetPriority(VideoDownloadJobRow job) =>
     job.lifecycle == VideoDownloadJobLifecycle.active ||
     job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
 
-typedef VideoDownloadJobLocationLoader = Future<String?> Function(
-  VideoDownloadJobRow job,
-);
+typedef VideoDownloadJobLocationLoader =
+    Future<String?> Function(VideoDownloadJobRow job);
 
-typedef VideoDownloadJobDeleteAction = Future<void> Function(
-  VideoDownloadJobRow job, {
-  required bool deleteFiles,
-});
+typedef VideoDownloadJobDeleteAction =
+    Future<void> Function(VideoDownloadJobRow job, {required bool deleteFiles});
 
 typedef VideoDownloadPathRevealer = Future<bool> Function(String path);
-typedef VideoDownloadJobMetricsLoader = Future<Map<String, TorrentSnapshot>>
-    Function(
-  Iterable<VideoDownloadJobRow> jobs,
-);
+typedef VideoDownloadJobMetricsLoader =
+    Future<Map<String, TorrentSnapshot>> Function(
+      Iterable<VideoDownloadJobRow> jobs,
+    );
 
-typedef VideoDownloadJobSelectedSizeLoader = Future<Map<String, int>> Function(
-  Iterable<VideoDownloadJobRow> jobs,
-);
+typedef VideoDownloadJobSelectedSizeLoader =
+    Future<Map<String, int>> Function(Iterable<VideoDownloadJobRow> jobs);
 
 /// Narrow read port used by [VideoDownloadJobsPanel].
 ///
@@ -99,29 +93,27 @@ final class DatabaseVideoDownloadJobsPanelStore
 }
 
 /// 调整单个任务的排队优先级。数值越大越先被取走（DAO 侧 `priority DESC`）。
-typedef VideoDownloadJobPriorityAction = Future<void> Function(
-  VideoDownloadJobRow job,
-  int priority,
-);
+typedef VideoDownloadJobPriorityAction =
+    Future<void> Function(VideoDownloadJobRow job, int priority);
 
 /// 任务列表的排序维度（会话级，不落偏好——列表通常几十条，切换成本为零）。
 enum VideoDownloadJobSort { createdDesc, titleAsc, progressDesc, statusGroup }
 
 /// [VideoDownloadJobSort.statusGroup] 的分组次序：越需要用户看的越靠前。
 int videoDownloadLifecycleRank(String lifecycle) => switch (lifecycle) {
-      VideoDownloadJobLifecycle.needsAttention => 0,
-      VideoDownloadJobLifecycle.failed => 1,
-      VideoDownloadJobLifecycle.active => 2,
-      VideoDownloadJobLifecycle.cancelled => 3,
-      VideoDownloadJobLifecycle.completed => 4,
-      _ => 5,
-    };
+  VideoDownloadJobLifecycle.needsAttention => 0,
+  VideoDownloadJobLifecycle.failed => 1,
+  VideoDownloadJobLifecycle.active => 2,
+  VideoDownloadJobLifecycle.cancelled => 3,
+  VideoDownloadJobLifecycle.completed => 4,
+  _ => 5,
+};
 
 /// 任务在没有实时后端快照时的可比进度：完成恒 1，否则用持久的阶段进度。
 double videoDownloadJobComparableProgress(VideoDownloadJobRow job) =>
     job.lifecycle == VideoDownloadJobLifecycle.completed
-        ? 1
-        : job.stageProgress.clamp(0, 1).toDouble();
+    ? 1
+    : job.stageProgress.clamp(0, 1).toDouble();
 
 /// 按 [sort] 返回新的有序列表。纯函数，稳定 tiebreak 用 createdAt 倒序 + jobId。
 List<VideoDownloadJobRow> sortedVideoDownloadJobs(
@@ -139,20 +131,23 @@ List<VideoDownloadJobRow> sortedVideoDownloadJobs(
       out.sort(byCreatedDesc);
     case VideoDownloadJobSort.titleAsc:
       out.sort((VideoDownloadJobRow a, VideoDownloadJobRow b) {
-        final int byTitle =
-            a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        final int byTitle = a.title.toLowerCase().compareTo(
+          b.title.toLowerCase(),
+        );
         return byTitle != 0 ? byTitle : byCreatedDesc(a, b);
       });
     case VideoDownloadJobSort.progressDesc:
       out.sort((VideoDownloadJobRow a, VideoDownloadJobRow b) {
-        final int byProgress = videoDownloadJobComparableProgress(b)
-            .compareTo(videoDownloadJobComparableProgress(a));
+        final int byProgress = videoDownloadJobComparableProgress(
+          b,
+        ).compareTo(videoDownloadJobComparableProgress(a));
         return byProgress != 0 ? byProgress : byCreatedDesc(a, b);
       });
     case VideoDownloadJobSort.statusGroup:
       out.sort((VideoDownloadJobRow a, VideoDownloadJobRow b) {
-        final int byRank = videoDownloadLifecycleRank(a.lifecycle)
-            .compareTo(videoDownloadLifecycleRank(b.lifecycle));
+        final int byRank = videoDownloadLifecycleRank(
+          a.lifecycle,
+        ).compareTo(videoDownloadLifecycleRank(b.lifecycle));
         return byRank != 0 ? byRank : byCreatedDesc(a, b);
       });
   }
@@ -164,15 +159,14 @@ List<VideoDownloadJobRow> sortedVideoDownloadJobs(
 List<VideoDownloadJobRow> filterVideoDownloadJobs(
   List<VideoDownloadJobRow> jobs,
   String query,
-) =>
-    filterByMediaSearch(
-      jobs,
-      query,
-      (VideoDownloadJobRow job) => <String>[
-        job.title,
-        if (job.resourceTitle?.trim().isNotEmpty ?? false) job.resourceTitle!,
-      ],
-    );
+) => filterByMediaSearch(
+  jobs,
+  query,
+  (VideoDownloadJobRow job) => <String>[
+    job.title,
+    if (job.resourceTitle?.trim().isNotEmpty ?? false) job.resourceTitle!,
+  ],
+);
 
 /// 任务列表的类型筛选档位（BUG-1937；会话级，不落偏好，同 [VideoDownloadJobSort]）。
 ///
@@ -215,18 +209,17 @@ bool videoDownloadJobNeedsAudiobookPairing(VideoDownloadJobRow job) =>
 List<VideoDownloadJobRow> filterVideoDownloadJobsByKind(
   List<VideoDownloadJobRow> jobs,
   VideoDownloadJobKindFilter filter,
-) =>
-    switch (filter) {
-      VideoDownloadJobKindFilter.all => jobs,
-      VideoDownloadJobKindFilter.video => <VideoDownloadJobRow>[
-          for (final VideoDownloadJobRow job in jobs)
-            if (videoDownloadJobDiscoveryKind(job) == null) job,
-        ],
-      _ => <VideoDownloadJobRow>[
-          for (final VideoDownloadJobRow job in jobs)
-            if (videoDownloadJobDiscoveryKind(job) == filter.discoveryKind) job,
-        ],
-    };
+) => switch (filter) {
+  VideoDownloadJobKindFilter.all => jobs,
+  VideoDownloadJobKindFilter.video => <VideoDownloadJobRow>[
+    for (final VideoDownloadJobRow job in jobs)
+      if (videoDownloadJobDiscoveryKind(job) == null) job,
+  ],
+  _ => <VideoDownloadJobRow>[
+    for (final VideoDownloadJobRow job in jobs)
+      if (videoDownloadJobDiscoveryKind(job) == filter.discoveryKind) job,
+  ],
+};
 
 /// 类型筛选档位的用户可见名（发现域四档复用 [discoveryMediaKindLabel]）。
 String videoDownloadJobKindFilterLabel(VideoDownloadJobKindFilter filter) =>
@@ -292,34 +285,34 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     Widget? header,
     DownloadTaskWorkFocus? workFocus,
     VoidCallback? onClearWorkFocus,
-  }) =>
-      VideoDownloadJobsPanel(
-        key: key,
-        store: DatabaseVideoDownloadJobsPanelStore(database),
-        onRetry: onRetry,
-        onResume: onResume,
-        onCancel: onCancel,
-        onOpenDetails: onOpenDetails,
-        onPairAudiobook: onPairAudiobook,
-        onSetPriority: onSetPriority,
-        locationLoader: locationLoader,
-        onDelete: onDelete,
-        pathRevealer: pathRevealer,
-        metricsLoader: metricsLoader,
-        selectedSizeLoader: selectedSizeLoader ??
-            (Iterable<VideoDownloadJobRow> jobs) =>
-                _loadSelectedSizes(database, jobs),
-        lifecycleLabel: lifecycleLabel,
-        stageLabel: stageLabel,
-        unified: unified,
-        additionalTasks: additionalTasks,
-        onAddTask: onAddTask,
-        executionDeviceLabel: executionDeviceLabel,
-        onOpenExecutionSettings: onOpenExecutionSettings,
-        header: header,
-        workFocus: workFocus,
-        onClearWorkFocus: onClearWorkFocus,
-      );
+  }) => VideoDownloadJobsPanel(
+    key: key,
+    store: DatabaseVideoDownloadJobsPanelStore(database),
+    onRetry: onRetry,
+    onResume: onResume,
+    onCancel: onCancel,
+    onOpenDetails: onOpenDetails,
+    onPairAudiobook: onPairAudiobook,
+    onSetPriority: onSetPriority,
+    locationLoader: locationLoader,
+    onDelete: onDelete,
+    pathRevealer: pathRevealer,
+    metricsLoader: metricsLoader,
+    selectedSizeLoader:
+        selectedSizeLoader ??
+        (Iterable<VideoDownloadJobRow> jobs) =>
+            _loadSelectedSizes(database, jobs),
+    lifecycleLabel: lifecycleLabel,
+    stageLabel: stageLabel,
+    unified: unified,
+    additionalTasks: additionalTasks,
+    onAddTask: onAddTask,
+    executionDeviceLabel: executionDeviceLabel,
+    onOpenExecutionSettings: onOpenExecutionSettings,
+    header: header,
+    workFocus: workFocus,
+    onClearWorkFocus: onClearWorkFocus,
+  );
 
   /// 统一列表顶部随列表滚动的一块（网络问题横幅等）。
   final Widget? header;
@@ -387,10 +380,13 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   @override
   void didUpdateWidget(VideoDownloadJobsPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final bool sameDatabase = oldWidget.store is DatabaseVideoDownloadJobsPanelStore &&
-      widget.store is DatabaseVideoDownloadJobsPanelStore &&
-      identical((oldWidget.store as DatabaseVideoDownloadJobsPanelStore).database,
-        (widget.store as DatabaseVideoDownloadJobsPanelStore).database);
+    final bool sameDatabase =
+        oldWidget.store is DatabaseVideoDownloadJobsPanelStore &&
+        widget.store is DatabaseVideoDownloadJobsPanelStore &&
+        identical(
+          (oldWidget.store as DatabaseVideoDownloadJobsPanelStore).database,
+          (widget.store as DatabaseVideoDownloadJobsPanelStore).database,
+        );
     if (!identical(oldWidget.store, widget.store) && !sameDatabase) {
       _jobs = widget.store.watchJobs();
     }
@@ -422,7 +418,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       delete: onDelete == null
           ? null
           : ({required bool deleteFiles}) =>
-              onDelete(job, deleteFiles: deleteFiles),
+                onDelete(job, deleteFiles: deleteFiles),
       // durable pipeline 的 deleteJob 自己会去后端摘种子删数据，能删。
       deletesFiles: onDelete != null,
       // 删文件时登记的视频库行与封面一并移除（deletePersistedVideoDownloadJob）。
@@ -492,76 +488,84 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // 统一任务列表直接落在外壳背景上（不铺 surface 实底，否则浏览页的外壳
+    // 渐变在下载页被整块盖白、只在标题栏一条露出来）。
     return ColoredBox(
-      color: colors.surface,
+      color: widget.unified ? const Color(0x00000000) : colors.surface,
       child: StreamBuilder<List<VideoDownloadJobRow>>(
         stream: _jobs,
-        builder: (
-          BuildContext context,
-          AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
-        ) {
-          if (widget.unified) {
-            // 加载失败提示与宿主给的横幅进列表顶部（随列表滚到浮动头部之下）。
-            final Widget? header = snapshot.hasError || widget.header != null
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      if (snapshot.hasError) Text(t.error_load_failed),
-                      if (widget.header != null) widget.header!,
-                    ],
-                  )
-                : null;
-            return Column(children: <Widget>[
-              Expanded(
-                  key: const ValueKey<String>('unified-download-tasks'),
-                  child: _buildJobList(
-                    snapshot.data ?? const <VideoDownloadJobRow>[],
-                    header: header,
-                    // 首个快照未到且别的来源也还没东西：画骨架，不闪「暂无任务」。
-                    loading: !snapshot.hasData &&
-                        !snapshot.hasError &&
-                        widget.additionalTasks.isEmpty,
-                  )),
-            ]);
-          }
-          if (snapshot.hasError) {
-            return _MessageState(
-              icon: Icons.error_outline,
-              message: t.error_load_failed,
-            );
-          }
-          if (!snapshot.hasData) {
-            return const FushiLoadingView();
-          }
-          final List<VideoDownloadJobRow> jobs = snapshot.data!;
-          if (jobs.isEmpty) {
-            return _MessageState(
-              icon: Icons.downloading_outlined,
-              message: t.anime_download_no_tasks,
-            );
-          }
-          final List<VideoDownloadJobRow> visible = sortedVideoDownloadJobs(
-            filterVideoDownloadJobsByKind(
-              filterVideoDownloadJobs(jobs, _searchQuery),
-              _kindFilter,
-            ),
-            _sort,
-          );
-          return Column(
-            children: <Widget>[
-              _buildToolbar(),
-              Expanded(
-                child: visible.isEmpty
-                    ? _MessageState(
-                        icon: Icons.search_off,
-                        message: t.download_task_no_match,
+        builder:
+            (
+              BuildContext context,
+              AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
+            ) {
+              if (widget.unified) {
+                // 加载失败提示与宿主给的横幅进列表顶部（随列表滚到浮动头部之下）。
+                final Widget? header =
+                    snapshot.hasError || widget.header != null
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          if (snapshot.hasError) Text(t.error_load_failed),
+                          if (widget.header != null) widget.header!,
+                        ],
                       )
-                    : _buildJobList(visible),
-              ),
-            ],
-          );
-        },
+                    : null;
+                return Column(
+                  children: <Widget>[
+                    Expanded(
+                      key: const ValueKey<String>('unified-download-tasks'),
+                      child: _buildJobList(
+                        snapshot.data ?? const <VideoDownloadJobRow>[],
+                        header: header,
+                        // 首个快照未到且别的来源也还没东西：画骨架，不闪「暂无任务」。
+                        loading:
+                            !snapshot.hasData &&
+                            !snapshot.hasError &&
+                            widget.additionalTasks.isEmpty,
+                      ),
+                    ),
+                  ],
+                );
+              }
+              if (snapshot.hasError) {
+                return _MessageState(
+                  icon: Icons.error_outline,
+                  message: t.error_load_failed,
+                );
+              }
+              if (!snapshot.hasData) {
+                return const FushiLoadingView();
+              }
+              final List<VideoDownloadJobRow> jobs = snapshot.data!;
+              if (jobs.isEmpty) {
+                return _MessageState(
+                  icon: Icons.downloading_outlined,
+                  message: t.anime_download_no_tasks,
+                );
+              }
+              final List<VideoDownloadJobRow> visible = sortedVideoDownloadJobs(
+                filterVideoDownloadJobsByKind(
+                  filterVideoDownloadJobs(jobs, _searchQuery),
+                  _kindFilter,
+                ),
+                _sort,
+              );
+              return Column(
+                children: <Widget>[
+                  _buildToolbar(),
+                  Expanded(
+                    child: visible.isEmpty
+                        ? _MessageState(
+                            icon: Icons.search_off,
+                            message: t.download_task_no_match,
+                          )
+                        : _buildJobList(visible),
+                  ),
+                ],
+              );
+            },
       ),
     );
   }
@@ -588,7 +592,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       tooltip: _kindFilter == VideoDownloadJobKindFilter.all
           ? t.download_task_kind_filter
           : '${t.download_task_kind_filter} · '
-              '${videoDownloadJobKindFilterLabel(_kindFilter)}',
+                '${videoDownloadJobKindFilterLabel(_kindFilter)}',
       iconWidget: _kindFilter == VideoDownloadJobKindFilter.all
           ? const FushiIcon(Icons.filter_list)
           : FushiIcon(
@@ -663,11 +667,11 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   static const double _kToolbarSingleRowMinWidth = 480;
 
   static String _sortLabel(VideoDownloadJobSort sort) => switch (sort) {
-        VideoDownloadJobSort.createdDesc => t.download_task_sort_created,
-        VideoDownloadJobSort.titleAsc => t.sort_title,
-        VideoDownloadJobSort.progressDesc => t.download_task_sort_progress,
-        VideoDownloadJobSort.statusGroup => t.download_task_sort_status,
-      };
+    VideoDownloadJobSort.createdDesc => t.download_task_sort_created,
+    VideoDownloadJobSort.titleAsc => t.sort_title,
+    VideoDownloadJobSort.progressDesc => t.download_task_sort_progress,
+    VideoDownloadJobSort.statusGroup => t.download_task_sort_status,
+  };
 
   Widget _buildJobList(
     List<VideoDownloadJobRow> jobs, {
@@ -688,52 +692,55 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       metricsLoader: widget.metricsLoader,
       selectedSizeLoader: widget.selectedSizeLoader,
       actionsFor: _entryActions,
-      itemBuilder: (
-        BuildContext context,
-        VideoDownloadJobRow job,
-        TorrentSnapshot? snapshot,
-        int? selectedSizeBytes,
-      ) =>
-          _VideoDownloadJobCard(
-        compact: widget.unified,
-        key: ValueKey<String>('video-download-job-${job.jobId}'),
-        job: job,
-        snapshot: snapshot,
-        selectedSizeBytes: selectedSizeBytes,
-        busy: _busyJobIds.contains(job.jobId),
-        onRetry: widget.onRetry == null
-            ? null
-            : () => _runAction(job, widget.onRetry!),
-        onResume: widget.onResume == null
-            ? null
-            : () => _runAction(job, widget.onResume!),
-        onCancel: widget.onCancel == null
-            ? null
-            : () => _runAction(job, widget.onCancel!),
-        onOpenDetails: widget.onOpenDetails == null
-            ? null
-            : () => _runAction(job, widget.onOpenDetails!),
-        onPairAudiobook: widget.onPairAudiobook == null ||
-                !videoDownloadJobNeedsAudiobookPairing(job)
-            ? null
-            : () => _runAction(job, widget.onPairAudiobook!),
-        onSetPriority: widget.onSetPriority == null
-            ? null
-            : (int priority) => _runAction(
-                  job,
-                  (VideoDownloadJobRow row) =>
-                      widget.onSetPriority!(row, priority),
-                ),
-        // Mobile has no file-manager reveal contract; the action would
-        // always fail, so it is not offered there.
-        onOpenLocation:
-            widget.locationLoader == null || currentRevealHost() == null
+      itemBuilder:
+          (
+            BuildContext context,
+            VideoDownloadJobRow job,
+            TorrentSnapshot? snapshot,
+            int? selectedSizeBytes,
+          ) => _VideoDownloadJobCard(
+            compact: widget.unified,
+            key: ValueKey<String>('video-download-job-${job.jobId}'),
+            job: job,
+            snapshot: snapshot,
+            selectedSizeBytes: selectedSizeBytes,
+            busy: _busyJobIds.contains(job.jobId),
+            onRetry: widget.onRetry == null
+                ? null
+                : () => _runAction(job, widget.onRetry!),
+            onResume: widget.onResume == null
+                ? null
+                : () => _runAction(job, widget.onResume!),
+            onCancel: widget.onCancel == null
+                ? null
+                : () => _runAction(job, widget.onCancel!),
+            onOpenDetails: widget.onOpenDetails == null
+                ? null
+                : () => _runAction(job, widget.onOpenDetails!),
+            onPairAudiobook:
+                widget.onPairAudiobook == null ||
+                    !videoDownloadJobNeedsAudiobookPairing(job)
+                ? null
+                : () => _runAction(job, widget.onPairAudiobook!),
+            onSetPriority: widget.onSetPriority == null
+                ? null
+                : (int priority) => _runAction(
+                    job,
+                    (VideoDownloadJobRow row) =>
+                        widget.onSetPriority!(row, priority),
+                  ),
+            // Mobile has no file-manager reveal contract; the action would
+            // always fail, so it is not offered there.
+            onOpenLocation:
+                widget.locationLoader == null || currentRevealHost() == null
                 ? null
                 : () => _openLocation(job),
-        onDelete: widget.onDelete == null ? null : () => _confirmDelete(job),
-        lifecycleLabel: widget.lifecycleLabel,
-        stageLabel: widget.stageLabel,
-      ),
+            onDelete: widget.onDelete == null
+                ? null
+                : () => _confirmDelete(job),
+            lifecycleLabel: widget.lifecycleLabel,
+            stageLabel: widget.stageLabel,
+          ),
     );
   }
 }
@@ -743,26 +750,31 @@ Future<Map<String, int>> _loadSelectedSizes(
   Iterable<VideoDownloadJobRow> jobs,
 ) async {
   final Map<String, int> result = <String, int>{};
-  await Future.wait(jobs.map((VideoDownloadJobRow job) async {
-    final List<VideoDownloadJobFileRow> files =
-        await database.getVideoDownloadJobFiles(job.jobId);
-    final Iterable<int> sizes = files
-        .where((VideoDownloadJobFileRow file) =>
-            file.selected && file.sizeBytes != null)
-        .map((VideoDownloadJobFileRow file) => file.sizeBytes!);
-    if (sizes.isNotEmpty) {
-      result[job.jobId] = sizes.fold(0, (int sum, int size) => sum + size);
-    }
-  }));
+  await Future.wait(
+    jobs.map((VideoDownloadJobRow job) async {
+      final List<VideoDownloadJobFileRow> files = await database
+          .getVideoDownloadJobFiles(job.jobId);
+      final Iterable<int> sizes = files
+          .where(
+            (VideoDownloadJobFileRow file) =>
+                file.selected && file.sizeBytes != null,
+          )
+          .map((VideoDownloadJobFileRow file) => file.sizeBytes!);
+      if (sizes.isNotEmpty) {
+        result[job.jobId] = sizes.fold(0, (int sum, int size) => sum + size);
+      }
+    }),
+  );
   return Map<String, int>.unmodifiable(result);
 }
 
-typedef _VideoDownloadJobItemBuilder = Widget Function(
-  BuildContext context,
-  VideoDownloadJobRow job,
-  TorrentSnapshot? snapshot,
-  int? selectedSizeBytes,
-);
+typedef _VideoDownloadJobItemBuilder =
+    Widget Function(
+      BuildContext context,
+      VideoDownloadJobRow job,
+      TorrentSnapshot? snapshot,
+      int? selectedSizeBytes,
+    );
 
 class _VideoDownloadJobList extends StatefulWidget {
   const _VideoDownloadJobList({
@@ -833,8 +845,10 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
   }
 
   String _jobIdentity(List<VideoDownloadJobRow> jobs) => jobs
-      .map((VideoDownloadJobRow job) =>
-          '${job.jobId}:${job.backendTaskId ?? job.torrentHash ?? ''}')
+      .map(
+        (VideoDownloadJobRow job) =>
+            '${job.jobId}:${job.backendTaskId ?? job.torrentHash ?? ''}',
+      )
       .join('|');
 
   void _restartMetrics() {
@@ -858,9 +872,11 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
     final VideoDownloadJobSelectedSizeLoader? loader =
         widget.selectedSizeLoader;
     if (loader == null) return;
-    unawaited(loader(widget.jobs).then((Map<String, int> sizes) {
-      if (mounted) setState(() => _selectedSizes = sizes);
-    }));
+    unawaited(
+      loader(widget.jobs).then((Map<String, int> sizes) {
+        if (mounted) setState(() => _selectedSizes = sizes);
+      }),
+    );
   }
 
   Future<void> _refreshMetrics() async {
@@ -890,21 +906,23 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
     if (widget.unified) {
       final Map<String, DownloadTaskEntry> entries =
           <String, DownloadTaskEntry>{
-        for (final DownloadTaskEntry task in widget.additionalTasks)
-          task.id: task,
-      };
+            for (final DownloadTaskEntry task in widget.additionalTasks)
+              task.id: task,
+          };
       for (final VideoDownloadJobRow job in widget.jobs) {
         final TorrentSnapshot? snapshot = _snapshots[job.jobId];
         final DownloadTaskKind kind =
             DownloadTaskKind.values.asNameMap()[job.mediaKind] ??
-                DownloadTaskKind.video;
+            DownloadTaskKind.video;
         final DownloadTaskStatus status = switch (job.lifecycle) {
           VideoDownloadJobLifecycle.completed => DownloadTaskStatus.completed,
           VideoDownloadJobLifecycle.cancelled => DownloadTaskStatus.cancelled,
           VideoDownloadJobLifecycle.failed ||
           VideoDownloadJobLifecycle.needsAttention =>
             DownloadTaskStatus.attention,
-          _ => switch (snapshot == null ? null : torrentDisplayStatusFor(snapshot.state)) {
+          _ => switch (snapshot == null
+              ? null
+              : torrentDisplayStatusFor(snapshot.state)) {
             TorrentDisplayStatus.paused => DownloadTaskStatus.paused,
             TorrentDisplayStatus.queued => DownloadTaskStatus.queued,
             TorrentDisplayStatus.error => DownloadTaskStatus.attention,
@@ -914,8 +932,8 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
         final String? collectionKey = job.collectionId != null
             ? 'collection:${job.collectionId}'
             : job.metadataProvider != null && job.externalId != null
-                ? 'series:${job.metadataProvider}:${job.externalId}'
-                : null;
+            ? 'series:${job.metadataProvider}:${job.externalId}'
+            : null;
         entries[job.jobId] = DownloadTaskEntry(
           id: job.jobId,
           title: job.title,
@@ -930,7 +948,8 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
             job.metadataProvider,
             job.externalId,
           ),
-          seeding: snapshot != null &&
+          seeding:
+              snapshot != null &&
               torrentDisplayStatusFor(snapshot.state) ==
                   TorrentDisplayStatus.seeding,
           downRateBps: snapshot?.downRateBps,
@@ -1045,9 +1064,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
     // Apple：完成是语义绿（单色强调色在 Apple 下是黑 / 白，不表达成功）。
     final Color statusColor =
         isGlassDesign(context) &&
-                job.lifecycle == VideoDownloadJobLifecycle.completed
-            ? fushiStatusColor(context, FushiStatusTone.success)
-            : _statusColor(colors);
+            job.lifecycle == VideoDownloadJobLifecycle.completed
+        ? fushiStatusColor(context, FushiStatusTone.success)
+        : _statusColor(colors);
     final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1096,7 +1115,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
           runSpacing: 6,
           children: <Widget>[
             FushiTagChip(
-              label: _torrentStatusLabel ??
+              label:
+                  _torrentStatusLabel ??
                   lifecycleLabel?.call(job.lifecycle) ??
                   _defaultLifecycleLabel(job.lifecycle),
               color: statusColor,
@@ -1237,7 +1257,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
                     icon: busy
                         ? const SizedBox.square(
                             dimension: 16,
-                            child: FushiCircularProgressIndicator(strokeWidth: 2),
+                            child: FushiCircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
                         : const FushiIcon(Icons.refresh, size: 18),
                     label: Text(t.retry),
@@ -1251,7 +1273,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
                     icon: busy
                         ? const SizedBox.square(
                             dimension: 16,
-                            child: FushiCircularProgressIndicator(strokeWidth: 2),
+                            child: FushiCircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
                         : const FushiIcon(Icons.play_arrow, size: 18),
                     label: Text(t.download_task_resume),
@@ -1265,7 +1289,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
                     icon: busy
                         ? const SizedBox.square(
                             dimension: 16,
-                            child: FushiCircularProgressIndicator(strokeWidth: 2),
+                            child: FushiCircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
                         : const FushiIcon(Icons.close, size: 18),
                     label: Text(t.cancel),
@@ -1334,7 +1360,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
         // 视频下载管线只走 torrent 后端（内置引擎 / 外接 qBittorrent）。
         method: DownloadTransferMethod.torrent,
         externalSource: true,
-        status: _torrentStatusLabel ??
+        status:
+            _torrentStatusLabel ??
             lifecycleLabel?.call(job.lifecycle) ??
             _defaultLifecycleLabel(job.lifecycle),
         subtitle: job.resourceTitle,
@@ -1383,9 +1410,10 @@ class _VideoDownloadJobCard extends StatelessWidget {
         DownloadTaskKind.manga => FushiIcons.manga,
         DownloadTaskKind.audiobook => FushiIcons.audiobook,
         DownloadTaskKind.game => FushiIcons.games,
-        _ => job.lifecycle == VideoDownloadJobLifecycle.failed
-            ? FushiIcons.error
-            : FushiIcons.video,
+        _ =>
+          job.lifecycle == VideoDownloadJobLifecycle.failed
+              ? FushiIcons.error
+              : FushiIcons.video,
       };
 
   /// 卡片标题下的指标 chip：↓ / ↑ 速度、剩余时间、大小、做种比。
@@ -1514,14 +1542,14 @@ class _VideoDownloadJobCard extends StatelessWidget {
   /// 优先级按钮的外观（真正的点击由外层菜单接管，onPressed 恒 null；busy 时
   /// 直接单独渲染这张脸当禁用态）。
   Widget _priorityButtonFace() => FushiOutlinedButton.icon(
-        onPressed: null,
-        // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形（FushiShapedMenuTrigger）。
-        style: kFushiMenuTriggerButtonStyle,
-        icon: const FushiIcon(Icons.low_priority, size: 18),
-        label: Text(
-          '${t.download_task_priority} · ${_priorityLabel(job.priority)}',
-        ),
-      );
+    onPressed: null,
+    // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形（FushiShapedMenuTrigger）。
+    style: kFushiMenuTriggerButtonStyle,
+    icon: const FushiIcon(Icons.low_priority, size: 18),
+    label: Text(
+      '${t.download_task_priority} · ${_priorityLabel(job.priority)}',
+    ),
+  );
 
   /// Shows the untouched raw `lastError` diagnostics in a copyable dialog.
   Future<void> _showErrorDetail(BuildContext context) async {
@@ -1580,33 +1608,31 @@ class _VideoDownloadJobCard extends StatelessWidget {
   }
 
   static String _defaultLifecycleLabel(String lifecycle) => switch (lifecycle) {
-        VideoDownloadJobLifecycle.active => t.download_task_lifecycle_active,
-        VideoDownloadJobLifecycle.needsAttention =>
-          t.download_task_lifecycle_needs_attention,
-        VideoDownloadJobLifecycle.completed =>
-          t.download_task_lifecycle_completed,
-        VideoDownloadJobLifecycle.failed => t.download_task_lifecycle_failed,
-        VideoDownloadJobLifecycle.cancelled =>
-          t.download_task_lifecycle_cancelled,
-        _ => lifecycle,
-      };
+    VideoDownloadJobLifecycle.active => t.download_task_lifecycle_active,
+    VideoDownloadJobLifecycle.needsAttention =>
+      t.download_task_lifecycle_needs_attention,
+    VideoDownloadJobLifecycle.completed => t.download_task_lifecycle_completed,
+    VideoDownloadJobLifecycle.failed => t.download_task_lifecycle_failed,
+    VideoDownloadJobLifecycle.cancelled => t.download_task_lifecycle_cancelled,
+    _ => lifecycle,
+  };
 
   static String _defaultStageLabel(String stage) => switch (stage) {
-        VideoDownloadJobStage.enqueue => t.download_task_stage_enqueue,
-        VideoDownloadJobStage.download => t.download_task_stage_download,
-        VideoDownloadJobStage.organize => t.download_task_stage_organize,
-        VideoDownloadJobStage.subtitle => t.download_task_stage_subtitle,
-        VideoDownloadJobStage.import => t.download_task_stage_import,
-        VideoDownloadJobStage.scrape => t.download_task_stage_scrape,
-        _ => stage,
-      };
+    VideoDownloadJobStage.enqueue => t.download_task_stage_enqueue,
+    VideoDownloadJobStage.download => t.download_task_stage_download,
+    VideoDownloadJobStage.organize => t.download_task_stage_organize,
+    VideoDownloadJobStage.subtitle => t.download_task_stage_subtitle,
+    VideoDownloadJobStage.import => t.download_task_stage_import,
+    VideoDownloadJobStage.scrape => t.download_task_stage_scrape,
+    _ => stage,
+  };
 
   String get _details => <String>[
-        job.mediaKind,
-        if (job.year != null) '${job.year}',
-        if (job.resourceTitle?.trim().isNotEmpty ?? false)
-          job.resourceTitle!.trim(),
-      ].join(' · ');
+    job.mediaKind,
+    if (job.year != null) '${job.year}',
+    if (job.resourceTitle?.trim().isNotEmpty ?? false)
+      job.resourceTitle!.trim(),
+  ].join(' · ');
 
   String get _progressLabel => '${(_progress * 100).round()}%';
 
@@ -1638,20 +1664,20 @@ class _VideoDownloadJobCard extends StatelessWidget {
   }
 
   Color _statusColor(ColorScheme colors) => switch (job.lifecycle) {
-        VideoDownloadJobLifecycle.needsAttention => colors.tertiary,
-        VideoDownloadJobLifecycle.failed => colors.error,
-        VideoDownloadJobLifecycle.completed => colors.primary,
-        VideoDownloadJobLifecycle.cancelled => colors.outline,
-        _ => colors.secondary,
-      };
+    VideoDownloadJobLifecycle.needsAttention => colors.tertiary,
+    VideoDownloadJobLifecycle.failed => colors.error,
+    VideoDownloadJobLifecycle.completed => colors.primary,
+    VideoDownloadJobLifecycle.cancelled => colors.outline,
+    _ => colors.secondary,
+  };
 
   IconData _statusIcon() => switch (job.lifecycle) {
-        VideoDownloadJobLifecycle.needsAttention => Icons.warning_amber,
-        VideoDownloadJobLifecycle.failed => Icons.error_outline,
-        VideoDownloadJobLifecycle.completed => Icons.check_circle_outline,
-        VideoDownloadJobLifecycle.cancelled => Icons.block,
-        _ => Icons.downloading_outlined,
-      };
+    VideoDownloadJobLifecycle.needsAttention => Icons.warning_amber,
+    VideoDownloadJobLifecycle.failed => Icons.error_outline,
+    VideoDownloadJobLifecycle.completed => Icons.check_circle_outline,
+    VideoDownloadJobLifecycle.cancelled => Icons.block,
+    _ => Icons.downloading_outlined,
+  };
 }
 
 class _TaskMetrics extends StatelessWidget {
@@ -1697,20 +1723,20 @@ class _TaskMetrics extends StatelessWidget {
         value == null
             ? '—'
             : formatTorrentEta(
-                  amountLeft: value.amountLeft,
-                  downRateBps: value.downRateBps,
-                ) ??
-                '∞',
+                    amountLeft: value.amountLeft,
+                    downRateBps: value.downRateBps,
+                  ) ??
+                  '∞',
       ),
       (
         t.download_task_ratio,
         value == null
             ? '—'
             : formatShareRatio(
-                  uploadedBytes: value.uploadedBytes,
-                  downloadedBytes: value.downloadedBytes,
-                ) ??
-                '—',
+                    uploadedBytes: value.uploadedBytes,
+                    downloadedBytes: value.downloadedBytes,
+                  ) ??
+                  '—',
       ),
     ];
     return Wrap(
@@ -1726,8 +1752,8 @@ class _TaskMetrics extends StatelessWidget {
                   Text(
                     metric.$1,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 1),
                   Text(

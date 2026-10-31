@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 #include "scan/mixed_orthography.hpp"
+#include "scan/ruby_reading.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
 #include "util/redirect_glossary.hpp"
@@ -338,6 +339,14 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     query_.enrich_freq(r.term);
   }
 
+  // 原文振假名一致度每条只算一次（比较器里会被反复比较）。
+  const ruby_reading::Matcher ruby_matcher(options.ruby_readings);
+  if (!ruby_matcher.empty()) {
+    for (auto& r : results) {
+      r.ruby_agreement = ruby_matcher.agreement(r.matched, r.term.expression, r.term.reading);
+    }
+  }
+
   // 上游 bc62d2b：排序选项解析。Auto = 既有比较器（按注册顺序遍历全部 freq 词典，
   // 零行为变化）；显式指定词典 + 升/降序时只按该词典排（找不到词典名则静默退回，
   // 不排序也不报错——与上游一致）。
@@ -385,6 +394,13 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
         auto len_b = utf8::distance(b.matched.begin(), b.matched.end());
         if (len_a != len_b) {
           return len_a > len_b;
+        }
+
+        // 原文 ruby：只在同匹配长度之内起作用（最长匹配决定高亮与制卡词形，ruby 不跨
+        // 长度挪结果），压过变形步数与频率——`<ruby>忙<rt>せわ</rt></ruby>しい` 的
+        // せわしい 排在高频的 いそがしい 前面。无 ruby 时两边恒 0，此档恒平。
+        if (a.ruby_agreement != b.ruby_agreement) {
+          return a.ruby_agreement > b.ruby_agreement;
         }
 
         auto steps_a = a.preprocessor_steps;

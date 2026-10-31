@@ -3,7 +3,10 @@
 /// 互联下载（手机从已配对电脑拉视频）跑在主 isolate 里，没有原生组件托底；
 /// 用户切走后 Android 随时可能杀进程，下载随之中断。Android 上本门面驱动原生
 /// `DownloadKeepAliveService.java`（dataSync 前台服务 + 常驻进度通知）把进程
-/// 保活到下载结束；其余平台是 no-op。
+/// 保活到下载结束；iOS 上驱动 `FushiBackgroundDownload.swift` 里的
+/// `beginBackgroundTask`（系统不给前台服务，只能多换来切走后约半分钟的执行时间，
+/// 够正在收尾的导入 / 小文件跑完；大文件的传输本身由系统后台 `URLSession` 接管，
+/// 见 `ios_background_download.dart`）；桌面是 no-op。
 ///
 /// 方法名与参数名（`update` / `stop`，`title` / `text` / `progress`）是跨语言
 /// 契约，改一边必须改另一边。
@@ -40,15 +43,15 @@ abstract interface class DownloadKeepAlive {
   Future<void> stop();
 }
 
-/// 按平台选实现：只有 Android 有原生侧，其余平台一律 no-op。
+/// 按平台选实现：Android / iOS 有原生侧，桌面一律 no-op。
 DownloadKeepAlive createDownloadKeepAlive() {
-  if (Platform.isAndroid) {
-    return AndroidDownloadKeepAlive();
+  if (Platform.isAndroid || Platform.isIOS) {
+    return ChannelDownloadKeepAlive();
   }
   return const NoopDownloadKeepAlive();
 }
 
-/// 非 Android 平台的实现：什么也不做，也不发任何通道调用。
+/// 桌面平台的实现：什么也不做，也不发任何通道调用。
 class NoopDownloadKeepAlive implements DownloadKeepAlive {
   const NoopDownloadKeepAlive();
 
@@ -196,11 +199,12 @@ class DownloadKeepAliveThrottle {
   }
 }
 
-/// Android 实现：经 [FushiChannels.downloadKeepAlive] 驱动原生前台服务。
+/// 移动端实现：经 [FushiChannels.downloadKeepAlive] 驱动原生侧（Android 前台服务 /
+/// iOS 后台任务）。
 ///
 /// 通道异常（没注册 / 原生抛错）一律吞掉只记日志：保活失败不能连带下载失败。
-class AndroidDownloadKeepAlive implements DownloadKeepAlive {
-  AndroidDownloadKeepAlive({
+class ChannelDownloadKeepAlive implements DownloadKeepAlive {
+  ChannelDownloadKeepAlive({
     MethodChannel? channel,
     DateTime Function()? now,
     Duration minInterval = kDownloadKeepAliveMinInterval,

@@ -283,7 +283,11 @@ window.flutter_inappwebview = {
         return Promise.resolve(null);
       case 'textSelected':
       case 'onLinkClick':
-        if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0], args[1], name === 'textSelected');
+        // textSelected 的第三个参数是 selection.js 选出的原文振假名 `[{s,e,r}]`（可缺）。
+        if (window.__fushiOnLinkClick) {
+          window.__fushiOnLinkClick(args[0], args[1], name === 'textSelected',
+            name === 'textSelected' && Array.isArray(args[2]) ? args[2] : null);
+        }
         return Promise.resolve(null);
       case 'tapOutside':
         if (window.__fushiOnTapOutside) window.__fushiOnTapOutside();

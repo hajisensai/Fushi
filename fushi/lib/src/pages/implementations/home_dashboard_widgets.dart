@@ -563,11 +563,10 @@ class HomeContinueCoverCard extends StatelessWidget {
           excludeSemantics: true,
           child: _withTitle(
             context,
-            FushiTooltip(
-              message: label == null || showTitle ? title : '$title · $label',
-              excludeFromSemantics: true,
+            _hoverHint(
+              label,
               // 横竖切换（封面解码出真实宽高比后）走尺寸过渡，不硬跳。
-              child: AnimatedContainer(
+              AnimatedContainer(
                 duration: fushiMotionDuration(context, FushiMotion.medium),
                 curve: FushiMotion.standard,
                 width: width,
@@ -609,6 +608,17 @@ class HomeContinueCoverCard extends StatelessWidget {
     );
     final ShelfCoverMaterial? m = material;
     return m == null ? card : ShelfCoverMaterialScope(material: m, child: card);
+  }
+
+  /// 悬停提示只在封面下方不挂文字块时给（[showTitle] 时标题与进度已经写在
+  /// 封面下面，再弹一条同文案的提示是重复信息，2026-10-30 用户「这个提示关掉」）。
+  Widget _hoverHint(String? label, Widget child) {
+    if (showTitle) return child;
+    return FushiTooltip(
+      message: label == null ? title : '$title · $label',
+      excludeFromSemantics: true,
+      child: child,
+    );
   }
 
   /// [showTitle] 时在封面下方挂库页同款文字块（[ShelfCardMeta]，定高）；否则原样

@@ -52,7 +52,8 @@ void openMediaServerAggregateSearch(
   BuildContext context,
   List<MediaServerSession> sessions,
 ) {
-  Navigator.of(context).push<void>(
+  // 二级页面：与服务器首页同样压在根 Navigator 上（分区列表页也能直接打开）。
+  Navigator.of(context, rootNavigator: true).push<void>(
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => MediaServerAggregateSearchView(sessions: sessions),

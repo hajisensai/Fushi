@@ -113,7 +113,7 @@ class _HostShellState extends State<_HostShell> {
             result: null,
             webViewKey: GlobalKey(),
             onDismiss: _closePopup,
-            onTextSelected: (_, __) {},
+            onTextSelected: (_, __, ___) {},
             onLinkClick: (_, __) {},
             onMineEntry: (_) async => const MinePopupResult(),
             onDuplicateCheck: (_, __) async => false,
