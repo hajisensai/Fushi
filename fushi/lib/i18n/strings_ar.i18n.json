@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "متاح فقط مع AnkiConnect.",
   "anki_select_handlebar": "اختر قيمة لـ $field",
   "anki_settings_label": "إعدادات Anki",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "تسمح شروط AnkiWeb لتطبيقات Anki الرسمية فقط بالمزامنة. يعرّف Fushi نفسه بصدق على أنه Fushi، لذا قد ترفضه AnkiWeb أو تتخذ إجراءً بحق حسابك. خوادم المزامنة المستضافة ذاتيًا ليس لها هذا القيد.",
   "anki_sync_client_ankiweb_confirm": "استخدام AnkiWeb على أي حال",

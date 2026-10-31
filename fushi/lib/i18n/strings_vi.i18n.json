@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "Chỉ khả dụng với AnkiConnect.",
   "anki_select_handlebar": "Chọn giá trị cho $field",
   "anki_settings_label": "Cài đặt Anki",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "Điều khoản của AnkiWeb chỉ cho phép các ứng dụng Anki chính thức đồng bộ. Fushi tự nhận mình trung thực là Fushi, nên AnkiWeb có thể từ chối hoặc xử lý tài khoản của bạn. Máy chủ đồng bộ tự lưu trữ không có hạn chế như vậy.",
   "anki_sync_client_ankiweb_confirm": "Vẫn dùng AnkiWeb",

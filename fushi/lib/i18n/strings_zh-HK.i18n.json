@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "僅 AnkiConnect 後端可用。",
   "anki_select_handlebar": "選擇 $field 的值",
   "anki_settings_label": "Anki 設定",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "AnkiWeb 的服務條款只允許官方 Anki 客户端同步。Fushi 會如實表明自己是 Fushi，因此 AnkiWeb 可能拒絕連接，或對你的帳户採取措施。自建同步伺服器沒有這項限制。",
   "anki_sync_client_ankiweb_confirm": "仍然使用 AnkiWeb",

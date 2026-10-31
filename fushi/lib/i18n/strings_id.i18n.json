@@ -708,7 +708,7 @@
   "anki_reposition_unsupported": "Hanya tersedia dengan AnkiConnect.",
   "anki_select_handlebar": "Pilih nilai untuk $field",
   "anki_settings_label": "Pengaturan Anki",
-  "anki_sync_client_advanced_hint": "Experimental. Tap to expand.",
+  "anki_sync_client_advanced_hint": "Advanced. Tap to expand.",
   "anki_sync_client_advanced_title": "Advanced: Anki sync client",
   "anki_sync_client_ankiweb_body": "Ketentuan AnkiWeb hanya mengizinkan aplikasi Anki resmi untuk menyinkronkan. Fushi mengidentifikasi dirinya dengan jujur sebagai Fushi, sehingga AnkiWeb mungkin menolaknya atau mengambil tindakan pada akun Anda. Server sinkronisasi yang dihosting sendiri tidak memiliki batasan seperti itu.",
   "anki_sync_client_ankiweb_confirm": "Tetap gunakan AnkiWeb",
