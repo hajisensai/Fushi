@@ -247,14 +247,8 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
   }
 
   @override
-  Widget buildBackground(
-    BuildContext context,
-    LyricsPlayerData data, {
-    double bleedTop = 0,
-  }) => FushiMeshBackdrop(
-    bleedTop: bleedTop,
-    plateRect: lyricsShellMd3PlateResolver(mirrorProgress),
-  );
+  Widget buildBackground(BuildContext context, LyricsPlayerData data) =>
+      FushiMeshBackdrop(plateRect: lyricsShellMd3PlateResolver(mirrorProgress));
 
   @override
   Widget buildChrome(

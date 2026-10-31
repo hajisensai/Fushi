@@ -18,8 +18,8 @@ void main() {
   const FushiTitleBarColors readerColors = (background: paper, foreground: ink);
 
   setUp(() {
-    // 下面这组钉的是「沉浸页从顶栏下沿开始排、标题行画上报底色」的宿主——
-    // macOS（系统红绿灯收不起）。Windows / Linux 沉浸页铺满整窗，见文件末尾。
+    // 上报通道的生命周期与宿主无关；沉浸页的版面各宿主一致（铺满整窗、
+    // 顶栏悬停浮出），见文件末尾按宿主分的组。
     FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.macOS;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), (
@@ -81,6 +81,10 @@ void main() {
   Color? titleColor(WidgetTester tester) =>
       FushiDesktopTitleBar.pageColors.value?.foreground;
 
+  /// 页面上报的底色（沉浸页标题行透明，按钮组 / 柔光从它派生）。
+  Color? reportedBackground(WidgetTester tester) =>
+      FushiDesktopTitleBar.pageColors.value?.background;
+
   Widget reader() => const FushiTitleBarColorScope(
     colors: readerColors,
     child: Scaffold(backgroundColor: paper),
@@ -97,25 +101,25 @@ void main() {
     );
   });
 
-  testWidgets('阅读器上报纸色后顶栏底色 / 标题色跟随，关书后回落', (WidgetTester tester) async {
+  testWidgets('阅读器上报纸色后上报纸色 / 前景色，关书后回落', (WidgetTester tester) async {
     await pumpShell(tester, const Scaffold());
 
     navigatorKey.currentState!.push(
       MaterialPageRoute<void>(builder: (_) => reader()),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
     expect(titleColor(tester), ink);
 
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(captionColor(tester), Colors.transparent);
+    expect(reportedBackground(tester), isNull);
     expect(FushiDesktopTitleBar.pageColors.value, isNull);
   });
 
   testWidgets('被另一整页盖住时撤回、回到阅读器时恢复；弹窗不撤回', (WidgetTester tester) async {
     await pumpShell(tester, reader());
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
 
     // 弹窗（PopupRoute）不推动 PageRoute 的 secondaryAnimation：顶栏不闪色。
     showDialog<void>(
@@ -123,7 +127,7 @@ void main() {
       builder: (_) => const AlertDialog(content: Text('dialog')),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
 
@@ -132,35 +136,11 @@ void main() {
       MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), Colors.transparent);
+    expect(reportedBackground(tester), isNull);
 
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(captionColor(tester), paper);
-  });
-
-  testWidgets('半透明上报叠成不透明的标题行；内容区底色恒为 surface', (WidgetTester tester) async {
-    final ColorScheme scheme = await pumpShell(
-      tester,
-      const FushiTitleBarColorScope(
-        colors: (background: Color(0x80000000), foreground: ink),
-        child: SizedBox.expand(),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final Color caption = captionColor(tester)!;
-    expect(caption.a, 1.0, reason: '标题行透明会露出窗口后面的东西');
-    expect(caption, Color.alphaBlend(const Color(0x80000000), scheme.surface));
-    final ColoredBox frame = tester.widget<ColoredBox>(
-      find
-          .ancestor(
-            of: find.byType(DragToMoveArea),
-            matching: find.byType(ColoredBox),
-          )
-          .at(1),
-    );
-    expect(frame.color, scheme.surface);
+    expect(reportedBackground(tester), paper);
   });
 
   testWidgets('阅读器在 build 中改色（切换阅读主题）顶栏跟着重画', (WidgetTester tester) async {
@@ -176,108 +156,155 @@ void main() {
         ),
       ),
     );
-    expect(captionColor(tester), paper);
+    expect(reportedBackground(tester), paper);
 
     bg.value = const Color(0xFF1E1E1E);
     await tester.pumpAndSettle();
-    expect(captionColor(tester), const Color(0xFF1E1E1E));
+    expect(reportedBackground(tester), const Color(0xFF1E1E1E));
     expect(tester.takeException(), isNull);
   });
 
-  // Windows / Linux：沉浸页铺满整窗，顶栏悬停才浮出（用户 2026-10-30「顶栏条
-  // 只有在应用外才显示……都要占满」「目的只是为了更多显示面积」）。
-  group('Windows 沉浸页', () {
-    setUp(
-      () =>
-          FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.windows,
-    );
+  // 沉浸页铺满整窗，顶栏悬停才浮出（用户 2026-10-30「顶栏条只有在应用外才
+  // 显示……都要占满」「目的只是为了更多显示面积」；同日「mac 也要和 windows
+  // 一样……顶部胶囊位置不变」）。macOS 的系统红绿灯随标题行显隐。
+  for (final TargetPlatform host in <TargetPlatform>[
+    TargetPlatform.windows,
+    TargetPlatform.macOS,
+  ]) {
+    group('${host.name} 沉浸页', () {
+      setUp(() => FushiDesktopTitleBar.debugHostPlatform = () => host);
 
-    double captionOpacity(WidgetTester tester) => tester
-        .widget<AnimatedOpacity>(
-          find
-              .ancestor(
-                of: find.byType(DragToMoveArea),
-                matching: find.byType(AnimatedOpacity),
-              )
-              .first,
-        )
-        .opacity;
+      // 顶边停留触发时长（与组件内 _kImmersiveRevealDwell 一致）。
+      const Duration dwell = Duration(milliseconds: 400);
 
-    testWidgets('页面从窗口顶端铺起，padding 仍为顶栏让位；标题行透明', (WidgetTester tester) async {
-      await pumpShell(tester, reader());
+      double captionOpacity(WidgetTester tester) => tester
+          .widget<AnimatedOpacity>(
+            find
+                .ancestor(
+                  of: find.byType(DragToMoveArea),
+                  matching: find.byType(AnimatedOpacity),
+                )
+                .first,
+          )
+          .opacity;
 
-      final Finder page = find.byType(Scaffold).last;
-      expect(tester.getTopLeft(page).dy, 0, reason: '沉浸页不再被顶栏下推');
-      expect(
-        MediaQuery.paddingOf(tester.element(page)).top,
-        greaterThanOrEqualTo(FushiDesktopTitleBar.height),
-        reason: '页面的悬浮胶囊要按 padding 排在窗口按钮下面',
-      );
-      expect(FushiDesktopTitleBar.visibleHeight, 0);
-      expect(FushiDesktopTitleBar.pageColors.value, readerColors);
-      expect(captionColor(tester), Colors.transparent);
+      testWidgets('页面从窗口顶端铺起，padding 仍为顶栏让位；标题行透明', (
+        WidgetTester tester,
+      ) async {
+        await pumpShell(tester, reader());
+
+        final Finder page = find.byType(Scaffold).last;
+        expect(tester.getTopLeft(page).dy, 0, reason: '沉浸页不再被顶栏下推');
+        expect(
+          MediaQuery.paddingOf(tester.element(page)).top,
+          greaterThanOrEqualTo(FushiDesktopTitleBar.height),
+          reason: '页面的悬浮胶囊要按 padding 排在窗口按钮下面',
+        );
+        expect(FushiDesktopTitleBar.pageColors.value, readerColors);
+        // macOS：浮出时铺一层不可见（1/255）的页面底色，让这一条在 WKWebView
+        // 上方归 Flutter 命中、拖得动窗口；Windows 全透明。
+        expect(
+          captionColor(tester),
+          host == TargetPlatform.macOS
+              ? paper.withAlpha(1)
+              : Colors.transparent,
+        );
+      });
+
+      testWidgets('指针进入顶栏才显示，离开淡出；原生最大化键悬停也算', (WidgetTester tester) async {
+        await pumpShell(tester, reader());
+        expect(captionOpacity(tester), 0);
+
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 8));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        await mouse.moveTo(const Offset(200, 300));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+
+        // 最大化键是 runner 的 HTMAXBUTTON 原生命中区：Flutter 只收到离开，
+        // 悬停真值由原生回传，不并进来指针一停到最大化键整条就隐去。
+        WindowCaptionChannel.captionMaxButtonHovered.value = true;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+        WindowCaptionChannel.captionMaxButtonHovered.value = false;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+      });
+
+      testWidgets('从下面移进带子 / 划过顶边不浮出（顶部正文照常可点），在顶边停留才浮出', (
+        WidgetTester tester,
+      ) async {
+        await pumpShell(tester, reader());
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 20));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0, reason: '带子里的正文要能点击查词');
+
+        // 划过顶边（手滑出窗口再划回来）不浮出：没停够就离开了顶边。
+        await mouse.moveTo(const Offset(200, 3));
+        await tester.pump(const Duration(milliseconds: 150));
+        await mouse.moveTo(const Offset(200, 20));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0, reason: '路过顶边不算想要顶栏');
+
+        await mouse.moveTo(const Offset(200, 3));
+        await tester.pump(dwell);
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        // 浮出后在带子里往下移（去拖动 / 点窗口按钮）保持显示。
+        await mouse.moveTo(const Offset(200, 24));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+      });
+
+      testWidgets('触摸没有悬停：带子里按下浮出，带子外按下收起', (WidgetTester tester) async {
+        await pumpShell(tester, reader());
+        expect(captionOpacity(tester), 0);
+
+        final TestGesture touch = await tester.startGesture(
+          const Offset(200, 8),
+          kind: PointerDeviceKind.touch,
+        );
+        await touch.up();
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1, reason: '纯触屏也要够得着窗口按钮');
+
+        // 浮出后再点带子里（窗口按钮所在处）不收起。
+        final TestGesture again = await tester.startGesture(
+          const Offset(300, 10),
+          kind: PointerDeviceKind.touch,
+        );
+        await again.up();
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        final TestGesture outside = await tester.startGesture(
+          const Offset(200, 300),
+          kind: PointerDeviceKind.touch,
+        );
+        await outside.up();
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+      });
+
+      testWidgets('普通页（未上报配色）顶栏常显', (WidgetTester tester) async {
+        await pumpShell(tester, const Scaffold());
+        expect(captionOpacity(tester), 1);
+      });
     });
-
-    testWidgets('指针进入顶栏才显示，离开淡出；原生最大化键悬停也算', (WidgetTester tester) async {
-      await pumpShell(tester, reader());
-      expect(captionOpacity(tester), 0);
-
-      final TestGesture mouse = await tester.createGesture(
-        kind: PointerDeviceKind.mouse,
-      );
-      addTearDown(mouse.removePointer);
-      await mouse.addPointer(location: const Offset(200, 300));
-      await mouse.moveTo(const Offset(200, 8));
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 1);
-
-      await mouse.moveTo(const Offset(200, 300));
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 0);
-
-      // 最大化键是 runner 的 HTMAXBUTTON 原生命中区：Flutter 只收到离开，
-      // 悬停真值由原生回传，不并进来指针一停到最大化键整条就隐去。
-      WindowCaptionChannel.captionMaxButtonHovered.value = true;
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 1);
-      WindowCaptionChannel.captionMaxButtonHovered.value = false;
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 0);
-    });
-
-    testWidgets('触摸没有悬停：带子里按下浮出，带子外按下收起', (WidgetTester tester) async {
-      await pumpShell(tester, reader());
-      expect(captionOpacity(tester), 0);
-
-      final TestGesture touch = await tester.startGesture(
-        const Offset(200, 8),
-        kind: PointerDeviceKind.touch,
-      );
-      await touch.up();
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 1, reason: '纯触屏也要够得着窗口按钮');
-
-      // 浮出后再点带子里（窗口按钮所在处）不收起。
-      final TestGesture again = await tester.startGesture(
-        const Offset(300, 10),
-        kind: PointerDeviceKind.touch,
-      );
-      await again.up();
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 1);
-
-      final TestGesture outside = await tester.startGesture(
-        const Offset(200, 300),
-        kind: PointerDeviceKind.touch,
-      );
-      await outside.up();
-      await tester.pumpAndSettle();
-      expect(captionOpacity(tester), 0);
-    });
-
-    testWidgets('普通页（未上报配色）顶栏常显', (WidgetTester tester) async {
-      await pumpShell(tester, const Scaffold());
-      expect(captionOpacity(tester), 1);
-    });
-  });
+  }
 }
