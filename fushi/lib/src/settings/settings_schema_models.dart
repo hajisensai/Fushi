@@ -21,6 +21,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/utils.dart';
 
 /// 「模型」一级设置分类（2026-10-13 用户拍板）：所有「模型」类配置的唯一的家。
@@ -289,8 +290,8 @@ SettingsDestination _buildTtsDestination() {
   );
 }
 
-/// TTS 兜底发音的倍速：查词 ♪ / 自动发音一律生效；制卡单词音频受「句子音频跟随
-/// 播放倍速」开关管（与有声书倍速制卡同一开关）。0.25×–3.0×，0.05× 一档。
+/// TTS 兜底发音的倍速：查词 ♪ / 自动发音与制卡单词音频一律生效（倍速是 TTS 声音
+/// 本身的属性，不受有声书「句子音频跟随播放倍速」开关影响）。0.25×–3.0×，0.05× 一档。
 SettingsSliderItem _ttsFallbackSpeedItem() => SettingsSliderItem(
   id: 'models.tts_fallback_speed',
   title: t.models_tts_fallback_speed,
@@ -298,18 +299,15 @@ SettingsSliderItem _ttsFallbackSpeedItem() => SettingsSliderItem(
   icon: FushiIcons.speed,
   min: kTtsFallbackSpeedMin,
   max: kTtsFallbackSpeedMax,
-  divisions: 55,
-  step: 0.05,
+  divisions: kPlaybackSpeedDivisions,
+  step: kPlaybackSpeedStep,
   defaultValue: 1.0,
   titleReadout: true,
   commitOnRelease: true,
   label: (double v) => '${v.toStringAsFixed(2)}x',
   value: (SettingsContext c) => ttsFallbackSpeedOf(c.appModel.prefsRepo),
   onChanged: (SettingsContext c, double v) async {
-    await setTtsFallbackSpeed(
-      c.appModel.prefsRepo,
-      (v * 20).roundToDouble() / 20,
-    );
+    await setTtsFallbackSpeed(c.appModel.prefsRepo, snapPlaybackSpeed(v));
     c.refresh();
   },
 );

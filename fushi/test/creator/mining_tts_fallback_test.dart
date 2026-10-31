@@ -286,6 +286,17 @@ void main() {
       expect(ttsFallbackSpeedOf(prefs), kTtsFallbackSpeedMax);
     });
 
+    test('制卡单词音频的 TTS 兜底一律按兜底倍速，不受有声书「句子音频跟随播放倍速」开关影响', () {
+      // 倍速是 TTS 声音本身的属性（所有者拍板）。生效点在 LocalAudioEnhancement
+      // 的兜底合成调用里，它要 AppModel + 平台目录，单测起不来，所以咬源码：
+      // tempo 直接取 ttsFallbackSpeedOf，整个文件不再读那个有声书开关。
+      final String src = File(
+        'lib/src/creator/enhancements/local_audio_enhancement.dart',
+      ).readAsStringSync();
+      expect(src, contains('tempo: ttsFallbackSpeedOf(appModel.prefsRepo),'));
+      expect(src, isNot(contains('miningAudioFollowPlaybackSpeed')));
+    });
+
     Future<File?> runAt(
       MiningTtsFallbackVoice choice,
       double? tempo,

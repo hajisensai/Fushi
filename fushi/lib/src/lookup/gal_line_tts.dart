@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 
 /// String：整份 [GalLineTtsSettings] JSON。含本机声音预设 id，设备本地（不进备份 /
 /// 同步 / Profile 快照，与 `tts_active_preset_id` 同族）。
@@ -390,8 +391,8 @@ List<GalLineTtsRule> insertGalLineTtsRule(
 }
 
 /// 台词 TTS 倍速范围（与有声书倍速拖动条同一范围）。
-const double kGalLineTtsSpeedMin = 0.25;
-const double kGalLineTtsSpeedMax = 3.0;
+const double kGalLineTtsSpeedMin = kPlaybackSpeedMin;
+const double kGalLineTtsSpeedMax = kPlaybackSpeedMax;
 
 @immutable
 class GalLineTtsSettings {

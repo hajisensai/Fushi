@@ -5398,7 +5398,7 @@
   "models_tts_fallback_off": "Don't use TTS",
   "models_tts_fallback_online_notice": "The word is sent to this online service",
   "models_tts_fallback_speed": "Fallback voice speed",
-  "models_tts_fallback_speed_hint": "Speed of TTS word audio when looking up words (pitch preserved). Cards follow it too when \"Match sentence audio to playback speed\" is on.",
+  "models_tts_fallback_speed_hint": "Speed of TTS word audio when looking up words and in mined cards (pitch preserved). Independent of the audiobook playback speed.",
   "models_tts_fallback_voice": "Fallback voice",
   "models_tts_fallback_voice_hint": "Voice used to generate word audio when none is found",
   "models_tts_fallback_voice_missing": "The selected voice was deleted",

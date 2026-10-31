@@ -5398,7 +5398,7 @@
   "models_tts_fallback_off": "Don't use TTS",
   "models_tts_fallback_online_notice": "The word is sent to this online service",
   "models_tts_fallback_speed": "대체 음성 속도",
-  "models_tts_fallback_speed_hint": "단어 검색 시 TTS 발음의 재생 속도(음높이 유지). \"문장 오디오를 재생 속도에 맞추기\"가 켜져 있으면 카드의 TTS 발음도 이 속도를 따릅니다.",
+  "models_tts_fallback_speed_hint": "Speed of TTS word audio when looking up words and in mined cards (pitch preserved). Independent of the audiobook playback speed.",
   "models_tts_fallback_voice": "Fallback voice",
   "models_tts_fallback_voice_hint": "Voice used to generate word audio when none is found",
   "models_tts_fallback_voice_missing": "The selected voice was deleted",
