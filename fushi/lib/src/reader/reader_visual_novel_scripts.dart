@@ -1920,8 +1920,13 @@ $sharedInitViewport
   },
   buildSentenceScreens: function() {
     this.sentenceAtomicRoots = this.buildSentenceAtomicRoots();
-    var units = this.buildSentenceUnits()
-      .concat(this.buildStandaloneSentenceUnits())
+    // BUG-3887：独立单元（插图 / 表格等原子块）先算出来，作为句子切分的硬边界传进
+    // buildSentenceUnits——否则不以「。！？」收尾的一句（典型是「……」对白段）会越过插图
+    // 把图后的正文吞进同一个句子单元，排序后插图屏落到这句之后、字符区间倒挂，跟随
+    // 跨过插图时 pauseAtCrossedMediaScreen 看不见它（插图要等下一句才冒出来）。
+    var standaloneUnits = this.buildStandaloneSentenceUnits();
+    var units = this.buildSentenceUnits(standaloneUnits)
+      .concat(standaloneUnits)
       .sort(function(a, b) {
         if (a.order !== b.order) return a.order - b.order;
         if (a.startRawCount !== b.startRawCount) return a.startRawCount - b.startRawCount;
@@ -2123,14 +2128,37 @@ $sharedInitViewport
     }).length;
     return sharedRootCount <= 1 ? unit.renderRoot : unit.mediaNode;
   },
-  buildSentenceUnits: function() {
+  buildSentenceUnits: function(standaloneUnits) {
     var items = this.buildTextItems();
     if (!items.length) return [];
     var units = [];
     var unitStart = 0;
     var dialogueDepth = 0;
     var segmenterBoundaries = this.sentenceSegmenterBoundaryIndexes(items);
+    // BUG-3887：独立单元在原文里的位置是句子切分的硬边界（见 buildSentenceScreens）。
+    var breaks = (Array.isArray(standaloneUnits) ? standaloneUnits : [])
+      .map((unit) => ({
+        start: this.screenStartRawCount(unit),
+        end: this.screenEndRawCount(unit)
+      }))
+      .sort(function(a, b) { return a.start - b.start; });
+    var breakCursor = 0;
     for (var i = 0; i < items.length; i++) {
+      if (i > 0 && breakCursor < breaks.length) {
+        var prevEnd = items[i - 1].chapterRawEnd;
+        var nextStart = items[i].chapterRawStart;
+        while (breakCursor < breaks.length && breaks[breakCursor].start < prevEnd) breakCursor += 1;
+        var crossed = false;
+        while (breakCursor < breaks.length && breaks[breakCursor].end <= nextStart) {
+          crossed = true;
+          breakCursor += 1;
+        }
+        if (crossed && i > unitStart) {
+          this.pushSentenceUnit(units, items, unitStart, i);
+          unitStart = i;
+          dialogueDepth = 0;
+        }
+      }
       var char = items[i].char;
       var split = false;
       if (this.preserveDialogue && (char === '「' || char === '『')) {

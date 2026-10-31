@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
+import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 一次词典下载/更新任务当前所处的阶段。
@@ -111,10 +114,21 @@ class DictionaryDownloadJob {
 /// `<资源目录>/import_temp` 暂存目录，并且都会「删旧目录 + 删 meta 再 publish」。
 /// 并发跑同一本词典时后者的 `deleteSync(recursive: true)` 会把前者正在写的暂存整个
 /// 删掉，轻则导入失败重则旧词典已删、新词典没落地。改成两条流程共用 [run] 一把锁。
+///
+/// 后台保活：任务在跑（下载 + 导入两段）期间持有 [downloadKeepAliveHub] 的
+/// `dictionary` 租约。此前词典链路是唯一没领租约的下载来源，Android 上用户一切走
+/// 就没有前台服务托底，几 GB 的推荐词典 / 启动自动更新随进程被冻结或杀掉而中断。
+/// 三条流程（推荐词典、手动更新、启动自动更新）都经 [run]，在这里挂一次全覆盖。
 class DictionaryDownloadController {
   DictionaryDownloadController({
     void Function(DictionaryDownloadOutcome outcome)? showOutcome,
-  }) : _showOutcome = showOutcome ?? _defaultShowOutcome;
+    DownloadKeepAlive? keepAlive,
+  }) : _showOutcome = showOutcome ?? _defaultShowOutcome,
+       _keepAlive = keepAlive ?? downloadKeepAliveHub.lease('dictionary') {
+    phase.addListener(_reportKeepAlive);
+    message.addListener(_reportKeepAlive);
+    progress.addListener(_reportKeepAlive);
+  }
 
   static void _defaultShowOutcome(DictionaryDownloadOutcome outcome) {
     FushiToast.show(
@@ -125,6 +139,9 @@ class DictionaryDownloadController {
   }
 
   final void Function(DictionaryDownloadOutcome outcome) _showOutcome;
+
+  /// 任务期间的下载保活租约（Android 前台服务，其余平台 no-op）。
+  final DownloadKeepAlive _keepAlive;
 
   /// 当前阶段。对话框订阅它自动关闭（回到 [DictionaryDownloadPhase.idle] 时），
   /// 词典页订阅它决定是否显示「正在下载…（查看进度）」状态行。
@@ -184,7 +201,8 @@ class DictionaryDownloadController {
     required String initialMessage,
     required Future<DictionaryDownloadOutcome?> Function(
       DictionaryDownloadJob job,
-    ) body,
+    )
+    body,
   }) async {
     if (isBusy) return false;
 
@@ -203,6 +221,8 @@ class DictionaryDownloadController {
       progress.value = 0;
       message.value = '';
       detail.value = '';
+      // 导入也要保活到底：native 导入跑在本进程里，被杀会停在「删旧之后」。
+      await _keepAlive.stop();
     }
     if (outcome != null) _showOutcome(outcome);
     return true;
@@ -213,6 +233,25 @@ class DictionaryDownloadController {
   static bool isCancellation(Object error) =>
       error is DioError && error.type == DioErrorType.cancel;
 
+  /// 把当前进度同步到保活通知。只在任务进行中上报（收尾时的复位不算）；
+  /// 节流 / 去重在 [DownloadKeepAlive] 实现里做。导入阶段没有可信进度
+  /// （[progress] 停在下载结束时的值），一律报不确定。
+  void _reportKeepAlive() {
+    if (!isBusy) return;
+    final double ratio = progress.value;
+    final int? percent =
+        phase.value == DictionaryDownloadPhase.downloading && ratio > 0
+        ? (ratio.clamp(0.0, 1.0) * 100).floor()
+        : null;
+    unawaited(
+      _keepAlive.update(
+        title: t.dict_keep_alive_title,
+        text: message.value,
+        percent: percent,
+      ),
+    );
+  }
+
   void _setPhase(DictionaryDownloadPhase next) {
     cancellable.value =
         next == DictionaryDownloadPhase.downloading && !_cancelRequested;
@@ -221,6 +260,9 @@ class DictionaryDownloadController {
   }
 
   void dispose() {
+    phase.removeListener(_reportKeepAlive);
+    message.removeListener(_reportKeepAlive);
+    progress.removeListener(_reportKeepAlive);
     phase.dispose();
     message.dispose();
     detail.dispose();
