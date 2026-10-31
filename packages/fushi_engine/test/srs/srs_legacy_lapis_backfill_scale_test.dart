@@ -53,6 +53,7 @@ class ScaleFixture {
       engine: const FakeFsrsEngine(),
       trustedClock: SrsTrustedClock(
         wallClockMs: () => 1780272000000,
+        bootClockMs: () => 1780272000000,
         bootId: 'scale',
       ),
       fallbackRolloverHour: () => 4,

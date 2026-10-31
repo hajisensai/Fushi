@@ -20,8 +20,11 @@
 //!   （字段寄存器内核：修改记录 → 寄存器 → 物化视图，见 registers.rs；排序键 ordering.rs、
 //!   释义样式去重规范形 style_dedup.rs 两边共用） /
 //!   ffsrs_memory_input / ffsrs_rwkv_now_rows
-//!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）
+//!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）/
+//!   ffsrs_boot_time_ms
+//!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）
 
+pub mod boot_clock;
 pub mod card_cache;
 pub mod history;
 pub mod ordering;
@@ -939,6 +942,12 @@ pub extern "C" fn ffsrs_materialize(
 #[no_mangle]
 pub extern "C" fn ffsrs_abi_version() -> i32 {
     ABI_VERSION
+}
+
+/// 自本次开机以来的毫秒，含睡眠（见 boot_clock.rs）；取不到返回 -1（Dart 侧当错误抛出）。
+#[no_mangle]
+pub extern "C" fn ffsrs_boot_time_ms() -> i64 {
+    boot_clock::boot_time_ms().unwrap_or(-1)
 }
 
 #[cfg(test)]
