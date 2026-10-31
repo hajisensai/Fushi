@@ -55,9 +55,15 @@ function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelec
 // 汉字卡大字、结构化链接）若把它当成「点了我」，就会原地重查 → renderPopup 重建 DOM →
 // 用户刚拖出的原生选区丢失，Ctrl+C / 右键复制读到空串。真点击在 mousedown 时浏览器已
 // 把旧选区收成折叠态，所以「click 时仍有非折叠选区」只可能是拖选的收尾。
-function __fushiClickEndsTextSelection() {
+// 这次 click 是不是一次拖选的收尾（BUG-3889）：只有指针点击（detail >= 1；键盘 / 焦点导航激活
+// 是 detail 0）且非折叠选区碰到被点的元素时才是——别处残留的选区不能吞掉对这个元素的点击。
+function __fushiClickEndsTextSelection(e) {
+    if (e && e.detail === 0) return false;
     const sel = __fushiSel();
-    return !!sel && !sel.isCollapsed && String(sel).length > 0;
+    if (!sel || sel.isCollapsed || String(sel).length === 0) return false;
+    const target = e && e.currentTarget;
+    if (target && typeof sel.containsNode === 'function' && !sel.containsNode(target, true)) return false;
+    return true;
 }
 /* BUG-1078: composedPath() allocates a fresh array on every call and the wheel
    handler used to call it at least twice per event (__fushiEventTarget +
@@ -3788,7 +3794,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
         element.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (__fushiClickEndsTextSelection()) return;
+            if (__fushiClickEndsTextSelection(e)) return;
             if (isExternal) {
                 openExternalLink(node.href);
             } else {
@@ -5261,7 +5267,7 @@ function createEntryHeader(entry, idx) {
         e.preventDefault();
         e.stopPropagation();
         // 拖选词头文字的收尾 click 不是「点词头」：放过它，选区留给复制。
-        if (__fushiClickEndsTextSelection()) return;
+        if (__fushiClickEndsTextSelection(e)) return;
         // 词头的每个字都是自己的点击目标（wrapExpressionInlineKanji 逐字包格）：
         // 汉字格查该字（汉字卡入口，design-2026-08 讨论区反馈），其余字格查「从该
         // 字到词尾」的那一段（用户 2026-09-10 反馈）。onLinkClick 通道与锚点矩形
@@ -7352,7 +7358,7 @@ function createKanjiCard(kanji) {
     charEl.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (__fushiClickEndsTextSelection()) return;
+        if (__fushiClickEndsTextSelection(e)) return;
         const rect = charEl.getBoundingClientRect();
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
