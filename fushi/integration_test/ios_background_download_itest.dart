@@ -179,7 +179,7 @@ void _restartMain() {
         },
         handoff: DictionaryDownloadHandoff(
           url: '$_base/big.bin',
-          candidates: <String>['$_base/big.bin'],
+          candidates: const <String>['$_base/big.bin'],
           candidateIndex: 0,
           destPath: dest,
           payload: _restartPayload,
