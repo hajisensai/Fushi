@@ -1846,8 +1846,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Progress is saved. Pick the same audio files later to resume.';
   String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
   String get audiobook_transcribe_preparing => 'Loading model…';
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU detection failed, planning for CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   String audiobook_transcribe_progress({
     required Object done,
     required Object total,
@@ -17957,8 +17957,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'جارٍ تحميل النموذج…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'فشل اكتشاف وحدة معالجة الرسومات، سيتم التخطيط لوحدة المعالجة المركزية: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -43566,8 +43566,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Modell wird geladen…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU-Erkennung fehlgeschlagen, es wird für CPU geplant: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -69541,8 +69541,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Cargando modelo…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Error al detectar la GPU, se planifica para CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -95570,8 +95570,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Chargement du modèle…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Échec de la détection du GPU, planification sur le CPU : ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -121628,8 +121628,8 @@ class _StringsId extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Memuat model…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Deteksi GPU gagal, merencanakan untuk CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -147398,8 +147398,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Caricamento del modello…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Rilevamento GPU non riuscito, si pianifica per la CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -173212,8 +173212,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'モデルを読み込み中…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU の検出に失敗したため、CPU で計画します：${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -198085,8 +198085,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => '모델 로드 중…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU 감지 실패, CPU로 계획합니다: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -223138,8 +223138,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Model laden…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU-detectie mislukt, gepland voor CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -249015,8 +249015,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Carregando modelo…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Falha na detecção da GPU, planejando para CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -274938,8 +274938,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Загрузка модели…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Не удалось определить GPU, планируется работа на CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -300779,8 +300779,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'กำลังโหลดโมเดล…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'ตรวจจับ GPU ไม่สำเร็จ วางแผนใช้ CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -326360,8 +326360,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Model yükleniyor…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU algılanamadı, CPU için planlanıyor: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -352114,8 +352114,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => 'Đang tải mô hình…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'Phát hiện GPU thất bại, sẽ dùng CPU: ${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -377578,8 +377578,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => '正在加载模型…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU 探测失败，按 CPU 规划：${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      '未能检测本机的 GPU 加速能力，本次改用 CPU 转录：速度会慢一些，转录结果不受影响。';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -401144,8 +401144,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get audiobook_transcribe_preparing => '正在加載模型…';
   @override
-  String audiobook_transcribe_probe_failed({required Object reason}) =>
-      'GPU 探測失敗，按 CPU 規劃：${reason}';
+  String get audiobook_transcribe_probe_failed_hint =>
+      'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
   @override
   String audiobook_transcribe_progress({
     required Object done,
@@ -425096,9 +425096,8 @@ extension on _StringsEn {
         return 'Pausing at the next checkpoint…';
       case 'audiobook_transcribe_preparing':
         return 'Loading model…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'GPU detection failed, planning for CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -447018,9 +447017,8 @@ extension on _StringsAr {
         return 'جارٍ الإيقاف المؤقت عند نقطة التحقق التالية…';
       case 'audiobook_transcribe_preparing':
         return 'جارٍ تحميل النموذج…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'فشل اكتشاف وحدة معالجة الرسومات، سيتم التخطيط لوحدة المعالجة المركزية: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -468954,9 +468952,8 @@ extension on _StringsDe {
         return 'Pausiert am nächsten Kontrollpunkt…';
       case 'audiobook_transcribe_preparing':
         return 'Modell wird geladen…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'GPU-Erkennung fehlgeschlagen, es wird für CPU geplant: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -490939,9 +490936,8 @@ extension on _StringsEs {
         return 'Pausando en el siguiente punto de control…';
       case 'audiobook_transcribe_preparing':
         return 'Cargando modelo…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Error al detectar la GPU, se planifica para CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -512919,9 +512915,8 @@ extension on _StringsFr {
         return 'Mise en pause au prochain point de contrôle…';
       case 'audiobook_transcribe_preparing':
         return 'Chargement du modèle…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Échec de la détection du GPU, planification sur le CPU : ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -534899,9 +534894,8 @@ extension on _StringsId {
         return 'Menjeda di titik pemeriksaan berikutnya…';
       case 'audiobook_transcribe_preparing':
         return 'Memuat model…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Deteksi GPU gagal, merencanakan untuk CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -556840,9 +556834,8 @@ extension on _StringsIt {
         return 'Pausa al prossimo punto di controllo…';
       case 'audiobook_transcribe_preparing':
         return 'Caricamento del modello…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Rilevamento GPU non riuscito, si pianifica per la CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -578791,9 +578784,8 @@ extension on _StringsJa {
         return '次のチェックポイントで一時停止します…';
       case 'audiobook_transcribe_preparing':
         return 'モデルを読み込み中…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'GPU の検出に失敗したため、CPU で計画します：${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -600627,8 +600619,8 @@ extension on _StringsKo {
         return '다음 체크포인트에서 일시정지하는 중…';
       case 'audiobook_transcribe_preparing':
         return '모델 로드 중…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) => 'GPU 감지 실패, CPU로 계획합니다: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -622500,9 +622492,8 @@ extension on _StringsNl {
         return 'Pauzeren bij het volgende controlepunt…';
       case 'audiobook_transcribe_preparing':
         return 'Model laden…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'GPU-detectie mislukt, gepland voor CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -644469,9 +644460,8 @@ extension on _StringsPtBr {
         return 'Pausando no próximo ponto de controle…';
       case 'audiobook_transcribe_preparing':
         return 'Carregando modelo…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Falha na detecção da GPU, planejando para CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -666430,9 +666420,8 @@ extension on _StringsRu {
         return 'Пауза на ближайшей контрольной точке…';
       case 'audiobook_transcribe_preparing':
         return 'Загрузка модели…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Не удалось определить GPU, планируется работа на CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -688380,9 +688369,8 @@ extension on _StringsTh {
         return 'กำลังหยุดที่จุดตรวจถัดไป…';
       case 'audiobook_transcribe_preparing':
         return 'กำลังโหลดโมเดล…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'ตรวจจับ GPU ไม่สำเร็จ วางแผนใช้ CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -710311,9 +710299,8 @@ extension on _StringsTr {
         return 'Sonraki kontrol noktasında duraklatılıyor…';
       case 'audiobook_transcribe_preparing':
         return 'Model yükleniyor…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'GPU algılanamadı, CPU için planlanıyor: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -732256,9 +732243,8 @@ extension on _StringsVi {
         return 'Sẽ tạm dừng ở điểm kiểm tra tiếp theo…';
       case 'audiobook_transcribe_preparing':
         return 'Đang tải mô hình…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) =>
-            'Phát hiện GPU thất bại, sẽ dùng CPU: ${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -754149,8 +754135,8 @@ extension on _StringsZhCn {
         return '将在下一个检查点暂停…';
       case 'audiobook_transcribe_preparing':
         return '正在加载模型…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) => 'GPU 探测失败，按 CPU 规划：${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return '未能检测本机的 GPU 加速能力，本次改用 CPU 转录：速度会慢一些，转录结果不受影响。';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,
@@ -775816,8 +775802,8 @@ extension on _StringsZhHk {
         return '將在下一個檢查點暫停…';
       case 'audiobook_transcribe_preparing':
         return '正在加載模型…';
-      case 'audiobook_transcribe_probe_failed':
-        return ({required Object reason}) => 'GPU 探測失敗，按 CPU 規劃：${reason}';
+      case 'audiobook_transcribe_probe_failed_hint':
+        return 'Couldn\'t check this device\'s GPU acceleration, so transcription runs on the CPU. It\'s slower, but the result is the same.';
       case 'audiobook_transcribe_progress':
         return ({
           required Object done,

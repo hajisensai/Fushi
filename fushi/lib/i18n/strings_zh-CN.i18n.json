@@ -1047,7 +1047,7 @@
   "audiobook_transcribe_paused_hint": "进度已保存，之后选同一组音频文件即可继续。",
   "audiobook_transcribe_pausing": "将在下一个检查点暂停…",
   "audiobook_transcribe_preparing": "正在加载模型…",
-  "audiobook_transcribe_probe_failed": "GPU 探测失败，按 CPU 规划：$reason",
+  "audiobook_transcribe_probe_failed_hint": "未能检测本机的 GPU 加速能力，本次改用 CPU 转录：速度会慢一些，转录结果不受影响。",
   "audiobook_transcribe_progress": "$done / $total · 文件 $file/$files",
   "audiobook_transcribe_proofread": "AI 校对",
   "audiobook_transcribe_proofread_done": "AI 校对完成：改了 $changed 行，$skipped 块保留原文",

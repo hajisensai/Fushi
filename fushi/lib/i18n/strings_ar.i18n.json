@@ -1047,7 +1047,7 @@
   "audiobook_transcribe_paused_hint": "تم حفظ التقدّم. اختر ملفات الصوت نفسها لاحقًا للاستئناف.",
   "audiobook_transcribe_pausing": "جارٍ الإيقاف المؤقت عند نقطة التحقق التالية…",
   "audiobook_transcribe_preparing": "جارٍ تحميل النموذج…",
-  "audiobook_transcribe_probe_failed": "فشل اكتشاف وحدة معالجة الرسومات، سيتم التخطيط لوحدة المعالجة المركزية: $reason",
+  "audiobook_transcribe_probe_failed_hint": "Couldn't check this device's GPU acceleration, so transcription runs on the CPU. It's slower, but the result is the same.",
   "audiobook_transcribe_progress": "$done / $total · الملف $file/$files",
   "audiobook_transcribe_proofread": "AI proofread",
   "audiobook_transcribe_proofread_done": "AI proofreading done: $changed lines changed, $skipped blocks kept as is",

@@ -6,6 +6,7 @@
 
 // ignore_for_file: constant_identifier_names
 
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -136,15 +137,33 @@ class OnnxRuntime {
   /// [FlutterOnnxruntimePlatform.getRuntimeInfo].
   Future<Map<String, dynamic>?> getRuntimeInfo() => FlutterOnnxruntimePlatform.instance.getRuntimeInfo();
 
+  /// EPs compiled into this process's ONNX Runtime that can be requested
+  /// through [OrtSessionOptions.providers].
+  ///
+  /// Fushi fork: native names are normalised by [ortProviderFromNativeName].
+  /// An EP that this Dart API cannot name (a newer ORT release added it) is
+  /// left out and logged under `flutter_onnxruntime` instead of failing the
+  /// whole list — upstream threw `ArgumentError` there, so the ORT 1.28.0 aar
+  /// reporting `WEBGPU` broke every Android probe (feedback eEnV5gBn1K).
   Future<List<OrtProvider>> getAvailableProviders() async {
-    final providers = await FlutterOnnxruntimePlatform.instance.getAvailableProviders();
-    return providers.map((p) {
-      final provider = OrtProvider.values.firstWhere(
-        (e) => e.name == p,
-        orElse: () => throw ArgumentError('Provider $p is not a valid OrtProvider.'),
+    final List<String> names = await FlutterOnnxruntimePlatform.instance.getAvailableProviders();
+    final List<OrtProvider> providers = <OrtProvider>[];
+    final List<String> unnamed = <String>[];
+    for (final String name in names) {
+      final OrtProvider? provider = ortProviderFromNativeName(name);
+      if (provider == null) {
+        unnamed.add(name);
+      } else if (!providers.contains(provider)) {
+        providers.add(provider);
+      }
+    }
+    if (unnamed.isNotEmpty) {
+      developer.log(
+        'ONNX Runtime reports execution providers this API cannot request: ${unnamed.join(', ')}',
+        name: 'flutter_onnxruntime',
       );
-      return provider;
-    }).toList();
+    }
+    return providers;
   }
 }
 
