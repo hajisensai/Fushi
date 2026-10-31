@@ -1478,15 +1478,17 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           tooltip: t.music_lyrics_offset_earlier,
           onPressed: () => _nudgeOffset(kMusicLyricsOffsetStepMs),
         ),
-        FushiIconButtonControl(
-          key: const ValueKey<String>('music_lyrics_ab_loop'),
-          icon: const FushiIcon(FushiIcons.repeat),
-          isSelected: _loopLines != null,
-          tooltip: _loopLines == null
-              ? t.music_lyrics_ab_loop_line
-              : t.music_lyrics_ab_loop_off,
-          onPressed: () => unawaited(_toggleLoop()),
-        ),
+        // 托管播放的后端（MusicKit 等）做不了音频时间轴上的循环：不给入口。
+        if (_engine.capabilities.abLoop)
+          FushiIconButtonControl(
+            key: const ValueKey<String>('music_lyrics_ab_loop'),
+            icon: const FushiIcon(FushiIcons.repeat),
+            isSelected: _loopLines != null,
+            tooltip: _loopLines == null
+                ? t.music_lyrics_ab_loop_line
+                : t.music_lyrics_ab_loop_off,
+            onPressed: () => unawaited(_toggleLoop()),
+          ),
         // 循环开着时才出现「再加一行」（多行循环），带进出场动效。
         AnimatedSwitcher(
           duration: fushiMotionDuration(context, FushiMotion.short),
@@ -1639,12 +1641,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_lyrics_export_ttml,
             icon: FushiIcons.save,
           ),
-        // 信号路径从底部播放条挪进这里（用户 2026-10-29：底栏只留循环与音量）。
-        FushiChoiceOption<int>(
-          value: 4,
-          label: t.music_signal_path_title,
-          icon: FushiIcons.highQuality,
-        ),
+        // 信号路径从底部播放条挪进这里（用户 2026-10-29：底栏只留循环与音量）。托管播放的
+        // 后端拿不到信号，不给入口。
+        if (_engine.capabilities.signalPath)
+          FushiChoiceOption<int>(
+            value: 4,
+            label: t.music_signal_path_title,
+            icon: FushiIcons.highQuality,
+          ),
       ],
     );
     switch (choice) {

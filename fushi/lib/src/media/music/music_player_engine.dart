@@ -229,8 +229,10 @@ class MusicPlayerEngine extends ChangeNotifier {
     bool Function()? gaplessEnabled,
     bool Function()? replayGainEnabled,
     MusicOutputSettings Function()? baseSettings,
+    MusicBackendCapabilities Function(MusicPlayItem item)? capabilitiesOf,
     Random? random,
   }) : _backendFactory = backendFactory,
+       _capabilitiesOf = capabilitiesOf,
        _gaplessEnabled = gaplessEnabled ?? (() => true),
        _replayGainEnabled = replayGainEnabled ?? (() => true),
        _baseSettings = baseSettings ?? (() => _kDefaultBaseSettings),
@@ -242,6 +244,9 @@ class MusicPlayerEngine extends ChangeNotifier {
   );
 
   final MusicOutputBackendFactory _backendFactory;
+
+  /// 曲目所属后端的能力（`MusicRoutingBackend` 的路由表）；null = 只有默认链路。
+  final MusicBackendCapabilities Function(MusicPlayItem item)? _capabilitiesOf;
   final bool Function() _gaplessEnabled;
   final bool Function() _replayGainEnabled;
 
@@ -361,8 +366,20 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 当前 AB 循环（相对当前曲目起点）；null = 没开。换曲目自动关。
   MusicAbLoop? get abLoop => _abLoop;
 
+  /// 当前曲目所属后端能做什么（界面按它隐藏信号路径 / A-B 循环入口）；没有当前曲目时
+  /// 按默认链路算。
+  MusicBackendCapabilities get capabilities {
+    final MusicPlayItem? item = current;
+    final MusicBackendCapabilities Function(MusicPlayItem)? of =
+        _capabilitiesOf;
+    if (item == null || of == null) return MusicBackendCapabilities.full;
+    return of(item);
+  }
+
   /// 开 / 改 AB 循环；[loop] 为 null（或区间为空）= 关。没在播时只记状态不下发。
+  /// 当前曲目的后端做不了循环（[MusicBackendCapabilities.abLoop]）时开不起来。
   Future<void> setAbLoop(MusicAbLoop? loop) async {
+    if (loop != null && !capabilities.abLoop) return;
     final MusicAbLoop? next = loop == null || loop.b <= loop.a ? null : loop;
     if (next == _abLoop) return;
     _abLoop = next;
@@ -417,7 +434,7 @@ class MusicPlayerEngine extends ChangeNotifier {
 
   /// 正在播放时读信号路径（面板）；没在播为 null。
   Future<MusicSignalPathSnapshot?> readSignalPath() async =>
-      _backend?.readSignalPath();
+      capabilities.signalPath ? _backend?.readSignalPath() : null;
 
   /// 可选输出设备。没在播时临时建一个后端读完即释放。
   Future<List<MusicAudioDevice>> listAudioDevices() async {

@@ -313,6 +313,7 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_routing_backend.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -1747,13 +1748,21 @@ class AppModel with ChangeNotifier {
         ),
       );
     }
+    // 由专用后端播放的曲目（托管播放，如 MusicKit）；其余走默认链路。目前还没有专用后端，
+    // 路由层原样转发（docs/specs/2026-10-31-apple-music-musickit.md §3.3）。
+    const List<MusicBackendRoute> backendRoutes = <MusicBackendRoute>[];
     final MusicPlayerEngine engine = MusicPlayerEngine(
-      // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
-      // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
-      backendFactory: () => MusicCrossfadeBackend(
-        instanceFactory: MpvMusicOutputBackend.new,
-        platform: musicOutputPlatformOfHost(),
+      backendFactory: () => MusicRoutingBackend(
+        routes: backendRoutes,
+        // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
+        // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
+        fallback: () => MusicCrossfadeBackend(
+          instanceFactory: MpvMusicOutputBackend.new,
+          platform: musicOutputPlatformOfHost(),
+        ),
       ),
+      capabilitiesOf: (MusicPlayItem item) =>
+          musicBackendCapabilitiesFor(backendRoutes, item),
       gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
       replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
       baseSettings: _musicBaseOutputSettings,
