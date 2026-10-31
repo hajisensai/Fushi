@@ -83,7 +83,7 @@ void main() {
     expect(ctx.volumes[0].extractDir, '/extract/v2');
   });
 
-  // BUG-3915：用户库里的实际加入顺序（合集 sortIndex）：5, 8, 7, 6, 4, 3, 2, 1，
+  // BUG-3923：用户库里的实际加入顺序（合集 sortIndex）：5, 8, 7, 6, 4, 3, 2, 1，
   // 外加一本系列键不同的番外「安達としまむらSS」。
   const List<(String, String)> adachiAdded = <(String, String)>[
     ('b5', '安達としまむら5'),
