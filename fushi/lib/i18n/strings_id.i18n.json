@@ -799,6 +799,7 @@
   "audio_panel_auto": "Otomatis",
   "audio_panel_pick_new_subtitle": "Pilih file subtitle baru",
   "audio_source_added": "Sumber audio ditambahkan",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Koneksi sumber audio gagal: tidak dapat menemukan \"${host}\" — periksa jaringan Anda, atau hapus sumber ini di pengaturan",
   "audio_source_edit_target_gone": "Sumber audio tersebut sudah tidak ada — perubahan dibatalkan",
   "audio_source_edit_url": "Edit tautan sumber audio",

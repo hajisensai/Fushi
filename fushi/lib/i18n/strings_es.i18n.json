@@ -799,6 +799,7 @@
   "audio_panel_auto": "Automático",
   "audio_panel_pick_new_subtitle": "Elegir nuevo archivo de subtítulos",
   "audio_source_added": "Fuente de audio añadida",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "Error de conexión de fuente de audio: no se puede resolver \"${host}\" — verifica tu red o elimina esta fuente en ajustes",
   "audio_source_edit_target_gone": "Esa fuente de audio ya no existe — edición descartada",
   "audio_source_edit_url": "Editar enlace de fuente de audio",

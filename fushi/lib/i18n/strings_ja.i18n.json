@@ -799,6 +799,7 @@
   "audio_panel_auto": "自動",
   "audio_panel_pick_new_subtitle": "新しい字幕ファイルを選択",
   "audio_source_added": "音声ソースを追加しました",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "音声ソース接続失敗：\"${host}\" を解決できません — ネットワークを確認するか、設定でこのソースを削除してください",
   "audio_source_edit_target_gone": "その音声ソースはもう存在しません — 編集は破棄されました",
   "audio_source_edit_url": "音声ソースリンクを編集",

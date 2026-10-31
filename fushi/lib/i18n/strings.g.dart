@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179061 (10533 per locale)
+/// Strings: 179078 (10534 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1445,6 +1445,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audio_panel_auto => 'Auto';
   String get audio_panel_pick_new_subtitle => 'Pick new subtitle file';
   String get audio_source_added => 'Audio source added';
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   String audio_source_dns_error({required Object host}) =>
       'Audio source connection failed: cannot resolve "${host}" — check your network, or remove this source in settings';
   String get audio_source_edit_target_gone =>
@@ -17282,6 +17284,9 @@ class _StringsAr extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'اختيار ملف ترجمة جديد';
   @override
   String get audio_source_added => 'تمت إضافة مصدر الصوت';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'فشل اتصال مصدر الصوت: تعذر حل "${host}" — تحقق من الشبكة أو أزل هذا المصدر في الإعدادات';
@@ -42841,6 +42846,9 @@ class _StringsDe extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Neue Untertiteldatei auswählen';
   @override
   String get audio_source_added => 'Audioquelle hinzugefügt';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Verbindung zur Audioquelle fehlgeschlagen: "${host}" kann nicht aufgelöst werden — überprüfen Sie Ihr Netzwerk oder entfernen Sie diese Quelle in den Einstellungen';
@@ -68769,6 +68777,9 @@ class _StringsEs extends _StringsEn {
       'Elegir nuevo archivo de subtítulos';
   @override
   String get audio_source_added => 'Fuente de audio añadida';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Error de conexión de fuente de audio: no se puede resolver "${host}" — verifica tu red o elimina esta fuente en ajustes';
@@ -94749,6 +94760,9 @@ class _StringsFr extends _StringsEn {
       'Choisir un nouveau fichier de sous-titres';
   @override
   String get audio_source_added => 'Source audio ajoutée';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Échec de connexion de la source audio : impossible de résoudre "${host}" — vérifiez votre réseau ou supprimez cette source dans les paramètres';
@@ -120779,6 +120793,9 @@ class _StringsId extends _StringsEn {
   @override
   String get audio_source_added => 'Sumber audio ditambahkan';
   @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
+  @override
   String audio_source_dns_error({required Object host}) =>
       'Koneksi sumber audio gagal: tidak dapat menemukan "${host}" — periksa jaringan Anda, atau hapus sumber ini di pengaturan';
   @override
@@ -146498,6 +146515,9 @@ class _StringsIt extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Scegli nuovo file sottotitoli';
   @override
   String get audio_source_added => 'Sorgente audio aggiunta';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Connessione sorgente audio fallita: impossibile risolvere "${host}" — controlla la rete o rimuovi questa sorgente nelle impostazioni';
@@ -172290,6 +172310,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get audio_source_added => '音声ソースを追加しました';
   @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
+  @override
   String audio_source_dns_error({required Object host}) =>
       '音声ソース接続失敗："${host}" を解決できません — ネットワークを確認するか、設定でこのソースを削除してください';
   @override
@@ -197119,6 +197142,9 @@ class _StringsKo extends _StringsEn {
   String get audio_panel_pick_new_subtitle => '새 자막 파일 선택';
   @override
   String get audio_source_added => '오디오 소스가 추가됨';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       '오디오 소스 연결 실패: "${host}"를 확인할 수 없음 — 네트워크를 확인하거나 설정에서 이 소스를 제거하세요';
@@ -222111,6 +222137,9 @@ class _StringsNl extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Nieuw ondertitelbestand kiezen';
   @override
   String get audio_source_added => 'Audiobron toegevoegd';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Audiobron verbinding mislukt: kan "${host}" niet oplossen — controleer uw netwerk of verwijder deze bron in instellingen';
@@ -247946,6 +247975,9 @@ class _StringsPtBr extends _StringsEn {
       'Escolher novo arquivo de legendas';
   @override
   String get audio_source_added => 'Fonte de áudio adicionada';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Falha na conexão da fonte de áudio: não é possível resolver "${host}" — verifique sua rede ou remova esta fonte nas configurações';
@@ -273827,6 +273859,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get audio_source_added => 'Источник аудио добавлен';
   @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
+  @override
   String audio_source_dns_error({required Object host}) =>
       'Не удалось подключиться к источнику аудио: невозможно разрешить "${host}" — проверьте сеть или удалите этот источник в настройках';
   @override
@@ -299630,6 +299665,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get audio_source_added => 'เพิ่มแหล่งเสียงแล้ว';
   @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
+  @override
   String audio_source_dns_error({required Object host}) =>
       'เชื่อมต่อแหล่งเสียงล้มเหลว: ไม่สามารถหา "${host}" — ตรวจสอบเครือข่ายหรือลบแหล่งนี้ในการตั้งค่า';
   @override
@@ -325166,6 +325204,9 @@ class _StringsTr extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Yeni altyazı dosyası seç';
   @override
   String get audio_source_added => 'Ses kaynağı eklendi';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Ses kaynağı bağlantısı başarısız: "${host}" çözümlenemedi — ağınızı kontrol edin veya bu kaynağı ayarlardan kaldırın';
@@ -350878,6 +350919,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get audio_source_added => 'Đã thêm nguồn âm thanh';
   @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
+  @override
   String audio_source_dns_error({required Object host}) =>
       'Kết nối nguồn âm thanh thất bại: không thể phân giải "${host}" — kiểm tra mạng hoặc xóa nguồn này trong cài đặt';
   @override
@@ -376353,6 +376397,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audio_source_added => '已添加音频来源';
   @override
+  String audio_source_connection_refused({required Object host}) =>
+      '音频源拒绝连接："${host}" 上没有服务在监听 — 请确认服务已启动，或在设置中移除此音频源';
+  @override
   String audio_source_dns_error({required Object host}) =>
       '音频源连接失败：无法解析 "${host}" — 请检查网络，或在设置中移除此音频源';
   @override
@@ -399851,6 +399898,9 @@ class _StringsZhHk extends _StringsEn {
   String get audio_panel_pick_new_subtitle => '選擇新字幕檔';
   @override
   String get audio_source_added => '已新增音訊來源';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       '音頻來源連線失敗：無法解析 "${host}" — 請檢查網絡，或在設定中移除此來源';
@@ -423861,6 +423911,9 @@ extension on _StringsEn {
         return 'Pick new subtitle file';
       case 'audio_source_added':
         return 'Audio source added';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Audio source connection failed: cannot resolve "${host}" — check your network, or remove this source in settings';
@@ -445749,6 +445802,9 @@ extension on _StringsAr {
         return 'اختيار ملف ترجمة جديد';
       case 'audio_source_added':
         return 'تمت إضافة مصدر الصوت';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'فشل اتصال مصدر الصوت: تعذر حل "${host}" — تحقق من الشبكة أو أزل هذا المصدر في الإعدادات';
@@ -467644,6 +467700,9 @@ extension on _StringsDe {
         return 'Neue Untertiteldatei auswählen';
       case 'audio_source_added':
         return 'Audioquelle hinzugefügt';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Verbindung zur Audioquelle fehlgeschlagen: "${host}" kann nicht aufgelöst werden — überprüfen Sie Ihr Netzwerk oder entfernen Sie diese Quelle in den Einstellungen';
@@ -489593,6 +489652,9 @@ extension on _StringsEs {
         return 'Elegir nuevo archivo de subtítulos';
       case 'audio_source_added':
         return 'Fuente de audio añadida';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Error de conexión de fuente de audio: no se puede resolver "${host}" — verifica tu red o elimina esta fuente en ajustes';
@@ -511538,6 +511600,9 @@ extension on _StringsFr {
         return 'Choisir un nouveau fichier de sous-titres';
       case 'audio_source_added':
         return 'Source audio ajoutée';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Échec de connexion de la source audio : impossible de résoudre "${host}" — vérifiez votre réseau ou supprimez cette source dans les paramètres';
@@ -533487,6 +533552,9 @@ extension on _StringsId {
         return 'Pilih file subtitle baru';
       case 'audio_source_added':
         return 'Sumber audio ditambahkan';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Koneksi sumber audio gagal: tidak dapat menemukan "${host}" — periksa jaringan Anda, atau hapus sumber ini di pengaturan';
@@ -555391,6 +555459,9 @@ extension on _StringsIt {
         return 'Scegli nuovo file sottotitoli';
       case 'audio_source_added':
         return 'Sorgente audio aggiunta';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Connessione sorgente audio fallita: impossibile risolvere "${host}" — controlla la rete o rimuovi questa sorgente nelle impostazioni';
@@ -577313,6 +577384,9 @@ extension on _StringsJa {
         return '新しい字幕ファイルを選択';
       case 'audio_source_added':
         return '音声ソースを追加しました';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '音声ソース接続失敗："${host}" を解決できません — ネットワークを確認するか、設定でこのソースを削除してください';
@@ -599114,6 +599188,9 @@ extension on _StringsKo {
         return '새 자막 파일 선택';
       case 'audio_source_added':
         return '오디오 소스가 추가됨';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '오디오 소스 연결 실패: "${host}"를 확인할 수 없음 — 네트워크를 확인하거나 설정에서 이 소스를 제거하세요';
@@ -620949,6 +621026,9 @@ extension on _StringsNl {
         return 'Nieuw ondertitelbestand kiezen';
       case 'audio_source_added':
         return 'Audiobron toegevoegd';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Audiobron verbinding mislukt: kan "${host}" niet oplossen — controleer uw netwerk of verwijder deze bron in instellingen';
@@ -642880,6 +642960,9 @@ extension on _StringsPtBr {
         return 'Escolher novo arquivo de legendas';
       case 'audio_source_added':
         return 'Fonte de áudio adicionada';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Falha na conexão da fonte de áudio: não é possível resolver "${host}" — verifique sua rede ou remova esta fonte nas configurações';
@@ -664805,6 +664888,9 @@ extension on _StringsRu {
         return 'Выбрать новый файл субтитров';
       case 'audio_source_added':
         return 'Источник аудио добавлен';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Не удалось подключиться к источнику аудио: невозможно разрешить "${host}" — проверьте сеть или удалите этот источник в настройках';
@@ -686725,6 +686811,9 @@ extension on _StringsTh {
         return 'เลือกไฟล์ซับไตเติลใหม่';
       case 'audio_source_added':
         return 'เพิ่มแหล่งเสียงแล้ว';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'เชื่อมต่อแหล่งเสียงล้มเหลว: ไม่สามารถหา "${host}" — ตรวจสอบเครือข่ายหรือลบแหล่งนี้ในการตั้งค่า';
@@ -708618,6 +708707,9 @@ extension on _StringsTr {
         return 'Yeni altyazı dosyası seç';
       case 'audio_source_added':
         return 'Ses kaynağı eklendi';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Ses kaynağı bağlantısı başarısız: "${host}" çözümlenemedi — ağınızı kontrol edin veya bu kaynağı ayarlardan kaldırın';
@@ -730530,6 +730622,9 @@ extension on _StringsVi {
         return 'Chọn tệp phụ đề mới';
       case 'audio_source_added':
         return 'Đã thêm nguồn âm thanh';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Kết nối nguồn âm thanh thất bại: không thể phân giải "${host}" — kiểm tra mạng hoặc xóa nguồn này trong cài đặt';
@@ -752396,6 +752491,9 @@ extension on _StringsZhCn {
         return '选择新字幕文件';
       case 'audio_source_added':
         return '已添加音频来源';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            '音频源拒绝连接："${host}" 上没有服务在监听 — 请确认服务已启动，或在设置中移除此音频源';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '音频源连接失败：无法解析 "${host}" — 请检查网络，或在设置中移除此音频源';
@@ -774025,6 +774123,9 @@ extension on _StringsZhHk {
         return '選擇新字幕檔';
       case 'audio_source_added':
         return '已新增音訊來源';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '音頻來源連線失敗：無法解析 "${host}" — 請檢查網絡，或在設定中移除此來源';

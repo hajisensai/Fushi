@@ -799,6 +799,7 @@
   "audio_panel_auto": "자동",
   "audio_panel_pick_new_subtitle": "새 자막 파일 선택",
   "audio_source_added": "오디오 소스가 추가됨",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "오디오 소스 연결 실패: \"${host}\"를 확인할 수 없음 — 네트워크를 확인하거나 설정에서 이 소스를 제거하세요",
   "audio_source_edit_target_gone": "해당 오디오 소스가 더 이상 존재하지 않습니다 — 편집이 취소되었습니다",
   "audio_source_edit_url": "오디오 소스 링크 편집",
