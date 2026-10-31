@@ -54,7 +54,14 @@ class _Utterance {
 
   final String lineId;
   final String rawText;
-  final bool manual;
+
+  /// 用户手动点的「朗读」→ 后来配上原声也不停。
+  ///
+  /// 只升不降：自动朗读在等配对证据时已为这一行建了预合成的 utterance，用户此时
+  /// 点「朗读」会复用它（省掉重合成），复用时必须把它提升为手动——否则它仍按
+  /// 自动朗读处理，游戏原声一配上就被 [GalLineTtsPlayer.onLatestLine] 取消，
+  /// 用户点了朗读却被打断。
+  bool manual;
   final TtsCancelToken cancel = TtsCancelToken();
 
   /// 规则明确判为照读（read / voice）→ 后来配上原声也不停。
@@ -217,6 +224,8 @@ class GalLineTtsPlayer {
                 !_current!.playing)
             ? _current!
             : _begin(line, manual: manual);
+        // 复用预合成 utterance 时按这次触发提升（手动只升不降）。
+        if (manual) utterance.manual = true;
         utterance.forcedByRule = _ruleForcesRead(settings, line.text);
         unawaited(_speak(utterance, text: text, presetId: presetId));
     }
