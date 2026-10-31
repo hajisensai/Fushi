@@ -7304,6 +7304,7 @@
   "srs_browse_undone": "Undone",
   "srs_browse_unsuspended": "Cards unsuspended",
   "srs_card_appearance_blur_translation": "Blur translation until tapped",
+  "srs_card_appearance_blur_translation_desc": "Hanya kartu Fushi. Templat yang diubah harus mempertahankan elemen .fc-translation",
   "srs_card_appearance_color_app": "Follow app theme",
   "srs_card_appearance_color_custom": "Custom accent",
   "srs_card_appearance_compact_phone": "Compact back on phones (long definitions folded)",

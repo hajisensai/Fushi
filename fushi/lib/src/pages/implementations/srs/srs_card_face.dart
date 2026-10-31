@@ -34,6 +34,7 @@ import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -745,6 +746,15 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 例句翻译模糊（srs_card_translation_blur.dart）：只在开关开着时随主题下发定义；按 body 的
+  // 宿主类名给翻译行加 / 撤可聚焦属性。换卡后（新节点）与换主题后（开关变了）各跑一次。
+  function translationBlur(){
+    try {
+      if (window.__fushiSrsTranslationBlur) window.__fushiSrsTranslationBlur();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   // 宿主排版钩子（SrsCardFace.hostScript 定义）：卡片脚本与钩子都跑完后再排。
   function hostLayout(){
     try {
@@ -759,6 +769,7 @@ const String kSrsCardShellScript = r'''
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
     designSkin();
+    translationBlur();
     hostLayout();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
@@ -766,6 +777,7 @@ const String kSrsCardShellScript = r'''
     setClasses(classes);
     dictStyle();
     designSkin();
+    translationBlur();
     // 卡片脚本可据此跟随外观变化（例如「全部释义默认展开」），不必重跑。
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
@@ -1103,8 +1115,8 @@ class SrsCardFaceDocument {
   /// 见 [SrsCardFace.autoplayMedia]。
   final bool autoplayMedia;
 
-  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）。目前只有
-  /// 设计系统样式覆盖的判定脚本：覆盖关着时外壳里连脚本都没有（零注入）。
+  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）：设计系统
+  /// 样式覆盖的判定脚本、Fushi 卡片的例句翻译模糊脚本。开关关着时外壳里连脚本都没有（零注入）。
   final String hostScript;
 
   /// 卡面的键盘桥脚本（写进外壳 `<head>`，见 [srsCardShellHtml]）。
@@ -1521,11 +1533,21 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
           )
         : '',
     appearanceClasses: fushi
-        ? srsCardAppearanceClasses(appearance)
+        ? <String>[
+            srsCardAppearanceClasses(appearance),
+            // 墨水屏：卡面注入的过渡瞬间到位（系统「减弱动态效果」走页内 prefers-reduced-motion）。
+            if (theme.extension<FushiEinkTheme>()?.einkMode ?? false)
+              kSrsCardNoMotionClass,
+          ].where((String c) => c.isNotEmpty).join(' ')
         : skin
         ? kSrsDesignSkinClass
         : '',
-    hostScript: (skin ? kSrsCardDesignSkinScript : '') + face.hostScript,
+    hostScript:
+        (skin ? kSrsCardDesignSkinScript : '') +
+        (fushi && appearance.showTranslation && appearance.blurTranslation
+            ? kSrsCardTranslationBlurScript
+            : '') +
+        face.hostScript,
   );
 }
 
@@ -1899,12 +1921,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     if (!readerHostHoverPointInside(local, box.size)) return false;
     unawaited(
       _evaluateQuiet(
-        ReaderSelectionScripts.selectInvocation(
-          local.dx,
-          local.dy,
-          400,
-          fromHover: fromHover,
-        ),
+        srsCardSelectInvocation(local.dx, local.dy, 400, fromHover: fromHover),
       ),
     );
     return true;

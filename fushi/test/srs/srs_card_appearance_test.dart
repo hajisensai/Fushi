@@ -223,10 +223,23 @@ void main() {
       expect(back.blurTranslation, isTrue);
       expect(back, on);
       expect(on == const SrsCardAppearance(), isFalse);
-      // 只在原生视图生效：不新增模板类名（Anki / HTML 卡面不受影响）。
+      // 模板卡面同一套规则：开着（且显示翻译）才挂宿主类名，翻译关掉时不挂。
       expect(
-        srsCardAppearanceClasses(on),
+        srsCardAppearanceClasses(on).split(' '),
+        contains('fushi-srs-blur-translation'),
+      );
+      expect(
         srsCardAppearanceClasses(const SrsCardAppearance()),
+        isNot(contains('fushi-srs-blur-translation')),
+      );
+      expect(
+        srsCardAppearanceClasses(
+          const SrsCardAppearance(
+            showTranslation: false,
+            blurTranslation: true,
+          ),
+        ),
+        isNot(contains('fushi-srs-blur-translation')),
       );
     });
 
