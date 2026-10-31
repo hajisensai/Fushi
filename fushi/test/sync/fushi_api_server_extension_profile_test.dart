@@ -151,7 +151,10 @@ void main() {
     req.write(jsonEncode(body));
     final HttpClientResponse resp = await req.close();
     final String text = await resp.transform(utf8.decoder).join();
-    final Object? decoded = text.isEmpty ? null : jsonDecode(text);
+    // 404 等错误响应是纯文本（`Unknown endpoint`），只有 JSON 响应才解析。
+    final bool isJson =
+        resp.headers.contentType?.mimeType == ContentType.json.mimeType;
+    final Object? decoded = isJson ? jsonDecode(text) : null;
     return (
       status: resp.statusCode,
       active: resp.headers.value(kExtensionProfileActiveHeader),
