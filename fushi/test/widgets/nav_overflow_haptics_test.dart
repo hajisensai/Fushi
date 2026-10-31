@@ -232,7 +232,7 @@ void main() {
     );
   });
 
-  testWidgets('mode strip draws a bottom marker under the highlight', (
+  testWidgets('mode strip draws no bottom marker under the highlight', (
     WidgetTester tester,
   ) async {
     await pumpVariant(
@@ -251,12 +251,7 @@ void main() {
                 BorderRadius.circular(2),
       ),
     );
-    expect(marker, findsOneWidget);
-    final Rect rect = tester.getRect(marker);
-    expect(rect.width, 16);
-    expect(rect.height, 3);
-    expect(rect.center.dx, moreOrLessEquals(stripCenters(tester, 4)[2]));
-    final double bottom = tester.getBottomLeft(find.byType(NavModeStripBar)).dy;
-    expect(bottom - rect.bottom, moreOrLessEquals(2));
+    // 2026-10-30 用户：高亮多边形已经标明当前项，底部短横两套设计系统都去掉。
+    expect(marker, findsNothing);
   });
 }
