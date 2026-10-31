@@ -826,6 +826,7 @@
   "audio_panel_auto": "تلقائي",
   "audio_panel_pick_new_subtitle": "اختيار ملف ترجمة جديد",
   "audio_source_added": "تمت إضافة مصدر الصوت",
+  "audio_source_connection_refused": "Audio source refused the connection: nothing is listening at \"${host}\" — make sure the service is running, or remove this source in settings",
   "audio_source_dns_error": "فشل اتصال مصدر الصوت: تعذر حل \"${host}\" — تحقق من الشبكة أو أزل هذا المصدر في الإعدادات",
   "audio_source_edit_target_gone": "مصدر الصوت لم يعد موجوداً — تم تجاهل التعديل",
   "audio_source_edit_url": "تعديل رابط مصدر الصوت",
