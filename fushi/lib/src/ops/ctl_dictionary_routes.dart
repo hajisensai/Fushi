@@ -990,6 +990,8 @@ Map<String, Object?> _ankiSyncStateJson(AnkiSyncState state) =>
       if (state.lastSyncAt != null) 'lastSyncAt': state.lastSyncAt,
       if (state.lastError != null) 'lastError': state.lastError,
       if (state.message != null) 'message': state.message,
+      if (state.rateLimitedUntil != null)
+        'rateLimitedUntil': state.rateLimitedUntil,
     };
 
 /// 拉 Anki 实时配置（与设置页「刷新」同一个 fetchConfiguration）；不可用抛 422。

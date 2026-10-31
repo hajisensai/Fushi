@@ -67,6 +67,36 @@ void main() {
     expect(sentLog, contains('[truncated]'));
   });
 
+  // 反馈 4k7x0-1MHe：接收端（CF Worker 版 512 KiB）限的是整个请求体。旧实现只把日志
+  // 原文截到 512 KiB 再套 JSON，Windows 错误日志里的换行 / 反斜杠 / 引号转义后膨胀，
+  // 请求体必然超限 → 413 →「日志过大，无法上传」。
+  test('整个请求体（JSON 转义 + 元信息）都在上限内，而不只是日志原文', () async {
+    late http.Request seen;
+    final MockClient client = MockClient((http.Request req) async {
+      seen = req;
+      return http.Response('{"id":"x"}', 200);
+    });
+    const String line =
+        r'[2026-10-28] C:\Users\u\AppData\Local\Fushi "NetworkError { info: '
+        '"429" }"\n\t#0 frame\n';
+    final String big = line * (2 * 1024 * 1024 ~/ line.length);
+
+    final LogUploadOutcome out = await run(client, log: big);
+
+    expect(out.kind, LogUploadStatus.success);
+    expect(seen.bodyBytes.length, lessThanOrEqualTo(512 * 1024));
+    final Map<String, dynamic> body =
+        jsonDecode(seen.body) as Map<String, dynamic>;
+    final String sentLog = body['log'] as String;
+    expect(sentLog, startsWith('[truncated]'));
+    expect(
+      big.endsWith(sentLog.substring(sentLog.indexOf('\n') + 1)),
+      isTrue,
+      reason: '保留的是最近的尾部',
+    );
+    expect(body['app_version'], '1.0.0+1');
+  });
+
   test('多字节日志截断后字节数仍严格 <= 上限（不被 U+FFFD 膨胀顶破）', () async {
     late http.Request seen;
     final MockClient client = MockClient((http.Request req) async {
