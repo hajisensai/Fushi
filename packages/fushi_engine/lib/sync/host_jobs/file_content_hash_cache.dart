@@ -17,6 +17,12 @@ import 'dart:io';
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 import 'package:fushi_engine/foundation/engine_log.dart';
 
+/// 内容哈希缓存在某个**缓存目录**下的落盘文件名（app 传平台缓存目录、无头服务端
+/// 传 `<data_dir>/tmp`）。缓存是纯派生数据，不放数据根 / support 根，免得被备份或
+/// 「更改数据位置」带走。
+File contentHashCacheFile(Directory cacheRoot) =>
+    File('${cacheRoot.path}${Platform.pathSeparator}content_hash_cache.json');
+
 /// 一份文件在某一刻的内容指纹。
 class FileContentFingerprint {
   const FileContentFingerprint({
@@ -74,17 +80,28 @@ class _CacheEntry {
 }
 
 class FileContentHashCache {
+  /// [store] / [locateStore] 二选一给缓存落盘位置（都不给 = 只在内存里，测试 /
+  /// 不需要跨进程）。[locateStore] 用于落点要异步解析的场合（app 的平台缓存目录），
+  /// 第一次用到缓存时才解析一次。缓存是纯派生数据，落点应在平台缓存目录 / 临时
+  /// 目录，不进数据根（不随备份、不随换数据位置搬走）。
   FileContentHashCache({
     File? store,
+    Future<File> Function()? locateStore,
     Future<String> Function(String path)? hasher,
     DateTime Function()? now,
     this.maxEntries = 4096,
-  }) : _store = store,
+  }) : assert(
+         store == null || locateStore == null,
+         'give either store or locateStore',
+       ),
+       _store = store,
+       _locateStore = locateStore,
        _hasher = hasher ?? ffcSha256File,
        _now = now ?? DateTime.now;
 
-  /// 缓存落盘位置；null = 只在内存里（测试 / 不需要跨进程）。
-  final File? _store;
+  /// 缓存落盘位置；[_ensureLoaded] 之后才确定（[_locateStore] 解析出来的写回这里）。
+  File? _store;
+  final Future<File> Function()? _locateStore;
   final Future<String> Function(String path) _hasher;
   final DateTime Function() _now;
 
@@ -131,6 +148,35 @@ class FileContentHashCache {
     } finally {
       if (identical(_inFlight[key], computing)) _inFlight.remove(key);
     }
+  }
+
+  /// 只查缓存、**不读文件内容**：文件当前 `(大小, 修改时刻)` 与缓存一致时返回缓存的
+  /// 指纹，否则 null（要算的话调 [fingerprint]）。给「请求里不许整份读大文件」的场合
+  /// 用（host 的输入匹配端点）。[stat] 是调用方刚 stat 过的结果，省一次 stat。
+  ///
+  /// 文件不存在 / 不是普通文件抛 [FileSystemException]。
+  Future<FileContentFingerprint?> cachedFingerprint(
+    String path, {
+    FileStat? stat,
+  }) async {
+    await _ensureLoaded();
+    final FileStat current = stat ?? await _statFile(path);
+    if (current.type != FileSystemEntityType.file) {
+      throw FileSystemException('not a file', path);
+    }
+    final _CacheEntry? cached = _entries[path];
+    if (cached == null ||
+        cached.size != current.size ||
+        cached.modifiedAt != current.modified.millisecondsSinceEpoch) {
+      return null;
+    }
+    cached.usedAt = _now().millisecondsSinceEpoch;
+    return FileContentFingerprint(
+      path: path,
+      sha256: cached.sha256,
+      size: cached.size,
+      modifiedAt: cached.modifiedAt,
+    );
   }
 
   /// 等所有在飞的落盘写完（测试用）。
@@ -182,6 +228,8 @@ class FileContentHashCache {
   Future<void> _ensureLoaded() => _loading ??= _load();
 
   Future<void> _load() async {
+    final Future<File> Function()? locate = _locateStore;
+    if (locate != null) _store = await locate();
     final File? store = _store;
     if (store == null || !await store.exists()) return;
     try {

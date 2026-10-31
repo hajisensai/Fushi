@@ -16,6 +16,7 @@ import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart'
     show mangaOcrPollDelay;
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
 import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart'
     show HostInputWanted;
@@ -283,7 +284,15 @@ class InterconnectJobClient {
       final List<String> names = hostJobInputNamesFor(inputs);
       controller.add(HostJobUploading(0, inputs.length));
       final Set<String> onHost = reuseHostFiles
-          ? await _matchHostInputs(c, token, target, id, inputs, names)
+          ? await _matchHostInputs(
+              c,
+              token,
+              target,
+              id,
+              inputs,
+              names,
+              isCancelled: () => cancelled,
+            )
           : const <String>{};
       int done = onHost.length;
       if (done > 0) controller.add(HostJobUploading(done, inputs.length));
@@ -397,16 +406,21 @@ class InterconnectJobClient {
     return controller.stream;
   }
 
-  /// 发内容哈希清单，返回 host 本地已有的输入名。host 不认这条路由（老版本）当作
-  /// 一个都没有；本机文件正被写（哈希期间变了）的那份不参与匹配、照常上传。
+  /// 发内容哈希清单，返回 host 本地已有的输入名。本机文件正被写（哈希期间变了）
+  /// 的那份不参与匹配、照常上传。
+  ///
+  /// 匹配是**可选优化**：host 不认这条路由（老版本）、应答出错、超时、连接断了，
+  /// 一律当「一个都没有」照旧全部上传，绝不让整个任务因此失败。host 报
+  /// `pending`（还在后台给冷文件算哈希）时按轮询节奏再问，直到它给出终局答复。
   Future<Set<String>> _matchHostInputs(
     http.Client c,
     String token,
     HostJobTarget target,
     String id,
     List<File> inputs,
-    List<String> names,
-  ) async {
+    List<String> names, {
+    required bool Function() isCancelled,
+  }) async {
     final FileContentHashCache cache = _hashCache!;
     final List<Map<String, Object?>> files = <Map<String, Object?>>[];
     for (int i = 0; i < inputs.length; i++) {
@@ -425,26 +439,48 @@ class InterconnectJobClient {
       );
     }
     if (files.isEmpty) return const <String>{};
-    final http.Response response;
-    try {
-      response = await _send(
-        c,
-        token,
-        'POST',
-        target,
-        '/api/jobs/$id/inputs/match',
-        jsonBody: <String, Object?>{'files': files},
-      );
-    } on HostJobRemoteException catch (e) {
-      if (e.code == 'http_404' || e.code == 'http_405') return const <String>{};
-      rethrow;
+    int attempt = 0;
+    while (true) {
+      if (isCancelled()) throw const HostJobRemoteException('cancelled');
+      final Map<String, dynamic> body;
+      try {
+        body = _json(
+          await _send(
+            c,
+            token,
+            'POST',
+            target,
+            '/api/jobs/$id/inputs/match',
+            jsonBody: <String, Object?>{'files': files},
+          ),
+        );
+      } on Object catch (e, stack) {
+        if (!_isOptionalStepFailure(e)) rethrow;
+        // 老 host（404/405）是常态，不记日志；其余是真故障，记下再退回上传。
+        if (e is! HostJobRemoteException ||
+            (e.code != 'http_404' && e.code != 'http_405')) {
+          engineLog.log('InterconnectJobClient.matchHostInputs', e, stack);
+        }
+        return const <String>{};
+      }
+      final Object? matched = body['matched'];
+      final Set<String> onHost = <String>{
+        if (matched is List)
+          for (final Object? name in matched) '$name',
+      };
+      if (body['pending'] != true) return onHost;
+      await Future<void>.delayed(_pollDelay(attempt++));
     }
-    final Object? matched = _json(response)['matched'];
-    return <String>{
-      if (matched is List)
-        for (final Object? name in matched) '$name',
-    };
   }
+
+  /// 可选步骤（输入匹配）里「问不到答案」的失败：host 应答错误、超时、网络 / TLS
+  /// 断开、应答不是 JSON 对象。这些都只意味着这次没法复用 host 文件。
+  static bool _isOptionalStepFailure(Object e) =>
+      e is HostJobRemoteException ||
+      e is TimeoutException ||
+      e is http.ClientException ||
+      e is IOException ||
+      e is FormatException;
 
   // ── HTTP 助手（与漫画 OCR 客户端同款） ─────────────────────────────
 
