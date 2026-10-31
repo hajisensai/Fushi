@@ -1730,20 +1730,26 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 语言」组放最后。分组与组内顺序的推导见 [groupDictionariesByLanguage]——
   /// 组内顺序就是全局查词优先级在该组的子序列，组内重排只在该组原占的槽位里
   /// 重新分配（[mergeLanguageGroupOrder]），不影响其它组。
+  ///
+  /// 只有一个语言组时不画组标题：多数用户只装一种语言的词典，列表保持原样，
+  /// 不平白多一行标题；两组及以上才需要标题来区分。
   Widget _buildLanguageGroups(List<Dictionary> section) {
     final List<DictionaryLanguageGroup> groups =
         groupDictionariesByLanguage(section);
+    final bool showHeaders = groups.length > 1;
     final List<Widget> children = <Widget>[];
     // 错峰下标跨组累加：标题与词典行按屏幕自上而下依次进场。
     int entranceIndex = 0;
     for (int g = 0; g < groups.length; g++) {
       final DictionaryLanguageGroup group = groups[g];
-      children.add(
-        FushiStaggeredEntrance(
-          index: entranceIndex++,
-          child: _buildLanguageGroupHeader(group, first: g == 0),
-        ),
-      );
+      if (showHeaders) {
+        children.add(
+          FushiStaggeredEntrance(
+            index: entranceIndex++,
+            child: _buildLanguageGroupHeader(group, first: g == 0),
+          ),
+        );
+      }
       children.add(
         _buildDictionaryList(
           group.dictionaries,
