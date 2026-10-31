@@ -86,7 +86,7 @@ verified at runtime on this machine.
   `fushi/integration_test/web_browser_youtube_menu_probe_itest.dart`.
   Test: `test/composition_host_child_window_test.dart`.
 
-## Capacity-sized shared texture and WGC frame pool (BUG-3895, 2026-10-31)
+## Capacity-sized shared texture and WGC frame pool (BUG-3913, 2026-10-31)
 
 - `texture_bridge_gpu.cc` / `texture_bridge.cc`: upstream recreated both the
   WGC capture frame pool (`RecreateFramePoolLocked`, exact-size compare) and the

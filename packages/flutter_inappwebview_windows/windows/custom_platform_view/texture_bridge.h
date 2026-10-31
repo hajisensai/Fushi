@@ -73,7 +73,7 @@ namespace flutter_inappwebview_plugin
     // Flutter 平台视图的逻辑尺寸与 DPI。GPU bridge 会原子记录换算后的目标物理
     // 像素尺寸，再用回调驱动 WebView2 surface；WGC 的尺寸通知不会反写目标尺寸。
     //
-    // BUG-3895：[capacity] 是 Dart 侧算好的纹理容量（物理像素，只增不减，见
+    // BUG-3913：[capacity] 是 Dart 侧算好的纹理容量（物理像素，只增不减，见
     // texture_capacity.dart）。WGC 帧池与共享目标纹理都按它分配，布局在容量内变化
     // 时既不重建帧池也不换共享句柄——两者每换一次都会在系统 / 引擎侧留下一份
     // 永不归还的显存。{0,0} = 旧协议（Dart 未给容量），退回贴身分配。
@@ -125,7 +125,7 @@ namespace flutter_inappwebview_plugin
     SurfaceSizeChangedCallback surface_size_changed_;
     Size requested_surface_size_ = { 0, 0 };
     float requested_scale_factor_ = 0.0f;
-    // BUG-3895：纹理 / 帧池容量（物理像素），见 SetOutputSize。
+    // BUG-3913：纹理 / 帧池容量（物理像素），见 SetOutputSize。
     Size capacity_ = { 0, 0 };
     std::atomic<bool> needs_update_ = false;
     winrt::com_ptr<ID3D11Texture2D> last_frame_;
@@ -155,7 +155,7 @@ namespace flutter_inappwebview_plugin
     // 回 true = 真的退役并重建了帧池（本轮 pump 不再取帧）；当前帧池放得下捕获源
     // 与容量时原样保留、回 false。
     bool RecreateFramePoolLocked();
-    // BUG-3895：帧池尺寸 = 捕获源尺寸与容量逐维取大。
+    // BUG-3913：帧池尺寸 = 捕获源尺寸与容量逐维取大。
     ABI::Windows::Graphics::SizeInt32 FramePoolSizeFor(
       ABI::Windows::Graphics::SizeInt32 item_size) const;
     bool StartPumpLocked(const std::shared_ptr<WgcFramePoolLifetime>& lifetime);

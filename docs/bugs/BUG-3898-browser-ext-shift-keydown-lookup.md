@@ -1,4 +1,4 @@
-## BUG-3892 · 浏览器扩展 Shift 悬停查词要晃一下鼠标才触发
+## BUG-3898 · 浏览器扩展 Shift 悬停查词要晃一下鼠标才触发
 - **报告**：2026-10-29（用户：应用内反馈 pBDjgW3T4v「鼠标已经停留在某个单词上时，直接按下 Shift 并不会立即弹出查词窗口，必须再稍微移动一下鼠标」）
 - **真实性**：✅ 真交互缺陷（根因 `tools/browser-extension/content.js` 的 Shift 悬停入口只挂在 `document` 的 `mousemove` 上，且有 4px 位移阈值；全文件没有 Shift `keydown` 入口，指针静止时按 Shift 什么都不发生）
 - **[x] ① 已修复** — 把 mousemove 处理体抽成共同入口 `fushiShiftHoverAt(x, y, target, clearNativeSelection, bypassMoveThreshold)`；新增 `document` capture 阶段 `keydown(Shift)`：用 window 捕获阶段 mousemove 记下的 `fushiHoverPointerX/Y` 立即扫一次、跳过位移阈值，其余门控（批量录制、宿主模式、总开关、在途闸 + 待补查、同词去重）与 mousemove 共用；`keyup(Shift)` 复位同词去重。`fushi/assets/browser_extension/content.js` 镜像同步。分支 `pr/fb-browserext`。

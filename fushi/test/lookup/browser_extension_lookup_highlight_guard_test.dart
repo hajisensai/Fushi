@@ -285,7 +285,7 @@ void main() {
             isTrue,
             reason: '${content.path} 未按 e.buttons 门控（会误伤用户手动拖拽划选复制）',
           );
-          // 清原生选区必须真接进 mousemove Shift 悬停查词路径。BUG-3892 起 mousemove 与
+          // 清原生选区必须真接进 mousemove Shift 悬停查词路径。BUG-3898 起 mousemove 与
           // keydown（指针静止按 Shift）共用 fushiShiftHoverAt：mousemove 把「纯悬停」
           // (e.buttons === 0) 作为 clearNativeSelection 实参传进去，由共同入口清；keydown
           // 传 false（单按 Shift 不扩选，清了反而毁掉用户要 Shift+点击扩的选区）。

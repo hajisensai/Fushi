@@ -1,4 +1,4 @@
-## BUG-3892 · srs-trusted-clock-ahead-rwkv-fallback
+## BUG-3900 · srs-trusted-clock-ahead-rwkv-fallback
 - **报告**：2026-10-31（用户：QQ 群反馈「Fushi 时钟偏差 >10 分钟时回退 FSRS-7，导致复习队列无限增长」；用户确认系统时间本身是准的）
 - **真实性**：✅ 真 bug，系统时钟不是元凶，是 Fushi 自己推算的「可信时间」错了：
   - `fushi/lib/src/srs/srs_sync_scheduler.dart`（旧 852/880 行）一轮同步**开头**取单调时钟读数 `probedAtMono`，而 `report.serverTimeMs` 是 `packages/fushi_engine/lib/srs/sync2/srs_sync2_round.dart`（旧 318 行）在这一轮**末尾**写完 head 后列目录拿到的 mtime。两者配成锚点后，整轮同步的耗时（2.9 万张卡的大库、卡顿时十几分钟）被全部算成「本机时钟落后」：可信时间超前同样的时长，复习记录与 HLC 写进未来（反馈里是 +10 分 42 秒），并误报「该设备时钟明显超前」。
