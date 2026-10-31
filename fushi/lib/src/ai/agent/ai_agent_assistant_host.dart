@@ -9,9 +9,6 @@
 /// 页）不给远端用：远端用户看不见这台电脑的屏幕。
 library;
 
-import 'dart:convert';
-
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
@@ -23,6 +20,7 @@ import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
+import 'package:fushi/src/ai/agent/ai_agent_session_archive.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart'
     show createVideoAcquisitionAssistantHost;
@@ -104,7 +102,7 @@ AgentAssistantHost createAgentAssistantHostWith({
             .where((FushiOp op) => !op.inProcessOnly)
             .length ??
         0,
-    persist: (AgentSession session) => saveAiAgentHostSession(
+    persist: (AgentSession session) => saveAiAgentSessionArchive(
       database,
       session,
       scene: kAiAgentRemoteScene,
@@ -168,35 +166,5 @@ AgentAssistantHost createAgentAssistantHostWith({
         },
       );
     },
-  );
-}
-
-/// 把一场（远端）会话写进本机对话存档 `ai_agent_sessions`：与本机 AI 页同一张表、
-/// 同一种标题取法，「AI 操作记录」页能看到远端会话、过了会话也能撤销。
-Future<void> saveAiAgentHostSession(
-  FushiDatabase database,
-  AgentSession session, {
-  required String scene,
-  required DateTime now,
-}) async {
-  if (session.entries.isEmpty) return;
-  final String firstUser = session.entries
-      .firstWhere(
-        (AgentEntry e) => e.kind == AgentEntryKind.user,
-        orElse: () => session.entries.first,
-      )
-      .text;
-  await database.upsertAiAgentSession(
-    AiAgentSessionsCompanion.insert(
-      id: session.id,
-      title: firstUser.length > 60
-          ? '${firstUser.substring(0, 60)}…'
-          : firstUser,
-      scene: scene,
-      payloadJson: jsonEncode(session.toJson()),
-      totalTokens: Value<int>(session.totalTokens),
-      createdAt: session.entries.first.createdAt,
-      updatedAt: now.millisecondsSinceEpoch,
-    ),
   );
 }

@@ -3582,16 +3582,19 @@ class LibraryOrganizeChanges extends Table {
 // ── ai_agent_sessions / ai_agent_actions（AI 助手，schema v136）──────────────
 // spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §5.3 / D3 / D5：AI 助手的
 // 对话存档与它做过的操作记录，供「操作记录」页与撤销用。与 library_organize_* 同一口径：
-// **设备本地**——不同步、不进备份、不分 Profile；本机按期限清理（D5 对话存档 30 天），
-// 清理只删记录与快照，不动已生效的改动。
+// **设备本地**——不同步、不进备份；本机按期限清理（D5 对话存档 30 天），清理只删记录
+// 与快照，不动已生效的改动。v140 起会话按 Profile 归属（[AiAgentSessions.profileUid]，
+// 会话列表只列当前 Profile 的）；操作记录仍不分 Profile。
 
-/// AI 助手的一场对话（整场序列化成 [payloadJson]）。
+/// AI 助手的一场对话（整场序列化成 [payloadJson]）。一行 = 一场会话，消息（条目 +
+/// 模型历史）属于这场会话、随它整体存取；会话列表只投影元数据列，不读 [payloadJson]。
 @DataClassName('AiAgentSessionRow')
 class AiAgentSessions extends Table {
   /// 会话 id（调用方生成）。
   TextColumn get id => text()();
 
-  /// 首句用户话截断，调用方给。
+  /// 会话标题。首次落库时取首条用户消息摘要（`aiAgentSessionAutoTitle`），之后整场
+  /// 重存**不再改写**；只有用户重命名（`renameAiAgentSession`）会改它。
   TextColumn get title => text()();
 
   /// `general` | `reader` | `manga` | `video` | `system`。
@@ -3604,6 +3607,12 @@ class AiAgentSessions extends Table {
 
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
+
+  /// v140：会话所属 Profile 的全局身份（`profiles.uid`），首次落库时按当前激活
+  /// Profile 盖戳，之后不改。用 uid 而不是本机自增 `profiles.id`：本表设备本地、覆盖
+  /// 恢复后原样回灌，而 `profiles` 随备份恢复，自增 id 会对不上。空串 = 归属不明
+  /// （v140 前的存档且迁移时解析不出激活 Profile 的 uid），对所有 Profile 可见。
+  TextColumn get profileUid => text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => <Column>{id};
