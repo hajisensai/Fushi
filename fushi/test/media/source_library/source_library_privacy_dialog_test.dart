@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_library_privacy.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -24,22 +25,24 @@ void main() {
       () => db.getMediaSourceById(sourceId),
     ))!;
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildFushiThemeData(
-          scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          textTheme: Typography.material2021().black,
-          glass: FushiGlassMaterial.off,
-          glassDesign: apple,
-        ),
-        home: FushiGlassScope(
-          child: Scaffold(
-            body: SourceLibraryPrivacyDialog(
-              db: db,
-              source: source,
-              withdrawFromLeaderboard: () async {
-                withdrawCalls++;
-                return true;
-              },
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            glass: FushiGlassMaterial.off,
+            glassDesign: apple,
+          ),
+          home: FushiGlassScope(
+            child: Scaffold(
+              body: SourceLibraryPrivacyDialog(
+                db: db,
+                source: source,
+                withdrawFromLeaderboard: () async {
+                  withdrawCalls++;
+                  return true;
+                },
+              ),
             ),
           ),
         ),
