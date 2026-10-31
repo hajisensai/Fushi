@@ -9593,6 +9593,7 @@
   "video_remote_remove": "Remove selected favorites",
   "video_remote_retry": "Reconnect",
   "video_remote_sentence": "Sentence",
+  "video_remote_subtitle_episode_short": "Tập",
   "video_remote_subtitle_refetch": "Re-fetch subtitles from server",
   "video_remote_subtitle_refetch_default": "Server's default subtitles",
   "video_remote_subtitle_refetch_failed": "Couldn't re-fetch subtitles",

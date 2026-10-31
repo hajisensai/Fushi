@@ -9593,6 +9593,7 @@
   "video_remote_remove": "取消选中收藏",
   "video_remote_retry": "重新连接",
   "video_remote_sentence": "例句",
+  "video_remote_subtitle_episode_short": "集",
   "video_remote_subtitle_refetch": "重新从服务端拉取字幕",
   "video_remote_subtitle_refetch_default": "服务端默认字幕",
   "video_remote_subtitle_refetch_failed": "重新拉取字幕失败",

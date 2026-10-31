@@ -1663,6 +1663,7 @@ class FushiTextField extends StatefulWidget {
     this.clearable = false,
     this.onClear,
     this.showObscureToggle = true,
+    this.showInputAssist = true,
     this.inputFormatters,
     this.contextMenuBuilder,
     this.contentInsertionConfiguration,
@@ -1714,6 +1715,10 @@ class FushiTextField extends StatefulWidget {
 
   /// [obscureText] 为真时在尾部给显隐切换钮（M3E 密码框）。
   final bool showObscureToggle;
+
+  /// 尾部的输入辅助钮（移动端粘贴 / 桌面端软键盘）。只装几位数字的窄框（集号等）
+  /// 关掉：辅助钮会占走一半宽度，粘贴对它也没有意义。
+  final bool showInputAssist;
   final List<TextInputFormatter>? inputFormatters;
 
   /// 自定义长按 / 右键菜单（给了就整个替换默认菜单，调用方自己带上
@@ -1764,7 +1769,7 @@ class _FushiTextFieldState extends State<FushiTextField> {
     final EdgeInsets? padding = compact ? const EdgeInsets.all(6) : null;
     final Widget? assist = _fushiTextFieldInputSuffix(
       context: context,
-      controller: editable ? controller : null,
+      controller: editable && widget.showInputAssist ? controller : null,
       onChanged: widget.onChanged,
       iconSize: iconSize,
       padding: padding,
