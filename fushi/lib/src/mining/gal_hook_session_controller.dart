@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/mining/adts_duration.dart';
+import 'package:fushi/src/mining/gal_game_exit_watch.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -790,7 +791,14 @@ class GalHookSessionController extends ChangeNotifier {
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
     Duration activityFlushDebounce = kGalActivityFlushDebounce,
     GalgamePlayTrackerFactory? playTrackerFactory,
+    // BUG-3928：游戏进程退出监视。null = 用默认 Windows probe（非 Windows 不监视）。
+    GalgameProcessProbe? gameProcessProbe,
+    Duration gameExitPollInterval = const Duration(seconds: 2),
+    int gameExitConfirmSamples = 3,
   }) : _textService = textService ?? TexthookerService.instance,
+       _gameProcessProbeOverride = gameProcessProbe,
+       _gameExitPollInterval = gameExitPollInterval,
+       _gameExitConfirmSamples = gameExitConfirmSamples,
        _activityFlushDebounce = activityFlushDebounce,
        _playTrackerFactory = playTrackerFactory ?? _defaultPlayTrackerFactory,
        _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
@@ -870,6 +878,9 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
   final Duration _windowRebindInterval;
+  final GalgameProcessProbe? _gameProcessProbeOverride;
+  final Duration _gameExitPollInterval;
+  final int _gameExitConfirmSamples;
   final Duration _trackRefreshInterval;
   final Duration _loopbackFreezeDelay;
   final Duration _utteranceSettleInterval;
@@ -1005,6 +1016,19 @@ class GalHookSessionController extends ChangeNotifier {
   Timer? _trackRefreshTimer;
   // BUG-1049：launch 后游戏窗口尚未出现时的重绑监视（见 [_startWindowRebindWatch]）。
   Timer? _windowRebindTimer;
+
+  /// 游戏进程退出监视的定时器（见 [_startGameExitWatch]）。
+  Timer? _gameExitTimer;
+
+  final ValueNotifier<int> _gameExitedCount = ValueNotifier<int>(0);
+
+  /// 每当会话因**游戏进程退出**而自动结束就 +1（BUG-3928）。游戏页据此把停在
+  /// 捕获工作台上的用户送回游戏首页；手动停止不计（用户自己点的停，留在原页）。
+  ValueListenable<int> get gameExitedCount => _gameExitedCount;
+
+  /// 测试用：模拟一次「游戏退出致会话结束」的通知，验证页面接线。
+  @visibleForTesting
+  void debugNotifyGameExited() => _gameExitedCount.value++;
   bool _windowRebindInFlight = false;
   // A rebind completion must only release the request it started; operation
   // generation alone does not distinguish two watches in the same session.
@@ -1547,6 +1571,12 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: window.pid,
     );
+    // 同理，游戏退出就该结束会话，与 hook 走哪条分支无关（BUG-3928）。
+    _startGameExitWatch(
+      generation: generation,
+      pid: window.pid,
+      executablePath: identity.executablePath,
+    );
     _record(
       GalHookEventSeverity.info,
       'resolve',
@@ -1930,6 +1960,11 @@ class GalHookSessionController extends ChangeNotifier {
           identity: identity,
           mainPid: runningPid,
         );
+        _startGameExitWatch(
+          generation: generation,
+          pid: runningPid,
+          executablePath: identity.executablePath,
+        );
         return const GalHookLaunchResult.launched();
       }
       _fail(
@@ -2029,7 +2064,92 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: gamePid,
     );
+    if (gamePid != null) {
+      _startGameExitWatch(
+        generation: generation,
+        pid: gamePid,
+        executablePath: identity.executablePath,
+      );
+    }
     return const GalHookLaunchResult.launched();
+  }
+
+  /// 游戏进程退出监视（BUG-3928）：确认游戏没了就自动结束整条捕获会话。
+  ///
+  /// 旧实现里「游戏退出」只有游玩计时器看得到，它结算完就自停，会话本身没人收：
+  /// 游戏关了、工作台还停在「正在监听」，只能手动点停止。判据见 [GalGameExitWatch]；
+  /// 结束走 [stopCapture]，结算 / 超分 / 状态复位与手动停止同一条路。
+  /// 会话被换代（stop、重启、attach）即自停；源停止时（[_stopSourcesInternal]）一并取消。
+  void _startGameExitWatch({
+    required int generation,
+    required int pid,
+    required String? executablePath,
+  }) {
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
+    if (pid <= 0 || generation != _operationGeneration) return;
+    final GalgameProcessProbe? probe = _resolveGameProcessProbe();
+    if (probe == null) return;
+    final GalGameExitWatch watch = GalGameExitWatch(
+      pid: pid,
+      executablePath: executablePath,
+      confirmSamples: _gameExitConfirmSamples,
+    );
+    _gameExitTimer = Timer.periodic(_gameExitPollInterval, (Timer timer) {
+      if (generation != _operationGeneration) {
+        timer.cancel();
+        if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+        return;
+      }
+      final int watchedPid = watch.pid;
+      switch (watch.sample(probe)) {
+        case GalGameExitStatus.alive:
+        case GalGameExitStatus.unconfirmed:
+          return;
+        case GalGameExitStatus.handedOff:
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_process_handoff',
+            'The game process exited, but another process from the game '
+                'folder is still running; following it',
+            details: <String, Object?>{'from': watchedPid, 'to': watch.pid},
+          );
+          return;
+        case GalGameExitStatus.exited:
+          timer.cancel();
+          if (identical(_gameExitTimer, timer)) _gameExitTimer = null;
+          _record(
+            GalHookEventSeverity.info,
+            'session',
+            'session.game_exited',
+            'The game exited; stopping capture',
+            details: <String, Object?>{'pid': watchedPid},
+          );
+          unawaited(_stopCaptureAfterGameExit(generation));
+      }
+    });
+  }
+
+  Future<void> _stopCaptureAfterGameExit(int generation) async {
+    if (generation != _operationGeneration) return;
+    await stopCapture(keepBinding: false);
+    // stopCapture 自身换代一次；期间没有**别的**操作插进来（新 attach / launch）、
+    // 会话此刻是 idle，才通知页面回首页。
+    if (_operationGeneration != generation + 1) return;
+    if (_state.phase != GalHookSessionPhase.idle) return;
+    _gameExitedCount.value++;
+  }
+
+  GalgameProcessProbe? _resolveGameProcessProbe() {
+    final GalgameProcessProbe? injected = _gameProcessProbeOverride;
+    if (injected != null) return injected;
+    if (!_isWindows || !Platform.isWindows) return null;
+    try {
+      return _sharedProcessProbe ??= GalgameWindowsProcessProbe();
+    } on Object {
+      return null;
+    }
   }
 
   /// launch 会话的窗口绑定监视，跟随整条会话的生命周期：
@@ -4153,6 +4273,7 @@ class GalHookSessionController extends ChangeNotifier {
     await shutdownMagpieUpscaling();
     await shutdownWindowRecording();
     await _stopSources();
+    _gameExitedCount.dispose();
     dispose();
   }
 
@@ -5226,6 +5347,8 @@ class GalHookSessionController extends ChangeNotifier {
     _windowRebindTimer?.cancel();
     _windowRebindTimer = null;
     _windowRebindGeneration++;
+    _gameExitTimer?.cancel();
+    _gameExitTimer = null;
     _engineRetryTimer?.cancel();
     _engineRetryTimer = null;
     _engineRetryAttempt = 0;
