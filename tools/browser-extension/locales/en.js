@@ -397,7 +397,7 @@
   ap_update_stale_detail: 'Automatic update did not take effect: go to chrome://extensions and press “Reload” on this extension (current {local} → latest {remote})',
   ap_update_unknown_build: 'unknown',
   ap_profile_label: 'Fushi profile',
-  ap_profile_hint: 'Lookups and card mining in the browser use this profile; Fushi switches to it when you look up a word here',
+  ap_profile_hint: 'Lookups and card mining in the browser use this profile; the active profile in Fushi stays unchanged',
   ap_profile_follow_app: 'Follow Fushi ({name})',
   ap_profile_follow_app_plain: 'Follow Fushi',
   ap_profile_unavailable: 'Profile list unavailable: Fushi is not connected',

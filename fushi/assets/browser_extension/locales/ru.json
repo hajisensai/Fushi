@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "Автоматическое обновление не сработало: откройте chrome://extensions и нажмите «Перезагрузить» у этого расширения (сейчас {local} → последняя {remote})",
   "ap_update_unknown_build": "неизвестно",
   "ap_profile_label": "Профиль Fushi",
-  "ap_profile_hint": "Поиск слов и создание карточек в браузере используют этот профиль; при поиске здесь Fushi переключается на него",
+  "ap_profile_hint": "Поиск слов и создание карточек в браузере используют этот профиль; активный профиль Fushi не меняется",
   "ap_profile_follow_app": "Как в Fushi ({name})",
   "ap_profile_follow_app_plain": "Как в Fushi",
   "ap_profile_unavailable": "Список профилей недоступен: нет подключения к Fushi",

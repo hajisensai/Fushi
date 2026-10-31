@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "Otomatik güncelleme etkinleşmedi: chrome://extensions sayfasına gidip bu uzantıda “Yeniden yükle” düğmesine basın (şu an {local} → en son {remote})",
   "ap_update_unknown_build": "bilinmiyor",
   "ap_profile_label": "Fushi profili",
-  "ap_profile_hint": "Tarayıcıdaki sözlük aramaları ve kart oluşturma bu profili kullanır; burada arama yaptığınızda Fushi bu profile geçer",
+  "ap_profile_hint": "Tarayıcıdaki sözlük aramaları ve kart oluşturma bu profili kullanır; Fushi’deki etkin profil değişmez",
   "ap_profile_follow_app": "Fushi’yi izle ({name})",
   "ap_profile_follow_app_plain": "Fushi’yi izle",
   "ap_profile_unavailable": "Profil listesi alınamadı: Fushi bağlı değil",

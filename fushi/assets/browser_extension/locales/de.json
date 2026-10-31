@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "Automatisches Update wurde nicht wirksam: Gehe zu chrome://extensions und drücke bei dieser Erweiterung „Neu laden“ (aktuell {local} → neueste {remote})",
   "ap_update_unknown_build": "unbekannt",
   "ap_profile_label": "Fushi-Profil",
-  "ap_profile_hint": "Nachschlagen und Kartenerstellung im Browser nutzen dieses Profil; Fushi wechselt dorthin, wenn du hier nachschlägst",
+  "ap_profile_hint": "Nachschlagen und Kartenerstellung im Browser nutzen dieses Profil; das aktive Profil in Fushi bleibt unverändert",
   "ap_profile_follow_app": "Fushi folgen ({name})",
   "ap_profile_follow_app_plain": "Fushi folgen",
   "ap_profile_unavailable": "Profilliste nicht verfügbar: Fushi ist nicht verbunden",

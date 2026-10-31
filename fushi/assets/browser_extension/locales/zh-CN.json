@@ -379,7 +379,7 @@
   "ap_update_stale_detail": "自动更新未生效：请到 chrome://extensions 找到本扩展点「重新加载」（当前 {local} → 最新 {remote}）",
   "ap_update_unknown_build": "未知",
   "ap_profile_label": "Fushi 配置",
-  "ap_profile_hint": "浏览器里的查词与制卡使用这个配置；在这里查词时 Fushi 会切换到它",
+  "ap_profile_hint": "浏览器里的查词与制卡使用这个配置；不会切换 Fushi 当前的激活配置",
   "ap_profile_follow_app": "跟随 Fushi（{name}）",
   "ap_profile_follow_app_plain": "跟随 Fushi",
   "ap_profile_unavailable": "无法获取配置列表：未连接 Fushi",
