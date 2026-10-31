@@ -6,8 +6,9 @@
 //   不挡后面的提示（持久的 SnackBar 会把之后所有提示堵在队列里）。没点任何按钮 = 下次
 //   启动再问（攒下的几次合在一起）；「不用了」= 这批作废。
 // - 启动即闪退（[runCrashReportStartupGate]）：上次死在初始化完成之前，这次的初始化多半
-//   还会死、首页根本出不来，所以提示放在加载页上、**等用户选完再初始化**；那时数据库
-//   还没开，提交落在 [CrashReporter.spoolDir]，首页出来后并入反馈中心。
+//   还会死、首页根本出不来，所以提示放在加载页上、**等用户选完再初始化**（开着自动发送
+//   时不问，提交在后台跑、不拖住初始化）；那时数据库还没开，提交落在
+//   [CrashReporter.spoolDir]，首页出来后并入反馈中心。
 
 import 'dart:async';
 
@@ -383,13 +384,20 @@ FeedbackService crashReportSpoolService(CrashReporter reporter) =>
     );
 
 /// `AppModel.initialise()` 之前调：上次死在初始化完成之前、有该问的报告时，开着自动
-/// 发送就先发再初始化；否则在加载页显示提示、等用户选完（发送成功 / 不用了 / 失败后
-/// 跳过）再返回。其余情况立刻返回，交给首页出来后的 [offerCrashReportAfterStartup]。
+/// 发送就在后台开始提交、**立刻返回**（只做本机的事：这批连幂等键落盘，网络在后台跟
+/// 初始化并行跑，弱网下不拖住初始化、不触发加载看门狗）；否则在加载页显示提示、等用户
+/// 选完（发送成功 / 不用了 / 失败后跳过）再返回。其余情况立刻返回，交给首页出来后的
+/// [offerCrashReportAfterStartup]。
 ///
-/// [spoolService] 只给测试替换。
+/// 等用户选的这段时间在会话标记里记着（[PreviousExitLog.markAwaitingCrashReportDecision]）：
+/// 用户停在提示上直接把 app 关掉 / 杀掉，下次启动按用户结束处理，不再算一次启动即闪退。
+///
+/// [spoolService] / [markAwaitingDecision] 只给测试替换。
 Future<void> runCrashReportStartupGate(
   CrashReporter reporter, {
   FeedbackService? spoolService,
+  void Function(bool awaiting) markAwaitingDecision =
+      PreviousExitLog.markAwaitingCrashReportDecision,
 }) async {
   final CrashReportOffer? offer = reporter.currentOffer();
   if (offer == null || !offer.duringStartup || reporter.spoolDir == null) {
@@ -399,11 +407,7 @@ Future<void> runCrashReportStartupGate(
   final FeedbackService service =
       spoolService ?? crashReportSpoolService(reporter);
   if (reporter.autoSend) {
-    try {
-      await reporter.submit(service, crashReportDraftFor);
-    } on Object catch (e, st) {
-      ErrorLogService.instance.log('CrashReport.startup_auto_send', e, st);
-    }
+    reporter.submitInBackground(service, crashReportDraftFor);
     return;
   }
   final CrashReportStartupRequest request = CrashReportStartupRequest(offer, (
@@ -412,11 +416,13 @@ Future<void> runCrashReportStartupGate(
     if (always) reporter.setAutoSend(true);
     await reporter.submit(service, crashReportDraftFor);
   });
+  markAwaitingDecision(true);
   crashReportStartupPrompt.value = request;
   try {
     await request._done.future;
   } finally {
     crashReportStartupPrompt.value = null;
+    markAwaitingDecision(false);
   }
 }
 
