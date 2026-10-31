@@ -759,6 +759,7 @@
   "anki_sync_client_status_failed": "上次同步失败：$error",
   "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error",
   "anki_sync_client_status_last_sync": "上次同步：$time",
+  "anki_sync_client_status_rate_limit_expired": "上次同步被同步服务器限流，冷却已于 $time 结束，下次同步会重新尝试。",
   "anki_sync_client_status_rate_limited": "同步服务器限流了（请求过于频繁），Fushi 会在 $time 之后自动重试；在那之前卡片保留在本机。",
   "anki_sync_client_status_signed_in": "已登录：$user（$server）",
   "anki_sync_client_status_signed_out": "未登录",

@@ -759,6 +759,7 @@
   "anki_sync_client_status_failed": "Échec de la dernière synchronisation : $error",
   "anki_sync_client_status_failing": "$count carte(s) n'ont pas pu être écrites dans la collection et seront réessayées : $error",
   "anki_sync_client_status_last_sync": "Dernière synchronisation $time",
+  "anki_sync_client_status_rate_limit_expired": "The sync server rate-limited the last sync. The wait ended at $time; the next sync will try again.",
   "anki_sync_client_status_rate_limited": "The sync server is limiting requests (too many requests). Fushi will retry automatically after $time; your cards stay here until then.",
   "anki_sync_client_status_signed_in": "Connecté en tant que $user sur $server",
   "anki_sync_client_status_signed_out": "Non connecté",

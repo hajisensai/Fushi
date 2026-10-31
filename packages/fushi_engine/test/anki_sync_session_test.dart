@@ -370,6 +370,40 @@ void main() {
       expect(second.state.rateLimitedUntil, now + 20 * 60 * 1000);
     });
 
+    test('重启后第一次 refresh 就带出落盘的冷却（阶段 idle），同步成功后清掉', () async {
+      int now = 7000000;
+      final AnkiSyncSession first = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: const Duration(days: 1),
+        clock: () => now,
+      );
+      await first.signIn(username: 'u', password: 'pw');
+      await first.addNote(_note('猫'));
+      server.nextSync = 'rateLimited';
+      await expectLater(first.syncNow(), throwsA(anything));
+      final int until = now + 10 * 60 * 1000;
+      await first.close();
+
+      final AnkiSyncSession second = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => helper,
+        syncDelay: const Duration(days: 1),
+        clock: () => now,
+      );
+      addTearDown(second.close);
+      final AnkiSyncState s = await second.refresh();
+      expect(s.phase, AnkiSyncPhase.idle);
+      expect(s.rateLimitedUntil, until);
+
+      // 冷却过期了照样带出（界面据此改说「冷却已结束」）；同步成功才清掉。
+      now += 11 * 60 * 1000;
+      expect((await second.refresh()).rateLimitedUntil, until);
+      await second.syncNow();
+      expect(second.state.rateLimitedUntil, isNull);
+      expect((await second.refresh()).rateLimitedUntil, isNull);
+    });
+
     test('别的失败不显示成限流', () async {
       await session.signIn(username: 'u', password: 'pw');
       await session.addNote(_note('猫'));
