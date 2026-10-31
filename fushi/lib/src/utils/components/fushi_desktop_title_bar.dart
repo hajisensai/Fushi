@@ -146,9 +146,12 @@ class FushiDesktopTitleBar extends StatefulWidget {
     final bool nativeFullscreen =
         MacosFullscreenState.instance.isFullscreen.value;
     unawaited(
+      // 两个隐藏理由在原生全屏下都不成立：沉浸页标题行在原生全屏时随自绘顶栏
+      // 一起卸掉（hideFrame），它的「隐去」真值只在卸载帧末才被 dispose 清零；
+      // 这里直接排除，不依赖那一帧的先后。
       setMacOSTrafficLightsHidden(
         (_contentFullscreen.value && !nativeFullscreen) ||
-            _immersiveCaptionConcealed,
+            (_immersiveCaptionConcealed && !nativeFullscreen),
       ),
     );
   }
@@ -754,8 +757,22 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   /// 指针停在最顶边时的浮出倒计时；离开顶边即取消。
   Timer? _revealDwell;
 
+  /// 改显隐输入（[_shown] 的各项）都走这里：重建之外，把「标题行此刻隐去」
+  /// 同步给 macOS 红绿灯。平台消息在状态变化点发，不在 build 里发（build 可能
+  /// 因无关原因重跑，也不该带副作用）。
+  void _update(VoidCallback change) {
+    setState(change);
+    _syncConcealed();
+  }
+
+  /// 把 [_shown] 的当前真值推给 [FushiDesktopTitleBar] 的红绿灯显隐（值不变时
+  /// 那边直接返回，不重发平台消息）。
+  void _syncConcealed() {
+    FushiDesktopTitleBar._setImmersiveCaptionConcealed(!_shown);
+  }
+
   void _setHovered(bool value) {
-    if (_hovered != value) setState(() => _hovered = value);
+    if (_hovered != value) _update(() => _hovered = value);
   }
 
   void _cancelRevealDwell() {
@@ -801,7 +818,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   /// 带子内的触摸按下：浮出（不吃事件，页面顶端照常收到这次按下）。
   void _onBandPointerDown(PointerDownEvent event) {
     if (!widget.enabled || !_isHoverless(event.kind)) return;
-    if (!_touchRevealed) setState(() => _touchRevealed = true);
+    if (!_touchRevealed) _update(() => _touchRevealed = true);
   }
 
   /// 全局路由看所有按下：触摸落在带子外时收起。带子内的按下由
@@ -820,10 +837,10 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     if (box is! RenderBox || !box.hasSize) return;
     final Offset local = box.globalToLocal(event.position);
     if (box.size.contains(local)) return;
-    setState(() => _touchRevealed = false);
+    _update(() => _touchRevealed = false);
   }
 
-  void _onNativeMaxButton() => setState(() {});
+  void _onNativeMaxButton() => _update(() {});
 
   @override
   void initState() {
@@ -838,6 +855,8 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       _onNativeMaxButton,
     );
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
+    // 挂上即把初始显隐推给红绿灯（沉浸页从隐藏态开始）。
+    _syncConcealed();
   }
 
   @override
@@ -863,6 +882,9 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       _hovered = false;
       _touchRevealed = false;
     }
+    // enabled 翻转（普通页 ↔ 沉浸页）本身就改 [_shown]；框架随后会重建，
+    // 这里只同步红绿灯。
+    if (widget.enabled != oldWidget.enabled) _syncConcealed();
   }
 
   bool get _shown =>
@@ -884,8 +906,6 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   @override
   Widget build(BuildContext context) {
     final bool shown = _shown;
-    // 只改静态真值 + 发平台消息，不标脏任何 widget，build 里同步即可。
-    FushiDesktopTitleBar._setImmersiveCaptionConcealed(!shown);
     // translucent：带子只记触摸按下，不挡下面页面的命中（隐藏时页面顶端
     // 照常可点；显示时标题行自己的命中层在上面接管）。鼠标悬停走全局路由。
     return Listener(
@@ -895,7 +915,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
         canRequestFocus: false,
         skipTraversal: true,
         onFocusChange: (bool value) {
-          if (_focused != value) setState(() => _focused = value);
+          if (_focused != value) _update(() => _focused = value);
         },
         child: IgnorePointer(
           ignoring: !shown,
