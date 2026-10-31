@@ -100,11 +100,16 @@ class _FakeBackend implements SrsRwkvBackend {
     scores.clear();
   }
 
+  /// 给了就让 [lookupScores] 抛它（模拟 worker 崩了 / 已关）。
+  Error? lookupError;
+
   @override
   Future<RwkvScoreLookup> lookupScores(
     Int64List cardIds,
     Uint64List versions,
   ) async {
+    final Error? error = lookupError;
+    if (error != null) throw error;
     final Float32List out = Float32List(cardIds.length);
     final Uint8List found = Uint8List(cardIds.length);
     for (int i = 0; i < cardIds.length; i++) {
@@ -591,6 +596,52 @@ void main() {
       await again.close();
     });
 
+    test('检查点坏了：删掉它、落到全量重建，不转「出错」', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(3);
+      await f.graduate(cards);
+      final _FakeBackend first = _FakeBackend();
+      final SrsRwkvService service = f.service(first);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      final int day0 = f.clock[0];
+      f.advance(kDay);
+      await f.store.answer(cards[0], 3);
+      expect(await service.refresh(), isTrue);
+      await service.close();
+      List<File> checkpoints() => Directory('${f.dir.path}/state')
+          .listSync()
+          .whereType<File>()
+          .where((File e) => e.path.contains('.cp-'))
+          .toList();
+      final File cp = checkpoints().singleWhere(
+        (File e) => e.path.endsWith('.snap'),
+      );
+      // 元数据完好、快照本体写坏（截断 / 磁盘错误）：只有 restore 时才发现。
+      cp.writeAsBytesSync(<int>[0xff, 0x00, 0x13]);
+
+      final _FakeBackend second = _FakeBackend();
+      final SrsRwkvService again = f.service(second);
+      f.store.rwkv = again;
+      await again.start();
+      await _settled(again);
+      expect((second.restores, second.resets), (1, 0));
+
+      // 晚到的评分落在检查点之后：撤销日志够不着 → 试检查点（坏的）→ 全量重建。
+      f.clock[0] = day0 + kDay ~/ 2;
+      await f.store.answer(cards[1], 3);
+      await again.refresh();
+      await _settled(again);
+      expect(again.status.phase, SrsRwkvPhase.ready);
+      expect(second.restores, 2, reason: 'tried the corrupt checkpoint');
+      expect(second.resets, 1, reason: 'fell through to a full rebuild');
+      expect(second.replayedCards, await _fullReplayOrder(f));
+      expect(cp.existsSync(), isFalse, reason: 'corrupt checkpoint deleted');
+      expect(File('${cp.path}.json').existsSync(), isFalse);
+      await again.close();
+    });
+
     test('删过日志（指纹的行数对不上）：全量重建，期间「准备中」', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(4);
@@ -761,6 +812,121 @@ void main() {
         expect(s!.next, isNull);
         expect(s.rwkvPending, isTrue);
         expect(s.summary.reviewCount, 0);
+        // 牌组列表 / 首页同一口径：0 不是「没有到期」，行上标 rwkvPending（界面显示「准备中」）。
+        final SrsDeckSummary row = (await f.store.deckSummaries()).singleWhere(
+          (SrsDeckSummary d) => d.deck.id == f.store.defaultDeckId,
+        );
+        expect(row.reviewCount, 0);
+        expect(row.rwkvPending, isTrue);
+        expect(
+          (await f.store.deckSummary(f.store.defaultDeckId))!.rwkvPending,
+          isTrue,
+        );
+        await service.close();
+      },
+    );
+
+    test('牌组列表的 rwkvPending 只标子树里有 RWKV 牌组的行；就绪后清掉', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(2);
+      await f.graduate(cards);
+      final String fsrsDeck = await f.store.createDeck('FSRS only');
+      await f.store.editFields(SrsEntityKind.deck, fsrsDeck, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': false,
+        },
+      });
+      final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
+      final SrsRwkvService service = f.service(backend);
+      f.store.rwkv = service;
+      f.advance(kDay);
+      Future<Map<String, SrsDeckSummary>> read() async =>
+          <String, SrsDeckSummary>{
+            for (final SrsDeckSummary d in await f.store.deckSummaries())
+              d.deck.id: d,
+          };
+      // 还没准备好（这次排队触发准备）：RWKV 的默认牌组标「准备中」，纯 FSRS 牌组不标。
+      Map<String, SrsDeckSummary> rows = await read();
+      expect(rows[f.store.defaultDeckId]!.rwkvPending, isTrue);
+      expect(rows[f.store.defaultDeckId]!.reviewCount, 0);
+      expect(rows[fsrsDeck]!.rwkvPending, isFalse);
+      await _settled(service);
+      rows = await read();
+      expect(rows[f.store.defaultDeckId]!.rwkvPending, isFalse);
+      expect(rows[f.store.defaultDeckId]!.reviewCount, 2);
+      await service.close();
+    });
+
+    test(
+      '已就绪时打分失败（worker 崩了）：转「出错」而不是静默 pending，丢掉后端；重试重开 worker 回到就绪',
+      () async {
+        final _Fixture f = await _Fixture.create();
+        final List<String> cards = await f.cards(2);
+        await f.graduate(cards);
+        final _FakeBackend first = _FakeBackend()..defaultR = 0.1;
+        final _FakeBackend second = _FakeBackend()..defaultR = 0.1;
+        final List<_FakeBackend> opened = <_FakeBackend>[];
+        final List<_FakeBackend> pool = <_FakeBackend>[first, second];
+        final SrsRwkvService service = SrsRwkvService(
+          store: f.store,
+          models: f.models(),
+          snapshotDir: Directory('${f.dir.path}/state'),
+          openBackend: (File weights) async {
+            final _FakeBackend b = pool.removeAt(0);
+            opened.add(b);
+            return b;
+          },
+        );
+        f.store.rwkv = service;
+        await service.start();
+        await _settled(service);
+        f.advance(kDay);
+        first.lookupError = StateError('worker exited');
+
+        final SrsStudyState? s = await f.store.studyState(
+          f.store.defaultDeckId,
+        );
+        expect(s!.next, isNull);
+        expect(s.rwkvPending, isTrue);
+        // 不能留在「就绪」：调用方等的「就绪」不会再来。
+        expect(service.ready, isFalse);
+        expect(service.status.phase, SrsRwkvPhase.failed);
+        expect(service.status.error, isA<StateError>());
+        expect(first.closed, isTrue, reason: 'the broken backend is discarded');
+
+        // 设置 / 复习页的「重试」：重新打开 worker，从快照恢复，回到就绪、照常出卡。
+        await service.start(force: true);
+        await _settled(service);
+        expect(opened, <_FakeBackend>[first, second]);
+        expect(second.restores, 1, reason: 'restored from the saved snapshot');
+        expect(await f.store.nextCard(f.store.defaultDeckId), isNotNull);
+        await service.close();
+      },
+    );
+
+    test(
+      '无头宿主（没装配 RWKV 运行时）：RWKV 牌组按存下的 FSRS-7 到期日出，日志 alg 记 FSRS-7；装配后才记 rwkv',
+      () async {
+        final _Fixture f = await _Fixture.create();
+        final List<String> cards = await f.cards(1);
+        expect(f.store.rwkv, isNull);
+        final SrsReviewLog graduated = await f.store.answer(cards.single, 4);
+        expect(graduated.algorithm, SrsAlgorithm.fsrs7.wire);
+        await f.advancePastDue(cards.single);
+        expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
+        final SrsAnswerPreview headless = await f.store.preview(cards.single);
+        expect(headless.algorithm, SrsAlgorithm.fsrs7);
+        final SrsReviewLog log = await f.store.answer(cards.single, 3);
+        expect(log.algorithm, SrsAlgorithm.fsrs7.wire);
+
+        final _FakeBackend backend = _FakeBackend();
+        final SrsRwkvService service = f.service(backend);
+        f.store.rwkv = service;
+        expect(
+          (await f.store.preview(cards.single)).algorithm,
+          SrsAlgorithm.rwkv,
+        );
         await service.close();
       },
     );

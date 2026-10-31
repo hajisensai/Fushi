@@ -105,6 +105,7 @@ class SrsDeckSummary {
     required this.newBudget,
     required this.totalCards,
     this.parentId,
+    this.rwkvPending = false,
   });
 
   final SrsDeckView deck;
@@ -118,6 +119,10 @@ class SrsDeckSummary {
   final int reviewCount;
   final SrsNewCardBudget newBudget;
   final int totalCards;
+
+  /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没算进
+  /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
+  final bool rwkvPending;
 }
 
 /// 复习页一张卡的全部信息。
@@ -3121,7 +3126,7 @@ class SrsDbStore implements SrsSync2Host {
           ),
       }),
       memoryBefore: SrsMemory.fromJson(raw.r['memoryBefore']),
-      algorithm: config.algorithm.usesRwkv
+      algorithm: _queuesByRwkv(config)
           ? SrsAlgorithm.rwkv
           : config.algorithm.memoryAlgorithm,
       params: <double>[
@@ -3326,7 +3331,12 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内核的一行计数 `[新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因]` → 摘要。内核与 Dart 的牌组树
   /// 来自同一份数据；读的间隙恰好新建的牌组内核那边还没有（没有卡），按零计。
-  SrsDeckSummary _summaryFrom(SrsDeckView d, SrsDeckTree tree, Object? row) {
+  SrsDeckSummary _summaryFrom(
+    SrsDeckView d,
+    SrsDeckTree tree,
+    Object? row, {
+    Set<String> rwkvPendingDecks = const <String>{},
+  }) {
     final List<Object?> c = (row as List?) ?? const <Object?>[];
     int at(int i, int fallback) =>
         (c.length > i ? c[i] as int? : null) ?? fallback;
@@ -3348,7 +3358,23 @@ class SrsDbStore implements SrsSync2Host {
             : SrsNewCardBudgetReason.values.byName(reason),
       ),
       totalCards: at(3, 0),
+      rwkvPending:
+          rwkvPendingDecks.isNotEmpty &&
+          tree.subtree(d.id).any(rwkvPendingDecks.contains),
     );
+  }
+
+  /// 排队请求（[_studyRequest]）里因 RWKV 没准备好而一张复习卡都没交的 RWKV 牌组（[_instantInput] 的 `pending`）。
+  static Set<String> _rwkvPendingDecks(Map<String, Object?> request) {
+    final Map<Object?, Object?>? rw = request['rwkv'] as Map<Object?, Object?>?;
+    if (rw == null || rw['pending'] != true) return const <String>{};
+    return <String>{
+      for (final Object? d
+          in (rw['decks'] as Map<Object?, Object?>? ??
+                  const <Object?, Object?>{})
+              .keys)
+        d! as String,
+    };
   }
 
   SrsStudyState? _studyStateOf(
@@ -3361,10 +3387,16 @@ class SrsDbStore implements SrsSync2Host {
     final Map<Object?, Object?>? counts = r['counts'] as Map<Object?, Object?>?;
     if (d == null || counts == null) return null;
     return SrsStudyState(
-      summary: _summaryFrom(d, tree, counts[deckId]),
+      summary: _summaryFrom(
+        d,
+        tree,
+        counts[deckId],
+        rwkvPendingDecks: request == null
+            ? const <String>{}
+            : _rwkvPendingDecks(request),
+      ),
       next: r['next'] as String?,
       after: r['after'] as String?,
-      rwkvPending: (request?['rwkv'] as Map?)?['pending'] == true,
     );
   }
 
@@ -3388,8 +3420,10 @@ class SrsDbStore implements SrsSync2Host {
   /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数（一次排队命令）。
   Future<List<SrsDeckSummary>> deckSummaries() async {
     final SrsDeckTree tree = await deckTree();
+    final Map<String, Object?> request = await _studyRequest(tree, null);
+    final Set<String> pending = _rwkvPendingDecks(request);
     final Map<Object?, Object?> counts =
-        ((await _sync2(await _studyRequest(tree, null)))['counts'] as Map?) ??
+        ((await _sync2(request))['counts'] as Map?) ??
         const <Object?, Object?>{};
     final Map<String?, List<SrsDeckView>> children =
         <String?, List<SrsDeckView>>{};
@@ -3404,7 +3438,7 @@ class SrsDbStore implements SrsSync2Host {
       final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
         ..sort(SrsDeckView.compareSiblings);
       for (final SrsDeckView d in level) {
-        out.add(_summaryFrom(d, tree, counts[d.id]));
+        out.add(_summaryFrom(d, tree, counts[d.id], rwkvPendingDecks: pending));
         visit(d.id);
       }
     }
@@ -3418,10 +3452,12 @@ class SrsDbStore implements SrsSync2Host {
   Future<SrsDeckSummary?> deckSummary(String deckId) async {
     final SrsDeckTree tree = await deckTree();
     if (tree[deckId] == null) return null;
+    final Map<String, Object?> request = await _studyRequest(tree, deckId);
     return _studyStateOf(
-      await _sync2(await _studyRequest(tree, deckId)),
+      await _sync2(request),
       tree,
       deckId,
+      request: request,
     )?.summary;
   }
 
@@ -3644,10 +3680,16 @@ class SrsDbStore implements SrsSync2Host {
     return <String, double>{
       for (final String d in decks)
         if (_schedulingConfigIn(tree, d) case final SrsSchedulingConfig c
-            when c.algorithm.usesRwkv)
+            when _queuesByRwkv(c))
           d: c.desiredRetention,
     };
   }
+
+  /// 按 [config] 排程的牌组在这个宿主上是不是由 RWKV-Instant 排队：算法是 RWKV **且**宿主装配了 RWKV 运行时
+  /// （[rwkv]）。没有运行时的宿主（无头服务端 / CLI）上 RWKV 牌组照存下的 FSRS-7 到期日排队（[_instantInput]
+  /// 返回 null），这时评分日志的 `alg` 也必须是 FSRS-7（[_previewOf]）——日志记的是实际排它的算法。
+  bool _queuesByRwkv(SrsSchedulingConfig config) =>
+      rwkv != null && config.algorithm.usesRwkv;
 
   /// 这些牌组里可能有按 RWKV-Instant 排队的（有 RWKV 服务且有 RWKV 牌组）。
   bool _instantPossible(SrsDeckTree tree, Iterable<String> decks) =>
@@ -3710,7 +3752,14 @@ class SrsDbStore implements SrsSync2Host {
       <SrsRwkvCandidate>[for (final _RwkvCandidate r in rows) r.card],
       nowMs: nowMs,
     );
-    if (scores == null || scores.length != rows.length) return pending;
+    if (scores == null) return pending;
+    if (scores.length != rows.length) {
+      // 违反 [SrsRwkvScheduling.instantRetrievability] 的契约（与候选同序同长）：不是「没准备好」，当成
+      // pending 的话复习页会一直等一个已经来过的「就绪」。
+      throw StateError(
+        'SrsDbStore: RWKV returned ${scores.length} scores for ${rows.length} cards',
+      );
+    }
     final bool anyMinimum = queueOf.values.any(
       (SrsRwkvQueueSettings q) => q.minReviewsPerDay > 0,
     );
@@ -4784,7 +4833,6 @@ class SrsStudyState {
     required this.summary,
     required this.next,
     required this.after,
-    this.rwkvPending = false,
   });
 
   final SrsDeckSummary summary;
@@ -4796,8 +4844,8 @@ class SrsStudyState {
   final String? after;
 
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没出，等就绪后
-  /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。
-  final bool rwkvPending;
+  /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。与 [summary] 的同名标志同源。
+  bool get rwkvPending => summary.rwkvPending;
 }
 
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
