@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -87,7 +88,7 @@ void main() {
     ).readAsStringSync();
     expect(
       clipper,
-      contains('playOnce: playOnce ?? miningAnimatedPlayOnceReader()'),
+      contains('playOnce: playOnce ?? resolveMiningAnimatedPlayOnce()'),
       reason: 'extractClipGifViaFfmpeg 没读「动图只播放一次」偏好',
     );
     expect(
@@ -99,5 +100,30 @@ void main() {
       File('lib/src/models/preferences_repository.dart').readAsStringSync(),
       contains('miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;'),
     );
+  });
+
+  // 反馈 biLEesNqWb：浏览器扩展按所选（非激活）配置制卡时，「动图只播一次」取那份配置，
+  // 经 zone 覆盖传到 IO 层；zone 外仍读进程级偏好读取器。
+  test('zone 覆盖优先于进程级读取器，zone 外不变', () {
+    final bool Function() saved = miningAnimatedPlayOnceReader;
+    addTearDown(() => miningAnimatedPlayOnceReader = saved);
+    miningAnimatedPlayOnceReader = () => false;
+    expect(resolveMiningAnimatedPlayOnce(), isFalse);
+    expect(
+      runZoned(
+        resolveMiningAnimatedPlayOnce,
+        zoneValues: <Object, Object>{kMiningAnimatedPlayOnceZoneKey: true},
+      ),
+      isTrue,
+    );
+    miningAnimatedPlayOnceReader = () => true;
+    expect(
+      runZoned(
+        resolveMiningAnimatedPlayOnce,
+        zoneValues: <Object, Object>{kMiningAnimatedPlayOnceZoneKey: false},
+      ),
+      isFalse,
+    );
+    expect(resolveMiningAnimatedPlayOnce(), isTrue);
   });
 }
