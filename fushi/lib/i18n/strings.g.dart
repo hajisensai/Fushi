@@ -35269,7 +35269,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get stat_vs_prev => 'مقارنة بـ 14 يوماً السابقة';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'الأسبوع الماضي';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -61143,7 +61143,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs. vorige 14T';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Letzte Woche';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -87134,7 +87134,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs 14d ant.';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Última semana';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -113213,7 +113213,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs 14j préc.';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Semaine passée';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -139054,7 +139054,7 @@ class _StringsId extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs 14h sebelumnya';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Seminggu terakhir';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -164939,7 +164939,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs 14g precedenti';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Ultima settimana';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -240638,7 +240638,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs vorige 14d';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Afgelopen week';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -266554,7 +266554,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get stat_vs_prev => 'vs 14d anteriores';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Última semana';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -292446,7 +292446,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get stat_vs_prev => 'к пред. 14д';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Последняя неделя';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -318087,7 +318087,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get stat_vs_prev => 'เทียบกับ 14 วันก่อน';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'สัปดาห์ที่ผ่านมา';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -343800,7 +343800,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get stat_vs_prev => 'önceki 14g ile karş.';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Geçen hafta';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -369505,7 +369505,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get stat_vs_prev => 'so với 14n trước';
   @override
-  String get stat_week_past => 'Past week';
+  String get stat_week_past => 'Tuần qua';
   @override
   String get stat_weighted_avg_speed => 'Weighted Avg';
   @override
@@ -461999,7 +461999,7 @@ extension on _StringsAr {
       case 'stat_vs_prev':
         return 'مقارنة بـ 14 يوماً السابقة';
       case 'stat_week_past':
-        return 'Past week';
+        return 'الأسبوع الماضي';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -483976,7 +483976,7 @@ extension on _StringsDe {
       case 'stat_vs_prev':
         return 'vs. vorige 14T';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Letzte Woche';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -505954,7 +505954,7 @@ extension on _StringsEs {
       case 'stat_vs_prev':
         return 'vs 14d ant.';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Última semana';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -527941,7 +527941,7 @@ extension on _StringsFr {
       case 'stat_vs_prev':
         return 'vs 14j préc.';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Semaine passée';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -549892,7 +549892,7 @@ extension on _StringsId {
       case 'stat_vs_prev':
         return 'vs 14h sebelumnya';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Seminggu terakhir';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -571850,7 +571850,7 @@ extension on _StringsIt {
       case 'stat_vs_prev':
         return 'vs 14g precedenti';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Ultima settimana';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -637514,7 +637514,7 @@ extension on _StringsNl {
       case 'stat_vs_prev':
         return 'vs vorige 14d';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Afgelopen week';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -659474,7 +659474,7 @@ extension on _StringsPtBr {
       case 'stat_vs_prev':
         return 'vs 14d anteriores';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Última semana';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -681440,7 +681440,7 @@ extension on _StringsRu {
       case 'stat_vs_prev':
         return 'к пред. 14д';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Последняя неделя';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -703367,7 +703367,7 @@ extension on _StringsTh {
       case 'stat_vs_prev':
         return 'เทียบกับ 14 วันก่อน';
       case 'stat_week_past':
-        return 'Past week';
+        return 'สัปดาห์ที่ผ่านมา';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -725310,7 +725310,7 @@ extension on _StringsTr {
       case 'stat_vs_prev':
         return 'önceki 14g ile karş.';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Geçen hafta';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
@@ -747251,7 +747251,7 @@ extension on _StringsVi {
       case 'stat_vs_prev':
         return 'so với 14n trước';
       case 'stat_week_past':
-        return 'Past week';
+        return 'Tuần qua';
       case 'stat_weighted_avg_speed':
         return 'Weighted Avg';
       case 'stop':
