@@ -69,6 +69,7 @@ import 'package:fushi/src/media/collections/collection_ai_order.dart'
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
@@ -4377,15 +4378,29 @@ class AppModel with ChangeNotifier {
       }
       // TODO-861③：启动 check-due 词典自动更新（前台、静默、不弹错）。fire-and-forget，
       // 失败自吞 + 记日志，绝不阻塞 / 中断 app init（守卫见 maybeAutoUpdateDictionaries）。
-      unawaited(
-        maybeAutoUpdateDictionaries().catchError((Object e, StackTrace s) {
+      //
+      // BUG-3887 续：先接手上一个进程留下的在途词典下载（iOS 进程被系统回收），再跑
+      // 自动更新——两者共用 controller 的互斥锁，自动更新先抢到锁会让接手白等一轮。
+      unawaited(() async {
+        try {
+          await resumeInterruptedDictionaryDownloads();
+        } catch (e, s) {
+          ErrorLogService.instance.log(
+            'AppModel.resumeInterruptedDictionaryDownloads',
+            e,
+            s,
+          );
+        }
+        try {
+          await maybeAutoUpdateDictionaries();
+        } catch (e, s) {
           ErrorLogService.instance.log(
             'AppModel.maybeAutoUpdateDictionaries',
             e,
             s,
           );
-        }),
-      );
+        }
+      }());
       // 番剧下载：启动 qb 完成监听 + 自动入库（fire-and-forget；未配置 qb 时每
       // tick 直接返回，无网络开销，绝不阻塞/中断 init）。
       // 模块门（downloads）：番剧下载完成监听是「下载中心」专属后台（计划仓储 +
@@ -8279,11 +8294,22 @@ class AppModel with ChangeNotifier {
       job.markDownloadPhase();
       job.progress.value = 0;
       job.message.value = t.dict_update_updating(name: dictionary.name);
+      final Map<String, String> sourceOverride = remote.updatedSourceMetadata(
+        localDownloadUrl: dictionary.downloadUrl,
+        localIndexUrl: dictionary.indexUrl,
+      );
       final File zipFile = await DictionaryDownloader.download(
         url: remote.resolveDownloadUrl(dictionary.downloadUrl),
         tempDir: tempDir,
         progressNotifier: job.progress,
         cancelToken: job.cancelToken,
+        // BUG-3887 续：iOS 进程被回收后新进程据此接着下、按同一配方重导。
+        handoffPayload: DictionaryImportRecipe.update(
+          name: dictionary.effectiveDisplayName,
+          replaceTargetName: dictionary.name,
+          sourceOverride: sourceOverride,
+          forceReplaceExisting: true,
+        ).toPayload(),
       );
       job.markImportPhase();
       job.progress.value = 0;
@@ -8295,14 +8321,65 @@ class AppModel with ChangeNotifier {
         // BUG-1595：自动更新替换的就是这本——远端包哪怕改了标题（title 携带版本
         // 号等）也不允许按 title 误判成新增、旧本残留。
         replaceTarget: dictionary,
-        sourceOverride: remote.updatedSourceMetadata(
-          localDownloadUrl: dictionary.downloadUrl,
-          localIndexUrl: dictionary.indexUrl,
-        ),
+        sourceOverride: sourceOverride,
       );
     } finally {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     }
+  }
+
+  /// BUG-3887 续：接手上一个进程留下的在途词典下载（iOS 系统后台会话；其余平台没有
+  /// [dictionaryDownloadRecovery]，直接返回）。
+  ///
+  /// 进程是被系统回收的，传输却还在守护进程里跑（或已经下完落盘）：在这里接回来，
+  /// 按随下载持久化的 [DictionaryImportRecipe] 走与原流程同一条 [importDictionary]。
+  /// 导入要等 app 回到前台再跑——系统把 app 唤醒到后台只给几十秒，导入「导新 → 删旧
+  /// → publish」中途被杀会把旧词典删掉。
+  Future<void> resumeInterruptedDictionaryDownloads() async {
+    final DictionaryDownloadRecovery? recovery = dictionaryDownloadRecovery;
+    if (recovery == null) return;
+    final List<AdoptedDictionaryDownload> adopted = await recovery();
+    if (adopted.isEmpty) return;
+    await _untilAppResumed();
+    await dictionaryDownloadController.resumeAdoptedDownloads(
+      adopted: adopted,
+      resolve: (DictionaryDownloadHandoff handoff) =>
+          resumableDictionaryImportFor(
+            handoff: handoff,
+            installed: dictionaries,
+            importer:
+                ({
+                  required File file,
+                  required ValueNotifier<String> progressNotifier,
+                  required DictionaryImportRecipe recipe,
+                  required Dictionary? replaceTarget,
+                }) => importDictionary(
+                  file: file,
+                  progressNotifier: progressNotifier,
+                  onImportSuccess: () {},
+                  forceReplaceExisting: recipe.forceReplaceExisting,
+                  sourceOverride: recipe.sourceOverride,
+                  replaceTarget: replaceTarget,
+                ),
+          ),
+    );
+  }
+
+  /// 等 app 处于前台（已在前台立即返回）。
+  static Future<void> _untilAppResumed() {
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) {
+      return Future<void>.value();
+    }
+    final Completer<void> resumed = Completer<void>();
+    late final AppLifecycleListener listener;
+    listener = AppLifecycleListener(
+      onResume: () {
+        listener.dispose();
+        if (!resumed.isCompleted) resumed.complete();
+      },
+    );
+    return resumed.future;
   }
 
   /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
