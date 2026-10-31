@@ -623,6 +623,9 @@ void main() {
     );
     expect(moveButton().enabled, isFalse);
 
+    // 第六行在语言组标题之下，可能落在首屏之外：先滚进视口再点。
+    await tester.ensureVisible(find.text('Dict 6'));
+    await _settle(tester);
     await tester.tap(find.text('Dict 6'));
     await _settle(tester);
     expect(moveButton().enabled, isTrue);
@@ -735,9 +738,20 @@ void main() {
           if (dictionaryLanguageGroupOf(d) == 'en') d.name,
       ];
       expect(en, <String>['OALDPE', 'JMdict']);
+      // 按行尾开关定位列表行（右侧详情里也有一个 JMdict 标题）。
       expect(
-        tester.getTopLeft(find.text('JMdict')).dy,
-        greaterThan(tester.getTopLeft(find.text('OALDPE')).dy),
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey<String>('dict-row-switch-JMdict')),
+            )
+            .dy,
+        greaterThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey<String>('dict-row-switch-OALDPE')),
+              )
+              .dy,
+        ),
       );
     });
   });
