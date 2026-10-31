@@ -57,7 +57,14 @@ pub use rwkv::{
 /// `frwkv_runtime_next_intervals`。
 /// 3：撤销日志（`frwkv_runtime_append` / `frwkv_runtime_unappend`）与常驻分数表
 /// （`frwkv_runtime_scores_clear` / `_lookup` / `_update`）。
-pub const ABI_VERSION: i32 = 4;
+/// 4：撤销日志条目带评分时刻（`frwkv_runtime_append` 多一个 `ats` 参数）与按时刻回退
+/// （`frwkv_runtime_rewind_from`）。
+/// 5：快照直接走文件的流式接口（`frwkv_runtime_snapshot_to_file` /
+/// `frwkv_runtime_restore_from_file`），文件格式与 `frwkv_runtime_snapshot` 的字节逐位相同。
+pub const ABI_VERSION: i32 = 5;
+
+#[cfg(test)]
+mod snapshot_tests;
 
 /// 撤销日志最多留多少字节（小模型一条约 54 KB：卡 / 笔记两份紧凑状态 + 牌组 / 预设 / 全局三份
 /// f32 状态，32 MB 约 600 条）。超出时丢最早的条目；退得比这更深的（[RwkvRuntime::rewind_from]
@@ -224,6 +231,20 @@ impl Engine {
         match self {
             Self::Large(inference) => inference.restore_snapshot(bytes),
             Self::Small(inference) => inference.restore_snapshot(bytes),
+        }
+    }
+
+    fn write_snapshot(&self, out: &mut impl io::Write) -> io::Result<()> {
+        match self {
+            Self::Large(inference) => inference.write_snapshot(out),
+            Self::Small(inference) => inference.write_snapshot(out),
+        }
+    }
+
+    fn read_snapshot(&mut self, input: &mut impl io::Read, len: u64) -> io::Result<()> {
+        match self {
+            Self::Large(inference) => inference.read_snapshot(input, len),
+            Self::Small(inference) => inference.read_snapshot(input, len),
         }
     }
 
@@ -569,6 +590,34 @@ impl RwkvRuntime {
     /// 用快照替换当前状态（同时解除 poisoned）。失败时状态不变。
     pub fn restore(&mut self, bytes: &[u8]) -> Result<(), RwkvError> {
         self.inference.restore_snapshot(bytes)?;
+        self.poisoned = false;
+        self.clear_journal();
+        self.scores.clear();
+        Ok(())
+    }
+
+    /// Writes the existing lossless snapshot format, flushes it and syncs it to
+    /// disk. Use a temporary path and promote it only after success: I/O errors
+    /// can leave a partial file, but never change the runtime.
+    pub fn snapshot_to_file(&self, path: &std::path::Path) -> Result<(), RwkvError> {
+        use std::io::Write;
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        let mut out = io::BufWriter::with_capacity(256 * 1024, std::fs::File::create(path)?);
+        self.inference.write_snapshot(&mut out)?;
+        out.flush()?;
+        out.get_ref().sync_all()?;
+        Ok(())
+    }
+
+    /// Restores a bounded file without materializing it in the caller. Format
+    /// and I/O failures preserve state, poison flag, undo journal and scores.
+    pub fn restore_from_file(&mut self, path: &std::path::Path) -> Result<(), RwkvError> {
+        let file = std::fs::File::open(path)?;
+        let len = file.metadata()?.len();
+        let mut input = io::BufReader::with_capacity(256 * 1024, file);
+        self.inference.read_snapshot(&mut input, len)?;
         self.poisoned = false;
         self.clear_journal();
         self.scores.clear();
@@ -1639,6 +1688,43 @@ pub unsafe extern "C" fn frwkv_runtime_restore(
         let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
         let bytes = slice_or_empty(bytes, len).ok_or_else(|| argument("null snapshot"))?;
         runtime.0.restore(bytes).map_err(rwkv_error)
+    })
+}
+
+/// Writes a lossless snapshot to a UTF-8 path (no NUL terminator), flushes and
+/// syncs it. The caller owns temporary-file promotion after success.
+///
+/// # Safety
+/// `runtime` is valid; `path` points to `path_len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_snapshot_to_file(
+    runtime: *const FrwkvRuntime,
+    path: *const u8,
+    path_len: usize,
+) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_ref().ok_or_else(|| argument("null runtime"))?;
+        let path = slice_or_empty(path, path_len).ok_or_else(|| argument("null path"))?;
+        let path = std::str::from_utf8(path).map_err(|_| argument("path must be UTF-8"))?;
+        runtime.0.snapshot_to_file(std::path::Path::new(path)).map_err(rwkv_error)
+    })
+}
+
+/// Restores a lossless snapshot from a UTF-8 path; errors preserve the runtime.
+///
+/// # Safety
+/// `runtime` is valid; `path` points to `path_len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_restore_from_file(
+    runtime: *mut FrwkvRuntime,
+    path: *const u8,
+    path_len: usize,
+) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let path = slice_or_empty(path, path_len).ok_or_else(|| argument("null path"))?;
+        let path = std::str::from_utf8(path).map_err(|_| argument("path must be UTF-8"))?;
+        runtime.0.restore_from_file(std::path::Path::new(path)).map_err(rwkv_error)
     })
 }
 

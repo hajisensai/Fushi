@@ -209,6 +209,14 @@ class RwkvWorker {
     TransferableTypedData.fromList(<Uint8List>[snapshot]),
   );
 
+  /// 后台原生流式保存快照，跨 isolate 只传文件路径。
+  Future<void> snapshotToFile(String path) =>
+      _call<void>(_Op.snapshotToFile, path);
+
+  /// 后台原生流式恢复快照；失败时保留原状态。
+  Future<void> restoreFromFile(String path) =>
+      _call<void>(_Op.restoreFromFile, path);
+
   Future<void> reset() => _call<void>(_Op.reset);
 
   Future<RwkvStats> stats() async {
@@ -257,6 +265,8 @@ enum _Op {
   nextIntervals,
   snapshot,
   restore,
+  snapshotToFile,
+  restoreFromFile,
   reset,
   stats,
   close,
@@ -455,6 +465,12 @@ Object? _run(RwkvNativeRuntime runtime, _Command command) {
             .materialize()
             .asUint8List(),
       );
+      return null;
+    case _Op.snapshotToFile:
+      runtime.snapshotToFile(command.argument! as String);
+      return null;
+    case _Op.restoreFromFile:
+      runtime.restoreFromFile(command.argument! as String);
       return null;
     case _Op.reset:
       runtime.reset();
