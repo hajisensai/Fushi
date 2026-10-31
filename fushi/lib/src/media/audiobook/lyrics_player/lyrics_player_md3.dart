@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout_editor.dart'
+    show lyricsControlItemIcon, lyricsControlItemLabel;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
@@ -22,8 +24,12 @@ import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+
+part 'lyrics_player_md3_modern.part.dart';
 
 // MD3（Material 3 Expressive）歌词播放页。
 //
@@ -248,7 +254,13 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
 
   @override
   Widget buildBackground(BuildContext context, LyricsPlayerData data) =>
-      FushiMeshBackdrop(plateRect: lyricsShellMd3PlateResolver(mirrorProgress));
+      FushiMeshBackdrop(
+        plateRect: lyricsShellMd3PlateResolver(mirrorProgress),
+        // 歌词模式背景静止（2026-10-31 用户拍板：原 30fps 常驻流动是发热源），
+        // 只在配色变化时交叉过渡一次。
+        animate: false,
+        colorTransition: true,
+      );
 
   @override
   Widget buildChrome(
@@ -1042,12 +1054,16 @@ class _SecondaryActions extends StatelessWidget {
     required this.callbacks,
     required this.items,
     required this.wide,
+    this.padding = const EdgeInsets.all(4),
   });
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
   final List<LyricsControlItem> items;
   final bool wide;
+
+  /// 胶囊内边距。新版窄屏展开卡传 0：胶囊外高 = 48（按钮命中区），设计稿 v2。
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
@@ -1057,7 +1073,7 @@ class _SecondaryActions extends StatelessWidget {
         shape: const StadiumBorder(),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(4),
+        padding: padding,
         child: FushiButtonGroup(
           spacing: 2,
           children: <Widget>[
@@ -1249,18 +1265,34 @@ class _TypographyButton extends StatelessWidget {
 
 /// ⋯ 更多：把按钮的全局矩形与 context 交给页面锚定菜单（菜单从它取主题）。
 class _MoreButton extends StatelessWidget {
-  const _MoreButton({required this.onMore});
+  const _MoreButton({
+    required this.onMore,
+    this.collapsedItems = const <LyricsControlItem>[],
+  });
 
   final ValueChanged<LyricsMenuAnchor> onMore;
+
+  /// 新版宽屏右岛收进 ⋯ 的按钮（交给页面排在菜单最前）。
+  final List<LyricsControlItem> collapsedItems;
 
   @override
   Widget build(BuildContext context) {
     return Builder(
+      key: const ValueKey<String>('lyrics_more_button'),
       builder: (BuildContext anchor) => FushiIconButtonControl(
         tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
         onPressed: () {
           final LyricsMenuAnchor? at = _anchorOf(anchor);
-          if (at != null) onMore(at);
+          if (at == null) return;
+          onMore(
+            collapsedItems.isEmpty
+                ? at
+                : LyricsMenuAnchor(
+                    rect: at.rect,
+                    context: at.context,
+                    collapsedItems: collapsedItems,
+                  ),
+          );
         },
         icon: const FushiIcon(FushiIcons.moreHoriz),
       ),

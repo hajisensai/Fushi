@@ -7,6 +7,10 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
+    show LyricsIllustrationCue;
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart'
+    show LyricsControlsStyle;
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
@@ -1287,8 +1291,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       AdaptiveSettingsSection(
         key: const ValueKey<String>('reader_panel_lyrics_listening'),
         title: t.reader_panel_lyrics_section_listening,
-        children: <Widget>[_lyricsBlurRow()],
+        children: <Widget>[
+          _lyricsBlurRow(),
+          // 插图提示方式 + 停留秒数（「图片暂停」与有声书页是同一个设置）。
+          _lyricsIllustrationCueRow(),
+          if (widget.controller != null)
+            _buildImagePauseSection(widget.controller!),
+        ],
       ),
+      // 播放控件布局只作用于 MD3：Apple 设计系统的歌词页不读它，隐藏免得切了
+      // 没反应。
+      if (!isGlassDesign(context))
+        AdaptiveSettingsSection(
+          key: const ValueKey<String>('reader_panel_lyrics_controls'),
+          children: <Widget>[_lyricsControlsStyleRow()],
+        ),
       if (widget.onOpenLyricsControlLayout != null)
         AdaptiveSettingsSection(
           children: <Widget>[
@@ -2797,6 +2814,60 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         if (!mounted) return;
         setState(() {});
         widget.onStyleChanged?.call();
+      },
+    );
+  }
+
+  /// MD3 歌词模式播放控件布局：新版（默认）/ 经典（`lyrics_controls_style`）。
+  /// 纯 Flutter 覆盖层布局，写偏好后 source 经 chrome 重建通道让覆盖层重排。
+  Widget _lyricsControlsStyleRow() {
+    return AdaptiveSettingsSegmentedRow<LyricsControlsStyle>(
+      key: const ValueKey<String>('reader_lyrics_controls_style'),
+      title: t.lyrics_controls_style,
+      subtitle: t.lyrics_controls_style_hint,
+      icon: FushiIcons.dashboardCustomize,
+      controlBelow: true,
+      segments: <ButtonSegment<LyricsControlsStyle>>[
+        ButtonSegment<LyricsControlsStyle>(
+          value: LyricsControlsStyle.modern,
+          label: Text(t.lyrics_controls_style_modern),
+        ),
+        ButtonSegment<LyricsControlsStyle>(
+          value: LyricsControlsStyle.classic,
+          label: Text(t.lyrics_controls_style_classic),
+        ),
+      ],
+      selected: _src.lyricsControlsStyle,
+      onChanged: (LyricsControlsStyle style) async {
+        await _src.setLyricsControlsStyle(style);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// 歌词模式播放走过插图时的提示方式：弹出停留（默认）/ 红点
+  /// （`lyrics_illustration_cue`）。停留秒数复用「图片暂停」。
+  Widget _lyricsIllustrationCueRow() {
+    return AdaptiveSettingsSegmentedRow<LyricsIllustrationCue>(
+      key: const ValueKey<String>('reader_lyrics_illustration_cue'),
+      title: t.lyrics_illustration_cue,
+      subtitle: t.lyrics_illustration_cue_hint,
+      icon: FushiIcons.collections,
+      controlBelow: true,
+      segments: <ButtonSegment<LyricsIllustrationCue>>[
+        ButtonSegment<LyricsIllustrationCue>(
+          value: LyricsIllustrationCue.popup,
+          label: Text(t.lyrics_illustration_cue_popup),
+        ),
+        ButtonSegment<LyricsIllustrationCue>(
+          value: LyricsIllustrationCue.dot,
+          label: Text(t.lyrics_illustration_cue_dot),
+        ),
+      ],
+      selected: _src.lyricsIllustrationCue,
+      onChanged: (LyricsIllustrationCue cue) async {
+        await _src.setLyricsIllustrationCue(cue);
+        if (mounted) setState(() {});
       },
     );
   }
