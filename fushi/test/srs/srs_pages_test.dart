@@ -237,6 +237,23 @@ class _LookupApp extends SrsTestAppModel {
 
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
+/// 把默认牌组切成 FSRS-7：评分按钮上的「进复习队列的天数」只有非 RWKV 牌组才显示（RWKV 牌组的复习卡按此刻
+/// 的回忆率回来，天数不是它真正回来的时间；RWKV 没就绪时也不退回 FSRS-7 的到期日，BUG-3892）。
+Future<void> _useFsrs7(WidgetTester tester, SrsDbStore store) async {
+  await tester.runAsync(
+    () => store.editFields(
+      SrsEntityKind.deck,
+      store.defaultDeckId,
+      <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': false,
+        },
+      },
+    ),
+  );
+}
+
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
   final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
   return (await tester.runAsync(
@@ -296,6 +313,9 @@ Future<void> _pumpPage(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => appModel),
         srsStoreProvider.overrideWith((Ref ref) async => store),
+        // 复习页先等 RWKV 服务装配到 store 上：测试不起真服务（会去下载权重），要用 RWKV 的用例自己给
+        // `store.rwkv` 装替身。
+        srsRwkvServiceProvider.overrideWith((Ref ref) async => null),
         srsCardFaceBuilderProvider.overrideWithValue(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),
@@ -788,6 +808,7 @@ void main() {
 
     testWidgets('[$ds] 复习页：显示答案 → 评分预览 → 评分', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
+      await _useFsrs7(tester, store);
       await _addLapis(tester, store, '食べる');
       await _pumpPage(
         tester,
@@ -1219,6 +1240,7 @@ void main() {
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
+      await _useFsrs7(tester, store);
       await addWithAudio(tester, store);
       final _RecordingAudio audio = _RecordingAudio();
       final _LayoutApp app = _LayoutApp();
@@ -2073,7 +2095,7 @@ void main() {
     }
   });
 
-  testWidgets('RWKV 排队时评分按钮不显示进复习队列的天数；学习步与 RWKV 没就绪时照常显示', (
+  testWidgets('RWKV 牌组评分按钮不显示进复习队列的天数（RWKV 没就绪也不退回 FSRS-7 的天数）；学习步照常显示', (
     WidgetTester tester,
   ) async {
     for (final bool ready in <bool>[true, false]) {
@@ -2112,8 +2134,8 @@ void main() {
       expect(texts(1), 2, reason: '学习步按步长计时，ready=$ready');
       expect(
         texts(4),
-        ready ? 1 : 2,
-        reason: ready ? 'RWKV 排队：天数不是它真正回来的时间' : 'RWKV 没就绪：按存下的到期日排队',
+        1,
+        reason: 'RWKV 牌组：天数不是它真正回来的时间；没就绪时复习卡等 RWKV，不按存下的到期日排，ready=$ready',
       );
       await _unmount(tester);
     }
