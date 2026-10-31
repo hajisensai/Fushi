@@ -80,26 +80,43 @@ class SrsReviewGesturesPage extends ConsumerWidget {
     final SrsReviewGestureMap map = ref.watch(srsReviewGesturesProvider);
     final bool hideHardEasy = ref.watch(srsReviewHideHardEasyProvider);
 
+    // 每面的可选动作都多于行内下拉的上限（kSettingsPickerInlineLimit），一律走整页选择
+    // （与 AdaptiveSettingsPickerRow 的长列表分支同一个 pickOption）；行副标题是当前
+    // 动作，被「只留重来 / 良好」屏蔽时随附说明（长列表分支的副标题只能放当前值）。
     Widget row(SrsReviewSide side, SrsReviewGesture g) {
       final SrsReviewGestureAction selected = map.actionFor(side, g);
+      final String label = srsReviewGestureActionLabel(selected);
+      final String title = srsReviewGestureLabel(g);
       return FushiPressScale(
-        child: AdaptiveSettingsPickerRow<SrsReviewGestureAction>(
+        child: AdaptiveSettingsNavigationRow(
           key: ValueKey<String>('srs-gesture-${side.name}-${g.wire}'),
-          title: srsReviewGestureLabel(g),
+          title: title,
           subtitle: selected.hiddenBy(hideHardEasy: hideHardEasy)
-              ? t.srs_review_gestures_rating_hidden
-              : null,
-          selected: selected,
-          options: <AdaptiveSettingsPickerOption<SrsReviewGestureAction>>[
-            for (final SrsReviewGestureAction a
-                in SrsReviewGestureAction.choicesFor(side))
-              AdaptiveSettingsPickerOption<SrsReviewGestureAction>(
-                value: a,
-                label: srsReviewGestureActionLabel(a),
-              ),
-          ],
-          onChanged: (SrsReviewGestureAction a) =>
-              app.setSrsReviewGestures(map.withBinding(side, g, a)),
+              ? '$label · ${t.srs_review_gestures_rating_hidden}'
+              : label,
+          icon: srsReviewGestureActionIcon(selected),
+          showIcon: srsReviewGestureActionIcon(selected) != null,
+          onTap: () async {
+            final SrsReviewGestureAction? picked =
+                await pickOption<SrsReviewGestureAction>(
+                  context,
+                  title: title,
+                  selected: selected,
+                  options: <FushiOptionSelectionOption<SrsReviewGestureAction>>[
+                    for (final SrsReviewGestureAction a
+                        in SrsReviewGestureAction.choicesFor(side))
+                      FushiOptionSelectionOption<SrsReviewGestureAction>(
+                        value: a,
+                        label: srsReviewGestureActionLabel(a),
+                      ),
+                  ],
+                );
+            if (picked == null || picked == selected) return;
+            // 选择页开着期间映射可能已变（重置等）：按最新的写。
+            await app.setSrsReviewGestures(
+              ref.read(srsReviewGesturesProvider).withBinding(side, g, picked),
+            );
+          },
         ),
       );
     }
