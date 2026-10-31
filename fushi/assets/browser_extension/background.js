@@ -1706,10 +1706,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === 'srsTermStatus') {
         // Fushi 复习词状态：POST {expression,reading} → server /api/srs/term-status，回
         // {status: null | {...}}。app 的复习模块关着时 404（bridge-shim 据此退避）。
-        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/term-status', {
+        // 复习标记三个端点都带所选配置（X-Fushi-Profile-Id）：词状态 / 打开笔记按那份配置的复习。
+        const r = await fushiRequest(({ base, token, profileId }) => fetch(base + '/api/srs/term-status', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
-          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          headers: profileHeaders({ 'Content-Type': 'application/json', Authorization: authHeader(token) }, profileId),
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
@@ -1717,10 +1718,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 批量版：POST {terms:[{expression,reading}]} → /api/srs/term-status-batch，回
         // {statuses:[...]}（等长同序）。老 app 没有该端点 → 非 200，bridge-shim 退回逐条。
         const terms = Array.isArray(msg.terms) ? msg.terms : [];
-        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/term-status-batch', {
+        const r = await fushiRequest(({ base, token, profileId }) => fetch(base + '/api/srs/term-status-batch', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
-          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          headers: profileHeaders({ 'Content-Type': 'application/json', Authorization: authHeader(token) }, profileId),
           body: JSON.stringify({
             terms: terms.map((t) => ({ expression: (t && t.expression) || '', reading: (t && t.reading) || '' })),
           }),
@@ -1728,10 +1729,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'srsOpenCard') {
         // 点复习标记：让 app 打开那张卡。POST {cardId,noteId} → /api/srs/open，回 {opened:bool}。
-        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/open', {
+        const r = await fushiRequest(({ base, token, profileId }) => fetch(base + '/api/srs/open', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
-          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          headers: profileHeaders({ 'Content-Type': 'application/json', Authorization: authHeader(token) }, profileId),
           body: JSON.stringify({ cardId: msg.cardId || '', noteId: msg.noteId || '' }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });

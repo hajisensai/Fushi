@@ -198,7 +198,7 @@ test('跟随 Fushi（没选）：查重 / 制卡请求不带配置头', async ()
   assert.deepEqual(bg.api('/api/mine').map((c) => c.profile), [null]);
 });
 
-test('选了配置：查词 / 制卡 / 查重 / 音频 / 在 Anki 中打开都带它，其余端点不带', async () => {
+test('选了配置：查词 / 制卡 / 查重 / 音频 / 在 Anki 中打开 / 复习标记都带它，其余端点不带', async () => {
   const bg = loadBackground({ saved: { fushiProfileSelection: { id: 2, name: '英语' } } });
   await settle();
   await bg.send({ type: 'lookup', term: '猫' });
@@ -207,12 +207,17 @@ test('选了配置：查词 / 制卡 / 查重 / 音频 / 在 Anki 中打开都�
   await bg.send({ type: 'lookupAudio', expression: '猫', reading: 'ねこ' });
   await bg.send({ type: 'lookupAudioList', expression: '猫', reading: 'ねこ' });
   await bg.send({ type: 'openInAnki', expression: '猫', reading: 'ねこ' });
+  // 复习标记按所选配置的复习：挖词目标 = 复习时卡制进那份配置的复习，标记也得查那份。
   await bg.send({ type: 'srsTermStatus', expression: '猫', reading: 'ねこ' });
+  await bg.send({ type: 'srsTermStatusBatch', terms: [{ expression: '猫', reading: 'ねこ' }] });
+  await bg.send({ type: 'srsOpenCard', cardId: 'c1', noteId: 'n1' });
+  await bg.send({ type: 'favorite', toggle: false, expression: '猫', reading: 'ねこ' });
   for (const p of ['/api/lookup/dictionary', '/api/mine', '/api/duplicate', '/api/lookup/audio',
-    '/api/lookup/audio/list', '/api/anki/open']) {
+    '/api/lookup/audio/list', '/api/anki/open', '/api/srs/term-status',
+    '/api/srs/term-status-batch', '/api/srs/open']) {
     assert.deepEqual(bg.api(p).map((c) => c.profile), [2], p);
   }
-  assert.deepEqual(bg.api('/api/srs/term-status').map((c) => c.profile), [null], '与配置无关的端点不带头');
+  assert.deepEqual(bg.api('/api/extension/favorite').map((c) => c.profile), [null], '与配置无关的端点不带头');
 });
 
 test('选择即时生效：fushiSelectProfile 后下一条请求就带新配置；选回跟随 Fushi 即不带', async () => {

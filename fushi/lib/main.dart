@@ -40,7 +40,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
+import 'package:fushi/src/srs/srs_mining.dart' show SrsMiner;
+import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -653,6 +656,16 @@ void main([List<String> args = const <String>[]]) {
         database: () => appModel.database,
         servicesForView: appModel.extensionRequestServicesForView,
       );
+      // 扩展所选配置的挖词目标是 Fushi 复习时，卡进那份配置的复习：同一个 srs.db 句柄上按它的
+      // uid 取副本（srs_profile_stores.dart），「在复习里打开」的编辑页套那份副本。
+      appModel.srsProfileStoresReader = () =>
+          container.read(srsProfileStoresProvider);
+      appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
+          srsPushProfileNoteEditor(
+            appModel.navigatorKey.currentState,
+            miner,
+            noteId,
+          );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>

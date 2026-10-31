@@ -18,6 +18,8 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss, RemoteThemeColorsProvider;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
+import 'package:fushi/src/sync/fushi_api_server.dart' show SrsExtensionApi;
+
 /// 请求头：扩展所选配置的 id（正整数）。
 const String kExtensionProfileRequestHeader = 'x-fushi-profile-id';
 
@@ -69,6 +71,7 @@ class ExtensionRequestServices {
     this.autoReadOnLookupProvider,
     this.dictionaryUnifiedStyleProvider,
     this.popupDictionaryCssProvider,
+    this.srsApiProvider,
   });
 
   final FushiRemoteLookupService lookup;
@@ -78,6 +81,10 @@ class ExtensionRequestServices {
   final bool Function()? autoReadOnLookupProvider;
   final bool Function()? dictionaryUnifiedStyleProvider;
   final RemotePopupDictionaryCss Function()? popupDictionaryCssProvider;
+
+  /// 复习标记（`/api/srs/*`：词状态 / 点标记打开笔记）按这份配置的复习处理；供给器回 null =
+  /// 复习模块关着（端点 404）。
+  final SrsExtensionApi? Function()? srsApiProvider;
 }
 
 /// [ExtensionProfileApi.resolveScope] 的结果。

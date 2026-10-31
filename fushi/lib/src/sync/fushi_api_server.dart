@@ -80,6 +80,10 @@ const Set<String> _kProfileScopedPaths = <String>{
   '/api/mine',
   '/api/duplicate',
   '/api/anki/open',
+  // 复习标记：词状态 / 点标记打开都按所选配置的复习（挖词目标 = 复习时卡就制进那份配置的复习）。
+  '/api/srs/term-status',
+  '/api/srs/term-status-batch',
+  '/api/srs/open',
 };
 
 /// BUG-3141：扩展查词弹窗收藏请求（`/api/extension/favorite` 的体）。
@@ -577,6 +581,7 @@ class FushiApiServer {
         autoReadOnLookupProvider: _autoReadOnLookupProvider,
         dictionaryUnifiedStyleProvider: _dictionaryUnifiedStyleProvider,
         popupDictionaryCssProvider: _popupDictionaryCssProvider,
+        srsApiProvider: _srsApiProvider,
       );
 
   /// [services] 对应的查词 / 制卡路由：默认组复用 [_lookupRoutes]，按配置的组现建一个
@@ -639,11 +644,11 @@ class FushiApiServer {
       case '/api/extension/favorite':
         return _handleExtensionFavorite(request);
       case '/api/srs/term-status':
-        return _handleSrsTermStatus(request);
+        return _handleSrsTermStatus(request, services.srsApiProvider);
       case '/api/srs/term-status-batch':
-        return _handleSrsTermStatusBatch(request);
+        return _handleSrsTermStatusBatch(request, services.srsApiProvider);
       case '/api/srs/open':
-        return _handleSrsOpen(request);
+        return _handleSrsOpen(request, services.srsApiProvider);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
@@ -917,8 +922,11 @@ class FushiApiServer {
 
   /// 复习词状态（扩展弹窗的复习标记）：body `{expression, reading}` → `{status: null | {...}}`。
   /// 复习模块关着时 404（扩展 shim 据此退避，不再每次查词都问）。
-  Future<shelf.Response> _handleSrsTermStatus(shelf.Request request) async {
-    final SrsExtensionApi? api = _srsApiProvider?.call();
+  Future<shelf.Response> _handleSrsTermStatus(
+    shelf.Request request,
+    SrsExtensionApi? Function()? srsApiProvider,
+  ) async {
+    final SrsExtensionApi? api = srsApiProvider?.call();
     if (api == null) return shelf.Response.notFound('SRS module off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -940,8 +948,9 @@ class FushiApiServer {
   /// 非 200 → 退回逐条 `/api/srs/term-status`。
   Future<shelf.Response> _handleSrsTermStatusBatch(
     shelf.Request request,
+    SrsExtensionApi? Function()? srsApiProvider,
   ) async {
-    final SrsExtensionApi? api = _srsApiProvider?.call();
+    final SrsExtensionApi? api = srsApiProvider?.call();
     if (api == null) return shelf.Response.notFound('SRS module off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -967,8 +976,11 @@ class FushiApiServer {
   }
 
   /// 扩展里点复习标记：body `{cardId, noteId?}` → `{opened: bool}`。模块关着时 404。
-  Future<shelf.Response> _handleSrsOpen(shelf.Request request) async {
-    final SrsExtensionApi? api = _srsApiProvider?.call();
+  Future<shelf.Response> _handleSrsOpen(
+    shelf.Request request,
+    SrsExtensionApi? Function()? srsApiProvider,
+  ) async {
+    final SrsExtensionApi? api = srsApiProvider?.call();
     if (api == null) return shelf.Response.notFound('SRS module off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
