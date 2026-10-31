@@ -9,6 +9,8 @@
 /// 墨水屏的差异也在这里各自收口。
 library;
 
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
@@ -679,7 +681,11 @@ class HomeContinueHero extends StatelessWidget {
     this.progressLabel,
     this.landscapeCover = false,
     this.material,
+    this.widthCap,
   });
+
+  /// 卡宽上限（首页宽屏主卡按版面给）；null = [FushiContinueHero.maxWidth]。
+  final double? widthCap;
 
   /// 封面本体（调用方按槽向渲染好的 PortraitCoverImage / 占位）。
   final Widget cover;
@@ -735,6 +741,170 @@ class HomeContinueHero extends StatelessWidget {
       progressLabel: progressLabel,
       onOpen: onOpen,
       entranceIndex: null,
+      // 2026-10-31 方案 A：封面高按版面给（此前 [coverHeight] 只传到这里、
+      // 没往下传，宽屏主卡封面恒为 112 高、卡贴左留一大片空）。
+      coverHeight: coverHeight,
+      widthCap: widthCap,
+    );
+  }
+}
+
+/// 首页面板自适应分列（用户 2026-10-31「有空地的时候可以自适应一下这些面板」）：
+/// 列数 = 按 [minColumnWidth] 放得下几列，且不超过面板数与 [maxColumns]——
+/// 面板少时每列更宽、铺满整行，不在右侧留空；面板按顺序轮流落进各列（第 i 个
+/// 落第 i % 列数 列），列内上下排。
+class HomePanelFlow extends StatelessWidget {
+  const HomePanelFlow({
+    super.key,
+    required this.children,
+    required this.gap,
+    this.minColumnWidth = 320,
+    this.maxColumns = 3,
+  });
+
+  final List<Widget> children;
+  final double gap;
+  final double minColumnWidth;
+  final int maxColumns;
+
+  /// 宽 [width] 下 [count] 个面板分几列（纯函数，测试与版面共用）。
+  static int columnsFor({
+    required double width,
+    required int count,
+    required double gap,
+    double minColumnWidth = 320,
+    int maxColumns = 3,
+  }) {
+    if (count <= 1) return 1;
+    final int fit = ((width + gap) / (minColumnWidth + gap)).floor();
+    return fit.clamp(1, math.min(count, maxColumns));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final int columns = columnsFor(
+          width: c.maxWidth,
+          count: children.length,
+          gap: gap,
+          minColumnWidth: minColumnWidth,
+          maxColumns: maxColumns,
+        );
+        if (columns == 1) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int i = 0; i < children.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(height: gap),
+                children[i],
+              ],
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (int col = 0; col < columns; col++) ...<Widget>[
+              if (col > 0) SizedBox(width: gap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (
+                      int i = col;
+                      i < children.length;
+                      i += columns
+                    ) ...<Widget>[
+                      if (i >= columns) SizedBox(height: gap),
+                      children[i],
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 「今日」面板宽屏时的近 7 天柱条（2026-10-31 方案 A 补齐「今日」）：每天一根，
+/// 高度按 7 天里的最大值归一，今天用强调色、其余用浅一档；悬停提示是当天字数。
+/// 全为 0 时柱条贴底一线（不画空白）。
+class HomeWeekBars extends StatelessWidget {
+  const HomeWeekBars({
+    super.key,
+    required this.values,
+    required this.labels,
+    required this.semanticLabel,
+    this.height = 44,
+  });
+
+  /// 升序 7 天的数值（最后一个是今天）。
+  final List<int> values;
+
+  /// 与 [values] 对齐的悬停提示文案。
+  final List<String> labels;
+  final String semanticLabel;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    final Color today = eink
+        ? cs.onSurface
+        : (apple ? appleColorsOf(context).accent : cs.primary);
+    final Color past = eink
+        ? cs.outline
+        : (apple
+              ? appleColorsOf(context).accent.withValues(alpha: 0.4)
+              : cs.primaryContainer);
+    final int peak = values.fold<int>(0, math.max);
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: SizedBox(
+        key: const ValueKey<String>('home-week-bars'),
+        height: height,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            for (int i = 0; i < values.length; i++) ...<Widget>[
+              if (i > 0) SizedBox(width: tokens.spacing.gap / 2),
+              Expanded(
+                child: FushiTooltip(
+                  message: labels[i],
+                  excludeFromSemantics: true,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(end: peak == 0 ? 0 : values[i] / peak),
+                    duration: fushiMotionDuration(context, FushiMotion.medium),
+                    curve: FushiMotion.standard,
+                    builder: (BuildContext _, double f, Widget? __) =>
+                        Container(
+                          height: math.max(3, height * f),
+                          decoration: BoxDecoration(
+                            color: i == values.length - 1 ? today : past,
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(4),
+                            ),
+                          ),
+                        ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -48,8 +48,22 @@ class FushiContinueHero extends StatelessWidget {
     this.onLongPress,
     this.metaIcon,
     this.widthCap,
+    this.coverHeight,
     super.key,
   });
+
+  /// 调用方指定的封面高（首页宽屏主卡按版面放大，用户 2026-10-31 选定方案 A
+  /// 「书影主卡」）；null = 按卡宽分档（宽卡 [_roomyCoverHeight]、窄卡 102）。
+  /// 横图封面仍受「宽不超过卡宽 40%」约束，实际高度可能更矮。
+  final double? coverHeight;
+
+  /// 内边距（四周同值）：骨架、外部版面计算与真卡同一口径。
+  static double _padding(double gap) => gap * 1.5;
+
+  /// 给定封面高时整卡的高（竖封面、宽度放得下时）：首页宽屏把右侧封面行与
+  /// 主卡对齐等高用。
+  static double heightFor({required double coverHeight, required double gap}) =>
+      coverHeight + _padding(gap) * 2;
 
   /// 调用方按自己的网格给的卡宽上限（书架：与第三本书右缘对齐）；null =
   /// [maxWidth]。
@@ -68,7 +82,7 @@ class FushiContinueHero extends StatelessWidget {
   /// 首屏骨架用的卡高：与真卡同一套判据（同一个宽度上限与宽 / 窄分档），骨架
   /// 换真卡不跳。
   static double placeholderHeight(double cardWidth, {required double gap}) {
-    final double pad = gap * 1.5;
+    final double pad = _padding(gap);
     final bool roomy =
         math.min(cardWidth, maxWidth) - pad * 2 >= _roomyMinWidth;
     return (roomy ? _roomyCoverHeight : 102.0) + pad * 2;
@@ -208,11 +222,12 @@ class FushiContinueHero extends StatelessWidget {
       onSecondaryTap: onLongPress,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints outer) {
-          final EdgeInsets pad = EdgeInsets.all(tokens.spacing.gap * 1.5);
+          final EdgeInsets pad = EdgeInsets.all(_padding(tokens.spacing.gap));
           final BoxConstraints c = outer.deflate(pad);
           final bool roomy = c.maxWidth >= _roomyMinWidth;
           final double gap = tokens.spacing.gap * (roomy ? 2 : 1.5);
-          final double coverHeight = roomy ? _roomyCoverHeight : 102;
+          final double coverHeight =
+              this.coverHeight ?? (roomy ? _roomyCoverHeight : 102);
           // 横图封面在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
           final double coverWidth = (coverHeight * coverAspectRatio).clamp(
             0.0,
