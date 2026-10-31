@@ -43,6 +43,8 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
+      # strings.g.dart 不入库：编 app 前由它生成（生成器 fushi/tool/gen_i18n.dart 在 fushi/** 里）。
+      - '.github/actions/gen-i18n/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'

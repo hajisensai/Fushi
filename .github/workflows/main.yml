@@ -38,6 +38,8 @@ on:
       - 'tool/release_sequence.sh'
       - '.github/workflows/main.yml'
       - '.github/actions/provide-baked-secrets/**'
+      # strings.g.dart 不入库：analyze / test / build 前由它生成（生成器在 fushi/** 里）。
+      - '.github/actions/gen-i18n/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/actions/test-native-linux/**'
