@@ -21,6 +21,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/recommended_dictionary_installer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
@@ -2697,6 +2698,12 @@ class _DictionaryDialogPageState extends BasePageState {
     final Directory tempDir = Directory(
       path.join(appModel.dictionaryResourceDirectory.path, 'update_temp'),
     );
+    // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+    // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+    final Map<String, String> sourceOverride = remote.updatedSourceMetadata(
+      localDownloadUrl: dictionary.downloadUrl,
+      localIndexUrl: dictionary.indexUrl,
+    );
     try {
       job.markDownloadPhase();
       progressNotifier.value = t.dict_update_updating(name: name);
@@ -2709,6 +2716,13 @@ class _DictionaryDialogPageState extends BasePageState {
         onBytes: (int received, int total) => progressNotifier.value =
             dictionaryDownloadStageMessage(
                 name: name, received: received, total: total),
+        // BUG-3887 续：iOS 进程被回收后新进程据此接着下、按同一配方重导。
+        handoffPayload: DictionaryImportRecipe.update(
+          name: name,
+          replaceTargetName: dictionary.name,
+          sourceOverride: sourceOverride,
+          forceReplaceExisting: false,
+        ).toPayload(),
       );
       enterDictionaryImportStage(
         name: name,
@@ -2721,12 +2735,7 @@ class _DictionaryDialogPageState extends BasePageState {
         progressNotifier: progressNotifier,
         onImportSuccess: () {},
         replaceTarget: dictionary,
-        // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-        // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-        sourceOverride: remote.updatedSourceMetadata(
-          localDownloadUrl: dictionary.downloadUrl,
-          localIndexUrl: dictionary.indexUrl,
-        ),
+        sourceOverride: sourceOverride,
       );
       return true;
     } finally {

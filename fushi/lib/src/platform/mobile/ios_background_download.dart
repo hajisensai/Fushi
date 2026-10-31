@@ -529,7 +529,6 @@ DioError _dioErrorFor(String url, Map<Object?, Object?> error) {
   }
 }
 
-
 /// 在 iOS 上把词典包下载接到系统后台会话（启动时调一次，幂等；其余平台 no-op）。
 /// 用户配了带认证的手动代理、或本引擎入口没注册原生通道时退回进程内 dio。
 /// 同一个传输实例同时接上 [dictionaryDownloadRecovery]：通道 handler 只有一个，

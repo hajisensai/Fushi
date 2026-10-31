@@ -54,13 +54,14 @@ Future<Dio> createDictionaryDio() async {
 /// [handoff] 非 null 时调用方要求这次传输**跨进程可接管**：能在进程死后继续跑的
 /// 传输（iOS 系统后台会话）必须把它与任务一起持久化，供下一个进程经
 /// [dictionaryDownloadRecovery] 接回；进程内传输随进程一起死，忽略它即可。
-typedef DictionaryDownloadTransport = Future<void> Function({
-  required String url,
-  required String destPath,
-  required void Function(int received, int total) onReceiveProgress,
-  CancelToken? cancelToken,
-  DictionaryDownloadHandoff? handoff,
-});
+typedef DictionaryDownloadTransport =
+    Future<void> Function({
+      required String url,
+      required String destPath,
+      required void Function(int received, int total) onReceiveProgress,
+      CancelToken? cancelToken,
+      DictionaryDownloadHandoff? handoff,
+    });
 
 /// 默认传输：进程内 [Dio]（代理与超时见 [createDictionaryDio]）。进程死了下载就没了，
 /// [handoff] 无处可交，忽略。
@@ -77,10 +78,7 @@ Future<void> dioDictionaryDownloadTransport({
       url,
       destPath,
       cancelToken: cancelToken,
-      options: Options(
-        followRedirects: true,
-        maxRedirects: 5,
-      ),
+      options: Options(followRedirects: true, maxRedirects: 5),
       onReceiveProgress: onReceiveProgress,
     );
   } finally {
@@ -559,15 +557,17 @@ class DictionaryDownloader {
     return RecommendedDictionary(
       name: mono
           ? 'Wiktionary ${srcLang.toUpperCase()}-${srcLang.toUpperCase()} '
-              '($srcName)'
+                '($srcName)'
           : 'Wiktionary ${srcLang.toUpperCase()}-${tgtLang.toUpperCase()} '
-              '($tgtName)',
+                '($tgtName)',
       url: '$_wtyBase/$srcLang/$tgtLang/wty-$srcLang-$tgtLang.zip',
-      description:
-          mono ? 'Wiktionary $srcName' : 'Wiktionary $srcName–$tgtName',
+      description: mono
+          ? 'Wiktionary $srcName'
+          : 'Wiktionary $srcName–$tgtName',
       matchPrefix: 'wty-$srcLang-$tgtLang',
-      category:
-          mono ? DictionaryCategory.monolingual : DictionaryCategory.bilingual,
+      category: mono
+          ? DictionaryCategory.monolingual
+          : DictionaryCategory.bilingual,
       sizeEstimate: '~10 MB',
       langCode: tgtLang,
     );
@@ -630,8 +630,9 @@ class DictionaryDownloader {
   ) {
     final Map<DictionaryCategory, List<RecommendedDictionary>> map = {};
     for (final DictionaryCategory cat in DictionaryCategory.values) {
-      final List<RecommendedDictionary> catItems =
-          items.where((d) => d.category == cat).toList();
+      final List<RecommendedDictionary> catItems = items
+          .where((d) => d.category == cat)
+          .toList();
       if (catItems.isNotEmpty) map[cat] = catItems;
     }
     return map;
@@ -1149,7 +1150,11 @@ class DictionaryDownloader {
     final String fileName = dictionaryDownloadFileName(url);
     final String destPath = path.join(tempDir.path, fileName);
     if (!path.isWithin(tempDir.path, destPath)) {
-      throw ArgumentError.value(url, 'url', 'download file name escapes tempDir');
+      throw ArgumentError.value(
+        url,
+        'url',
+        'download file name escapes tempDir',
+      );
     }
     final List<String> candidates = dictionaryDownloadCandidates(url);
     return _downloadCandidates(

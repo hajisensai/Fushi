@@ -2063,6 +2063,7 @@
   "dict_download_learning_language": "Ngôn ngữ đang học",
   "dict_download_partial": "$success / $total thành công. Thất bại: $error",
   "dict_download_progress_show": "Xem tiến trình",
+  "dict_download_resuming": "Resuming download: $name",
   "dict_download_select_title": "Chọn từ điển",
   "dict_downloading": "Đang tải $name…",
   "dict_downloading_size": "Đang tải $name ($done / $total)",
