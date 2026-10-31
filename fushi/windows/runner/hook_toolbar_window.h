@@ -67,26 +67,32 @@ enum class Profile {
 // FloatingLyricWindow::ControlActionAt() resolves through SlotAction(), so the
 // body window and the standalone toolbar can never disagree about what a slot
 // does.
-constexpr int kGalHookSlotCount = 10;
+constexpr int kGalHookSlotCount = 12;
 constexpr const char* kGalHookSlotActions[kGalHookSlotCount] = {
     "replayVoice",         // 0 replay the line's captured audio
     "recaptureVoice",      // 1 open a recapture window
-    "toggleFollow",        // 2 follow / pause caption updates
-    "togglePassThrough",   // 3 mouse pass-through  <- the escape hatch
-    "toggleTransparency",  // 4 one-click background transparency
-    "lock",                // 5 position lock
-    "openWorkbench",       // 6 capture workbench
-    // 7 copy the displayed line to the clipboard (feedback qM4n-Tu0pc: the
+    // 2 read the displayed line aloud with TTS (click again = stop). Executed
+    // by Dart (it owns the TTS voices and the line text).
+    "speakLine",
+    // 3 auto-read toggle: new lines are read aloud (by default only the ones
+    // without captured game voice). Lit while on; state pushed by Dart.
+    "toggleAutoSpeak",
+    "toggleFollow",        // 4 follow / pause caption updates
+    "togglePassThrough",   // 5 mouse pass-through  <- the escape hatch
+    "toggleTransparency",  // 6 one-click background transparency
+    "lock",                // 7 position lock
+    "openWorkbench",       // 8 capture workbench
+    // 9 copy the displayed line to the clipboard (feedback qM4n-Tu0pc: the
     // line could only be copied from the workbench, i.e. after switching
     // windows). Executed by Dart (it owns the displayed line text).
     "copyLine",
-    // 8 always-on-top pin. Handled natively in DispatchControlAction (no Dart
+    // 10 always-on-top pin. Handled natively in DispatchControlAction (no Dart
     // round-trip), exactly like the clipboard window's 📌 — the overlay is born
     // topmost, and this is the only way to drop it behind another window
     // without closing it. Kept right ahead of the close slot so the rightmost
     // button is still 关闭 (muscle memory).
     "topmost",
-    "close",  // 9 close the overlay
+    "close",  // 11 close the overlay
 };
 
 // 有声书悬浮字幕的槽表。前三颗是播放控制（沿用旧歌词条的肌肉记忆顺序：上一句 /
@@ -128,6 +134,10 @@ const char* SlotAction(Profile profile, int slot);
 struct States {
   bool replaying = false;
   bool recapturing = false;
+  // TTS is reading the displayed line (speakLine lit).
+  bool speaking = false;
+  // Auto-read is on (toggleAutoSpeak lit).
+  bool auto_speak = false;
   bool playing = false;
   bool pass_through = false;
   bool locked = false;

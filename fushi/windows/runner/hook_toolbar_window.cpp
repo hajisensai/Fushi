@@ -86,6 +86,7 @@ bool SameStyle(const hook_toolbar::Style& a, const hook_toolbar::Style& b) {
 
 bool SameStates(const hook_toolbar::States& a, const hook_toolbar::States& b) {
   return a.replaying == b.replaying && a.recapturing == b.recapturing &&
+         a.speaking == b.speaking && a.auto_speak == b.auto_speak &&
          a.playing == b.playing && a.pass_through == b.pass_through &&
          a.locked == b.locked && a.topmost == b.topmost;
 }
@@ -111,6 +112,8 @@ bool SlotActive(Profile profile, int slot, const States& states) {
   const char* action = SlotAction(profile, slot);
   if (std::strcmp(action, "replayVoice") == 0) return states.replaying;
   if (std::strcmp(action, "recaptureVoice") == 0) return states.recapturing;
+  if (std::strcmp(action, "speakLine") == 0) return states.speaking;
+  if (std::strcmp(action, "toggleAutoSpeak") == 0) return states.auto_speak;
   // 「跟随」被关掉才高亮：默认态（跟随中）不上色，只有用户暂停了台词更新时才亮，
   // 否则用户永远在看一颗亮着的灯。
   if (std::strcmp(action, "toggleFollow") == 0) return !states.playing;
@@ -126,6 +129,9 @@ const wchar_t* SlotGlyph(Profile profile, int slot, const States& states) {
   const char* action = SlotAction(profile, slot);
   if (std::strcmp(action, "replayVoice") == 0) return L"\uE042";  // replay
   if (std::strcmp(action, "recaptureVoice") == 0) return L"\uE31D";  // mic
+  // volume_up / record_voice_over 不在打包字体的极小子集里：显式空串 = 矢量画法。
+  if (std::strcmp(action, "speakLine") == 0) return L"";
+  if (std::strcmp(action, "toggleAutoSpeak") == 0) return L"";
   if (std::strcmp(action, "toggleFollow") == 0) {
     return states.playing ? L"\uE034" : L"\uE037";  // pause / play_arrow
   }
@@ -400,6 +406,65 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory,
                        round_stroke.Get());
       target->DrawLine(point(0.53f, 0.60f), point(0.63f, 0.60f), brush, stroke,
                        round_stroke.Get());
+    }
+  } else if (is("speakLine") || is("toggleAutoSpeak")) {
+    // Speaker cone; speakLine adds two sound waves, toggleAutoSpeak an "auto"
+    // loop arrow on the right so the two read as related but distinct.
+    {
+      Microsoft::WRL::ComPtr<ID2D1PathGeometry> cone;
+      if (SUCCEEDED(factory->CreatePathGeometry(cone.GetAddressOf()))) {
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(cone->Open(sink.GetAddressOf()))) {
+          sink->BeginFigure(point(0.24f, 0.42f), D2D1_FIGURE_BEGIN_FILLED);
+          sink->AddLine(point(0.34f, 0.42f));
+          sink->AddLine(point(0.48f, 0.29f));
+          sink->AddLine(point(0.48f, 0.71f));
+          sink->AddLine(point(0.34f, 0.58f));
+          sink->AddLine(point(0.24f, 0.58f));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+          target->FillGeometry(cone.Get(), brush);
+        }
+      }
+      if (is("speakLine")) {
+        for (const float r : {0.10f, 0.20f}) {
+          Microsoft::WRL::ComPtr<ID2D1PathGeometry> wave;
+          if (FAILED(factory->CreatePathGeometry(wave.GetAddressOf()))) {
+            continue;
+          }
+          Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+          if (FAILED(wave->Open(sink.GetAddressOf()))) {
+            continue;
+          }
+          sink->BeginFigure(point(0.52f + r * 0.5f, 0.50f - r),
+                            D2D1_FIGURE_BEGIN_HOLLOW);
+          sink->AddArc(D2D1::ArcSegment(
+              point(0.52f + r * 0.5f, 0.50f + r),
+              D2D1::SizeF(size * r * 1.1f, size * r), 0.0f,
+              D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+          sink->EndFigure(D2D1_FIGURE_END_OPEN);
+          sink->Close();
+          draw_path(wave.Get());
+        }
+      } else {
+        Microsoft::WRL::ComPtr<ID2D1PathGeometry> loop;
+        if (SUCCEEDED(factory->CreatePathGeometry(loop.GetAddressOf()))) {
+          Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+          if (SUCCEEDED(loop->Open(sink.GetAddressOf()))) {
+            sink->BeginFigure(point(0.66f, 0.36f), D2D1_FIGURE_BEGIN_HOLLOW);
+            sink->AddArc(D2D1::ArcSegment(
+                point(0.62f, 0.62f), D2D1::SizeF(size * 0.14f, size * 0.14f),
+                0.0f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_LARGE));
+            sink->EndFigure(D2D1_FIGURE_END_OPEN);
+            sink->Close();
+            draw_path(loop.Get());
+          }
+        }
+        target->DrawLine(point(0.66f, 0.36f), point(0.74f, 0.33f), brush,
+                         stroke, round_stroke.Get());
+        target->DrawLine(point(0.66f, 0.36f), point(0.68f, 0.44f), brush,
+                         stroke, round_stroke.Get());
+      }
     }
   } else if (is("topmost")) {  // Always-on-top pin.
     {

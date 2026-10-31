@@ -17,6 +17,11 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/lookup/gal_line_tts.dart';
+import 'package:fushi/src/lookup/gal_line_tts_player.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
@@ -261,6 +266,18 @@ Map<String, Object?> galHookToolbarThemeArgs(GalHookToolbarPalette palette) =>
     };
 
 /// App 级 Windows Hook 台词浮窗控制器。
+/// 台词 TTS 失败的用户提示（浮窗 toast 与设置页试听共用）：按失败类型给原因，
+/// 不把「没配声音 / 引擎本平台不可用 / 鉴权失败」都说成「服务返回异常」。
+String galLineTtsErrorText(Object error) => switch (error) {
+  TtsFailure() => ttsFailureText(error),
+  GalLineTtsUnavailable(:final String reason) => switch (reason) {
+    'not_configured' => t.audiobook_tts_failure_not_configured,
+    'provider_unavailable' => t.audiobook_tts_failure_unsupported,
+    _ => t.gal_line_tts_no_voice,
+  },
+  _ => t.audiobook_tts_failure_bad_response,
+};
+
 class GalHookTextOverlayController extends ChangeNotifier {
   static const Duration _geometryAdmissionTimeout = Duration(seconds: 1);
   static const Duration _attachedSyncTimeout = Duration(seconds: 2);
@@ -407,6 +424,27 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 已推给 native 的语音控件状态，避免每轮 sync 都发一次 channel 调用。
   bool _pushedReplaying = false;
   bool _pushedRecapturing = false;
+  bool _pushedSpeaking = false;
+  bool _pushedAutoSpeak = false;
+
+  /// 台词 TTS 设置（偏好 [kGalLineTtsSettingsPrefKey]，整份 JSON）。
+  GalLineTtsSettings _ttsSettings = const GalLineTtsSettings();
+
+  /// 台词 TTS 设置的偏好来源（设置页接上的）。与浮窗启动解耦：游戏模块是本次启动
+  /// 之后才打开的（[start] 只在启动时按模块门调一次）、或启动链失败时，浮窗没启动，
+  /// 但设置页照样可见、照样要读写这份设置——以前写入走 `_appModel?.prefsRepo`，
+  /// 没启动就静默丢掉，界面上改了、重启就回去。
+  PreferencesRepository? _ttsPrefs;
+  bool _ttsSettingsLoaded = false;
+
+  /// 台词 TTS 播放编排（换句打断 / 等配对证据 / 原声来了就让）。
+  late final GalLineTtsPlayer _tts = GalLineTtsPlayer(
+    settings: () => _ttsSettings,
+    services: () => TtsServices.of(_appModel!.prefsRepo),
+  )..speaking.addListener(_onTtsSpeakingChanged);
+
+  /// 同一个失败原因只提示一次（自动朗读每句都会撞上同一个「没配声音」）。
+  String? _lastTtsErrorToast;
 
   /// 已推给 native 的「悬停即查词」值（show 载荷里带过的也算已推）。
   bool _pushedHoverAutoLookup = false;
@@ -453,6 +491,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool get isSuppressedForSession => _suppressedForSession;
   String? get displayedLineId => _displayedLineId;
   bool get isReplaying => _replaying;
+
+  /// 台词 TTS 设置（设置页读写）。
+  GalLineTtsSettings get lineTtsSettings => _ttsSettings;
+
+  /// TTS 正在朗读（含合成中）。
+  ValueListenable<bool> get lineTtsSpeaking => _tts.speaking;
   bool get isRecapturing => _session.isRecapturing;
   GalAttachedTextController get attachedText => _attachedText;
 
@@ -521,6 +565,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 不抛，且没孤儿时是一次读文件的零成本早退。
     unawaited(magpie.reconcileOrphansOnStartup());
     _loadPreferences(appModel);
+    _ttsSettings = GalLineTtsSettings.decode(
+      _readPreference(kGalLineTtsSettingsPrefKey, ''),
+    );
+    _ttsSettingsLoaded = true;
+    _tts.lastError.addListener(_onTtsError);
     await _ingameLookup.start(
       appModel: appModel,
       miningResolver: _ingameMiningHandlerFor,
@@ -537,6 +586,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onOverlayDestroyed: _onOverlayDestroyed,
       onReplayVoice: replayCurrentLine,
       onRecaptureVoice: recaptureCurrentLine,
+      onSpeakLine: speakCurrentLine,
+      onToggleAutoSpeak: toggleAutoSpeak,
       onLockChanged: _onLockChanged,
       onPassThroughChanged: _onPassThroughChanged,
       onBoundsChanged: _onBoundsChanged,
@@ -573,6 +624,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _syncRetryAttempt = 0;
     _session.removeListener(_scheduleSessionSync);
     _attachedText.removeListener(_onAttachedRoutingChanged);
+    _tts.lastError.removeListener(_onTtsError);
+    _tts.stop();
     GalHookTextOverlayChannel.clearEventHandlers();
     await _attachedText.detach();
     // 停机拆解是一串**互不依赖**的边，必须每条都走到：原来是裸串联，
@@ -1212,7 +1265,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _displayedLineText = null;
       _ingameLatestLineId = null;
       _ingameLatestLineText = null;
-      // 新会话：上一局的试听计时不能把高亮留在新浮窗上。
+      // 新会话：上一局的 TTS 与试听计时不能留到新浮窗上。
+      _tts.stop();
       _replayResetTimer?.cancel();
       _replayResetTimer = null;
       _replaying = false;
@@ -1420,6 +1474,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       if (_visible) {
         await GalHookTextOverlayChannel.hide();
         _visible = false;
+        // 会话结束 / 浮窗收起：TTS 跟着停，不在没有台词的地方继续念。
+        _tts.stop();
         // 浮窗收起后试听高亮无处可显示，本地状态跟着收——否则下次 show 会把一个
         // 早已播完的试听态推给新窗口。
         _replayResetTimer?.cancel();
@@ -1512,10 +1568,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 否则下一次 _syncVoiceState 会认为「已经推过了」而不再推。
       _pushedReplaying = false;
       _pushedRecapturing = false;
+      _pushedSpeaking = false;
+      _pushedAutoSpeak = false;
       if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) return;
       if (_visible) {
         _displayedLineId = latest.id;
         _displayedLineText = latest.text;
+        if (_following) _tts.onLatestLine(latest);
       }
       notifyListeners();
       await _syncVoiceState();
@@ -1534,6 +1593,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _displayedLineText = latest.text;
       notifyListeners();
     }
+    // 自动朗读：每轮都把最新行（含它的配对状态变化）交给编排器——「等原声配对」
+    // 的那一句要靠后续的状态更新再裁决一次。暂停跟随时不读（屏上不是这一句）。
+    if (_following) _tts.onLatestLine(latest);
     // 补录窗口可能由 session 侧超时自行收束：每轮都比对一次，浮窗上的「录音中」
     // 高亮才不会停在已结束的状态上。
     await _syncVoiceState();
@@ -1545,6 +1607,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
   List<String> get _slotTooltips => <String>[
     t.game_hook_btn_replay,
     t.game_hook_btn_recapture,
+    t.game_hook_btn_speak,
+    t.game_hook_btn_auto_speak,
     t.game_hook_btn_follow,
     t.game_hook_btn_passthrough,
     t.game_hook_btn_transparency,
@@ -1560,6 +1624,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
   List<String> get _slotLabels => <String>[
     t.gal_hook_toolbar_label_replay,
     t.gal_hook_toolbar_label_recapture,
+    t.gal_hook_toolbar_label_speak,
+    t.gal_hook_toolbar_label_auto_speak,
     t.gal_hook_toolbar_label_follow,
     t.gal_hook_toolbar_label_passthrough,
     t.gal_hook_toolbar_label_transparency,
@@ -1901,6 +1967,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 只读既有配对结果（资源原件直接播，PCM/loopback 冻结切片拼 WAV），不改行状态。
   Future<void> replayCurrentLine() async {
     if (!_started) return;
+    // 听原声时不和 TTS 叠在一起。
+    _tts.stop();
     if (_replaying) {
       await _stopReplay();
       return;
@@ -1998,15 +2066,112 @@ class GalHookTextOverlayController extends ChangeNotifier {
   Future<void> _syncVoiceState() async {
     final bool replaying = _replaying;
     final bool recapturing = _session.isRecapturing;
-    if (replaying == _pushedReplaying && recapturing == _pushedRecapturing) {
+    final bool speaking = _tts.speaking.value;
+    final bool autoSpeak = _ttsSettings.autoPlayEnabled;
+    if (replaying == _pushedReplaying &&
+        recapturing == _pushedRecapturing &&
+        speaking == _pushedSpeaking &&
+        autoSpeak == _pushedAutoSpeak) {
       return;
     }
     _pushedReplaying = replaying;
     _pushedRecapturing = recapturing;
+    _pushedSpeaking = speaking;
+    _pushedAutoSpeak = autoSpeak;
     await GalHookTextOverlayChannel.setVoiceState(
       replaying: replaying,
       recapturing: recapturing,
+      speaking: speaking,
+      autoSpeak: autoSpeak,
     );
+  }
+
+  // ── 台词 TTS ─────────────────────────────────────────────────────────────
+
+  /// 浮窗「朗读」：用 TTS 读当前显示的这句（正在读再点即停）。不受自动朗读档位与
+  /// 「跳过」规则限制——用户点了就是想听。
+  Future<void> speakCurrentLine() async {
+    if (!_started) return;
+    final String? lineId = _displayedLineId;
+    TexthookerLineEntry? line;
+    if (lineId != null) {
+      for (final TexthookerLineEntry entry in _session.lines.reversed) {
+        if (entry.id == lineId) {
+          line = entry;
+          break;
+        }
+      }
+    }
+    if (line == null && !_tts.speaking.value) {
+      FushiToast.show(
+        msg: t.game_hook_line_unavailable,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    // 手动朗读前先停原声试听，两个声音不叠。
+    if (_replaying) await _stopReplay();
+    _lastTtsErrorToast = null;
+    _tts.toggleManual(line);
+  }
+
+  /// 浮窗「自动朗读」开关。
+  Future<void> toggleAutoSpeak() async {
+    if (!_started) return;
+    final bool enabled = !_ttsSettings.autoPlayEnabled;
+    await setLineTtsSettings(_ttsSettings.copyWith(autoPlayEnabled: enabled));
+    if (!enabled) _tts.stop();
+    FushiToast.show(
+      msg: enabled ? t.gal_line_tts_auto_on : t.gal_line_tts_auto_off,
+      severity: ToastSeverity.info,
+    );
+  }
+
+  /// 设置入口（设置分组 / 规则页）在读写台词 TTS 设置前调：浮窗没启动时接上偏好
+  /// 来源并读一次已存设置；已启动或已接过则什么都不做。
+  void attachLineTtsPreferences(PreferencesRepository prefs) {
+    _ttsPrefs ??= prefs;
+    if (_ttsSettingsLoaded) return;
+    _ttsSettings = GalLineTtsSettings.decode(
+      prefs.getPref(kGalLineTtsSettingsPrefKey, defaultValue: ''),
+    );
+    _ttsSettingsLoaded = true;
+  }
+
+  /// 写台词 TTS 设置（设置页 / 浮窗开关共用）：落偏好 + 刷新浮窗按钮高亮。
+  /// 没有任何偏好来源（既没启动、也没 [attachLineTtsPreferences]）是调用方漏接线，
+  /// 抛 [StateError]，不静默丢。
+  Future<void> setLineTtsSettings(GalLineTtsSettings settings) async {
+    final GalHookPreferenceWriter? writer = _preferenceWriter;
+    final PreferencesRepository? prefs = _appModel?.prefsRepo ?? _ttsPrefs;
+    if (writer != null) {
+      await writer(kGalLineTtsSettingsPrefKey, settings.encode());
+    } else if (prefs != null) {
+      await prefs.setPref(kGalLineTtsSettingsPrefKey, settings.encode());
+    } else {
+      throw StateError(
+        'galgame line TTS settings written before preferences were attached',
+      );
+    }
+    _ttsSettings = settings;
+    _ttsSettingsLoaded = true;
+    _lastTtsErrorToast = null;
+    notifyListeners();
+    if (_visible) await _syncVoiceState();
+  }
+
+  void _onTtsSpeakingChanged() {
+    if (_visible) unawaited(_syncVoiceState());
+    notifyListeners();
+  }
+
+  void _onTtsError() {
+    final Object? error = _tts.lastError.value;
+    if (error == null) return;
+    final String message = galLineTtsErrorText(error);
+    if (message == _lastTtsErrorToast) return;
+    _lastTtsErrorToast = message;
+    FushiToast.show(msg: message, severity: ToastSeverity.error);
   }
 
   /// 浮窗「复制」（反馈 qM4n-Tu0pc）：把浮窗上正显示的这句台词放进剪贴板，

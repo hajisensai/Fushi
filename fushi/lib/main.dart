@@ -1366,6 +1366,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           const Duration(seconds: 2),
         );
       }),
+      // 本机 VOICEVOX / AivisSpeech 同理：停引擎进程、取消安装中的解压子进程。
+      _guardedExitStep('local voicevox engines stop', () async {
+        final TtsServices? tts = TtsServices.existing;
+        if (tts == null) return;
+        await Future.wait(<Future<void>>[
+          tts.localVoicevox.shutdown(),
+          tts.localAivisSpeech.shutdown(),
+        ]).timeout(const Duration(seconds: 2));
+      }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续

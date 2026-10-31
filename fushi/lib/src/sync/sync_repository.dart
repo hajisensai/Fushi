@@ -2006,6 +2006,8 @@ class SyncRepository {
     'tts_active_preset_id',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
     'mining_tts_fallback_voice',
+    // galgame 台词浮窗 TTS 设置：里面的声音也是上面清单里的预设 id。
+    'gal_line_tts_settings',
     // 本机 GPT-SoVITS 整合包的磁盘路径与端口：换一台设备毫无意义。
     'tts_gpt_sovits_local',
     // 本机 Irodori-TTS-Server 的专属目录与端口：同上。
