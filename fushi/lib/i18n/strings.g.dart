@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179554 (10562 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -425,6 +425,23 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_interconnect_host_title => 'Run on a paired computer';
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  String get ai_mcp_access => 'External AI access (MCP)';
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  String get ai_mcp_token => 'Pairing token';
+  String get ai_mcp_token_copy => 'Copy token';
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  String get ai_mcp_token_issued_title => 'New pairing token';
   String get ai_media_acquire_ai_failed =>
       'AI is unavailable right now; results are from your original text, sorted by seeders.';
   String get ai_media_acquire_download => 'Download';
@@ -15638,6 +15655,35 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'الذكاء الاصطناعي غير متاح حاليًا؛ النتائج من نصك الأصلي مرتبة حسب البذور.';
@@ -41211,6 +41257,35 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'Die KI ist gerade nicht verfügbar; die Ergebnisse stammen aus deinem ursprünglichen Text, nach Seedern sortiert.';
@@ -67174,6 +67249,35 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'La IA no está disponible ahora mismo; los resultados provienen de tu texto original, ordenados por seeders.';
@@ -93190,6 +93294,35 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'L\'IA est indisponible pour le moment ; les résultats proviennent de votre texte d\'origine, triés par seeders.';
@@ -119290,6 +119423,35 @@ class _StringsId extends _StringsEn {
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
   @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
+  @override
   String get ai_media_acquire_ai_failed =>
       'AI tidak tersedia saat ini; hasil berasal dari teks asli Anda, diurutkan menurut seeder.';
   @override
@@ -145045,6 +145207,35 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'L\'IA non è disponibile al momento; i risultati derivano dal testo originale, ordinati per seeder.';
@@ -170954,6 +171145,35 @@ class _StringsJa extends _StringsEn {
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
   @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
+  @override
   String get ai_media_acquire_ai_failed =>
       '現在AIを利用できません。結果は入力した元のテキストによるもので、シーダー数順に並べています。';
   @override
@@ -195833,6 +196053,35 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'AI를 지금 사용할 수 없습니다. 입력하신 원문 기준으로 시더 수 순으로 정렬한 결과입니다.';
@@ -220786,6 +221035,35 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'AI is nu niet beschikbaar; de resultaten komen uit je oorspronkelijke tekst, gesorteerd op seeders.';
@@ -246654,6 +246932,35 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'A IA está indisponível no momento; os resultados vêm do seu texto original, ordenados por seeders.';
@@ -272588,6 +272895,35 @@ class _StringsRu extends _StringsEn {
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
   @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
+  @override
   String get ai_media_acquire_ai_failed =>
       'ИИ сейчас недоступен; результаты получены по вашему исходному тексту и отсортированы по числу сидов.';
   @override
@@ -298466,6 +298802,35 @@ class _StringsTh extends _StringsEn {
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
   @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
+  @override
   String get ai_media_acquire_ai_failed =>
       'ขณะนี้ AI ไม่พร้อมใช้งาน ผลลัพธ์มาจากข้อความเดิมของคุณ เรียงตามผู้แชร์';
   @override
@@ -324026,6 +324391,35 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'Yapay zeka şu anda kullanılamıyor; sonuçlar özgün metninizden, tohumlayıcı sayısına göre sıralı.';
@@ -349788,6 +350182,35 @@ class _StringsVi extends _StringsEn {
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
   @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
+  @override
   String get ai_media_acquire_ai_failed =>
       'AI hiện không khả dụng; kết quả lấy từ văn bản gốc của bạn, sắp xếp theo seeder.';
   @override
@@ -375440,6 +375863,34 @@ class _StringsZhCn extends _StringsEn {
   String get ai_interconnect_host_unpaired =>
       '还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。';
   @override
+  String get ai_mcp_access => '外部 AI 访问（MCP）';
+  @override
+  String get ai_mcp_access_hint =>
+      '让本机的 MCP 客户端（Claude Desktop、Claude Code 等）调用 Fushi 的操作。只监听本机，需要下面的配对令牌。可撤销的改动直接执行并记入「AI 操作记录」；撤销不了的操作和安装扩展会先在这里请你确认。默认关闭。';
+  @override
+  String get ai_mcp_confirm_arguments => '参数';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} 请求执行：${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      '${minutes} 分钟内不回答将自动拒绝。';
+  @override
+  String get ai_mcp_confirm_title => '外部 AI 请求执行操作';
+  @override
+  String get ai_mcp_token => '配对令牌';
+  @override
+  String get ai_mcp_token_copy => '复制令牌';
+  @override
+  String get ai_mcp_token_copy_config => '复制客户端配置';
+  @override
+  String get ai_mcp_token_hint => '为 MCP 客户端生成令牌。重新生成会作废旧令牌。';
+  @override
+  String get ai_mcp_token_issued_body =>
+      '把这个令牌填进 MCP 客户端配置的 FUSHI_MCP_TOKEN（接入说明里有示例）。它只显示这一次。';
+  @override
+  String get ai_mcp_token_issued_title => '新的配对令牌';
+  @override
   String get ai_media_acquire_ai_failed => 'AI 暂不可用，已按原文搜索并按做种数排序。';
   @override
   String get ai_media_acquire_download => '下载';
@@ -398961,6 +399412,35 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed => 'AI 暫不可用，已按原文搜尋並按做種數排序。';
   @override
@@ -423171,6 +423651,32 @@ extension on _StringsEn {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI is unavailable right now; results are from your original text, sorted by seeders.';
       case 'ai_media_acquire_download':
@@ -445093,6 +445599,32 @@ extension on _StringsAr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'الذكاء الاصطناعي غير متاح حاليًا؛ النتائج من نصك الأصلي مرتبة حسب البذور.';
       case 'ai_media_acquire_download':
@@ -467010,6 +467542,32 @@ extension on _StringsDe {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'Die KI ist gerade nicht verfügbar; die Ergebnisse stammen aus deinem ursprünglichen Text, nach Seedern sortiert.';
       case 'ai_media_acquire_download':
@@ -489002,6 +489560,32 @@ extension on _StringsEs {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'La IA no está disponible ahora mismo; los resultados provienen de tu texto original, ordenados por seeders.';
       case 'ai_media_acquire_download':
@@ -510977,6 +511561,32 @@ extension on _StringsFr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'L\'IA est indisponible pour le moment ; les résultats proviennent de votre texte d\'origine, triés par seeders.';
       case 'ai_media_acquire_download':
@@ -532967,6 +533577,32 @@ extension on _StringsId {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI tidak tersedia saat ini; hasil berasal dari teks asli Anda, diurutkan menurut seeder.';
       case 'ai_media_acquire_download':
@@ -554904,6 +555540,32 @@ extension on _StringsIt {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'L\'IA non è disponibile al momento; i risultati derivano dal testo originale, ordinati per seeder.';
       case 'ai_media_acquire_download':
@@ -576874,6 +577536,32 @@ extension on _StringsJa {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return '現在AIを利用できません。結果は入力した元のテキストによるもので、シーダー数順に並べています。';
       case 'ai_media_acquire_download':
@@ -598711,6 +599399,32 @@ extension on _StringsKo {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI를 지금 사용할 수 없습니다. 입력하신 원문 기준으로 시더 수 순으로 정렬한 결과입니다.';
       case 'ai_media_acquire_download':
@@ -620565,6 +621279,32 @@ extension on _StringsNl {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI is nu niet beschikbaar; de resultaten komen uit je oorspronkelijke tekst, gesorteerd op seeders.';
       case 'ai_media_acquire_download':
@@ -642533,6 +643273,32 @@ extension on _StringsPtBr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'A IA está indisponível no momento; os resultados vêm do seu texto original, ordenados por seeders.';
       case 'ai_media_acquire_download':
@@ -664490,6 +665256,32 @@ extension on _StringsRu {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'ИИ сейчас недоступен; результаты получены по вашему исходному тексту и отсортированы по числу сидов.';
       case 'ai_media_acquire_download':
@@ -686455,6 +687247,32 @@ extension on _StringsTh {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'ขณะนี้ AI ไม่พร้อมใช้งาน ผลลัพธ์มาจากข้อความเดิมของคุณ เรียงตามผู้แชร์';
       case 'ai_media_acquire_download':
@@ -708375,6 +709193,32 @@ extension on _StringsTr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'Yapay zeka şu anda kullanılamıyor; sonuçlar özgün metninizden, tohumlayıcı sayısına göre sıralı.';
       case 'ai_media_acquire_download':
@@ -730325,6 +731169,32 @@ extension on _StringsVi {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI hiện không khả dụng; kết quả lấy từ văn bản gốc của bạn, sắp xếp theo seeder.';
       case 'ai_media_acquire_download':
@@ -752256,6 +753126,31 @@ extension on _StringsZhCn {
         return '交给互联电脑办';
       case 'ai_interconnect_host_unpaired':
         return '还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。';
+      case 'ai_mcp_access':
+        return '外部 AI 访问（MCP）';
+      case 'ai_mcp_access_hint':
+        return '让本机的 MCP 客户端（Claude Desktop、Claude Code 等）调用 Fushi 的操作。只监听本机，需要下面的配对令牌。可撤销的改动直接执行并记入「AI 操作记录」；撤销不了的操作和安装扩展会先在这里请你确认。默认关闭。';
+      case 'ai_mcp_confirm_arguments':
+        return '参数';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} 请求执行：${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) => '${minutes} 分钟内不回答将自动拒绝。';
+      case 'ai_mcp_confirm_title':
+        return '外部 AI 请求执行操作';
+      case 'ai_mcp_token':
+        return '配对令牌';
+      case 'ai_mcp_token_copy':
+        return '复制令牌';
+      case 'ai_mcp_token_copy_config':
+        return '复制客户端配置';
+      case 'ai_mcp_token_hint':
+        return '为 MCP 客户端生成令牌。重新生成会作废旧令牌。';
+      case 'ai_mcp_token_issued_body':
+        return '把这个令牌填进 MCP 客户端配置的 FUSHI_MCP_TOKEN（接入说明里有示例）。它只显示这一次。';
+      case 'ai_mcp_token_issued_title':
+        return '新的配对令牌';
       case 'ai_media_acquire_ai_failed':
         return 'AI 暂不可用，已按原文搜索并按做种数排序。';
       case 'ai_media_acquire_download':
@@ -773917,6 +774812,32 @@ extension on _StringsZhHk {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI 暫不可用，已按原文搜尋並按做種數排序。';
       case 'ai_media_acquire_download':
