@@ -154,6 +154,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 不再出现任何 `ref.*`，BUG-513 的不变量（ref 只在 initState）继续成立。
   late final AppModel _appModel;
 
+  /// 同 [_db]：排行榜服务也在 initState 捕获，隐私开关改动后用它把条目从排行榜撤下。
+  late final LeaderboardService _leaderboard;
+
   /// 本域可选的网络传输：书/漫画四 transport 全通（远端文件下载后导入）；
   /// 视频是 SFTP、WebDAV 与 AList/OpenList（条目原地流播——AList 起播前经 fs/get
   /// 换签名直链，SFTP 经回环中继按偏移读；FTP 读不了区间，扫描器会拒）。
@@ -176,6 +179,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     super.initState();
     _appModel = ref.read(appProvider);
     _db = _appModel.database;
+    _leaderboard = ref.read(leaderboardServiceProvider);
     widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
     if (widget.mediaKind == 'video') {
       videoScrapeCleanupRevision.addListener(_onVideoScrapeCleanupChanged);
@@ -1307,15 +1311,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
-  /// 来源的隐私开关对话框。排行榜服务在 await 之前取（同 [_db] 的约定：async gap
-  /// 之后不再 `ref.read`）。
+  /// 来源的隐私开关对话框（排行榜服务用 initState 捕获的 [_leaderboard]）。
   Future<void> _openPrivacy(SourceLibraryRow row) async {
-    final LeaderboardService leaderboard = ref.read(leaderboardServiceProvider);
     final bool? changed = await showSourceLibraryPrivacyDialog(
       context,
       db: _db,
       source: row,
-      withdrawFromLeaderboard: leaderboard.syncAfterPrivacyChange,
+      withdrawFromLeaderboard: _leaderboard.syncAfterPrivacyChange,
     );
     if (changed == null || !mounted) return;
     await _load();
