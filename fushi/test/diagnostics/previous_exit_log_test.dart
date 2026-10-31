@@ -342,7 +342,7 @@ void main() {
         ),
       ],
     );
-    final String log = collectFeedbackLogText();
+    final String log = collectFeedbackLogText(includeDebugLog: true);
     expect(log, contains(kAndroidExitInfoSource));
     expect(log, contains('reason=LOW_MEMORY'));
     expect(log, contains('onTrimMemory: UI_HIDDEN'));

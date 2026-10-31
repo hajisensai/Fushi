@@ -45,6 +45,7 @@ class FeedbackDraft {
     this.contact = '',
     this.includeLogs = true,
     this.includeDeviceInfo = true,
+    this.includeDebugLog = true,
     this.linkAccount = true,
     this.screenshots = const <Uint8List>[],
     this.video,
@@ -58,6 +59,10 @@ class FeedbackDraft {
   final String contact;
   final bool includeLogs;
   final bool includeDeviceInfo;
+
+  /// [includeLogs] 时是否连调试日志一起带（仍要用户开着「调试日志」才有内容）。手动反馈
+  /// 默认带；闪退自动报告不带（[buildCrashReportDraft]），只发错误日志与退出摘要。
+  final bool includeDebugLog;
 
   /// 已登录排行榜账户时是否关联账户提交（开发者能看到昵称）。
   final bool linkAccount;
@@ -186,7 +191,7 @@ class FeedbackService extends ChangeNotifier {
     required LeaderboardClient Function() client,
     Future<Map<String, Object?>> Function()? meta,
     Future<InstallAttestation?> Function()? installId,
-    String Function()? logText,
+    String Function({required bool includeDebugLog})? logText,
     Uint8List Function(String log)? logEncoder,
     FeedbackVideoPreparer? prepareVideo,
     this.onSubmitted,
@@ -220,7 +225,7 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
-  final String Function() _logText;
+  final String Function({required bool includeDebugLog}) _logText;
   final Uint8List Function(String log) _logEncoder;
   final FeedbackVideoPreparer _prepareVideo;
 
@@ -619,7 +624,10 @@ class FeedbackService extends ChangeNotifier {
       onStage?.call(FeedbackSubmitStage.logs);
       Uint8List? gz;
       try {
-        final Uint8List encoded = await compute(_logEncoder, _logText());
+        final Uint8List encoded = await compute(
+          _logEncoder,
+          _logText(includeDebugLog: draft.includeDebugLog),
+        );
         gz = encoded;
         await client.uploadFeedbackAttachment(
           receipt.id,

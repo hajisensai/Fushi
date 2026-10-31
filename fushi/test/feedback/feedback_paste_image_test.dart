@@ -64,7 +64,7 @@ void main() {
       supportRoot: () async => root,
       client: board.feedbackClient,
       meta: () async => <String, Object?>{},
-      logText: () => '',
+      logText: ({required bool includeDebugLog}) => '',
       logEncoder: (String s) => Uint8List.fromList(utf8.encode(s)),
     );
     return ProviderScope(
