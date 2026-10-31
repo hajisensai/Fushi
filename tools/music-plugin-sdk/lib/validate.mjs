@@ -234,6 +234,40 @@ export function validateResult(method, args, value, policy) {
       r.lyricText(`${p}.translation`, value.translation);
       r.lyricText(`${p}.romanization`, value.romanization);
       break;
+    case 'lyricsSearch': {
+      if (value === null) break;
+      if (!obj(value)) break;
+      if (!Array.isArray(value.items)) {
+        r.warn(p, 'missing "items" array — the host treats this as "no candidates"');
+        break;
+      }
+      if (value.items.length > 20) r.warn(p, 'only the first 20 candidates are used');
+      value.items.slice(0, 20).forEach((it, i) => {
+        const ip = `${p}.items[${i}]`;
+        if (!isObj(it)) return r.warn(ip, 'not an object — dropped');
+        if (!str(it.title) || it.title.trim() === '') return r.warn(ip, 'missing or empty title — dropped');
+        if (it.ref === undefined || it.ref === null) return r.warn(ip, 'missing ref — dropped');
+        let refBytes;
+        try {
+          refBytes = Buffer.byteLength(JSON.stringify(it.ref), 'utf8');
+        } catch {
+          return r.warn(ip, 'ref is not JSON-serializable — dropped');
+        }
+        if (refBytes > 2048) r.warn(ip, `ref is ${refBytes} bytes serialized (max 2048) — dropped`);
+        if (it.artist !== undefined && it.artist !== null && typeof it.artist !== 'string') r.warn(ip, 'artist must be a string — ignored');
+        if (it.durationMs !== undefined && it.durationMs !== null && (!Number.isInteger(it.durationMs) || it.durationMs < 0)) {
+          r.warn(ip, 'durationMs must be a non-negative integer (milliseconds) — ignored');
+        }
+      });
+      break;
+    }
+    case 'lyricsFetch':
+      if (value === null) break;
+      if (!obj(value)) break;
+      if (!r.lyricText(`${p}.original`, value.original)) r.warn(p, 'no usable "original" — the host treats this as "no lyrics" (return null instead)');
+      r.lyricText(`${p}.translation`, value.translation);
+      r.lyricText(`${p}.romanization`, value.romanization);
+      break;
     case 'home': {
       if (!obj(value)) break;
       if (!Array.isArray(value.sections)) {
