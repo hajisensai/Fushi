@@ -193,7 +193,7 @@ libraryVideoSubtitleTarget(
 ///
 /// 刮削后自动补、下载后缺字幕重试、控制通道补字幕都经这里，三条路对同一个文件
 /// 搜的是同一份身份：刮削主源是 TMDB 时库内身份不带 AniList，Jimaku 就找不到
-/// 条目（BUG-3892）。规则见 [mergeDownloadConfirmedIdentity]。
+/// 条目（BUG-3926）。规则见 [mergeDownloadConfirmedIdentity]。
 Future<VideoMediaReference> withDownloadConfirmedIdentity(
   FushiDatabase database, {
   required String videoPath,

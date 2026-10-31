@@ -1,4 +1,4 @@
-## BUG-3892 · download-subtitle-retry-drops-anilist
+## BUG-3926 · download-subtitle-retry-drops-anilist
 - **报告**：2026-10-31（用户：订阅的《凶乱令嬢ニア・リストン》S01E04 没有自动下载日语字幕）
 - **真实性**：✅ 真 bug。用户库实测：E04 下载任务的字幕行 `status=unavailable`、`error=provider request timed out`（10-27 21:49 记、10-31 14:50 最后一次重试仍同样）；而 Jimaku 条目 12710 自 10-28 起就有 E04 的日语字幕（ABEMA `ja[cc].srt`、LoliHouse `[JPN].ass`、NanakoRaws）。
   - 下载当时 Jimaku 还没有 E04，记 `unavailable` 本身正常；问题在之后的定时重试。

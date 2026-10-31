@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3496 条。点号进各自文件。
+> 共 3530 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3892](bugs/BUG-3892-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
-> 共 3529 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
 | [BUG-3924](bugs/BUG-3924-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
 | [BUG-3923](bugs/BUG-3923-reader-volume-chips-order-and-center.md) | ✅ | ✅ | 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中 |

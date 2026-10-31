@@ -297,7 +297,7 @@ bool _sameLookup(VideoMetadataLookup a, VideoMetadataLookup b) =>
 /// tmdb / imdb / tvdb——不带 AniList / MAL 这类动画专库 id。Jimaku 的权威检索键
 /// 恰恰是 `anilist_id`：TMDB 关联与 TMDB 的长标题（含副标题、中点写成 U+2027）在
 /// Jimaku 都搜不到条目，于是字幕站明明有这一集，下载后缺字幕重试也永远补不上
-/// （BUG-3892：《凶乱令嬢ニア・リストン》第 4 集）。下载入队时用户确认过的身份里
+/// （BUG-3926：《凶乱令嬢ニア・リストン》第 4 集）。下载入队时用户确认过的身份里
 /// 正好有这些 id，同一个文件的字幕搜索要把它们带上（见 [mergeDownloadConfirmedIdentity]）。
 ///
 /// 没有任务导入过这个文件、任务身份里没有任何外部 id、或多条任务给出互不相干的
