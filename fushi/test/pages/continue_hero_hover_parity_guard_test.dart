@@ -14,7 +14,7 @@ import '../helpers/source_guard.dart';
 ///
 /// 2026-10-31 起这套交互收口在一个共享件里：书 / 游戏 / 音乐 / 视频首屏走
 /// `FushiContinueSpotlight`（竖封面主卡皮是 `FushiContinueHero`，横图剧照是叠层
-/// 皮），dashboard 主卡走 `FushiContinueHero`。守卫钉两头：共享件自身带悬停
+/// 皮），首页 dashboard 同样走它。守卫钉两头：共享件自身带悬停
 /// 抬升 + 整卡点按 + 右键；各页面的继续卡都经共享件而不是另画一张。
 void main() {
   String src(String path) {
@@ -50,8 +50,8 @@ void main() {
           'FushiContinueSpotlight(',
       'lib/src/pages/implementations/galgame_home_page.dart':
           'FushiContinueSpotlight(',
-      'lib/src/pages/implementations/home_dashboard_widgets.dart':
-          'FushiContinueHero(',
+      'lib/src/pages/implementations/home_dashboard_page.dart':
+          'FushiContinueSpotlight(',
       'lib/src/pages/implementations/music/music_library_page.dart':
           'FushiContinueSpotlight(',
       'lib/src/pages/implementations/home_video_page.dart':
