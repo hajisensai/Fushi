@@ -300,6 +300,55 @@ void main() {
     expect(mediaRuns, 4, reason: '用户主动同步：全量对账');
   });
 
+  // 审查 S-11：进复习页的节流同步以前直接调 syncNow，清空对账时刻 → 每次进页都把全部媒体整套对一遍。
+  test('进复习页的节流同步：媒体对账走内容指纹门控，只有手动立即同步做全量', () async {
+    DateTime now = DateTime(2026, 10, 29, 12);
+    int mediaRuns = 0;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            mediaRuns++;
+            return SrsMediaSyncReport();
+          },
+    );
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 1, reason: '这个位置第一次：对账');
+    now = now.add(kSrsSyncMinInterval + const Duration(seconds: 1));
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 1, reason: '内容指纹没变：节流同步不重做对账');
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '霞',
+      },
+    );
+    now = now.add(kSrsSyncMinInterval + const Duration(seconds: 1));
+    expect(await s.syncThrottled(), isTrue);
+    expect(mediaRuns, 2, reason: '新笔记可能引用新媒体：指纹变了就对账');
+    await s.syncNow();
+    expect(mediaRuns, 3, reason: '手动立即同步：全量对账');
+  });
+
   // 审查 PR #2593：关联判定缓存只按位置记，调度器跨 profile 切换常驻 → 切过去的 profile 永远跳过关联
   // （不自动采用、不检出冲突、不续做中断的并入）。
   test('关联判定缓存按（位置, profile）记：切到另一个 profile 照样判定，同一 profile 才复用', () async {
@@ -478,6 +527,59 @@ void main() {
         reason: f.path,
       );
     }
+  });
+
+  // 媒体对账报有内容对象这把密钥解不开（undecryptable，不记可疑）：调度器按口令不对提示，与握手报的是同一条。
+  test('媒体对账有对象解不开：位置的加密状态记成口令不对', () async {
+    final SrsLocationKey key = await srsDeriveLocationKey(
+      store,
+      'correct horse',
+      pendingEnable: true,
+    );
+    SrsLocationKey current = key;
+    final Directory media = Directory(p.join(root.path, '_media_k'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc_k'))
+      ..createSync();
+    bool undecryptable = false;
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc_k',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      locationKey: (String id) => id == 'local:loc_k' ? current : null,
+      onEncryptionEnabled: (String id, SrsLocationKey k) async => current = k,
+      readMediaRoot: () async => media,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+          }) async {
+            final SrsMediaSyncReport r = SrsMediaSyncReport();
+            if (undecryptable) r.undecryptable.add('pic.png');
+            return r;
+          },
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(location));
+    expect(s.locationCrypto['local:loc_k']?.error, isNull);
+    expect(s.locationCrypto['local:loc_k']?.encrypted, isTrue);
+    undecryptable = true;
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '絵',
+      },
+    );
+    await s.syncWithBackend(LocalDirectoryAssetStore(location));
+    expect(s.locationCrypto['local:loc_k']?.error, kSrsSync2WrongKey);
+    expect(s.locationCrypto['local:loc_k']?.encrypted, isTrue);
   });
 
   test('支持服务器时间的后端：同步成功、上传段与 head、校时；不提示', () async {

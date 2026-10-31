@@ -92,21 +92,24 @@ impl Ctx {
 
 // ---------------------------------------------------------------- 修改记录
 
+// 与列重复的键（id / p / k / e / f / w / s）在 srs.db v18 的瘦存里不在 JSON 里（store/slim.rs）：都可缺，缺了从
+// [EditCols] 补；原文（不是瘦存）缺必需的键照旧报错。
 #[derive(Deserialize)]
 struct WireEdit<'a> {
     #[serde(default, borrow)]
     id: Option<&'a RawValue>,
-    #[serde(borrow)]
-    p: Cow<'a, str>,
+    #[serde(default, borrow, rename = "p")]
+    _p: Option<Cow<'a, str>>,
     #[serde(default, borrow)]
     k: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    e: Cow<'a, str>,
-    #[serde(borrow)]
-    f: Cow<'a, str>,
-    #[serde(borrow)]
-    w: Cow<'a, str>,
-    s: i64,
+    #[serde(default, borrow)]
+    e: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    f: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    w: Option<Cow<'a, str>>,
+    #[serde(default)]
+    s: Option<i64>,
     #[serde(default)]
     ctx: Option<Value>,
     #[serde(default)]
@@ -207,14 +210,54 @@ pub fn edit_id(writer: &str, seq: i64) -> String {
 }
 
 /// Dart `SrsFieldEdit.fromJson`：kind 不认识 / 必填键缺失或类型不对 / ID 与 dot 不符 → 坏数据。
+/// 修改记录行里与 JSON 键重复的列（ID 已解码成文本）。读 `jslim` + 这些列的读者（store/slim.rs）用它代替拼回的 `json`。
+pub(crate) struct EditCols {
+    pub id: String,
+    pub k: String,
+    pub e: String,
+    pub f: String,
+    pub w: String,
+    pub s: i64,
+}
+
 fn parse_edit<'a>(
-    json: &'a str,
+    stored: &'a str,
     server_time: Option<i64>,
+    cols: Option<&'a EditCols>,
     ns: &[u8; 16],
 ) -> Result<Edit<'a>, String> {
+    // 瘦存 `~<原文没有的键>{…}`：去掉的键从列补，记为原文没有的不补（与 slim::expand 拼回的原文同义）。
+    let (json, absent, cols) = match (stored.strip_prefix('~'), cols) {
+        (Some(rest), Some(c)) => {
+            let brace = rest.find('{').ok_or("bad slim field edit")?;
+            (&rest[brace..], &rest[..brace], Some(c))
+        }
+        (Some(_), None) => return Err("slim field edit read without its columns".to_owned()),
+        (None, _) => (stored, "", None),
+    };
     let w: WireEdit<'a> = serde_json::from_str(json).map_err(|e| format!("bad field edit: {e}"))?;
-    let _ = &w.p;
-    let kind = match w.k.as_deref() {
+    let col = |v: Option<Cow<'a, str>>, key: &str, pick: fn(&'a EditCols) -> &'a str| -> Option<Cow<'a, str>> {
+        v.or_else(|| cols.filter(|_| !absent.split(',').any(|a| a == key)).map(|c| Cow::Borrowed(pick(c))))
+    };
+    let need = |v: Option<Cow<'a, str>>, key: &str| v.ok_or_else(|| format!("bad field edit: missing field `{key}`"));
+    // p 解出来用不到：瘦存里缺了不补，原文缺照旧报错。
+    need(col(w._p, "p", |c| &c.id), "p")?;
+    let k = col(w.k, "k", |c| &c.k);
+    let e = need(col(w.e, "e", |c| &c.e), "e")?;
+    let f = need(col(w.f, "f", |c| &c.f), "f")?;
+    let wr = need(col(w.w, "w", |c| &c.w), "w")?;
+    let seq = match w.s {
+        Some(s) => s,
+        None => cols.filter(|_| !absent.split(',').any(|a| a == "s")).map(|c| c.s).ok_or("bad field edit: missing field `s`")?,
+    };
+    let given_id: Option<Cow<'a, str>> = match w.id {
+        Some(raw) if raw.get().starts_with('"') => {
+            Some(Cow::Owned(serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?))
+        }
+        Some(_) => None,
+        None => col(None, "id", |c| &c.id),
+    };
+    let kind = match k.as_deref() {
         Some(k) => KINDS
             .iter()
             .copied()
@@ -226,23 +269,19 @@ fn parse_edit<'a>(
         let (p, c, wr) = parse_hlc(&w.hlc)?;
         (p, c, wr.to_owned())
     };
-    let id = uuid_v5(ns, &format!("edit/{}/{}", w.w, w.s));
-    if let Some(raw) = w.id {
-        if raw.get().starts_with('"') {
-            let given: String =
-                serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?;
-            if given != id {
-                return Err(format!("field edit id mismatch: {given} vs {id}"));
-            }
+    let id = uuid_v5(ns, &format!("edit/{wr}/{seq}"));
+    if let Some(given) = given_id {
+        if given != id {
+            return Err(format!("field edit id mismatch: {given} vs {id}"));
         }
     }
     Ok(Edit {
         id,
         kind,
-        entity: w.e,
-        key: w.f,
-        writer: w.w,
-        seq: w.s,
+        entity: e,
+        key: f,
+        writer: wr,
+        seq,
         ctx: Ctx::parse(w.ctx.as_ref()),
         value: w.v.unwrap_or(Value::Null),
         physical,
@@ -971,12 +1010,6 @@ enum Group {
     },
     #[serde(rename = "deck")]
     Deck { n: usize, rec: Value },
-    /// 一组卡：`cards` = [卡 ID, 记录条数]，`want` = [卡 ID, 笔记首选牌组, 默认牌组]。
-    #[serde(rename = "cards")]
-    Cards {
-        cards: Vec<(String, usize)>,
-        want: Vec<(String, Option<String>, String)>,
-    },
     /// 落库裁剪：前 `e` 条是已有的，其余依次到达。
     #[serde(rename = "land")]
     Land { n: usize, e: usize },
@@ -1022,7 +1055,7 @@ pub fn materialize(
         let mut out = Vec::with_capacity(n);
         for i in from..from + n {
             let s = servers[i];
-            out.push(parse_edit(item(i)?, (s != NONE_I64).then_some(s), &ns)?);
+            out.push(parse_edit(item(i)?, (s != NONE_I64).then_some(s), None, &ns)?);
         }
         at.set(from + n);
         Ok(out)
@@ -1055,11 +1088,6 @@ pub fn materialize(
                 let payload = rec;
                 let view = deck_view(&ent, &payload)?;
                 entity_json(&ent, Some(view))
-            }
-            Group::Cards { cards, want } => {
-                let total: usize = cards.iter().map(|(_, n)| n).sum();
-                let edits = take(total)?;
-                cards_group(&edits, cards, want)?
             }
             Group::Land { n, e } => {
                 if e > n {
@@ -1104,11 +1132,12 @@ fn entity_json(ent: &Entity<'_, '_>, view: Option<Value>) -> Value {
 // ---------------------------------------------------------------- crate 内部入口（同步 v2，sync2）
 
 /// 一条落库修改记录（JSON 原文 + S(e)）。
-pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>);
+/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列)。
+pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>, Option<&'a EditCols>);
 
 fn parse_stored<'a>(edits: &[StoredEdit<'a>]) -> Result<Vec<Edit<'a>>, String> {
     let ns = uuid_bytes(SRS_NAMESPACE);
-    edits.iter().map(|(j, s)| parse_edit(j, *s, &ns)).collect()
+    edits.iter().map(|(j, s, c)| parse_edit(j, *s, *c, &ns)).collect()
 }
 
 /// 落库裁剪（[land]，与 `materialize` 的 `land` 组同一个判据）：前 [existing] 条是已有的，其余依次到达。
@@ -1168,7 +1197,28 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
-/// 一组卡的血统与标志（与 `materialize` 的 `cards` 组同一份）：[cards] 是 (卡 ID, 它的修改记录)，
+/// 浏览（store/browse.rs）：一条笔记各字段的生效原文（`f/<字段 id>` 键；非字符串记成空串，与 Dart 浏览按需读同值），
+/// 以及各寄存器生效记录 HLC 物理时刻的最大值（Dart `srsEditsModifiedAt` 去掉创建时刻那一项；没有记录 = None）。
+/// [edits] 只给部分字段键时，最后改动时刻只对这些键成立（调用方只在给全部记录时用它）。
+pub(crate) fn note_browse_values(edits: &[StoredEdit<'_>]) -> Result<(Vec<(String, String)>, Option<i64>), String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let mut values = Vec::new();
+    let mut modified: Option<i64> = None;
+    for r in &ent.regs {
+        let winner = r.live.first().map(|&i| &parsed[i]);
+        if let Some(e) = winner {
+            modified = Some(modified.map_or(e.physical, |m| m.max(e.physical)));
+        }
+        if let Some(id) = r.key.strip_prefix("f/") {
+            let v = winner.and_then(|e| e.value.as_str()).unwrap_or("");
+            values.push((id.to_owned(), v.to_owned()));
+        }
+    }
+    Ok((values, modified))
+}
+
+/// 一组卡的血统与标志（store/caches.rs 的血统查询、缓存刷新用）：[cards] 是 (卡 ID, 它的修改记录)，
 /// [want] 是 (卡 ID, 笔记首选牌组, 默认牌组)。返回每个 want 的 (血统, 标志 JSON)。
 pub(crate) fn card_lineage_flags(
     cards: &[(String, Vec<StoredEdit<'_>>)],
@@ -1193,6 +1243,86 @@ pub(crate) fn card_lineage_flags(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 卡片血统与继承后的标志（[card_lineage_flags] / [cards_group]）：tests/fixtures/card_lineage_vectors.json 是
+    /// packages/fushi_srs/test/registers/fixtures/register_vectors.json.gz 里的 300 个 `card` 用例（由**删除前的
+    /// Dart 实现**生成：成环、缺失前身、historyFrom 值不为 true、坏类型），以前经 Dart `srsCardLineages`（`cards`
+    /// 批量组）对拍；那层 Dart 包装生产不再用、已删（L-5），这里直接测内核：血统、标志、每张输入卡的寄存器。
+    #[test]
+    fn card_lineage_vectors_match_the_old_dart_implementation() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/card_lineage_vectors.json");
+        let vectors: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(vectors.len(), 300);
+        let mut multi = 0;
+        for v in &vectors {
+            let server = v["server"].as_object().cloned().unwrap_or_default();
+            let mut texts: Vec<(String, Vec<String>)> = Vec::new();
+            for (id, items) in v["cards"].as_object().unwrap() {
+                texts.push((id.clone(), items.as_array().unwrap().iter().map(|j| j.as_str().unwrap().to_owned()).collect()));
+            }
+            let id_of = |j: &str| -> Option<String> {
+                serde_json::from_str::<Value>(j).ok().and_then(|x| x.get("id").and_then(Value::as_str).map(str::to_owned))
+            };
+            let cards: Vec<(String, Vec<StoredEdit<'_>>)> = texts
+                .iter()
+                .map(|(id, items)| {
+                    let edits = items
+                        .iter()
+                        .map(|j| (j.as_str(), id_of(j).and_then(|e| server.get(&e)).and_then(Value::as_i64), None))
+                        .collect();
+                    (id.clone(), edits)
+                })
+                .collect();
+            let want = vec![(
+                v["card"].as_str().unwrap().to_owned(),
+                v["noteDeckId"].as_str().map(str::to_owned),
+                v["fallbackDeckId"].as_str().unwrap().to_owned(),
+            )];
+            let e = &v["expect"];
+            let mut all: Vec<StoredEdit<'_>> = Vec::new();
+            let mut counts: Vec<(String, usize)> = Vec::new();
+            for (id, es) in &cards {
+                all.extend_from_slice(es);
+                counts.push((id.clone(), es.len()));
+            }
+            let got = parse_stored(&all).and_then(|parsed| cards_group(&parsed, &counts, &want));
+            if e.get("error").is_some() {
+                assert!(got.is_err(), "{v}");
+                continue;
+            }
+            let got = got.unwrap_or_else(|err| panic!("{err}: {v}"));
+            // 与旧 Dart 测试同一份序列化：标志用 Dart 字段名，寄存器里的项下标换回修改记录 id。
+            let f = &got["w"][0]["f"];
+            let flags = json!({
+                "deckId": f["dk"],
+                "suspended": f["su"] == Value::Bool(true),
+                "buriedUntilDay": f["bu"],
+                "flag": f["fl"],
+                "newPosition": f["np"],
+            });
+            assert_eq!(got["w"][0]["l"], e["lineage"], "{v}");
+            assert_eq!(flags, e["flags"], "{v}");
+            let mut regs = Map::new();
+            for (k, (id, items)) in texts.iter().enumerate() {
+                let ids: Vec<Option<String>> = items.iter().map(|j| id_of(j)).collect();
+                let by = |xs: &Value| -> Value {
+                    Value::Array(xs.as_array().unwrap().iter().map(|i| json!(ids[i.as_u64().unwrap() as usize])).collect())
+                };
+                let list: Vec<Value> = got["r"][k]["r"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|r| json!([r[0], by(&r[1]), r[2] == json!(1), by(&r[3])]))
+                    .collect();
+                regs.insert(id.clone(), Value::Array(list));
+            }
+            assert_eq!(Value::Object(regs), e["regs"], "{v}");
+            if e["lineage"].as_array().unwrap().len() > 1 {
+                multi += 1;
+            }
+        }
+        assert!(multi > 60);
+    }
 
     #[test]
     fn uuid_v5_matches_dart_field_edit_id() {
@@ -1221,7 +1351,7 @@ mod tests {
             // 用户真改过名。
             edit(3, "fieldDef/c", json!({"name": "我的来源", "ord": 2, "ankiNum": 13})),
         ];
-        let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None)).collect();
+        let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None, None)).collect();
         let builtin = json!({
             "name": "Fushi Card", "css": "",
             "fields": [
@@ -1249,7 +1379,7 @@ mod tests {
             "fields": [{"id": "a", "name": "Expression", "ord": 0, "ankiNum": 11}],
             "templates": [],
         });
-        let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None)];
+        let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None, None)];
         let v = note_type_view_of(&payload, &only_a, &lapis).unwrap();
         assert_eq!(v["fs"][0]["name"], "Expression");
     }

@@ -43,7 +43,7 @@ void main() {
   Future<void> tamper(SrsDbStore s, Iterable<String> noteIds) async {
     for (final String id in noteIds) {
       await s.db.customStatement(
-        "UPDATE srs_notes_cache SET sort_field = 'TAMPERED' WHERE id = ?",
+        "UPDATE srs_notes_cache SET sort_field = 'TAMPERED' WHERE id = srs_id(?)",
         <Object>[id],
       );
     }
@@ -375,7 +375,7 @@ void main() {
                 .customSelect(
                   'SELECT id FROM srs_cards_cache WHERE deck_id = ? AND hidden = 0',
                   variables: <Variable<Object>>[
-                    Variable<String>(a.defaultDeckId),
+                    Variable<String>(a.defaultDeckId, srsIdType),
                   ],
                 )
                 .get())

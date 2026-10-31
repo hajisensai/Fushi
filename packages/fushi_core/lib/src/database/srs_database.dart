@@ -6,6 +6,7 @@ library;
 
 import 'package:drift/drift.dart';
 
+import 'srs_id_type.dart';
 import 'srs_tables.dart';
 
 part 'srs_database.g.dart';

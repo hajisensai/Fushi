@@ -230,17 +230,20 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
 /// 与 Dart `SrsReviewLog.fromJson` 一样判为坏数据。
 #[derive(Deserialize)]
 struct WireLog<'a> {
-    #[serde(borrow)]
-    id: Cow<'a, str>,
-    #[serde(borrow)]
-    p: Cow<'a, str>,
-    #[serde(borrow)]
-    card: Cow<'a, str>,
-    #[serde(borrow)]
-    kind: Cow<'a, str>,
+    // 与列重复的键（id / p / card / kind / rating / at / rtype / origin / dur）在 srs.db v18 的瘦存里不在 JSON
+    // 里（store/slim.rs）：都可缺，缺了从 [LogCols] 补；原文（不是瘦存）缺必需的键照旧报错。
+    #[serde(default, borrow)]
+    id: Option<Cow<'a, str>>,
+    #[serde(default, borrow, rename = "p")]
+    _p: Option<Cow<'a, str>>,
+    #[serde(default, borrow, rename = "card")]
+    _card: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    kind: Option<Cow<'a, str>>,
     #[serde(borrow)]
     hlc: Cow<'a, str>,
-    at: i64,
+    #[serde(default)]
+    at: Option<i64>,
     #[serde(default, borrow)]
     origin: Option<Cow<'a, str>>,
     #[serde(default, borrow)]
@@ -372,7 +375,7 @@ pub type Parsed<'a> = (Log<'a>, Option<Outcome>, Extra<'a>);
 
 /// 一条落库日志解成 [Parsed]（与 [state_from_json] 同一套坏数据判据）。
 pub fn parse_full(json: &str, server_time: Option<i64>) -> Result<Parsed<'_>, String> {
-    let (log, res, extra) = parse_wire(json, server_time)?;
+    let (log, res, extra) = parse_wire(json, server_time, None)?;
     Ok((log, res.as_ref().map(Outcome::of), extra))
 }
 
@@ -388,13 +391,68 @@ pub(crate) fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
     Ok((p, c, w))
 }
 
+/// 日志行里与 JSON 键重复的列（ID 已解码成文本；`rating` 列 NULL = None）。读 `jslim` + 这些列的读者
+/// （store/slim.rs）用它代替拼回的 `json`。
+pub struct LogCols {
+    pub id: String,
+    pub kind: String,
+    pub rating: Option<i64>,
+    pub at: i64,
+    pub rtype: String,
+    pub origin: String,
+    pub dur: i64,
+}
+
+/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列)。
+pub type StoredLog<'a> = (&'a str, Option<i64>, Option<&'a LogCols>);
+
 /// 一条落库日志解成 [Log]，连同解好的结果（与 Dart 一样每条都解：哪条的结果是坏数据都判错）。
 fn parse_wire<'a>(
-    json: &'a str,
+    stored: &'a str,
     server_time: Option<i64>,
+    cols: Option<&'a LogCols>,
 ) -> Result<(Log<'a>, Option<WireResult<'a>>, Extra<'a>), String> {
-    let w: WireLog<'a> = serde_json::from_str(json).map_err(|e| format!("bad review log: {e}"))?;
-    let _ = (&w.p, &w.card);
+    // 瘦存 `~<原文没有的键>{…}`：去掉的键从列补，记为原文没有的不补（与 slim::expand 拼回的原文同义）。
+    let (json, absent, cols) = match (stored.strip_prefix('~'), cols) {
+        (Some(rest), Some(c)) => {
+            let brace = rest.find('{').ok_or("bad slim review log")?;
+            (&rest[brace..], &rest[..brace], Some(c))
+        }
+        (Some(_), None) => return Err("slim review log read without its columns".to_owned()),
+        (None, _) => (stored, "", None),
+    };
+    let mut w: WireLog<'a> = serde_json::from_str(json).map_err(|e| format!("bad review log: {e}"))?;
+    let col = |key: &str| cols.filter(|_| !absent.split(',').any(|a| a == key));
+    if let Some(c) = col("id") {
+        w.id.get_or_insert(Cow::Borrowed(&c.id));
+    }
+    if let Some(c) = col("kind") {
+        w.kind.get_or_insert(Cow::Borrowed(&c.kind));
+    }
+    if let Some(c) = col("at") {
+        w.at.get_or_insert(c.at);
+    }
+    if let Some(c) = col("rtype") {
+        w.rtype.get_or_insert(Cow::Borrowed(&c.rtype));
+    }
+    if let Some(c) = col("origin") {
+        w.origin.get_or_insert(Cow::Borrowed(&c.origin));
+    }
+    if let Some(c) = col("dur") {
+        w.dur.get_or_insert(c.dur);
+    }
+    if let Some(r) = col("rating").and_then(|c| c.rating) {
+        w.rating.get_or_insert(r);
+    }
+    // p / card 选取用不到：瘦存里缺了不补（原文缺照旧报错）。
+    for (key, v) in [("p", w._p.is_some()), ("card", w._card.is_some())] {
+        if !v && col(key).is_none() {
+            return Err(format!("bad review log: missing field `{key}`"));
+        }
+    }
+    let id = w.id.ok_or("bad review log: missing field `id`")?;
+    let kind = w.kind.ok_or("bad review log: missing field `kind`")?;
+    let at = w.at.ok_or("bad review log: missing field `at`")?;
     let (physical, counter, writer) = match w.hlc {
         Cow::Borrowed(s) => {
             let (p, c, wr) = parse_hlc(s)?;
@@ -429,17 +487,17 @@ fn parse_wire<'a>(
     };
     Ok((
         Log {
-            id: w.id,
+            id,
             writer,
             physical,
             counter,
             server_time,
-            kind: Kind::parse(&w.kind),
+            kind: Kind::parse(&kind),
             origin,
             rating_type,
             rating: w.rating,
             anki_id: w.anki_id,
-            occurred_at: w.at,
+            occurred_at: at,
             revokes: w.revokes,
             has_result: res.is_some(),
         },
@@ -519,7 +577,13 @@ fn parse_result<'a>(raw: &'a RawValue) -> Result<WireResult<'a>, String> {
 
 /// 一份历史（落库 JSON + 各自的服务器时刻）的当前状态。
 pub fn state_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<State, String> {
-    let (logs, results, _) = parse_all(jsons, server_times)?;
+    let stored: Vec<StoredLog<'_>> = jsons.iter().zip(server_times).map(|(j, s)| (*j, *s, None)).collect();
+    state_from_stored(&stored)
+}
+
+/// [state_from_json]，日志可以是瘦存 + 列（[StoredLog]）。
+pub fn state_from_stored(stored: &[StoredLog<'_>]) -> Result<State, String> {
+    let (logs, results, _) = parse_all(stored)?;
     let sel = select(&logs);
     state_of(sel, logs, results)
 }
@@ -548,19 +612,25 @@ pub struct StatRow {
 /// 一份归属组（归属卡 + 归它的前身卡，日志合在一起）的有效复习投影：每条有效日志在分类 / 成熟变化
 /// 上看合并历史里的前序有效结果。规则与删除前的 Dart `srsStatProjectionOf` 逐条对应。
 pub fn stats_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<Vec<StatRow>, String> {
-    let (logs, results, extras) = parse_all(jsons, server_times)?;
+    let stored: Vec<StoredLog<'_>> = jsons.iter().zip(server_times).map(|(j, s)| (*j, *s, None)).collect();
+    stats_from_stored(&stored)
+}
+
+/// [stats_from_json]，日志可以是瘦存 + 列（[StoredLog]）。
+pub fn stats_from_stored(stored: &[StoredLog<'_>]) -> Result<Vec<StatRow>, String> {
+    let (logs, results, extras) = parse_all(stored)?;
     let sel = select(&logs);
     Ok(stat_rows(&sel, &logs, &results, &extras))
 }
 
 type ParsedAll<'a> = (Vec<Log<'a>>, Vec<Option<WireResult<'a>>>, Vec<Extra<'a>>);
 
-fn parse_all<'a>(jsons: &[&'a str], server_times: &[Option<i64>]) -> Result<ParsedAll<'a>, String> {
-    let mut logs = Vec::with_capacity(jsons.len());
-    let mut results = Vec::with_capacity(jsons.len());
-    let mut extras = Vec::with_capacity(jsons.len());
-    for (j, s) in jsons.iter().zip(server_times) {
-        let (log, res, extra) = parse_wire(j, *s)?;
+fn parse_all<'a>(stored: &[StoredLog<'a>]) -> Result<ParsedAll<'a>, String> {
+    let mut logs = Vec::with_capacity(stored.len());
+    let mut results = Vec::with_capacity(stored.len());
+    let mut extras = Vec::with_capacity(stored.len());
+    for (j, s, c) in stored {
+        let (log, res, extra) = parse_wire(j, *s, *c)?;
         logs.push(log);
         results.push(res);
         extras.push(extra);
@@ -881,7 +951,7 @@ pub fn import_equivalent_any(text: &[u8], offs: &[u32], groups: &[u32]) -> Resul
         if a > b || b > text.len() || !text.is_char_boundary(a) || !text.is_char_boundary(b) {
             return Err("bad import batch offsets".to_owned());
         }
-        logs.push(parse_wire(&text[a..b], None)?.0);
+        logs.push(parse_wire(&text[a..b], None, None)?.0);
     }
     let mut out = Vec::with_capacity(groups.len() - 1);
     for g in groups.windows(2) {

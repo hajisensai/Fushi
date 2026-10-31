@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow, srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaRetention;
@@ -98,7 +98,9 @@ void main() {
                 .customSelect(
                   'SELECT field_key FROM srs_field_edits WHERE entity_id = ? '
                   'ORDER BY field_key',
-                  variables: <Variable<Object>>[Variable<String>(noteId)],
+                  variables: <Variable<Object>>[
+                    Variable<String>(noteId, srsIdType),
+                  ],
                 )
                 .get())
           r.read<String>('field_key'),
@@ -111,7 +113,7 @@ void main() {
                 'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ? '
                 'AND instr(payload, CAST(? AS BLOB)) > 0',
                 variables: <Variable<Object>>[
-                  Variable<String>(kProfile),
+                  Variable<String>(kProfile, srsIdType),
                   Variable<String>(text),
                 ],
               )

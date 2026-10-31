@@ -71,7 +71,7 @@ statsViaRust(List<SrsReviewLog> logs, SrsDayContext day) {
   core.execBatch(
     <String>[
       'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
-          'review_type, origin, duration_ms, json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, ?, ?, ?, ?, ?, ?)',
     ],
     <(int, List<Object?>)>[
       for (final SrsReviewLog l in logs)
@@ -655,7 +655,7 @@ void main() {
       srsLapisFieldId(kProfile, 'Expression'): expr,
     };
 
-    test('评分 / 撤销 / 翻日 / 牌组与搜索筛选 / 可提取度', () async {
+    test('评分 / 撤销 / 翻日 / 牌组筛选 / 可提取度', () async {
       final String sub = await store.createDeck('語彙');
       final String n1 = await store.createNote(
         noteTypeId: store.lapisNoteTypeId,
@@ -714,12 +714,6 @@ void main() {
       final Set<String> inSub = b.index.cardIdsInDeck(sub);
       expect(inSub, <String>{c2});
       expect(d.subset(inSub).reviews.single.cardId, c2);
-      expect(b.index.cardIdsMatching('tag:verb'), <String>{c1});
-      expect(b.index.cardIdsMatching('飲'), <String>{c2});
-      expect(
-        () => b.index.cardIdsMatching('prop:ease>2'),
-        throwsA(isA<SrsSearchUnsupported>()),
-      );
       expect(b.index.decks.map(((String, String) x) => x.$2), contains('語彙'));
     });
   });

@@ -621,7 +621,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
             icon: FushiIcons.error,
             tone: FushiPlaceholderTone.error,
             message: t.error_load_failed,
-            detail: '${data.error}',
+            detail: srsLoadErrorDetail(data.error),
             action: FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('srs-load-retry'),
               onPressed: () => ref.invalidate(srsStoreProvider),
@@ -1838,4 +1838,16 @@ class SrsDeckIndentGuides extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 复习库打不开时占位页的说明：升级格式空间不够（[SrsUpgradeNoSpaceException]）给出可读的「还要腾出多少」，别的错误
+/// 照原文。
+String srsLoadErrorDetail(Object? error) {
+  if (error is SrsUpgradeNoSpaceException) {
+    final int short = error.neededBytes - error.freeBytes;
+    return t.srs_storage_upgrade_no_space(
+      size: FushiByteFormat.bytes(short > 0 ? short : error.neededBytes),
+    );
+  }
+  return '$error';
 }
