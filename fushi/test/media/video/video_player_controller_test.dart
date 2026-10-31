@@ -18,38 +18,39 @@ AudioCue _cue(int i, int s, int e) => AudioCue()
 
 void main() {
   group('VideoPlayerController cue sync', () {
-    test('selects cue by position; gap clears subtitle; notifies on change',
-        () {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
+    test(
+      'selects cue by position; gap clears subtitle; notifies on change',
+      () {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
 
-      int notifications = 0;
-      c.addListener(() => notifications++);
+        int notifications = 0;
+        c.addListener(() => notifications++);
 
-      c.debugUpdateCueForPosition(500);
-      expect(c.currentCueIndex, 0);
-      expect(c.currentCue!.text, 'line0');
+        c.debugUpdateCueForPosition(500);
+        expect(c.currentCueIndex, 0);
+        expect(c.currentCue!.text, 'line0');
 
-      c.debugUpdateCueForPosition(1500); // gap：字幕消失（BUG-074）
-      expect(c.currentCueIndex, -1);
-      expect(c.currentCue, isNull);
+        c.debugUpdateCueForPosition(1500); // gap：字幕消失（BUG-074）
+        expect(c.currentCueIndex, -1);
+        expect(c.currentCue, isNull);
 
-      c.debugUpdateCueForPosition(2500);
-      expect(c.currentCueIndex, 1);
-      expect(c.currentCue!.text, 'line1');
+        c.debugUpdateCueForPosition(2500);
+        expect(c.currentCueIndex, 1);
+        expect(c.currentCue!.text, 'line1');
 
-      c.debugUpdateCueForPosition(2600); // 同句不重复通知
-      expect(c.currentCueIndex, 1);
+        c.debugUpdateCueForPosition(2600); // 同句不重复通知
+        expect(c.currentCueIndex, 1);
 
-      // 500→cue0, 1500→clear, 2500→cue1 = 3 次；2600 同句不通知。
-      expect(notifications, 3);
-    });
+        // 500→cue0, 1500→clear, 2500→cue1 = 3 次；2600 同句不通知。
+        expect(notifications, 3);
+      },
+    );
 
     // BUG-074: 视频底部字幕 overlay 与有声书正文跟随高亮语义不同——真实字幕在
     // 其时间窗结束后（句间静音 gap / 末句之后）必须消失，不能保留上一句。
-    test(
-        'BUG-074: subtitle clears in gap and after last cue; no redundant '
+    test('BUG-074: subtitle clears in gap and after last cue; no redundant '
         'notify while gap is sustained', () {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -83,18 +84,20 @@ void main() {
       expect(notifications, 4);
     });
 
-    test('BUG-074: position before first cue shows no subtitle (no notify)',
-        () {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 1000, 2000)]);
-      int notifications = 0;
-      c.addListener(() => notifications++);
-      c.debugUpdateCueForPosition(500); // 早于首句：无字幕
-      expect(c.currentCue, isNull);
-      expect(c.currentCueIndex, -1);
-      expect(notifications, 0); // 本就无字幕，不应 notify
-    });
+    test(
+      'BUG-074: position before first cue shows no subtitle (no notify)',
+      () {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        c.setCues([_cue(0, 1000, 2000)]);
+        int notifications = 0;
+        c.addListener(() => notifications++);
+        c.debugUpdateCueForPosition(500); // 早于首句：无字幕
+        expect(c.currentCue, isNull);
+        expect(c.currentCueIndex, -1);
+        expect(notifications, 0); // 本就无字幕，不应 notify
+      },
+    );
 
     test('delayMs offsets cue lookup', () {
       final c = VideoPlayerController();
@@ -232,8 +235,11 @@ void main() {
 
       c.debugHandleCompletedForTesting(true);
       c.debugHandleCompletedForTesting(true);
-      expect(completed, 1,
-          reason: 'a single media load must not auto-advance more than once');
+      expect(
+        completed,
+        1,
+        reason: 'a single media load must not auto-advance more than once',
+      );
     });
 
     test('a new load rearms completed=true', () {
@@ -246,49 +252,62 @@ void main() {
       c.debugResetCompletedForNewLoadForTesting();
       c.debugHandleCompletedForTesting(true);
 
-      expect(completed, 2,
-          reason: 'episode reload must allow the next EOF to advance again');
+      expect(
+        completed,
+        2,
+        reason: 'episode reload must allow the next EOF to advance again',
+      );
     });
 
-    test('replacing the completed stream cancels the previous subscription',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      final StreamController<bool> first = StreamController<bool>();
-      final StreamController<bool> second = StreamController<bool>();
-      addTearDown(first.close);
-      addTearDown(second.close);
-      int completed = 0;
-      c.setOnCompleted(() => completed++);
+    test(
+      'replacing the completed stream cancels the previous subscription',
+      () async {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        final StreamController<bool> first = StreamController<bool>();
+        final StreamController<bool> second = StreamController<bool>();
+        addTearDown(first.close);
+        addTearDown(second.close);
+        int completed = 0;
+        c.setOnCompleted(() => completed++);
 
-      await c.debugAttachCompletedStreamForTesting(first.stream);
-      await c.debugAttachCompletedStreamForTesting(second.stream);
-      first.add(true);
-      await Future<void>.delayed(Duration.zero);
-      expect(completed, 0,
-          reason: 'load must cancel the old completed subscription first');
+        await c.debugAttachCompletedStreamForTesting(first.stream);
+        await c.debugAttachCompletedStreamForTesting(second.stream);
+        first.add(true);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          completed,
+          0,
+          reason: 'load must cancel the old completed subscription first',
+        );
 
-      second.add(true);
-      await Future<void>.delayed(Duration.zero);
-      expect(completed, 1);
-    });
+        second.add(true);
+        await Future<void>.delayed(Duration.zero);
+        expect(completed, 1);
+      },
+    );
 
-    test('dispose cancels completed subscription and clears callback',
-        () async {
-      final c = VideoPlayerController();
-      final StreamController<bool> stream = StreamController<bool>();
-      addTearDown(stream.close);
-      int completed = 0;
-      c.setOnCompleted(() => completed++);
-      await c.debugAttachCompletedStreamForTesting(stream.stream);
+    test(
+      'dispose cancels completed subscription and clears callback',
+      () async {
+        final c = VideoPlayerController();
+        final StreamController<bool> stream = StreamController<bool>();
+        addTearDown(stream.close);
+        int completed = 0;
+        c.setOnCompleted(() => completed++);
+        await c.debugAttachCompletedStreamForTesting(stream.stream);
 
-      c.dispose();
-      stream.add(true);
-      await Future<void>.delayed(Duration.zero);
+        c.dispose();
+        stream.add(true);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(completed, 0,
-          reason: 'completed events after dispose must not call page state');
-    });
+        expect(
+          completed,
+          0,
+          reason: 'completed events after dispose must not call page state',
+        );
+      },
+    );
   });
 
   group('字幕调轴纯函数 effectiveSubtitlePositionMs', () {
@@ -446,26 +465,28 @@ void main() {
       expect(c.speed, 1.5);
     });
 
-    test('mute toggles without constructing a player and preserves volume',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
+    test(
+      'mute toggles without constructing a player and preserves volume',
+      () async {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
 
-      await c.setVolume(42);
-      expect(c.volume, 42);
-      expect(c.muted, isFalse);
+        await c.setVolume(42);
+        expect(c.volume, 42);
+        expect(c.muted, isFalse);
 
-      // toggleMute 返回确定的「切换后有效目标音量」：静音返回 0。
-      expect(await c.toggleMute(), 0);
-      expect(c.muted, isTrue);
-      // 无 player 时 volume getter 回退 _lastVolume；静音不改音量目标，故仍 42。
-      expect(c.volume, 42);
+        // toggleMute 返回确定的「切换后有效目标音量」：静音返回 0。
+        expect(await c.toggleMute(), 0);
+        expect(c.muted, isTrue);
+        // 无 player 时 volume getter 回退 _lastVolume；静音不改音量目标，故仍 42。
+        expect(c.volume, 42);
 
-      // 取消静音返回静音前音量 42。
-      expect(await c.toggleMute(), 42);
-      expect(c.muted, isFalse);
-      expect(c.volume, 42);
-    });
+        // 取消静音返回静音前音量 42。
+        expect(await c.toggleMute(), 42);
+        expect(c.muted, isFalse);
+        expect(c.volume, 42);
+      },
+    );
 
     test('adjustVolume accumulates from effective output and clamps', () async {
       final c = VideoPlayerController();
@@ -480,8 +501,11 @@ void main() {
       await c.setVolume(42);
       await c.toggleMute();
       expect(c.muted, isTrue);
-      expect(await c.adjustVolume(5), 5,
-          reason: 'volume-up from mute starts at audible zero');
+      expect(
+        await c.adjustVolume(5),
+        5,
+        reason: 'volume-up from mute starts at audible zero',
+      );
       expect(c.muted, isFalse);
     });
 
@@ -503,29 +527,33 @@ void main() {
       expect(await c.toggleMute(), 0);
       await c.applyMpvConfig(VideoMpvConfig.defaults.copyWith(volumeMax: 150));
       expect(c.requestedVolume, 150);
-      expect(await c.toggleMute(), 150,
-          reason: 'pre-mute volume is pulled into the lowered limit too');
+      expect(
+        await c.toggleMute(),
+        150,
+        reason: 'pre-mute volume is pulled into the lowered limit too',
+      );
     });
 
     // TODO-433：静音真生效 + 独立「静音前音量」字段，根因修复
     // ① 静音期间调音量不污染静音前音量 ② 取消静音恢复到静音前值
     // ③ 静音期间加音量从 0 起、正确解除静音。
-    test('toggleMute restores the exact pre-mute volume (TODO-433 bug2)',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-
-      await c.setVolume(73);
-      expect(await c.toggleMute(), 0, reason: '进入静音返回有效音量 0');
-      expect(c.muted, isTrue);
-      // 取消静音必须回到确定的静音前音量 73（不读异步滞后的播放器音量）。
-      expect(await c.toggleMute(), 73, reason: '取消静音恢复到静音前音量');
-      expect(c.muted, isFalse);
-      expect(c.volume, 73);
-    });
-
     test(
-        'adjusting volume while muted does not corrupt the pre-mute volume '
+      'toggleMute restores the exact pre-mute volume (TODO-433 bug2)',
+      () async {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+
+        await c.setVolume(73);
+        expect(await c.toggleMute(), 0, reason: '进入静音返回有效音量 0');
+        expect(c.muted, isTrue);
+        // 取消静音必须回到确定的静音前音量 73（不读异步滞后的播放器音量）。
+        expect(await c.toggleMute(), 73, reason: '取消静音恢复到静音前音量');
+        expect(c.muted, isFalse);
+        expect(c.volume, 73);
+      },
+    );
+
+    test('adjusting volume while muted does not corrupt the pre-mute volume '
         '(TODO-433 bug1)', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -535,19 +563,24 @@ void main() {
       expect(c.muted, isTrue);
 
       // 静音期间「加音量」是合理的「从 0 起音」语义：解除静音并落到 delta。
-      expect(await c.adjustVolume(10), 10,
-          reason: '静音期间加音量从 0 起 → 正确解除静音并落到 delta');
+      expect(
+        await c.adjustVolume(10),
+        10,
+        reason: '静音期间加音量从 0 起 → 正确解除静音并落到 delta',
+      );
       expect(c.muted, isFalse, reason: '加非零音量解除静音');
 
       // 关键：再次静音后取消，恢复值是「最近一次静音前的音量 10」，而非被污染的 80。
       expect(await c.toggleMute(), 0);
-      expect(await c.toggleMute(), 10,
-          reason: '静音前音量字段独立，按进入静音那一刻的音量恢复，未被旧 80 污染');
+      expect(
+        await c.toggleMute(),
+        10,
+        reason: '静音前音量字段独立，按进入静音那一刻的音量恢复，未被旧 80 污染',
+      );
       expect(c.volume, 10);
     });
 
-    test(
-        'setVolume during mute does not change the pre-mute restore value '
+    test('setVolume during mute does not change the pre-mute restore value '
         '(TODO-433 bug1)', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
@@ -561,8 +594,11 @@ void main() {
       expect(c.muted, isTrue, reason: 'setVolume(0) 不解除静音');
 
       // 取消静音仍恢复到进入静音那一刻的 55（静音前音量字段未被 setVolume(0) 污染）。
-      expect(await c.toggleMute(), 55,
-          reason: '静音前音量只在进入静音那一刻写一次，setVolume 不碰它');
+      expect(
+        await c.toggleMute(),
+        55,
+        reason: '静音前音量只在进入静音那一刻写一次，setVolume 不碰它',
+      );
       expect(c.muted, isFalse);
       expect(c.volume, 55);
     });
@@ -589,8 +625,11 @@ void main() {
       final List<int> writes = <int>[];
       c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
       await c.flushPosition();
-      expect(writes, isEmpty,
-          reason: 'no player/bookUid before load → nothing to flush');
+      expect(
+        writes,
+        isEmpty,
+        reason: 'no player/bookUid before load → nothing to flush',
+      );
     });
 
     test('dispose does not write a position before load', () async {
@@ -622,12 +661,21 @@ void main() {
 
       c.debugSyncInitialCueForPosition(50000);
 
-      expect(c.currentCueIndex, 0,
-          reason: 'load 仍要用 initialPositionMs 初始化当前字幕');
-      expect(writes, isEmpty,
-          reason: 'synthetic initialPositionMs 不是真实 player position，不能落库');
-      expect(c.debugRestoreGuardActive, isTrue,
-          reason: 'synthetic initialPositionMs 不能被当成 seek 已追上目标');
+      expect(
+        c.currentCueIndex,
+        0,
+        reason: 'load 仍要用 initialPositionMs 初始化当前字幕',
+      );
+      expect(
+        writes,
+        isEmpty,
+        reason: 'synthetic initialPositionMs 不是真实 player position，不能落库',
+      );
+      expect(
+        c.debugRestoreGuardActive,
+        isTrue,
+        reason: 'synthetic initialPositionMs 不能被当成 seek 已追上目标',
+      );
     });
 
     test('TODO-250: synthetic 后真实低位 tick 仍被挡，追近目标才写入', () async {
@@ -682,7 +730,9 @@ void main() {
       // 目标设很大（600000ms）：模拟用户上次看到很后面退出。seek 落地失败时 position
       // 从 0 起、在低位前进，整程都 < target-1500，永远追不上 → 测「宽限兜底」路径。
       c.debugPrimeRestoreGuardForTesting(
-          bookUid: 'v1', restoreTargetMs: 600000);
+        bookUid: 'v1',
+        restoreTargetMs: 600000,
+      );
 
       final int grace = VideoPlayerController.debugRestoreGuardGraceTicks;
       // 喂 grace-1 次「整秒互不相同、始终远低于目标」的位置：每次未追上 → 跳过写入 +
@@ -695,8 +745,11 @@ void main() {
 
       // 第 grace 次观测仍未追上 → 宽限耗尽，主动放弃守护（本次仍不写，下一拍起恢复）。
       c.debugUpdateCueForPosition(grace * 1000);
-      expect(c.debugRestoreGuardActive, isFalse,
-          reason: '宽限耗尽：判定 seek 落地失败，放弃守护');
+      expect(
+        c.debugRestoreGuardActive,
+        isFalse,
+        reason: '宽限耗尽：判定 seek 落地失败，放弃守护',
+      );
 
       // 守护放弃后，用户从头看的进度被正常记住（BUG-179 修复核心）。
       c.debugUpdateCueForPosition((grace + 5) * 1000);
@@ -709,12 +762,16 @@ void main() {
       final List<int> writes = <int>[];
       c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
       c.debugPrimeRestoreGuardForTesting(
-          bookUid: 'v1', restoreTargetMs: 600000);
+        bookUid: 'v1',
+        restoreTargetMs: 600000,
+      );
 
       // 喂远超宽限上限次数、始终远低于目标的位置（旧实现：守护永久挡 → writes 恒空）。
-      for (int i = 0;
-          i < VideoPlayerController.debugRestoreGuardGraceTicks + 30;
-          i++) {
+      for (
+        int i = 0;
+        i < VideoPlayerController.debugRestoreGuardGraceTicks + 30;
+        i++
+      ) {
         c.debugUpdateCueForPosition((i % 5) * 1000); // 在 0..4000 循环，永不接近 600000
       }
       expect(c.debugRestoreGuardActive, isFalse, reason: '守护必须已被宽限放弃');
@@ -902,7 +959,9 @@ void main() {
         final lateStart = <AudioCue>[_cue(0, 1000, 2000), _cue(1, 3000, 4000)];
         expect(
           VideoPlayerController.nextCueIndexFor(
-              cues: lateStart, positionMs: 200),
+            cues: lateStart,
+            positionMs: 200,
+          ),
           0,
         );
       });
@@ -917,7 +976,9 @@ void main() {
       test('空 cue 列表：null', () {
         expect(
           VideoPlayerController.nextCueIndexFor(
-              cues: const <AudioCue>[], positionMs: 0),
+            cues: const <AudioCue>[],
+            positionMs: 0,
+          ),
           isNull,
         );
       });
@@ -962,7 +1023,9 @@ void main() {
         final lateStart = <AudioCue>[_cue(0, 1000, 2000), _cue(1, 3000, 4000)];
         expect(
           VideoPlayerController.prevCueIndexFor(
-              cues: lateStart, positionMs: 200),
+            cues: lateStart,
+            positionMs: 200,
+          ),
           0,
         );
       });
@@ -977,14 +1040,16 @@ void main() {
       test('空 cue 列表：null', () {
         expect(
           VideoPlayerController.prevCueIndexFor(
-              cues: const <AudioCue>[], positionMs: 0),
+            cues: const <AudioCue>[],
+            positionMs: 0,
+          ),
           isNull,
         );
       });
     });
 
-    // TODO-085：Ctrl+← 跳上一句时，若上一句起点距当前位置 > seekSeconds 秒，则退化
-    // 成回退 seekSeconds 秒（不一脚跳到很远的上一句）。
+    // TODO-085：Ctrl+← 跳上一句时，若上一句说完到当前语境（当前句起点 / gap 里的当前
+    // 位置）的静默 > seekSeconds 秒，则退化成回退 seekSeconds 秒（不一脚跳到很远的上一句）。
     group('prevSeekDecisionFor (TODO-085 上句太远回退Xs)', () {
       // cue0 [0,1000]、cue1 [10000,11000]、cue2 [12000,13000]：cue0↔cue1 之间是
       // 一段很长的 gap，便于构造「上一句很远」。
@@ -1029,11 +1094,65 @@ void main() {
       });
 
       test('阈值边界：恰好等于 Xs 仍跳句（> 才退化）', () {
-        // 上一句 = cue0(0)，pos=3000 → gap = 3000 == 3*1000，不 > 阈值 → 跳句。
+        // 上一句 = cue0(0-1000)，pos=4000 在 gap → 静默 = 4000-1000 = 3000 == 3*1000，
+        // 不 > 阈值 → 跳句；再晚 1ms 即退化。
+        final cues = <AudioCue>[_cue(0, 0, 1000), _cue(1, 5000, 6000)];
+        expect(
+          VideoPlayerController.prevSeekDecisionFor(
+            cues: cues,
+            positionMs: 4000,
+            seekSeconds: 3,
+          ),
+          const PrevSeekDecision.cue(0),
+        );
+        expect(
+          VideoPlayerController.prevSeekDecisionFor(
+            cues: cues,
+            positionMs: 4001,
+            seekSeconds: 3,
+          ),
+          const PrevSeekDecision.timeSeek(-3000),
+        );
+      });
+
+      // 反馈 zNlCBVuISX：桌面 Ctrl+← 「上一句」几乎总只退 3 秒，双击 / 手机按钮正常。
+      // 旧判据量「上一句起点 → 当前位置」= 上一句时长 + 句间隙 + 当前句已播时长，普通
+      // 连续对话里也恒 > 3s。判据应只看上一句说完到当前句开口之间的静默。
+      test('连续对话：上一句长、当前句已播一阵，句间隙很短 → 仍跳句不退化', () {
+        final dialogue = <AudioCue>[
+          _cue(0, 10000, 13000), // 上一句 3s
+          _cue(1, 13300, 17000), // 当前句，间隙 300ms
+        ];
+        // 当前句已播 2.7s：起点距离 = 16000-10000 = 6s（旧判据 > 3s 退化），
+        // 静默只有 300ms → 跳到上一句。
         final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
-          cues: <AudioCue>[_cue(0, 0, 1000), _cue(1, 5000, 6000)],
-          positionMs: 3000,
+          cues: dialogue,
+          positionMs: 16000,
           seekSeconds: 3,
+        );
+        expect(d, const PrevSeekDecision.cue(0));
+      });
+
+      test('当前句之前有长静默：句中按 Ctrl+← 仍退化（TODO-085 语义保留）', () {
+        final cues = <AudioCue>[
+          _cue(0, 0, 1000),
+          _cue(1, 9000, 12000), // 与上一句之间静默 8s
+        ];
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: cues,
+          positionMs: 9500,
+          seekSeconds: 3,
+        );
+        expect(d, const PrevSeekDecision.timeSeek(-3000));
+      });
+
+      test('锚定偏前落点（pos 略早于当前句起点）：静默按 pos 计，不出负数误判', () {
+        final cues = <AudioCue>[_cue(0, 0, 2000), _cue(1, 2500, 4000)];
+        final PrevSeekDecision d = VideoPlayerController.prevSeekDecisionFor(
+          cues: cues,
+          positionMs: 2300,
+          seekSeconds: 3,
+          anchorIndex: 1,
         );
         expect(d, const PrevSeekDecision.cue(0));
       });
@@ -1069,10 +1188,14 @@ void main() {
 
       test('PrevSeekDecision 值相等性', () {
         expect(const PrevSeekDecision.cue(2), const PrevSeekDecision.cue(2));
-        expect(const PrevSeekDecision.cue(2) == const PrevSeekDecision.cue(3),
-            isFalse);
-        expect(const PrevSeekDecision.timeSeek(-3000),
-            const PrevSeekDecision.timeSeek(-3000));
+        expect(
+          const PrevSeekDecision.cue(2) == const PrevSeekDecision.cue(3),
+          isFalse,
+        );
+        expect(
+          const PrevSeekDecision.timeSeek(-3000),
+          const PrevSeekDecision.timeSeek(-3000),
+        );
         expect(PrevSeekDecision.none == const PrevSeekDecision.cue(0), isFalse);
       });
     });
@@ -1114,23 +1237,31 @@ void main() {
       test('position 在 cue1 内、currentCueIndex 陈旧停在 0：下一句 = cue2（不是 cue1）', () {
         expect(
           VideoPlayerController.nextCueIndexFor(
-              cues: adjacent, positionMs: 14000),
+            cues: adjacent,
+            positionMs: 14000,
+          ),
           2,
-          reason: '实时 position=14000 已在 cue1 内，下一句应是 cue2；旧实现裸信 stale '
+          reason:
+              '实时 position=14000 已在 cue1 内，下一句应是 cue2；旧实现裸信 stale '
               'currentCueIndex=0 会算成 cue1（=当前句本身）',
         );
       });
 
-      test('position 在 cue1 内、currentCueIndex 陈旧停在 0：上一句 = cue0（不乱跳/不 no-op）',
-          () {
-        expect(
-          VideoPlayerController.prevCueIndexFor(
-              cues: adjacent, positionMs: 14000),
-          0,
-          reason: '实时 position=14000 已在 cue1 内，上一句应是 cue0；旧实现裸信 stale '
-              'currentCueIndex=0 会算成 0-1=null（不动）',
-        );
-      });
+      test(
+        'position 在 cue1 内、currentCueIndex 陈旧停在 0：上一句 = cue0（不乱跳/不 no-op）',
+        () {
+          expect(
+            VideoPlayerController.prevCueIndexFor(
+              cues: adjacent,
+              positionMs: 14000,
+            ),
+            0,
+            reason:
+                '实时 position=14000 已在 cue1 内，上一句应是 cue0；旧实现裸信 stale '
+                'currentCueIndex=0 会算成 0-1=null（不动）',
+          );
+        },
+      );
 
       test('真实控制器：tick 滞后（currentCueIndex=0）下 next/prev 仍按 position 决策', () {
         final c = VideoPlayerController();
@@ -1143,13 +1274,17 @@ void main() {
         expect(c.currentCueIndex, 0, reason: 'tick 滞后：成员变量仍停在 cue0');
         expect(
           VideoPlayerController.nextCueIndexFor(
-              cues: c.cues, positionMs: 14000),
+            cues: c.cues,
+            positionMs: 14000,
+          ),
           2,
           reason: '下一句必须按实时 position(14000=cue1) 排除当前句 → cue2',
         );
         expect(
           VideoPlayerController.prevCueIndexFor(
-              cues: c.cues, positionMs: 14000),
+            cues: c.cues,
+            positionMs: 14000,
+          ),
           0,
           reason: '上一句必须按实时 position(14000=cue1) → cue0',
         );
@@ -1191,7 +1326,10 @@ void main() {
       // 带 anchor=1（_seekTargetCueIndex）：严格 anchor+1 = cue2（真前进）。
       expect(
         VideoPlayerController.nextCueIndexFor(
-            cues: spaced, positionMs: 1820, anchorIndex: 1),
+          cues: spaced,
+          positionMs: 1820,
+          anchorIndex: 1,
+        ),
         2,
         reason: '锚定刚跳到的 cue1，下一句必须是 cue2，不受 preRoll 偏前落点干扰',
       );
@@ -1208,7 +1346,10 @@ void main() {
       // 带 anchor=2（_seekTargetCueIndex）：严格 anchor-1 = cue1（相邻 N-1）。
       expect(
         VideoPlayerController.prevCueIndexFor(
-            cues: spaced, positionMs: 2820, anchorIndex: 2),
+          cues: spaced,
+          positionMs: 2820,
+          anchorIndex: 2,
+        ),
         1,
         reason: '锚定刚跳到的 cue2，上一句必须是相邻的 cue1，绝不跳过头到 cue0',
       );
@@ -1219,19 +1360,28 @@ void main() {
       // anchor=1, pos=1820（cue2 偏前前一步的落点不影响，anchor 主导）→ next=2
       expect(
         VideoPlayerController.nextCueIndexFor(
-            cues: spaced, positionMs: 1820, anchorIndex: 1),
+          cues: spaced,
+          positionMs: 1820,
+          anchorIndex: 1,
+        ),
         2,
       );
       // anchor=2, pos=2820 → next=3
       expect(
         VideoPlayerController.nextCueIndexFor(
-            cues: spaced, positionMs: 2820, anchorIndex: 2),
+          cues: spaced,
+          positionMs: 2820,
+          anchorIndex: 2,
+        ),
         3,
       );
       // anchor=3（末句）, pos=3820 → null（无下一句，no-op）
       expect(
         VideoPlayerController.nextCueIndexFor(
-            cues: spaced, positionMs: 3820, anchorIndex: 3),
+          cues: spaced,
+          positionMs: 3820,
+          anchorIndex: 3,
+        ),
         isNull,
         reason: 'anchor 已是末句：下一句越界返回 null（保持末句 no-op 边界）',
       );
@@ -1240,17 +1390,26 @@ void main() {
     test('连续上一句逐句后退：anchor 链 2→1→0→null', () {
       expect(
         VideoPlayerController.prevCueIndexFor(
-            cues: spaced, positionMs: 2820, anchorIndex: 2),
+          cues: spaced,
+          positionMs: 2820,
+          anchorIndex: 2,
+        ),
         1,
       );
       expect(
         VideoPlayerController.prevCueIndexFor(
-            cues: spaced, positionMs: 1820, anchorIndex: 1),
+          cues: spaced,
+          positionMs: 1820,
+          anchorIndex: 1,
+        ),
         0,
       );
       expect(
         VideoPlayerController.prevCueIndexFor(
-            cues: spaced, positionMs: 820, anchorIndex: 0),
+          cues: spaced,
+          positionMs: 820,
+          anchorIndex: 0,
+        ),
         isNull,
         reason: 'anchor 已是首句：上一句越界返回 null（保持首句 no-op 边界）',
       );
@@ -1260,13 +1419,19 @@ void main() {
       // anchorIndex 超出范围 → 走原 position 逻辑（防御：快照与 cues 不同步时不应锚错）。
       expect(
         VideoPlayerController.nextCueIndexFor(
-            cues: spaced, positionMs: 1500, anchorIndex: 99),
+          cues: spaced,
+          positionMs: 1500,
+          anchorIndex: 99,
+        ),
         1,
         reason: '越界 anchor 忽略，按 position(1500=cue0 后 gap) floor 取下一句 cue1',
       );
       expect(
         VideoPlayerController.prevCueIndexFor(
-            cues: spaced, positionMs: 3500, anchorIndex: -5),
+          cues: spaced,
+          positionMs: 3500,
+          anchorIndex: -5,
+        ),
         1,
         reason: '负 anchor 忽略，按 position(3500=cue1 后 gap) 回退到 cue1',
       );
@@ -1276,12 +1441,18 @@ void main() {
       // 无快照：与现有 TODO-410 行为完全一致（按 position 反推）。
       expect(
         VideoPlayerController.nextCueIndexFor(
-            cues: spaced, positionMs: 2500, anchorIndex: null),
+          cues: spaced,
+          positionMs: 2500,
+          anchorIndex: null,
+        ),
         VideoPlayerController.nextCueIndexFor(cues: spaced, positionMs: 2500),
       );
       expect(
         VideoPlayerController.prevCueIndexFor(
-            cues: spaced, positionMs: 2500, anchorIndex: null),
+          cues: spaced,
+          positionMs: 2500,
+          anchorIndex: null,
+        ),
         VideoPlayerController.prevCueIndexFor(cues: spaced, positionMs: 2500),
       );
     });
@@ -1295,8 +1466,11 @@ void main() {
         seekSeconds: 3,
         anchorIndex: 2,
       );
-      expect(d, const PrevSeekDecision.cue(1),
-          reason: '锚定 cue2 → 上一句 cue1（相邻），距离 820ms 未超阈值，跳句不退化');
+      expect(
+        d,
+        const PrevSeekDecision.cue(1),
+        reason: '锚定 cue2 → 上一句 cue1（相邻），距离 820ms 未超阈值，跳句不退化',
+      );
     });
   });
 
@@ -1349,27 +1523,38 @@ void main() {
       );
     });
 
-    test('skipToNextCueOrSeekForward：空 cue 列表不抛、安全 no-op（无 player 时）',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      // 无字幕 + 无 player：empty 分支走 seekRelative，positionMs==null → no-op 安全。
-      await c.skipToNextCueOrSeekForward(seekSeconds: 5);
-      expect(c.cues, isEmpty);
-      expect(c.positionMs, isNull, reason: '无 player：seekRelative 不动（不会回到 0）');
-    });
+    test(
+      'skipToNextCueOrSeekForward：空 cue 列表不抛、安全 no-op（无 player 时）',
+      () async {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        // 无字幕 + 无 player：empty 分支走 seekRelative，positionMs==null → no-op 安全。
+        await c.skipToNextCueOrSeekForward(seekSeconds: 5);
+        expect(c.cues, isEmpty);
+        expect(
+          c.positionMs,
+          isNull,
+          reason: '无 player：seekRelative 不动（不会回到 0）',
+        );
+      },
+    );
 
-    test('skipToNextCueOrSeekForward：有 cue 时走 cue 决策（无 player 时安全 no-op）',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues(opCues);
-      c.debugUpdateCueForPosition(10000);
-      // 无 player：skipToCue→seekMs 是 no-op，但不应抛、不应改 cue 状态指向原点。
-      await c.skipToNextCueOrSeekForward(seekSeconds: 5);
-      expect(c.currentCueIndex, -1,
-          reason: 'seek 是 no-op（无 player），cue 状态不被错误改写');
-    });
+    test(
+      'skipToNextCueOrSeekForward：有 cue 时走 cue 决策（无 player 时安全 no-op）',
+      () async {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        c.setCues(opCues);
+        c.debugUpdateCueForPosition(10000);
+        // 无 player：skipToCue→seekMs 是 no-op，但不应抛、不应改 cue 状态指向原点。
+        await c.skipToNextCueOrSeekForward(seekSeconds: 5);
+        expect(
+          c.currentCueIndex,
+          -1,
+          reason: 'seek 是 no-op（无 player），cue 状态不被错误改写',
+        );
+      },
+    );
   });
 
   // TODO-119: 视频转场/无字幕段，按「上一句字幕」按钮 / 键盘没反应、回退不了。
@@ -1400,8 +1585,11 @@ void main() {
         positionMs: 70000,
         seekSeconds: 3,
       );
-      expect(d, const PrevSeekDecision.timeSeek(-3000),
-          reason: '转场 gap 上一句太远 → 回退 seekSeconds 秒，不卡住也不跳到很远的上句');
+      expect(
+        d,
+        const PrevSeekDecision.timeSeek(-3000),
+        reason: '转场 gap 上一句太远 → 回退 seekSeconds 秒，不卡住也不跳到很远的上句',
+      );
     });
 
     test('转场 gap 里上一句很近：跳到该 cue（句子 seek，原有行为不退化）', () {
@@ -1412,8 +1600,11 @@ void main() {
         positionMs: 43000,
         seekSeconds: 10,
       );
-      expect(d, const PrevSeekDecision.cue(0),
-          reason: '上一句够近（<= seekSeconds）时仍跳到该 cue，不退化成时间 seek');
+      expect(
+        d,
+        const PrevSeekDecision.cue(0),
+        reason: '上一句够近（<= seekSeconds）时仍跳到该 cue，不退化成时间 seek',
+      );
     });
 
     test('BUG-942 按钮语义(degradeFarCueToTimeSeek:false)：上一句很远也跳句、不退化', () {
@@ -1426,8 +1617,11 @@ void main() {
         seekSeconds: 3,
         degradeFarCueToTimeSeek: false,
       );
-      expect(d, const PrevSeekDecision.cue(0),
-          reason: '按钮「上一句」恒跳句：上一句再远也跳到相邻上一句，不悄悄变成 3 秒 seek');
+      expect(
+        d,
+        const PrevSeekDecision.cue(0),
+        reason: '按钮「上一句」恒跳句：上一句再远也跳到相邻上一句，不悄悄变成 3 秒 seek',
+      );
       expect(d.timeSeekDeltaMs, isNull);
     });
 
@@ -1442,7 +1636,9 @@ void main() {
       expect(VideoPlayerController.clampSeekTargetMs(0, -3000, 600000), 0);
       // 正常段回退：不 clamp。
       expect(
-          VideoPlayerController.clampSeekTargetMs(50000, -3000, 600000), 47000);
+        VideoPlayerController.clampSeekTargetMs(50000, -3000, 600000),
+        47000,
+      );
     });
 
     test('skipToPrevCueOrSeekBack：空 cue 列表不抛、安全 no-op（无 player 时）', () async {
@@ -1454,18 +1650,23 @@ void main() {
       expect(c.positionMs, isNull, reason: '无 player：seekRelative 不动（不会乱跳）');
     });
 
-    test('skipToPrevCueOrSeekBack：有 cue 时走 prev 决策（无 player 时安全 no-op）',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues(transitionCues);
-      c.debugUpdateCueForPosition(70000); // 转场 gap → -1
-      expect(c.currentCueIndex, -1);
-      // 无 player：seek 是 no-op，但不应抛、不应把 cue 状态错误改写。
-      await c.skipToPrevCueOrSeekBack(seekSeconds: 3);
-      expect(c.currentCueIndex, -1,
-          reason: 'seek 是 no-op（无 player），cue 状态不被错误改写');
-    });
+    test(
+      'skipToPrevCueOrSeekBack：有 cue 时走 prev 决策（无 player 时安全 no-op）',
+      () async {
+        final c = VideoPlayerController();
+        addTearDown(c.dispose);
+        c.setCues(transitionCues);
+        c.debugUpdateCueForPosition(70000); // 转场 gap → -1
+        expect(c.currentCueIndex, -1);
+        // 无 player：seek 是 no-op，但不应抛、不应把 cue 状态错误改写。
+        await c.skipToPrevCueOrSeekBack(seekSeconds: 3);
+        expect(
+          c.currentCueIndex,
+          -1,
+          reason: 'seek 是 no-op（无 player），cue 状态不被错误改写',
+        );
+      },
+    );
   });
 
   group('BUG-301 图形字幕调轴 → libmpv sub-delay 分流', () {
@@ -1479,8 +1680,11 @@ void main() {
       // 文本字幕偏移在 Dart 侧扣减（effectiveSubtitlePositionMs），mpv sub-delay 恒 0。
       c.setDelayMs(1500);
       expect(c.delayMs, 1500);
-      expect(c.debugSubtitleDelayMpvMs, 0,
-          reason: '文本模式不把延迟下发给 libmpv（避免双重偏移）');
+      expect(
+        c.debugSubtitleDelayMpvMs,
+        0,
+        reason: '文本模式不把延迟下发给 libmpv（避免双重偏移）',
+      );
     });
 
     test('图形模式：sub-delay = _delayMs / 1000（同向，不翻符号）', () {
@@ -1489,15 +1693,22 @@ void main() {
       // 模拟 selectEmbeddedGraphicTrack 成功（宿主无 libmpv，真选轨返 false）。
       c.debugSetGraphicSubtitleActiveForTesting(true);
       c.setDelayMs(2000);
-      expect(c.debugSubtitleDelayMpvMs, 2000,
-          reason: '图形字幕走 libmpv 画面渲染：延迟必须下发到 sub-delay');
+      expect(
+        c.debugSubtitleDelayMpvMs,
+        2000,
+        reason: '图形字幕走 libmpv 画面渲染：延迟必须下发到 sub-delay',
+      );
       // 纯函数把毫秒转秒、同向：2000ms → "2.0"。
-      expect(buildSubtitleDelayProperty(c.debugSubtitleDelayMpvMs)['sub-delay'],
-          '2.0');
+      expect(
+        buildSubtitleDelayProperty(c.debugSubtitleDelayMpvMs)['sub-delay'],
+        '2.0',
+      );
       c.setDelayMs(-3000);
       expect(c.debugSubtitleDelayMpvMs, -3000);
-      expect(buildSubtitleDelayProperty(c.debugSubtitleDelayMpvMs)['sub-delay'],
-          '-3.0');
+      expect(
+        buildSubtitleDelayProperty(c.debugSubtitleDelayMpvMs)['sub-delay'],
+        '-3.0',
+      );
     });
 
     test('图形 → 文本切换：setCues(非空) 复位图形标志 → sub-delay 回 0', () {
@@ -1530,8 +1741,11 @@ void main() {
       c.debugSetGraphicSubtitleActiveForTesting(true);
       // selectEmbeddedGraphicTrack 内部先 setCues(空) 再选轨置 true；空 cue 不应误复位。
       c.setCues(const <AudioCue>[]);
-      expect(c.debugGraphicSubtitleActive, isTrue,
-          reason: '空 cue 不推断模式（图形轨与无字幕段都空，会误判）');
+      expect(
+        c.debugGraphicSubtitleActive,
+        isTrue,
+        reason: '空 cue 不推断模式（图形轨与无字幕段都空，会误判）',
+      );
     });
   });
 
@@ -1637,48 +1851,50 @@ void main() {
       );
     });
 
-    test('纯函数 cueSnapIndex：短目标句吸附落点越过其 endMs 进下一句 → 仍 snap 回目标（BUG-378 真因）',
-        () {
-      // 极短目标句 cue1=[1050,1100]（仅 50ms），preRoll=180：snap 窗口 [870, 1100]。
-      // 关键帧吸附把落点推到 1080（在 [1050,1100] 句内）→ findCueIndex 此刻可能因吸附
-      // 命中下一句的边界，但 1080<=endMs(1100)，应 snap 回目标 1（不取 findCueIndex 的 2）。
-      expect(
-        VideoPlayerController.cueSnapIndex(
-          findCueIndex: 2, // 反推命中下一句（吸附边界 / gap 模糊）
-          effectiveMs: 1080,
-          targetIndex: 1,
-          targetStartMs: 1050,
-          targetEndMs: 1100,
-          preRollMs: 180,
-        ),
-        (1, true),
-        reason: '落点仍在短目标句区间内，必须 snap 回目标句而非多跳到下一句',
-      );
-      // 落点 1099（endMs 内最后 1ms）仍 snap 回目标。
-      expect(
-        VideoPlayerController.cueSnapIndex(
-          findCueIndex: 2,
-          effectiveMs: 1099,
-          targetIndex: 1,
-          targetStartMs: 1050,
-          targetEndMs: 1100,
-          preRollMs: 180,
-        ),
-        (1, true),
-      );
-      // 真正越过 endMs（1101）才认定落定、用原命中、清快照。
-      expect(
-        VideoPlayerController.cueSnapIndex(
-          findCueIndex: 2,
-          effectiveMs: 1101,
-          targetIndex: 1,
-          targetStartMs: 1050,
-          targetEndMs: 1100,
-          preRollMs: 180,
-        ),
-        (2, false),
-      );
-    });
+    test(
+      '纯函数 cueSnapIndex：短目标句吸附落点越过其 endMs 进下一句 → 仍 snap 回目标（BUG-378 真因）',
+      () {
+        // 极短目标句 cue1=[1050,1100]（仅 50ms），preRoll=180：snap 窗口 [870, 1100]。
+        // 关键帧吸附把落点推到 1080（在 [1050,1100] 句内）→ findCueIndex 此刻可能因吸附
+        // 命中下一句的边界，但 1080<=endMs(1100)，应 snap 回目标 1（不取 findCueIndex 的 2）。
+        expect(
+          VideoPlayerController.cueSnapIndex(
+            findCueIndex: 2, // 反推命中下一句（吸附边界 / gap 模糊）
+            effectiveMs: 1080,
+            targetIndex: 1,
+            targetStartMs: 1050,
+            targetEndMs: 1100,
+            preRollMs: 180,
+          ),
+          (1, true),
+          reason: '落点仍在短目标句区间内，必须 snap 回目标句而非多跳到下一句',
+        );
+        // 落点 1099（endMs 内最后 1ms）仍 snap 回目标。
+        expect(
+          VideoPlayerController.cueSnapIndex(
+            findCueIndex: 2,
+            effectiveMs: 1099,
+            targetIndex: 1,
+            targetStartMs: 1050,
+            targetEndMs: 1100,
+            preRollMs: 180,
+          ),
+          (1, true),
+        );
+        // 真正越过 endMs（1101）才认定落定、用原命中、清快照。
+        expect(
+          VideoPlayerController.cueSnapIndex(
+            findCueIndex: 2,
+            effectiveMs: 1101,
+            targetIndex: 1,
+            targetStartMs: 1050,
+            targetEndMs: 1100,
+            preRollMs: 180,
+          ),
+          (2, false),
+        );
+      },
+    );
 
     test('纯函数 cueSnapIndex：远早于引导窗口（被别的 seek 拉走）→ 用原命中、清快照', () {
       // 869 < 1050-180=870：在 snap 窗口之外（更早），跳转已失效，不 snap、清快照。
@@ -1741,11 +1957,7 @@ void main() {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       // 密集对话：句间隔 < preRoll，落点会粘进上一句区间 → 旧实现高亮 N-1。
-      c.setCues([
-        _cue(0, 0, 1900),
-        _cue(1, 2000, 3000),
-        _cue(2, 3100, 4000),
-      ]);
+      c.setCues([_cue(0, 0, 1900), _cue(1, 2000, 3000), _cue(2, 3100, 4000)]);
 
       // 点第 2 行（index 1）。skipToCue 记录目标下标（无 player 时 seek no-op，但快照已设）。
       await c.skipToCue(c.cues[1]);
@@ -1767,15 +1979,13 @@ void main() {
     test('skipToCue 后用户主动 seekRelative 拉到别处：快照作废，按真实位置推导（不误 snap）', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
-      c.setCues([
-        _cue(0, 0, 1000),
-        _cue(1, 5000, 6000),
-      ]);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 5000, 6000)]);
       await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)，置在途 seek 宽限
       // 用户主动 seekRelative（与 skipToCue 不同路径）作废宽限+清快照；下个 tick 读到
       // 首句区间应高亮 0，绝不被旧目标 1 误 snap（手动 seek 仍能清快照）。
-      await c
-          .seekRelative(-100000); // 无 player 时 seek no-op，但 seekRelative 已清宽限
+      await c.seekRelative(
+        -100000,
+      ); // 无 player 时 seek no-op，但 seekRelative 已清宽限
       c.debugUpdateCueForPosition(500);
       expect(c.currentCueIndex, 0, reason: '主动 seekRelative 已作废快照，按真实位置高亮');
     });
@@ -1793,11 +2003,7 @@ void main() {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       // 密集对话：句间隔 < preRoll，落点会粘进上一句区间 → 无快照时高亮 N-1。
-      c.setCues([
-        _cue(0, 0, 1900),
-        _cue(1, 2000, 3000),
-        _cue(2, 3100, 4000),
-      ]);
+      c.setCues([_cue(0, 0, 1900), _cue(1, 2000, 3000), _cue(2, 3100, 4000)]);
 
       // 点第 2 行（index 1，startMs=2000）。skipToCue 记录目标 + 置在途 seek 宽限
       // （无 player 时 seek no-op，但快照与宽限已设）。
@@ -1806,14 +2012,20 @@ void main() {
       // ① stale tick：seek 尚未落地，tick 先读到 seek 之前的旧远位置 300
       //    （300 < 2000-180=1820，落「远早于引导窗口」情形）。旧实现在此清快照。
       c.debugUpdateCueForPosition(300);
-      expect(c.debugSeekTargetCueIndex, 1,
-          reason: '在途 seek 的 stale tick 不得清快照（宽限保护，撑到落点）');
+      expect(
+        c.debugSeekTargetCueIndex,
+        1,
+        reason: '在途 seek 的 stale tick 不得清快照（宽限保护，撑到落点）',
+      );
 
       // ② 真落点 tick：seek 落地，position 进入引导窗口 1820（落 cue0 区间 [0,1900]）。
       //    快照仍在 → snap 回目标句 1，而不是按真实位置反推的 cue0（N-1）。
       c.debugUpdateCueForPosition(1820);
-      expect(c.currentCueIndex, 1,
-          reason: 'stale tick 后快照仍在，真落点处 snap 回目标句 N（非上一句 N-1）');
+      expect(
+        c.currentCueIndex,
+        1,
+        reason: 'stale tick 后快照仍在，真落点处 snap 回目标句 N（非上一句 N-1）',
+      );
       expect(c.currentCue!.text, 'line1');
 
       // ③ 播放自然进入目标句：宽限已作废、快照已清，纯位置推导接管。
@@ -1828,10 +2040,7 @@ void main() {
     test('在途 seek 宽限有界：连续 stale tick 耗尽配额后退回纯位置推导', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
-      c.setCues([
-        _cue(0, 0, 1000),
-        _cue(1, 5000, 6000),
-      ]);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 5000, 6000)]);
       await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)
       // 宽限只在播放态消耗（BUG-3488：暂停态 position 不推进，不算 seek 失败）。
       c.debugSetIsPlayingForTesting(true);
@@ -1840,8 +2049,11 @@ void main() {
       for (int i = 0; i <= grace; i++) {
         c.debugUpdateCueForPosition(500);
       }
-      expect(c.debugSeekTargetCueIndex, isNull,
-          reason: '宽限耗尽：放弃保护、清快照（seek 落地失败兜底）');
+      expect(
+        c.debugSeekTargetCueIndex,
+        isNull,
+        reason: '宽限耗尽：放弃保护、清快照（seek 落地失败兜底）',
+      );
       expect(c.currentCueIndex, 0, reason: '退回纯位置推导，高亮真实位置 cue0');
     });
 
@@ -1870,25 +2082,15 @@ void main() {
       for (int i = 0; i < grace * 3; i++) {
         c.debugUpdateCueForPosition(1000);
       }
-      expect(
-        c.debugSeekTargetCueIndex,
-        1,
-        reason: '暂停态不消耗宽限：等多久都保持跳转目标',
-      );
+      expect(c.debugSeekTargetCueIndex, 1, reason: '暂停态不消耗宽限：等多久都保持跳转目标');
       expect(c.currentCueIndex, 1, reason: '字幕停在跳到的那一句，不弹回原句');
-      expect(
-        c.activeCues.map((AudioCue e) => e.text),
-        <String>['line1'],
-        reason: '画面上只剩跳到的那句，旧句不回来',
-      );
+      expect(c.activeCues.map((AudioCue e) => e.text), <String>[
+        'line1',
+      ], reason: '画面上只剩跳到的那句，旧句不回来');
 
       // 再按一次：从刚跳到的那句往后走，而不是按旧位置再算出同一句。
       await c.skipToNextCueOrSeekForward(seekSeconds: 3);
-      expect(
-        c.debugSeekTargetCueIndex,
-        2,
-        reason: '第二次下一句 = 第 2 句（非又是第 1 句）',
-      );
+      expect(c.debugSeekTargetCueIndex, 2, reason: '第二次下一句 = 第 2 句（非又是第 1 句）');
       for (int i = 0; i < grace * 3; i++) {
         c.debugUpdateCueForPosition(1000);
       }
@@ -1917,28 +2119,33 @@ void main() {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       // 句间隔 > preRoll，让各句区间清晰；M=300 落 cue0、目标 N=2 起点 5000。
-      c.setCues([
-        _cue(0, 0, 1000),
-        _cue(1, 3000, 4000),
-        _cue(2, 5000, 6000),
-      ]);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 3000, 4000), _cue(2, 5000, 6000)]);
 
       // 点第 3 行（index 2，startMs=5000）：skipToCue 置目标 2 + 满宽限（无 player 时
       // seek no-op，但快照与宽限已设）。
       await c.skipToCue(c.cues[2]);
-      expect(c.debugSeekTargetCueIndex, 2,
-          reason: 'skipToCue 后快照应指向点击的目标句 N（顺序调整不破坏自身快照）');
+      expect(
+        c.debugSeekTargetCueIndex,
+        2,
+        reason: 'skipToCue 后快照应指向点击的目标句 N（顺序调整不破坏自身快照）',
+      );
 
       // 落地前用户经 seekMs 跳到更早位置 M=300（模拟收藏句 / 章节 / 相对 seek 入口）。
       // 宽限此刻仍满（未消耗），M=300 远早于目标 N 的引导窗口 [4820,5000)。
       await c.seekMs(300);
-      expect(c.debugSeekTargetCueIndex, isNull,
-          reason: 'seekMs 统一清除点：手动跳更早句必须作废旧主动跳转快照');
+      expect(
+        c.debugSeekTargetCueIndex,
+        isNull,
+        reason: 'seekMs 统一清除点：手动跳更早句必须作废旧主动跳转快照',
+      );
 
       // 下个 tick 读到 M：纯位置推导高亮 cue0，绝不被旧目标 2 误 snap。
       c.debugUpdateCueForPosition(300);
-      expect(c.currentCueIndex, 0,
-          reason: '快照已清，按真实位置 M 高亮 cue0（非误 snap 回旧目标 N=2）');
+      expect(
+        c.currentCueIndex,
+        0,
+        reason: '快照已清，按真实位置 M 高亮 cue0（非误 snap 回旧目标 N=2）',
+      );
     });
 
     // 守卫 skipToCue 的顺序调整（先 seekMs 发 seek，再置快照+宽限）没把自己的快照清掉：
@@ -1947,21 +2154,23 @@ void main() {
     test('skipToCue 顺序保证：seekMs 在前置快照在后，自身快照不被统一清除点自清', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
-      c.setCues([
-        _cue(0, 0, 1900),
-        _cue(1, 2000, 3000),
-        _cue(2, 3100, 4000),
-      ]);
+      c.setCues([_cue(0, 0, 1900), _cue(1, 2000, 3000), _cue(2, 3100, 4000)]);
 
       await c.skipToCue(c.cues[1]);
       // skipToCue 内部经 seekMs（统一清除点）后才置目标——快照必须存活、宽限满。
-      expect(c.debugSeekTargetCueIndex, 1,
-          reason: 'skipToCue 自己的快照不得被它内部的 seekMs 清除点自清');
+      expect(
+        c.debugSeekTargetCueIndex,
+        1,
+        reason: 'skipToCue 自己的快照不得被它内部的 seekMs 清除点自清',
+      );
 
       // 前两轮情形 3 保护仍生效：preRoll 落点处 snap 回目标句 N（非 N-1）。
       c.debugUpdateCueForPosition(1820); // 2000-180，落 cue0 区间但应 snap 回 1
-      expect(c.currentCueIndex, 1,
-          reason: 'preRoll 引导窗口内仍 snap 回点击的目标句（前两轮保护不破坏）');
+      expect(
+        c.currentCueIndex,
+        1,
+        reason: 'preRoll 引导窗口内仍 snap 回点击的目标句（前两轮保护不破坏）',
+      );
     });
 
     // BUG-378：点字幕列表里某句（短句 / 间隔密），skipToCue 的 seek 在途瞬态 tick 读到一个
@@ -1975,11 +2184,7 @@ void main() {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       // 短目标句 cue1=[1050,1100]（50ms），下一句 cue2=[1120,2000]。
-      c.setCues([
-        _cue(0, 0, 1000),
-        _cue(1, 1050, 1100),
-        _cue(2, 1120, 2000),
-      ]);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 1050, 1100), _cue(2, 1120, 2000)]);
 
       // 点第 2 行（index 1）。skipToCue 置目标 1 + 满在途宽限（无 player 时 seek no-op）。
       await c.skipToCue(c.cues[1]);
@@ -2010,11 +2215,7 @@ void main() {
     test('BUG-378：点靠前句时 stale tick（旧远位置在目标句之后）→ snap 回目标句，不停旧句', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
-      c.setCues([
-        _cue(0, 0, 1000),
-        _cue(1, 3000, 4000),
-        _cue(2, 6000, 7000),
-      ]);
+      c.setCues([_cue(0, 0, 1000), _cue(1, 3000, 4000), _cue(2, 6000, 7000)]);
 
       // 当前在 cue2 播放，点第 1 行（index 0，靠前句）。skipToCue 置目标 0 + 满宽限。
       await c.skipToCue(c.cues[0]);
@@ -2287,7 +2488,9 @@ void main() {
       final c = VideoPlayerController();
       addTearDown(c.dispose);
       c.notifyExternalSeek(600000);
-      c.noteExternalSeekDispatched(Future<void>.error(StateError('seek failed')));
+      c.noteExternalSeekDispatched(
+        Future<void>.error(StateError('seek failed')),
+      );
       await Future<void>.delayed(Duration.zero);
       expect(c.debugPendingSeekLandingMs, isNull);
     });
@@ -2426,8 +2629,7 @@ void main() {
 
       c.debugUpdateCueForPosition(42000);
 
-      expect(writes, isEmpty,
-          reason: '门是「媒体有没有打开」，不是「位置大不大」——否则换个非零值就能绕过去');
+      expect(writes, isEmpty, reason: '门是「媒体有没有打开」，不是「位置大不大」——否则换个非零值就能绕过去');
     });
 
     test('未打开：退出时的 flushPosition 不写', () async {
@@ -2467,8 +2669,7 @@ void main() {
 
       c.debugUpdateCueForPosition(1000); // 追上目标 → 清守护 → 放行写入。
 
-      expect(writes, <int>[1000],
-          reason: '媒体打开后必须照常记录进度，否则这道门就把正常功能一起关掉了');
+      expect(writes, <int>[1000], reason: '媒体打开后必须照常记录进度，否则这道门就把正常功能一起关掉了');
     });
 
     // 失败判定本身（决定「把整页换成失败页」）必须可测：判早了会把正在正常起播的
@@ -2573,21 +2774,25 @@ void main() {
         bool settled = false;
         final Future<void> waiting =
             VideoPlayerController.awaitPendingNativeDisposal().then((_) {
-          settled = true;
-        });
+              settled = true;
+            });
         await Future<void>.delayed(const Duration(milliseconds: 50));
         expect(settled, isFalse, reason: '释放没落定就不能放行建新 Player');
         disposal.complete();
         await waiting;
         expect(settled, isTrue);
-        expect(VideoPlayerController.pendingNativeDisposalForTesting, isNull,
-            reason: '落定后清掉，下一次不再等');
+        expect(
+          VideoPlayerController.pendingNativeDisposalForTesting,
+          isNull,
+          reason: '落定后清掉，下一次不再等',
+        );
       });
 
       test('无在途释放：立即返回', () async {
         VideoPlayerController.pendingNativeDisposalForTesting = null;
-        await VideoPlayerController.awaitPendingNativeDisposal()
-            .timeout(const Duration(milliseconds: 100));
+        await VideoPlayerController.awaitPendingNativeDisposal().timeout(
+          const Duration(milliseconds: 100),
+        );
       });
 
       test('释放永不落定：有界等待后照常放行（不把新页一起卡死）', () async {

@@ -9034,6 +9034,8 @@
   "video_anilist_error_unreachable": "AniList (graphql.anilist.co) is niet bereikbaar. Controleer je netwerkverbinding of stel een proxy in via de downloadinstellingen.",
   "video_audio_track": "Audiotrack",
   "video_audio_track_empty": "Geen wisselbare audiotracks",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "Audiotrack: $label",
   "video_auto_play_next_cancel": "Annuleren",
   "video_auto_play_next_countdown": "Volgende aflevering over ${seconds}s",

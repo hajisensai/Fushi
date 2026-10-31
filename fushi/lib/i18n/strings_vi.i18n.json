@@ -9034,6 +9034,8 @@
   "video_anilist_error_unreachable": "Không thể kết nối AniList (graphql.anilist.co). Hãy kiểm tra kết nối mạng hoặc cấu hình proxy trong cài đặt tải xuống.",
   "video_audio_track": "Bản âm thanh",
   "video_audio_track_empty": "Không có bản âm thanh có thể chuyển đổi",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "Bản âm thanh: $label",
   "video_auto_play_next_cancel": "Hủy",
   "video_auto_play_next_countdown": "Phát tập sau sau ${seconds} giây",

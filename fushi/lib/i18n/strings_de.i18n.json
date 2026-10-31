@@ -9034,6 +9034,8 @@
   "video_anilist_error_unreachable": "AniList (graphql.anilist.co) ist nicht erreichbar. Prüfe deine Netzwerkverbindung oder konfiguriere einen Proxy in den Download-Einstellungen.",
   "video_audio_track": "Tonspur",
   "video_audio_track_empty": "Keine umschaltbaren Audiospuren",
+  "video_audio_track_fallback_muxed": "The audio stream was refused; switched to a compatible stream with sound (lower quality)",
+  "video_audio_track_load_failed": "Couldn't load the audio stream — there is no sound. The source refused access; try again later.",
   "video_audio_track_switched": "Tonspur: $label",
   "video_auto_play_next_cancel": "Abbrechen",
   "video_auto_play_next_countdown": "Nächste Folge in ${seconds} s",

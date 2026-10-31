@@ -9034,6 +9034,8 @@
   "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。",
   "video_audio_track": "音轨",
   "video_audio_track_empty": "没有可切换的音频轨",
+  "video_audio_track_fallback_muxed": "音频流被拒绝，已切换到带声音的兼容流（画质较低）",
+  "video_audio_track_load_failed": "音频流加载失败，当前没有声音（来源拒绝访问），请稍后重试",
   "video_audio_track_switched": "音轨: $label",
   "video_auto_play_next_cancel": "取消",
   "video_auto_play_next_countdown": "${seconds} 秒后播放下一集",
