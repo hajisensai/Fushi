@@ -310,12 +310,14 @@ uint64_t published_seq = 0, snapshot_seq = 0, queued_voice_seq = 0;
 uint64_t queued_voice_tick = 0, last_writer_tick = 0;
 bool use_real_lane_writer = false;
 int writes = 0;
+const wchar_t* last_code = nullptr;
 uint64_t WriteTextRingEntryLocked(const wchar_t* text, int units,
                                  uint64_t thread_id, uint64_t address,
                                  uint64_t context, uint32_t source_kind,
                                  const char* name, const wchar_t* code,
                                  uint64_t* committed_tick_ms = nullptr) {
   ++writes;
+  last_code = code;
   if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
   if (use_real_lane_writer) {
     TextLaneWrite write;
@@ -459,6 +461,9 @@ void TestProductionWorkerAndRollback() {
   Check(g_siglus_message_tasks.TryPush(task));
   ProcessSiglusMessageTextTasks();
   Check(writes == 1 && snapshot_seq == 123 && queued_voice_seq == 0);
+  // The app auto-selects only ENGINE:-coded threads; this lane is one.
+  Check(last_code != nullptr &&
+        std::wcscmp(last_code, L"ENGINE:SIGLUS:message") == 0);
   g_siglus_message_profile.voice_key_resource_mapping_proved = true;
   Check(!IsSiglusMessageVoiceMappingProved());  // Static profile is insufficient.
   published_seq = 124;
@@ -687,9 +692,11 @@ void TestInstallationFailures() {
       g_siglus_message_targets[i] = reinterpret_cast<void*>(static_cast<uintptr_t>(0x5000 + i));
     }
   };
+  g_header->luna_active = 0;
   for (int failure = 0; failure < 2; ++failure) {
     reset(); mock_create_status[failure] = MH_ERROR_NOT_CREATED;
     Check(!InstallSiglusMessageHookGroup());
+    Check(g_header->luna_active == 0);
     Check(!IsSiglusMessageTextInstalled() && !IsSiglusMessageTextOwnershipBlocked());
     Check(mock_removed == failure && mock_enabled == 0);
   }
@@ -749,9 +756,12 @@ void TestInstallationFailures() {
   Check(mock_detours[1] == reinterpret_cast<void*>(&Detour_SiglusEightArgMessageScenario));
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
   reset();
+  g_header->luna_active = 0;
   Check(InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
   Check(mock_created == 2 && mock_enabled == 2 && mock_removed == 0);
+  // Installed ownership silences the GDI fallback before the first line.
+  Check(g_header->luna_active == 1);
   ShutdownSiglusMessageText();
   Check(!IsSiglusMessageTextInstalled() && !IsSiglusMessageTextOwnershipBlocked());
   Check(mock_removed == 0 && g_orig_SiglusMessageEntry != nullptr &&

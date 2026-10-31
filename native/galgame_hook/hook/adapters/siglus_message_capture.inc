@@ -9,6 +9,9 @@ bool IsSiglusVoiceSourceInstalled();
 
 constexpr uint32_t kSiglusMessageMaxTextUnits = 1500;
 constexpr uint32_t kSiglusMessageTaskSlots = 32;
+// ENGINE: marks a proved engine boundary (one per game, the on-screen line);
+// the app auto-selects such a thread instead of asking the user to pick it.
+constexpr wchar_t kSiglusMessageHookCode[] = L"ENGINE:SIGLUS:message";
 struct SiglusMessageTextTask {
   uint64_t tick_ms = 0;
   uint32_t voice_key = UINT32_MAX;
@@ -405,6 +408,9 @@ bool InstallSiglusMessageHookGroup() {
   if (complete) {
     g_siglus_message_install_state.store(1, std::memory_order_release);
     g_siglus_message_capture_enabled.store(true, std::memory_order_release);
+    // The proved message boundary owns this process's text from now on. GDI
+    // would otherwise publish save-screen dates etc. before the first line.
+    if (g_header != nullptr) g_header->luna_active = 1;
   } else {
     const bool clean = RollbackSiglusMessageHooks();
     // BUG-2348: NativeEcx's plain fallback targets this same MinHook registry.
@@ -534,8 +540,8 @@ void ProcessSiglusMessageTextTasks() {
         task.text, static_cast<int>(task.text_units), thread_id,
         g_siglus_message_scenario_rva,
         g_siglus_message_profile.scenario_return_rva,
-        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message", nullptr,
-        &committed_tick_ms);
+        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message",
+        kSiglusMessageHookCode, &committed_tick_ms);
     if (event_id != 0) {
       const fushi_voice_hook::SiglusLookupTextIdentity identity{event_id, thread_id};
       if (task.eightarg_epoch == 0 || BindSiglusEightArgText(
