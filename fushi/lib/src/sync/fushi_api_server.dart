@@ -24,6 +24,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/extension_profile_api.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
@@ -65,14 +66,24 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/srs/term-status-batch',
 };
 
-/// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
-/// 浏览器里查词/制卡」的端点。刻意**不含** `/api/extension/status`：那是扩展 SW
-/// 启动的探活 ping（浏览器一开就发），不代表用户在用扩展查词，不该据此切 Profile。
-const Set<String> _kLookupActivityPaths = <String>{
+/// 反馈 biLEesNqWb（并入 TODO-2936 的「浏览器」媒体类型绑定）：「按配置生效」的端点。
+/// 查词（词典启用 / 顺序 / 弹窗设置）、制卡与查重（Anki 牌组 / 字段映射 / 挖词目标）、单词
+/// 音频（音频源）、在 Anki 中打开都按 [ExtensionProfileApi.resolveScope] 解析出的配置处理；
+/// 字幕 / 字体 / 统计这类与配置无关的端点不在内。刻意**不含** `/api/extension/status`：
+/// 那是扩展 SW 启动的探活 ping。
+const Set<String> _kProfileScopedPaths = <String>{
   '/termEntries',
   '/tokenize',
   '/api/lookup/dictionary',
+  '/api/lookup/audio',
+  '/api/lookup/audio/list',
   '/api/mine',
+  '/api/duplicate',
+  '/api/anki/open',
+  // 复习标记：词状态 / 点标记打开都按所选配置的复习（挖词目标 = 复习时卡就制进那份配置的复习）。
+  '/api/srs/term-status',
+  '/api/srs/term-status-batch',
+  '/api/srs/open',
 };
 
 /// BUG-3141：扩展查词弹窗收藏请求（`/api/extension/favorite` 的体）。
@@ -152,12 +163,12 @@ class FushiApiServer {
     void Function(BrowserVideoSample sample)? onExtensionStudy,
     ExtensionFavoriteHandler? onExtensionFavorite,
     void Function()? onExtensionSeen,
-    void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
+    ExtensionProfileApi? profileApi,
     String? apiKey,
     FushiApiAccessPolicy accessPolicy = FushiApiAccessPolicy.localOnly,
     SrsAnkiConnectEndpoint? ankiConnectEndpoint,
@@ -179,11 +190,11 @@ class FushiApiServer {
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
        _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
-       _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
        _srsApiProvider = srsApiProvider,
+       _profileApi = profileApi,
        _apiKey = apiKey,
        _accessPolicy = accessPolicy,
        _ownsExtensionApi = extensionApiCore == null,
@@ -235,9 +246,6 @@ class FushiApiServer {
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
   final void Function()? _onExtensionSeen;
-  // TODO-2936：查词/制卡端点被命中即回调（已过鉴权中间件，只代表真实扩展活动）。
-  // app 侧据此应用「浏览器」媒体类型的 Profile 绑定（未绑定时为 no-op）。
-  final void Function()? _onLookupActivity;
   // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」
   // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
   // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
@@ -254,6 +262,10 @@ class FushiApiServer {
 
   /// 复习（SRS）扩展端点的供给器；未注入或回 null（模块关）时 `/api/srs/*` 404。
   final SrsExtensionApi? Function()? _srsApiProvider;
+
+  /// 反馈 biLEesNqWb：扩展手动选配置 + 「浏览器」媒体类型绑定的解析。未注入时
+  /// `/api/extension/profiles` 404、请求头被忽略，全部请求走默认服务组。
+  final ExtensionProfileApi? _profileApi;
   final String? _apiKey;
 
   /// 网络层「允许谁连」：决定监听地址，并在密钥校验之前对**每个**请求判来源。
@@ -532,10 +544,72 @@ class FushiApiServer {
     if (_kExtensionSeenPaths.contains(path)) {
       _onExtensionSeen?.call();
     }
-    // TODO-2936：查词/制卡活动 → 应用「浏览器」媒体类型 Profile 绑定。
-    if (_kLookupActivityPaths.contains(path)) {
-      _onLookupActivity?.call();
+    final ExtensionProfileApi? profileApi = _profileApi;
+    if (profileApi == null || !_kProfileScopedPaths.contains(path)) {
+      return _dispatchPost(request, path, _defaultServices);
     }
+    // 反馈 biLEesNqWb：解析这次请求按哪份配置处理（扩展所选 > 浏览器绑定 > 跟随 App），
+    // 拿到按那份配置读设置的服务组；App 的激活配置不动。
+    final int? requestedProfileId = parseExtensionProfileHeader(
+      request.headers[kExtensionProfileRequestHeader],
+    );
+    final ExtensionProfileScope scope = await profileApi.resolveScope(
+      requestedProfileId,
+    );
+    final shelf.Response response = await _dispatchPost(
+      request,
+      path,
+      scope.services ?? _defaultServices,
+    );
+    if (requestedProfileId == null) return response;
+    final int? missing = scope.missingRequestedProfileId;
+    return response.change(
+      headers: <String, String>{
+        kExtensionProfileActiveHeader: '${scope.effectiveProfileId}',
+        if (missing != null) kExtensionProfileMissingHeader: '$missing',
+      },
+    );
+  }
+
+  /// 构造时注入的那一组服务（App 当前生效设置）：不带配置、或解析出的就是激活配置时用。
+  late final ExtensionRequestServices _defaultServices =
+      ExtensionRequestServices(
+        lookup: _lookup,
+        mining: _mining,
+        themeColorsProvider: _themeColorsProvider,
+        audioSourcesProvider: _audioSourcesProvider,
+        autoReadOnLookupProvider: _autoReadOnLookupProvider,
+        dictionaryUnifiedStyleProvider: _dictionaryUnifiedStyleProvider,
+        popupDictionaryCssProvider: _popupDictionaryCssProvider,
+        srsApiProvider: _srsApiProvider,
+      );
+
+  /// [services] 对应的查词 / 制卡路由：默认组复用 [_lookupRoutes]，按配置的组现建一个
+  /// （只是几个引用的薄壳，单词音频 token 仓库仍是同一个）。
+  RemoteLookupRoutes _routesFor(ExtensionRequestServices services) =>
+      identical(services, _defaultServices)
+      ? _lookupRoutes
+      : RemoteLookupRoutes(
+          audioTokens: _audioTokens,
+          lookup: services.lookup,
+          mining: services.mining,
+        );
+
+  /// 反馈 biLEesNqWb：`/api/extension/profiles` → `{profiles:[{id,name}], activeProfileId}`。
+  Future<shelf.Response> _handleExtensionProfiles() async {
+    final ExtensionProfileApi? api = _profileApi;
+    if (api == null) return shelf.Response.notFound('Unknown endpoint');
+    final ExtensionProfileList list = await api.listProfiles();
+    return jsonResponse(list.toJson());
+  }
+
+  /// POST 端点的路由表（405 门与探活 / 配置前置步骤之后）。[services] 是这次请求按配置
+  /// 解析出的服务组（只有 [_kProfileScopedPaths] 用得到）。
+  Future<shelf.Response> _dispatchPost(
+    shelf.Request request,
+    String path,
+    ExtensionRequestServices services,
+  ) async {
     if (FushiExtensionApiCore.paths.contains(path)) {
       return _handleExtensionApiCore(request, path);
     }
@@ -545,17 +619,17 @@ class FushiApiServer {
       case '/yomitanVersion':
         return jsonResponse(<String, dynamic>{'version': '0.0.0.0'});
       case '/termEntries':
-        return _handleTermEntries(request);
+        return _handleTermEntries(request, services.lookup);
       case '/tokenize':
         return _handleTokenize(request);
       case '/api/lookup/dictionary':
-        return _handleDictionaryLookup(request);
+        return _handleDictionaryLookup(request, services);
       case '/api/lookup/audio':
-        return _lookupRoutes.handleAudioLookup(request);
+        return _routesFor(services).handleAudioLookup(request);
       case '/api/lookup/audio/list':
-        return _lookupRoutes.handleAudioList(request);
+        return _routesFor(services).handleAudioList(request);
       case '/api/mine':
-        return _lookupRoutes.handleMine(request);
+        return _routesFor(services).handleMine(request);
       case '/api/mine/forward':
         return _lookupRoutes.handleMineForward(request);
       case '/api/anki/note-type/read':
@@ -563,24 +637,26 @@ class FushiApiServer {
       case '/api/anki/note-type/templates':
         return _lookupRoutes.handleAnkiNoteType(request, path);
       case '/api/duplicate':
-        return _lookupRoutes.handleDuplicate(request);
+        return _routesFor(services).handleDuplicate(request);
       // Issue #1409：弹窗 ↗「在 Anki 中打开」（与 app 内 openInAnki 桥同一 repo 方法）。
       case '/api/anki/open':
-        return _lookupRoutes.handleOpenInAnki(request);
+        return _routesFor(services).handleOpenInAnki(request);
       case '/api/extension/favorite':
         return _handleExtensionFavorite(request);
       case '/api/srs/term-status':
-        return _handleSrsTermStatus(request);
+        return _handleSrsTermStatus(request, services.srsApiProvider);
       case '/api/srs/term-status-batch':
-        return _handleSrsTermStatusBatch(request);
+        return _handleSrsTermStatusBatch(request, services.srsApiProvider);
       case '/api/srs/open':
-        return _handleSrsOpen(request);
+        return _handleSrsOpen(request, services.srsApiProvider);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
         return _handleSiteCookies(request);
       case '/api/extension/fonts/download':
         return _handleExtensionFontDownload(request);
+      case kExtensionProfilesPath:
+        return _handleExtensionProfiles();
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
@@ -755,7 +831,10 @@ class FushiApiServer {
   }
 
   /// BUG-530：浏览器扩展查词端点（与 FushiSyncServer 共享契约）。
-  Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
+  Future<shelf.Response> _handleDictionaryLookup(
+    shelf.Request request,
+    ExtensionRequestServices services,
+  ) async {
     final Stopwatch serverWatch = Stopwatch()..start();
     final Stopwatch requestJsonWatch = Stopwatch()..start();
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
@@ -768,15 +847,16 @@ class FushiApiServer {
     final Map<String, dynamic> response =
         await buildRemoteDictionaryLookupResponse(
           body,
-          lookup: _lookup,
+          lookup: services.lookup,
           history: _history,
           popupTiming: popupTiming,
-          themeColorsProvider: _themeColorsProvider,
-          audioSourcesProvider: _audioSourcesProvider,
-          autoReadOnLookupProvider: _autoReadOnLookupProvider,
-          dictionaryUnifiedStyleProvider: _dictionaryUnifiedStyleProvider,
+          themeColorsProvider: services.themeColorsProvider,
+          audioSourcesProvider: services.audioSourcesProvider,
+          autoReadOnLookupProvider: services.autoReadOnLookupProvider,
+          dictionaryUnifiedStyleProvider:
+              services.dictionaryUnifiedStyleProvider,
           extensionBuildProvider: _extensionBuildProvider,
-          popupDictionaryCssProvider: _popupDictionaryCssProvider,
+          popupDictionaryCssProvider: services.popupDictionaryCssProvider,
           appLocaleProvider: _appLocaleProvider,
         );
     handlerWatch.stop();
@@ -842,8 +922,11 @@ class FushiApiServer {
 
   /// 复习词状态（扩展弹窗的复习标记）：body `{expression, reading}` → `{status: null | {...}}`。
   /// 复习模块关着时 404（扩展 shim 据此退避，不再每次查词都问）。
-  Future<shelf.Response> _handleSrsTermStatus(shelf.Request request) async {
-    final SrsExtensionApi? api = _srsApiProvider?.call();
+  Future<shelf.Response> _handleSrsTermStatus(
+    shelf.Request request,
+    SrsExtensionApi? Function()? srsApiProvider,
+  ) async {
+    final SrsExtensionApi? api = srsApiProvider?.call();
     if (api == null) return shelf.Response.notFound('SRS module off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -865,8 +948,9 @@ class FushiApiServer {
   /// 非 200 → 退回逐条 `/api/srs/term-status`。
   Future<shelf.Response> _handleSrsTermStatusBatch(
     shelf.Request request,
+    SrsExtensionApi? Function()? srsApiProvider,
   ) async {
-    final SrsExtensionApi? api = _srsApiProvider?.call();
+    final SrsExtensionApi? api = srsApiProvider?.call();
     if (api == null) return shelf.Response.notFound('SRS module off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -892,8 +976,11 @@ class FushiApiServer {
   }
 
   /// 扩展里点复习标记：body `{cardId, noteId?}` → `{opened: bool}`。模块关着时 404。
-  Future<shelf.Response> _handleSrsOpen(shelf.Request request) async {
-    final SrsExtensionApi? api = _srsApiProvider?.call();
+  Future<shelf.Response> _handleSrsOpen(
+    shelf.Request request,
+    SrsExtensionApi? Function()? srsApiProvider,
+  ) async {
+    final SrsExtensionApi? api = srsApiProvider?.call();
     if (api == null) return shelf.Response.notFound('SRS module off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
@@ -909,24 +996,33 @@ class FushiApiServer {
     return jsonResponse(<String, dynamic>{'opened': opened});
   }
 
-  Future<shelf.Response> _handleTermEntries(shelf.Request request) async {
+  Future<shelf.Response> _handleTermEntries(
+    shelf.Request request,
+    FushiRemoteLookupService lookup,
+  ) async {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final dynamic term = body?['term'];
     if (term is List) {
       final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
       for (int i = 0; i < term.length; i++) {
-        out.add(await _termEntriesFor(term[i]?.toString() ?? '', i));
+        out.add(await _termEntriesFor(lookup, term[i]?.toString() ?? '', i));
       }
       return jsonRawResponse(jsonEncode(out));
     }
-    return jsonResponse(await _termEntriesFor(term?.toString() ?? '', 0));
+    return jsonResponse(
+      await _termEntriesFor(lookup, term?.toString() ?? '', 0),
+    );
   }
 
-  Future<Map<String, dynamic>> _termEntriesFor(String term, int index) async {
+  Future<Map<String, dynamic>> _termEntriesFor(
+    FushiRemoteLookupService lookup,
+    String term,
+    int index,
+  ) async {
     if (term.trim().isEmpty) {
       return buildYomitanTermEntriesResponse(null, index);
     }
-    final DictionarySearchResult? result = await _lookup.searchDictionary(
+    final DictionarySearchResult? result = await lookup.searchDictionary(
       term: term,
       wildcards: false,
       maximumTerms: 10,

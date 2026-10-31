@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart';
 
 /// BUG-2918：首页「继续」区曾只按 `0 < position < duration` 判「在读」，而阅读器
 /// 存的位置是末页首个可见字符——读到最后一页 position 永远 < duration、百分比四舍五入
@@ -121,7 +122,7 @@ void main() {
     });
   });
 
-  group('dashboardBookVolumeNumber（「Vol. N」徽标）', () {
+  group('collectionMemberVolumeNumber（续读卡「第 N 卷」/ 书架「读到第 N 卷」）', () {
     const String dm = '絶対に働きたくないダンジョンマスターが惰眠をむさぼるまで';
     // 原样书名：1、2 卷 dc:title 用全角空格 + 全角数字，3 卷起半角。
     final List<String> dmTitles = <String>[
@@ -132,7 +133,7 @@ void main() {
 
     test('用户实报：第 2 卷排在合集第 17 位时徽标仍是卷号 2，不是位置 17', () {
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
           title: '$dm　２',
           memberTitles: dmTitles,
           memberOrdinal: 17,
@@ -140,7 +141,7 @@ void main() {
         2,
       );
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
           title: '$dm 17',
           memberTitles: dmTitles,
           memberOrdinal: 1,
@@ -156,7 +157,7 @@ void main() {
         'Brave New World',
       ];
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
           title: 'Fahrenheit 451',
           memberTitles: theme,
           memberOrdinal: 1,
@@ -164,7 +165,7 @@ void main() {
         1,
       );
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
           title: '$dm　２',
           memberTitles: <String>['$dm　２', '安達としまむら10'],
           memberOrdinal: 2,
@@ -173,7 +174,7 @@ void main() {
         reason: '混了别的系列同样退回位置',
       );
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
           title: '安達としまむら10',
           memberTitles: <String>['$dm　２', '安達としまむら10'],
           memberOrdinal: 1,
@@ -182,22 +183,89 @@ void main() {
       );
     });
 
-    test('书名没有卷号时退回合集内第几个', () {
+    test('书名没有卷号：同系列兄弟都带卷号且无第 1 卷时是第 1 卷，否则退回位置', () {
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
           title: '安達としまむら',
-          memberTitles: <String>['安達としまむら', '安達としまむら2'],
-          memberOrdinal: 1,
+          memberTitles: <String>['安達としまむら2', 'しまむらSS', '安達としまむら'],
+          memberOrdinal: 3,
         ),
         1,
+        reason: '无卷号的首卷存在位置 3 也是第 1 卷',
       );
       expect(
-        dashboardBookVolumeNumber(
+        collectionMemberVolumeNumber(
+          title: '安達としまむら',
+          memberTitles: <String>['安達としまむら1', '安達としまむら'],
+          memberOrdinal: 2,
+        ),
+        2,
+        reason: '已有卷自称第 1 卷，无卷号的那本认不出第几卷',
+      );
+      expect(
+        collectionMemberVolumeNumber(
           title: '86',
           memberTitles: <String>['86', '86'],
           memberOrdinal: 3,
         ),
         3,
+      );
+    });
+
+    // BUG continue-card-volume-number：用户实报「安達としまむら3」续读卡显示
+    // 「第 13 卷」——合集混了番外（系列键与正篇不同），旧判据要求全体同系列，一混
+    // 番外就退回存储位置，而合集顺序又乱，第 3 卷排在第 13 位。
+    test('用户实报：正篇 + 番外合集里第 3 卷存在位置 13 仍是第 3 卷', () {
+      final List<String> members = <String>[
+        '安達としまむら5',
+        '安達としまむら8',
+        '安達としまむらSS',
+        '安達としまむら',
+        '安達としまむら2',
+        '安達としまむら4',
+        '安達としまむら6',
+        '安達としまむら7',
+        '安達としまむら9',
+        '安達としまむら10',
+        '安達としまむら11',
+        '安達としまむら12',
+        '安達としまむら3',
+        '安達としまむら13 (電撃文庫)',
+      ];
+      expect(members.indexOf('安達としまむら3') + 1, 13);
+      expect(
+        collectionMemberVolumeNumber(
+          title: '安達としまむら3',
+          memberTitles: members,
+          memberOrdinal: 13,
+        ),
+        3,
+      );
+      expect(
+        collectionMemberVolumeNumber(
+          title: '安達としまむら13 (電撃文庫)',
+          memberTitles: members,
+          memberOrdinal: 14,
+        ),
+        13,
+      );
+      expect(
+        collectionMemberVolumeNumber(
+          title: '安達としまむら',
+          memberTitles: members,
+          memberOrdinal: 4,
+        ),
+        1,
+        reason: '无卷号的首卷',
+      );
+      expect(
+        collectionMemberVolumeNumber(
+          title: '安達としまむらSS',
+          memberTitles: members,
+          memberOrdinal: 3,
+        ),
+        3,
+        reason: '番外不是正篇的卷，退回合集内序号（与合集详情页同序）',
       );
     });
   });

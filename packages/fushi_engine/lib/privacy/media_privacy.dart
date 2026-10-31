@@ -11,6 +11,10 @@
 // - 视频文件：本集被标，或它所在的任一合集被标；
 // - 视频作品单元 / 合集级追踪：合集被标，或单元里任一集是私密的；
 // - 游戏：本游戏被标，或它所在的任一合集被标（游戏也能加入合集）。
+// - 隐私来源（`media_sources.is_private`，v140）：扫描根开了隐私开关，它产出的书 /
+//   漫画（epub_books.source_id）与视频文件（video_books.source_id）一律当作被标——
+//   与作品级标记同一口径，下游（排行榜 / Bangumi）不用各自再判来源。移除来源时
+//   这些条目会被逐一补上作品级标记（`deleteMediaSource`），不会因此变回公开。
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -42,6 +46,25 @@ class MediaPrivacySnapshot {
   );
 
   static Future<MediaPrivacySnapshot> load(FushiDatabase db) async {
+    final Set<int> privateSources = await db.privateMediaSourceIds();
+    final Set<String> books = await db.privateEntryKeys(TagHostKind.epub);
+    final Set<String> videos = await db.privateEntryKeys(TagHostKind.video);
+    if (privateSources.isNotEmpty) {
+      books.addAll(
+        await (db.selectOnly(db.epubBooks)
+              ..addColumns(<Expression<Object>>[db.epubBooks.bookKey])
+              ..where(db.epubBooks.sourceId.isIn(privateSources)))
+            .map((TypedResult r) => r.read(db.epubBooks.bookKey)!)
+            .get(),
+      );
+      videos.addAll(
+        await (db.selectOnly(db.videoBooks)
+              ..addColumns(<Expression<Object>>[db.videoBooks.bookUid])
+              ..where(db.videoBooks.sourceId.isIn(privateSources)))
+            .map((TypedResult r) => r.read(db.videoBooks.bookUid)!)
+            .get(),
+      );
+    }
     final Set<int> collections = <int>{
       for (final String k in await db.privateEntryKeys(TagHostKind.collection))
         ?collectionIdOfTagEntryKey(k),
@@ -72,8 +95,8 @@ class MediaPrivacySnapshot {
       }
     }
     return MediaPrivacySnapshot._(
-      books: await db.privateEntryKeys(TagHostKind.epub),
-      videos: await db.privateEntryKeys(TagHostKind.video),
+      books: books,
+      videos: videos,
       collections: collections,
       games: await db.privateEntryKeys(TagHostKind.game),
       collectionsOfEntry: collectionsOfEntry,
@@ -180,4 +203,34 @@ Future<List<MediaCollectionRow>> privateCollectionsContaining(
     (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
   );
   return result;
+}
+
+/// [kind] / [entryKey] 宿主所属的、开着隐私开关的来源库（v140 `media_sources.is_private`；
+/// 没有 = null）。作品级私密开关用它说明「这部作品因所在来源库私密而私密」——那份私密
+/// 只能到来源库里取消。只有书 / 漫画（epub_books）与视频文件（video_books）挂来源库。
+Future<MediaSourceRow?> privateSourceLibraryContaining(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+) async {
+  final int? sourceId = switch (kind) {
+    TagHostKind.epub =>
+      await (db.selectOnly(db.epubBooks)
+            ..addColumns(<Expression<Object>>[db.epubBooks.sourceId])
+            ..where(db.epubBooks.bookKey.equals(entryKey))
+            ..limit(1))
+          .map((TypedResult r) => r.read(db.epubBooks.sourceId))
+          .getSingleOrNull(),
+    TagHostKind.video =>
+      await (db.selectOnly(db.videoBooks)
+            ..addColumns(<Expression<Object>>[db.videoBooks.sourceId])
+            ..where(db.videoBooks.bookUid.equals(entryKey))
+            ..limit(1))
+          .map((TypedResult r) => r.read(db.videoBooks.sourceId))
+          .getSingleOrNull(),
+    TagHostKind.srt || TagHostKind.game || TagHostKind.collection => null,
+  };
+  if (sourceId == null) return null;
+  final MediaSourceRow? source = await db.getMediaSourceById(sourceId);
+  return source != null && source.isPrivate ? source : null;
 }

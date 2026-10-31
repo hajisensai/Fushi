@@ -150,8 +150,9 @@ class ErrorLogService extends ChangeNotifier
     final String separator = '─' * 60;
     final firstSep = content.indexOf(separator);
     if (firstSep != -1) {
-      final String afterSeparator =
-          content.substring(firstSep + separator.length).trimLeft();
+      final String afterSeparator = content
+          .substring(firstSep + separator.length)
+          .trimLeft();
       if (afterSeparator.isNotEmpty) {
         content = afterSeparator;
       }
@@ -166,7 +167,8 @@ class ErrorLogService extends ChangeNotifier
     }
 
     final String separator = '─' * 60;
-    final String header = '[${entry.timestamp}] ${entry.source}\n'
+    final String header =
+        '[${entry.timestamp}] ${entry.source}\n'
         '[truncated: single log entry exceeded $_maxFileBytes bytes]\n';
     final StringBuffer body = StringBuffer(entry.error);
     final String? stackTrace = entry.stackTrace;
@@ -214,7 +216,8 @@ class ErrorLogService extends ChangeNotifier
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
   /// path_provider）；生产不传，走 [fushiTestDirectory] / 应用文档目录。
   Future<void> init({Directory? directoryOverride}) async {
-    final dir = directoryOverride ??
+    final dir =
+        directoryOverride ??
         fushiTestDirectory('app-documents') ??
         await getApplicationDocumentsDirectory();
     _appDir = dir;
@@ -249,11 +252,14 @@ class ErrorLogService extends ChangeNotifier
       // 不在（正常清掉），步进文件若残留也单独读出，定位到「哪一步」而不仅「哪本词典」。
       final String? nativeStep = readAndClearBreadcrumb(_importStepFile!);
       if (culprit != null || nativeStep != null) {
-        final String stepSuffix =
-            nativeStep != null ? '，native 最后步骤=$nativeStep' : '';
+        final String stepSuffix = nativeStep != null
+            ? '，native 最后步骤=$nativeStep'
+            : '';
         final String head = culprit ?? '（无导入面包屑残留）';
-        log('DictImport.crashRecovered',
-            '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$head$stepSuffix');
+        log(
+          'DictImport.crashRecovered',
+          '上次词典导入疑似让 app 崩溃（native 进程级，Dart 无法捕获）：$head$stepSuffix',
+        );
       }
     } catch (e) {
       debugPrint('[ErrorLogService] breadcrumb recovery failed: $e');
@@ -264,14 +270,16 @@ class ErrorLogService extends ChangeNotifier
     // `Lookup.crashRecovered`（日志 label，非 i18n key），记下当时栈深度。卡死那条
     // 由 Windows 看门狗另折 `MainThread.hangRecovered`（带 hang dump 路径）。
     try {
-      final String? lookupCulprit =
-          readAndClearBreadcrumb(_lookupBreadcrumbFile!);
+      final String? lookupCulprit = readAndClearBreadcrumb(
+        _lookupBreadcrumbFile!,
+      );
       if (lookupCulprit != null) {
         log(
-            'Lookup.crashRecovered',
-            '上次查词期间进程没有正常退出（native 崩溃，或卡死后被强杀——若同时有 '
-                'MainThread.hangRecovered 即为卡死，dump 见诊断区「崩溃转储」）：'
-                '$lookupCulprit');
+          'Lookup.crashRecovered',
+          '上次查词期间进程没有正常退出（native 崩溃，或卡死后被强杀——若同时有 '
+              'MainThread.hangRecovered 即为卡死，dump 见诊断区「崩溃转储」）：'
+              '$lookupCulprit',
+        );
       }
     } catch (e) {
       debugPrint('[ErrorLogService] lookup breadcrumb recovery failed: $e');
@@ -283,9 +291,10 @@ class ErrorLogService extends ChangeNotifier
       final String? initStep = readAndClearBreadcrumb(_initStepFile!);
       if (initStep != null) {
         log(
-            'AppInit.hangRecovered',
-            '上次启动疑似卡在某步没返回（无限加载 / 首帧不出，多半是自定义数据根所在磁盘'
-                '掉线致早期 IO 永不返回）：$initStep');
+          'AppInit.hangRecovered',
+          '上次启动疑似卡在某步没返回（无限加载 / 首帧不出，多半是自定义数据根所在磁盘'
+              '掉线致早期 IO 永不返回）：$initStep',
+        );
       }
     } catch (e) {
       debugPrint('[ErrorLogService] init-step breadcrumb recovery failed: $e');
@@ -307,8 +316,10 @@ class ErrorLogService extends ChangeNotifier
 
   void markImportStart(String detail) {
     try {
-      _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail',
-          flush: true);
+      _breadcrumbFile?.writeAsStringSync(
+        '[${DateTime.now()}] $detail',
+        flush: true,
+      );
     } catch (e) {
       debugPrint('[ErrorLogService] markImportStart failed: $e');
     }
@@ -388,8 +399,10 @@ class ErrorLogService extends ChangeNotifier
   /// 同步落盘（`flush: true`），否则 hang→强杀期间异步缓冲来不及写盘。
   void markInitStep(String step) {
     try {
-      _initStepFile?.writeAsStringSync('[${DateTime.now()}] $step',
-          flush: true);
+      _initStepFile?.writeAsStringSync(
+        '[${DateTime.now()}] $step',
+        flush: true,
+      );
     } catch (e) {
       debugPrint('[ErrorLogService] markInitStep failed: $e');
     }
@@ -469,8 +482,11 @@ class ErrorLogService extends ChangeNotifier
     }
     notifyListenersFrameSafe();
     try {
-      _logFile?.writeAsStringSync(_formatEntryForFile(entry),
-          mode: FileMode.append, flush: true);
+      _logFile?.writeAsStringSync(
+        _formatEntryForFile(entry),
+        mode: FileMode.append,
+        flush: true,
+      );
       _trimLogFileToMaxBytesSync();
     } catch (e) {
       debugPrint('[ErrorLogService] logFatal sync append failed: $e');
@@ -632,10 +648,7 @@ String? localizeAnkiMineError(String? code) {
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
 ///   + 不记账），一并收口于此。
 ({String message, bool success, bool record, MineToastStatus status})
-    describeMineOutcome(
-  MineOutcome outcome, {
-  bool overwrite = false,
-}) {
+describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
   switch (outcome.result) {
     case MineResult.success:
       // TODO-779：卡片已建好，但单词远程音频下载失败（非 200 / 网络异常）时，把
@@ -656,10 +669,12 @@ String? localizeAnkiMineError(String? code) {
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
-        // TODO-1325 #6：新制与覆写成功都是绿色 added（覆写用 card_overwritten 文案区分）。
+        // 新制是绿色 added，覆盖已有卡是紫色 overwritten（此前两者同绿，用户分不出）。
         // 带音频缺失提示的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
         status: hasAudioWarning
             ? MineToastStatus.addedWithWarning
+            : overwrite
+            ? MineToastStatus.overwritten
             : MineToastStatus.added,
       );
     case MineResult.duplicate:

@@ -832,7 +832,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     setState(() {
       _pluginSources = <MusicPluginManifest>[
         for (final InstalledMusicPlugin p in all)
-          if (p.usable) p.info!.manifest,
+          if (p.isMusicSource) p.info!.manifest,
       ];
       if (_hasRecommend && !_sectionTouched) {
         _section = MusicLibrarySection.recommend;

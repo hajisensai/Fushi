@@ -23,6 +23,12 @@ import 'package:fushi/src/platform/ios/ios_clipboard_service.dart';
 import 'package:fushi/src/platform/ios/ios_permission_service.dart';
 import 'package:fushi/src/platform/ios/ios_device_info_service.dart';
 
+/// Anki 后端工厂：[settingsStore] 非 null 时新实例读写它而不是进程级装配点
+/// （`BaseAnkiRepository.defaultSettingsStore`）。反馈 biLEesNqWb：浏览器扩展所选的
+/// 非激活配置用只读设置视图建仓库，同一后端、按那个配置的牌组 / 字段映射制卡。
+typedef AnkiRepositoryFactory =
+    BaseAnkiRepository Function({AnkiSettingsStore? settingsStore});
+
 /// Holds all platform-specific service implementations.
 ///
 /// Created once in `main()` before `runApp()` and passed to [AppModel] as a
@@ -34,8 +40,8 @@ class PlatformServices {
   final PlatformClipboardService clipboard;
   final PlatformPermissionService permission;
   final PlatformDeviceInfoService deviceInfo;
-  final BaseAnkiRepository Function() _createDefaultAnkiRepository;
-  final BaseAnkiRepository Function()? _createMobileAnkiConnectRepository;
+  final AnkiRepositoryFactory _createDefaultAnkiRepository;
+  final AnkiRepositoryFactory? _createMobileAnkiConnectRepository;
 
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这条路
   /// （Android 的 AnkiDroid / iOS 的 AnkiMobile 都是）。桌面本来就走 AnkiConnect，
@@ -86,8 +92,8 @@ class PlatformServices {
     required this.clipboard,
     required this.permission,
     required this.deviceInfo,
-    required BaseAnkiRepository Function() createAnkiRepository,
-    BaseAnkiRepository Function()? createMobileAnkiConnectRepository,
+    required AnkiRepositoryFactory createAnkiRepository,
+    AnkiRepositoryFactory? createMobileAnkiConnectRepository,
     bool isMobile = false,
     AndroidClipboardService? androidClipboard,
     bool? isWindows,
@@ -112,14 +118,20 @@ class PlatformServices {
 
   /// Creates the active Anki backend. 移动端保留各自的原生后端（AnkiDroid /
   /// AnkiMobile）作为升级安全的默认值，但可显式改用一台可达的 AnkiConnect。
-  BaseAnkiRepository createAnkiRepository() {
+  ///
+  /// [settingsStore]：见 [AnkiRepositoryFactory]。后端**选择**（同步客户端 / 移动端
+  /// AnkiConnect）是设备设置，不随它变。
+  BaseAnkiRepository createAnkiRepository({AnkiSettingsStore? settingsStore}) {
     if (_useAnkiSyncClient) {
-      return AnkiSyncClientRepository(session: _ankiSyncSession());
+      return AnkiSyncClientRepository(
+        session: _ankiSyncSession(),
+        settingsStore: settingsStore,
+      );
     }
     if (_isMobile && _useAnkiConnectOnMobile) {
-      return _createMobileAnkiConnectRepository!();
+      return _createMobileAnkiConnectRepository!(settingsStore: settingsStore);
     }
-    return _createDefaultAnkiRepository();
+    return _createDefaultAnkiRepository(settingsStore: settingsStore);
   }
 
   bool get useAnkiConnectOnMobile => _isMobile && _useAnkiConnectOnMobile;

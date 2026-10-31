@@ -878,15 +878,26 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
 
   // ── 删除传播墓碑（显式确认式）─────────────────────────────────────────────────
 
-  /// 记一条删除墓碑（本地删资产时调；重复删同键 upsert 刷新 deletedAt，重置发布状态）。
+  /// 记一条删除墓碑（本地删资产时调；重复删同键 upsert 刷新 deletedAt，重置发布状态
+  /// 与云盘文件夹处置状态）。
+  ///
+  /// [cloudFolderName]：书墓碑的云盘书文件夹名（`sanitizeTtuFilename(书名)`，删除时
+  /// 按当时的书名取）。墓碑键可能是对端键 / 别名，不等于文件夹名；只有记下了它，云通道
+  /// 才会去删云盘上的书文件夹。其它资产 / 拿不到书名时留 null。
   Future<void> writeSyncDeletionTombstone(
-          String mediaType, String itemKey, int deletedAt) =>
+          String mediaType, String itemKey, int deletedAt,
+          {String? cloudFolderName}) =>
       into(syncDeletionTombstones).insertOnConflictUpdate(
           SyncDeletionTombstoneRow(
               mediaType: mediaType,
               itemKey: itemKey,
               deletedAt: deletedAt,
-              remotePublishedAt: 0));
+              remotePublishedAt: 0,
+              cloudFolderName:
+                  (cloudFolderName == null || cloudFolderName.isEmpty)
+                      ? null
+                      : cloudFolderName,
+              cloudFolderState: TombstoneCloudFolderState.pending.dbValue));
 
   /// 清除某资产的删除墓碑（重新导入 / 新增同 (mediaType, itemKey) 时调，防误删复活）。
   Future<void> clearSyncDeletionTombstone(String mediaType, String itemKey) =>
@@ -915,6 +926,17 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         row.itemKey: row.deletedAt,
     };
   }
+
+  /// 记下某墓碑的云盘书文件夹处置结论（v142，[TombstoneCloudFolderState]）。只在真的
+  /// 删掉了（[TombstoneCloudFolderState.deleted]）或核实云盘上本就没有
+  /// （[TombstoneCloudFolderState.absent]）时调；删失败保持未处置，下一轮重试。
+  Future<void> markSyncDeletionCloudFolderState(String mediaType,
+          String itemKey, TombstoneCloudFolderState state) =>
+      (update(syncDeletionTombstones)
+            ..where((t) =>
+                t.mediaType.equals(mediaType) & t.itemKey.equals(itemKey)))
+          .write(SyncDeletionTombstonesCompanion(
+              cloudFolderState: Value(state.dbValue)));
 
   /// 标记某墓碑已发布到远端（避免每轮重发；[publishedAt] = 发布时刻）。
   Future<void> markSyncDeletionPublished(

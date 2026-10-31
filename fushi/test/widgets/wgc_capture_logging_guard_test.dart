@@ -95,7 +95,7 @@ void main() {
       'retire',
       'stop',
       'recreate',
-      'recreate-skip-samesize',
+      'recreate-skip-fits',
       'createSession-fail',
       'startCapture-fail',
       'state-inactive',

@@ -296,7 +296,7 @@ void main() {
         'pump-stop-start',
         'pump-remove-tick-done',
         'pump-stop-done',
-        'recreate-skip-samesize',
+        'recreate-skip-fits',
       ]) {
         expect(src.contains('WgcLog::Write("$event"'), isTrue,
             reason: 'TODO-506 must make $event visible in WGC.captureLog');
@@ -323,14 +323,14 @@ void main() {
 
       final String recreateBody = _methodBody(
         src,
-        'void TextureBridge::RecreateFramePoolLocked()',
+        'bool TextureBridge::RecreateFramePoolLocked()',
         'void TextureBridge::Stop()',
       );
       expect(recreateBody.contains('current_size'), isTrue,
-          reason: 'recreate-skip-samesize must log current capture item size');
+          reason: 'recreate-skip-fits must log current capture item size');
       expect(recreateBody.contains('lifetime_size'), isTrue,
           reason:
-              'recreate-skip-samesize must log existing frame-pool lifetime size');
+              'recreate-skip-fits must log existing frame-pool lifetime size');
 
       final String frameBody = src.substring(
         src.indexOf('void TextureBridge::PumpFrameLocked('),

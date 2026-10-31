@@ -8,6 +8,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'ctl_endpoint.dart';
 import 'ctl_protocol.dart';
 import 'ctl_routes.dart';
+import 'mcp/mcp_http.dart';
 
 /// app 侧实现的动作面。服务端只做鉴权、解析与状态码，不懂任何 app 语义。
 abstract interface class CtlDesktopHandler {
@@ -36,6 +37,7 @@ class CtlServer {
     String? token,
     this.appVersion,
     int? processId,
+    this.mcp,
   }) : token = token ?? generateCtlToken(),
        pid = processId ?? currentProcessId();
 
@@ -44,6 +46,10 @@ class CtlServer {
   final String token;
   final String? appVersion;
   final int pid;
+
+  /// 外部 AI 的 MCP 入口（`/mcp`）：复用本通道的监听，但用自己的配对令牌鉴权
+  /// （[McpHttpEndpoint.authorize]），不认控制通道 token。null = 不挂。
+  final McpHttpEndpoint? mcp;
 
   HttpServer? _server;
   CtlEndpoint? _endpoint;
@@ -91,6 +97,10 @@ class CtlServer {
   Future<shelf.Response> _handle(shelf.Request request) async {
     if (request.headers.containsKey('origin')) {
       return _error(403, 'forbidden');
+    }
+    final McpHttpEndpoint? mcpEndpoint = mcp;
+    if (mcpEndpoint != null && '/${request.url.path}' == kMcpHttpPath) {
+      return mcpEndpoint.handle(request);
     }
     if (!_authorized(request.headers['authorization'])) {
       return _error(401, kCtlErrorUnauthorized);

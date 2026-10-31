@@ -127,7 +127,7 @@ class HomeSrsPanel extends ConsumerWidget {
     final Widget status;
     if (data == null) {
       status = const _HomeSrsCountsSkeleton(key: ValueKey<String>('loading'));
-    } else if (!data.hasWorkToday) {
+    } else if (!data.hasWorkToday && !data.rwkvPending) {
       status = Row(
         key: const ValueKey<String>('done'),
         mainAxisSize: MainAxisSize.min,
@@ -160,6 +160,7 @@ class HomeSrsPanel extends ConsumerWidget {
             newCount: data.todayNew,
             learnCount: data.todayLearn,
             reviewCount: data.todayReview,
+            reviewPending: data.rwkvPending,
             dense: true,
           ),
           if (target != null)

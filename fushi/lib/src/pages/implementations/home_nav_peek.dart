@@ -413,11 +413,17 @@ String? srsNavPeekCountsLabel({
   required int newCount,
   required int learnCount,
   required int reviewCount,
+  bool reviewPending = false,
 }) {
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
     if (learnCount > 0) '${t.srs_count_learn} $learnCount',
-    if (reviewCount > 0) '${t.srs_count_review} $reviewCount',
+    if (reviewPending)
+      '${t.srs_count_review} '
+          '${reviewCount > 0 ? '$reviewCount ' : ''}'
+          '(${t.srs_settings_rwkv_preparing_start})'
+    else if (reviewCount > 0)
+      '${t.srs_count_review} $reviewCount',
   ];
   return parts.isEmpty ? null : parts.join(' · ');
 }
@@ -434,7 +440,9 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
       .where((SrsDeckSummary d) => d.depth == 0)
       .toList();
   AdaptiveNavPeekEntry entryOf(SrsDeckSummary deck) {
-    final bool hasWork = deck.newCount + deck.learnCount + deck.reviewCount > 0;
+    final bool hasWork =
+        deck.newCount + deck.learnCount + deck.reviewCount > 0 ||
+        deck.rwkvPending;
     return AdaptiveNavPeekEntry(
       title: deck.fullName,
       subtitle:
@@ -442,6 +450,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             newCount: deck.newCount,
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
+            reviewPending: deck.rwkvPending,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完

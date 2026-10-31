@@ -979,6 +979,14 @@ class MediaSources extends Table {
   TextColumn get videoGroupingMode =>
       text().withDefault(const Constant('series'))();
 
+  /// 隐私来源（schema v140，反馈 kEAgATi1LF）：true = 本扫描根产出的条目一律按
+  /// 「私密」处理（口径同作品级 `media_privacy_flags`，见 fushi_engine
+  /// `MediaPrivacySnapshot`）——不上传排行榜公开书架 / 主页、不推 Bangumi。
+  /// 设备本地配置（不进互联同步）；存量来源 false。移除隐私来源时条目改由
+  /// **会同步**的作品级 `media_privacy_flags` 承载私密（有意为之，理由见
+  /// `deleteMediaSource`）。
+  BoolColumn get isPrivate => boolean().withDefault(const Constant(false))();
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
@@ -1398,6 +1406,18 @@ class SyncDeletionTombstones extends Table {
 
   /// 已发布到远端的毫秒戳（0 = 尚未发布；发布后置为发布时刻，避免每轮重发）。
   IntColumn get remotePublishedAt => integer().withDefault(const Constant(0))();
+
+  /// v142：这本书在云盘同步根下的书文件夹名（仅 book 墓碑；删除时按**当时的书名**记下
+  /// `sanitizeTtuFilename(title)`，与 `SyncBackend.ensureBookFolder` 建文件夹同一派生）。
+  /// 墓碑键是 bookKey / 对端键，不一定等于文件夹名，所以删云盘文件夹只认这一列。
+  /// null = 不知道（v142 之前写的墓碑、非书资产、删除时拿不到书名）——这种墓碑云通道
+  /// 不删任何文件夹。
+  TextColumn get cloudFolderName => text().nullable()();
+
+  /// v142：云盘书文件夹的处置结论（[TombstoneCloudFolderState.dbValue]）：0 = 未处置
+  /// （含 v142 之前的全部墓碑），1 = 已删掉，2 = 发布时核实云盘上本就没有。云盘书库的
+  /// 远端占位卡只对 1 / 2 停止隐藏——那之后同名文件夹只可能是删除之后重新上传的新书。
+  IntColumn get cloudFolderState => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {mediaType, itemKey};
@@ -3582,16 +3602,19 @@ class LibraryOrganizeChanges extends Table {
 // ── ai_agent_sessions / ai_agent_actions（AI 助手，schema v136）──────────────
 // spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §5.3 / D3 / D5：AI 助手的
 // 对话存档与它做过的操作记录，供「操作记录」页与撤销用。与 library_organize_* 同一口径：
-// **设备本地**——不同步、不进备份、不分 Profile；本机按期限清理（D5 对话存档 30 天），
-// 清理只删记录与快照，不动已生效的改动。
+// **设备本地**——不同步、不进备份；本机按期限清理（D5 对话存档 30 天），清理只删记录
+// 与快照，不动已生效的改动。v141 起会话按 Profile 归属（[AiAgentSessions.profileUid]，
+// 会话列表只列当前 Profile 的）；操作记录仍不分 Profile。
 
-/// AI 助手的一场对话（整场序列化成 [payloadJson]）。
+/// AI 助手的一场对话（整场序列化成 [payloadJson]）。一行 = 一场会话，消息（条目 +
+/// 模型历史）属于这场会话、随它整体存取；会话列表只投影元数据列，不读 [payloadJson]。
 @DataClassName('AiAgentSessionRow')
 class AiAgentSessions extends Table {
   /// 会话 id（调用方生成）。
   TextColumn get id => text()();
 
-  /// 首句用户话截断，调用方给。
+  /// 会话标题。首次落库时取首条用户消息摘要（`aiAgentSessionAutoTitle`），之后整场
+  /// 重存**不再改写**；只有用户重命名（`renameAiAgentSession`）会改它。
   TextColumn get title => text()();
 
   /// `general` | `reader` | `manga` | `video` | `system`。
@@ -3604,6 +3627,12 @@ class AiAgentSessions extends Table {
 
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
+
+  /// v141：会话所属 Profile 的全局身份（`profiles.uid`），首次落库时按当前激活
+  /// Profile 盖戳，之后不改。用 uid 而不是本机自增 `profiles.id`：本表设备本地、覆盖
+  /// 恢复后原样回灌，而 `profiles` 随备份恢复，自增 id 会对不上。空串 = 归属不明
+  /// （v141 前的存档且迁移时解析不出激活 Profile 的 uid），对所有 Profile 可见。
+  TextColumn get profileUid => text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => <Column>{id};
