@@ -2398,8 +2398,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ({AudiobookPlayerController ctrl, LyricsIllustrationController ill})?
   _lyricsIllustrationStay;
 
-  /// 上一次喂插图状态机时的（墙钟, 音频位置），判「连续播放」用。
-  ({DateTime at, int audioMs})? _lyricsIllustrationLastObservation;
+  /// 上一次喂插图状态机时的（控制器跳转序号, 音频位置），判「连续播放」用。
+  ({int jumpSerial, int audioMs})? _lyricsIllustrationLastObservation;
 
   /// 插图探测的代次：退出歌词模式（或重进）后，在途的探测结果作废。
   int _lyricsIllustrationGeneration = 0;
