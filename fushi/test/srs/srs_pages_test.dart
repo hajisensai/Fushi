@@ -238,7 +238,7 @@ class _LookupApp extends SrsTestAppModel {
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
 /// 把默认牌组切成 FSRS-7：评分按钮上的「进复习队列的天数」只有非 RWKV 牌组才显示（RWKV 牌组的复习卡按此刻
-/// 的回忆率回来，天数不是它真正回来的时间；RWKV 没就绪时也不退回 FSRS-7 的到期日，BUG-3892）。
+/// 的回忆率回来，天数不是它真正回来的时间；RWKV 没就绪时也不退回 FSRS-7 的到期日，BUG-3900）。
 Future<void> _useFsrs7(WidgetTester tester, SrsDbStore store) async {
   await tester.runAsync(
     () => store.editFields(
