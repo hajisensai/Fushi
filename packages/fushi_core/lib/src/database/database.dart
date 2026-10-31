@@ -892,7 +892,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 141;
+  int get schemaVersion => 142;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2726,6 +2726,25 @@ class FushiDatabase extends _$FushiDatabase
               }
               await _backfillAiAgentSessionProfiles();
               await _ensureAiAgentSessionProfileIndex();
+            }
+          }
+          if (from < 142) {
+            // v142：sync_deletion_tombstones 加 cloud_folder_name（删书时记下的云盘书
+            // 文件夹名）与 cloud_folder_state（文件夹处置结论：0 未处置 / 1 已删 / 2 本就
+            // 没有）。存量墓碑一律 NULL / 0 = 未处置：旧版本发布「从所有设备删除」时从不
+            // 删云盘文件夹，残留还在，云盘书库占位卡必须继续藏（不能把「已发布」当成
+            // 「文件夹已删」）。幂等：早期步骤按当前定义建表时已带这两列，跳过。
+            if (await _tableExists('sync_deletion_tombstones')) {
+              for (final GeneratedColumn<Object> column
+                  in <GeneratedColumn<Object>>[
+                syncDeletionTombstones.cloudFolderName,
+                syncDeletionTombstones.cloudFolderState,
+              ]) {
+                if (!await _columnExists(
+                    'sync_deletion_tombstones', column.name)) {
+                  await m.addColumn(syncDeletionTombstones, column);
+                }
+              }
             }
           }
         },

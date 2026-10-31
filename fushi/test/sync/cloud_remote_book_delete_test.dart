@@ -204,6 +204,11 @@ void main() {
         expect(row.itemKey, 'Book A');
         expect(row.deletedAt, parsed?.deletedAt);
         expect(row.remotePublishedAt, greaterThan(0), reason: '标记已直接发布');
+        expect(row.cloudFolderName, 'Book A');
+        expect(
+          TombstoneCloudFolderState.fromDb(row.cloudFolderState),
+          TombstoneCloudFolderState.deleted,
+        );
       });
     }
 
@@ -250,6 +255,25 @@ void main() {
         throwsA(isA<SyncBackendError>()),
       );
       expect(await cloudMarker('Book A'), isNotNull);
+      final SyncDeletionTombstoneRow pending =
+          (await db.getSyncDeletionTombstones()).single;
+      expect(pending.cloudFolderName, 'Book A');
+      expect(
+        TombstoneCloudFolderState.fromDb(pending.cloudFolderState),
+        TombstoneCloudFolderState.pending,
+        reason: '文件夹没删掉就不能记成已处置',
+      );
+      expect(
+        await loadPendingRemoteDeletionKeys(
+          db,
+          SyncTombstoneKind.book,
+          remoteLibrarySourceId: cloudRemoteLibrarySourceId(
+            SyncBackendType.webDav.name,
+          ),
+        ),
+        contains('Book A'),
+        reason: '残留还在云盘上，书架继续藏',
+      );
 
       backend.deleteError = null;
       await c.deleteRemoteBook(a);
@@ -450,9 +474,17 @@ void main() {
         SyncTombstoneKind.book.dbValue,
         key,
         deletedAt,
+        cloudFolderName: sanitizeTtuFilename(title),
       );
       return deletedAt;
     }
+
+    Future<SyncDeletionTombstoneRow> tombstoneOf(
+      FushiDatabase deviceDb,
+      String itemKey,
+    ) async => (await deviceDb.getSyncDeletionTombstones()).singleWhere(
+      (SyncDeletionTombstoneRow r) => r.itemKey == itemKey,
+    );
 
     Future<Set<String>> cloudFolders() async => <String>{
       for (final AssetEntry e in await store.listChildren('root'))
@@ -496,7 +528,137 @@ void main() {
         (await db.getSyncDeletionTombstones()).single.remotePublishedAt,
         greaterThan(0),
       );
+      expect(
+        TombstoneCloudFolderState.fromDb(
+          (await tombstoneOf(db, 'Book A')).cloudFolderState,
+        ),
+        TombstoneCloudFolderState.deleted,
+      );
       expect(await hiddenOnShelf(db), isEmpty, reason: '文件夹已删，不再需要藏');
+    });
+
+    test('墓碑键是对端键 / 别名（≠ 文件夹名）：按删除时记下的文件夹名删掉', () async {
+      await _seedCloudBook(store, 'Re:Zero');
+      await _seedCloudBook(store, 'Book C');
+      // 从对端下载、落地键与对端不同的书：墓碑写对端键（`syncDeletionBookKeyOf`），
+      // 云盘文件夹名是 sanitizeTtuFilename(书名)，两者对不上。
+      await db.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue,
+        'peer-key-7',
+        DateTime.now().millisecondsSinceEpoch,
+        cloudFolderName: sanitizeTtuFilename('Re:Zero'),
+      );
+      expect(await hiddenOnShelf(db), <String>{
+        'peer-key-7',
+        sanitizeTtuFilename('Re:Zero'),
+      }, reason: '书架按文件夹名比对：处置前两者都藏');
+
+      final SyncRunReport report = await device(db).run();
+
+      expect(
+        report.errors.where((String e) => e.contains('tombstone')),
+        isEmpty,
+      );
+      expect(await cloudFolders(), <String>{
+        'Book C',
+      }, reason: '旧实现按墓碑键找文件夹，找不到就静默跳过，残留永远留在云盘');
+      final SyncDeletionTombstoneRow row = await tombstoneOf(db, 'peer-key-7');
+      expect(row.remotePublishedAt, greaterThan(0));
+      expect(
+        TombstoneCloudFolderState.fromDb(row.cloudFolderState),
+        TombstoneCloudFolderState.deleted,
+      );
+      expect(await cloudMarker('peer-key-7'), isNotNull);
+      expect(await hiddenOnShelf(db), isEmpty);
+    });
+
+    test('云盘上本就没有这本书的文件夹：记「本就没有」而不是「已删」，墓碑照常发布', () async {
+      await _seedCloudBook(store, 'Book C');
+      await importBook(db, 'Never Uploaded', localAddedAt: 1000);
+      await deleteEverywhere(db, 'Never Uploaded');
+
+      final SyncRunReport report = await device(db).run();
+
+      expect(
+        report.errors.where((String e) => e.contains('tombstone')),
+        isEmpty,
+      );
+      expect(await cloudFolders(), <String>{'Book C'}, reason: '别的书不动');
+      final SyncDeletionTombstoneRow row = await tombstoneOf(
+        db,
+        'Never Uploaded',
+      );
+      expect(row.remotePublishedAt, greaterThan(0));
+      expect(
+        TombstoneCloudFolderState.fromDb(row.cloudFolderState),
+        TombstoneCloudFolderState.absent,
+      );
+      expect(await hiddenOnShelf(db), isEmpty);
+    });
+
+    test('升级前的已发布墓碑（没记文件夹名）：同步不删任何文件夹，书架继续藏', () async {
+      // 旧版本「从所有设备删除」：墓碑已发布，但从没删过云盘文件夹。
+      await _seedCloudBook(store, 'Legacy');
+      await db.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue,
+        'Legacy',
+        100,
+      );
+      await db.markSyncDeletionPublished(
+        SyncTombstoneKind.book.dbValue,
+        'Legacy',
+        200,
+      );
+      expect(await hiddenOnShelf(db), <String>{
+        'Legacy',
+      }, reason: '旧实现把「已发布」当「文件夹已删」，升级后这里会放出整个残留');
+
+      final SyncRunReport report = await device(db).run();
+
+      expect(
+        report.errors.where((String e) => e.contains('tombstone')),
+        isEmpty,
+      );
+      expect(
+        await cloudFolders(),
+        contains('Legacy'),
+        reason: '不知道文件夹名就不碰（那之后同名文件夹可能是别人重新上传的新书）',
+      );
+      expect(
+        TombstoneCloudFolderState.fromDb(
+          (await tombstoneOf(db, 'Legacy')).cloudFolderState,
+        ),
+        TombstoneCloudFolderState.pending,
+      );
+      expect(await hiddenOnShelf(db), <String>{'Legacy'});
+    });
+
+    test('书架直删时文件夹删失败：云通道下一轮按记下的文件夹名重试删掉', () async {
+      await _seedCloudBook(store, 'Book A');
+      final CloudRemoteBookClient c = client();
+      backend.deleteError = SyncBackendError('403');
+      await expectLater(
+        c.deleteRemoteBook(await listed(c, 'Book A')),
+        throwsA(isA<SyncBackendError>()),
+      );
+      backend.deleteError = null;
+      expect(await cloudFolders(), contains('Book A'));
+      expect(await hiddenOnShelf(db), <String>{'Book A'});
+
+      final SyncRunReport report = await device(db).run();
+
+      expect(
+        report.errors.where((String e) => e.contains('tombstone')),
+        isEmpty,
+      );
+      expect(await cloudFolders(), isNot(contains('Book A')));
+      expect(
+        TombstoneCloudFolderState.fromDb(
+          (await tombstoneOf(db, 'Book A')).cloudFolderState,
+        ),
+        TombstoneCloudFolderState.deleted,
+      );
+      expect(await hiddenOnShelf(db), isEmpty);
     });
 
     test('删文件夹失败：墓碑已写、不标已发布、残留继续藏；下一轮重试删掉', () async {
