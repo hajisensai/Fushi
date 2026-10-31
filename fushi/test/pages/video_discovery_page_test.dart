@@ -226,6 +226,10 @@ void main() {
         expect(find.text('今日の番組'), findsOneWidget);
         expect(find.text('別の日の番組'), findsNothing);
         expect(requests.last.weekStart, weekStart);
+        // 小模块只要今天：不被整周分页拉取挡住（反馈 L1rmA0Ayuh）。
+        final DateTime? requestedDay = requests.last.day;
+        expect(requestedDay, isNotNull);
+        expect(daysBetweenLocalDates(requestedDay!, now), 0);
       }
     });
   }

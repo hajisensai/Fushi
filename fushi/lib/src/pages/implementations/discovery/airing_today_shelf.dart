@@ -27,7 +27,8 @@ import 'package:fushi/utils.dart';
 /// 播出的番剧横滑竖版小卡（封面 + 标题 + 时刻 · 第 N 集），点卡与日历页里点条目
 /// 一致：合成 [VideoDiscoveryItem] 进发现详情页。数据走 [loader]（生产装配 =
 /// `loadAiringCalendarWeek`，与日历页同一条取数路径与两层缓存），与日历页同为
-/// 当季全量放送（日历页已去掉「显示本季全部」开关）。
+/// 当季全量放送（日历页已去掉「显示本季全部」开关）。请求带 `day`：只拉今天的
+/// 窗口，整周留给进日历页时按需拉。
 class AiringTodayShelf extends StatefulWidget {
   const AiringTodayShelf({
     required this.loader,
@@ -70,6 +71,8 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
       final AiringCalendarSnapshot snapshot = await widget.loader(
         AiringCalendarRequest(
           weekStart: weekStart,
+          // 只取今天：不被整周分页拉取挡住（整周缓存已在时照样直接截取）。
+          day: now,
           isCancelled: () => !mounted,
         ),
       );
