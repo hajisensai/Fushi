@@ -117,16 +117,21 @@ class RwkvWorker {
     return out.materialize().asFloat32List();
   }
 
-  /// 追加并记撤销日志（[RwkvNativeRuntime.append]）。返回 false = 模型不支持撤销日志（大模型），
-  /// 这时行**已按普通回放追加**（状态照样是最新的，只是不能 [unappend]）。
-  Future<bool> append(RwkvRows rows, List<int> tags) =>
+  /// 追加并记撤销日志（[RwkvNativeRuntime.append]，[ats] 是评分时刻毫秒）。返回 false = 模型不支持
+  /// 撤销日志（大模型），这时行**已按普通回放追加**（状态照样是最新的，只是不能 [unappend] /
+  /// [rewindFrom]）。
+  Future<bool> append(RwkvRows rows, List<int> tags, List<int> ats) =>
       _call<bool>(_Op.append, (
         TransferableTypedData.fromList(<Uint8List>[rows.bytes]),
         Uint64List.fromList(tags),
+        Int64List.fromList(ats),
       ));
 
   /// 撤回最近一条 [append]（仅当标签是 [tag]）。
   Future<bool> unappend(int tag) => _call<bool>(_Op.unappend, tag);
+
+  /// 退到时刻 [atMs] 之前（[RwkvNativeRuntime.rewindFrom]）；null = 退不到，什么都没改。
+  Future<int?> rewindFrom(int atMs) => _call<int?>(_Op.rewindFrom, atMs);
 
   Future<void> clearScores() => _call<void>(_Op.clearScores);
 
@@ -242,6 +247,7 @@ enum _Op {
   query,
   append,
   unappend,
+  rewindFrom,
   clearScores,
   lookupScores,
   updateScores,
@@ -380,11 +386,11 @@ Object? _run(RwkvNativeRuntime runtime, _Command command) {
         out.buffer.asUint8List(),
       ]);
     case _Op.append:
-      final (TransferableTypedData rows, Uint64List tags) =
-          command.argument! as (TransferableTypedData, Uint64List);
+      final (TransferableTypedData rows, Uint64List tags, Int64List ats) =
+          command.argument! as (TransferableTypedData, Uint64List, Int64List);
       final RwkvRows batch = rowsOf(rows);
       try {
-        runtime.append(batch, tags);
+        runtime.append(batch, tags, ats);
         return true;
       } on RwkvNativeException catch (error) {
         if (!error.isUnsupported) rethrow;
@@ -393,6 +399,8 @@ Object? _run(RwkvNativeRuntime runtime, _Command command) {
       }
     case _Op.unappend:
       return runtime.unappend(command.argument! as int);
+    case _Op.rewindFrom:
+      return runtime.rewindFrom(command.argument! as int);
     case _Op.clearScores:
       runtime.clearScores();
       return null;
