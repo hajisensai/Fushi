@@ -6907,6 +6907,21 @@ class $MediaSourcesTable extends MediaSources
         requiredDuringInsert: false,
         defaultValue: const Constant('series'),
       );
+  static const VerificationMeta _isPrivateMeta = const VerificationMeta(
+    'isPrivate',
+  );
+  @override
+  late final GeneratedColumn<bool> isPrivate = GeneratedColumn<bool>(
+    'is_private',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_private" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -6943,6 +6958,7 @@ class $MediaSourcesTable extends MediaSources
     lastScanError,
     recursive,
     videoGroupingMode,
+    isPrivate,
     sortOrder,
     createdAt,
   ];
@@ -7036,6 +7052,12 @@ class $MediaSourcesTable extends MediaSources
         ),
       );
     }
+    if (data.containsKey('is_private')) {
+      context.handle(
+        _isPrivateMeta,
+        isPrivate.isAcceptableOrUnknown(data['is_private']!, _isPrivateMeta),
+      );
+    }
     if (data.containsKey('sort_order')) {
       context.handle(
         _sortOrderMeta,
@@ -7103,6 +7125,10 @@ class $MediaSourcesTable extends MediaSources
         DriftSqlType.string,
         data['${effectivePrefix}video_grouping_mode'],
       )!,
+      isPrivate: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_private'],
+      )!,
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -7158,6 +7184,12 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   /// 与网络连接参数独立；旧来源保持作品识别行为。
   final String videoGroupingMode;
 
+  /// 隐私来源（schema v140，反馈 kEAgATi1LF）：true = 本扫描根产出的条目一律按
+  /// 「私密」处理（口径同作品级 `media_privacy_flags`，见 fushi_engine
+  /// `MediaPrivacySnapshot`）——不上传排行榜公开书架 / 主页、不推 Bangumi。
+  /// 设备本地配置（不进互联同步）；存量来源 false。
+  final bool isPrivate;
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   final int sortOrder;
 
@@ -7175,6 +7207,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     this.lastScanError,
     required this.recursive,
     required this.videoGroupingMode,
+    required this.isPrivate,
     required this.sortOrder,
     required this.createdAt,
   });
@@ -7198,6 +7231,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     }
     map['recursive'] = Variable<bool>(recursive);
     map['video_grouping_mode'] = Variable<String>(videoGroupingMode);
+    map['is_private'] = Variable<bool>(isPrivate);
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
     return map;
@@ -7222,6 +7256,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           : Value(lastScanError),
       recursive: Value(recursive),
       videoGroupingMode: Value(videoGroupingMode),
+      isPrivate: Value(isPrivate),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
@@ -7244,6 +7279,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       lastScanError: serializer.fromJson<String?>(json['lastScanError']),
       recursive: serializer.fromJson<bool>(json['recursive']),
       videoGroupingMode: serializer.fromJson<String>(json['videoGroupingMode']),
+      isPrivate: serializer.fromJson<bool>(json['isPrivate']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
@@ -7263,6 +7299,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       'lastScanError': serializer.toJson<String?>(lastScanError),
       'recursive': serializer.toJson<bool>(recursive),
       'videoGroupingMode': serializer.toJson<String>(videoGroupingMode),
+      'isPrivate': serializer.toJson<bool>(isPrivate),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
     };
@@ -7280,6 +7317,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     Value<String?> lastScanError = const Value.absent(),
     bool? recursive,
     String? videoGroupingMode,
+    bool? isPrivate,
     int? sortOrder,
     int? createdAt,
   }) => MediaSourceRow(
@@ -7298,6 +7336,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
         : this.lastScanError,
     recursive: recursive ?? this.recursive,
     videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
+    isPrivate: isPrivate ?? this.isPrivate,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -7324,6 +7363,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       videoGroupingMode: data.videoGroupingMode.present
           ? data.videoGroupingMode.value
           : this.videoGroupingMode,
+      isPrivate: data.isPrivate.present ? data.isPrivate.value : this.isPrivate,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -7343,6 +7383,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           ..write('lastScanError: $lastScanError, ')
           ..write('recursive: $recursive, ')
           ..write('videoGroupingMode: $videoGroupingMode, ')
+          ..write('isPrivate: $isPrivate, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -7362,6 +7403,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     lastScanError,
     recursive,
     videoGroupingMode,
+    isPrivate,
     sortOrder,
     createdAt,
   );
@@ -7380,6 +7422,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           other.lastScanError == this.lastScanError &&
           other.recursive == this.recursive &&
           other.videoGroupingMode == this.videoGroupingMode &&
+          other.isPrivate == this.isPrivate &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
@@ -7396,6 +7439,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
   final Value<String?> lastScanError;
   final Value<bool> recursive;
   final Value<String> videoGroupingMode;
+  final Value<bool> isPrivate;
   final Value<int> sortOrder;
   final Value<int> createdAt;
   const MediaSourcesCompanion({
@@ -7410,6 +7454,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     this.lastScanError = const Value.absent(),
     this.recursive = const Value.absent(),
     this.videoGroupingMode = const Value.absent(),
+    this.isPrivate = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
@@ -7425,6 +7470,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     this.lastScanError = const Value.absent(),
     this.recursive = const Value.absent(),
     this.videoGroupingMode = const Value.absent(),
+    this.isPrivate = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required int createdAt,
   }) : label = Value(label),
@@ -7443,6 +7489,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     Expression<String>? lastScanError,
     Expression<bool>? recursive,
     Expression<String>? videoGroupingMode,
+    Expression<bool>? isPrivate,
     Expression<int>? sortOrder,
     Expression<int>? createdAt,
   }) {
@@ -7458,6 +7505,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
       if (lastScanError != null) 'last_scan_error': lastScanError,
       if (recursive != null) 'recursive': recursive,
       if (videoGroupingMode != null) 'video_grouping_mode': videoGroupingMode,
+      if (isPrivate != null) 'is_private': isPrivate,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
     });
@@ -7475,6 +7523,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     Value<String?>? lastScanError,
     Value<bool>? recursive,
     Value<String>? videoGroupingMode,
+    Value<bool>? isPrivate,
     Value<int>? sortOrder,
     Value<int>? createdAt,
   }) {
@@ -7490,6 +7539,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
       lastScanError: lastScanError ?? this.lastScanError,
       recursive: recursive ?? this.recursive,
       videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
+      isPrivate: isPrivate ?? this.isPrivate,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -7531,6 +7581,9 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     if (videoGroupingMode.present) {
       map['video_grouping_mode'] = Variable<String>(videoGroupingMode.value);
     }
+    if (isPrivate.present) {
+      map['is_private'] = Variable<bool>(isPrivate.value);
+    }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
@@ -7554,6 +7607,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
           ..write('lastScanError: $lastScanError, ')
           ..write('recursive: $recursive, ')
           ..write('videoGroupingMode: $videoGroupingMode, ')
+          ..write('isPrivate: $isPrivate, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -79793,6 +79847,7 @@ typedef $$MediaSourcesTableCreateCompanionBuilder =
       Value<String?> lastScanError,
       Value<bool> recursive,
       Value<String> videoGroupingMode,
+      Value<bool> isPrivate,
       Value<int> sortOrder,
       required int createdAt,
     });
@@ -79809,6 +79864,7 @@ typedef $$MediaSourcesTableUpdateCompanionBuilder =
       Value<String?> lastScanError,
       Value<bool> recursive,
       Value<String> videoGroupingMode,
+      Value<bool> isPrivate,
       Value<int> sortOrder,
       Value<int> createdAt,
     });
@@ -80038,6 +80094,11 @@ class $$MediaSourcesTableFilterComposer
 
   ColumnFilters<String> get videoGroupingMode => $composableBuilder(
     column: $table.videoGroupingMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isPrivate => $composableBuilder(
+    column: $table.isPrivate,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -80297,6 +80358,11 @@ class $$MediaSourcesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isPrivate => $composableBuilder(
+    column: $table.isPrivate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -80359,6 +80425,9 @@ class $$MediaSourcesTableAnnotationComposer
     column: $table.videoGroupingMode,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isPrivate =>
+      $composableBuilder(column: $table.isPrivate, builder: (column) => column);
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -80598,6 +80667,7 @@ class $$MediaSourcesTableTableManager
                 Value<String?> lastScanError = const Value.absent(),
                 Value<bool> recursive = const Value.absent(),
                 Value<String> videoGroupingMode = const Value.absent(),
+                Value<bool> isPrivate = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MediaSourcesCompanion(
@@ -80612,6 +80682,7 @@ class $$MediaSourcesTableTableManager
                 lastScanError: lastScanError,
                 recursive: recursive,
                 videoGroupingMode: videoGroupingMode,
+                isPrivate: isPrivate,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
               ),
@@ -80628,6 +80699,7 @@ class $$MediaSourcesTableTableManager
                 Value<String?> lastScanError = const Value.absent(),
                 Value<bool> recursive = const Value.absent(),
                 Value<String> videoGroupingMode = const Value.absent(),
+                Value<bool> isPrivate = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required int createdAt,
               }) => MediaSourcesCompanion.insert(
@@ -80642,6 +80714,7 @@ class $$MediaSourcesTableTableManager
                 lastScanError: lastScanError,
                 recursive: recursive,
                 videoGroupingMode: videoGroupingMode,
+                isPrivate: isPrivate,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
               ),

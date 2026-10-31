@@ -313,6 +313,7 @@ void main() {
       rootPath: 'D:/source-$id',
       recursive: true,
       videoGroupingMode: 'series',
+      isPrivate: false,
       configJson: null,
       mediaCount: 0,
       lastScannedAt: null,
