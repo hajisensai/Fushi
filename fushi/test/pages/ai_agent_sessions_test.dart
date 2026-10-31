@@ -207,7 +207,10 @@ void main() {
       await tester.tap(find.text(t.ai_agent_session_rename).last);
       await tester.pumpAndSettle();
       expect(find.text(t.ai_agent_session_rename_title), findsOneWidget);
-      expect(find.widgetWithText(EditableText, '调字幕'), findsOneWidget);
+      expect(
+        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+        '调字幕',
+      );
       await tester.enterText(find.byType(EditableText), '字幕设置');
       await tester.tap(find.text(t.ai_agent_session_rename).last);
       await tester.pumpAndSettle();
