@@ -22,7 +22,8 @@ class HostInputWanted {
 
   /// 解析 wire 上的一条；缺字段 / 类型不对抛 [FormatException]。
   factory HostInputWanted.fromJson(Object? json) {
-    if (json is! Map) throw const FormatException('match: entry must be object');
+    if (json is! Map)
+      throw const FormatException('match: entry must be object');
     final Object? name = json['name'];
     final Object? sha = json['sha256'];
     final Object? size = json['size'];
@@ -60,7 +61,9 @@ class HostInputMatcher {
   /// 返回 名字 → 命中的 host 文件；没命中的名字不在结果里。
   Future<Map<String, HostInputRef>> match(List<HostInputWanted> wanted) async {
     if (wanted.isEmpty) return const <String, HostInputRef>{};
-    final Set<int> sizes = <int>{for (final HostInputWanted w in wanted) w.size};
+    final Set<int> sizes = <int>{
+      for (final HostInputWanted w in wanted) w.size,
+    };
     final Set<String> missing = <String>{
       for (final HostInputWanted w in wanted) w.sha256,
     };
