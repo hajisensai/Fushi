@@ -11,6 +11,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/tts/local/local_service_process.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart'
+    show LocalInstallRemoveException;
 import 'package:fushi_engine/tts/local/voicevox_local_engine.dart';
 import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -181,7 +183,14 @@ class _VoicevoxLocalPageState extends State<VoicevoxLocalPage> {
       destructive: true,
     );
     if (!confirmed) return;
-    await _engine.remove(deleteFiles: _engine.canDeleteFiles);
+    try {
+      await _engine.remove(deleteFiles: _engine.canDeleteFiles);
+    } on LocalInstallRemoveException catch (error) {
+      FushiToast.show(
+        msg: localInstallRemoveFailureText(error),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<void> _showLog(String title, List<String> lines) async {

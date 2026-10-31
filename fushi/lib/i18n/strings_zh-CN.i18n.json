@@ -1177,6 +1177,7 @@
   "audiobook_tts_local_create_voice_hint": "新建后选一段参考音频即可试听",
   "audiobook_tts_local_delete": "删除本机 GPT-SoVITS",
   "audiobook_tts_local_delete_confirm": "将停止服务并删除 ${path}（约 19 GB）。",
+  "audiobook_tts_local_delete_failed": "无法删除 ${path}（${reason}）。请关闭占用它的程序后重试。",
   "audiobook_tts_local_dir": "安装位置",
   "audiobook_tts_local_dir_hint": "需要约 30 GB 空闲空间；解压完成后会删除安装包",
   "audiobook_tts_local_editor_not_installed": "还没有本机服务？在 Fushi 里一键部署 GPT-SoVITS",

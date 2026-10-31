@@ -294,6 +294,15 @@ const Set<int> kVoicevoxReservedPorts = <int>{7870, 7871, 9880, 8088};
 bool voicevoxPortAllowed(int port) =>
     port >= 1024 && port <= 65535 && !kVoicevoxReservedPorts.contains(port);
 
+/// 专属子目录下正式引擎所在的子目录。
+const String kVoicevoxEngineSubdir = 'engine';
+
+/// 解压暂存目录：解完并验收通过才整体换成 [kVoicevoxEngineSubdir]。
+const String kVoicevoxStagingSubdir = 'engine.staging';
+
+/// 换装时旧引擎先挪到这里，新引擎就位后删掉。
+const String kVoicevoxRetiredSubdir = 'engine.old';
+
 /// 装好的引擎：引擎根（`engine_manifest.json` 所在目录）与清单内容。
 class VoicevoxInstallLayout {
   const VoicevoxInstallLayout({
@@ -313,12 +322,18 @@ class VoicevoxInstallLayout {
 
   /// 在 [root] 下两层以内找 `engine_manifest.json`（VVPP 在包根，AivisSpeech 的 7z
   /// 多一层平台目录）。找不到 / 清单坏 / 可执行文件不在返回 null。
-  static VoicevoxInstallLayout? find(String root, {String? engineDirHint}) {
+  ///
+  /// [engineSubdir] 默认是正式位置 `engine/`；安装器先在暂存目录里按同一判据验收。
+  static VoicevoxInstallLayout? find(
+    String root, {
+    String? engineDirHint,
+    String engineSubdir = kVoicevoxEngineSubdir,
+  }) {
     final List<String> candidates = <String>[
       if (engineDirHint != null) engineDirHint,
-      p.join(root, 'engine'),
+      p.join(root, engineSubdir),
     ];
-    final Directory engineRoot = Directory(p.join(root, 'engine'));
+    final Directory engineRoot = Directory(p.join(root, engineSubdir));
     if (engineRoot.existsSync()) {
       for (final FileSystemEntity e in engineRoot.listSync()) {
         if (e is Directory) candidates.add(e.path);
@@ -507,12 +522,16 @@ class VoicevoxInstaller extends EngineChangeNotifier {
   final List<String> _log = <String>[];
   List<String> get logTail => List<String>.unmodifiable(_log);
 
-  bool get isBusy => switch (step) {
-    VoicevoxInstallStep.downloading ||
-    VoicevoxInstallStep.joining ||
-    VoicevoxInstallStep.extracting => true,
-    _ => false,
-  };
+  bool get isBusy =>
+      _inFlight.active ||
+      switch (step) {
+        VoicevoxInstallStep.downloading ||
+        VoicevoxInstallStep.joining ||
+        VoicevoxInstallStep.extracting => true,
+        _ => false,
+      };
+
+  final LocalInstallRun _inFlight = LocalInstallRun();
 
   bool _cancelled = false;
   HttpClient? _client;
@@ -539,6 +558,12 @@ class VoicevoxInstaller extends EngineChangeNotifier {
     _extractor?.kill();
   }
 
+  /// 取消并等安装函数真正返回（下载 client / 解压子进程 / 暂存目录都已收尾）。
+  Future<void> cancelAndWait() {
+    cancel();
+    return _inFlight.idle;
+  }
+
   VoicevoxInstallLayout? _cancel() {
     _set(VoicevoxInstallStep.cancelled);
     return null;
@@ -546,11 +571,28 @@ class VoicevoxInstaller extends EngineChangeNotifier {
 
   /// 下载并解压 [pkg] 到 [root]（专属子目录）。返回装好的布局；失败 / 取消返回 null
   /// （原因在 [failure]）。已下完的分卷不重下，下到一半的从 `.part` 续。
+  ///
+  /// 解压进 [kVoicevoxStagingSubdir]，验收（清单 + 可执行文件）通过才整体换成
+  /// `engine/`：失败 / 取消只清暂存目录，旧引擎原样可用，也不会留下「看起来装好了」
+  /// 的残缺引擎。
   Future<VoicevoxInstallLayout?> install({
     required String root,
     required VoicevoxPackage pkg,
   }) async {
-    if (isBusy) return null;
+    if (!_inFlight.tryBegin()) return null;
+    try {
+      return await _install(root: root, pkg: pkg);
+    } finally {
+      _inFlight.end();
+      // isBusy 含在途占位：最后一次 _set 时还算忙，这里再通知一次让 UI 退出忙碌态。
+      notifyListeners();
+    }
+  }
+
+  Future<VoicevoxInstallLayout?> _install({
+    required String root,
+    required VoicevoxPackage pkg,
+  }) async {
     _cancelled = false;
     receivedBytes = 0;
     totalBytes = pkg.totalBytes;
@@ -654,39 +696,67 @@ class VoicevoxInstaller extends EngineChangeNotifier {
       }
 
       _set(VoicevoxInstallStep.extracting);
-      // 解到全新的 engine/ 下：旧版本（换加速重装）先清掉，免得新旧文件混在一起。
-      final Directory engineDir = Directory(p.join(root, 'engine'));
+      final Directory staging = Directory(p.join(root, kVoicevoxStagingSubdir));
       try {
-        if (engineDir.existsSync()) await engineDir.delete(recursive: true);
-        await engineDir.create(recursive: true);
+        if (await staging.exists()) await staging.delete(recursive: true);
+        await staging.create(recursive: true);
       } on FileSystemException catch (e) {
         detail = e.message;
         _set(VoicevoxInstallStep.failed, VoicevoxInstallFailure.disk);
         return null;
       }
-      final bool? extracted = await _extract(
-        pkg.format,
-        archive.path,
-        engineDir.path,
-      );
-      if (files.length > 1) _deleteQuietly(archive);
-      if (_cancelled) return _cancel();
-      if (extracted == null) {
-        _set(VoicevoxInstallStep.failed, VoicevoxInstallFailure.noExtractor);
-        return null;
-      }
-      if (!extracted) {
-        _set(VoicevoxInstallStep.failed, VoicevoxInstallFailure.extractFailed);
-        return null;
+      bool committed = false;
+      try {
+        final bool? extracted = await _extract(
+          pkg.format,
+          archive.path,
+          staging.path,
+        );
+        if (files.length > 1) _deleteQuietly(archive);
+        if (_cancelled) return _cancel();
+        if (extracted == null) {
+          _set(VoicevoxInstallStep.failed, VoicevoxInstallFailure.noExtractor);
+          return null;
+        }
+        if (!extracted) {
+          _set(
+            VoicevoxInstallStep.failed,
+            VoicevoxInstallFailure.extractFailed,
+          );
+          return null;
+        }
+        final VoicevoxInstallLayout? staged = VoicevoxInstallLayout.find(
+          root,
+          engineSubdir: kVoicevoxStagingSubdir,
+        );
+        if (staged == null) {
+          _set(
+            VoicevoxInstallStep.failed,
+            VoicevoxInstallFailure.layoutMissing,
+          );
+          return null;
+        }
+        if (_os != 'windows') {
+          // python3 -m zipfile 不保留可执行位；其余解压器保留，补一次无害。
+          // 可执行位随目录改名保留。
+          await _run('chmod', <String>['+x', staged.executable]);
+        }
+        if (_cancelled) return _cancel();
+        try {
+          await _commitStaging(root, staging);
+        } on FileSystemException catch (e) {
+          detail = e.message;
+          _set(VoicevoxInstallStep.failed, VoicevoxInstallFailure.disk);
+          return null;
+        }
+        committed = true;
+      } finally {
+        if (!committed) await _deleteDirLogged(staging);
       }
       final VoicevoxInstallLayout? layout = VoicevoxInstallLayout.find(root);
       if (layout == null) {
         _set(VoicevoxInstallStep.failed, VoicevoxInstallFailure.layoutMissing);
         return null;
-      }
-      if (_os != 'windows') {
-        // python3 -m zipfile 不保留可执行位；其余解压器保留，补一次无害。
-        await _run('chmod', <String>['+x', layout.executable]);
       }
       // 解完就删包：2 GB 的包留着没用。
       for (final File f in files) {
@@ -697,6 +767,32 @@ class VoicevoxInstaller extends EngineChangeNotifier {
     } finally {
       _client = null;
       client.close(force: true);
+    }
+  }
+
+  /// 暂存目录整体换成 `engine/`：旧引擎先挪开，新引擎改名就位，失败把旧引擎挪回。
+  Future<void> _commitStaging(String root, Directory staging) async {
+    final Directory engine = Directory(p.join(root, kVoicevoxEngineSubdir));
+    final Directory retired = Directory(p.join(root, kVoicevoxRetiredSubdir));
+    if (await retired.exists()) await retired.delete(recursive: true);
+    final bool hadOld = await engine.exists();
+    if (hadOld) await engine.rename(retired.path);
+    try {
+      await staging.rename(engine.path);
+    } on FileSystemException {
+      if (hadOld && !await engine.exists()) await retired.rename(engine.path);
+      rethrow;
+    }
+    if (hadOld) await _deleteDirLogged(retired);
+  }
+
+  /// 清掉安装器自己的中间目录；删不掉（被占用）记进安装日志，留给下次安装开头或
+  /// 「删除」整个专属目录时再清，不影响这次安装的结论。
+  Future<void> _deleteDirLogged(Directory dir) async {
+    try {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } on FileSystemException catch (e) {
+      _appendLog('cleanup ${dir.path}: ${e.message} ${e.osError ?? ''}');
     }
   }
 
@@ -728,6 +824,9 @@ class VoicevoxInstaller extends EngineChangeNotifier {
         continue;
       }
       _extractor = process;
+      // 取消落在「子进程正在起」的那段 await 里时，cancel() 还看不到它：这里补杀，
+      // 否则取消（以及等取消的「删除」）要一直等到整包解完。
+      if (_cancelled) process.kill();
       _appendLog('extract with ${cmd.executable}');
       final Future<void> out = process.stdout.drain<void>();
       final Future<void> err = process.stderr
@@ -750,20 +849,27 @@ class VoicevoxInstaller extends EngineChangeNotifier {
   }
 }
 
-/// 设备本地设置：`{dir, port, accel, owned}`（不进同步 / 备份）。
+/// 设备本地设置：`{dir, port, accel, installedAccel, owned}`（不进同步 / 备份）。
 class VoicevoxLocalSettings {
   const VoicevoxLocalSettings({
     required this.port,
     this.dir,
     this.accel,
+    this.installedAccel,
     this.owned = false,
   });
 
   final String? dir;
   final int port;
 
-  /// 用户选的加速；null = 用平台默认（第一个包）。
+  /// 用户**想装**的加速（下次安装用哪个包）；null = 平台默认（第一个包）。
+  /// 只是选择，不代表磁盘上的引擎就是这个版本。
   final VoicevoxAccel? accel;
+
+  /// 磁盘上**已装**引擎的加速档（安装成功才写）。启动参数（`--use_gpu`）只看它：
+  /// 选了 GPU 档却还没重装时，磁盘上仍是 CPU 包，带 `--use_gpu` 会起不来。
+  /// null = 没有经本 app 装成功的引擎（按 CPU 启动）。
+  final VoicevoxAccel? installedAccel;
   final bool owned;
 
   VoicevoxLocalSettings copyWith({
@@ -771,11 +877,16 @@ class VoicevoxLocalSettings {
     bool clearDir = false,
     int? port,
     VoicevoxAccel? accel,
+    VoicevoxAccel? installedAccel,
+    bool clearInstalledAccel = false,
     bool? owned,
   }) => VoicevoxLocalSettings(
     dir: clearDir ? null : (dir ?? this.dir),
     port: port ?? this.port,
     accel: accel ?? this.accel,
+    installedAccel: clearInstalledAccel
+        ? null
+        : (installedAccel ?? this.installedAccel),
     owned: owned ?? this.owned,
   );
 
@@ -783,8 +894,13 @@ class VoicevoxLocalSettings {
     if (dir != null) 'dir': dir,
     'port': port,
     if (accel != null) 'accel': accel!.name,
+    if (installedAccel != null) 'installedAccel': installedAccel!.name,
     'owned': owned,
   };
+
+  static VoicevoxAccel? _accelOf(Object? raw) => VoicevoxAccel.values
+      .where((VoicevoxAccel a) => a.name == raw)
+      .firstOrNull;
 
   static VoicevoxLocalSettings fromJson(Object? raw, int defaultPort) {
     if (raw is! Map) return VoicevoxLocalSettings(port: defaultPort);
@@ -793,9 +909,8 @@ class VoicevoxLocalSettings {
     return VoicevoxLocalSettings(
       dir: dir is String && dir.isNotEmpty ? dir : null,
       port: port is int && voicevoxPortAllowed(port) ? port : defaultPort,
-      accel: VoicevoxAccel.values
-          .where((VoicevoxAccel a) => a.name == raw['accel'])
-          .firstOrNull,
+      accel: _accelOf(raw['accel']),
+      installedAccel: _accelOf(raw['installedAccel']),
       owned: raw['owned'] == true,
     );
   }
@@ -968,6 +1083,9 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
 
   bool get isInstalled => layout != null;
 
+  /// 安装在途（门面层的准备阶段或安装器本身）：此时引擎目录随时会被整体换掉。
+  bool get isInstalling => installer.isBusy || _installRun.active;
+
   bool get canDeleteFiles {
     final VoicevoxLocalSettings s = settings;
     final String? dir = s.dir;
@@ -979,38 +1097,79 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
   String defaultInstallDir(Directory supportRoot) =>
       p.join(supportRoot.path, 'tts_engines');
 
+  /// 门面这一层的在途安装（含调安装器之前停服务、写记录的 await）。
+  final LocalInstallRun _installRun = LocalInstallRun();
+
+  /// 「删除」每来一次加一：在途安装看到它变了就不再往下走、也不再写记录。
+  int _installEpoch = 0;
+
   Future<bool> install({required String installDir}) async {
     final VoicevoxPackage? pkg = selectedPackage;
     if (pkg == null) return false;
+    if (installer.isBusy || !_installRun.tryBegin()) return false;
+    try {
+      return await _install(installDir, pkg, _installEpoch);
+    } finally {
+      _installRun.end();
+    }
+  }
+
+  Future<bool> _install(
+    String installDir,
+    VoicevoxPackage pkg,
+    int epoch,
+  ) async {
     _autoStartBlocked = false;
     if (server.phase != LocalServicePhase.stopped) await server.stop();
+    if (epoch != _installEpoch) return false;
     final String root = p.join(installDir, manifest.installSubdir);
-    // 先记目录：下到一半的东西在专属子目录里，「删除」要能找到它清掉。
-    await _save(settings.copyWith(dir: root, owned: true, accel: pkg.accel));
+    final String? previousDir = settings.dir;
+    // 先记目录：下到一半的东西在专属子目录里，「删除」要能找到它清掉。换了安装
+    // 位置时，旧位置的已装档位不再适用。
+    await _save(
+      settings.copyWith(
+        dir: root,
+        owned: true,
+        accel: pkg.accel,
+        clearInstalledAccel: previousDir != root,
+      ),
+    );
+    if (epoch != _installEpoch) return false;
     final VoicevoxInstallLayout? installed = await installer.install(
       root: root,
       pkg: pkg,
     );
-    _layoutCache = null;
-    notifyListeners();
+    if (epoch != _installEpoch) return false;
+    if (installed != null) {
+      // 引擎已整体换成这个包：启动参数从此按它来。失败 / 取消时 engine/ 仍是旧包
+      // （安装器只动暂存目录），已装档位保持不变。
+      await _save(settings.copyWith(installedAccel: pkg.accel));
+    } else {
+      _layoutCache = null;
+      notifyListeners();
+    }
     return installed != null;
   }
 
+  /// 停服务并忘掉安装；[deleteFiles] 且是 app 装的才删专属子目录。
+  ///
+  /// 先**等**进行中的安装真正退出（下载 client 关掉、解压子进程被杀并回收、暂存
+  /// 目录清完）再删——只发取消就删会和仍在写盘的安装抢文件。删不掉抛
+  /// [LocalInstallRemoveException]，安装记录保留，用户关掉占用程序后可再点「删除」。
   Future<void> remove({required bool deleteFiles}) async {
-    installer.cancel();
+    _installEpoch++;
+    await installer.cancelAndWait();
+    await _installRun.idle;
     await server.stop();
     _autoStartBlocked = false;
     final VoicevoxLocalSettings current = settings;
-    final bool deletable = canDeleteFiles;
-    await _save(current.copyWith(clearDir: true, owned: false));
     final String? dir = current.dir;
-    if (deleteFiles && deletable && dir != null) {
-      try {
-        await Directory(dir).delete(recursive: true);
-      } on FileSystemException {
-        // 文件被占用：已经忘掉了，剩下的让用户自己删。
-      }
+    if (deleteFiles && canDeleteFiles && dir != null) {
+      await deleteLocalInstallDir(dir);
     }
+    await _save(
+      current.copyWith(clearDir: true, owned: false, clearInstalledAccel: true),
+    );
   }
 
   /// 启动参数（纯函数式：只读设置与布局）。
@@ -1019,7 +1178,8 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
     Map<String, String> environment = const <String, String>{},
   }) {
     final VoicevoxLocalSettings s = settings;
-    final VoicevoxAccel accel = selectedPackage?.accel ?? VoicevoxAccel.cpu;
+    // 看磁盘上实际装的包，不看「想装」的档位（见 [VoicevoxLocalSettings.installedAccel]）。
+    final VoicevoxAccel accel = s.installedAccel ?? VoicevoxAccel.cpu;
     return LocalServiceLaunchSpec(
       executable: layout.executable,
       arguments: <String>[
@@ -1042,7 +1202,9 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
     );
   }
 
-  Future<bool> start() {
+  /// 用户手动启动。安装进行中不启动：引擎目录随时会被整体换掉。
+  Future<bool> start() async {
+    if (isInstalling) return false;
     _autoStartBlocked = false;
     return _launch();
   }
@@ -1061,13 +1223,13 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
 
   /// 退出 app 时调用：停服务、取消进行中的安装（解压子进程一并杀掉）。
   Future<void> shutdown() async {
-    installer.cancel();
+    await installer.cancelAndWait();
     await server.stop();
   }
 
   Future<void> ensureRunningFor(String endpoint) async {
     if (!isSupported || !isInstalled || server.isRunning) return;
-    if (_autoStartBlocked || installer.isBusy) return;
+    if (_autoStartBlocked || isInstalling) return;
     if (!localServiceEndpointIsManaged(endpoint, settings.port)) return;
     final bool ok = await _launch();
     if (!ok && server.phase == LocalServicePhase.failed) {
