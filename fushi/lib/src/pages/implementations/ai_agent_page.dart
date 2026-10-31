@@ -57,6 +57,10 @@ const double kAiAgentSidePanelBreakpoint = 840;
 /// 把高度吃光，输入框被裁掉，用户既输入不了也滚不动。
 const double kAiAgentTightHeight = 200;
 
+/// 紧凑排版里上下文 / 屏幕附件 chip 收进输入行左侧，最多占输入行宽度的这个比例，
+/// 剩下的留给输入框。
+const double kAiAgentTightAttachmentWidthFactor = 0.4;
+
 /// 装扩展类操作（D9）：确认卡片换成「要安装这个扩展吗？」的标题。
 final RegExp _kExtensionInstallOp = RegExp(
   r'^online\.(extension\.(install|update)\w*|repo\.add)$',
@@ -1234,6 +1238,9 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
         hintText: t.ai_agent_input_hint,
+        // 提示语只占一行：默认跟随 maxLines（4），输入框一变窄（紧凑排版里与
+        // 上下文 chip 同行）提示语就折成多行把输入栏撑高、挤掉对话区。
+        hintMaxLines: 1,
         border: InputBorder.none,
         filled: false,
         isDense: true,
@@ -1243,7 +1250,26 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         ),
       ),
     );
-    final Widget row = Row(
+    // 这条消息要带的页面上下文。点掉 = 这一场不再带上下文（唯一的查看 / 移除
+    // 入口，紧凑排版里也不能藏）。
+    final Widget? contextChip = contextTitle == null
+        ? null
+        : FushiInputChip(
+            key: const ValueKey<String>('ai-agent-context-chip'),
+            label: Text(
+              t.ai_agent_context_chip(title: contextTitle),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            // 紧凑排版里 chip 与输入框同行：不额外撑 48dp 触控外框，免得把输入行
+            // 撑高、再挤掉对话区。
+            visualDensity: tight ? VisualDensity.compact : null,
+            materialTapTargetSize: tight
+                ? MaterialTapTargetSize.shrinkWrap
+                : null,
+            onDeleted: () => setState(() => _contextDropped = true),
+          );
+    Widget buildRow(double? tightWidth) => Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
         // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
@@ -1258,6 +1284,26 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           if (!panel) SizedBox(width: tokens.spacing.gap / 2),
         ] else if (panel)
           const SizedBox(width: 12),
+        // 紧凑排版没有 chip 行：上下文 chip 与屏幕附件 chip 收进输入行左侧一条，
+        // 最多占行宽的 [kAiAgentTightAttachmentWidthFactor]，上下文标题省略号截断，
+        // 删除键始终可见。
+        if (tightWidth != null)
+          ConstrainedBox(
+            key: const ValueKey<String>('ai-agent-inline-attachments'),
+            constraints: BoxConstraints(
+              maxWidth: tightWidth * kAiAgentTightAttachmentWidthFactor,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (contextChip != null) Flexible(child: contextChip),
+                  AiAgentScreenTextChip(attachment: _screenText),
+                ],
+              ),
+            ),
+          ),
         Expanded(
           child: panel
               ? field
@@ -1289,6 +1335,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           ),
       ],
     );
+    // 两种排法共用同一个 LayoutBuilder → Row 结构：键盘弹起正是切进紧凑排版的
+    // 时刻，若外层结构随之变化，输入框会被重建、丢焦点收键盘。
+    final Widget row = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          buildRow(tight ? constraints.maxWidth : null),
+    );
     final Widget body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1302,14 +1354,10 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               if (!tight) AiAgentScreenTextChip(attachment: _screenText),
-              if (contextTitle != null && !tight)
+              if (contextChip != null && !tight)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2, left: 4),
-                  child: FushiInputChip(
-                    key: const ValueKey<String>('ai-agent-context-chip'),
-                    label: Text(t.ai_agent_context_chip(title: contextTitle)),
-                    onDeleted: () => setState(() => _contextDropped = true),
-                  ),
+                  child: contextChip,
                 ),
             ],
           ),
