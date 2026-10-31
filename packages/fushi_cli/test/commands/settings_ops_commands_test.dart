@@ -318,14 +318,29 @@ void main() {
       expect(r.body, <String, Object?>{'confirm': true});
     });
 
-    test('sync-use on/off 写开关', () {
-      final CtlRequestSpec r = build('anki', 'sync-use', <String>['on']);
+    test('sync-use on 必须 --yes 并走带确认的 enable 动作；off 直接写开关', () {
+      // 与设置页启用前的警告确认框同一道闸。
+      expect(
+        () => build('anki', 'sync-use', <String>['on']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec on = build('anki', 'sync-use', <String>[
+        'on',
+        '--yes',
+      ]);
+      expect(on.method, 'POST');
+      expect(
+        on.path,
+        '/api/admin/settings/card_creation.anki.sync_client.enable/run',
+      );
+      expect(on.body, <String, Object?>{'confirm': true});
+      final CtlRequestSpec r = build('anki', 'sync-use', <String>['off']);
       expect(r.method, 'PUT');
       expect(
         r.path,
         '/api/admin/settings/card_creation.anki.sync_client.enabled',
       );
-      expect(r.body!['value'], 'true');
+      expect(r.body!['value'], 'false');
       expect(
         () => build('anki', 'sync-use', <String>['maybe']),
         throwsA(isA<CtlUsageError>()),

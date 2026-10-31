@@ -13,6 +13,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:material_ui/material_ui.dart';
@@ -217,6 +218,44 @@ void main() {
         _syncAction(
           'card_creation.anki.sync_client.sign_out_discard',
         ).cli!.confirm,
+        isTrue,
+      );
+      await tester.runAsync(session.close);
+    });
+
+    testWidgets('启用与设置节同一道闸：开关直接写 true 被拒，必须走带确认的 enable', (
+      WidgetTester tester,
+    ) async {
+      final AnkiSyncSession session = AnkiSyncSession(
+        root: () async => root,
+        startClient: () async => throw StateError('测试里不该启动同步助手'),
+      );
+      await capture(tester, session);
+      final SettingsSwitchItem toggle = buildCtlBodyPages()
+          .expand((CtlBodyPage p) => p.items)
+          .whereType<SettingsSwitchItem>()
+          .firstWhere(
+            (SettingsSwitchItem i) =>
+                i.id == 'card_creation.anki.sync_client.enabled',
+          );
+      expect(settings.appModel.platformServices.useAnkiSyncClient, isFalse);
+      await expectLater(
+        Future<void>.sync(() => toggle.onChanged(settings, true)),
+        throwsA(
+          isA<ArgumentError>().having(
+            (ArgumentError e) => '${e.message}',
+            'message',
+            allOf(
+              contains(t.anki_sync_client_enable_warn_body),
+              contains('card_creation.anki.sync_client.enable'),
+            ),
+          ),
+        ),
+      );
+      expect(settings.appModel.platformServices.useAnkiSyncClient, isFalse);
+      expect(toggle.userOnly, isTrue, reason: 'AI 助手不能替用户打开高风险功能');
+      expect(
+        _syncAction('card_creation.anki.sync_client.enable').cli!.confirm,
         isTrue,
       );
       await tester.runAsync(session.close);

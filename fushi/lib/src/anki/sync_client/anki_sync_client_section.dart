@@ -12,6 +12,10 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
+/// 本节启用开关的设置搜索落点 id（与 settings_schema_card_creation.dart 的
+/// `SettingsBodySearchEntry` 同一个）。
+const String kAnkiSyncClientSearchTargetId = 'card_creation.anki.sync_client';
+
 /// 「Anki 同步（无需安装 Anki）」设置节：选后端、登录同步服务器、看同步状态。
 ///
 /// 本机没有 `fushi-anki-sync` 时整节不渲染（[PlatformServices.offersAnkiSyncClient]）。
@@ -33,9 +37,32 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   AnkiSyncAccount? _account;
   bool _switching = false;
 
-  /// 整节默认折叠：这是高风险的实验功能（同步到 AnkiWeb 可能被拒绝或动账号），
-  /// 不该让不了解的用户一眼点到。
-  bool _expanded = false;
+  /// 用户亲手展开 / 折叠过的结果；null = 还没动过，跟随 [_defaultExpanded]。
+  bool? _userExpanded;
+
+  /// 已消费的设置搜索跳转代号（[SettingsSearchReveal.generation]）。
+  int _searchGeneration = -1;
+
+  /// 默认展开态只对**未启用**的用户折叠：这是高风险的实验功能（同步到 AnkiWeb
+  /// 可能被拒绝或动账号），不该让不了解的用户一眼点到；但已启用的用户必须一眼
+  /// 看到同步状态与「还有 N 张卡没同步」——折起来等于把告警藏掉。跟随 [enabled]
+  /// 实时求值（而不是 initState 抄一次）：页面开着时经 CLI / 档案切换启用，
+  /// 这里同样立刻展开。
+  static bool _defaultExpanded({required bool enabled}) => enabled;
+
+  /// 搜索跳到本节的开关（`card_creation.anki.sync_client`）时，落点
+  /// [SettingsSearchTarget] 只在展开时才构建；折叠着就没人消费挂点，跳转落空且
+  /// [SettingsSearchReveal.pendingItemId] 一直悬挂。所以在构建子树**之前**先认领
+  /// 这次跳转并展开（同 SettingsSectionContainer 的搜索展开），同一帧里落点随即
+  /// 构建、消费挂点、滚动高亮。
+  void _expandForPendingSearchReveal() {
+    if (_searchGeneration == SettingsSearchReveal.generation) return;
+    if (SettingsSearchReveal.pendingItemId != kAnkiSyncClientSearchTargetId) {
+      return;
+    }
+    _searchGeneration = SettingsSearchReveal.generation;
+    _userExpanded = true;
+  }
 
   /// 已登录时点了「重新登录」（凭据过期 / 改了密码）：显示预填好的登录表单。
   bool _relogin = false;
@@ -85,19 +112,22 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     );
     final AnkiSyncState? state = _state;
     final bool busy = state?.phase == AnkiSyncPhase.busy;
+    _expandForPendingSearchReveal();
+    final bool expanded = _userExpanded ?? _defaultExpanded(enabled: enabled);
     return AdaptiveSettingsSection(
       title: t.anki_sync_client_section_title,
       children: <Widget>[
         AdaptiveSettingsRow(
+          key: const ValueKey<String>('anki-sync-client-expander'),
           title: t.anki_sync_client_advanced_title,
           subtitle: t.anki_sync_client_advanced_hint,
-          icon: _expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+          icon: expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
           showIcon: true,
-          onTap: () => setState(() => _expanded = !_expanded),
+          onTap: () => setState(() => _userExpanded = !expanded),
         ),
-        if (_expanded)
+        if (expanded)
           SettingsSearchTarget(
-            id: 'card_creation.anki.sync_client',
+            id: kAnkiSyncClientSearchTargetId,
             child: AdaptiveSettingsSwitchRow(
               title: t.anki_sync_client_use_title,
               subtitle: t.anki_sync_client_use_hint,
@@ -105,7 +135,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
               onChanged: _switching ? null : _setEnabled,
             ),
           ),
-        if (_expanded && enabled) ...<Widget>[
+        if (expanded && enabled) ...<Widget>[
           AdaptiveSettingsRow(
             // 状态行首图标按阶段换语义：同步中 / 受阻 / 失败 / 已同步 / 未登录。
             icon: _statusIcon(state),

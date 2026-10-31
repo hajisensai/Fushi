@@ -17,15 +17,41 @@ List<CtlBodyPage> buildCtlAnkiSyncBodyPages() => <CtlBodyPage>[
     breadcrumb: t.anki_sync_client_section_title,
     visible: (SettingsContext c) => ankiSyncClientSessionOf(c.ref) != null,
     items: <SettingsItem>[
+      // 与设置节同一道闸：设置节打开前弹「启用 Anki 同步？」警告确认，所以这里
+      // 写 true 不直接生效，必须走带确认的 `.enable` 动作（CLI `--yes`）；关闭
+      // 不需要确认。userOnly：开不开这个高风险功能是用户自己的决定，AI 助手的
+      // settings.set 读得到、写不进去。
       SettingsSwitchItem(
         id: 'card_creation.anki.sync_client.enabled',
         title: t.anki_sync_client_use_title,
         subtitle: t.anki_sync_client_use_hint,
         value: (SettingsContext c) =>
             c.appModel.platformServices.useAnkiSyncClient,
-        onChanged: (SettingsContext c, bool value) =>
-            setAnkiSyncClientEnabled(c.ref, value),
+        onChanged: (SettingsContext c, bool value) async {
+          if (value && !c.appModel.platformServices.useAnkiSyncClient) {
+            throw ArgumentError(ankiSyncClientEnableNeedsConfirmMessage());
+          }
+          await setAnkiSyncClientEnabled(c.ref, value);
+        },
         defaultValue: false,
+        userOnly: true,
+      ),
+      _action(
+        id: 'card_creation.anki.sync_client.enable',
+        title: t.anki_sync_client_enable_warn_confirm,
+        cli: SettingsCliAction(
+          // 等价于设置节警告框里点「我已了解，启用」：没有 confirm=true 就拒。
+          confirm: true,
+          run: (SettingsContext c, Map<String, String> _) async {
+            final AnkiSyncSession session = _session(c);
+            await setAnkiSyncClientEnabled(c.ref, true);
+            return ankiSyncClientStatusJson(
+              session.state,
+              await session.account(),
+              enabled: c.appModel.platformServices.useAnkiSyncClient,
+            );
+          },
+        ),
       ),
       _action(
         id: 'card_creation.anki.sync_client.status',
@@ -160,6 +186,12 @@ List<CtlBodyPage> buildCtlAnkiSyncBodyPages() => <CtlBodyPage>[
     ],
   ),
 ];
+
+/// 经开关直接写 true 时的拒绝说明：设置节警告框的同一段话 + 带确认的入口。
+String ankiSyncClientEnableNeedsConfirmMessage() =>
+    '${t.anki_sync_client_enable_warn_body}\n'
+    '确认启用请用 card_creation.anki.sync_client.enable（confirm=true；'
+    'fushi_cli anki sync-use on --yes）';
 
 AnkiSyncSession _session(SettingsContext c) {
   final AnkiSyncSession? session = ankiSyncClientSessionOf(c.ref);
