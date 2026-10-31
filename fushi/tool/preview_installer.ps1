@@ -36,6 +36,13 @@
     （polar / slate / zircon / windows11），或强制明暗：
         -StyleOverride 'modern light windows11 hidebevels'
 
+.PARAMETER Language
+    以 /LANG=<名字> 启动安装器，跳过系统语言检测，直接看某种语言的页面
+    （名字取 fushi.iss [Languages] 的 Name，如 english / japanese / arabic）。
+    不传时按本机 Windows 显示语言自动选，正好用来验语言检测本身。
+    翻页只认「下一步 / Next」两种按钮文字；其它语言要看第二页，配 -SkipDirPage
+    让数据目录页成为第一页。
+
 .PARAMETER RealScreen
     改用「置顶 + CopyFromScreen」抓真实屏幕，而不是离屏 PrintWindow。
     只在验**标题栏**时需要：标题栏由 DWM 画、属于非客户区，PrintWindow 抓不准。
@@ -58,7 +65,8 @@ param(
   [switch]$SkipDirPage,
   [switch]$Install,
   [switch]$CompileOnly,
-  [switch]$RealScreen
+  [switch]$RealScreen,
+  [string]$Language = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -67,8 +75,14 @@ if (-not $Iss) {
 }
 if (-not (Test-Path -LiteralPath $Iss)) { throw "找不到 iss：$Iss" }
 
-$iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-if (-not (Test-Path -LiteralPath $iscc)) {
+# 管理员安装落在 Program Files (x86)（CI 也是这里）；Inno 6.7 的「仅为我安装」落在
+# %LOCALAPPDATA%\Programs。两处都认，先认 CI 同款。
+$iscc = @(
+  "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+  "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $iscc) {
+  $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
   throw @"
 找不到 ISCC：$iscc
 安装器外观要 Inno Setup 6.6+（StyleElements / IsDarkInstallMode 是 6.6 加的）。
@@ -300,7 +314,11 @@ function Save-WindowShot([IntPtr]$hwnd, [string]$png, [bool]$useRealScreen) {
 }
 
 Stop-SetupProc
-Start-Process -FilePath $setupExe | Out-Null
+if ($Language) {
+  Start-Process -FilePath $setupExe -ArgumentList "/LANG=$Language" | Out-Null
+} else {
+  Start-Process -FilePath $setupExe | Out-Null
+}
 
 # Inno 的 setup.exe 只是 loader，真正的向导被解压成 <name>.tmp 再启动，
 # 窗口属于那个 .tmp 进程，不是 Start-Process 拿到的那个 → 按进程名前缀轮询。

@@ -5931,6 +5931,7 @@
   "onboarding_anki_addon_installed": "AnkiConnect installed. Start or restart Anki, then test the connection.",
   "onboarding_anki_addon_no_anki": "Anki data folder not found. Install Anki, open it once, then try again.",
   "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards.",
+  "onboarding_anki_backend_ankiconnect": "AnkiConnect ($address)",
   "onboarding_anki_backend_label": "Connection",
   "onboarding_anki_fsrs_body": "Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.",
   "onboarding_anki_fsrs_srs_note": "Fushi's built-in review already uses FSRS-7 by default. You only need the steps below if you also review in Anki.",
