@@ -753,10 +753,16 @@ const String kSrsCardLookupScript =
       axis: null, snap: null, long: false, timer: null, raf: 0, el: target,
       touch: touch, first: null, samples: [[x, y, nowMs()]]};
     if (!g) return;
-    if (pending && Math.abs(x - pending.x) <= DBL_SLOP && Math.abs(y - pending.y) <= DBL_SLOP) {
-      clearTimeout(pending.timer);
-      cur.first = pending;
+    if (pending) {
+      var p0 = pending;
       pending = null;
+      clearTimeout(p0.timer);
+      if (Math.abs(x - p0.x) <= DBL_SLOP && Math.abs(y - p0.y) <= DBL_SLOP) {
+        cur.first = p0;
+      } else {
+        // 第二下离得太远：第一下就是单击，先报出去。
+        send({t: 'tap', x: p0.x, y: p0.y});
+      }
     }
     if (g.longPress && touch && !blocked(target) && !hitsText(x, y)) {
       var q = cur;
