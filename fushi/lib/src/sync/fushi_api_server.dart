@@ -24,6 +24,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/extension_profile_api.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
@@ -73,6 +74,20 @@ const Set<String> _kLookupActivityPaths = <String>{
   '/tokenize',
   '/api/lookup/dictionary',
   '/api/mine',
+};
+
+/// 反馈 biLEesNqWb：「按配置生效」的端点——带 [kExtensionProfileRequestHeader] 时先让 app
+/// 以扩展所选配置处理。查词（词典启用 / 顺序）、制卡与查重（Anki 牌组 / 字段映射）、单词
+/// 音频（音频源）、在 Anki 中打开都随配置走；字幕 / 字体 / 统计这类与配置无关的端点不在内。
+const Set<String> _kProfileScopedPaths = <String>{
+  '/termEntries',
+  '/tokenize',
+  '/api/lookup/dictionary',
+  '/api/lookup/audio',
+  '/api/lookup/audio/list',
+  '/api/mine',
+  '/api/duplicate',
+  '/api/anki/open',
 };
 
 /// BUG-3141：扩展查词弹窗收藏请求（`/api/extension/favorite` 的体）。
@@ -158,6 +173,7 @@ class FushiApiServer {
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
+    ExtensionProfileApi? profileApi,
     String? apiKey,
     FushiApiAccessPolicy accessPolicy = FushiApiAccessPolicy.localOnly,
     SrsAnkiConnectEndpoint? ankiConnectEndpoint,
@@ -184,6 +200,7 @@ class FushiApiServer {
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
        _srsApiProvider = srsApiProvider,
+       _profileApi = profileApi,
        _apiKey = apiKey,
        _accessPolicy = accessPolicy,
        _ownsExtensionApi = extensionApiCore == null,
@@ -254,6 +271,9 @@ class FushiApiServer {
 
   /// 复习（SRS）扩展端点的供给器；未注入或回 null（模块关）时 `/api/srs/*` 404。
   final SrsExtensionApi? Function()? _srsApiProvider;
+
+  /// 反馈 biLEesNqWb：扩展手动选配置。未注入时 `/api/extension/profiles` 404，请求头被忽略。
+  final ExtensionProfileApi? _profileApi;
   final String? _apiKey;
 
   /// 网络层「允许谁连」：决定监听地址，并在密钥校验之前对**每个**请求判来源。
@@ -532,10 +552,47 @@ class FushiApiServer {
     if (_kExtensionSeenPaths.contains(path)) {
       _onExtensionSeen?.call();
     }
+    // 反馈 biLEesNqWb：扩展显式选了配置 → 先（await）让 app 以它处理，再进 handler；
+    // 响应头回报实际生效的配置。显式选择压过「浏览器」媒体类型绑定，故不再触发后者。
+    final ExtensionProfileApi? profileApi = _profileApi;
+    final int? requestedProfileId =
+        profileApi != null && _kProfileScopedPaths.contains(path)
+        ? parseExtensionProfileHeader(
+            request.headers[kExtensionProfileRequestHeader],
+          )
+        : null;
+    if (profileApi != null && requestedProfileId != null) {
+      final ExtensionProfileApplyResult applied = await profileApi
+          .applySelectedProfile(requestedProfileId);
+      final shelf.Response response = await _dispatchPost(request, path);
+      return response.change(
+        headers: <String, String>{
+          kExtensionProfileActiveHeader: '${applied.activeProfileId}',
+          if (!applied.found)
+            kExtensionProfileMissingHeader: '$requestedProfileId',
+        },
+      );
+    }
     // TODO-2936：查词/制卡活动 → 应用「浏览器」媒体类型 Profile 绑定。
     if (_kLookupActivityPaths.contains(path)) {
       _onLookupActivity?.call();
     }
+    return _dispatchPost(request, path);
+  }
+
+  /// 反馈 biLEesNqWb：`/api/extension/profiles` → `{profiles:[{id,name}], activeProfileId}`。
+  Future<shelf.Response> _handleExtensionProfiles() async {
+    final ExtensionProfileApi? api = _profileApi;
+    if (api == null) return shelf.Response.notFound('Unknown endpoint');
+    final ExtensionProfileList list = await api.listProfiles();
+    return jsonResponse(list.toJson());
+  }
+
+  /// POST 端点的路由表（405 门与探活 / 配置前置步骤之后）。
+  Future<shelf.Response> _dispatchPost(
+    shelf.Request request,
+    String path,
+  ) async {
     if (FushiExtensionApiCore.paths.contains(path)) {
       return _handleExtensionApiCore(request, path);
     }
@@ -581,6 +638,8 @@ class FushiApiServer {
         return _handleSiteCookies(request);
       case '/api/extension/fonts/download':
         return _handleExtensionFontDownload(request);
+      case kExtensionProfilesPath:
+        return _handleExtensionProfiles();
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
