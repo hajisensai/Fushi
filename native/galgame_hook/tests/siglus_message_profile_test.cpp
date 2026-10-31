@@ -121,9 +121,157 @@ struct Image {
     assert(out.owner_register == SiglusMessageOwnerRegister::kNone);
   }
 };
+// Plain-frame generation: the message entry calls Scenario directly (no
+// surface wrapper), owner in EDI, and the scenario is the plain-frame lane.
+struct PlainImage {
+  uint8_t* bytes = static_cast<uint8_t*>(VirtualAlloc(
+      nullptr, 0xa000u, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+  exact_lookup::LoadedPeImage view;
+  SiglusLookupProfile scenario;
+  Layout layout;
+
+  explicit PlainImage(Layout positions = {}) : layout(positions) {
+    assert(bytes != nullptr);
+    std::memset(bytes, 0xcc, 0xa000u);
+    view.base = bytes;
+    view.absolute_base = 0x400000u;
+    view.size = 0xa000u;
+    view.machine = IMAGE_FILE_MACHINE_I386;
+    view.pointer_bits = 32u;
+    view.section_count = 1u;
+    view.sections[0] = {bytes + 0x1000u, 0x9000u, 0x1000u,
+                        IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_READ |
+                            IMAGE_SCN_MEM_EXECUTE};
+    scenario.pe_machine = IMAGE_FILE_MACHINE_I386;
+    scenario.pointer_bits = 32u;
+    scenario.text_feed = SiglusLookupTextFeed::kLunaScenarioLane;
+    scenario.input_entry_abi = SiglusInputEntryAbi::kPlainFrame;
+    scenario.exact_text_rva = layout.scenario;
+    Put(layout.message, kPlainMessageEdi.pattern());
+    Branch(layout.message + kPlainMessageEdi.bytes.size(),
+           layout.message + 0x400u);
+    Put(layout.message + 0x100u, kPlainDirectSurface.pattern());
+    Put(layout.message + 0x400u, kMessageCleanup.pattern());
+    Put(layout.voice, kPlainVoiceEntry.pattern());
+    Branch(layout.voice + kPlainVoiceEntry.bytes.size(), layout.voice + 0x200u);
+    Put(layout.voice + 0x100u, kPlainVoiceWrite.pattern());
+    Put(layout.voice + 0x200u, kVoiceReturn.pattern());
+    Put(layout.clear_layout, kClearLayout.pattern());
+    Put(layout.clear_all, kClearAll.pattern());
+    Put(layout.prepare, kPlainPrepare.pattern());
+    std::memcpy(bytes + layout.scenario, "\x55\x8b\xec\x6a\xff", 5u);
+    Put(layout.scenario + 5u, siglus_family::kPlainScenarioEntryTail.pattern());
+    Put(layout.scenario + 0x100u,
+        siglus_family::kPlainScenarioStringAbi.pattern());
+    Put(layout.scenario + 0x800u, siglus_family::kScenarioReturn.pattern());
+    Call(layout.message + 0x100u + kPlainDirectScenarioCallOffset,
+         layout.scenario);
+    Call(layout.prepare + kPlainPrepareClearLayoutOffset, layout.clear_layout);
+    Call(layout.prepare + kPlainPrepareClearAllOffset, layout.clear_all);
+  }
+  ~PlainImage() { VirtualFree(bytes, 0, MEM_RELEASE); }
+  PlainImage(const PlainImage&) = delete;
+  PlainImage& operator=(const PlainImage&) = delete;
+  void Put(uintptr_t rva, const exact_lookup::MaskedPattern& pattern) {
+    assert(rva + pattern.size <= view.size);
+    std::memcpy(bytes + rva, pattern.bytes, pattern.size);
+  }
+  void Call(uintptr_t rva, uintptr_t target) {
+    bytes[rva] = 0xe8u;
+    const int32_t displacement = static_cast<int32_t>(target - rva - 5u);
+    std::memcpy(bytes + rva + 1u, &displacement, 4u);
+  }
+  void Branch(uintptr_t rva, uintptr_t target) {
+    bytes[rva] = 0x0fu;
+    bytes[rva + 1u] = 0x84u;
+    const int32_t displacement = static_cast<int32_t>(target - rva - 6u);
+    std::memcpy(bytes + rva + 2u, &displacement, 4u);
+  }
+  void Check() {
+    SiglusMessageProfile out;
+    assert(ResolveSiglusMessageProfile(view, scenario, &out));
+    assert(out.message_entry_rva == layout.message);
+    assert(out.direct_scenario_call);
+    assert(out.message_surface_return_rva == 0u && out.surface_wrapper_rva == 0u);
+    assert(out.scenario_return_rva ==
+           layout.message + 0x100u + kPlainDirectScenarioCallOffset + 5u);
+    assert(out.voice_entry_rva == layout.voice);
+    assert(out.prepare_entry_rva == layout.prepare);
+    assert(out.clear_layout_rva == layout.clear_layout);
+    assert(out.clear_all_rva == layout.clear_all);
+    assert(out.owner_register == SiglusMessageOwnerRegister::kEdi);
+    assert(out.owner_voice_key_offset == 0x1f8u);
+    assert(out.surface_stride == 0x1c0u);
+    // The same image under the aligned lane ABI has no aligned message entry.
+    SiglusLookupProfile aligned = scenario;
+    aligned.input_entry_abi = SiglusInputEntryAbi::kAlignedFrame;
+    assert(!ResolveSiglusMessageProfile(view, aligned, &out));
+  }
+  void Reject() {
+    SiglusMessageProfile out;
+    out.message_entry_rva = 1u;
+    out.direct_scenario_call = true;
+    assert(!ResolveSiglusMessageProfile(view, scenario, &out));
+    assert(out.message_entry_rva == 0u && !out.direct_scenario_call);
+    assert(out.owner_register == SiglusMessageOwnerRegister::kNone);
+  }
+};
+
+void TestPlainFrame() {
+  PlainImage{}.Check();
+  Layout moved;
+  moved.message += 0x73u;
+  moved.voice += 0x114u;
+  moved.clear_layout += 0x38u;
+  moved.clear_all += 0x45u;
+  moved.prepare += 0x96u;
+  moved.scenario += 0x83u;
+  PlainImage{moved}.Check();
+  {
+    PlainImage x;  // a second direct Scenario call inside the message entry
+    x.Call(x.layout.message + 0x300u, x.layout.scenario);
+    x.Reject();
+  }
+  {
+    PlainImage x;  // the direct call must target the admitted scenario
+    x.Call(x.layout.message + 0x100u + kPlainDirectScenarioCallOffset,
+           x.layout.clear_all);
+    x.Reject();
+  }
+  {
+    PlainImage x;  // surface outside the message function
+    std::memset(x.bytes + x.layout.message + 0x100u, 0xcc,
+                kPlainDirectSurface.bytes.size());
+    x.Put(0x8000u, kPlainDirectSurface.pattern());
+    x.Reject();
+  }
+  {
+    PlainImage x;  // no plain scenario prologue tail
+    x.bytes[x.layout.scenario + 5u + 14u] ^= 1u;
+    x.Reject();
+  }
+  {
+    PlainImage x;  // voice write outside the voice function
+    std::memset(x.bytes + x.layout.voice + 0x100u, 0xcc,
+                kPlainVoiceWrite.bytes.size());
+    x.Put(0x8800u, kPlainVoiceWrite.pattern());
+    x.Reject();
+  }
+  {
+    PlainImage x;  // prepare must call both clears
+    x.Call(x.layout.prepare + kPlainPrepareClearAllOffset, x.layout.clear_layout);
+    x.Reject();
+  }
+  {
+    PlainImage x;  // duplicate message entry
+    x.Put(0x8c00u, kPlainMessageEdi.pattern());
+    x.Reject();
+  }
+}
 }  // namespace
 
 int main() {
+  TestPlainFrame();
   Image{}.Check();
   Image{true}.Check();
   Layout moved;

@@ -27,6 +27,10 @@ struct SiglusVoiceSourceLayout {
   uint32_t path_argument_offset = 0;
   uint32_t offset_argument_offset = 0;
   uint32_t length_argument_offset = 0;
+  // Aligned-frame Resource keeps offset in ESI and length in EBX. Plain-frame
+  // Resource keeps offset in EBX and length only in its frame local; nonzero
+  // selects that form and names the local's displacement from Resource EBP.
+  int32_t length_frame_displacement = 0;
 };
 struct SiglusVoiceSourceCall {
   uint32_t reader = 0;
@@ -119,8 +123,17 @@ bool CaptureSiglusVoiceSource(const SiglusVoiceSourceLayout& layout,
           static_cast<int32_t>(layout.offset_argument_offset), &offset) ||
       !ReadSiglusVoiceSourceWord(read, call.entry_esp,
           static_cast<int32_t>(layout.length_argument_offset), &length) ||
-      offset != call.original_esi || length != call.original_ebx ||
       offset == 0 || length == 0 || length > UINT32_MAX - offset) return false;
+  if (layout.length_frame_displacement == 0) {
+    if (offset != call.original_esi || length != call.original_ebx) return false;
+  } else {
+    uint32_t frame_length = 0;
+    if (layout.length_frame_displacement > 0 || offset != call.original_ebx ||
+        !ReadSiglusVoiceSourceWord(read, call.caller_ebp,
+                                   layout.length_frame_displacement,
+                                   &frame_length) ||
+        frame_length != length) return false;
+  }
   // The original path is an MSVC x86 TextUnion, including its size/capacity.
   uint32_t text_union[6] = {};
   if (path > UINT32_MAX - sizeof(text_union) ||

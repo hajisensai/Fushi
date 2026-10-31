@@ -83,6 +83,48 @@ Memory MemoryFixture() {
            {0x2f00, 0x7002}}};
 }
 
+// Plain-frame message entry calls Scenario itself: Scenario's caller frame is
+// the armed entry's own EBP (entryESP-4) and there is no wrapper return.
+void TestDirectTicket() {
+  SiglusMessageLayout layout{0x1f8, 0x1e0, 0x228, 0x22c, 0x1c0, 0, 0x7002, true};
+  auto memory = MemoryFixture();
+  SiglusMessageTicket ticket{};
+  SiglusMessageOwnerSnapshot frozen;
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  Check(ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3ffc,
+                                  memory, &ticket, &frozen));
+  Check(frozen.voice_key == 42 && frozen.surface == 0x21c0);
+  // A nested/foreign Scenario frame, even one with the aligned wrapper shape,
+  // is not the armed entry's own frame.
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  Check(!ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3000,
+                                   memory, &ticket, &frozen));
+  Check(!ticket.armed);
+  // The return into the message entry is still required.
+  memory.words[0x2f00] = 0x7001;
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  Check(!ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3ffc,
+                                   memory, &ticket, &frozen));
+  memory = MemoryFixture();
+  // Owner state changed between entry and Scenario.
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  ++memory.words[0x11f8];
+  Check(!ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3ffc,
+                                   memory, &ticket, &frozen));
+  memory = MemoryFixture();
+  // Mixed layouts fail closed in both directions.
+  layout.message_surface_return = 0x7001;
+  Check(!ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  auto wrapped = Layout();
+  wrapped.message_surface_return = 0;
+  Check(!ArmSiglusMessageTicket(wrapped, 0x1000, 0x4000, memory, &ticket));
+  // The wrapped layout never accepts a direct frame.
+  wrapped = Layout();
+  Check(ArmSiglusMessageTicket(wrapped, 0x1000, 0x4000, memory, &ticket));
+  Check(!ConsumeSiglusMessageTicket(wrapped, 0x21c0, 0x2f00, 0x3ffc,
+                                   memory, &ticket, &frozen));
+}
+
 void TestTicket() {
   const auto layout = Layout();
   auto memory = MemoryFixture();
@@ -1005,7 +1047,7 @@ void TestEightArgProduction() {
 }  // namespace
 
 int main() {
-  TestTicket(); TestQueue(); TestCommittedTextLaneTimestamp();
+  TestTicket(); TestDirectTicket(); TestQueue(); TestCommittedTextLaneTimestamp();
 #if defined(_M_IX86)
   TestNakedAbi(); TestProductionObservers(); TestProductionWorkerAndRollback();
   TestDelayedWorkerUsesCommittedTimestamp();

@@ -505,8 +505,11 @@ bool TryHookSiglusMessageText() {
       profile.owner_voice_key_offset, profile.owner_surface_index_offset,
       profile.owner_surface_begin_offset, profile.owner_surface_end_offset,
       profile.surface_stride,
-      static_cast<uint32_t>(base + profile.message_surface_return_rva),
-      static_cast<uint32_t>(base + profile.scenario_return_rva)};
+      profile.direct_scenario_call
+          ? 0u
+          : static_cast<uint32_t>(base + profile.message_surface_return_rva),
+      static_cast<uint32_t>(base + profile.scenario_return_rva),
+      profile.direct_scenario_call};
   g_siglus_message_scenario_rva = lane->exact_text_rva;
   g_siglus_message_targets[0] = reinterpret_cast<void*>(base + profile.message_entry_rva);
   g_siglus_message_targets[1] = reinterpret_cast<void*>(base + lane->exact_text_rva);
