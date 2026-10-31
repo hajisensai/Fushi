@@ -535,6 +535,35 @@ describe('网页处理台', () => {
     await call(env, 'POST', `/admin/api/accounts/${dev.id}/role`, { headers: basic, body: { role: 'user' }, now: NOW });
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('发送验证码');
   });
+
+  it('开发者账户提的反馈醒目标出：自己的写「我提的」，其他开发者写昵称，外部用户 / 匿名不标', async () => {
+    const env = makeEnv();
+    const me = await makeDev(env, 'me');
+    const other = await makeDev(env, 'boss');
+    const user = await registerUser(env, 'outsider', { now: NOW });
+    const mine = (await submit(env, { title: '我自测的' }, { user: me })).data.id;
+    const boss = (await submit(env, { title: '超管提的' }, { user: other })).data.id;
+    const ext = (await submit(env, { title: '外部用户' }, { user })).data.id;
+    const anon = (await submit(env, { title: '匿名' })).data.id;
+
+    const items = (await as(env, me, 'GET', '/v1/dev/feedback')).data.items;
+    const byId = Object.fromEntries(items.map((x) => [x.id, x.devReporter]));
+    expect(byId[mine]).toEqual({ id: me.id, nickname: 'me' });
+    expect(byId[boss]).toEqual({ id: other.id, nickname: 'boss' });
+    expect(byId[ext]).toBeNull();
+    expect(byId[anon]).toBeNull();
+    expect((await as(env, me, 'GET', `/v1/dev/feedback/${boss}`)).data.reporter.isDev).toBe(true);
+    expect((await as(env, me, 'GET', `/v1/dev/feedback/${ext}`)).data.reporter.isDev).toBe(false);
+
+    const cookie = (await webLogin(env, me)).res.headers.get('Set-Cookie').split(';')[0];
+    const list = (await page(env, 'GET', '/dev', { cookie })).data;
+    expect(list).toContain('★ 我提的');
+    expect(list).toContain('★ 开发者 boss');
+    expect(list.match(/class="row insider"/g)).toHaveLength(2);
+    expect((await page(env, 'GET', `/dev/f/${boss}`, { cookie })).data).toContain('★ 开发者 boss');
+    expect((await page(env, 'GET', `/dev/f/${mine}`, { cookie })).data).toContain('★ 我提的');
+    expect((await page(env, 'GET', `/dev/f/${ext}`, { cookie })).data).not.toContain('badge insider');
+  });
 });
 
 describe('开发者私有批注（AI 总结 / 开发者批改）', () => {
