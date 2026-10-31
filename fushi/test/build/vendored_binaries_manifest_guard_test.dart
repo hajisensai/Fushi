@@ -378,80 +378,89 @@ void main() {
       });
     });
 
-    test('a manifest / tool / action change re-runs every gate that fetches', () {
-      // A binary bump changes only these files (the bytes are not in git), so
-      // every trigger filter and in-job change detector in front of a job that
-      // fetches must see them, or the bump ships unbuilt / unverified.
-      const List<String> changed = <String>[
-        'tool/vendored_binaries.json',
-        'tool/vendored_binaries.py',
-        '.github/actions/fetch-vendored-binaries/action.yml',
-      ];
-      bool globMatches(String glob, String path) => glob.endsWith('/**')
-          ? path.startsWith(glob.substring(0, glob.length - 2))
-          : glob == path;
-      // In-job diff detectors (grep -E over `git diff --name-only`).
-      const Map<String, List<String>> detectors = <String, List<String>>{
-        'main.yml': <String>['pattern'],
-        'build-multiplatform.yml': <String>['app_common'],
-      };
-      final List<File> workflows =
-          Directory('$repo/.github/workflows')
-              .listSync()
-              .whereType<File>()
-              .where((File f) => f.path.endsWith('.yml'))
-              .toList()
-            ..sort((File a, File b) => a.path.compareTo(b.path));
-      int fetching = 0;
-      for (final File file in workflows) {
-        final String text = file.readAsStringSync().replaceAll('\r\n', '\n');
-        if (!text.contains('uses: ./.github/actions/fetch-vendored-binaries')) {
-          continue;
-        }
-        fetching++;
-        final String name = file.uri.pathSegments.last;
-        final List<String> on = text.split('\njobs:').first.split('\n');
-        for (int i = 0; i < on.length; i++) {
-          final RegExpMatch? head = RegExp(
-            r'^(\s+)paths:\s*(&\w+)?\s*$',
-          ).firstMatch(on[i]);
-          if (head == null) continue;
-          final List<String> globs = <String>[];
-          for (int j = i + 1; j < on.length; j++) {
-            final String line = on[j];
-            if (line.trim().isEmpty || line.trim().startsWith('#')) continue;
-            final RegExpMatch? item = RegExp(
-              r"""^\s+- ['"]?([^'"#\s]+)['"]?\s*(#.*)?$""",
-            ).firstMatch(line);
-            if (item == null) break;
-            globs.add(item.group(1)!);
+    test(
+      'a manifest / tool / action change re-runs every gate that fetches',
+      () {
+        // A binary bump changes only these files (the bytes are not in git), so
+        // every trigger filter and in-job change detector in front of a job that
+        // fetches must see them, or the bump ships unbuilt / unverified.
+        const List<String> changed = <String>[
+          'tool/vendored_binaries.json',
+          'tool/vendored_binaries.py',
+          '.github/actions/fetch-vendored-binaries/action.yml',
+        ];
+        bool globMatches(String glob, String path) => glob.endsWith('/**')
+            ? path.startsWith(glob.substring(0, glob.length - 2))
+            : glob == path;
+        // In-job diff detectors (grep -E over `git diff --name-only`).
+        const Map<String, List<String>> detectors = <String, List<String>>{
+          'main.yml': <String>['pattern'],
+          'build-multiplatform.yml': <String>['app_common'],
+        };
+        final List<File> workflows =
+            Directory('$repo/.github/workflows')
+                .listSync()
+                .whereType<File>()
+                .where((File f) => f.path.endsWith('.yml'))
+                .toList()
+              ..sort((File a, File b) => a.path.compareTo(b.path));
+        int fetching = 0;
+        for (final File file in workflows) {
+          final String text = file.readAsStringSync().replaceAll('\r\n', '\n');
+          if (!text.contains(
+            'uses: ./.github/actions/fetch-vendored-binaries',
+          )) {
+            continue;
           }
-          for (final String path in changed) {
-            expect(
-              globs.any((String g) => globMatches(g, path)),
-              isTrue,
-              reason: '$name: the paths filter at line ${i + 1} misses $path',
-            );
+          fetching++;
+          final String name = file.uri.pathSegments.last;
+          final List<String> on = text.split('\njobs:').first.split('\n');
+          for (int i = 0; i < on.length; i++) {
+            final RegExpMatch? head = RegExp(
+              r'^(\s+)paths:\s*(&\w+)?\s*$',
+            ).firstMatch(on[i]);
+            if (head == null) continue;
+            final List<String> globs = <String>[];
+            for (int j = i + 1; j < on.length; j++) {
+              final String line = on[j];
+              if (line.trim().isEmpty || line.trim().startsWith('#')) continue;
+              final RegExpMatch? item = RegExp(
+                r"""^\s+- ['"]?([^'"#\s]+)['"]?\s*(#.*)?$""",
+              ).firstMatch(line);
+              if (item == null) break;
+              globs.add(item.group(1)!);
+            }
+            for (final String path in changed) {
+              expect(
+                globs.any((String g) => globMatches(g, path)),
+                isTrue,
+                reason: '$name: the paths filter at line ${i + 1} misses $path',
+              );
+            }
+          }
+          for (final String variable in detectors[name] ?? const <String>[]) {
+            final RegExpMatch? m = RegExp(
+              '^\\s*$variable=\'(.+)\'\\s*\$',
+              multiLine: true,
+            ).firstMatch(text);
+            expect(m, isNotNull, reason: '$name: no $variable= detector');
+            final RegExp detector = RegExp(m!.group(1)!);
+            for (final String path in changed) {
+              expect(
+                detector.hasMatch(path),
+                isTrue,
+                reason: '$name: change detector $variable does not match $path',
+              );
+            }
           }
         }
-        for (final String variable in detectors[name] ?? const <String>[]) {
-          final RegExpMatch? m = RegExp(
-            '^\\s*$variable=\'(.+)\'\\s*\$',
-            multiLine: true,
-          ).firstMatch(text);
-          expect(m, isNotNull, reason: '$name: no $variable= detector');
-          final RegExp detector = RegExp(m!.group(1)!);
-          for (final String path in changed) {
-            expect(
-              detector.hasMatch(path),
-              isTrue,
-              reason: '$name: change detector $variable does not match $path',
-            );
-          }
-        }
-      }
-      expect(fetching, greaterThanOrEqualTo(6), reason: 'enumeration collapsed');
-    });
+        expect(
+          fetching,
+          greaterThanOrEqualTo(6),
+          reason: 'enumeration collapsed',
+        );
+      },
+    );
 
     test(
       'tool/vendored_binaries_test.py passes (identity LF, retry policy, cache lock)',

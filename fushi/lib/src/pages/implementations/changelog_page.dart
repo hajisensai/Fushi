@@ -9,7 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 
-/// 「查看更新日志」页（TODO-1310）：应用内在线拉取本仓库全部 GitHub releases，
+/// 「查看更新日志」页（TODO-1310）：应用内在线拉取本仓库的 app 版本 GitHub releases
+/// （[isAppVersionRelease]：只挂资产的 `vendored-binaries` / `flutter-engine-*` 等不算），
 /// 用 Markdown 渲染每个版本的发布说明（版本号 / 发布日期 / 预发布标记 / 正文）。
 ///
 /// 数据经 [fetchAllGitHubReleases] 拉取，复用「检查更新」同一套镜像回退 + 代理注入
