@@ -400,9 +400,92 @@ void VerifiedUser32Imports() {
 
 }  // namespace
 
+// Plain-frame build: render-state copy, save-image capture call and the
+// width*height*4 allocation in the capture callee.
+struct PlainConfigImage : TestImage {
+  void Render(uint32_t rva, uint32_t slot = kSlot) {
+    std::memcpy(bytes.data() + rva, viewport::kPlainRenderSizeBytes,
+                sizeof(viewport::kPlainRenderSizeBytes));
+    Write(rva + 2u, kBase + slot);
+    Write(rva + 8u, uint32_t{kBase + 0x1700u});
+  }
+  void Capture(uint32_t rva, uint32_t callee, uint32_t slot = kSlot) {
+    std::memcpy(bytes.data() + rva, viewport::kPlainCaptureSizeBytes,
+                sizeof(viewport::kPlainCaptureSizeBytes));
+    Write(rva + 2u, kBase + slot);
+    const uint32_t call = rva + static_cast<uint32_t>(viewport::kPlainCaptureCallOffset);
+    Write(call + 1u, static_cast<int32_t>(callee - call - 5u));
+  }
+  void Alloc(uint32_t callee, uint32_t offset = 0x43u) {
+    std::memcpy(bytes.data() + callee + offset, viewport::kPlainCaptureAllocBytes,
+                sizeof(viewport::kPlainCaptureAllocBytes));
+  }
+  void Complete() {
+    Render(0x420u);
+    Capture(0x600u, 0x800u);
+    Alloc(0x800u);
+  }
+};
+
+void PlainFrameConfigSlot() {
+  {
+    PlainConfigImage test;
+    test.Complete();
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == TestImage::kSlot);
+    // The aligned-frame resolver never claims plain-frame code, and vice versa.
+    assert(viewport::ResolveConfigSlot(test.image) == 0u);
+    // Protector builds merge sections into one executable header; the two
+    // references, not the header role, identify the slot.
+    test.image.sections[1].characteristics =
+        IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE;
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == TestImage::kSlot);
+  }
+  {
+    PlainConfigImage test;  // Two references must name the same slot.
+    test.Complete();
+    test.Capture(0x600u, 0x800u, TestImage::kSlot + 4u);
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == 0u);
+  }
+  for (const uint32_t alloc_offset : {0u, 0x60u}) {
+    PlainConfigImage test;  // Missing, or outside the callee window.
+    test.Render(0x420u);
+    test.Capture(0x600u, 0x800u);
+    if (alloc_offset != 0u) test.Alloc(0x800u, alloc_offset);
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == 0u);
+  }
+  {
+    PlainConfigImage test;  // Call that leaves the image.
+    test.Complete();
+    test.Write(0x600u + static_cast<uint32_t>(viewport::kPlainCaptureCallOffset) + 1u,
+               int32_t{0x100000});
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == 0u);
+  }
+  for (const bool duplicate_render : {false, true}) {
+    PlainConfigImage test;
+    test.Complete();
+    if (duplicate_render) test.Render(0xa00u);
+    else test.Capture(0xa00u, 0x800u);
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == 0u);
+  }
+  for (const uint32_t slot : {0x200u, 0x3000u, TestImage::kSlot + 1u}) {
+    PlainConfigImage test;
+    test.Render(0x420u, slot);
+    test.Capture(0x600u, 0x800u, slot);
+    test.Alloc(0x800u);
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == 0u);
+  }
+  {
+    PlainConfigImage test;
+    test.Complete();
+    test.image.machine = IMAGE_FILE_MACHINE_AMD64;
+    assert(viewport::ResolvePlainFrameConfigSlot(test.image) == 0u);
+  }
+}
+
 int main() {
   ConfigSlotRelocation();
   ConfigSlotSectionAndUniqueness();
+  PlainFrameConfigSlot();
   DesignSizeBounds();
   NamedImportIdentity();
   ImportBoundsAndAmbiguity();
