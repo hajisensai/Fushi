@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 
 /// TODO-1310：`fetchAllGitHubReleases` 的纯解析核心 [parseGitHubReleasesResponse]
