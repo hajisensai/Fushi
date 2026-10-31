@@ -1123,9 +1123,10 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
     if (server.phase != LocalServicePhase.stopped) await server.stop();
     if (epoch != _installEpoch) return false;
     final String root = p.join(installDir, manifest.installSubdir);
-    final String? previousDir = settings.dir;
+    final VoicevoxLocalSettings previous = settings;
+    final String? previousDir = previous.dir;
     // 先记目录：下到一半的东西在专属子目录里，「删除」要能找到它清掉。换了安装
-    // 位置时，旧位置的已装档位不再适用。
+    // 位置时，旧位置的已装档位不再适用（失败 / 取消时见下面的回退）。
     await _save(
       settings.copyWith(
         dir: root,
@@ -1144,6 +1145,11 @@ class VoicevoxLocalEngine extends EngineChangeNotifier {
       // 引擎已整体换成这个包：启动参数从此按它来。失败 / 取消时 engine/ 仍是旧包
       // （安装器只动暂存目录），已装档位保持不变。
       await _save(settings.copyWith(installedAccel: pkg.accel));
+    } else if (previousDir != root && previous.installedAccel != null) {
+      // 换到新位置没装成（下载 / 解压失败或取消），旧位置那份能用的引擎还在：
+      // 记录回到旧安装，不让它变成「删除」也找不到的孤儿。新位置下到一半的
+      // 分卷留在原处（`downloads/*.part`），再选同一位置安装时接着续传。
+      await _save(previous);
     } else {
       _layoutCache = null;
       notifyListeners();
