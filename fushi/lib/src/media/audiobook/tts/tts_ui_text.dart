@@ -1,6 +1,8 @@
 /// TTS 引擎 / 参数 / 失败码的界面文案（引擎层只给稳定 id，文案在这里翻译）。
 library;
 
+import 'package:fushi_engine/tts/local/local_service_support.dart'
+    show LocalInstallRemoveException;
 import 'package:fushi_engine/tts/providers/azure_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
@@ -16,6 +18,13 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
+
+/// 「删除本机引擎」删不掉时的提示（路径 + 系统给的原因）。
+String localInstallRemoveFailureText(LocalInstallRemoveException error) =>
+    t.audiobook_tts_local_delete_failed(
+      path: error.path,
+      reason: error.cause.osError?.message ?? error.cause.message,
+    );
 
 String ttsProviderLabel(String providerId) => switch (providerId) {
   GptSovitsTtsDescriptor.providerId => t.audiobook_tts_provider_gpt_sovits,

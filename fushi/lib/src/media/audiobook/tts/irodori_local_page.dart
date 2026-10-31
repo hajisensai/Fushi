@@ -24,6 +24,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart'
     show formatGptSovitsBytes;
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart'
+    show localInstallRemoveFailureText;
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -265,7 +267,14 @@ class _IrodoriLocalPageState extends State<IrodoriLocalPage> {
       destructive: true,
     );
     if (!confirmed) return;
-    await _engine.remove(deleteFiles: _engine.canDeleteFiles);
+    try {
+      await _engine.remove(deleteFiles: _engine.canDeleteFiles);
+    } on LocalInstallRemoveException catch (error) {
+      FushiToast.show(
+        msg: localInstallRemoveFailureText(error),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<void> _showLog(String title, List<String> lines) async {

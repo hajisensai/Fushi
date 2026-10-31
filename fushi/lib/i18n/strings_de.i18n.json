@@ -1177,6 +1177,7 @@
   "audiobook_tts_local_create_voice_hint": "Then pick a reference audio clip and play a test",
   "audiobook_tts_local_delete": "Delete local GPT-SoVITS",
   "audiobook_tts_local_delete_confirm": "This stops the service and deletes ${path} (about 19 GB).",
+  "audiobook_tts_local_delete_failed": "Could not delete ${path} (${reason}). Close any program using it and try again.",
   "audiobook_tts_local_dir": "Install location",
   "audiobook_tts_local_dir_hint": "Needs about 30 GB free; the download is deleted after extraction",
   "audiobook_tts_local_editor_not_installed": "No local service yet? Set up GPT-SoVITS on this computer in one step",

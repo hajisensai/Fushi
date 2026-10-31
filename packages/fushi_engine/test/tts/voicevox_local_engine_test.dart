@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart';
 import 'package:fushi_engine/tts/local/voicevox_local_engine.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:path/path.dart' as p;
@@ -28,7 +29,32 @@ class _DoneProcess implements Process {
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => true;
 }
 
+/// 一直跑到被 kill 的解压子进程（取消 / 「删除」等它退出）。
+class _HangingProcess implements Process {
+  final Completer<int> _exit = Completer<int>();
+  int kills = 0;
+
+  @override
+  Future<int> get exitCode => _exit.future;
+  @override
+  int get pid => 2;
+  @override
+  Stream<List<int>> get stdout => const Stream<List<int>>.empty();
+  @override
+  Stream<List<int>> get stderr => const Stream<List<int>>.empty();
+  @override
+  IOSink get stdin => throw UnimplementedError();
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    kills++;
+    if (!_exit.isCompleted) _exit.complete(-1);
+    return true;
+  }
+}
+
 String _sha(List<int> bytes) => sha256.convert(bytes).toString();
+
+String? _uuidAt(String root) => VoicevoxInstallLayout.find(root)?.uuid;
 
 /// 在 [dir] 下写一份最小引擎（清单 + 可执行文件）。
 void _writeEngine(
@@ -270,6 +296,110 @@ void main() {
       expect(inst.failure, VoicevoxInstallFailure.layoutMissing);
     });
 
+    test(
+      'failed extraction keeps the old engine and leaves no staging',
+      () async {
+        final String root = p.join(tmp.path, 'swap');
+        _writeEngine(p.join(root, 'engine'), uuid: 'uuid-old');
+        // 解压器写出了一份「看起来完整」的引擎再报错：不能被当成装好了。
+        final VoicevoxInstaller inst = installer(extractExit: 2);
+        expect(await inst.install(root: root, pkg: pkg), isNull);
+        expect(inst.failure, VoicevoxInstallFailure.extractFailed);
+        expect(_uuidAt(root), 'uuid-old');
+        expect(
+          Directory(p.join(root, kVoicevoxStagingSubdir)).existsSync(),
+          isFalse,
+        );
+        expect(inst.isBusy, isFalse);
+      },
+    );
+
+    test(
+      'fresh install that fails leaves nothing that looks installed',
+      () async {
+        final String root = p.join(tmp.path, 'fresh');
+        final VoicevoxInstaller inst = installer(extractExit: 2);
+        expect(await inst.install(root: root, pkg: pkg), isNull);
+        expect(_uuidAt(root), isNull);
+        expect(Directory(p.join(root, 'engine')).existsSync(), isFalse);
+        expect(
+          Directory(p.join(root, kVoicevoxStagingSubdir)).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test('successful reinstall swaps the engine in whole', () async {
+      final String root = p.join(tmp.path, 'reinstall');
+      _writeEngine(p.join(root, 'engine'), uuid: 'uuid-old');
+      File(p.join(root, 'engine', 'stale.dll')).writeAsStringSync('old');
+      final VoicevoxInstaller inst = installer();
+      final VoicevoxInstallLayout? layout = await inst.install(
+        root: root,
+        pkg: pkg,
+      );
+      expect(layout?.uuid, 'uuid-1');
+      expect(layout?.engineDir, p.join(root, 'engine'));
+      expect(File(p.join(root, 'engine', 'stale.dll')).existsSync(), isFalse);
+      expect(
+        Directory(p.join(root, kVoicevoxRetiredSubdir)).existsSync(),
+        isFalse,
+      );
+      expect(
+        Directory(p.join(root, kVoicevoxStagingSubdir)).existsSync(),
+        isFalse,
+      );
+    });
+
+    test(
+      'cancel during extraction cleans staging and waits for the run',
+      () async {
+        final String root = p.join(tmp.path, 'cancel');
+        _writeEngine(p.join(root, 'engine'), uuid: 'uuid-old');
+        final _HangingProcess proc = _HangingProcess();
+        final Completer<void> extracting = Completer<void>();
+        final VoicevoxInstaller inst = VoicevoxInstaller(
+          httpClientFactory: () => HttpClient(),
+          manifest: kVoicevoxManifest,
+          os: 'windows',
+          open:
+              (HttpClient client, Uri uri, Map<String, String> headers) async {
+                final List<int> body = uri.path.endsWith('e.001.vvppp')
+                    ? part1
+                    : part2;
+                return ResumableDownloadResponse.bytes(
+                  statusCode: 200,
+                  body: body,
+                  headers: <String, String>{'content-length': '${body.length}'},
+                );
+              },
+          spawn: (String exe, List<String> args) async {
+            _writeEngine(args[args.indexOf('-C') + 1]);
+            extracting.complete();
+            return proc;
+          },
+        );
+        final Future<VoicevoxInstallLayout?> run = inst.install(
+          root: root,
+          pkg: pkg,
+        );
+        // 同步占位：第二次安装在第一个 await 之前就被挡住。
+        expect(inst.isBusy, isTrue);
+        expect(await inst.install(root: root, pkg: pkg), isNull);
+        await extracting.future;
+        await inst.cancelAndWait();
+        expect(proc.kills, 1);
+        expect(await run, isNull);
+        expect(inst.step, VoicevoxInstallStep.cancelled);
+        expect(inst.isBusy, isFalse);
+        expect(_uuidAt(root), 'uuid-old');
+        expect(
+          Directory(p.join(root, kVoicevoxStagingSubdir)).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
     test('already-downloaded parts are not fetched again', () async {
       final String root = p.join(tmp.path, 'c');
       final Directory downloads = Directory(p.join(root, 'downloads'))
@@ -329,42 +459,209 @@ void main() {
       e.dispose();
     });
 
-    test('accel picks the package; GPU builds launch with --use_gpu', () async {
-      final VoicevoxLocalEngine e = engine(kVoicevoxManifest);
-      expect(e.selectedPackage?.accel, VoicevoxAccel.cpu);
-      final String dir = p.join(tmp.path, 'voicevox_engine');
-      _writeEngine(p.join(dir, 'engine'));
-      const VoicevoxInstallLayout fake = VoicevoxInstallLayout(
-        root: 'r',
-        engineDir: 'r/engine',
-        executable: 'r/engine/run.exe',
-        uuid: 'u',
-        version: '0.26.0',
-      );
-      expect(e.launchSpec(fake).arguments, <String>[
-        '--host',
-        '127.0.0.1',
-        '--port',
-        '50021',
-      ]);
-      await e.setAccel(VoicevoxAccel.nvidia);
-      expect(e.selectedPackage?.parts, hasLength(2));
-      final List<String> args = e
-          .launchSpec(fake, environment: <String, String>{'HTTPS_PROXY': 'x'})
-          .arguments;
-      expect(args.last, '--use_gpu');
-      expect(
-        e
+    test(
+      '--use_gpu follows the installed package, not the picked one',
+      () async {
+        final MemoryPrefStore prefs = MemoryPrefStore();
+        final VoicevoxLocalEngine e = engine(kVoicevoxManifest, prefs: prefs);
+        expect(e.selectedPackage?.accel, VoicevoxAccel.cpu);
+        const VoicevoxInstallLayout fake = VoicevoxInstallLayout(
+          root: 'r',
+          engineDir: 'r/engine',
+          executable: 'r/engine/run.exe',
+          uuid: 'u',
+          version: '0.26.0',
+        );
+        expect(e.launchSpec(fake).arguments, <String>[
+          '--host',
+          '127.0.0.1',
+          '--port',
+          '50021',
+        ]);
+        // 只选了 GPU 档、还没重装：磁盘上仍是 CPU 包，不能带 --use_gpu。
+        await e.setAccel(VoicevoxAccel.nvidia);
+        expect(e.selectedPackage?.parts, hasLength(2));
+        expect(e.launchSpec(fake).arguments, isNot(contains('--use_gpu')));
+        // 已装的是 GPU 包（安装成功才写的已装档位）：带 --use_gpu，与选中档位无关。
+        prefs.values[e.prefKey] = jsonEncode(<String, Object?>{
+          'port': 50021,
+          'accel': 'cpu',
+          'installedAccel': 'nvidia',
+        });
+        final List<String> args = e
             .launchSpec(fake, environment: <String, String>{'HTTPS_PROXY': 'x'})
-            .environment['HTTPS_PROXY'],
-        'x',
-      );
-      e.dispose();
+            .arguments;
+        expect(args.last, '--use_gpu');
+        expect(
+          e
+              .launchSpec(
+                fake,
+                environment: <String, String>{'HTTPS_PROXY': 'x'},
+              )
+              .environment['HTTPS_PROXY'],
+          'x',
+        );
+        e.dispose();
 
-      final VoicevoxLocalEngine aivis = engine(kAivisSpeechManifest);
-      expect(aivis.launchSpec(fake).arguments, isNot(contains('--use_gpu')));
-      aivis.dispose();
+        final VoicevoxLocalEngine aivis = engine(kAivisSpeechManifest);
+        expect(aivis.launchSpec(fake).arguments, isNot(contains('--use_gpu')));
+        aivis.dispose();
+      },
+    );
+
+    VoicevoxEngineManifest testManifest(VoicevoxPackage gpu) =>
+        VoicevoxEngineManifest(
+          kind: VoicevoxLocalKind.voicevox,
+          repo: 'o/r',
+          tag: 't',
+          defaultPort: 50021,
+          installSubdir: 'voicevox_engine',
+          packages: <String, List<VoicevoxPackage>>{
+            'windows-x64': <VoicevoxPackage>[
+              VoicevoxPackage(
+                accel: VoicevoxAccel.cpu,
+                format: VoicevoxArchiveFormat.zip,
+                parts: gpu.parts,
+              ),
+              gpu,
+            ],
+          },
+        );
+
+    test('installedAccel is written only after a successful install', () async {
+      final List<int> body = utf8.encode('PKG');
+      final VoicevoxPackage gpu = VoicevoxPackage(
+        accel: VoicevoxAccel.nvidia,
+        format: VoicevoxArchiveFormat.zip,
+        parts: <VoicevoxPackagePart>[
+          VoicevoxPackagePart('g.vvpp', body.length, _sha(body)),
+        ],
+      );
+      final VoicevoxEngineManifest manifest = testManifest(gpu);
+      int extractExit = 0;
+      final MemoryPrefStore prefs = MemoryPrefStore();
+      final VoicevoxLocalEngine e = VoicevoxLocalEngine(
+        prefs: prefs,
+        httpClientFactory: () => HttpClient(),
+        manifest: manifest,
+        platformKey: 'windows-x64',
+        supported: true,
+        installer: VoicevoxInstaller(
+          httpClientFactory: () => HttpClient(),
+          manifest: manifest,
+          os: 'windows',
+          open: (HttpClient c, Uri u, Map<String, String> h) async =>
+              ResumableDownloadResponse.bytes(
+                statusCode: 200,
+                body: body,
+                headers: <String, String>{'content-length': '${body.length}'},
+              ),
+          spawn: (String exe, List<String> args) async {
+            _writeEngine(args[args.indexOf('-C') + 1]);
+            return _DoneProcess(extractExit);
+          },
+        ),
+      );
+      await e.setAccel(VoicevoxAccel.nvidia);
+      expect(await e.install(installDir: tmp.path), isTrue);
+      expect(e.settings.installedAccel, VoicevoxAccel.nvidia);
+      expect(e.isInstalled, isTrue);
+
+      // 想换回 CPU 但重装失败：磁盘上还是 GPU 包，已装档位不变、照样带 --use_gpu。
+      await e.setAccel(VoicevoxAccel.cpu);
+      extractExit = 2;
+      expect(await e.install(installDir: tmp.path), isFalse);
+      expect(e.settings.accel, VoicevoxAccel.cpu);
+      expect(e.settings.installedAccel, VoicevoxAccel.nvidia);
+      expect(e.isInstalled, isTrue);
+      expect(e.launchSpec(e.layout!).arguments, contains('--use_gpu'));
+
+      await e.remove(deleteFiles: true);
+      expect(e.settings.installedAccel, isNull);
+      e.dispose();
     });
+
+    test('remove waits for the in-flight install before deleting', () async {
+      final List<int> body = utf8.encode('PKG');
+      final VoicevoxPackage gpu = VoicevoxPackage(
+        accel: VoicevoxAccel.nvidia,
+        format: VoicevoxArchiveFormat.zip,
+        parts: <VoicevoxPackagePart>[
+          VoicevoxPackagePart('g.vvpp', body.length, _sha(body)),
+        ],
+      );
+      final VoicevoxEngineManifest manifest = testManifest(gpu);
+      final _HangingProcess proc = _HangingProcess();
+      final Completer<void> extracting = Completer<void>();
+      final VoicevoxLocalEngine e = VoicevoxLocalEngine(
+        prefs: MemoryPrefStore(),
+        httpClientFactory: () => HttpClient(),
+        manifest: manifest,
+        platformKey: 'windows-x64',
+        supported: true,
+        installer: VoicevoxInstaller(
+          httpClientFactory: () => HttpClient(),
+          manifest: manifest,
+          os: 'windows',
+          open: (HttpClient c, Uri u, Map<String, String> h) async =>
+              ResumableDownloadResponse.bytes(
+                statusCode: 200,
+                body: body,
+                headers: <String, String>{'content-length': '${body.length}'},
+              ),
+          spawn: (String exe, List<String> args) async {
+            _writeEngine(args[args.indexOf('-C') + 1]);
+            extracting.complete();
+            return proc;
+          },
+        ),
+      );
+      bool installReturned = false;
+      final Future<bool> install = e
+          .install(installDir: tmp.path)
+          .whenComplete(() => installReturned = true);
+      await extracting.future;
+      expect(await e.start(), isFalse, reason: '安装中不启动');
+      await e.remove(deleteFiles: true);
+      expect(installReturned, isTrue, reason: '删除要等安装真正退出');
+      expect(await install, isFalse);
+      expect(proc.kills, 1);
+      expect(
+        Directory(p.join(tmp.path, 'voicevox_engine')).existsSync(),
+        isFalse,
+      );
+      expect(e.settings.dir, isNull);
+      e.dispose();
+    });
+
+    test('remove reports a delete failure and keeps the record', () async {
+      final MemoryPrefStore prefs = MemoryPrefStore();
+      final VoicevoxLocalEngine e = engine(kVoicevoxManifest, prefs: prefs);
+      final String root = p.join(tmp.path, 'voicevox_engine');
+      _writeEngine(p.join(root, 'engine'));
+      prefs.values[e.prefKey] = jsonEncode(<String, Object?>{
+        'dir': root,
+        'port': 50021,
+        'owned': true,
+      });
+      // Windows 上打开着的文件删不掉（杀软扫描 / 引擎残留进程的同类情形）。
+      final RandomAccessFile lock = File(
+        p.join(root, 'engine', 'run.exe'),
+      ).openSync(mode: FileMode.append);
+      try {
+        await expectLater(
+          e.remove(deleteFiles: true),
+          throwsA(isA<LocalInstallRemoveException>()),
+        );
+        expect(e.settings.dir, root, reason: '记录保留，用户可以再点删除');
+      } finally {
+        lock.closeSync();
+      }
+      await e.remove(deleteFiles: true);
+      expect(Directory(root).existsSync(), isFalse);
+      expect(e.settings.dir, isNull);
+      e.dispose();
+    }, skip: Platform.isWindows ? false : '只有 Windows 会因打开的句柄删不掉文件');
 
     test(
       'isInstalled follows the recorded dir; delete only owned subdir',

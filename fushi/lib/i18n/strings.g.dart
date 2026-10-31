@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 178279 (10487 per locale)
+/// Strings: 178296 (10488 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -2070,6 +2070,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audiobook_tts_local_delete => 'Delete local GPT-SoVITS';
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   String get audiobook_tts_local_dir => 'Install location';
   String get audiobook_tts_local_dir_hint =>
       'Needs about 30 GB free; the download is deleted after extraction';
@@ -18224,6 +18229,12 @@ class _StringsAr extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -43684,6 +43695,12 @@ class _StringsDe extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -69510,6 +69527,12 @@ class _StringsEs extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -95390,6 +95413,12 @@ class _StringsFr extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -121300,6 +121329,12 @@ class _StringsId extends _StringsEn {
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
   @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
+  @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
   String get audiobook_tts_local_dir_hint =>
@@ -146920,6 +146955,12 @@ class _StringsIt extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -172582,6 +172623,12 @@ class _StringsJa extends _StringsEn {
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
   @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
+  @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
   String get audiobook_tts_local_dir_hint =>
@@ -197307,6 +197354,12 @@ class _StringsKo extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -222213,6 +222266,12 @@ class _StringsNl extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -247941,6 +248000,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -273716,6 +273781,12 @@ class _StringsRu extends _StringsEn {
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
   @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
+  @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
   String get audiobook_tts_local_dir_hint =>
@@ -299407,6 +299478,12 @@ class _StringsTh extends _StringsEn {
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
   @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
+  @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
   String get audiobook_tts_local_dir_hint =>
@@ -324839,6 +324916,12 @@ class _StringsTr extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -350445,6 +350528,12 @@ class _StringsVi extends _StringsEn {
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
   @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
+  @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
   String get audiobook_tts_local_dir_hint =>
@@ -375718,6 +375807,11 @@ class _StringsZhCn extends _StringsEn {
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       '将停止服务并删除 ${path}（约 19 GB）。';
   @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) => '无法删除 ${path}（${reason}）。请关闭占用它的程序后重试。';
+  @override
   String get audiobook_tts_local_dir => '安装位置';
   @override
   String get audiobook_tts_local_dir_hint => '需要约 30 GB 空闲空间；解压完成后会删除安装包';
@@ -399183,6 +399277,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String audiobook_tts_local_delete_confirm({required Object path}) =>
       'This stops the service and deletes ${path} (about 19 GB).';
+  @override
+  String audiobook_tts_local_delete_failed({
+    required Object path,
+    required Object reason,
+  }) =>
+      'Could not delete ${path} (${reason}). Close any program using it and try again.';
   @override
   String get audiobook_tts_local_dir => 'Install location';
   @override
@@ -422921,6 +423021,9 @@ extension on _StringsEn {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -444714,6 +444817,9 @@ extension on _StringsAr {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -466521,6 +466627,9 @@ extension on _StringsDe {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -488379,6 +488488,9 @@ extension on _StringsEs {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -510229,6 +510341,9 @@ extension on _StringsFr {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -532079,6 +532194,9 @@ extension on _StringsId {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -553891,6 +554009,9 @@ extension on _StringsIt {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -575711,6 +575832,9 @@ extension on _StringsJa {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -597417,6 +597541,9 @@ extension on _StringsKo {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -619164,6 +619291,9 @@ extension on _StringsNl {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -641004,6 +641134,9 @@ extension on _StringsPtBr {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -662837,6 +662970,9 @@ extension on _StringsRu {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -684657,6 +684793,9 @@ extension on _StringsTh {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -706460,6 +706599,9 @@ extension on _StringsTr {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -728276,6 +728418,9 @@ extension on _StringsVi {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
@@ -750032,6 +750177,9 @@ extension on _StringsZhCn {
         return '删除本机 GPT-SoVITS';
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) => '将停止服务并删除 ${path}（约 19 GB）。';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            '无法删除 ${path}（${reason}）。请关闭占用它的程序后重试。';
       case 'audiobook_tts_local_dir':
         return '安装位置';
       case 'audiobook_tts_local_dir_hint':
@@ -771575,6 +771723,9 @@ extension on _StringsZhHk {
       case 'audiobook_tts_local_delete_confirm':
         return ({required Object path}) =>
             'This stops the service and deletes ${path} (about 19 GB).';
+      case 'audiobook_tts_local_delete_failed':
+        return ({required Object path, required Object reason}) =>
+            'Could not delete ${path} (${reason}). Close any program using it and try again.';
       case 'audiobook_tts_local_dir':
         return 'Install location';
       case 'audiobook_tts_local_dir_hint':
