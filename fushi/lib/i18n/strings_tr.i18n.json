@@ -733,6 +733,7 @@
   "anki_sync_client_status_failed": "Son eşitleme başarısız oldu: $error",
   "anki_sync_client_status_failing": "$count kart koleksiyona yazılamadı ve yeniden denenecek: $error",
   "anki_sync_client_status_last_sync": "Son eşitleme $time",
+  "anki_sync_client_status_rate_limited": "The sync server is limiting requests (too many requests). Fushi will retry automatically after $time; your cards stay here until then.",
   "anki_sync_client_status_signed_in": "$server üzerinde $user olarak oturum açıldı",
   "anki_sync_client_status_signed_out": "Oturum açılmadı",
   "anki_sync_client_status_unsynced": "$count kart henüz eşitlenmedi",

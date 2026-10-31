@@ -8,6 +8,19 @@ class FushiAnkiSyncException implements Exception {
 
   final String message;
 
+  /// 同步服务器限流（HTTP 429 Too Many Requests）。
+  ///
+  /// helper 只回 rslib 错误的 Debug 原文（`NetworkError { info: "HTTP status client
+  /// error (429 Too Many Requests) for url ()", kind: Other }`）：rslib 把 429 归进
+  /// `NetworkErrorKind::Other`，没有结构化状态码；它用 reqwest 的 `error_for_status`
+  /// 出错，响应头（含 Retry-After）在那一步就丢了，所以这里只能认状态行文字。
+  bool get isRateLimited => _rateLimitPattern.hasMatch(message);
+
+  static final RegExp _rateLimitPattern = RegExp(
+    'too many requests',
+    caseSensitive: false,
+  );
+
   @override
   String toString() => 'FushiAnkiSyncException: $message';
 }

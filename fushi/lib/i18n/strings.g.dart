@@ -1347,6 +1347,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       '${count} card(s) couldn\'t be written to the collection and will be retried: ${error}';
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Last synced ${time}';
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   String anki_sync_client_status_signed_in({
     required Object user,
     required Object server,
@@ -17146,6 +17148,9 @@ class _StringsAr extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'آخر مزامنة ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -42748,6 +42753,9 @@ class _StringsDe extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Zuletzt synchronisiert ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -68720,6 +68728,9 @@ class _StringsEs extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Última sincronización ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -94746,6 +94757,9 @@ class _StringsFr extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Dernière synchronisation ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -120825,6 +120839,9 @@ class _StringsId extends _StringsEn {
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Terakhir disinkronkan ${time}';
   @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
+  @override
   String anki_sync_client_status_signed_in({
     required Object user,
     required Object server,
@@ -146589,6 +146606,9 @@ class _StringsIt extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Ultima sincronizzazione ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -172430,6 +172450,9 @@ class _StringsJa extends _StringsEn {
   String anki_sync_client_status_last_sync({required Object time}) =>
       '最終同期: ${time}';
   @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
+  @override
   String anki_sync_client_status_signed_in({
     required Object server,
     required Object user,
@@ -197306,6 +197329,9 @@ class _StringsKo extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       '마지막 동기화 ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object server,
@@ -222340,6 +222366,9 @@ class _StringsNl extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Laatst gesynchroniseerd ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -248219,6 +248248,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Última sincronização ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -274148,6 +274180,9 @@ class _StringsRu extends _StringsEn {
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Последняя синхронизация: ${time}';
   @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
+  @override
   String anki_sync_client_status_signed_in({
     required Object user,
     required Object server,
@@ -299999,6 +300034,9 @@ class _StringsTh extends _StringsEn {
   String anki_sync_client_status_last_sync({required Object time}) =>
       'ซิงค์ล่าสุด ${time}';
   @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
+  @override
   String anki_sync_client_status_signed_in({
     required Object user,
     required Object server,
@@ -325581,6 +325619,9 @@ class _StringsTr extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Son eşitleme ${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object server,
@@ -351338,6 +351379,9 @@ class _StringsVi extends _StringsEn {
   String anki_sync_client_status_last_sync({required Object time}) =>
       'Đồng bộ lần cuối ${time}';
   @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
+  @override
   String anki_sync_client_status_signed_in({
     required Object user,
     required Object server,
@@ -376873,6 +376917,9 @@ class _StringsZhCn extends _StringsEn {
   String anki_sync_client_status_last_sync({required Object time}) =>
       '上次同步：${time}';
   @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      '同步服务器限流了（请求过于频繁），Fushi 会在 ${time} 之后自动重试；在那之前卡片保留在本机。';
+  @override
   String anki_sync_client_status_signed_in({
     required Object user,
     required Object server,
@@ -400407,6 +400454,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String anki_sync_client_status_last_sync({required Object time}) =>
       '上次同步：${time}';
+  @override
+  String anki_sync_client_status_rate_limited({required Object time}) =>
+      'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
   @override
   String anki_sync_client_status_signed_in({
     required Object user,
@@ -424485,6 +424535,9 @@ extension on _StringsEn {
             '${count} card(s) couldn\'t be written to the collection and will be retried: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Last synced ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Signed in as ${user} on ${server}';
@@ -446409,6 +446462,9 @@ extension on _StringsAr {
             'تعذّرت كتابة ${count} بطاقة في المجموعة وستُعاد المحاولة: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'آخر مزامنة ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'تم تسجيل الدخول باسم ${user} على ${server}';
@@ -468338,6 +468394,9 @@ extension on _StringsDe {
             '${count} Karte(n) konnten nicht in die Sammlung geschrieben werden und werden erneut versucht: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Zuletzt synchronisiert ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Angemeldet als ${user} auf ${server}';
@@ -490324,6 +490383,9 @@ extension on _StringsEs {
             '${count} tarjeta(s) no se pudieron escribir en la colección y se reintentarán: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Última sincronización ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Sesión iniciada como ${user} en ${server}';
@@ -512304,6 +512366,9 @@ extension on _StringsFr {
             '${count} carte(s) n\'ont pas pu être écrites dans la collection et seront réessayées : ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Dernière synchronisation ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Connecté en tant que ${user} sur ${server}';
@@ -534291,6 +534356,9 @@ extension on _StringsId {
             '${count} kartu tidak dapat ditulis ke koleksi dan akan dicoba lagi: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Terakhir disinkronkan ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Masuk sebagai ${user} di ${server}';
@@ -556230,6 +556298,9 @@ extension on _StringsIt {
             '${count} carta/e non hanno potuto essere scritte nella collezione e verranno ritentate: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Ultima sincronizzazione ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Accesso come ${user} su ${server}';
@@ -578189,6 +578260,9 @@ extension on _StringsJa {
             '${count} 枚のカードをコレクションに書き込めず、再試行します: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => '最終同期: ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object server, required Object user}) =>
             '${server} に ${user} としてサインイン中';
@@ -600026,6 +600100,9 @@ extension on _StringsKo {
             '카드 ${count}장을 컬렉션에 기록할 수 없었으며 다시 시도합니다: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => '마지막 동기화 ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object server, required Object user}) =>
             '${server}에 ${user}(으)로 로그인됨';
@@ -621897,6 +621974,9 @@ extension on _StringsNl {
             '${count} kaart(en) konden niet naar de collectie worden geschreven en worden opnieuw geprobeerd: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Laatst gesynchroniseerd ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Aangemeld als ${user} op ${server}';
@@ -643864,6 +643944,9 @@ extension on _StringsPtBr {
             '${count} cartão(ões) não puderam ser gravados na coleção e serão tentados novamente: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Última sincronização ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Conectado como ${user} em ${server}';
@@ -665825,6 +665908,9 @@ extension on _StringsRu {
             'Карточек не удалось записать в коллекцию, попытка будет повторена: ${count}; ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Последняя синхронизация: ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Вход выполнен как ${user} на ${server}';
@@ -687782,6 +687868,9 @@ extension on _StringsTh {
             'เขียนการ์ด ${count} ใบลงคอลเลกชันไม่ได้ และจะลองใหม่: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'ซิงค์ล่าสุด ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'ลงชื่อเข้าใช้เป็น ${user} บน ${server}';
@@ -709711,6 +709800,9 @@ extension on _StringsTr {
             '${count} kart koleksiyona yazılamadı ve yeniden denenecek: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Son eşitleme ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object server, required Object user}) =>
             '${server} üzerinde ${user} olarak oturum açıldı';
@@ -731659,6 +731751,9 @@ extension on _StringsVi {
             '${count} thẻ không ghi được vào bộ sưu tập và sẽ được thử lại: ${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => 'Đồng bộ lần cuối ${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             'Đã đăng nhập với tên ${user} trên ${server}';
@@ -753561,6 +753656,9 @@ extension on _StringsZhCn {
             '${count} 张卡写入牌组集合失败，会自动重试：${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => '上次同步：${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            '同步服务器限流了（请求过于频繁），Fushi 会在 ${time} 之后自动重试；在那之前卡片保留在本机。';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             '已登录：${user}（${server}）';
@@ -775226,6 +775324,9 @@ extension on _StringsZhHk {
             '${count} 張卡寫入牌組集合失敗，會自動重試：${error}';
       case 'anki_sync_client_status_last_sync':
         return ({required Object time}) => '上次同步：${time}';
+      case 'anki_sync_client_status_rate_limited':
+        return ({required Object time}) =>
+            'The sync server is limiting requests (too many requests). Fushi will retry automatically after ${time}; your cards stay here until then.';
       case 'anki_sync_client_status_signed_in':
         return ({required Object user, required Object server}) =>
             '已登入：${user}（${server}）';
