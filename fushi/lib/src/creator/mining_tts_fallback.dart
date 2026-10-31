@@ -31,6 +31,7 @@ import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
 
 /// String：制卡单词音频的 TTS 兜底声音（[MiningTtsFallbackVoice.wire]）。
@@ -39,12 +40,13 @@ import 'package:fushi/src/utils/misc/system_tts.dart';
 const String kMiningTtsFallbackVoicePref = 'mining_tts_fallback_voice';
 
 /// double：TTS 兜底发音（查词 ♪ / 自动发音、制卡单词音频）的倍速，默认 1.0。
-/// 范围同有声书倍速（[kTtsFallbackSpeedMin]..[kTtsFallbackSpeedMax]）。
+/// 倍速是 TTS 声音本身的属性：制卡单词音频一律按它，不受有声书「句子音频跟随
+/// 播放倍速」开关影响。范围同有声书倍速（[kTtsFallbackSpeedMin]..[kTtsFallbackSpeedMax]）。
 const String kTtsFallbackSpeedPref = 'tts_fallback_speed';
 
-/// TTS 兜底倍速下限 / 上限（与有声书倍速拖动条同一范围）。
-const double kTtsFallbackSpeedMin = 0.25;
-const double kTtsFallbackSpeedMax = 3.0;
+/// TTS 兜底倍速下限 / 上限（与有声书倍速拖动条同一范围，[kPlaybackSpeedMin]..[kPlaybackSpeedMax]）。
+const double kTtsFallbackSpeedMin = kPlaybackSpeedMin;
+const double kTtsFallbackSpeedMax = kPlaybackSpeedMax;
 
 /// 读 TTS 兜底倍速；坏值 / 越界夹回范围，非数字回落 1.0。
 double ttsFallbackSpeedOf(PrefStore prefs) {

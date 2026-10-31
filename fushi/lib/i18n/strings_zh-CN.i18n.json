@@ -5398,7 +5398,7 @@
   "models_tts_fallback_off": "不使用 TTS 兜底",
   "models_tts_fallback_online_notice": "词条文本会发送给该在线服务",
   "models_tts_fallback_speed": "兜底发音倍速",
-  "models_tts_fallback_speed_hint": "查词时 TTS 发音的播放倍速（变速不变调）。开启「句子音频跟随播放倍速」时，制卡的 TTS 发音也按此倍速。",
+  "models_tts_fallback_speed_hint": "查词和制卡时 TTS 单词发音的播放倍速（变速不变调），与有声书播放倍速无关。",
   "models_tts_fallback_voice": "兜底声音",
   "models_tts_fallback_voice_hint": "找不到单词音频时用哪个声音合成",
   "models_tts_fallback_voice_missing": "所选声音已被删除",

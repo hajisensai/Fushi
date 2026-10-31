@@ -24,6 +24,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/utils.dart';
 
 /// 「游戏」一级设置分类（审计 K / Phase 3.12：游戏域此前没有任何 destination，
@@ -220,8 +221,8 @@ SettingsDestination buildGameDestination() {
             visible: (_) => Platform.isWindows,
             min: kGalLineTtsSpeedMin,
             max: kGalLineTtsSpeedMax,
-            divisions: 55,
-            step: 0.05,
+            divisions: kPlaybackSpeedDivisions,
+            step: kPlaybackSpeedStep,
             defaultValue: 1.0,
             titleReadout: true,
             commitOnRelease: true,
@@ -233,9 +234,7 @@ SettingsDestination buildGameDestination() {
                 settingsContext,
               );
               await c.setLineTtsSettings(
-                c.lineTtsSettings.copyWith(
-                  speed: (v * 20).roundToDouble() / 20,
-                ),
+                c.lineTtsSettings.copyWith(speed: snapPlaybackSpeed(v)),
               );
               settingsContext.refresh();
             },
