@@ -25,9 +25,9 @@ mpv 拿不到明文，插件路线最多到 30 秒试听。合规播放只能让
 |---|---|---|---|---|
 | iOS ≥15.1 | Swift MusicKit `ApplicationMusicPlayer` + `MusicCatalog*Request` | ✅ | App ID 勾 MusicKit 服务后**自动生成** | 需 `NSAppleMusicUsageDescription` |
 | macOS ≥14（本仓最低 13.4） | 同上，`#available(macOS 14)` 守卫，13.x 不提供 | ⚠ | 同上 | 论坛报：原生 target 偶有不工作（Catalyst 正常）、AirPlay 路由无效、无应用级音量、26.3 早期构建播放失效 |
-| Windows | 隐藏 WebView2 跑 MusicKit JS v3，JS 桥控制 | ⚠ | 需签 ES256 JWT（含 origin 声明） | WebView2 走 Edge 运行时，Widevine 据称开箱可用但无官方文档；论坛有 Windows Chrome/Edge 上 `authorize()` 报 Unauthorized 的未解帖；页面必须从 https 源加载 |
+| Windows | 隐藏 WebView2 跑 MusicKit JS v3，JS 桥控制 | ⚠ | Worker 代签（§3.6） | WebView2 走 Edge 运行时，Widevine 据称开箱可用但无官方文档；论坛有 Windows Chrome/Edge 上 `authorize()` 报 Unauthorized 的未解帖；页面必须从 https 源加载 |
 | Android | 隐藏 Android WebView 跑 MusicKit JS | ⚠ | 同 Windows | 官方 MusicKit for Android SDK 多年未更新、AAR 专有不可再分发，**不采用** |
-| Linux | 不提供 | ❌ | — | WPE WebKit 无 Widevine，也无官方 Apple Music app |
+| Linux | 只浏览 + 30 s 试听（catalog REST + 预览 m4a 走 mpv） | ❌ | Worker 代签 | WPE WebKit 无 Widevine，也无官方 Apple Music app |
 
 MusicKit JS 经网页播放上限 256 kbps AAC（原生 MusicKit 由系统决定，可能更高，含无损与否待测）。
 
@@ -90,12 +90,25 @@ catalog 查询也走桥：原生用 `MusicCatalogSearchRequest` / `MusicCatalogR
 - **卡片音频：不提供**。拿不到 PCM，录制输出违反 MusicKit 条款；卡片只有文本 + 封面，UI 写明原因。
 - 听歌时长进学习统计：照常（`music_study_tracker.dart` 只读引擎状态）。
 
-### 3.6 网页端 token 与页面托管
+### 3.6 developer token 与页面托管（2026-10-31 已落地签发端）
 
-- MusicKit JS 需要开发者 JWT（ES256，MusicKit 私钥签，`origin` 声明锁定页面源，最长 6 个月）。
-- 方案：页面 `musickit/index.html` 托管在 Fushi 自有 https 域名；**CI 用仓库 secret 里的私钥签
-  token 并在部署时注入页面**，按月重签。运行时无需签发服务，私钥不进 app、不进仓库。
-  （网页端 developer token 本来就对访客可见，`origin` 声明是它的约束手段。）
+- 签发端：排行榜 Worker `GET https://rank.fushi.moe/v1/musickit/token` → `{token, expiresAt}`
+  （PR hajisensai/Fushi#2712，`services/leaderboard/src/musickit.js`；ES256、claims 只有
+  `iss/iat/exp`、**无 `origin` 声明**、有效 1 天、过半重签、免登录按 IP 限流、缺 secret 回 503）。
+  私钥只在 Worker secret，不进 app / git / GitHub secrets。密钥登记见 `docs/agent/apple-signing.md`
+  「MusicKit 密钥」。
+- 客户端：Dart 侧 `AppleMusicTokenSource` 取 token 并缓存到 `expiresAt` 前；503 / 网络失败时
+  Apple Music 来源整体显示「暂不可用」，不影响其它音乐来源。
+- **catalog 浏览因此不必经桥**：五端（含 Linux）都可由 Dart 直接调 `api.music.apple.com`
+  （`createAppHttpClient`，走全应用代理）；§3.1 的桥只负责授权、订阅状态与播放。
+  用户私有数据（资料库、喜欢）需要 Music-User-Token，仍由桥授权后取得。
+- Apple 平台原生 MusicKit **不用这枚 token**（系统按 App ID 自动生成），但 App ID 仍须勾 MusicKit 服务。
+- 网页桥：MusicKit JS 页面（`musickit/index.html`）仍须从 https 源加载（`authorize()` 不认
+  `file://` / 自定义 scheme），可由同一 Worker 托管（如 `rank.fushi.moe/musickit/`），页面启动时向
+  `/v1/musickit/token` 取 token 后 `MusicKit.configure`。token 无 origin 声明，页面源不受限。
+- 取舍：免登录端点等于任何人都能拿到一枚有效 token（网页版 MusicKit 应用的 token 本来也对访客
+  可见，行业通行做法）；风险是被滥用触发 Apple 侧限流 / 吊销而全体用户同时失效。1 天有效期 +
+  IP 限流是现有缓解；若出现滥用，再加 app 安装签名校验（复用排行榜现有账户签名）。
 - 用户登录：MusicKit JS `authorize()` 弹 Apple ID 登录，得 Music-User-Token，WebView 存储隔离在
   独立 profile；退出时清除。
 
@@ -121,7 +134,8 @@ catalog 查询也走桥：原生用 `MusicCatalogSearchRequest` / `MusicCatalogR
 | P0 spike | ① Mac + iPhone：Flutter 宿主里 `ApplicationMusicPlayer` 整曲播放、进度、Now Playing 与 audio_service 共存；② Windows WebView2 + MusicKit JS：`authorize()`、整曲（非 30 s）播放、SMTC 是否多出会话；③ Android WebView 同②；每项记证据 | §9 ①② |
 | P1 | `MusicBackendCapabilities` + `MusicRoutingBackend`（只有 mpv 一个子后端，行为不变，单测钉跨后端推进） | 可先做 |
 | P2 | Apple 平台：Swift 桥 + `AppleMusicNativeBridge` + 来源浏览 + 设置页 | P0① 通过 |
-| P3 | Windows：托管页 + CI 签 token + `AppleMusicWebBridge` | P0② 通过、§9 ③ |
+| P1b | `AppleMusicTokenSource` + catalog REST 来源（五端浏览 + 预览试听走 mpv） | #2712 合入并部署 |
+| P3 | Windows：Worker 托管页 + `AppleMusicWebBridge` | P0② 通过、§9 ③ |
 | P4 | Android：复用 P3 的网页桥 | P0③ 通过 |
 
 验证：每阶段在真机走「搜索 → 播放整曲 → 歌词逐字跟随 → 点词查词 → 学习统计入账」；
@@ -149,9 +163,9 @@ Apple 平台按全局规则在 `ssh mac` 上验（iPhone 真机 + macOS 14+）�
 ## 9. 待所有者拍板
 
 1. 是否同意 Fushi 本体内置 Apple Music 官方集成（不同于 10-29 的插件改判，这是本体能力）。
-2. 在所有者的 Apple 开发者账号里：主 App ID（iOS / macOS）勾选 MusicKit 服务；新建一把 MusicKit
-   私钥（网页端用），放进仓库 secrets。
-3. 网页端托管页放哪个 https 域名（`origin` 声明锁死它），以及 CI 部署归属。
+2. ~~新建 MusicKit 私钥~~（已完成，进 Worker secret，§3.6）；**仍待**：主 App ID（iOS / macOS）
+   勾选 MusicKit 服务（原生播放只认这个，与 Worker token 无关）。
+3. 网页桥托管页是否放排行榜 Worker（`rank.fushi.moe/musickit/`）。
 4. macOS 是否接受「仅 14+、稳定性视 spike 结果」，不行就先只上 iOS。
 
 ## 参考
