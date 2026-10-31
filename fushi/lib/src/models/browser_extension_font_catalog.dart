@@ -168,8 +168,11 @@ class BrowserExtensionFontCatalog implements ExtensionFontApi {
       allowedRoots: <String>[customFontsDirectory(_appModel.appDirectory).path],
     );
     if (safePath == null) return null;
-    if (!configuredDictionaryFontPaths(_appModel)
-        .contains(p.canonicalize(safePath))) {
+    // 白名单 = App 当前生效配置启用的词典字体 + 浏览器扩展所选的非激活配置启用过的
+    // （反馈 biLEesNqWb：那个配置的查词弹窗按它自己的字体渲染）。仍只认字体目录里的文件。
+    final String canonical = p.canonicalize(safePath);
+    if (!configuredDictionaryFontPaths(_appModel).contains(canonical) &&
+        !_appModel.extensionProfileViewDictionaryFontPaths.contains(canonical)) {
       return null;
     }
     final File file = File(safePath);

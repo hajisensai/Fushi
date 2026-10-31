@@ -155,7 +155,6 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        ProfileMediaKind,
         VideoBookRow,
         VideoBooksCompanion;
 import 'package:fushi/src/media/media_item.dart';
@@ -646,20 +645,13 @@ void main([List<String> args = const <String>[]]) {
       await FushiDicts.preloadTransforms();
 
       final appModel = container.read(appProvider);
-      // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
-      // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
-      // 查词是与正在看的条目并存的旁路活动：只应用命中的「浏览器」绑定，无绑定时
-      // 不回退、不消费回退点（否则阅读器背后的配置会被一次查词换掉）。
-      appModel.browserLookupProfileApplier = () => container
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            mediaType: ProfileMediaKind.browser,
-            restoreFallback: false,
-          );
-      // 反馈 biLEesNqWb：浏览器扩展里手动选配置。查词 / 制卡请求带所选配置时，server 先
-      // 让它生效（等同「浏览器」绑定命中，压过该绑定）再处理。同样须在 initialise() 之前。
-      appModel.browserExtensionProfileApi = ProfileViewModelExtensionProfileApi(
-        () => container.read(profileViewModelProvider.notifier),
+      // 反馈 biLEesNqWb（并入 TODO-2936 的「浏览器」媒体类型绑定）：扩展请求按哪份配置处理
+      // ——扩展手动所选 > 「浏览器」绑定 > 跟随 App；都只影响扩展请求、按该配置的只读设置
+      // 视图读设置，不切换 App 的激活配置。须在 initialise() 之前注入（server 在其内启动）。
+      appModel.browserExtensionProfileApi = AppExtensionProfileApi(
+        repository: () => container.read(profileRepositoryProvider),
+        database: () => appModel.database,
+        servicesForView: appModel.extensionRequestServicesForView,
       );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
