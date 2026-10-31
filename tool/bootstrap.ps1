@@ -425,6 +425,22 @@ if ($patchExit -ne 0) {
     throw "ci/apply-patches.sh failed (bash: $gitBash, exit $patchExit)."
 }
 
+# fushi/lib/i18n/strings.g.dart 不入库：由 i18n json 生成（slang + dart format，带戳记，
+# 输入没变秒退）。用 pub get 那份 SDK 的 dart。
+$dartExe = Join-Path (Split-Path -Parent $flutter) $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'dart.bat' } else { 'dart' })
+Write-Host "Generating i18n (fushi/tool/gen_i18n.dart)..." -ForegroundColor Cyan
+Push-Location $root
+try {
+    & $dartExe fushi/tool/gen_i18n.dart
+    $genExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+if ($genExit -ne 0) {
+    throw "fushi/tool/gen_i18n.dart failed (exit $genExit)."
+}
+
 # --- Rust 原生硬依赖（fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv）------------------
 # 备库逻辑（戳记复用 / 兄弟 worktree 拷贝 / 编译）在 tool/native_libs.ps1，已有 worktree 缺库时也可单独跑它。
 if ($SkipNativeCompute -or $env:FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE) {

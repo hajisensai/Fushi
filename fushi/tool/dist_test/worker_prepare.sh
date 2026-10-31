@@ -32,16 +32,26 @@ trap 'kill "$heartbeat" 2>/dev/null; rm -f "$state/prepare.pid"' EXIT
 # is still set; the batches then run against the warm hook cache.
 pub_key=$(git ls-files -s -- ':(glob)**/pubspec.yaml' ':(glob)**/pubspec.lock' \
   ci/patches ci/apply-patches.sh | git hash-object --stdin)
+deps_changed=
 if [ "$(cat "$state/pub.key" 2>/dev/null || true)" != "$pub_key" ]; then
   echo "==> pub get"
   (cd fushi && flutter pub get --enforce-lockfile)
   echo "==> pub cache patches"
   bash ci/apply-patches.sh
+  deps_changed=1
+else
+  echo "==> dependencies unchanged"
+fi
+# fushi/lib/i18n/strings.g.dart is not tracked and `git clean` (no -x) keeps
+# the previous snapshot's copy: regenerate on every prepare. gen_i18n.dart is
+# stamped on the json / lockfile / SDK and the output's own hash, so an
+# unchanged snapshot costs a hash, a changed one a fresh slang + format.
+echo "==> i18n (fushi/tool/gen_i18n.dart)"
+"$(dirname "$(command -v flutter)")/dart" fushi/tool/gen_i18n.dart
+if [ -n "$deps_changed" ]; then
   echo "==> warm native-asset hooks"
   (cd fushi && flutter test --no-pub test/tools/test_file_shards_test.dart > /dev/null)
   echo "$pub_key" > "$state/pub.key"
-else
-  echo "==> dependencies unchanged"
 fi
 
 # Rust test hard dependencies (same crate list as tool/bootstrap.sh and

@@ -196,12 +196,13 @@ melos:
     bootstrap:
       # workspace 下 pub 只在根解析一次，melos 不再需要写 pubspec_overrides.yaml
       # （usePubspecOverrides 是 Melos 6 时代给独立解析用的）。这里只保留装完
-      # 依赖后的收尾：打非 vendored 的 pub-cache 补丁。需要 bash（Windows 上是
+      # 依赖后的收尾：打非 vendored 的 pub-cache 补丁，再生成不入库的
+      # fushi/lib/i18n/strings.g.dart（fushi/tool/gen_i18n.dart）。需要 bash（Windows 上是
       # Git Bash）。Windows 原生路径是 tool/bootstrap.ps1 —— melos bootstrap 在
       # Windows 有 CJK 编码 bug。
       hooks:
         post: |
-          bash ci/apply-patches.sh
+          bash ci/apply-patches.sh && dart fushi/tool/gen_i18n.dart
 
   scripts:
     analyze:
