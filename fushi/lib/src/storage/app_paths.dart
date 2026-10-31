@@ -492,6 +492,9 @@ class AppPaths {
   static Future<Directory> _resolveTempRoot() async =>
       fushiTestDirectory('temp') ?? await getTemporaryDirectory();
 
+  static Future<Directory> _resolveAppCacheRoot() async =>
+      fushiTestDirectory('app-cache') ?? await getApplicationCacheDirectory();
+
   /// 给迁移引擎（E1）/ 设置 UI（E2）复用的纯派生：把一个 dataRoot 绝对路径映射成它
   /// 派生的 (documentsRoot, supportRoot) 对，子目录名与 [_resolveDocumentsRoot] /
   /// [_resolveSupportRoot] 的 dataRoot 分支逐字节一致。
@@ -628,6 +631,13 @@ class AppPaths {
 
   /// 临时目录。等价于过去的 `getTemporaryDirectory()`。
   static Future<Directory> tempRootDirectory() => _resolveTempRoot();
+
+  /// 本 app 专属的缓存目录（`getApplicationCacheDirectory()`）。
+  ///
+  /// 与 [tempRootDirectory] 不同：未沙盒的 macOS 上临时根是全用户共享的
+  /// `~/Library/Caches`，这里是追加了 bundle id 的子目录，只属于 Fushi。
+  /// 需要「这个目录里的东西全是我们的」时（存储页统计 / 清理）用它。
+  static Future<Directory> appCacheRootDirectory() => _resolveAppCacheRoot();
 
   /// `<documents>/<child>` 的绝对路径目录（不创建）。集中派生点，保证各模块对同一
   /// 子目录名拿到逐字节一致的绝对路径。

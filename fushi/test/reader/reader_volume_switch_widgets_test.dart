@@ -13,13 +13,16 @@ import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/reader/lyrics_cue_search.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiCircularProgressIndicator;
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi_engine/epub/epub_book.dart'
+    show EpubBook, EpubChapter, EpubImageRef;
 
 import '../helpers/test_platform_services.dart';
 
@@ -234,6 +237,351 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(switched, <(int, int?)>[(1, null)]);
+    });
+  });
+
+  group('ReaderQuickSettingsSheet volume chips: current volume centred', () {
+    // 用户实报：合集十几卷时当前卷在行尾、要自己横滚才找得到。
+    final List<String> labels = <String>[
+      for (int i = 1; i <= 8; i++) '安達としまむら$i',
+    ];
+
+    ScrollPosition chipScroll(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('reader-toc-volume-chips')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+
+    Future<void> pumpAt(WidgetTester tester, int current, Size surface) async {
+      // 复用上一组的 harness：重新声明一份最小版本，避免把 group 间状态耦起来。
+      await tester.binding.setSurfaceSize(surface);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      final AppModel model = _testAppModel(db);
+      final ReaderSettings? previous = ReaderFushiSource.readerSettings;
+      ReaderFushiSource.readerSettings = ReaderSettings(db)
+        ..applyPrefsSnapshot(const <String, String>{});
+      addTearDown(() => ReaderFushiSource.readerSettings = previous);
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: Consumer(
+                builder: (BuildContext context, WidgetRef ref, _) =>
+                    ReaderQuickSettingsSheet(
+                      controller: null,
+                      toc: const <TtuTocEntry>[
+                        TtuTocEntry(index: 0, label: 'Cur-1'),
+                      ],
+                      readerProgress: const (0, 1),
+                      onJumpSection: (int _, String? __) async {},
+                      onExitReader: () {},
+                      webViewController: _FakeInAppWebViewController(),
+                      appModel: model,
+                      ref: ref,
+                      isFushiReader: true,
+                      presentation:
+                          ReaderQuickSettingsPresentation.sideSheetNavigation,
+                      onStyleChanged: () async {},
+                      onThemeChanged: () async {},
+                      volumeSwitch: ReaderTocVolumeSwitch(
+                        labels: labels,
+                        currentIndex: current,
+                        tocOf: (int _) async => const <TtuTocEntry>[],
+                        onJump: (int _, int? __) async {},
+                      ),
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    double viewportCenterX(WidgetTester tester) => tester
+        .getCenter(
+          find.byKey(const ValueKey<String>('reader-toc-volume-chips')),
+        )
+        .dx;
+
+    double chipCenterX(WidgetTester tester, int i) => tester
+        .getCenter(find.byKey(ValueKey<String>('reader-toc-volume-chip-$i')))
+        .dx;
+
+    for (final Size surface in const <Size>[
+      Size(400, 1600),
+      Size(1000, 1600),
+    ]) {
+      testWidgets('middle volume → its chip is centred (${surface.width})', (
+        WidgetTester tester,
+      ) async {
+        await pumpAt(tester, 4, surface);
+        final ScrollPosition pos = chipScroll(tester);
+        expect(
+          pos.maxScrollExtent,
+          greaterThan(0),
+          reason: '8 卷的 chip 行在该宽度下必须溢出，否则测不出居中',
+        );
+        expect(pos.pixels, greaterThan(0));
+        expect(chipCenterX(tester, 4), closeTo(viewportCenterX(tester), 1.0));
+      });
+    }
+
+    testWidgets('third volume (user report) → centred on a phone-width panel', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, 2, const Size(400, 1600));
+      expect(chipScroll(tester).pixels, greaterThan(0));
+      expect(chipCenterX(tester, 2), closeTo(viewportCenterX(tester), 1.0));
+    });
+
+    testWidgets('first volume → row stays at the start edge', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, 0, const Size(400, 1600));
+      expect(chipScroll(tester).pixels, 0);
+    });
+
+    testWidgets('last volume → row pinned to the end edge', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, 7, const Size(400, 1600));
+      final ScrollPosition pos = chipScroll(tester);
+      expect(pos.maxScrollExtent, greaterThan(0));
+      expect(pos.pixels, pos.maxScrollExtent);
+    });
+
+    testWidgets('centring happens once: picking another chip does not scroll', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, 4, const Size(400, 1600));
+      final ScrollPosition pos = chipScroll(tester);
+      pos.jumpTo(0);
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('reader-toc-volume-chip-0')),
+      );
+      await tester.pumpAndSettle();
+      expect(pos.pixels, 0);
+    });
+  });
+
+  group('ReaderQuickSettingsSheet lyrics-mode subtitle search', () {
+    List<AudioCue> cues() => <AudioCue>[
+      for (final String text in <String>[
+        '桜が咲いた',
+        'しまむらはアダチを見た',
+        '体育館の二階',
+        '安達はしまむらを見た',
+      ])
+        AudioCue()
+          ..bookKey = 'b'
+          ..chapterHref = 'c.xhtml'
+          ..sentenceIndex = 0
+          ..textFragmentId = ''
+          ..text = text
+          ..startMs = 0
+          ..endMs = 1000
+          ..audioFileIndex = 0,
+    ];
+
+    Future<void> pumpLyrics(
+      WidgetTester tester, {
+      required ReaderLyricsCueSearch? search,
+      bool lyricsMode = true,
+      EpubBook? epubBook,
+      Future<void> Function(BookSearchResult, String)? onSearchJump,
+    }) async {
+      await tester.binding.setSurfaceSize(const Size(400, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      final AppModel model = _testAppModel(db);
+      final ReaderSettings? previous = ReaderFushiSource.readerSettings;
+      ReaderFushiSource.readerSettings = ReaderSettings(db)
+        ..applyPrefsSnapshot(const <String, String>{});
+      addTearDown(() => ReaderFushiSource.readerSettings = previous);
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: Consumer(
+                builder: (BuildContext context, WidgetRef ref, _) =>
+                    ReaderQuickSettingsSheet(
+                      controller: null,
+                      toc: const <TtuTocEntry>[
+                        TtuTocEntry(index: 0, label: 'Cur-1'),
+                      ],
+                      readerProgress: const (0, 1),
+                      onJumpSection: (int _, String? __) async {},
+                      onExitReader: () {},
+                      webViewController: _FakeInAppWebViewController(),
+                      appModel: model,
+                      ref: ref,
+                      isFushiReader: true,
+                      presentation:
+                          ReaderQuickSettingsPresentation.sideSheetNavigation,
+                      onStyleChanged: () async {},
+                      onThemeChanged: () async {},
+                      lyricsMode: lyricsMode,
+                      lyricsCueSearch: search,
+                      epubBook: epubBook,
+                      onSearchJump: onSearchJump,
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    final Finder searchTab = find.byKey(
+      const ValueKey<String>('reader-nav-tab-search'),
+    );
+
+    testWidgets('lyrics mode without cue search: no search tab (as before)', (
+      WidgetTester tester,
+    ) async {
+      await pumpLyrics(tester, search: null);
+      expect(searchTab, findsNothing);
+    });
+
+    testWidgets(
+      'lyrics mode: search tab appears; query hits cues through the shared '
+      'normalisation; tapping a result reports that cue',
+      (WidgetTester tester) async {
+        final List<AudioCue> list = cues();
+        final List<String> queries = <String>[];
+        final List<AudioCue> jumped = <AudioCue>[];
+        await pumpLyrics(
+          tester,
+          search: ReaderLyricsCueSearch(
+            cues: list,
+            search: (String q) async {
+              queries.add(q);
+              return searchLyricsCueTexts(<String>[
+                for (final AudioCue c in list) c.text,
+              ], q);
+            },
+            locationLabel: (AudioCue c) => 'Chapter X · 00:01',
+            onJump: (AudioCue c) async => jumped.add(c),
+          ),
+        );
+        expect(searchTab, findsOneWidget);
+        await tester.tap(searchTab);
+        await tester.pumpAndSettle();
+        expect(find.text("Search this audiobook's subtitles"), findsOneWidget);
+
+        await tester.enterText(find.byType(EditableText), 'シマムラ');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(queries, <String>['シマムラ']);
+        expect(
+          find.byKey(const ValueKey<String>('lyrics_search_result_0')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('lyrics_search_result_1')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('lyrics_search_result_2')),
+          findsNothing,
+        );
+        expect(find.text('Chapter X · 00:01'), findsNWidgets(2));
+        expect(
+          find.byKey(const ValueKey<String>('lyrics_search_truncated')),
+          findsNothing,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('lyrics_search_result_1')),
+        );
+        await tester.pumpAndSettle();
+        expect(jumped, hasLength(1));
+        expect(identical(jumped.single, list[3]), isTrue);
+      },
+    );
+
+    testWidgets(
+      'non-lyrics mode unchanged: book search tab with the book hint',
+      (WidgetTester tester) async {
+        await pumpLyrics(
+          tester,
+          search: null,
+          lyricsMode: false,
+          epubBook: EpubBook(
+            title: 'Book',
+            chapters: <EpubChapter>[
+              EpubChapter(
+                id: 'a',
+                href: 'a.xhtml',
+                mediaType: 'x',
+                html: '<p>a</p>',
+              ),
+            ],
+          ),
+          onSearchJump: (BookSearchResult _, String __) async {},
+        );
+        expect(searchTab, findsOneWidget);
+        await tester.tap(searchTab);
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Search the whole book, or jump to a character position'),
+          findsOneWidget,
+        );
+        expect(find.text("Search this audiobook's subtitles"), findsNothing);
+      },
+    );
+
+    testWidgets('more hits than the cap → truncation note', (
+      WidgetTester tester,
+    ) async {
+      final List<AudioCue> list = <AudioCue>[
+        for (int i = 0; i < 3; i++)
+          AudioCue()
+            ..bookKey = 'b'
+            ..chapterHref = 'c.xhtml'
+            ..sentenceIndex = i
+            ..textFragmentId = ''
+            ..text = 'しまむら$i'
+            ..startMs = 0
+            ..endMs = 1
+            ..audioFileIndex = 0,
+      ];
+      await pumpLyrics(
+        tester,
+        search: ReaderLyricsCueSearch(
+          cues: list,
+          search: (String q) async => searchLyricsCueTexts(
+            <String>[for (final AudioCue c in list) c.text],
+            q,
+            limit: 2,
+          ),
+          locationLabel: (AudioCue _) => '',
+          onJump: (AudioCue _) async {},
+        ),
+      );
+      await tester.tap(searchTab);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(EditableText), 'しまむら');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(find.text('Showing the first 2 of 3 matches'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('lyrics_search_result_1')),
+        findsOneWidget,
+      );
     });
   });
 

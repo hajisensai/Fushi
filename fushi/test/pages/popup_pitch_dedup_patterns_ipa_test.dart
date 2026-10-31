@@ -134,12 +134,16 @@ void main() {
         File('lib/src/models/app_model.dart').readAsStringSync();
     expect(
       appModel,
-      contains("'--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',"),
+      contains("'--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',"),
       reason:
           'app_model must send the pitch-dedup preference to the extension; '
           'without it window.deduplicatePitchAccents is undefined in the '
           'browser and the dedup branch never runs',
     );
+    // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路
+    // 填，两路都必须接到「音调去重」偏好上。
+    expect(appModel, contains('dedupPitch: deduplicatePitchAccents,'));
+    expect(appModel, contains('dedupPitch: p.deduplicatePitchAccents,'));
 
     contentMirrors.forEach((String name, String relPath) {
       final File file = File(relPath);

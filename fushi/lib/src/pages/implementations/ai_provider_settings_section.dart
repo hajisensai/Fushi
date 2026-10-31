@@ -1087,6 +1087,10 @@ class _AiProviderSettingsSectionState
         showIcon: true,
         title: title,
         subtitle: summary,
+        // 按钮的真实最大宽（见 [_aiChoiceMaxWidth]）。不声明的话堆叠判据套 220 的
+        // 经验值，手机宽度（~360）仍走行内布局，标题与说明被挤到十几 dp、一字一行。
+        // 声明后窄行把按钮落到标题下一行。
+        trailingWidth: _aiChoiceMaxWidth(context),
         trailing: _AiChoiceButton(
           key: menuKey,
           semanticLabel: title,
@@ -1636,6 +1640,31 @@ class _ProbeState {
   final String message;
 }
 
+/// [_AiChoiceButton] 当前值文字的最大宽（提供商 / 模型名普遍偏长，超出省略）。
+const double _kAiChoiceLabelMaxWidth = 200;
+
+/// MD3 形态的水平几何：按钮左右内边距（显式钉在按钮 style 上，不吃主题默认值）、
+/// 值与下拉箭头的间距、箭头尺寸。
+const double _kAiChoiceButtonHorizontalPadding = 12;
+const double _kAiChoiceArrowGap = 2;
+const double _kAiChoiceArrowSize = 22;
+
+/// MD3 [_AiChoiceButton] 的最大宽度：由上面几项推出，与按钮布局同源。
+const double _kAiChoiceMd3MaxWidth =
+    2 * _kAiChoiceButtonHorizontalPadding +
+    _kAiChoiceLabelMaxWidth +
+    _kAiChoiceArrowGap +
+    _kAiChoiceArrowSize;
+
+/// [_AiChoiceButton] 在当前设计系统下的最大宽度：给 [AdaptiveSettingsRow.trailingWidth]，
+/// 让行的堆叠判据跟着按钮走（改 [_kAiChoiceLabelMaxWidth] 判据自动跟上）。
+double _aiChoiceMaxWidth(BuildContext context) => isGlassDesign(context)
+    ? GlassSettingsPopUpButton.maxFaceWidth(
+        context,
+        maxLabelWidth: _kAiChoiceLabelMaxWidth,
+      )
+    : _kAiChoiceMd3MaxWidth;
+
 /// 设置行尾的单选弹出按钮：当前值 + 下拉箭头，点开菜单（当前项打勾）。
 ///
 /// - Apple：共享的 [GlassSettingsPopUpButton]（macOS 弹出按钮 / iOS pull-down）；
@@ -1713,7 +1742,7 @@ class _AiChoiceButtonState extends State<_AiChoiceButton> {
         labels: widget.labels,
         selectedIndex: widget.selectedIndex,
         onChanged: widget.onChanged,
-        maxLabelWidth: 200,
+        maxLabelWidth: _kAiChoiceLabelMaxWidth,
       );
     }
     final int? selected = widget.selectedIndex;
@@ -1726,11 +1755,19 @@ class _AiChoiceButtonState extends State<_AiChoiceButton> {
       key: _anchorKey,
       child: FushiTextButton(
         onPressed: () => unawaited(_openMenu()),
+        // 内边距显式钉住：[_kAiChoiceMd3MaxWidth] 按它推按钮最大宽。
+        style: const ButtonStyle(
+          padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+            EdgeInsets.symmetric(horizontal: _kAiChoiceButtonHorizontalPadding),
+          ),
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 200),
+              constraints: const BoxConstraints(
+                maxWidth: _kAiChoiceLabelMaxWidth,
+              ),
               child: Text(
                 value,
                 maxLines: 1,
@@ -1740,10 +1777,10 @@ class _AiChoiceButtonState extends State<_AiChoiceButton> {
                 ),
               ),
             ),
-            const SizedBox(width: 2),
+            const SizedBox(width: _kAiChoiceArrowGap),
             FushiIcon(
               FushiIcons.dropDown,
-              size: 22,
+              size: _kAiChoiceArrowSize,
               color: theme.colorScheme.primary,
             ),
           ],

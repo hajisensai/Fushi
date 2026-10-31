@@ -170,14 +170,26 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         // 覆盖层期间正文看不见，必须跟着音频走才能替用户记字数——即便用户关了
         // 「跟随音频」（那个开关在歌词模式只管歌词列表自己滚不滚）。
         _audiobookController!.setReaderFollowOverride(true);
-        // 挂上覆盖层：歌词 WebView 在 onWebViewCreated 里装载歌词文档。
+        // 挂上覆盖层。第一次进入：歌词 WebView 在 onWebViewCreated 里装载歌词文档；
+        // 之后（BUG-3913）同一个实例从屏外停放位搬回覆盖层，这里直接重装文档。
+        // 就绪前透明（_lyricsPageReady），上一轮的旧文档不会露出来。两个字段随下面
+        // 这次 _rebuild 一起生效。
+        _lyricsWebViewRetained = true;
+        _lyricsPageReady = false;
         _rebuild(() => _lyricsMode = true);
         // 查词弹窗换成歌词页主题：Apple 深色档当场生效（app 已是深色时宿主主题
         // 不变、不会发布通知）；MD3 封面取色到达后经宿主通知再换一次。
         _syncDictionaryTheme();
+        if (_lyricsWebViewController != null) unawaited(_loadLyricsPage());
         // 书中插图：后台探测尺寸、筛掉外字 / 装饰小图，装好后封面位才开始换图。
         unawaited(_prepareLyricsIllustrations());
       } else {
+        // 停放前量下歌词 WebView 的尺寸（BUG-3913）：停在屏外时按同一尺寸摆。
+        final RenderObject? lyricsBox = _lyricsWebViewKey.currentContext
+            ?.findRenderObject();
+        if (lyricsBox is RenderBox && lyricsBox.hasSize) {
+          _lyricsWebViewParkedSize = lyricsBox.size;
+        }
         _rebuild(() => _lyricsMode = false);
         // 查词弹窗立即回到阅读器主题（不等覆盖层卸载后宿主再发布）。
         _syncDictionaryTheme();
@@ -420,16 +432,17 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   Future<void> _exitLyricsMode() async {
     ++_lyricsLoadGeneration;
     ++_lyricsIllustrationGeneration;
+    _endLyricsIllustrationStay();
     _lyricsIllustrations = null;
     _lyricsReadyFinalizingGeneration = null;
     _lyricsDocumentLoadGeneration = null;
-    // 歌词 WebView 随覆盖层一起卸载，lyrics caret JS 随之消失；复位 surface，
-    // 否则方向键/A 会被误路由到已不存在的 fushiLyricsCaret。
+    // 歌词 WebView 停到屏外（BUG-3913：实例复用，不卸载），[_lyricsController] 随
+    // `_lyricsMode` 置 null；复位 surface，否则方向键/A 会被误路由到停放中的
+    // fushiLyricsCaret。下次进入重装文档，caret 随文档重新注入。
     if (_caretSurface == CaretSurface.lyrics) {
       _rebuild(() => _caretSurface = CaretSurface.none);
     }
     if (isDictionaryShown) clearDictionaryResult();
-    _lyricsController = null;
     _lyricsPageReady = false;
     _pendingLyricsHintOnReady = false;
     _lyricsCueIndexOffset = 0;
@@ -466,10 +479,19 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   // 设计系统外观（Apple Music / MD3 播放页）与按钮回调；**不写任何统计**——覆盖层
   // 上的读数是读阅读器现成的数据（[_ReaderLyricsClock]）。
 
-  /// 覆盖层（非歌词模式时是一个零尺寸占位，保持主 Stack 孩子数恒定）。
+  /// 覆盖层。不在歌词模式时：歌词 WebView 挂上过就停在屏外（BUG-3913，实例复用），
+  /// 否则是一个零尺寸占位——两者都占主 Stack 同一个孩子位，保持孩子数恒定。
   Widget _buildLyricsOverlay() {
     final AudiobookPlayerController? ctrl = _audiobookController;
-    if (!_lyricsMode || ctrl == null) return const SizedBox.shrink();
+    if (!_lyricsMode || ctrl == null) {
+      if (!_lyricsWebViewRetained) return const SizedBox.shrink();
+      // 同一个 [_lyricsWebViewKey]：进出覆盖层时 Flutter 把整棵 WebView 子树（含
+      // 原生实例）搬过去，不销毁重建。
+      return ParkedWebViewSlot(
+        size: _lyricsWebViewParkedSize,
+        child: _buildLyricsWebView(),
+      );
+    }
     return Positioned.fill(
       // BUG-1692 同款：排在正文 WebView 之后绘制的层自带 RepaintBoundary。
       child: RepaintBoundary(
@@ -518,8 +540,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       statsTimerPaused: _studyClockManualPause,
-      illustrations: _lyricsIllustrations,
+      illustrations: _lyricsIllustrations
+        // 提示方式随设置面板实时生效（只影响之后的自动弹出，不通知监听者）。
+        ?..autoOpenCard =
+            ReaderFushiSource.instance.lyricsIllustrationCue ==
+            LyricsIllustrationCue.popup,
       sidesMirrored: ReaderFushiSource.instance.lyricsPanelMirrored,
+      controlsStyle: ReaderFushiSource.instance.lyricsControlsStyle,
+      compactControlsExpanded:
+          ReaderFushiSource.instance.lyricsControlsExpanded,
       wideControls: ReaderFushiSource.instance.lyricsControlLayoutFor(
         compact: false,
       ),
@@ -563,6 +592,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             _openLyricsIllustrationViewer(index, returnToCover: returnToCover),
           ),
       onSwapSides: () => unawaited(_toggleLyricsSides()),
+      onCompactControlsExpandedChanged: (bool expanded) =>
+          unawaited(_setLyricsControlsExpanded(expanded)),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -739,6 +770,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (mounted) _rebuild(() {});
   }
 
+  /// 新版窄屏播放卡展开 / 收起（偏好 `lyrics_controls_expanded`，记住上次状态）。
+  /// 只换覆盖层布局：歌词 WebView 仍是同一个孩子、只换矩形。
+  Future<void> _setLyricsControlsExpanded(bool expanded) async {
+    final ReaderFushiSource src = ReaderFushiSource.instance;
+    if (src.lyricsControlsExpanded == expanded) return;
+    await src.setLyricsControlsExpanded(expanded);
+    if (mounted) _rebuild(() {});
+  }
+
   /// 👁：歌词遮罩（听力沉浸模糊，设置项 `lyrics_blur`）。与设置面板同一个偏好。
   Future<void> _toggleLyricsMask() async {
     final ReaderFushiSource src = ReaderFushiSource.instance;
@@ -761,6 +801,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final AudiobookPlayerController? ctrl = _audiobookController;
     final bool wide = lyricsPlayerIsWide(MediaQuery.sizeOf(menuContext));
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
+      // 新版宽屏右岛放不下、收进 ⋯ 的按钮排最前（顺序 = 岛上的显示顺序）。
+      if (ctrl != null)
+        for (final LyricsControlItem item in menuAnchor.collapsedItems)
+          ?_lyricsControlMenuAction(item, ctrl, menuAnchor, wide: wide),
       if (ctrl != null)
         for (final LyricsControlItem item
             in ReaderFushiSource.instance
@@ -921,6 +965,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 当前播放位置定好「已听到」的基线（基线之前的插图不弹出）。
   Future<void> _prepareLyricsIllustrations() async {
     final int generation = ++_lyricsIllustrationGeneration;
+    _endLyricsIllustrationStay();
     _lyricsIllustrations = null;
     final EpubBook? book = _book;
     final String? extractDir = _extractDir;
@@ -963,12 +1008,18 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (items.isEmpty) return;
     final AudiobookPlayerController? ctrl = _audiobookController;
     final AudioCue? cue = ctrl == null ? null : _lyricsCurrentAudioCue(ctrl);
+    final ReaderFushiSource src = ReaderFushiSource.instance;
     final LyricsIllustrationController illustrations =
-        LyricsIllustrationController()..load(
-          items,
-          position: cue == null ? null : _lyricsBookPositionOfCue(cue),
-          audioPosition: ctrl?.globalPosition,
-        );
+        LyricsIllustrationController()
+          // 竖排从右往左的书：插图翻页方向镜像（反馈 KhrrCkFteH）。
+          ..rightToLeft = _isRtlReading
+          ..autoOpenCard =
+              src.lyricsIllustrationCue == LyricsIllustrationCue.popup
+          ..load(
+            items,
+            position: cue == null ? null : _lyricsBookPositionOfCue(cue),
+            audioPosition: ctrl?.globalPosition,
+          );
     _rebuild(() => _lyricsIllustrations = illustrations);
   }
 
@@ -999,12 +1050,87 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   /// cue 推进时喂插图状态机（换图 / 收回都在状态机里判）。
+  ///
+  /// 「弹出停留」（偏好 `lyrics_illustration_cue` = popup，默认）：顺着播放新走过
+  /// 插图时状态机已把插图卡弹出，这里再按「图片暂停」秒数（`imagePauseSec`，与正文
+  /// 同一个设置、同一条 [AudiobookPlayerController.triggerImagePause] 原语）停留。
+  /// 暂停态、拖进度 / ±10 秒、显式跳句经过插图都不停：只认「正在播、且两次观测
+  /// 之间控制器没有登记过跳转（[AudiobookPlayerController.playbackJumpSerial]）」的
+  /// 连续播放。同一张插图一次经过只停一次（状态机
+  /// 只在新走过时报一次）。
   void _observeLyricsIllustrations(AudioCue cue, Duration audioPosition) {
     final LyricsIllustrationController? illustrations = _lyricsIllustrations;
     if (illustrations == null) return;
     final LyricsBookPosition? position = _lyricsBookPositionOfCue(cue);
     if (position == null) return;
-    illustrations.observe(position, audioPosition: audioPosition);
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final ({int jumpSerial, int audioMs})? last =
+        _lyricsIllustrationLastObservation;
+    _lyricsIllustrationLastObservation = ctrl == null
+        ? null
+        : (
+            jumpSerial: ctrl.playbackJumpSerial,
+            audioMs: audioPosition.inMilliseconds,
+          );
+    final bool revealed = illustrations.observe(
+      position,
+      audioPosition: audioPosition,
+    );
+    if (!revealed || ctrl == null) return;
+    if (ReaderFushiSource.instance.lyricsIllustrationCue !=
+        LyricsIllustrationCue.popup) {
+      return;
+    }
+    final bool continuous =
+        last != null &&
+        isContinuousLyricsPlayback(
+          playing: ctrl.isPlaying,
+          previousJumpSerial: last.jumpSerial,
+          currentJumpSerial: ctrl.playbackJumpSerial,
+          audioDeltaMs: audioPosition.inMilliseconds - last.audioMs,
+        );
+    if (!continuous) return;
+    _beginLyricsIllustrationStay(ctrl, illustrations);
+  }
+
+  void _beginLyricsIllustrationStay(
+    AudiobookPlayerController ctrl,
+    LyricsIllustrationController illustrations,
+  ) {
+    _endLyricsIllustrationStay();
+    ctrl.triggerImagePause();
+    // 「图片暂停」关着（0 秒）/ 阅读器不可见时控制器不停：卡照样弹出，不停留。
+    if (!ctrl.isImagePaused) return;
+    _lyricsIllustrationStay = (ctrl: ctrl, ill: illustrations);
+    ctrl.addListener(_onLyricsIllustrationStayChanged);
+    illustrations.addListener(_onLyricsIllustrationStayChanged);
+  }
+
+  void _onLyricsIllustrationStayChanged() {
+    final ({AudiobookPlayerController ctrl, LyricsIllustrationController ill})?
+    stay = _lyricsIllustrationStay;
+    if (stay == null) return;
+    if (!stay.ctrl.isImagePaused) {
+      // 停留结束（到点自动续播 / 用户按了播放或暂停）：收起插图卡，插图位留着
+      // 缩略图 + 红点，还能点开看。
+      _endLyricsIllustrationStay();
+      stay.ill.closeCard();
+      return;
+    }
+    if (!stay.ill.cardVisible) {
+      // 用户手动关了卡：立刻结束停留、继续播放（play 会成对作废停留计时器）。
+      _endLyricsIllustrationStay();
+      unawaited(stay.ctrl.play());
+    }
+  }
+
+  void _endLyricsIllustrationStay() {
+    final ({AudiobookPlayerController ctrl, LyricsIllustrationController ill})?
+    stay = _lyricsIllustrationStay;
+    if (stay == null) return;
+    _lyricsIllustrationStay = null;
+    stay.ctrl.removeListener(_onLyricsIllustrationStayChanged);
+    stay.ill.removeListener(_onLyricsIllustrationStayChanged);
   }
 
   /// 插图大图浏览（可缩放，看清印在插图上的文字）。音频照常播放；阅读计时与正文
@@ -1117,7 +1243,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         useShouldOverrideUrlLoading: true,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
-        _lyricsController = controller;
+        // 停放中创建完成（进入后立刻退出 / 停放时 renderer 死亡换代）也记下：实例
+        // 复用（BUG-3913），下次进入由 _toggleLyricsMode 装载文档。
+        _lyricsWebViewController = controller;
         controller.addJavaScriptHandler(
           handlerName: 'onTextSelected',
           callback: (List<dynamic> args) async {

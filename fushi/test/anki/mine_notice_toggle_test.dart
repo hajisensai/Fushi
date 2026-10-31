@@ -20,6 +20,7 @@ void main() {
 
   test('关掉成功提示：added / queued / pending 不弹，其余照弹', () {
     expect(shown(MineToastStatus.added, success: false), isFalse);
+    expect(shown(MineToastStatus.overwritten, success: false), isFalse);
     expect(shown(MineToastStatus.queued, success: false), isFalse);
     expect(
       shown(MineToastStatus.pending, success: false),
@@ -62,6 +63,14 @@ void main() {
         const MineOutcome.success(deckName: 'D', audioWarning: 'HTTP 404'),
       ).status,
       MineToastStatus.addedWithWarning,
+    );
+    expect(
+      describeMineOutcome(
+        const MineOutcome.success(deckName: 'D'),
+        overwrite: true,
+      ).status,
+      MineToastStatus.overwritten,
+      reason: '覆盖已有卡与新制分色',
     );
     expect(
       mineToastSeverity(MineToastStatus.addedWithWarning),

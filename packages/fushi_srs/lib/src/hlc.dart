@@ -83,10 +83,10 @@ class HlcClock {
 
 /// 事件时间来源（铁律 F 第一层）。
 enum SrsTimeSource {
-  /// 本次开机已与同步后端校时：服务器时间锚点 + 含睡眠的单调时钟。
+  /// 本进程已与同步后端校时：墙钟 + 校时时测得的「服务器时间 − 墙钟」偏移。
   anchored('anchored'),
 
-  /// 开机后还没校时：墙钟。
+  /// 本进程还没校时：墙钟。
   wall('wall');
 
   const SrsTimeSource(this.wire);
@@ -97,62 +97,54 @@ enum SrsTimeSource {
       wire == anchored.wire ? anchored : wall;
 }
 
-/// 可信时间：同步成功时记下 (服务器时间, 单调时钟读数, 本次开机 ID)，
-/// 之后 = 锚点服务器时间 + 单调时钟经过量；同一次开机内改系统时间不影响。
+/// 可信时间：同步成功时记下「服务器时间 − 同一刻的墙钟」偏移，之后 = 墙钟 + 偏移。
+///
+/// 只记偏移、不再按「锚点 + 单调时钟经过量」推算：单调时钟（Dart Stopwatch）在 Android 上不计深睡，睡一觉
+/// 可信时间就落后睡掉的时长；而且锚点的服务器时间与单调读数只要不是同一刻取的，差多少可信时间就偏多少
+/// （曾经把一整轮同步的耗时算成「墙钟超前」，同步慢 = 卡顿时可信时间超前十几分钟，复习记录写进未来、
+/// 进程重启退回墙钟后时间倒流）。墙钟一直在走（睡眠也算），偏移只在下一次校时时更新。
 class SrsTrustedClock {
-  SrsTrustedClock({
-    required int Function() wallClockMs,
-    required int Function() monotonicMs,
-    required String bootId,
-  }) : _wall = wallClockMs,
-       _mono = monotonicMs,
-       _bootId = bootId;
+  SrsTrustedClock({required int Function() wallClockMs, required String bootId})
+    : _wall = wallClockMs,
+      _bootId = bootId;
 
   final int Function() _wall;
-  final int Function() _mono;
   final String _bootId;
 
-  int? _anchorServerMs;
-  int? _anchorMonoMs;
+  int? _offsetMs;
   String? _anchorBootId;
+
+  /// 当前墙钟（毫秒）。校时的调用方用它记下「服务器时间被观测到的那一刻」。
+  int wallNowMs() => _wall();
 
   /// 同步成功、拿到服务器时间时调用。
   ///
-  /// [atMonotonicMs]：服务器时间被观测到那一刻的单调时钟读数（[monotonicNowMs]）。服务器时间是
-  /// 一轮同步开头的探针取到的，这一轮跑完才校时：不带它就会把整轮同步的耗时算成「墙钟超前」，
-  /// 同步一久就误报「系统时间不准」，校出来的可信时间也落后同样的时长。
-  void anchor({required int serverTimeMs, int? atMonotonicMs}) {
-    _anchorServerMs = serverTimeMs;
-    _anchorMonoMs = atMonotonicMs ?? _mono();
+  /// [observedAtWallMs]：服务器盖下 [serverTimeMs] 那一刻的墙钟读数（同步一轮里围着写 head 的那次上传取，
+  /// 见 `SrsSync2Report.serverTimeWallMs`）。不给就按现在的墙钟算，只适合当场拿到的服务器时间。
+  void anchor({required int serverTimeMs, int? observedAtWallMs}) {
+    _offsetMs = serverTimeMs - (observedAtWallMs ?? _wall());
     _anchorBootId = _bootId;
   }
 
-  /// 当前单调时钟读数，供调用方记下「服务器时间是何时取到的」再传给 [anchor]。
-  int monotonicNowMs() => _mono();
-
-  /// 恢复持久化的锚点（只有同一次开机的锚点才有效）。
-  void restoreAnchor({
-    required int serverTimeMs,
-    required int monotonicMs,
-    required String bootId,
-  }) {
+  /// 恢复持久化的偏移（只有本进程写下的才有效：进程之间用户可能改过系统时间）。
+  void restoreAnchor({required int offsetMs, required String bootId}) {
     if (bootId != _bootId) return;
-    _anchorServerMs = serverTimeMs;
-    _anchorMonoMs = monotonicMs;
+    _offsetMs = offsetMs;
     _anchorBootId = bootId;
   }
 
-  bool get isAnchored => _anchorBootId == _bootId && _anchorServerMs != null;
+  bool get isAnchored => _anchorBootId == _bootId && _offsetMs != null;
 
-  /// 墙钟与可信时间的偏差（毫秒），未校时为 null。超过 10 分钟时同步状态里提示「系统时间不准」。
-  int? get wallSkewMs => isAnchored ? _wall() - now().$1 : null;
+  /// 持久化用：(偏移, 本进程 ID)，未校时为 null。
+  ({int offsetMs, String bootId})? get anchorState =>
+      isAnchored ? (offsetMs: _offsetMs!, bootId: _bootId) : null;
+
+  /// 墙钟与可信时间的偏差（毫秒，正 = 墙钟超前），未校时为 null。超过 10 分钟时同步状态里提示「系统时间不准」。
+  int? get wallSkewMs => isAnchored ? -_offsetMs! : null;
 
   /// (可信时间毫秒, 时间来源)。
   (int, SrsTimeSource) now() {
-    if (isAnchored) {
-      final int elapsed = _mono() - _anchorMonoMs!;
-      return (_anchorServerMs! + elapsed, SrsTimeSource.anchored);
-    }
+    if (isAnchored) return (_wall() + _offsetMs!, SrsTimeSource.anchored);
     return (_wall(), SrsTimeSource.wall);
   }
 }

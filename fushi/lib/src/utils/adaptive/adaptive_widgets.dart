@@ -95,15 +95,9 @@ Widget adaptiveDialogAction({
     );
   }
   if (isDefaultAction) {
-    return FushiFilledButton(
-      onPressed: onPressed,
-      child: child,
-    );
+    return FushiFilledButton(onPressed: onPressed, child: child);
   }
-  return FushiTextButton(
-    onPressed: onPressed,
-    child: child,
-  );
+  return FushiTextButton(onPressed: onPressed, child: child);
 }
 
 Widget adaptiveSwitch({
@@ -129,10 +123,7 @@ Widget adaptiveSwitch({
     // Let MacosSwitch use the system accent for its active track — that's the
     // native macOS look, more correct than forcing the app's activeColor (which
     // is a Material/Cupertino Color, not macos_ui's MacosColor anyway).
-    return MacosSwitch(
-      value: value,
-      onChanged: onChanged,
-    );
+    return MacosSwitch(value: value, onChanged: onChanged);
   }
   if (isCupertinoPlatform(context)) {
     return CupertinoSwitch(
@@ -332,6 +323,11 @@ Widget adaptiveIndicator({
 ///   与对话框同一条弹簧缩放进出、同一 scrim；内容外包 [FushiDialogScope]，
 ///   [FushiModalSheetFrame] 随之按对话框规范排版。
 /// 两种形态都是模态路由：Esc / 手柄 B / 点遮罩关闭，关闭后焦点回到打开前。
+///
+/// [isDismissible] 为 false 时**点遮罩与下拉（整块下拉 / 拖动条下拉）都不再
+/// 关闭**，与桌面 `showAppDialog(barrierDismissible: false)` 同一语义：用于关掉
+/// 就会中断长任务的弹层（设备端转录，反馈 NrRPRDTprI）。Esc / 手柄 B / 系统
+/// 返回与弹层内的按钮仍照常关闭——那些是明确的关闭意图，不是误触。
 Future<T?> adaptiveModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -339,10 +335,12 @@ Future<T?> adaptiveModalSheet<T>({
   bool showDragHandle = true,
   bool useSafeArea = false,
   bool expandable = false,
+  bool isDismissible = true,
 }) {
   if (isCupertinoPlatform(context)) {
     return showCupertinoModalPopup<T>(
       context: context,
+      barrierDismissible: isDismissible,
       builder: builder,
     );
   }
@@ -362,8 +360,10 @@ Future<T?> adaptiveModalSheet<T>({
       // 关闭、点遮罩关闭、独立焦点作用域、pop 返回值与底部弹层一致。
       return showGeneralDialog<T>(
         context: context,
-        barrierDismissible: true,
-        barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        barrierDismissible: isDismissible,
+        barrierLabel: MaterialLocalizations.of(
+          context,
+        ).modalBarrierDismissLabel,
         barrierColor: Colors.black.withValues(alpha: 0.18),
         transitionDuration: noMotion
             ? Duration.zero
@@ -414,8 +414,11 @@ Future<T?> adaptiveModalSheet<T>({
       constraints: const BoxConstraints(),
       barrierColor: Colors.black.withValues(alpha: 0.2),
       sheetAnimationStyle: sheetMotion,
+      isDismissible: isDismissible,
+      enableDrag: isDismissible,
       builder: (BuildContext sheetContext) => _LiquidSheetBody(
         showDragHandle: showDragHandle,
+        dragToDismiss: isDismissible,
         child: builder(sheetContext),
       ),
     );
@@ -428,6 +431,7 @@ Future<T?> adaptiveModalSheet<T>({
         context: context,
         themes: InheritedTheme.capture(from: context, to: navigator.context),
         barrierColor: fushiModalScrimColor(context),
+        barrierDismissible: isDismissible,
         traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
         reduceMotion: noMotion || !fushiMotionEnabled(context),
         builder: (BuildContext sheetContext) => FushiM3eFloatingSheet(
@@ -449,11 +453,14 @@ Future<T?> adaptiveModalSheet<T>({
       backgroundColor: Colors.transparent,
       elevation: 0,
       sheetAnimationStyle: sheetMotion,
+      isDismissible: isDismissible,
+      enableDrag: isDismissible,
       builder: (BuildContext sheetContext) => _GlassSheetBody(
         showDragHandle: showDragHandle,
         child: FushiM3eSheetBody(
           showDragHandle: false,
           expandable: false,
+          dragToDismiss: isDismissible,
           child: builder(sheetContext),
         ),
       ),
@@ -466,9 +473,12 @@ Future<T?> adaptiveModalSheet<T>({
     // 拖动条由 [FushiM3eSheetBody] 自绘（同 M3 几何），两档高度要接它的手势。
     showDragHandle: false,
     sheetAnimationStyle: sheetMotion,
+    isDismissible: isDismissible,
+    enableDrag: isDismissible,
     builder: (BuildContext sheetContext) => FushiM3eSheetBody(
       showDragHandle: showDragHandle,
       expandable: expandable,
+      dragToDismiss: isDismissible,
       child: builder(sheetContext),
     ),
   );
@@ -485,10 +495,17 @@ Future<T?> adaptiveModalSheet<T>({
 /// 系统降低透明度（材质 off）时 medium 也是实色；系统关闭动画时切换无过渡。
 /// 内容外包一层透明 Material，弹层里依赖 Material 祖先的子组件照常工作。
 class _LiquidSheetBody extends StatefulWidget {
-  const _LiquidSheetBody({required this.showDragHandle, required this.child});
+  const _LiquidSheetBody({
+    required this.showDragHandle,
+    required this.child,
+    this.dragToDismiss = true,
+  });
 
   final bool showDragHandle;
   final Widget child;
+
+  /// 拖动条在 medium 档下拉是否关闭弹层（[adaptiveModalSheet] 的 isDismissible）。
+  final bool dragToDismiss;
 
   @override
   State<_LiquidSheetBody> createState() => _LiquidSheetBodyState();
@@ -511,7 +528,7 @@ class _LiquidSheetBodyState extends State<_LiquidSheetBody> {
     } else if (dy > 40 || velocity > 600) {
       if (_large) {
         setState(() => _large = false);
-      } else {
+      } else if (widget.dragToDismiss) {
         Navigator.of(context).maybePop();
       }
     }
@@ -641,10 +658,7 @@ class _AppleDesktopSheet extends StatelessWidget {
               ),
               child: ClipRRect(
                 borderRadius: radius,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: child,
-                ),
+                child: Material(type: MaterialType.transparency, child: child),
               ),
             ),
           ),
@@ -683,8 +697,9 @@ class _GlassSheetBody extends StatelessWidget {
                       height: 4,
                       decoration: BoxDecoration(
                         color: colors.onSurfaceVariant.withValues(alpha: 0.4),
-                        borderRadius:
-                            const BorderRadius.all(Radius.circular(2)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(2),
+                        ),
                       ),
                     ),
                   ),
@@ -721,8 +736,9 @@ Widget adaptiveSegmentedButton<T extends Object>({
           onSelectionChanged: onSelectionChanged,
           emptySelectionAllowed: selected.isEmpty,
           showSelectedIcon: false,
-          expandedInsets:
-              constraints.maxWidth.isFinite ? EdgeInsets.zero : null,
+          expandedInsets: constraints.maxWidth.isFinite
+              ? EdgeInsets.zero
+              : null,
           style: style,
         );
       },

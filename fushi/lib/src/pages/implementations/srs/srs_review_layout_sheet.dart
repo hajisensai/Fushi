@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
@@ -125,6 +126,12 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             subtitle: t.srs_review_layout_floating_top_bar_hint,
             value: floating,
             onChanged: (bool v) => app.setSrsReviewChromeFloating(v),
+          ),
+          AdaptiveSettingsNavigationRow(
+            key: const ValueKey<String>('srs-review-layout-gestures'),
+            title: t.srs_review_gestures_title,
+            subtitle: t.srs_review_gestures_hint,
+            onTap: () => openSrsReviewGesturesPage(context),
           ),
           AdaptiveSettingsSegmentedRow<SrsReviewImageSize>(
             key: const ValueKey<String>('srs-review-layout-image-size'),

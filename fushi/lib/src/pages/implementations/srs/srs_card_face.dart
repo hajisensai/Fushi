@@ -34,8 +34,10 @@ import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
@@ -63,7 +65,8 @@ class SrsCardFace {
     this.onSourceLink,
     this.autoplayMedia = false,
     this.onPlayAudio,
-    this.onTapEmpty,
+    this.onCardGesture,
+    this.gestureArming = SrsCardGestureArming.none,
     this.onImageTap,
   });
 
@@ -135,9 +138,14 @@ class SrsCardFace {
   /// 一段打断上一段，同一时刻只出一路声音（#10）。null = 卡面自己直接播（预览页）。
   final void Function(List<String> names)? onPlayAudio;
 
-  /// 卡面空白处被点了一下（页内取词脚本判定：没点在字、链接、按钮上）。复习页据此唤出 /
-  /// 收起悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同一口径）。null = 不响应。
-  final VoidCallback? onTapEmpty;
+  /// 卡面手势（点空白 / 双击 / 长按空白 / 滑动，见 [SrsCardGestureEvent]）：WebView 卡面经
+  /// 页内指针脚本（[kSrsCardLookupScript]）、原生卡面经 [SrsCardGestureRegion] 回报，判据同一套
+  /// （点在字、链接、按钮、可点元素上不算点空白）。复习页按手势映射执行（默认点空白切换
+  /// 悬浮顶栏，与小说、漫画阅读器同一口径）。null = 不识别。
+  final void Function(SrsCardGestureEvent event)? onCardGesture;
+
+  /// 这一面开着的识别器（没绑动作的手势不识别：不为双击推迟单击、不接管拖动 / 长按）。
+  final SrsCardGestureArming gestureArming;
 
   /// 卡面正文里点了图片（`src` 是页内地址：媒体库虚拟域 / 自定义 scheme / `data:`）：
   /// 宿主据此全屏查看（[srsMediaNameFromUrl] 换回媒体名）。null = 图片点击不拦。
@@ -164,7 +172,8 @@ class SrsCardFace {
         onSourceLink: onSourceLink,
         autoplayMedia: autoplayMedia,
         onPlayAudio: onPlayAudio,
-        onTapEmpty: onTapEmpty,
+        onCardGesture: onCardGesture,
+        gestureArming: gestureArming,
         onImageTap: onImageTap,
       );
 }
@@ -745,6 +754,15 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 例句翻译模糊（srs_card_translation_blur.dart）：只在开关开着时随主题下发定义；按 body 的
+  // 宿主类名给翻译行加 / 撤可聚焦属性。换卡后（新节点）与换主题后（开关变了）各跑一次。
+  function translationBlur(){
+    try {
+      if (window.__fushiSrsTranslationBlur) window.__fushiSrsTranslationBlur();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   // 宿主排版钩子（SrsCardFace.hostScript 定义）：卡片脚本与钩子都跑完后再排。
   function hostLayout(){
     try {
@@ -759,6 +777,7 @@ const String kSrsCardShellScript = r'''
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
     designSkin();
+    translationBlur();
     hostLayout();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
@@ -766,6 +785,7 @@ const String kSrsCardShellScript = r'''
     setClasses(classes);
     dictStyle();
     designSkin();
+    translationBlur();
     // 卡片脚本可据此跟随外观变化（例如「全部释义默认展开」），不必重跑。
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
@@ -1103,8 +1123,8 @@ class SrsCardFaceDocument {
   /// 见 [SrsCardFace.autoplayMedia]。
   final bool autoplayMedia;
 
-  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）。目前只有
-  /// 设计系统样式覆盖的判定脚本：覆盖关着时外壳里连脚本都没有（零注入）。
+  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）：设计系统
+  /// 样式覆盖的判定脚本、Fushi 卡片的例句翻译模糊脚本。开关关着时外壳里连脚本都没有（零注入）。
   final String hostScript;
 
   /// 卡面的键盘桥脚本（写进外壳 `<head>`，见 [srsCardShellHtml]）。
@@ -1521,11 +1541,21 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
           )
         : '',
     appearanceClasses: fushi
-        ? srsCardAppearanceClasses(appearance)
+        ? <String>[
+            srsCardAppearanceClasses(appearance),
+            // 墨水屏：卡面注入的过渡瞬间到位（系统「减弱动态效果」走页内 prefers-reduced-motion）。
+            if (theme.extension<FushiEinkTheme>()?.einkMode ?? false)
+              kSrsCardNoMotionClass,
+          ].where((String c) => c.isNotEmpty).join(' ')
         : skin
         ? kSrsDesignSkinClass
         : '',
-    hostScript: (skin ? kSrsCardDesignSkinScript : '') + face.hostScript,
+    hostScript:
+        (skin ? kSrsCardDesignSkinScript : '') +
+        (fushi && appearance.showTranslation && appearance.blurTranslation
+            ? kSrsCardTranslationBlurScript
+            : '') +
+        face.hostScript,
   );
 }
 
@@ -1565,8 +1595,19 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   /// 释义 WebView）。
   SrsCardLookupController? _lookup;
 
-  /// 当前外壳里已装好取词脚本（外壳重载 / renderer 重建后重装）。
+  /// 当前外壳里已装好指针脚本（取词 + 卡面手势；外壳重载 / renderer 重建后重装）。
   bool _lookupInstalled = false;
+
+  /// 上一次下发给页面的卡面手势门控（null = 没下发过 / 外壳重载后作废）。
+  String? _pushedGestureGate;
+
+  /// 要不要装指针脚本：有查词作用域（取词）或宿主要卡面手势。
+  bool get _wantsPointerScript =>
+      _lookup != null || widget.face.onCardGesture != null;
+
+  String _gestureGateScript() => srsCardGestureGateScript(
+    widget.face.onCardGesture == null ? null : widget.face.gestureArming,
+  );
 
   /// 平台视图创建失败后重建过一次（只重来一次，再失败只留痕）。
   bool _recreatedAfterFailure = false;
@@ -1795,10 +1836,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     );
   }
 
-  /// 装取词脚本（幂等）并下发门控。没有查词作用域时只下发「全关」的门控。
+  /// 装指针脚本（取词 + 卡面手势，幂等）并下发两份门控。既没有查词作用域、宿主也不要
+  /// 手势时只给已装的脚本下发「全关」。
   Future<void> _installLookup(InAppWebViewController controller) async {
-    if (_lookup == null) {
-      if (_lookupInstalled) await _evaluateQuiet(_lookupGateScript());
+    if (!_wantsPointerScript) {
+      if (_lookupInstalled) {
+        await _evaluateQuiet(_lookupGateScript() + _gestureGateScript());
+      }
       return;
     }
     try {
@@ -1809,10 +1853,44 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
         if (!mounted || !identical(_controller, controller)) return;
         _lookupInstalled = true;
       }
-      await controller.evaluateJavascript(source: _lookupGateScript());
+      final String gestureGate = _gestureGateScript();
+      await controller.evaluateJavascript(
+        source: _lookupGateScript() + gestureGate,
+      );
+      _pushedGestureGate = gestureGate;
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsWebCardFace.installLookup', e, stack);
     }
+  }
+
+  /// 换面 / 改了手势映射：开着的识别器变了就重发手势门控（不重装脚本、不重放卡面）。
+  void _syncGestureGate() {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_sync.shellReady) return;
+    if (!_lookupInstalled) {
+      if (_wantsPointerScript) unawaited(_installLookup(controller));
+      return;
+    }
+    final String gate = _gestureGateScript();
+    if (gate == _pushedGestureGate) return;
+    _pushedGestureGate = gate;
+    unawaited(_evaluateQuiet(gate));
+  }
+
+  /// 页内脚本回报的卡面手势（[kSrsGestureHandler]）：页面 CSS 像素换成全局逻辑像素。
+  void _onPageGesture(Object? raw) {
+    final void Function(SrsCardGestureEvent)? onGesture =
+        widget.face.onCardGesture;
+    final RenderBox? box = _box;
+    if (onGesture == null || box == null) return;
+    final Matrix4 toGlobal = box.getTransformTo(null);
+    final SrsCardGestureEvent? event = srsCardGestureFromPage(
+      raw,
+      viewWidth: box.size.width,
+      viewHeight: box.size.height,
+      toGlobal: (Offset local) => MatrixUtils.transformPoint(toGlobal, local),
+    );
+    if (event != null) onGesture(event);
   }
 
   RenderBox? get _box {
@@ -1899,12 +1977,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     if (!readerHostHoverPointInside(local, box.size)) return false;
     unawaited(
       _evaluateQuiet(
-        ReaderSelectionScripts.selectInvocation(
-          local.dx,
-          local.dy,
-          400,
-          fromHover: fromHover,
-        ),
+        srsCardSelectInvocation(local.dx, local.dy, 400, fromHover: fromHover),
       ),
     );
     return true;
@@ -1945,6 +2018,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   void didUpdateWidget(SrsWebCardFace oldWidget) {
     super.didUpdateWidget(oldWidget);
     _sync.update(_document(context));
+    _syncGestureGate();
   }
 
   /// 页面被卡片里的链接导航走了：把外壳装回来（onLoadStop 后重放当前内容）。
@@ -2135,10 +2209,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
               return null;
             },
           );
+          // 卡面手势（点空白 / 双击 / 长按 / 滑动），见 [kSrsCardLookupScript]。
           controller.addJavaScriptHandler(
-            handlerName: 'onTapEmpty',
-            callback: (List<dynamic> _) {
-              if (mounted) widget.face.onTapEmpty?.call();
+            handlerName: kSrsGestureHandler,
+            callback: (List<dynamic> arguments) {
+              if (mounted && arguments.isNotEmpty) {
+                _onPageGesture(arguments.first);
+              }
               return null;
             },
           );
@@ -2218,6 +2295,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           if (!identical(current.platform, controller.platform)) return;
           _sync.shellLoaded();
           _lookupInstalled = false;
+          _pushedGestureGate = null;
           unawaited(
             _injectBridge(current).then((_) => _installLookup(current)),
           );

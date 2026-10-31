@@ -12,7 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart'
-    show SrsBlankTapRegion;
+    show SrsCardGestureRegion;
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsPictureLimits, srsPictureLimits;
@@ -20,6 +20,8 @@ import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart' show SrsReviewImageSize;
+import 'package:fushi/src/srs/srs_review_gestures.dart'
+    show SrsCardGestureEvent;
 import 'package:material_ui/material_ui.dart';
 
 class _FakePlayer implements SrsCardVideoPlayer {
@@ -595,8 +597,9 @@ void main() {
             child: TranslationProvider(
               child: MaterialApp(
                 home: Scaffold(
-                  body: SrsBlankTapRegion(
-                    onTapEmpty: () => blank.add('empty'),
+                  body: SrsCardGestureRegion(
+                    onGesture: (SrsCardGestureEvent e) =>
+                        blank.add(e.kind.name),
                     tapTookLookup: () => false,
                     child: const ColoredBox(
                       key: ValueKey<String>('blank'),
@@ -634,7 +637,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(4, 4));
       await tester.pump();
-      expect(blank, <String>['empty']);
+      expect(blank, <String>['tap']);
     });
 
     testWidgets('按视频比例缩放进约束', (WidgetTester tester) async {

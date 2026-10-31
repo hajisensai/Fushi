@@ -158,25 +158,6 @@ int? dashboardBookCollectionContinueIndex(
   return idx;
 }
 
-/// 书合集续读卡「Vol. N」徽标的卷号：合集成员（[memberTitles]，含本卷）都是同一
-/// 系列的分卷时，取书名里的卷号（与分卷归组同一判据 [sharedBookSeriesKey] /
-/// [parseBookSeriesKey]，全角数字已折半角）；否则——主题合集、混了别的系列，或
-/// 书名没有卷号——退回合集内第几个（[memberOrdinal]，1 起）。
-///
-/// 用户实报「我在读 2/17 卷，首页却显示 Vol. 17」：旧实现直接拿合集内位置当卷号，
-/// 合集顺序与卷号一错位（手动建系列按选择顺序尾插、缺卷、只收了后几卷），徽标
-/// 就把位置当成卷号说出来。只在同系列时认书名尾数：主题合集里的「Fahrenheit 451」
-/// 不是第 451 卷。
-@visibleForTesting
-num? dashboardBookVolumeNumber({
-  required String title,
-  required List<String> memberTitles,
-  required int memberOrdinal,
-}) {
-  if (sharedBookSeriesKey(memberTitles) == null) return memberOrdinal;
-  return parseBookSeriesKey(title)?.volume ?? memberOrdinal;
-}
-
 /// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
 /// 以上的桌面窗口）。竖屏手机 / 平板竖屏走单栏。
 ///
@@ -633,6 +614,7 @@ class _ContinueEntry {
 /// 只存本地聚合，远端补位（互联）仍由 [_loadRemoteDashboardData] 增量到达。
 class _HomeDashboardSnapshot {
   const _HomeDashboardSnapshot({
+    required this.profileId,
     required this.statWindow,
     required this.videos,
     required this.games,
@@ -650,6 +632,9 @@ class _HomeDashboardSnapshot {
     required this.videoDurationMsByPath,
   });
 
+  /// 这轮聚合所属的激活 Profile（统计按 Profile 隔离）。快照只在同一 Profile 下
+  /// 复用：切了配置后旧快照不能当当前配置的数据显示（反馈 FH1toxJJxz）。
+  final int profileId;
   final StatWindow statWindow;
   final List<VideoBookRow> videos;
   final List<GalgameEntry> games;
@@ -923,6 +908,23 @@ class _HomeDashboardPageState
   StreamSubscription<void>? _dataChangeSub;
   Timer? _reloadDebounce;
 
+  /// 切换激活 Profile（写 `preferences.active_profile_id`）/ 增删 Profile 的表级
+  /// 信号。统计按 Profile 隔离，但这两张表不在 `watchDashboardDataChanges` 的表集里，
+  /// 首页在屏 / 保活时切配置就一直停在上一个配置的统计（反馈 FH1toxJJxz）。
+  /// 偏好写入很频繁，所以信号到达只防抖后核对一次激活 Profile，真变了才重载。
+  StreamSubscription<Set<TableUpdate>>? _profileChangeSub;
+  Timer? _profileCheckDebounce;
+
+  /// 最近一次发起的整批载入所针对的 Profile（[_loadDashboardDataUnsafe] 开头解析）；
+  /// null = 还没解析过。
+  int? _profileIdOfLatestLoad;
+
+  /// 当前屏上数据所属的 Profile（快照恢复 / 载入完成时更新）。
+  int? _shownProfileId;
+
+  /// 整批载入代次：切配置前发出的载入晚到时不能覆盖切换后的结果。
+  int _loadGeneration = 0;
+
   /// **本轮加载时**的统计窗口（今日目标 / 近 7 日日均都用它，BUG-2219：此前目标
   /// 卡在 build 时现算 todayKey，跨午夜后分子对着新的一天、热力图等仍是旧聚合）。
   /// 跨午夜由 [_midnightReload] 触发一次 [_scheduleReload] 整页重拉。
@@ -984,6 +986,17 @@ class _HomeDashboardPageState
         .database
         .watchDashboardDataChanges()
         .listen((_) => _scheduleReload());
+    final FushiDatabase db = ref.read(appProvider).database;
+    _profileChangeSub = db
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              db.profiles,
+              db.preferences,
+            ],
+          ),
+        )
+        .listen((Set<TableUpdate> _) => _scheduleActiveProfileCheck());
     // P4：游戏改名/刮削（库页写穿 galgames 表后 GalgameRepository.load() 通知）
     // 也要刷新日明细/时间轴的游戏显示名——galgames 表不在
     // watchDashboardDataChanges 的表集里，走仓储 ChangeNotifier 这条既有通道
@@ -1105,6 +1118,28 @@ class _HomeDashboardPageState
     });
   }
 
+  void _scheduleActiveProfileCheck() {
+    _profileCheckDebounce?.cancel();
+    _profileCheckDebounce = Timer(
+      const Duration(milliseconds: 150),
+      () => unawaited(_checkActiveProfile()),
+    );
+  }
+
+  /// 激活 Profile 与最近一次载入针对的不同 → 整页重载（看不见时照常推迟到切回）。
+  Future<void> _checkActiveProfile() async {
+    if (!mounted) return;
+    final int active;
+    try {
+      active = await ref.read(appProvider).database.resolveActiveProfileId();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('HomeDashboardPage.profile', e, stack);
+      return;
+    }
+    if (!mounted || active == _profileIdOfLatestLoad) return;
+    _scheduleReload();
+  }
+
   void _reloadNow() {
     // 「继续」的书侧数据来自缓存 provider（书列表/最近阅读时刻均派生自
     // reader_positions），它们此前只在关书/导入时失效——互联/云同步把更远的
@@ -1125,6 +1160,8 @@ class _HomeDashboardPageState
     homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());
+    _profileCheckDebounce?.cancel();
+    unawaited(_profileChangeSub?.cancel());
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
@@ -1140,12 +1177,15 @@ class _HomeDashboardPageState
   /// 异常（各区块对空数据都有降级），并补 [ErrorLogService] 使「首页空」这类问题线上
   /// 可诊断（对照 reader/video 侧统计 flush 的同款 fail-open）。
   Future<void> _loadDashboardData() async {
+    final int generation = ++_loadGeneration;
     try {
-      await _loadDashboardDataUnsafe();
+      await _loadDashboardDataUnsafe(generation);
     } catch (e, stack) {
       ErrorLogService.instance.log('HomeDashboardPage.load', e, stack);
     } finally {
-      if (mounted && !_initialLoadDone) {
+      // 只有最新一轮能宣告「已载入」：被取代的旧轮次（切配置前发出的）晚到时，
+      // 不能替新一轮把骨架撤掉。
+      if (mounted && !_initialLoadDone && generation == _loadGeneration) {
         setState(() => _initialLoadDone = true);
       }
     }
@@ -1159,9 +1199,17 @@ class _HomeDashboardPageState
     });
   }
 
-  Future<void> _loadDashboardDataUnsafe() async {
+  Future<void> _loadDashboardDataUnsafe(int generation) async {
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
+    // 先定下这轮的 Profile：统计事实按它取，快照按它记。
+    final int profileId = await db.resolveActiveProfileId();
+    if (generation != _loadGeneration) return;
+    _profileIdOfLatestLoad = profileId;
+    if (mounted && _shownProfileId != null && _shownProfileId != profileId) {
+      // 屏上是另一个 Profile 的统计：退回骨架，不把旧配置的数据当当前的显示。
+      setState(() => _initialLoadDone = false);
+    }
     final DateTime loadedAt = DateTime.now();
     final StatWindow statWindow = StatWindow(loadedAt);
     _armMidnightReload(loadedAt);
@@ -1171,7 +1219,7 @@ class _HomeDashboardPageState
     // v92：学习统计只经统一事实面读取（study_segments + 冻结的 legacy 投影表，
     // 游戏时长来自 galgame_sessions、游戏 hook 字数来自 legacy game 行 + 段），
     // 首页不再自己读六张表各自累加——与阅读/视频/游戏统计页同一份事实。
-    final Future<StatFacts> factsF = loadStatFacts(db);
+    final Future<StatFacts> factsF = loadStatFacts(db, profileId: profileId);
     final Future<List<MediaCollectionRow>> collectionsF = db
         .getAllMediaCollections();
     // 折叠归属主合集 + 组内 sortIndex 一次查回，且只查本机库里还在的条目
@@ -1280,7 +1328,10 @@ class _HomeDashboardPageState
         if ((e.value.durationMs ?? 0) > 0) e.key: e.value.durationMs!,
     };
 
+    // 切配置后又发起了新一轮：这轮结果属于旧 Profile，丢弃（快照也不写）。
+    if (generation != _loadGeneration) return;
     final _HomeDashboardSnapshot snapshot = _HomeDashboardSnapshot(
+      profileId: profileId,
       statWindow: statWindow,
       videos: videos,
       games: games,
@@ -1307,6 +1358,7 @@ class _HomeDashboardPageState
   /// 把一轮聚合结果灌进页面状态（加载完成与重建时从快照恢复共用）。远端补位
   /// 不在快照里，由 [_loadRemoteDashboardData] 增量到达。
   void _applySnapshot(_HomeDashboardSnapshot s) {
+    _shownProfileId = s.profileId;
     _statWindow = s.statWindow;
     _videos = s.videos;
     _games = s.games;
@@ -2023,9 +2075,11 @@ class _HomeDashboardPageState
       // 首页「继续」区同步显示新名），不直接读 DB 原名。
       final String title = ReaderFushiSource.instance
           .getDisplayTitleFromMediaItem(item);
+      // 「第 N 卷」的 N 是卷号（与书架合集卡「读到第 N 卷」同一判据），不是合集
+      // 存储位置：合集顺序错乱时位置会把第 3 卷说成第 13 卷。
       final num? volume = memberOrdinal == null
           ? null
-          : dashboardBookVolumeNumber(
+          : collectionMemberVolumeNumber(
               title: title,
               memberTitles: <String>[
                 for (final MediaItem m in collectionMembers)

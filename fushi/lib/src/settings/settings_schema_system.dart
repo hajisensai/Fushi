@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/feedback/crash_report.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -761,6 +762,21 @@ SettingsDestination buildSystemDestination() {
                   await alerts.syncPush();
                 }
               }
+              settingsContext.refresh();
+            },
+          ),
+          // 闪退报告（feedback/crash_report.dart）：默认关；打开 = 以后闪退后下次启动
+          // 不再询问、直接把日志发给开发者。开关存在错误日志目录的状态文件里（启动即
+          // 闪退时数据库还没开也要读得到），不进 Profile、不进备份。
+          SettingsSwitchItem(
+            id: 'system.updates.crash_report_auto_send',
+            title: t.feedback_crash_auto_send_setting,
+            subtitle: t.feedback_crash_auto_send_setting_hint,
+            icon: FushiIcons.error,
+            value: (SettingsContext settingsContext) =>
+                CrashReporter.instance.autoSend,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              CrashReporter.instance.setAutoSend(value);
               settingsContext.refresh();
             },
           ),

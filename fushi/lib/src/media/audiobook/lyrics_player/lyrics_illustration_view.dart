@@ -311,12 +311,17 @@ class _IllustrationCardState extends State<_IllustrationCard> {
     super.dispose();
   }
 
+  /// 点左 / 右 30% 翻页、中间看大图。竖排从右往左的书（[LyricsIllustrationController.rightToLeft]）
+  /// 方向对调：点左 = 下一张、点右 = 上一张（反馈 KhrrCkFteH）。
   void _onTapUp(TapUpDetails details, double width) {
     final LyricsIllustrationController c = widget.controller;
     final double x = details.localPosition.dx;
-    if (x < width * _kNavZoneFraction && c.canShowPrevious) {
+    final bool rtl = c.rightToLeft;
+    final bool left = x < width * _kNavZoneFraction;
+    final bool right = x > width * (1 - _kNavZoneFraction);
+    if ((rtl ? right : left) && c.canShowPrevious) {
       c.showPrevious();
-    } else if (x > width * (1 - _kNavZoneFraction) && c.canShowNext) {
+    } else if ((rtl ? left : right) && c.canShowNext) {
       c.showNext();
     } else {
       widget.onOpen?.call(widget.index);
@@ -416,15 +421,20 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                     onTap: c.dismiss,
                   ),
                 ),
+                // 上一张 / 下一张箭头：横排书上一张在左；竖排从右往左的书镜像，
+                // 下一张在左（与点按热区同一方向）。
                 if (c.canShowPrevious)
                   Positioned(
-                    left: 6,
+                    left: c.rightToLeft ? null : 6,
+                    right: c.rightToLeft ? 6 : null,
                     top: 0,
                     bottom: 0,
                     child: Center(
                       child: control(
                         key: const ValueKey<String>('lyrics_illustration_prev'),
-                        icon: FushiIcons.chevronLeft,
+                        icon: c.rightToLeft
+                            ? FushiIcons.chevronRight
+                            : FushiIcons.chevronLeft,
                         tooltip: t.lyrics_illustration_previous,
                         onTap: c.showPrevious,
                       ),
@@ -432,13 +442,16 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                   ),
                 if (c.canShowNext)
                   Positioned(
-                    right: 6,
+                    left: c.rightToLeft ? 6 : null,
+                    right: c.rightToLeft ? null : 6,
                     top: 0,
                     bottom: 0,
                     child: Center(
                       child: control(
                         key: const ValueKey<String>('lyrics_illustration_next'),
-                        icon: FushiIcons.chevronRight,
+                        icon: c.rightToLeft
+                            ? FushiIcons.chevronLeft
+                            : FushiIcons.chevronRight,
                         tooltip: t.lyrics_illustration_next,
                         onTap: c.showNext,
                       ),
@@ -515,7 +528,9 @@ class LyricsIllustrationPopupCard extends StatelessWidget {
     return ListenableBuilder(
       listenable: c,
       builder: (BuildContext context, Widget? _) {
-        final int? shown = c.shown;
+        // 插图位有图且卡没被收起才弹（「红点」提示方式 / 停留到点自动收起时，
+        // 插图位留着缩略图，卡不弹）。
+        final int? shown = c.cardVisible ? c.shown : null;
         final FushiMotionScheme motion = context.fushiMotion;
         return AnimatedSwitcher(
           duration: motion.spatialDefault.duration,
@@ -791,12 +806,14 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
+    // 竖排从右往左的书：← = 下一张、→ = 上一张（与翻页方向一致）。
+    final int step = widget.controller.rightToLeft ? -1 : 1;
     if (key == LogicalKeyboardKey.arrowLeft) {
-      _goTo(_index - 1);
+      _goTo(_index - step);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowRight) {
-      _goTo(_index + 1);
+      _goTo(_index + step);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.escape) {
@@ -812,6 +829,7 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
     final Color controlBg = _illustrationControlBg(context);
     final Color controlFg = _illustrationControlFg(context);
     final List<LyricsIllustration> items = widget.controller.items;
+    final bool rtl = widget.controller.rightToLeft;
     // 路由是透明叠层，没有 Material 祖先：按钮的墨水反馈要一层透明 Material 托着。
     return Material(
       type: MaterialType.transparency,
@@ -824,6 +842,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
             PageView.builder(
               key: const ValueKey<String>('lyrics_illustration_viewer_pages'),
               controller: _pages,
+              // 竖排从右往左的书：下一张从左边滑进来（向右滑 = 下一张）。
+              reverse: rtl,
               itemCount: _count,
               physics: _zoomed
                   ? const NeverScrollableScrollPhysics()
@@ -887,7 +907,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
             ),
             if (_index > 0)
               Positioned(
-                left: 12,
+                left: rtl ? null : 12,
+                right: rtl ? 12 : null,
                 top: 0,
                 bottom: 0,
                 child: Center(
@@ -895,7 +916,9 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                     key: const ValueKey<String>(
                       'lyrics_illustration_viewer_prev',
                     ),
-                    icon: FushiIcons.chevronLeft,
+                    icon: rtl
+                        ? FushiIcons.chevronRight
+                        : FushiIcons.chevronLeft,
                     tooltip: t.lyrics_illustration_previous,
                     backgroundColor: controlBg,
                     enabledColor: controlFg,
@@ -905,7 +928,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
               ),
             if (_index < _count - 1)
               Positioned(
-                right: 12,
+                left: rtl ? 12 : null,
+                right: rtl ? null : 12,
                 top: 0,
                 bottom: 0,
                 child: Center(
@@ -913,7 +937,9 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                     key: const ValueKey<String>(
                       'lyrics_illustration_viewer_next',
                     ),
-                    icon: FushiIcons.chevronRight,
+                    icon: rtl
+                        ? FushiIcons.chevronLeft
+                        : FushiIcons.chevronRight,
                     tooltip: t.lyrics_illustration_next,
                     backgroundColor: controlBg,
                     enabledColor: controlFg,

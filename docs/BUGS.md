@@ -33,10 +33,44 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3495 条。点号进各自文件。
+> 共 3529 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
+| [BUG-3924](bugs/BUG-3924-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
+| [BUG-3923](bugs/BUG-3923-reader-volume-chips-order-and-center.md) | ✅ | ✅ | 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中 |
+| [BUG-3922](bugs/BUG-3922-installer-and-onboarding-localization.md) | ✅ | ✅ | 安装器只有中文、onboarding 部分文字没翻译 |
+| [BUG-3921](bugs/BUG-3921-continue-card-volume-number.md) | ✅ | ✅ | continue-card-volume-number |
+| [BUG-3920](bugs/BUG-3920-subtitle-search-sheet-header-scrolls-away.md) | ✅ | ✅ | subtitle-search-sheet-header-scrolls-away |
+| [BUG-3919](bugs/BUG-3919-collapsible-header-dialog-intrinsics.md) | 🚧 | 🚧 | collapsible-header-dialog-intrinsics |
+| [BUG-3918](bugs/BUG-3918-home-hero-multi-episode-still-nondeterministic.md) | ✅ | ✅ | home-hero-multi-episode-still-nondeterministic |
+| [BUG-3917](bugs/BUG-3917-lyrics-choose-source-plugin-track-crash.md) | ✅ | ✅ | lyrics-choose-source-plugin-track-crash |
+| [BUG-3916](bugs/BUG-3916-lyrics-plugin-merge-stale-on-parser-bump.md) | ✅ | ✅ | lyrics-plugin-merge-stale-on-parser-bump |
+| [BUG-3915](bugs/BUG-3915-lyrics-plugin-cache-key-collision.md) | ✅ | ✅ | lyrics-plugin-cache-key-collision |
+| [BUG-3914](bugs/BUG-3914-ort-webgpu-provider-probe.md) | ✅ | ✅ | ort-webgpu-provider-probe |
+| [BUG-3913](bugs/BUG-3913-webview-resize-vram-leak.md) | ✅ | ✅ | webview-resize-vram-leak |
+| [BUG-3912](bugs/BUG-3912-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
+| [BUG-3911](bugs/BUG-3911-anki-sync-429-no-cooldown.md) | ✅ | ✅ | Anki 直连同步被 AnkiWeb 429 限流后无冷却，错误显示 Rust 原文 |
+| [BUG-3910](bugs/BUG-3910-asr-sheet-dismiss-interrupts-transcription.md) | ✅ | ✅ | 移动端转录弹层点外部或下拉即关闭并中断转录 |
+| [BUG-3909](bugs/BUG-3909-lookup-token-start-cjk-bracket.md) | ✅ | ✅ | 点〖tempering〗的 t，高亮却从〖开始 |
+| [BUG-3908](bugs/BUG-3908-youtube-separated-audio-403-silent.md) | ✅ | ✅ | YouTube 分离音频流 403 后有画面无声，无回退无提示 |
+| [BUG-3907](bugs/BUG-3907-remote-delete-gated-on-host-reachability.md) | ✅ | ✅ | 库页远端条目缺「从远端删除」（云盘来源没有、互联来源不看对端是否在线） |
+| [BUG-3906](bugs/BUG-3906-mined-card-dialog-pops-wrong-route.md) | ✅ | ✅ | 已制过卡对话框与「未适配视频」提示叠栈后两个都关不掉 |
+| [BUG-3905](bugs/BUG-3905-segmented-equal-width-truncates-longest.md) | ✅ | ✅ | 分段选择器强制等宽把最长段截成省略号 |
+| [BUG-3904](bugs/BUG-3904-airing-today-blocked-by-week-fetch.md) | ✅ | ✅ | 发现页「今日放送」冷启动等整周放送表拉完才显示 |
+| [BUG-3903](bugs/BUG-3903-popup-entry-nav-scroll-to-entry-start.md) | ✅ | ✅ | 查词弹窗 Alt+滚轮切词停在释义中间、切回第一条不回顶 |
+| [BUG-3902](bugs/BUG-3902-video-keyboard-prev-cue-degrades.md) | ✅ | ✅ | 桌面键盘「上一句」几乎总退化成回退 3 秒 |
+| [BUG-3901](bugs/BUG-3901-delete-scope-subtitle-contradiction.md) | ✅ | ✅ | 「从所有设备删除」不勾时副标题写「其他设备保留」，读成自相矛盾 |
+| [BUG-3900](bugs/BUG-3900-srs-trusted-clock-ahead-rwkv-fallback.md) | ✅ | ✅ | srs-trusted-clock-ahead-rwkv-fallback |
+| [BUG-3899](bugs/BUG-3899-pending-send-all-skips-failed.md) | ✅ | ✅ | 待发卡片「全部发送」跳过失败卡，提示 0/0/0 |
+| [BUG-3898](bugs/BUG-3898-browser-ext-shift-keydown-lookup.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词要晃一下鼠标才触发 |
+| [BUG-3897](bugs/BUG-3897-toolbar-disabled-icon-not-dimmed.md) | ✅ | ✅ | 顶栏禁用按钮外观与可用态相同 |
+| [BUG-3896](bugs/BUG-3896-home-stats-stale-after-profile-switch.md) | ✅ | ✅ | 切换配置后首页统计不刷新，仍显示上一个配置的数据 |
+| [BUG-3895](bugs/BUG-3895-log-upload-body-over-limit.md) | ✅ | ✅ | 日志上传截断只截日志原文，请求体仍超接收端上限 →「日志过大，无法上传」 |
+| [BUG-3894](bugs/BUG-3894-macos-storage-shared-caches.md) | ✅ | ✅ | macos-storage-shared-caches |
+| [BUG-3893](bugs/BUG-3893-download-keepalive-no-wakelock.md) | ✅ | ✅ | download-keepalive-no-wakelock |
+| [BUG-3892](bugs/BUG-3892-android-white-screen-srs-upgrade-on-ui-thread.md) | ✅ | ✅ | android-white-screen-srs-upgrade-on-ui-thread |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
 | [BUG-3889](bugs/BUG-3889-popup-headword-drag-copy.md) | ✅ | ✅ | 查词弹窗拖选词头后 Ctrl+C 复制不了 |

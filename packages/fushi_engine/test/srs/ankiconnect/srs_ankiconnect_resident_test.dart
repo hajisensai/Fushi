@@ -141,11 +141,7 @@ void main() {
       profileUid: kAcProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        monotonicMs: () => t,
-        bootId: 'boot',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootId: 'boot'),
       fallbackRolloverHour: () => 4,
     );
     resident = SrsAnkiConnectHandler(

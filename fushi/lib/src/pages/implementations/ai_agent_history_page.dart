@@ -63,9 +63,9 @@ class _AiAgentHistoryPageState extends State<AiAgentHistoryPage> {
       limit: 500,
     );
     final Map<String, String> titles = <String, String>{
-      for (final AiAgentSessionRow s in await widget.db.listAiAgentSessions(
-        limit: 200,
-      ))
+      // 操作记录不分 Profile，标题也按全部 Profile 的会话配。
+      for (final AiAgentSessionSummary s
+          in await widget.db.listAiAgentSessionSummaries(limit: 200))
         s.id: s.title,
     };
     final Map<String, List<AiAgentActionRow>> bySession =

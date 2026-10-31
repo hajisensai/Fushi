@@ -615,6 +615,47 @@ class WordAudioResolver {
           e.url,
       ];
 
+  /// 把远端音源的连接级失败翻成给用户看的一句话。
+  ///
+  /// 反馈 uY5I6JRU39：旧实现把**任何** [SocketException] 都报成「无法解析 host」，
+  /// 而安卓上配了 `localhost` 音源（本机没有服务在听）时真实错误是 `Connection
+  /// refused`——域名解析根本成功了，提示把人引去查网络 / DNS。这里按套接字错误的
+  /// 实际种类分开：解析失败 → [Translations.audio_source_dns_error]；连接被拒 →
+  /// [Translations.audio_source_connection_refused]；其它套接字错误照实给出系统消息。
+  @visibleForTesting
+  static String describeAudioSourceFetchError(Object e, String host) {
+    if (e is! DioError) return t.audio_source_error(detail: '$e');
+    final Object? inner = e.error;
+    if (inner is SocketException) {
+      if (isSocketHostLookupFailure(inner)) {
+        return t.audio_source_dns_error(host: host);
+      }
+      if (isSocketConnectionRefused(inner)) {
+        return t.audio_source_connection_refused(host: host);
+      }
+      return t.audio_source_request_error(
+        detail: inner.osError?.message ?? inner.message,
+      );
+    }
+    if (e.type == DioErrorType.connectionTimeout) {
+      return t.audio_source_timeout(host: host);
+    }
+    return t.audio_source_request_error(detail: e.message ?? e.type.name);
+  }
+
+  /// dart:io 的 DNS 失败统一抛 `SocketException('Failed host lookup: ...')`。
+  @visibleForTesting
+  static bool isSocketHostLookupFailure(SocketException e) =>
+      e.message.contains('Failed host lookup');
+
+  /// 连接被拒：Linux / Android `ECONNREFUSED`=111，macOS / iOS 61，Windows
+  /// `WSAECONNREFUSED`=10061。
+  @visibleForTesting
+  static bool isSocketConnectionRefused(SocketException e) {
+    final int? code = e.osError?.errorCode;
+    return code == 111 || code == 61 || code == 10061;
+  }
+
   /// [defaultFetchAudioSourceList] 的带名版本：保留 `audioSources[].name`，供
   /// 「选择音频源」菜单区分同一源的多个变体。错误语义与它完全一致（它就是本
   /// 函数的投影）。
@@ -650,21 +691,7 @@ class WordAudioResolver {
         return const <AudioSourceListEntry>[];
       }
       final host = Uri.tryParse(url)?.host ?? url;
-      final String detail;
-      if (e is DioError) {
-        final inner = e.error;
-        if (inner is SocketException) {
-          detail = t.audio_source_dns_error(host: host);
-        } else if (e.type == DioErrorType.connectionTimeout) {
-          detail = t.audio_source_timeout(host: host);
-        } else {
-          detail = t.audio_source_request_error(
-            detail: e.message ?? e.type.name,
-          );
-        }
-      } else {
-        detail = t.audio_source_error(detail: '$e');
-      }
+      final String detail = describeAudioSourceFetchError(e, host);
       ErrorLogService.instance.log(detail, e, stack);
       // rethrow 让上层 resolveConfigured 把这次失败计入 host 冷却（TODO-1057）；
       // 日志已在此记过一次，冷却窗内 resolveConfigured 会短路不再重入此处，故不刷屏。

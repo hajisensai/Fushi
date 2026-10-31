@@ -62,6 +62,18 @@ WizardSmallImageFileDynamicDark=assets\wizard_mark_dark_55.png,assets\wizard_mar
 WizardStyle=modern
 #endif
 
+; 语言选择（issue #2716：旧版只有简体中文，非中文系统的用户看到整屏中文）。
+; - LanguageDetectionMethod=uilanguage：按 Windows **显示语言**挑 [Languages] 里的项
+;   （先精确匹配 LanguageID，再按主语言匹配），不看区域格式 / 系统代码页。
+; - ShowLanguageDialog=auto：匹配上就直接用、不弹框；系统语言不在列表里才弹选择框，
+;   默认选中列表第一项 english——这就是「回落英文」。静默安装（应用内更新）从不弹框，
+;   匹配不上时同样落到 english。
+; - UsePreviousLanguage=no：Inno 默认会沿用**上一次安装记下的语言**。旧版只有
+;   chinesesimplified，存量用户每次升级都会被这条记录钉回中文；关掉它，每次都跟系统语言走。
+LanguageDetectionMethod=uilanguage
+ShowLanguageDialog=auto
+UsePreviousLanguage=no
+
 CloseApplications=no
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
@@ -69,52 +81,63 @@ RestartApplications=no
 AppMutex=FushiSingleInstanceMutex,HibikiSingleInstanceMutex
 
 [Languages]
-; 统一成简体中文。改之前这个安装器是**中英混杂**的：向导自身的页标题、说明、按钮
-; 走 Inno 内置的英文 Default.isl（"Select Destination Location" / "Next"），而本文件
-; 里的 [Tasks] 描述、数据根页文案、各种校验提示全是中文，同一屏上两种语言。
+; 覆盖 app 的全部 17 种界面语言（lib/i18n/strings*.i18n.json），守卫
+; fushi/test/build/windows_installer_languages_guard_test.dart 把两边绑在一起。
+; english 必须排第一：系统语言不在列表里时 Inno 回落到第一项（见 [Setup] 的语言选择三条）。
 ;
-; 为什么把 .isl 入库而不是引用 Inno 安装目录：简体中文属于 Inno 的
-; user-contributed translations，官方安装包**不随附**（本机 6.7.3 的 Languages\ 下
-; 29 个语言文件里没有中文，日语韩语都有）。放进仓库，CI 才不依赖编译机上恰好装过
-; 中文语言包，也不必在构建时联网取。
-; 来源：jrsoftware/issrc 的 Files/Languages/ChineseSimplified.isl
-;       （维护者 Zhenghan Yang，上游 github.com/kira-96/Inno-Setup-Chinese-Simplified-Translation）
-;       SHA-256 E0B0B350E2245F3C5E65586DFE43D574F6E7F06F2261149ABA284954B3FC9A8D
+; 语言文件两种来源：
+; - compiler:Languages\*.isl —— Inno 官方安装包随附、与编译器同版本维护（消息键永远对得上）。
+;   CI 编译机装的就是钉死 SHA-256 的 Inno 6.7.3（release-desktop.yml），本机 6.7.3 实测
+;   随附 Arabic / BrazilianPortuguese / Dutch / French / German / Italian / Japanese /
+;   Korean / Russian / Spanish / Thai / Turkish 等 29 个；缺文件时 ISCC 直接编译失败，
+;   不会静默少一种语言。
+; - languages\*.isl —— 官方安装包**不随附**的四种，入库钉版本，CI 不依赖编译机恰好装过、
+;   也不在构建时联网取。来源 jrsoftware/issrc @ 88f328ecf6669ffb3d51040de9abdf29994ac22b：
+;     Files/Languages/ChineseSimplified.isl     SHA-256 E0B0B350E2245F3C5E65586DFE43D574F6E7F06F2261149ABA284954B3FC9A8D
+;     Files/Languages/ChineseTraditional.isl    SHA-256 031684FC769259291FD563338B5ABE20B7753C88AB5A2976B83A80788DEB8455
+;     Files/Languages/Unofficial/Indonesian.isl SHA-256 06232EFFF765902DDF7BE78E39F1C5471B7E35F4C7C537DEEB76692F3B5E208D
+;     Files/Languages/Unofficial/Vietnamese.isl SHA-256 1ED7F5580DF3A302A6955C72DDBFA8E3C3E24D5ED22EA85F55BAD548859B3A19
+;   （哈希是上游原文件的；入库后按 .gitattributes 统一 LF，本地文件哈希会不同。）
 ;
-; 只列一个语言，所以 Inno 不会弹语言选择框（ShowLanguageDialog=auto 在单语言时不显示）。
-Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
+; 中文两项的顺序有讲究：Inno 先按 LanguageID 精确匹配（zh-CN $0804 → 简体，zh-TW $0404
+; → 繁体），匹配不上再按**主语言**（低 10 位，中文都是 $04）取列表里第一个。app 的繁体
+; 是 zh-HK，香港 $0C04 / 澳门 $1404 只能走主语言匹配，所以 chinesetraditional 排在
+; chinesesimplified 前面；代价是新加坡 $1004 会落到繁体（同样走主语言匹配）。
+Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "chinesetraditional"; MessagesFile: "languages\ChineseTraditional.isl"
+Name: "chinesesimplified"; MessagesFile: "languages\ChineseSimplified.isl"
+Name: "dutch"; MessagesFile: "compiler:Languages\Dutch.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "german"; MessagesFile: "compiler:Languages\German.isl"
+Name: "indonesian"; MessagesFile: "languages\Indonesian.isl"
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
+Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "thai"; MessagesFile: "compiler:Languages\Thai.isl"
+Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
+Name: "vietnamese"; MessagesFile: "languages\Vietnamese.isl"
 
-[Messages]
-WizardSelectDir=安装 Fushi
-SelectDirDesc=为程序选择一个安装位置。
-SelectDirLabel3=程序文件将保存在这里。
-SelectDirBrowseLabel=安装位置
-WizardSelectTasks=按你的习惯设置
-SelectTasksDesc=选择需要的快捷方式与文件关联。
-SelectTasksLabel2=这些选项不会更改你的默认播放器。
-WizardReady=准备好开始了
-ReadyLabel1=确认以下设置，然后开始安装。
-ReadyLabel2a=你可以返回上一步修改设置。
-ReadyLabel2b=确认后即可开始安装。
-ButtonBack=上一步(&B)
-ButtonNext=下一步(&N)
-ButtonInstall=开始安装(&I)
-ButtonFinish=完成(&F)
-ButtonBrowse=浏览(&R)
+; 我们自己写的文字（改写过的向导页文案 + 全部自定义消息），按语言分好。
+#include "messages.iss"
 
 [Tasks]
 ; 桌面快捷方式：默认勾选（保持旧行为——首装桌面即有图标），允许用户取消。
 ; 配合 [Icons] 的 Check: ShouldCreateDesktopIcon，仅在快捷方式尚不存在时创建，
 ; 应用内静默更新（/VERYSILENT，用户看不到向导、无法取消）不会重写已存在的 .lnk，
 ; 桌面图标位置得以保留（BUG-1014）。
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式："
+; CreateDesktopIcon / AdditionalIcons 是每个 .isl 自带的标准自定义消息，随语言切换。
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 ; 可选：把 Fushi 注册为视频文件的「打开方式」候选（不抢占系统默认播放器，
 ; 只在资源管理器右键「打开方式」里出现 Fushi，并支持拖视频到 fushi.exe）。
-Name: "videoassoc"; Description: "将 Fushi 加入视频文件的「打开方式」（mkv / mp4 等）"; GroupDescription: "文件关联："
+Name: "videoassoc"; Description: "{cm:FushiTaskVideoAssoc}"; GroupDescription: "{cm:FushiTaskGroupFileAssoc}"
 ; 同上，书 / 漫画文件（扩展名与 lib/src/media/import/external_book.dart 的
 ; kExternalBookOpenExtensions 逐一对应，守卫 test/media/import/external_book_test.dart）。
-Name: "bookassoc"; Description: "将 Fushi 加入书和漫画文件的「打开方式」（epub / pdf / txt / cbz 等）"; GroupDescription: "文件关联："
+Name: "bookassoc"; Description: "{cm:FushiTaskBookAssoc}"; GroupDescription: "{cm:FushiTaskGroupFileAssoc}"
 
 [InstallDelete]
 ; BUG-1449：galgame helper 现在以**普通文件**随包发在 {app}\voice_hook\<arch>\，
@@ -164,7 +187,7 @@ Root: HKCU; Subkey: "Software\Classes\fushi"; ValueType: string; ValueName: "URL
 Root: HKCU; Subkey: "Software\Classes\fushi\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"
 Root: HKCU; Subkey: "Software\Classes\fushi\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""
 
-Root: HKCU; Subkey: "Software\Classes\Fushi.Video"; ValueType: string; ValueData: "Fushi 视频"; Flags: uninsdeletekey; Tasks: videoassoc
+Root: HKCU; Subkey: "Software\Classes\Fushi.Video"; ValueType: string; ValueData: "{cm:FushiProgIdVideo}"; Flags: uninsdeletekey; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: videoassoc
 
@@ -192,7 +215,7 @@ Root: HKCU; Subkey: "Software\Classes\.mov\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
 
 ; 书 / 漫画：ProgId Fushi.Book + SupportedTypes + 各扩展名 OpenWithProgids 追加候选（不改默认关联）。
-Root: HKCU; Subkey: "Software\Classes\Fushi.Book"; ValueType: string; ValueData: "Fushi 书籍"; Flags: uninsdeletekey; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book"; ValueType: string; ValueData: "{cm:FushiProgIdBook}"; Flags: uninsdeletekey; Tasks: bookassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Book\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: bookassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Book\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: bookassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".epub"; ValueData: ""; Tasks: bookassoc
@@ -231,7 +254,7 @@ Type: files; Name: "{app}\data_root.bootstrap"
 Type: files; Name: "{app}\fushi-update-install-*.log"
 
 [Run]
-Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
+Filename: "{app}\fushi.exe"; Description: "{cm:LaunchProgram,Fushi}"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
 
 [Code]
 // -- TODO-549: app-internal self-update "AppMutex deadlock" root-cause layer --
@@ -484,12 +507,11 @@ begin
     { 文案不再断言占用者是「游戏」：Fushi 的捕获组件可以附着到任何被用户选中的窗口，
       实测现场里锁住 fushi_voice_hook.dll 的是**微信**（连开三天，于是每次自动更新都在
       这里中止，版本卡了五天，BUG-1708）。把占用者写死成游戏会让用户对着一个根本没开的
-      东西找问题。只陈述事实：哪个文件被占用、它为什么会被别的进程持有、怎么放开。 }
-    Result := '检测到 Fushi 的捕获组件正被其它程序占用，无法更新：' + NL + Locked + NL + NL +
-      'Fushi 的语音捕获组件会注入到你选定的程序里（游戏，或任何你附着过的窗口），' + NL +
-      '并由该程序持有到它退出为止。请关闭最近附着过的程序（游戏请先存档），' + NL +
-      '然后重新运行本安装程序。' + NL + NL +
-      '（本次未改动任何文件，现有版本可继续使用。）';
+      东西找问题。只陈述事实：哪个文件被占用、它为什么会被别的进程持有、怎么放开。
+      文案按语言取自 messages.iss（issue #2716）。 }
+    Result := CustomMessage('FushiLockedHead') + NL + Locked + NL + NL +
+      CustomMessage('FushiLockedBody') + NL + NL +
+      CustomMessage('FushiLockedNoChange');
   end;
 end;
 
@@ -621,10 +643,15 @@ end;
 #endif
 
 function Md3UiFontName(const Fallback: String): String;
+var
+  Preferred: String;
 begin
-  { Use a Windows CJK UI font so Chinese and Latin share a consistent baseline. }
-  if FontExists('Microsoft YaHei UI') then
-    Result := 'Microsoft YaHei UI'
+  { 字体跟随安装器语言（messages.iss 的 FushiUiFont）：中文用雅黑 / 正黑、日文 Yu Gothic UI、
+    韩文 Malgun Gothic、泰文 Leelawadee UI，其余 Segoe UI。旧版对所有语言写死雅黑，
+    日文汉字会以中文字形显示。 }
+  Preferred := CustomMessage('FushiUiFont');
+  if FontExists(Preferred) then
+    Result := Preferred
   else if FontExists('Segoe UI Variable Display') then
     Result := 'Segoe UI Variable Display'
   else if FontExists('Segoe UI') then
@@ -645,12 +672,12 @@ begin
 #endif
   DataRootPageOffered := False;
   DataRootPage := CreateInputDirPage(wpSelectDir,
-    '为内容留出空间',
-    '选择书籍、漫画、封面、字幕、词典和数据库的存储位置。',
-    '这些数据可能远大于程序本身，建议选一个空间充足的位置。' + #13#10 +
-    '之后可以在「设置 → 数据存储位置」里迁移。',
+    CustomMessage('FushiDataRootCaption'),
+    CustomMessage('FushiDataRootDescription'),
+    CustomMessage('FushiDataRootNote1') + #13#10 +
+    CustomMessage('FushiDataRootNote2'),
     False, 'Fushi');
-  DataRootPage.Add('数据存储位置');
+  DataRootPage.Add(CustomMessage('FushiDataRootLabel'));
 #ifdef Md3Chrome
   Md3LayoutDataRootPage();
 #endif
@@ -689,7 +716,7 @@ begin
   SetArrayLength(Lines, 1);
   Lines[0] := Target;
   if not SaveStringsToUTF8File(ExpandConstant('{app}\' + DataRootBootstrapFileName), Lines, False) then
-    Log('WriteDataRootBootstrap: 写入失败，app 将使用默认数据位置');
+    Log('WriteDataRootBootstrap: write failed; the app will use the default data location');
 end;
 
 { BUG-3567：提权的应用内更新把 Inno 日志写进安装目录（用户不可写，防链接重定向），
@@ -859,11 +886,9 @@ begin
   begin
     if not InstallDirWritable(WizardDirValue) then
     begin
-      MsgBox('当前权限无法写入所选目录：' + #13#10 + WizardDirValue + #13#10#13#10
-        + '请改选用户可写的目录（推荐默认目录 '
-        + ExpandConstant('{localappdata}\Fushi') + '）。' + #13#10#13#10
-        + '不建议装进需要管理员权限的目录：即使以管理员身份重装到该目录，'
-        + '应用日常以普通权限运行，之后每次自动更新都需要再次提权。',
+      MsgBox(CustomMessage('FushiErrNotWritable') + #13#10 + WizardDirValue + #13#10#13#10
+        + FmtMessage(CustomMessage('FushiErrWritableHint'),[ExpandConstant('{localappdata}\Fushi')]) + #13#10#13#10
+        + CustomMessage('FushiErrInstallAdminHint'),
         mbError, MB_OK);
       Result := False;
     end;
@@ -889,8 +914,8 @@ begin
     if (Length(DataRoot) < 3)
       or ((Copy(DataRoot, 2, 2) <> ':\') and (Copy(DataRoot, 1, 2) <> '\\')) then
     begin
-      MsgBox('数据存储位置必须是完整的绝对路径（例如 D:\FushiData）。' + #13#10#13#10
-        + '当前填写的是：' + #13#10 + DataRoot,
+      MsgBox(CustomMessage('FushiErrDataRootNotAbsolute') + #13#10#13#10
+        + CustomMessage('FushiErrCurrentValue') + #13#10 + DataRoot,
         mbError, MB_OK);
       Result := False;
       Exit;
@@ -901,11 +926,10 @@ begin
     if IsSameOrAncestorDir(DataRoot, WizardDirValue)
       or IsSameOrAncestorDir(WizardDirValue, DataRoot) then
     begin
-      MsgBox('数据存储位置不能与安装目录相同或互相包含：' + #13#10
-        + '安装目录：' + WizardDirValue + #13#10
-        + '数据目录：' + DataRoot + #13#10#13#10
-        + '请另选一个独立的目录（推荐默认 '
-        + ExpandConstant('{userdocs}\Fushi') + '）。',
+      MsgBox(CustomMessage('FushiErrDataRootOverlap') + #13#10
+        + FmtMessage(CustomMessage('FushiErrInstallFolder'), [WizardDirValue]) + #13#10
+        + FmtMessage(CustomMessage('FushiErrDataFolder'), [DataRoot]) + #13#10#13#10
+        + FmtMessage(CustomMessage('FushiErrSeparateFolderHint'),[ExpandConstant('{userdocs}\Fushi')]),
         mbError, MB_OK);
       Result := False;
       Exit;
@@ -919,17 +943,16 @@ begin
     if DirExists(AddBackslash(DataRoot) + 'documents')
       or DirExists(AddBackslash(DataRoot) + 'support') then
     begin
-      MsgBox('所选目录下已经存在 documents 或 support 子目录：' + #13#10 + DataRoot + #13#10#13#10
-        + 'Fushi 会在数据目录下创建并接管这两个子目录，请选一个空目录或新建一个目录。',
+      MsgBox(CustomMessage('FushiErrDataRootReserved') + #13#10 + DataRoot + #13#10#13#10
+        + CustomMessage('FushiErrDataRootReservedHint'),
         mbError, MB_OK);
       Result := False;
       Exit;
     end;
     if not InstallDirWritable(DataRoot) then
     begin
-      MsgBox('当前权限无法写入所选数据目录：' + #13#10 + DataRoot + #13#10#13#10
-        + '请改选用户可写的目录（推荐默认 '
-        + ExpandConstant('{userdocs}\Fushi') + '）。',
+      MsgBox(CustomMessage('FushiErrDataNotWritable') + #13#10 + DataRoot + #13#10#13#10
+        + FmtMessage(CustomMessage('FushiErrWritableHint'),[ExpandConstant('{userdocs}\Fushi')]),
         mbError, MB_OK);
       Result := False;
     end;
