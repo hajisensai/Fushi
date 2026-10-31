@@ -73,6 +73,7 @@
   - **远端红 ≠ 代码红**：对方的 SDK / NDK / VS 版本可能和本机不同。heavy 拿到红的编译检查会在本机再编一次，以本机结果为准；绿的直接采信。
   - 主人可在 `limits` 写 `ALLOW_BUILD=0` 关掉编译检查（`hello` 回 `build=off`，`build` 动词拒绝）。
 - 仍不外包：要在本机用产物的构建、集成测试（占对方屏幕）、`--update-goldens`（golden 钉平台，只有本机标了 `golden`）、`--merge-coverage` / `--file-reporter` / 分片参数。
+- **外包模式的收尾与回退（2026-10-31）**：`--offload` / `--analyze` / `--build` 下，配置缺失 / 无效 / 非 JSON、快照失败、参数被拒、内部异常一律退 75 并打 `DIST OFFLOAD: declined: <原因>`，由 heavy.dart 回本机跑（不再退 64 / 1 判红）；Ctrl-C、SIGTERM 与 `--max-minutes=N`（heavy.dart 传入）都经 `tool/test_flow/dist_stop.dart`：先 abandon prepare、再 `cancel()` 杀远端批次 / analyze / 构建、最后 `finish()` 释放 checkout 锁与租约，然后退 130 / 143 / 124（测试 `test/tools/dist_stop_test.dart`、`test/tools/dist_test_decline_test.dart`）。带 `--name` / `--plain-name` / `--tags` / `--exclude-tags` 时，单批零匹配（退 79 + `done: success` + 无错误）不判红，整次运行仍须 ≥1 条（`distTestFilterActive`，`dist_results_test.dart`）。`--concurrency=N` 给每台 worker 的并发封顶（`distEffectiveConcurrency`）。
 - 判定纯函数 `tool/test_flow/heavy_offload.dart`，测试 `test/tools/heavy_offload_test.dart`；构建白名单 `distBuildOf`（`dist_plan_test.dart`）；coverage 校验合并 `tool/test_flow/dist_coverage.dart`（`dist_coverage_test.dart`）；`hello` 判定 `distJobBlocker`（`dist_workers_test.dart`）；shim / worker 脚本契约 `test/tools/dist_shim_test.dart`。
 
 ## 第二期实现：朋友机器（`ssh-shim`）

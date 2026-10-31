@@ -34,8 +34,12 @@
 // from fushi/, `gradlew :app:assemble*` from fushi/android/) whose output is
 // not wanted here. Its output and exit code are then dist_test's (`DIST TEST
 // VERDICT` / `DIST ANALYZE` / `DIST BUILD` last lines). When no other machine
-// takes it, it runs here as before; a compile check that was red elsewhere is
-// built here once more, since that machine's toolchain may be the cause.
+// takes it, or dist_test cannot get going (bad worker config, no snapshot:
+// exit 75 with a `DIST OFFLOAD: declined:` line), it runs here as before; a
+// compile check that was red elsewhere is built here once more, since that
+// machine's toolchain may be the cause. --max-minutes is dist_test's own
+// deadline there (remote run killed, worker released, 124), Ctrl-C likewise
+// (130). The Job Object below is joined first, so all of it is throttled.
 // `--here` or FUSHI_HEAVY_OFFLOAD=off keep it here.
 import 'dart:async';
 import 'dart:io';
