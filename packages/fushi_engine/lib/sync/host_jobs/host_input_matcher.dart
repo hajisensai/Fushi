@@ -4,6 +4,10 @@
 /// 库里会播的音频，见 `host_audiobook_inputs.dart`）里找**内容哈希相同**的那份。
 /// 大小只用来缩小要算哈希的范围（大小不同的文件内容必不同），判定只认 SHA-256；
 /// 哈希走 [FileContentHashCache]，同一文件没改过就不重算。
+///
+/// **匹配请求里不读文件内容**：冷文件（缓存里没有当前 `(大小, 修改时刻)` 的哈希）
+/// 交给后台逐个预热，本次应答 `pending = true`，客户端隔一会儿再问。此前在请求里
+/// 同步整份算哈希，慢盘上的大有声书超过客户端请求超时，整个转录直接失败。
 library;
 
 import 'dart:io';
@@ -50,6 +54,22 @@ class HostInputWanted {
   };
 }
 
+/// 一次匹配的结果。
+class HostInputMatchResult {
+  const HostInputMatchResult({required this.matched, required this.pending});
+
+  static const HostInputMatchResult none = HostInputMatchResult(
+    matched: <String, HostInputRef>{},
+    pending: false,
+  );
+
+  /// 名字 → 命中的 host 文件；没命中的名字不在结果里。
+  final Map<String, HostInputRef> matched;
+
+  /// 还有大小吻合的候选在后台算哈希：再问一次可能多命中几份。false = 这就是终局。
+  final bool pending;
+}
+
 class HostInputMatcher {
   HostInputMatcher({required this.candidates, required this.cache});
 
@@ -58,9 +78,20 @@ class HostInputMatcher {
   final Future<List<String>> Function() candidates;
   final FileContentHashCache cache;
 
-  /// 返回 名字 → 命中的 host 文件；没命中的名字不在结果里。
-  Future<Map<String, HostInputRef>> match(List<HostInputWanted> wanted) async {
-    if (wanted.isEmpty) return const <String, HostInputRef>{};
+  /// 待预热（含正在算）的路径，按入队顺序逐个算——慢盘上并发读只会更慢。
+  final Set<String> _warmQueue = <String>{};
+
+  /// 算哈希失败（读不了 / 算的时候被改写）的路径 → 失败时的 `(大小, 修改时刻)`。
+  /// 文件没再变就不重试，否则客户端会一直收到 `pending`。
+  final Map<String, (int, int)> _warmFailedAt = <String, (int, int)>{};
+  Future<void>? _warming;
+
+  /// 后台预热跑完（测试用）。
+  Future<void> whenWarmIdle() => _warming ?? Future<void>.value();
+
+  /// 只用缓存里的哈希回答；大小吻合但没缓存的候选排进后台预热并报 `pending`。
+  Future<HostInputMatchResult> match(List<HostInputWanted> wanted) async {
+    if (wanted.isEmpty) return HostInputMatchResult.none;
     final Set<int> sizes = <int>{
       for (final HostInputWanted w in wanted) w.size,
     };
@@ -69,32 +100,83 @@ class HostInputMatcher {
     };
     final Map<String, FileContentFingerprint> bySha =
         <String, FileContentFingerprint>{};
+    bool pending = false;
     for (final String path in (await candidates()).toSet()) {
       if (missing.isEmpty) break;
       final FileStat stat = await FileStat.stat(path);
       if (stat.type != FileSystemEntityType.file) continue;
       if (!sizes.contains(stat.size)) continue;
-      final FileContentFingerprint fp;
-      try {
-        fp = await cache.fingerprint(path);
-      } on FileSystemException {
-        continue; // 期间被删：当没有
-      } on FileContentChangedWhileHashing {
-        continue; // 正在被写：当没有，宁可上传
+      final FileContentFingerprint? fp = await cache.cachedFingerprint(
+        path,
+        stat: stat,
+      );
+      if (fp == null) {
+        if (_scheduleWarm(path, stat)) pending = true;
+        continue;
       }
       if (missing.remove(fp.sha256)) bySha[fp.sha256] = fp;
     }
-    return <String, HostInputRef>{
-      for (final HostInputWanted w in wanted)
-        if (bySha[w.sha256] case final FileContentFingerprint fp
-            when fp.size == w.size)
-          w.name: HostInputRef(
-            path: fp.path,
-            sha256: fp.sha256,
-            size: fp.size,
-            modifiedAt: fp.modifiedAt,
-          ),
-    };
+    return HostInputMatchResult(
+      matched: <String, HostInputRef>{
+        for (final HostInputWanted w in wanted)
+          if (bySha[w.sha256] case final FileContentFingerprint fp
+              when fp.size == w.size)
+            w.name: HostInputRef(
+              path: fp.path,
+              sha256: fp.sha256,
+              size: fp.size,
+              modifiedAt: fp.modifiedAt,
+            ),
+      },
+      // 全部命中就不必再等别的候选。
+      pending: pending && missing.isNotEmpty,
+    );
+  }
+
+  /// 把 [path] 排进后台预热；返回它的哈希是否「还会算出来」（在队里 / 正在算）。
+  /// 上次就算失败且文件没再变的不重排，返回 false。
+  bool _scheduleWarm(String path, FileStat stat) {
+    final (int, int)? failed = _warmFailedAt[path];
+    if (failed != null &&
+        failed.$1 == stat.size &&
+        failed.$2 == stat.modified.millisecondsSinceEpoch) {
+      return false;
+    }
+    _warmQueue.add(path);
+    _warming ??= _drainWarmQueue();
+    return true;
+  }
+
+  Future<void> _drainWarmQueue() async {
+    try {
+      while (_warmQueue.isNotEmpty) {
+        final String path = _warmQueue.first;
+        try {
+          await cache.fingerprint(path);
+          _warmFailedAt.remove(path);
+        } on FileSystemException {
+          await _recordWarmFailure(path); // 读不了 / 期间被删：当没有
+        } on FileContentChangedWhileHashing {
+          await _recordWarmFailure(path); // 正在被写：这一版当没有，宁可上传
+        } catch (e, stack) {
+          engineLog.log('HostInputMatcher.warm($path)', e, stack);
+          await _recordWarmFailure(path);
+        } finally {
+          _warmQueue.remove(path);
+        }
+      }
+    } finally {
+      _warming = null;
+    }
+  }
+
+  Future<void> _recordWarmFailure(String path) async {
+    final FileStat stat = await FileStat.stat(path);
+    if (stat.type == FileSystemEntityType.notFound) {
+      _warmFailedAt.remove(path);
+      return;
+    }
+    _warmFailedAt[path] = (stat.size, stat.modified.millisecondsSinceEpoch);
   }
 
   /// [ref] 指向的文件现在的内容是否仍是匹配时那份。[force] = 不信缓存、整份重读

@@ -207,8 +207,112 @@ void main() {
           '${inputs.path}/001_b.mp3',
         ]);
         expect(service.jobDirAsked, isTrue);
+        // 原本就在、不带标记的目录是 host 用户的：不认领、不打标记。
+        expect(
+          File('${serviceJobDir.path}/$kRemoteAsrJobDirMarker').existsSync(),
+          isFalse,
+        );
       },
     );
+
+    test(
+      'service job dir created by this remote job is marked with its id',
+      () async {
+        final Directory inputs = Directory('${tmp.path}/inputs')..createSync();
+        final Directory outputs = Directory('${tmp.path}/outputs')
+          ..createSync();
+        File('${inputs.path}/000_a.mp3').writeAsBytesSync(<int>[1]);
+        final Directory serviceJobDir = Directory('${tmp.path}/asr_job_new');
+        final _RecordingService service = _RecordingService(serviceJobDir);
+        final AsrHostJobRunner runner = AsrHostJobRunner(
+          serviceFactory: (asr.AsrAudioProfile _) => service,
+        );
+        await expectLater(
+          runner.run(
+            HostJobContext(
+              jobId: 'remote-1',
+              params: const <String, Object?>{'language': 'ja'},
+              inputsDir: inputs,
+              outputsDir: outputs,
+              onProgress: (double _, String? _) {},
+              cancel: HostJobCancelToken(),
+            ),
+          ),
+          throwsA(isA<_FactoryCalled>()),
+        );
+        final File marker = File(
+          '${serviceJobDir.path}/$kRemoteAsrJobDirMarker',
+        );
+        expect(marker.readAsStringSync(), 'remote-1');
+      },
+    );
+
+    group('claimAsrServiceJobDir', () {
+      Future<bool> claim(
+        Directory dir, {
+        String jobId = 'job-b',
+        bool finished = false,
+        void Function()? onFinishedAsked,
+      }) => claimAsrServiceJobDir(
+        dir,
+        jobId: jobId,
+        finishedBefore: () async {
+          onFinishedAsked?.call();
+          return finished;
+        },
+      );
+
+      void mark(Directory dir, String owner) {
+        dir.createSync(recursive: true);
+        File('${dir.path}/$kRemoteAsrJobDirMarker').writeAsStringSync(owner);
+      }
+
+      test('missing dir: created, marked, discarded at the end', () async {
+        final Directory dir = Directory('${tmp.path}/fresh');
+        expect(await claim(dir), isFalse);
+        expect(
+          File('${dir.path}/$kRemoteAsrJobDirMarker').readAsStringSync(),
+          'job-b',
+        );
+      });
+
+      test(
+        'pre-existing unmarked dir belongs to the host user: kept',
+        () async {
+          final Directory dir = Directory('${tmp.path}/user')..createSync();
+          bool asked = false;
+          expect(await claim(dir, onFinishedAsked: () => asked = true), isTrue);
+          expect(asked, isFalse);
+          expect(
+            File('${dir.path}/$kRemoteAsrJobDirMarker').existsSync(),
+            isFalse,
+          );
+        },
+      );
+
+      test('leftover of a cancelled remote job: not kept', () async {
+        final Directory dir = Directory('${tmp.path}/leftover');
+        mark(dir, 'job-a');
+        expect(await claim(dir), isFalse);
+      });
+
+      test('own marker (same job rerun after restart): not kept', () async {
+        final Directory dir = Directory('${tmp.path}/own');
+        mark(dir, 'job-b');
+        bool asked = false;
+        expect(
+          await claim(dir, finished: true, onFinishedAsked: () => asked = true),
+          isFalse,
+        );
+        expect(asked, isFalse);
+      });
+
+      test('remote leftover the host user finished locally: kept', () async {
+        final Directory dir = Directory('${tmp.path}/adopted');
+        mark(dir, 'job-a');
+        expect(await claim(dir, finished: true), isTrue);
+      });
+    });
 
     test('validateParams rejects an unknown audioProfile', () {
       final AsrHostJobRunner runner = AsrHostJobRunner(

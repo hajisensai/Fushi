@@ -5,8 +5,10 @@
 /// GET    /api/jobs                        列表
 /// POST   /api/jobs                        {kind, params} → {jobId, state}
 /// GET    /api/jobs/<id>                   轮询
-/// POST   /api/jobs/<id>/inputs/match      {files:[{name,sha256,size}]} → {matched:[name]}
+/// POST   /api/jobs/<id>/inputs/match      {files:[{name,sha256,size}]} → {matched:[name], pending}
 ///                                         host 本地有同内容文件的那几份不必上传
+///                                         只查哈希缓存、不在请求里读文件；pending =
+///                                         host 还在后台算冷文件哈希，客户端稍后再问
 /// PUT    /api/jobs/<id>/input/<name>      上传输入（body=bytes）
 /// POST   /api/jobs/<id>/start
 /// GET    /api/jobs/<id>/result[/<name>]   产物
@@ -23,10 +25,10 @@ import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
-      status,
-      body: jsonEncode(body),
-      headers: const <String, String>{'Content-Type': 'application/json'},
-    );
+  status,
+  body: jsonEncode(body),
+  headers: const <String, String>{'Content-Type': 'application/json'},
+);
 
 Future<shelf.Response> handleHostJobRequest(
   HostJobManager jobs,
@@ -50,9 +52,11 @@ Future<shelf.Response> handleHostJobRequest(
       }
       if (method == 'POST') {
         final Object? decoded = jsonDecode(await request.readAsString());
-        if (decoded is! Map) return shelf.Response(400, body: 'JSON object body required');
+        if (decoded is! Map)
+          return shelf.Response(400, body: 'JSON object body required');
         final String? kind = decoded['kind']?.toString();
-        if (kind == null || kind.isEmpty) return shelf.Response(400, body: 'Missing kind');
+        if (kind == null || kind.isEmpty)
+          return shelf.Response(400, body: 'Missing kind');
         final Object? rawParams = decoded['params'];
         final Map<String, Object?> params = rawParams is Map
             ? Map<String, Object?>.from(rawParams)
@@ -88,9 +92,11 @@ Future<shelf.Response> handleHostJobRequest(
         for (final Object? e in decoded['files'] as List)
           HostInputWanted.fromJson(e),
       ];
-      final List<String> matched = await jobs.matchInputs(id, wanted);
+      final ({List<String> matched, bool pending}) result = await jobs
+          .matchInputs(id, wanted);
       return _json(<String, Object?>{
-        'matched': matched,
+        'matched': result.matched,
+        'pending': result.pending,
         ...jobs.get(id).toWireJson(),
       });
     }
@@ -103,16 +109,23 @@ Future<shelf.Response> handleHostJobRequest(
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       final HostJobRecord rec = jobs.get(id);
       if (rec.state != HostJobState.done) {
-        return _json(<String, Object?>{'reason': 'not_done', 'state': rec.state.name}, status: 409);
+        return _json(<String, Object?>{
+          'reason': 'not_done',
+          'state': rec.state.name,
+        }, status: 409);
       }
       final String? name = seg.length >= 3 ? seg[2] : null;
       final File? file = jobs.result(id, name);
-      if (file == null || !await file.exists()) return shelf.Response.notFound('No such output');
+      if (file == null || !await file.exists())
+        return shelf.Response.notFound('No such output');
       final int length = await file.length();
       return shelf.Response.ok(
         method == 'HEAD' ? null : file.openRead(),
         headers: <String, String>{
-          'Content-Type': jobs.contentTypeFor(id, name ?? rec.primaryOutput ?? ''),
+          'Content-Type': jobs.contentTypeFor(
+            id,
+            name ?? rec.primaryOutput ?? '',
+          ),
           'Content-Length': '$length',
         },
       );
