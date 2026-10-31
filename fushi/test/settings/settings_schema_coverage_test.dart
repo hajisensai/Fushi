@@ -27,7 +27,11 @@ import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show fushiM3eMenuAnimationStyle;
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart'
+    show LibraryShapeBackdrop;
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -1741,6 +1745,10 @@ void main() {
               'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
             });
       addTearDown(themeNotifier.dispose);
+      // 页面背景设置发布在进程级 notifier 上，驱动过的值不带出本测试。
+      addTearDown(
+        () => pageBackdropSettings.value = const PageBackdropSettings(),
+      );
       // 用现成公开 seam 把 schema 渲染需要的子系统全部 wire 到同一内存 DB（不改
       // app_model.dart，避开并发 agent 冲突）：wireDatabaseForTesting 设 database；
       // wireLocalAudioForTesting 设 prefsRepo(+localAudioManager) —— prefsRepo 是
@@ -1772,11 +1780,51 @@ void main() {
       final ReaderCssEffectProbe readerProbe = ReaderCssEffectProbe(
         () => readerSettings,
       );
+      // 「外观 › 页面背景」的强度 / 缓慢漂移不改配色，消费点是路由层背景
+      // （LibraryShapeBackdrop → PageBackdropLayer）。harness 把设置页垫在真实的
+      // LibraryShapeBackdrop 上，探针读**挂载出来的那一层**画了什么：各形状的
+      // 填充色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
+      // 控制器存在时出现）。设置页里的预设缩略图也是 PageBackdropLayer，按
+      // [settingsPageKey] 排除，只看路由层那一份。
+      final GlobalKey settingsPageKey = GlobalKey(debugLabel: 'settings-page');
+      String routeBackdropRender() {
+        final Finder pageLayers = find.descendant(
+          of: find.byKey(settingsPageKey),
+          matching: find.byType(PageBackdropLayer),
+        );
+        final Set<Element> thumbnails = pageLayers.evaluate().toSet();
+        final List<Element> routeLayers = find
+            .descendant(
+              of: find.byType(LibraryShapeBackdrop),
+              matching: find.byType(PageBackdropLayer),
+            )
+            .evaluate()
+            .where((Element e) => !thumbnails.contains(e))
+            .toList();
+        if (routeLayers.isEmpty) return 'backdrop:none';
+        final Finder layer = find.byElementPredicate(
+          (Element e) => identical(e, routeLayers.single),
+        );
+        final List<String> fills = find
+            .descendant(of: layer, matching: find.byType(DecoratedBox))
+            .evaluate()
+            .map((Element e) => (e.widget as DecoratedBox).decoration)
+            .whereType<ShapeDecoration>()
+            .map((ShapeDecoration d) => '${d.color}')
+            .toList();
+        final bool drifting = find
+            .descendant(of: layer, matching: find.byType(AnimatedBuilder))
+            .evaluate()
+            .isNotEmpty;
+        return 'backdrop:fills=$fills,drifting=$drifting';
+      }
+
       final RenderInputProbe themeProbe = RenderInputProbe(
         () =>
             '${themeNotifier.theme.colorScheme}|'
             '${themeNotifier.darkTheme.colorScheme}|'
-            '${themeNotifier.brightnessMode}|${themeNotifier.appThemeKey}',
+            '${themeNotifier.brightnessMode}|${themeNotifier.appThemeKey}|'
+            '${routeBackdropRender()}',
         tier: EffectTier.t2WidgetTree,
       );
       EffectProbe? probeFor(SettingsDestinationId id) => switch (id) {
@@ -1837,14 +1885,21 @@ void main() {
                   buildSettingsSchema(sctx),
                 );
                 destinations = all;
-                return ValueListenableBuilder<SettingsDestination?>(
-                  valueListenable: destNotifier,
-                  builder: (_, SettingsDestination? dest, __) {
-                    return MaterialSettingsRenderer().buildDetailPage(
-                      settingsContext: sctx,
-                      destination: dest ?? all.first,
-                    );
-                  },
+                // 真实路由层背景垫在设置页下面（与 FushiPageBackdrop 同一组件），
+                // 页面背景的设置才有可观测的消费点（见 routeBackdropRender）。
+                return LibraryShapeBackdrop(
+                  child: KeyedSubtree(
+                    key: settingsPageKey,
+                    child: ValueListenableBuilder<SettingsDestination?>(
+                      valueListenable: destNotifier,
+                      builder: (_, SettingsDestination? dest, __) {
+                        return MaterialSettingsRenderer().buildDetailPage(
+                          settingsContext: sctx,
+                          destination: dest ?? all.first,
+                        );
+                      },
+                    ),
+                  ),
                 );
               },
             ),
