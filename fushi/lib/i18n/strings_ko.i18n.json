@@ -4527,6 +4527,8 @@
   "lyrics_mode": "가사 모드",
   "lyrics_mode_hint_body": "가사 모드에는 자체 글꼴 크기 설정이 있습니다. ⚙ 설정 → 타이포그래피에서 조정할 수 있습니다.",
   "lyrics_mode_hint_title": "가사 모드",
+  "lyrics_search_empty_hint": "Search this audiobook's subtitles",
+  "lyrics_search_results_truncated": "Showing the first $n of $total matches",
   "lyrics_sentence_replay": "Replay current sentence",
   "lyrics_skipped_text_show": "Show unread book text",
   "lyrics_skipped_text_show_hint": "Book text the narrator skipped, or the transcript could not match, appears between lines in small grey text",
