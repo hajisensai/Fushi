@@ -124,8 +124,9 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
 
   Future<String?> blocker() async {
     // 先判 AI：没指派时连下载面都不必看，更不会走到任何 AI 调用。
-    if (resolveVideoAcquireAiProvider(aiSettings) == null)
+    if (resolveVideoAcquireAiProvider(aiSettings) == null) {
       return kHostAssistantReasonNoProvider;
+    }
     if (downloads.pipeline == null ||
         downloads.registry == null ||
         await downloads.downloadSource() == null) {

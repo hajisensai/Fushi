@@ -511,8 +511,9 @@ void main() {
             search: (_) async {
               searches++;
               // 与真实 _searchNyaa 同一种失败：没有启用的 Nyaa 式动画站。
-              if (!hasSite)
+              if (!hasSite) {
                 throw const VideoDownloadSubscriptionBtSiteMissing();
+              }
               return <NyaaTorrent>[_torrent(hash: 'abc123', episode: 2)];
             },
           );

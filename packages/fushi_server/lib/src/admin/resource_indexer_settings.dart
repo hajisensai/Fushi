@@ -65,8 +65,9 @@ Map<String, Object?> btSiteToJson(BtSiteConfig site, {bool? active}) =>
 /// 解析 `domains` 字段：媒体域名数组（`anime` / `movie` / `tv` / `novel` / `audiobook` /
 /// `manga` / `game`），至少一个。
 Set<BtSiteDomain> parseBtSiteDomains(Object? raw) {
-  if (raw is! List)
+  if (raw is! List) {
     throw const FormatException('domains must be an array of media domains');
+  }
   final Set<BtSiteDomain> out = <BtSiteDomain>{};
   for (final Object? item in raw) {
     final BtSiteDomain? domain = BtSiteDomain.fromWire(
@@ -79,8 +80,9 @@ Set<BtSiteDomain> parseBtSiteDomains(Object? raw) {
     }
     out.add(domain);
   }
-  if (out.isEmpty)
+  if (out.isEmpty) {
     throw const FormatException('select at least one media domain');
+  }
   return out;
 }
 
@@ -111,8 +113,9 @@ ResourceIndexerUpdate parseResourceIndexerUpdate(
   List<TorznabIndexerConfig>? torznab;
   final Object? rawList = body['torznab'];
   if (rawList != null) {
-    if (rawList is! List)
+    if (rawList is! List) {
       throw const FormatException('torznab must be an array');
+    }
     final Map<String, TorznabIndexerConfig> existing =
         <String, TorznabIndexerConfig>{
           for (final TorznabIndexerConfig c in readTorznabIndexerConfigs(prefs))
@@ -130,8 +133,9 @@ ResourceIndexerUpdate parseResourceIndexerUpdate(
         existing,
         '$stamp-$i',
       );
-      if (!seen.add(config.id))
+      if (!seen.add(config.id)) {
         throw FormatException('torznab[$i]: duplicate id "${config.id}"');
+      }
       torznab.add(config);
     }
   }
@@ -146,21 +150,25 @@ TorznabIndexerConfig _parseIndexer(
 ) {
   String where(String field) => 'torznab[$i].$field';
   final Object? rawId = m['id'];
-  if (rawId != null && rawId is! String)
+  if (rawId != null && rawId is! String) {
     throw FormatException('${where('id')} must be a string');
+  }
   final String givenId = (rawId as String? ?? '').trim();
   // 新行的 id 与 app 设置页同形（`torznab-<微秒>`）；客户端发来的订阅 provider 是 `torznab:<id>`。
   final String id = givenId.isEmpty ? 'torznab-$idSuffix' : givenId;
-  if (id.contains(':') || id.contains(','))
+  if (id.contains(':') || id.contains(',')) {
     throw FormatException('${where('id')} must not contain ":" or ","');
+  }
   final String name = (m['name'] is String ? m['name'] as String : '').trim();
   if (name.isEmpty) throw FormatException('${where('name')} is required');
   final Object? endpointRaw = m['endpoint'];
-  if (endpointRaw is! String || endpointRaw.trim().isEmpty)
+  if (endpointRaw is! String || endpointRaw.trim().isEmpty) {
     throw FormatException('${where('endpoint')} is required');
+  }
   final Object? apiKeyRaw = m['apiKey'];
-  if (apiKeyRaw != null && apiKeyRaw is! String)
+  if (apiKeyRaw != null && apiKeyRaw is! String) {
     throw FormatException('${where('apiKey')} must be a string');
+  }
   final bool clearApiKey = m['clearApiKey'] == true;
   final bool enabled = _bool(m, 'enabled', where, fallback: true);
   final bool allowInsecureHttp = _bool(
@@ -246,8 +254,9 @@ List<int> _categories(Object? raw, String where) {
     final int? value = item is int
         ? item
         : (item is String ? int.tryParse(item) : null);
-    if (value == null || value < 0)
+    if (value == null || value < 0) {
       throw FormatException('$where: "$item" is not a non-negative integer');
+    }
     out.add(value);
   }
   return out;

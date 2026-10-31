@@ -64,8 +64,9 @@ class UploadStore {
       throw const UploadRejected(400, 'bad path');
     }
     final String target = p.normalize(p.join(root, cleaned));
-    if (!p.isWithin(root, target))
+    if (!p.isWithin(root, target)) {
       throw const UploadRejected(400, 'path escapes library root');
+    }
     return target;
   }
 

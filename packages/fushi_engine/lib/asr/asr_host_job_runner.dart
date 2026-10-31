@@ -96,8 +96,9 @@ class AsrHostJobRunner implements HostJobRunner {
 
   @override
   String contentTypeFor(String outputName) {
-    if (outputName.endsWith('.srt'))
+    if (outputName.endsWith('.srt')) {
       return 'application/x-subrip; charset=utf-8';
+    }
     if (outputName.endsWith('.jsonl')) return 'application/x-ndjson';
     return 'application/octet-stream';
   }
@@ -191,8 +192,9 @@ class AsrHostJobRunner implements HostJobRunner {
     final String? videoId = ctx.params['videoId']?.toString();
     if (videoId != null && videoId.isNotEmpty) {
       final Future<String?> Function(String)? resolve = resolveVideoPath;
-      if (resolve == null)
+      if (resolve == null) {
         throw const FormatException('asr: videoId not supported on this host');
+      }
       final String? path = await resolve(videoId);
       if (path == null) throw FormatException('asr: unknown videoId $videoId');
       return <String>[path];
@@ -205,8 +207,9 @@ class AsrHostJobRunner implements HostJobRunner {
     final List<String> paths = <String>[];
     for (final String name in names) {
       final File f = ctx.input(name);
-      if (!await f.exists())
+      if (!await f.exists()) {
         throw FormatException('asr: input "$name" not uploaded');
+      }
       paths.add(f.path);
     }
     return paths;

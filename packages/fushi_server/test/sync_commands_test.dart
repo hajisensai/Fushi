@@ -331,8 +331,9 @@ void main() {
         methods.add('${req.method} ${req.uri.path}');
         await req.drain<void>();
         req.response.statusCode = status;
-        if (status == 200)
+        if (status == 200) {
           req.response.write(jsonEncode(<String, Object?>{'version': 1}));
+        }
         await req.response.close();
       });
     });

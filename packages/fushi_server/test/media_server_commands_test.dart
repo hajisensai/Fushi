@@ -60,8 +60,9 @@ void main() {
       return jsonResponse(<String, Object?>{'id': 1, 'username': 'neko'});
     }
     if (u.host == 'clients.plex.tv' && u.path == '/api/v2/resources') {
-      if (req.headers['X-Plex-Token'] != 'acct-token')
+      if (req.headers['X-Plex-Token'] != 'acct-token') {
         return http.Response('', 401);
+      }
       return jsonResponse(<Object?>[
         <String, Object?>{
           'name': 'Phone',
@@ -85,8 +86,9 @@ void main() {
       ]);
     }
     // PMS
-    if (u.host == '10.0.0.9' && !lanReachable)
+    if (u.host == '10.0.0.9' && !lanReachable) {
       throw http.ClientException('connection refused');
+    }
     if (pmsStatus != 200) return http.Response('', pmsStatus);
     if (u.path == '/identity') {
       return jsonResponse(<String, Object?>{

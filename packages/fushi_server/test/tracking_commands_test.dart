@@ -26,8 +26,9 @@ class _FakeBangumi implements BangumiTrackingApi {
   @override
   Future<BangumiUser> getMe() async {
     calls.add('getMe:$token');
-    if (token != 'good')
+    if (token != 'good') {
       throw const BangumiApiException(statusCode: 401, message: 'bad token');
+    }
     return const BangumiUser(username: 'neko', nickname: '猫');
   }
 

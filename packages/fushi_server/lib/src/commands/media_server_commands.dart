@@ -118,12 +118,14 @@ class PlexCredentialStore {
 /// 按 `--server`（名字或 machineIdentifier，大小写不敏感）选账号下的服务器；
 /// 不给时只有一台就用它。选不出返回 null。
 PlexResource? pickPlexServer(List<PlexResource> servers, String? selector) {
-  if (selector == null || selector.isEmpty)
+  if (selector == null || selector.isEmpty) {
     return servers.length == 1 ? servers.single : null;
+  }
   final String s = selector.toLowerCase();
   for (final PlexResource r in servers) {
-    if (r.clientIdentifier.toLowerCase() == s || r.name.toLowerCase() == s)
+    if (r.clientIdentifier.toLowerCase() == s || r.name.toLowerCase() == s) {
       return r;
+    }
   }
   return null;
 }
@@ -379,12 +381,13 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
           (env ?? Platform.environment)[kPlexTokenEnv] ??
           cred.accountToken ??
           '';
-      if (token.isEmpty)
+      if (token.isEmpty) {
         return (
           null,
           _exitUnavailable,
           '--url 直连需要环境变量 $kPlexTokenEnv（或先 login）',
         );
+      }
       final String normalized = PlexApi.normalizeServerUrl(url);
       if (normalized.isEmpty) return (null, _exitUsage, '--url 不是合法地址');
       return (
@@ -398,12 +401,13 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
         '',
       );
     }
-    if (!cred.signedIn)
+    if (!cred.signedIn) {
       return (
         null,
         _exitUnavailable,
         '未登录 Plex：先 media-server plex login，或用 --url 直连',
       );
+    }
     final PlexTvApi tv = PlexTvApi(clientInfo: info, client: _client());
     final List<PlexResource> servers;
     try {
@@ -440,8 +444,9 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
         }
       },
     );
-    if (reachable == null)
+    if (reachable == null) {
       return (null, _exitUnavailable, '服务器「${server.name}」的所有连接地址都连不上');
+    }
     return (
       PlexApi(
         serverUrl: reachable,

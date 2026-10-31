@@ -211,20 +211,23 @@ class SubsCredentials {
   String? unavailableReason(String providerId) {
     switch (providerId) {
       case 'opensubtitles':
-        if (!openSubtitles.enabled)
+        if (!openSubtitles.enabled) {
           return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
+        }
         if (openSubtitles.effectiveApiKey.isEmpty) {
           return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或从已配好的 Fushi 经互联同步';
         }
         return null;
       case kSubdlSubtitleProviderId:
-        if (subdlApiKey.isEmpty)
+        if (subdlApiKey.isEmpty) {
           return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
+        }
         if (!subdlEnabled) return 'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）';
         return null;
       case 'jimaku':
-        if (jimakuApiKey.isEmpty)
+        if (jimakuApiKey.isEmpty) {
           return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
+        }
         if (!jimakuEnabled) return 'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）';
         return null;
     }
@@ -375,8 +378,9 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
           if (!file.isTextSubtitle) continue;
           final String language = detectSubtitleLanguage(file.name) ?? '';
           if (request.languages.isNotEmpty &&
-              !request.languages.contains(language))
+              !request.languages.contains(language)) {
             continue;
+          }
           out.add(
             _JimakuCliCandidate(
               entry: entry,
@@ -553,8 +557,9 @@ int? _intOption(ArgResults sub, String name) {
   final String? raw = sub[name] as String?;
   if (raw == null) return null;
   final int? value = int.tryParse(raw.trim());
-  if (value == null || value < 0)
+  if (value == null || value < 0) {
     throw FormatException('--$name 需要非负整数，收到 "$raw"');
+  }
   return value;
 }
 
@@ -564,11 +569,12 @@ Future<int> subsSearch(
   required CliIo io,
   required SubsDeps deps,
 }) async {
-  if (sub.rest.length != 1)
+  if (sub.rest.length != 1) {
     return io.fail(
       kExitUsage,
       '用法: subs search <videoId|file> [--provider …] [-l ja]',
     );
+  }
   final int? season;
   final int? episode;
   try {
@@ -754,8 +760,9 @@ String defaultSubtitleOutputPath({
     '.vtt',
     '.sub',
     '.lrc',
-  }.contains(ext))
+  }.contains(ext)) {
     ext = '.srt';
+  }
   final String lang = language.trim().toLowerCase().replaceAll(
     RegExp(r'[^a-z0-9-]'),
     '',
@@ -772,28 +779,34 @@ Future<int> subsDownload(
   required CliIo io,
   required SubsDeps deps,
 }) async {
-  if (sub.rest.length != 1)
+  if (sub.rest.length != 1) {
     return io.fail(kExitUsage, '用法: subs download <resultId> --to <video>');
+  }
   final String? to = sub['to'] as String?;
-  if (to == null || to.trim().isEmpty)
+  if (to == null || to.trim().isEmpty) {
     return io.fail(kExitUsage, 'subs download 需要 --to <video>');
+  }
   final String videoPath = p.absolute(to);
-  if (!File(videoPath).existsSync())
+  if (!File(videoPath).existsSync()) {
     return io.fail(kExitNoInput, '找不到视频文件: $videoPath');
+  }
   final String resultId = sub.rest.single;
   final int colon = resultId.indexOf(':');
-  if (colon <= 0)
+  if (colon <= 0) {
     return io.fail(
       kExitUsage,
       'resultId 形如 <provider>:<remoteId>（取自 subs search 的第一列）',
     );
+  }
   final String providerId = resultId.substring(0, colon);
-  if (!kSubsProviderIds.contains(providerId))
+  if (!kSubsProviderIds.contains(providerId)) {
     return io.fail(kExitUsage, '未知字幕来源 $providerId');
+  }
 
   final File cache = subsSearchCacheFile(rt);
-  if (!cache.existsSync())
+  if (!cache.existsSync()) {
     return io.fail(kExitNoInput, '没有搜索记录：先跑 subs search');
+  }
   final Map<String, Object?> cached;
   try {
     cached = (jsonDecode(await cache.readAsString()) as Map<Object?, Object?>)
@@ -927,8 +940,9 @@ Future<SubtitleTimingCheck> _timingCheck(
 int? _requireFiles(ArgResults sub, CliIo io, List<String> names, String usage) {
   if (sub.rest.length != names.length) return io.fail(kExitUsage, '用法: $usage');
   for (int i = 0; i < names.length; i++) {
-    if (!File(sub.rest[i]).existsSync())
+    if (!File(sub.rest[i]).existsSync()) {
       return io.fail(kExitNoInput, '找不到${names[i]}: ${sub.rest[i]}');
+    }
   }
   return null;
 }
@@ -1063,8 +1077,9 @@ Future<int> subsSync(
       break;
   }
   final String kind = result.kind.name;
-  if (kind == 'refused')
+  if (kind == 'refused') {
     return (kExitFailure, '证据不足或互相矛盾，拒绝改动（${result.describe()}）');
+  }
   if (!result.changesTiming) return (kExitOk, '时间轴已经贴着视频，无需改动');
   if (kind == 'needsConfirmation' && !force) {
     return (

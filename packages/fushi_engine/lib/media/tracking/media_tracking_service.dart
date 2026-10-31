@@ -249,8 +249,9 @@ BangumiSubject? _uniqueHighConfidenceSubject(
   final List<BangumiSubject> kindMatches = subjects
       .where((subject) {
         // 动画与游戏在搜索阶段已按 subject type 精确过滤，无需再按 platform 二次筛。
-        if (kind == TrackingKind.anime || kind == TrackingKind.game)
+        if (kind == TrackingKind.anime || kind == TrackingKind.game) {
           return true;
+        }
         final String platform = subject.platform.toLowerCase();
         if (kind == TrackingKind.manga) {
           return platform.contains('漫画') ||

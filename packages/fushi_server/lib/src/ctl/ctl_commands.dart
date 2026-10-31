@@ -313,8 +313,9 @@ Future<int> runCtlAction(
     );
   } on AdminApiException catch (ex) {
     err.writeln('${request.method} ${request.path} 失败: $ex');
-    if (command['json'] as bool && ex.body != null)
+    if (command['json'] as bool && ex.body != null) {
       out.writeln(_pretty(ex.body));
+    }
     return _exitCodeFor(ex);
   }
   final String? grep = command['grep'] as String?;
@@ -475,8 +476,9 @@ Future<int> _upload(
       return _exitCodeFor(ex);
     }
   }
-  if (command['json'] as bool)
+  if (command['json'] as bool) {
     out.writeln(_pretty(<String, Object?>{'uploaded': results}));
+  }
   return 0;
 }
 
@@ -948,8 +950,9 @@ void _renderModels(Object? response, StringSink out) {
 
 /// 渲染 `{<key>: [...]}` 形状的列表响应；其余字段（capability 之类）不展开，`--json` 可看全量。
 _Render _listRenderer(String key) => (Object? response, StringSink out) {
-  if (response is Map && response['error'] != null)
+  if (response is Map && response['error'] != null) {
     out.writeln('! ${response['error']}');
+  }
   final Object? rows = response is Map ? response[key] : null;
   if (rows is! List) return _renderGeneric(response, out);
   _renderRows(rows, out);
@@ -1001,8 +1004,9 @@ void _renderRows(
       for (final String k in keys) {
         final Object? v = row[k];
         // 布尔状态写成词，`[false]` 看不出是哪个字段。
-        if (v is bool)
+        if (v is bool) {
           return k == 'ready' ? (v ? 'ready' : 'missing') : (v ? k : 'no-$k');
+        }
         if (v != null) return '$v';
       }
       return null;

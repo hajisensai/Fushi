@@ -44,8 +44,9 @@ void main() {
   // indefinite animation).
   Future<void> settleAsyncLoad(WidgetTester tester) async {
     for (int i = 0; i < 50; i++) {
-      if (find.byType(FushiExpressiveLoadingIndicator).evaluate().isEmpty)
+      if (find.byType(FushiExpressiveLoadingIndicator).evaluate().isEmpty) {
         return;
+      }
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );

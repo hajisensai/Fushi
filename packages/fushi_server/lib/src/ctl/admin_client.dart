@@ -312,8 +312,9 @@ const int kCtlUsageErrorStatus = -64;
 String interconnectPathFor(String adminPath) {
   const String host = '/api/admin/host/';
   const String downloads = '/api/admin/downloads';
-  if (adminPath.startsWith(host))
+  if (adminPath.startsWith(host)) {
     return '/api/${adminPath.substring(host.length)}';
+  }
   if (adminPath == downloads || adminPath.startsWith('$downloads/')) {
     return '/api/downloads${adminPath.substring(downloads.length)}';
   }

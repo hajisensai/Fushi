@@ -218,8 +218,9 @@ void main() {
         tempSeen = book.listSync().any(
           (FileSystemEntity e) => e.path.contains('.fushi-put-'),
         );
-        if (!tempSeen)
+        if (!tempSeen) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
       }
       expect(tempSeen, isTrue, reason: '请求体在写同目录的临时文件');
       expect(target.readAsStringSync(), 'old');

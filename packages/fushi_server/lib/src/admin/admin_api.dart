@@ -309,8 +309,9 @@ class AdminApi {
         final ServerVideoScrape? scrape = ctx.host.videoScrape;
         if (scrape == null) return _err(503, 'video scrape is not running');
         final String id = ((await _body(request))['id'] ?? '').toString();
-        if (id.isEmpty)
+        if (id.isEmpty) {
           throw const FormatException('id required (a pending work id)');
+        }
         // 先同步校验，免得「已开始」之后才在日志里报找不到。
         if (!(await scrape.pendingWorks()).any(
           (Map<String, Object?> w) => w['id'] == id,
@@ -355,8 +356,9 @@ class AdminApi {
       );
     }
     final FushiSyncServer? server = ctx.host.syncServer;
-    if (server == null)
+    if (server == null) {
       return _err(503, 'the interconnect host is not running');
+    }
     final Uri target = Uri(
       scheme: 'http',
       host: 'localhost',
@@ -481,8 +483,9 @@ class AdminApi {
     final String path = (body['path'] ?? '').toString().trim();
     if (path.isEmpty) throw const FormatException('path required');
     final String kind = (body['kind'] ?? 'video').toString();
-    if (kind != 'video' && kind != 'book')
+    if (kind != 'video' && kind != 'book') {
       throw const FormatException('kind must be video or book');
+    }
     final String id = (body['id'] ?? '').toString().trim().isEmpty
         ? 'lib${DateTime.now().millisecondsSinceEpoch}'
         : body['id'].toString().trim();
@@ -573,12 +576,13 @@ class AdminApi {
           library.path,
           kind!,
         );
-        if (source == null)
+        if (source == null) {
           return const LibraryPruneReport(
             considered: 0,
             missing: 0,
             deleted: 0,
           );
+        }
         return pruneMissingBookRows(
           db: ctx.db,
           sourceId: source.id,
@@ -599,8 +603,9 @@ class AdminApi {
     if (raw != null && raw is! bool) {
       throw const FormatException('prune must be a boolean');
     }
-    if (ctx.scanning)
+    if (ctx.scanning) {
       return _json(const <String, Object?>{'started': false, 'scanning': true});
+    }
     // 不 await：扫描可能很久，WebUI 轮询 status 看结果。
     ctx.scanLibraries(prune: raw as bool?).catchError((
       Object e,
@@ -625,11 +630,12 @@ class AdminApi {
 
   Future<shelf.Response> _downloads() async {
     final HostDownloadHost? d = ctx.host.downloads;
-    if (d == null)
+    if (d == null) {
       return _json(const <String, Object?>{
         'supported': false,
         'jobs': <Object?>[],
       });
+    }
     final Map<String, Object?> cap = await d.capability();
     return _json(<String, Object?>{
       ...cap,
@@ -650,18 +656,20 @@ class AdminApi {
 
   HostSubscriptionHost _subscriptionsHost() {
     final HostSubscriptionHost? host = ctx.host.subscriptions;
-    if (host == null)
+    if (host == null) {
       throw const FormatException('subscriptions not available');
+    }
     return host;
   }
 
   Future<shelf.Response> _subscriptions() async {
     final HostSubscriptionHost? host = ctx.host.subscriptions;
-    if (host == null)
+    if (host == null) {
       return _json(const <String, Object?>{
         'supported': false,
         'subscriptions': <Object?>[],
       });
+    }
     final Map<String, Object?> cap = await host.capability();
     final Map<String, Map<String, int>> counts = await host.itemCounts();
     final _ProviderLabels labels = _providerLabels();
@@ -685,8 +693,9 @@ class AdminApi {
   Future<shelf.Response> _createSubscription(Map<String, dynamic> body) async {
     final Map<String, dynamic> request = Map<String, dynamic>.from(body);
     final Object? provider = request['resourceProvider'];
-    if (provider is String)
+    if (provider is String) {
       request['resourceProvider'] = _adminProviderValue(provider);
+    }
     final VideoDownloadSubscriptionRow row = await _subscriptionsHost().create(
       HostSubscriptionCreateRequest.fromJson(request),
     );
@@ -894,8 +903,9 @@ class AdminApi {
 
   Future<void> _replaceBtSite(BtSiteConfig next) => _serialBtSites(() async {
     final List<BtSiteConfig> sites = readBtSiteConfigs(ctx.host.prefs);
-    if (!sites.any((BtSiteConfig s) => s.id == next.id))
+    if (!sites.any((BtSiteConfig s) => s.id == next.id)) {
       throw _BtSiteNotFound(next.id);
+    }
     await writeBtSiteConfigs(ctx.host.prefs, <BtSiteConfig>[
       for (final BtSiteConfig s in sites) s.id == next.id ? next : s,
     ]);
@@ -1003,8 +1013,9 @@ class AdminApi {
     // plan() 每种语言都要探一次 ORT provider；WebUI 2.5s 轮询下别每次都探。
     final bool fresh =
         DateTime.now().difference(_modelsCacheAt) < const Duration(seconds: 5);
-    if (_modelsCache != null && fresh && _pulling.isEmpty)
+    if (_modelsCache != null && fresh && _pulling.isEmpty) {
       return _json(_modelsCache!);
+    }
     final List<Object?> asrModels = <Object?>[];
     for (final asr.AsrAudioProfile profile in asr.AsrAudioProfile.values) {
       final asr.AsrTranscriptionService service =
@@ -1106,10 +1117,12 @@ class AdminApi {
 
   Future<shelf.Response> _pullModel(Map<String, dynamic> body) async {
     final String which = (body['model'] ?? '').toString();
-    if (which.isEmpty)
+    if (which.isEmpty) {
       throw const FormatException('model required (asr language tag or "ocr")');
-    if (_pulling.contains(which))
+    }
+    if (_pulling.contains(which)) {
       return _json(const <String, Object?>{'started': false, 'pulling': true});
+    }
     _pulling.add(which);
     Future<void> run() async {
       try {
@@ -1126,8 +1139,9 @@ class AdminApi {
           final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(
             parts.first,
           );
-          if (language == null)
+          if (language == null) {
             throw FormatException('unknown language $which');
+          }
           final asr.AsrAudioProfile profile = parts.length > 1
               ? (parseAsrAudioProfile(parts[1]) ??
                     (throw FormatException('unknown profile $which')))
@@ -1258,16 +1272,18 @@ class AdminApi {
     final List<String>? publicUrls = _remoteUrls(body, 'publicUrls');
     final List<String>? p2pRelays = _remoteUrls(body, 'p2pRelays');
     final Object? p2pRaw = body['p2p'];
-    if (p2pRaw != null && p2pRaw is! bool)
+    if (p2pRaw != null && p2pRaw is! bool) {
       throw const FormatException('p2p must be a boolean');
+    }
     final bool? p2p = p2pRaw as bool?;
     for (final String key in const <String>[
       'scanPrune',
       'scanScrape',
       'profileTransfer',
     ]) {
-      if (body[key] != null && body[key] is! bool)
+      if (body[key] != null && body[key] is! bool) {
         throw FormatException('$key must be a boolean');
+      }
     }
     // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
     if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
@@ -1343,16 +1359,18 @@ class AdminApi {
     };
     String? text(String key) {
       final Object? v = m[key];
-      if (v != null && v is! String)
+      if (v != null && v is! String) {
         throw FormatException('ai.$key must be a string');
+      }
       final String t = (v as String? ?? '').trim();
       return t.isEmpty ? null : t;
     }
 
     bool? flag(String key) {
       final Object? v = m[key];
-      if (v != null && v is! bool)
+      if (v != null && v is! bool) {
         throw FormatException('ai.$key must be a boolean');
+      }
       return v as bool?;
     }
 
@@ -1366,10 +1384,11 @@ class AdminApi {
       protocol = AiWireProtocol.values
           .where((AiWireProtocol p) => p.storageKey == protocolKey)
           .firstOrNull;
-      if (protocol == null)
+      if (protocol == null) {
         throw FormatException(
           'ai.protocol "$protocolKey" is not a known protocol',
         );
+      }
     }
     final String? effort = text('reasoningEffort');
     if (effort != null &&
@@ -1412,8 +1431,9 @@ class AdminApi {
     if (raw is! List) throw FormatException('$key must be an array of URLs');
     final List<String> urls = <String>[];
     for (final Object? item in raw) {
-      if (item is! String)
+      if (item is! String) {
         throw FormatException('$key must be an array of URLs');
+      }
       final String url = item.trim();
       if (url.isEmpty || urls.contains(url)) continue;
       final String? problem = ServerConfig.remoteUrlProblem(url);
@@ -1470,8 +1490,9 @@ class AdminApi {
 
   ServerAnkiLanding _ankiLanding() {
     final ServerAnkiLanding? anki = ctx.host.anki;
-    if (anki == null)
+    if (anki == null) {
       throw const FormatException('the interconnect host is not running');
+    }
     return anki;
   }
 

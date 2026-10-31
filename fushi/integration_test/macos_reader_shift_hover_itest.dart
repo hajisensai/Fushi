@@ -327,8 +327,9 @@ Future<void> _drive(
       'mode': mode,
     });
     hits.add('${r['hit']}');
-    if (hits.length == 1)
+    if (hits.length == 1) {
       debugPrint('[mac-shift-hover] hit chain: ${r['chain']}');
+    }
     await tester.pump(const Duration(milliseconds: 40));
   }
   final bool hoverPopup = await _waitPopup(tester, 'testword');

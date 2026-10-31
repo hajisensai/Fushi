@@ -294,8 +294,9 @@ CtlHostRequest? parseCtlHostAction(
       return usage('dict [ls]');
 
     case 'metadata':
-      if (sub == '' || sub == 'ls')
+      if (sub == '' || sub == 'ls') {
         return const CtlHostRequest('GET', '$kHostProxy/library/metadata');
+      }
       return usage('metadata [ls]');
 
     case 'activity' || 'collections' || 'tags' || 'tombstones':
@@ -307,17 +308,20 @@ CtlHostRequest? parseCtlHostAction(
       );
 
     case 'scrape':
-      if (sub == 'pending')
+      if (sub == 'pending') {
         return const CtlHostRequest(
           'GET',
           '/api/admin/scrape/pending',
           listKey: 'works',
         );
-      if (sub == 'sweep')
+      }
+      if (sub == 'sweep') {
         return const CtlHostRequest('POST', '/api/admin/scrape/sweep');
+      }
       if (sub == 'ai-identify') {
-        if (arg(0) == null)
+        if (arg(0) == null) {
           return usage('scrape ai-identify <待确认作品 id（scrape pending 的第一列）>');
+        }
         return CtlHostRequest(
           'POST',
           '/api/admin/scrape/ai-identify',
@@ -328,8 +332,9 @@ CtlHostRequest? parseCtlHostAction(
       switch (sub) {
         case 'search' when key != null:
           final String? query = command['query'] as String?;
-          if (query == null || query.trim().isEmpty)
+          if (query == null || query.trim().isEmpty) {
             return usage('scrape search <bookUid> -q <搜索词>');
+          }
           return CtlHostRequest(
             'POST',
             '$kHostProxy/library/metadata/candidates',
@@ -390,8 +395,9 @@ CtlHostRequest? parseCtlHostAction(
       switch (sub) {
         case 'start':
           final String? feature = command['feature'] as String?;
-          if (feature == null || feature.trim().isEmpty)
+          if (feature == null || feature.trim().isEmpty) {
             return usage('assistant start --feature <功能名>');
+          }
           return CtlHostRequest(
             'POST',
             '$kHostProxy/assistant/sessions',

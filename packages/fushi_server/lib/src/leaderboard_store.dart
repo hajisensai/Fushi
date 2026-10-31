@@ -163,8 +163,9 @@ class ServerLeaderboardStore {
           supportRoot: supportRoot,
           profileId: id,
         ).read();
-        if (a != null && a.uploadEnabled && !a.uploadBlockedByOtherDevice)
+        if (a != null && a.uploadEnabled && !a.uploadBlockedByOtherDevice) {
           out.add(id);
+        }
       } on ServerLeaderboardStoreException {
         continue;
       }
@@ -179,8 +180,9 @@ class ServerLeaderboardStore {
     if (!await f.exists()) return null;
     try {
       final Object? decoded = jsonDecode(await f.readAsString());
-      if (decoded is! Map<Object?, Object?>)
+      if (decoded is! Map<Object?, Object?>) {
         throw const FormatException('not a JSON object');
+      }
       return ServerLeaderboardAccount.fromJson(decoded.cast<String, Object?>());
     } on Object catch (e) {
       // 只报类型：jsonDecode 的 FormatException 会带上源文本（= 私钥）。

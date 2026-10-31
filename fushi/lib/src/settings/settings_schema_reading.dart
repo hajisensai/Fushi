@@ -1310,8 +1310,9 @@ final SettingsCliValue readerControlLayoutCli = SettingsCliValue(
     final ReaderControlLayout? wide = parse(decoded['wide'], 'wide');
     final ReaderControlLayout? compact = parse(decoded['compact'], 'compact');
     if (wide != null) await c.appModel.setReaderControlLayout(wide);
-    if (compact != null)
+    if (compact != null) {
       await c.appModel.setReaderCompactControlLayout(compact);
+    }
     notifyReaderChromeReanchored(c);
   },
 );

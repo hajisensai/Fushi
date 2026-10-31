@@ -26,8 +26,9 @@ class _EchoRunner implements HostJobRunner {
 
   @override
   void validateParams(Map<String, Object?> params) {
-    if (params['suffix'] == null)
+    if (params['suffix'] == null) {
       throw const FormatException('suffix required');
+    }
   }
 
   @override
