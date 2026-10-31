@@ -33,6 +33,9 @@ on:
       # （ffmpeg_kit_next_flutter / flutter_inappwebview_android / media_kit_* /
       # flutter_onnxruntime …），改它们直接改变 Android 构建产物，以前却不触发本门。
       - 'third_party/**'
+      - 'tool/vendored_binaries.json'
+      - 'tool/vendored_binaries.py'
+      - '.github/actions/fetch-vendored-binaries/**'
       # 统一 FFmpeg 配方（版本 / 补丁 / 能力清单）：播放器与制卡共用，守卫在 fushi/test。
       - 'tool/ffmpeg-unified/**'
       - 'tool/release_sequence.sh'
@@ -134,6 +137,11 @@ jobs:
         # 地板只补「历史重写导致计数倒退」，补不了「浅克隆导致计数截断」——
         # 后者每次 checkout 都可能不同，仍然只能靠 fetch-depth: 0 兜住。
         fetch-depth: 0
+    # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+    - name: Fetch vendored binaries
+      uses: ./.github/actions/fetch-vendored-binaries
+      with:
+        groups: android
 
     - name: Resolve shared release sequence
       shell: bash
@@ -505,6 +513,11 @@ jobs:
     name: unit-tests (${{ matrix.shard }}/4)
     steps:
     - uses: actions/checkout@v6
+    # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+    - name: Fetch vendored binaries
+      uses: ./.github/actions/fetch-vendored-binaries
+      with:
+        groups: all
 
     # 钉 commit（v2 = v2.23.0）：第三方 action 按 tag 引用时，tag 可被改指任意提交。
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0

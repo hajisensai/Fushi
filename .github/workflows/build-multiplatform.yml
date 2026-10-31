@@ -41,6 +41,9 @@ on:
       - 'native/**'
       - 'ci/**'
       - 'third_party/**'
+      - 'tool/vendored_binaries.json'
+      - 'tool/vendored_binaries.py'
+      - '.github/actions/fetch-vendored-binaries/**'
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
       # windows / macos job 构建并校验 Mihon 桌面 sidecar（tool/mihon/*）。
@@ -158,7 +161,7 @@ jobs:
           echo "event=$EVENT all=$all changed files: $(wc -l < "$files")"
           cat "$files"
 
-          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute|setup-fushi-rwkv|setup-fushi-music|setup-fushi-corpus)/)'
+          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core|fushi_rwkv|fushi_music|fushi_corpus)/|tool/vendored_binaries\.(json|py)$|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(fetch-vendored-binaries|provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute|setup-fushi-rwkv|setup-fushi-music|setup-fushi-corpus)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
@@ -247,6 +250,11 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: android
       - uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
@@ -913,6 +921,11 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v6
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: macos mihon
       # 名字的唯一算法见 linux-server job 同名步骤。p2p arm64 dylib 与 release-desktop.yml
       # macos job 同名（同一脚本、同一产物），develop 上的发布构建存的件这里直接复用；
       # anki-sync debug 是 PR 专用变体，由 native-cache-warm.yml 在 develop 上预存。
@@ -1516,6 +1529,11 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v6
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: ios
       # 名字的唯一算法见 linux-server job 同名步骤；与 release-desktop.yml ios job 同名（同一
       # device staticlib），develop 上的发布构建存的件这里直接复用。
       - name: Resolve native artifact store names
@@ -1654,6 +1672,11 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v6
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: windows galgame mihon
       # Windows 只缓存 pub、不缓存 SDK：run 36365037668 实测 1.8 GB SDK 缓存在 NTFS 上
       # 解包就要 125 s，与直接下官方 zip 同量级，却常驻占掉 10 GB 配额的 18%，把 vcpkg /
       # helper 这类真正省时间的原生产物缓存挤出 LRU。Linux（15 s）/ macOS（27 s）解包快，
