@@ -209,6 +209,38 @@ class MusicOutputSettings {
   );
 }
 
+/// 一个后端对某首曲目能做什么。mpv 链路全能；系统 / SDK 托管播放的后端（如 MusicKit，
+/// 解密与出声在 Apple 授权的播放器里）拿不到音频信号，信号路径、A-B 循环等只能关掉。
+/// 由 [MusicPlayerEngine.capabilities] 按**当前曲目所属后端**给出，界面据此隐藏入口。
+@immutable
+class MusicBackendCapabilities {
+  const MusicBackendCapabilities({
+    required this.signalPath,
+    required this.abLoop,
+  });
+
+  /// libmpv 链路：一切照旧。
+  static const MusicBackendCapabilities full = MusicBackendCapabilities(
+    signalPath: true,
+    abLoop: true,
+  );
+
+  /// 能读信号路径（源格式 / 解码 / 滤镜 / 输出设备 / bit-perfect 判定）。
+  final bool signalPath;
+
+  /// 能在音频时间轴上做 A-B 循环（[MusicOutputBackend.setAbLoop]）。
+  final bool abLoop;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicBackendCapabilities &&
+      other.signalPath == signalPath &&
+      other.abLoop == abLoop;
+
+  @override
+  int get hashCode => Object.hash(signalPath, abLoop);
+}
+
 /// 后端上报的事件。
 sealed class MusicBackendEvent {
   const MusicBackendEvent();
