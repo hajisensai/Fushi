@@ -20,6 +20,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart'
     show kLeaderboardDefaultBaseUrl;
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
     show openFeedbackTicket;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiCard;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -236,7 +237,7 @@ class _CrashReportPromptCardState extends State<CrashReportPromptCard> {
           ],
         ),
         const SizedBox(height: 8),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: motion,
           curve: context.fushiMotion.spatialFast.curve,
           alignment: Alignment.topCenter,

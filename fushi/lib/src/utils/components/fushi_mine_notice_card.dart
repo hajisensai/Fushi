@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
@@ -81,7 +82,9 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
     final Color onContainer = eink ? Colors.black : tone.onContainer;
     final Color accent = eink ? Colors.black : tone.accent;
     final String? title = mineNoticeTitle(widget.status);
-    final TextTheme text = Theme.of(context).textTheme;
+    // 字阶走设计令牌（context.fushiType），不写裸字号：标题与单行消息用
+    // titleSmall 的 Emphasized 档，标题下的具体消息降一档到 bodyMedium。
+    final FushiTypography type = context.fushiType;
 
     final Animation<double> spring = CurvedAnimation(
       parent: _iconIn,
@@ -116,23 +119,16 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: (text.titleSmall ?? const TextStyle()).copyWith(
-              color: onContainer,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
-            ),
+            style: type.titleSmallEmphasized.copyWith(color: onContainer),
           ),
         Text(
           widget.message,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
-          style: (text.bodySmall ?? const TextStyle()).copyWith(
-            color: onContainer.withValues(alpha: title == null ? 1 : 0.8),
-            fontSize: title == null ? 15 : 13,
-            fontWeight: title == null ? FontWeight.w600 : FontWeight.w400,
-            height: 1.3,
-          ),
+          style: (title == null ? type.titleSmallEmphasized : type.bodyMedium)
+              .copyWith(
+                color: onContainer.withValues(alpha: title == null ? 1 : 0.8),
+              ),
         ),
       ],
     );
