@@ -11,6 +11,13 @@ import 'reader_fushi_page_source_corpus.dart';
 /// DictionaryPopupWebView 的 `setSentenceContext` 处理器回到宿主。这里钉死三段接线 +
 /// reader 上下文消费 + 换词/制卡清空时机，防止任一环被悄悄断开（无头测试照不到真实
 /// WebView，故用源码扫描守卫）。
+/// 在 [compactCode] 语料上匹配
+/// `_miningDraft.composeAudioRange(_currentSentenceAudioRange())`，容忍
+/// `dart format` 把实参拆行时补上的尾逗号。
+final RegExp _composeAudioRangeOfCurrentSentence = RegExp(
+  r'_miningDraft\.composeAudioRange\(_currentSentenceAudioRange\(\),?\)',
+);
+
 void main() {
   String readSource(String relativePath) {
     final File file = File(relativePath);
@@ -31,8 +38,11 @@ void main() {
     // popup_settings_injection.dart；webview 仍按同一谓词把它喂给共享 builder 的
     // PopupSettingsOptions，injection 体据该 option 注入标量。两段一起钉死等价接线。
     expect(
-      src,
-      contains('sentenceDraftEnabled: kSentenceContextPickerEnabled &&'),
+      compactCode(src),
+      contains(
+        'sentenceDraftEnabled:kSentenceContextPickerEnabled&&'
+        'widget.onSetSentenceContext!=null',
+      ),
       reason:
           'webview must still gate the flag on the SAME predicate '
           '(kSentenceContextPickerEnabled && host callback present) and pass '
@@ -122,12 +132,7 @@ void main() {
       // Mine composes draft + current for both text and audio range（音频区间经
       // `_miningSentenceAudioClip` 合并草稿并叠加「高级制卡」的起止偏移）。
       expect(src, contains('_miningDraft.composeText(currentSentence)'));
-      expect(
-        src,
-        contains(
-          '_miningDraft.composeAudioRange(_currentSentenceAudioRange())',
-        ),
-      );
+      expect(compactCode(src), matches(_composeAudioRangeOfCurrentSentence));
       expect(src, contains('sourceAudioRange = _miningSentenceAudioClip('));
     },
   );
@@ -304,10 +309,8 @@ void main() {
       // 听到什么就会压出什么。播「当前句的 cue」只能证明这句有音频，证明不了裁出来
       // 的那段念全了，而用户报的正是后者。
       expect(
-        reader,
-        contains(
-          '_miningDraft.composeAudioRange(_currentSentenceAudioRange())',
-        ),
+        compactCode(reader),
+        matches(_composeAudioRangeOfCurrentSentence),
         reason: '试听区间必须现求，且与制卡实际裁片同源',
       );
       expect(

@@ -102,13 +102,16 @@ void main() {
   });
 
   test('reader body CSS still uses the legacy body customFonts list', () {
-    final String src = read('lib/src/reader/reader_content_styles.dart');
+    // 去空白再比：dart format 会把 `settings.buildCustomFontCss()` 拆成
+    // `settings\n.buildCustomFontCss()`，换行不改变绑定关系。
+    String flat(String s) => s.replaceAll(RegExp(r'\s+'), '');
+    final String src = flat(read('lib/src/reader/reader_content_styles.dart'));
     expect(src.contains('settings.buildCustomFontCss()'), isTrue);
-    final String settings = read('lib/src/reader/reader_settings.dart');
+    final String settings = flat(read('lib/src/reader/reader_settings.dart'));
     // buildCustomFontCss must stay bound to the BODY target (legacy key).
     expect(
       settings.contains(
-        'buildCustomFontCss() =>\n      customFontCssForEntries(customFonts)',
+        'buildCustomFontCss()=>customFontCssForEntries(customFonts)',
       ),
       isTrue,
     );

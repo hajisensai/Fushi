@@ -211,18 +211,12 @@ void main() {
     });
 
     test('exposes setBrightness / restoreBrightness over the channel', () {
-      expect(
-        brightnessCtrl.contains("invokeMethod<void>('setBrightness'"),
-        isTrue,
-      );
-      expect(
-        brightnessCtrl.contains("invokeMethod<void>('restoreBrightness'"),
-        isTrue,
-      );
-      expect(
-        brightnessCtrl.contains("invokeMethod<double>('getBrightness'"),
-        isTrue,
-      );
+      // dart format 会把长调用折成多行 `invokeMethod<double>(` + 换行参数：
+      // 用 compactCode（剥注释 + 折叠空白）匹配，钉语义不钉排版。
+      final String code = compactCode(brightnessCtrl);
+      expect(code.contains("invokeMethod<void>('setBrightness'"), isTrue);
+      expect(code.contains("invokeMethod<void>('restoreBrightness'"), isTrue);
+      expect(code.contains("invokeMethod<double>('getBrightness'"), isTrue);
     });
   });
 }

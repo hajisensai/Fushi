@@ -276,11 +276,16 @@ void main() {
       // or directory`）并进来——原先是常量，macOS 缺 ffmpeg 时用户只看到「required audio
       // missing」，根因只躺在沙盒容器的 error_log.txt 里。锚点连 `_withRootCause(` 一起钉，
       // 退回常量即红。
+      // dart format 会把 `_withRootCause(` 的实参折到下一行，锚点按去空白的 compactCode
+      // 比对（两侧同样压缩），只钉语义不钉排版。
+      final String engineCompact = compactCode(engine);
       expect(
-        engineNorm,
+        engineCompact,
         contains(
-          'aborted: true, abortReason: '
-          "_withRootCause('required audio missing'",
+          compactCode(
+            'aborted: true, abortReason: '
+            "_withRootCause('required audio missing'",
+          ),
         ),
         reason: '缺音频中止走 aborted 信号回 shell，且必须带出根因（不得退回常量）。',
       );
@@ -363,11 +368,11 @@ void main() {
       // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
       // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
       // BUG-1664：锚点随构造改为 `_withRootCause('required audio missing', …)`。
-      final int engineAbortIdx = engineNorm.indexOf(
-        "abortReason: _withRootCause('required audio missing'",
+      final int engineAbortIdx = engineCompact.indexOf(
+        compactCode("abortReason: _withRootCause('required audio missing'"),
       );
-      final int engineCtxIdx = engineNorm.indexOf(
-        'AnkiMiningContext context =',
+      final int engineCtxIdx = engineCompact.indexOf(
+        compactCode('AnkiMiningContext context ='),
       );
       expect(engineAbortIdx, greaterThanOrEqualTo(0));
       expect(

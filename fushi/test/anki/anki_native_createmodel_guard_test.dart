@@ -133,12 +133,20 @@ void main() {
       expect(start, greaterThan(-1));
       final int end = vm.indexOf('_lapisSetupFailure(Object e)', start);
       final String body = vm.substring(start, end > start ? end : vm.length);
+      // 钉的是「取清单第一个」（`.first` / `.firstOrNull`），不是子串：
+      // `(?!Where)` 只放过合法的按条件查找 `firstWhere*(...)`（其 orElse 里再写
+      // `.first` 仍会被抓到），`\s*` 容忍 dart format 在 `.` 前后换行（format 前
+      // `settings.availableNoteTypes\n.firstWhereOrNull` 恰好被换行隔开，裸子串守卫
+      // 才没误报；format 合成一行后它就把正确实现判红）。
       expect(
-        body.contains('availableNoteTypes.first'),
+        RegExp(r'availableNoteTypes\s*\.\s*first(?!Where)').hasMatch(body),
         isFalse,
         reason: '找不到 Lapis 就选清单第一个 = 把用户自己的牌组当成 Lapis',
       );
-      expect(body.contains('availableDecks.first'), isFalse);
+      expect(
+        RegExp(r'availableDecks\s*\.\s*first(?!Where)').hasMatch(body),
+        isFalse,
+      );
       expect(body, contains('AnkiErrorCode.lapisSetupMissing'));
     });
   });

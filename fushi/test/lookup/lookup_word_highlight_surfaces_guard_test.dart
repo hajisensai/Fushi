@@ -68,14 +68,15 @@ void main() {
         reason: 'mixin onLinkClick 不得再 push 子层（回退成叠层）',
       );
       // onPush 必须返回匹配字数（Future<int>），否则拿不到 count。
+      // 折叠空白比对：守签名语义，不钉 `dart format` 的换行 / 缩进。
       expect(
-        src.contains(
-          'required Future<int> Function(\n'
-          '      String text,\n'
-          '      Rect selectionRect,\n'
-          '      List<FushiRubySpan> rubySpans,\n'
-          '    )\n'
-          '    onPush,',
+        compactCode(src).contains(
+          'requiredFuture<int>Function('
+          'Stringtext,'
+          'RectselectionRect,'
+          'List<FushiRubySpan>rubySpans,'
+          ')'
+          'onPush,',
         ),
         isTrue,
         reason: 'onPush 签名未返回 Future<int> 匹配字数',
@@ -111,7 +112,10 @@ void main() {
       // 定界用**下一个回调的起点**，不用固定字符数（BUG-2054 的教训）。
       final String textBody = src.substring(text, idx);
       expect(
-        textBody.contains('item.webViewKey.currentState?.highlightSelection('),
+        // 折叠空白比对：`dart format` 会把 `?.highlightSelection(` 折到下一行。
+        compactCode(
+          textBody,
+        ).contains('item.webViewKey.currentState?.highlightSelection('),
         isTrue,
         reason: 'reader onTextSelected 未高亮点中的源词',
       );

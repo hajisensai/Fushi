@@ -137,8 +137,9 @@ void main() {
     });
 
     test('migration stores bookmark before data_root path', () {
-      final String src = read(
-        'lib/src/sync/sync_settings_schema/data_root.part.dart',
+      // compactCode：掩注释并折叠空白，needle 跨 `dart format` 换行仍能命中。
+      final String src = compactCode(
+        read('lib/src/sync/sync_settings_schema/data_root.part.dart'),
       );
       final int createIdx = src.indexOf('createBookmarkForPath(picked)');
       final int migrateIdx = src.indexOf('DataRootMigrator().migrate(');
@@ -164,8 +165,8 @@ void main() {
     test(
       'migration restores the previous bookmark when data_root write fails',
       () {
-        final String src = read(
-          'lib/src/sync/sync_settings_schema/data_root.part.dart',
+        final String src = compactCode(
+          read('lib/src/sync/sync_settings_schema/data_root.part.dart'),
         );
         final int previousIdx = src.indexOf('previousBookmark');
         final int storeIdx = src.indexOf('MacOSDataRootAccess.storeBookmark');

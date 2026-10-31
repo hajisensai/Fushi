@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 导入 / 书架加载路径的「全列全表读」与 N+1 守卫（性能三轮优化第一轮）。
 ///
 /// 根因：`epub_books` 的 `chaptersJson` / `tocJson` 是每本几十到几百 KB 的大列，
@@ -75,13 +77,17 @@ void main() {
       );
       final int start = src.indexOf('Stream<List<String>> watchEpubBookKeys()');
       expect(start, greaterThan(0));
-      final String body = src.substring(start, src.indexOf(';', start));
+      // 折叠空白（并掩注释）后匹配：dart format 可能把 `selectOnly(epubBooks)`
+      // 拆成多行并补尾逗号，守卫钉语义而不是排版。
+      final String body = compactCode(
+        src.substring(start, src.indexOf(';', start)),
+      );
       expect(
-        body.contains('selectOnly(epubBooks)'),
+        RegExp(r'selectOnly\(epubBooks,?\)').hasMatch(body),
         isTrue,
         reason: '流在每次写入时重跑，全列 select 会把整库大列读一遍只为取 key',
       );
-      expect(body.contains('select(epubBooks).map'), isFalse);
+      expect(RegExp(r'\bselect\(epubBooks,?\)').hasMatch(body), isFalse);
     });
   });
 

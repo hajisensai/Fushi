@@ -10,6 +10,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 停驻的热槽页里加载动画无限循环（Windows WebView2 停驻仍 `IsVisible(true)`、文档仍
@@ -211,18 +212,25 @@ void main() {
       contains('window.lookupIdle = false;'),
       reason: '真实结果（含查完为空）不是空闲占位',
     );
-    final String webView = File(
-      'lib/src/pages/implementations/dictionary_popup_webview.dart',
-    ).readAsStringSync();
+    // 掩注释 + 折叠空白：只钉语义，不钉 `dart format` 的换行与尾逗号。
+    final String webView = compactCode(
+      File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync(),
+    );
     expect(
       webView,
-      contains('identical(widget.result, kPopupSearchingPlaceholderResult);'),
+      matches(
+        RegExp(
+          r'identical\(widget\.result,kPopupSearchingPlaceholderResult,?\);',
+        ),
+      ),
       reason: 'in-app 推送必须按占位单例身份下发 lookupIdle',
     );
     // P1-B：字面量与拦截取回两条投递路径都必须带上同一个 idle（缺一条就会在大结果
     // 时退回 BUG-3274 的假空态）。
     expect(
-      RegExp(r'idle: idle,').allMatches(webView).length,
+      RegExp(r'idle:idle[,)]').allMatches(webView).length,
       greaterThanOrEqualTo(2),
       reason:
           '字面量（buildPopupEntriesJs）与取回（buildPopupFetchedEntriesJs）'

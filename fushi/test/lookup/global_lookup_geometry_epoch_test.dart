@@ -97,10 +97,14 @@ void main() {
         lookupStart,
       );
       // 根查词带原文振假名时走 searchDictionaryWithRuby，同一个 await 点。
+      // token 之间容忍任意空白：dart format 会把长调用折成
+      // `await model\n    .searchDictionaryWithRuby(`，守卫只钉语义不钉排版。
       final int search = source.indexOf(
-        RegExp(r'await model\.searchDictionary(WithRuby)?\('),
+        RegExp(r'await\s+model\s*\.\s*searchDictionary(WithRuby)?\s*\('),
         lookupStart,
       );
+      expect(lookupStart, isNonNegative);
+      expect(search, greaterThan(lookupStart));
       expect(reset, greaterThan(lookupStart));
       expect(
         reset,

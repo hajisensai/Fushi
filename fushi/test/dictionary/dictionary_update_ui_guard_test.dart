@@ -49,8 +49,11 @@ void main() {
   });
 
   test('TODO-839：从文件覆盖更新走显式替换 + 异名确认接线', () {
+    // 容忍 dart format 的折行与尾逗号：钉的是「以 file 为唯一实参调用」，不是排版。
     expect(
-      src.contains('DictionaryImportManager.peekDictionaryTitle(file)'),
+      RegExp(
+        r'DictionaryImportManager\.peekDictionaryTitle\(\s*file\s*,?\s*\)',
+      ).hasMatch(src),
       isTrue,
       reason: '从文件更新前应帩价探出新包 title 判断异名',
     );

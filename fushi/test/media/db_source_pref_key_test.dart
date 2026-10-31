@@ -3,6 +3,15 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_source.dart';
 
+import '../helpers/source_guard.dart';
+
+/// 源码守卫按语义而非排版匹配：掩注释、折叠空白（[compactCode]），并把 `dart format`
+/// 补的尾逗号 `,)` 归一成 `)`，使多行实参与单行写法等价。[needle] 同样归一。
+bool _codeHas(String source, String needle) {
+  String norm(String s) => compactCode(s).replaceAll(',)', ')');
+  return norm(source).contains(norm(needle));
+}
+
 /// [dbSourcePrefKey] 是 MediaSource 偏好命名空间 key（`src:<source>:<key>`）的单一
 /// 真相编码器。此前 media_source 与 profile_repository 各自硬编码该格式（后者还钉死
 /// 历史名 reader_ttu；存量旧键已由 v70 Drift 迁移一次性改写为 reader_fushi）。
@@ -49,13 +58,13 @@ void main() {
         'lib/src/profile/profile_repository.dart',
       ).readAsStringSync();
       expect(
-        ms,
-        contains('dbSourcePrefKey(uniqueKey, key)'),
+        _codeHas(ms, 'dbSourcePrefKey(uniqueKey, key)'),
+        isTrue,
         reason: 'MediaSource._dbPrefKey 应转调编码器',
       );
       expect(
-        pr,
-        contains('dbSourcePrefKey(kReaderSourcePersistedKey, row.key)'),
+        _codeHas(pr, 'dbSourcePrefKey(kReaderSourcePersistedKey, row.key)'),
+        isTrue,
         reason: 'profile applyProfile 应转调编码器',
       );
       expect(
@@ -87,8 +96,8 @@ void main() {
               'lib/src/storage/path_rebase_coverage.dart',
             ).readAsStringSync();
         expect(
-          rs,
-          contains("dbSourcePrefKey(kReaderSourcePersistedKey, '')"),
+          _codeHas(rs, "dbSourcePrefKey(kReaderSourcePersistedKey, '')"),
+          isTrue,
           reason: 'ReaderSettings._prefix 应转调编码器',
         );
         expect(
@@ -97,8 +106,8 @@ void main() {
           reason: 'reader_settings 不应再持有前缀字面量',
         );
         expect(
-          cf,
-          contains('dbSourcePrefKey(kReaderSourcePersistedKey, shortKey)'),
+          _codeHas(cf, 'dbSourcePrefKey(kReaderSourcePersistedKey, shortKey)'),
+          isTrue,
           reason: 'custom_fonts_page._readerPrefKey 应转调编码器',
         );
         expect(
@@ -108,10 +117,11 @@ void main() {
         );
         for (final String src in <String>[pr, dm]) {
           expect(
-            src,
-            contains(
+            _codeHas(
+              src,
               "dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog')",
             ),
+            isTrue,
             reason: '字体 key 组应经编码器生成',
           );
           expect(
@@ -128,8 +138,11 @@ void main() {
           '../packages/fushi_engine/lib/media/media_pref_keys.dart',
         ).readAsStringSync();
         expect(
-          src2,
-          contains("const String kReaderSourcePersistedKey = 'reader_fushi';"),
+          _codeHas(
+            src2,
+            "const String kReaderSourcePersistedKey = 'reader_fushi';",
+          ),
+          isTrue,
           reason: '持久化键字面值必须冻结在 kReaderSourcePersistedKey 单一常量',
         );
       },

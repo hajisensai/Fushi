@@ -440,7 +440,9 @@ void main() {
     final int end = mixin.indexOf('\n  }\n', body);
     final String src = mixin.substring(body, end);
     expect(
-      src.contains('selectionRect.shift(-rootOverlayScreenOrigin(context))'),
+      RegExp(
+        r'selectionRect\.shift\(\s*-rootOverlayScreenOrigin\(context\),?\s*\)',
+      ).hasMatch(src),
       isTrue,
       reason:
           '屏幕 rect 必须减去根 Overlay 原点再交给 resolvePopupRect，'

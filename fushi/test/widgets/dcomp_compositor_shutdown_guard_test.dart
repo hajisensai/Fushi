@@ -332,10 +332,12 @@ void main() {
     final String managerHdr = managerHeader!.readAsStringSync();
 
     expect(preExitSrc.contains('WindowsNativePreExit'), isTrue);
+    // 按 compactCode（掩注释 + 折叠空白）匹配，容忍 dart format 拆行后补的尾逗号：
+    // 钉的是「通道名指向 WebView manager」这一语义，而非排版。
     expect(
-      preExitSrc.contains(
-        "MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager')",
-      ),
+      RegExp(
+        r"MethodChannel\('com\.pichillilorenzo/flutter_inappwebview_manager',?\)",
+      ).hasMatch(compactCode(preExitSrc)),
       isTrue,
       reason:
           'The hook must target the native WebView manager that owns dcomp.',

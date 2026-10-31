@@ -310,7 +310,7 @@ void main() {
       expect(
         RegExp(
           r'entranceStartProgress:\s*popupEntranceProgressAfter\(\s*'
-          r'entry\.searchPlaceholderShownFor\s*\)',
+          r'entry\.searchPlaceholderShownFor\s*,?\s*\)',
         ).hasMatch(src),
         isTrue,
       );

@@ -207,7 +207,15 @@ void main() {
     final String runner = read('windows/runner/flutter_window.cpp');
 
     expect(constants, contains('clipboardImage'));
-    expect(constants, contains("MethodChannel('\$_prefix/clipboard_image')"));
+    // 折叠空白后匹配：`dart format` 会把长构造调用拆行并补尾逗号，守卫钉语义不钉排版。
+    expect(
+      RegExp(
+        r"clipboardImage=MethodChannel\('\$_prefix/clipboard_image',?\)",
+      ).hasMatch(compactCode(constants)),
+      isTrue,
+      reason:
+          r"clipboardImage must be MethodChannel('$_prefix/clipboard_image')",
+    );
     expect(header, contains('clipboard_image_channel_'));
     expect(runner, contains('"app.fushi.reader/clipboard_image"'));
     expect(runner, contains('copyImageFile'));

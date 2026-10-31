@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：桌面音量 / 倍速改为固定锚点轻浮层 + 顶栏设置入口去重（TODO-438）。
@@ -79,8 +80,11 @@ void main() {
         isTrue,
         reason: '音量按钮应包固定锚点 helper，桌面 hover 逻辑在 helper 内复用',
       );
+      // 折叠空白（注释先掩掉）后匹配：dart format 会把这个调用拆行并补尾逗号。
       expect(
-        body.contains('_controlPopoverLinkFor(slot, VideoControlItem.volume)'),
+        RegExp(
+          r'_controlPopoverLinkFor\(slot,VideoControlItem\.volume,?\)',
+        ).hasMatch(compactCode(body)),
         isTrue,
         reason: '音量按钮必须按 slot/item 获取独立 LayerLink',
       );

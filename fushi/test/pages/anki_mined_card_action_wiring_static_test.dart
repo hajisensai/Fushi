@@ -155,8 +155,12 @@ void main() {
       final src = read('lib/src/lookup/overlay_bridge_handlers.dart');
       expect(src.contains("case 'findMinedMatches':"), isTrue);
       expect(src.contains("case 'openMinedNote':"), isTrue);
+      // 比对折叠空白后的源码：dart format 会把实参拆行并补尾逗号，钉的是调用本身
+      // （同一个仓库方法、同样两个实参）而非排版。
       expect(
-        src.contains('repo.findMatchingNotes(expression, reading)'),
+        RegExp(
+          r'repo\.findMatchingNotes\(expression,reading,?\)',
+        ).hasMatch(compactCode(src)),
         isTrue,
       );
       expect(src.contains('repo.openNoteInAnki(noteId)'), isTrue);
@@ -186,9 +190,13 @@ void main() {
       );
       expect(src.contains("handlerName: 'minedCardAction'"), isTrue);
       expect(src.contains('widget.onMinedCardAction!'), isTrue);
+      // 比对折叠空白后的源码：字段类型与字段名之间的换行/缩进归 dart format 管。
       expect(
-        src.contains(
-          'Future<MinePopupResult> Function(Map<String, String> fields)?\n      onMinedCardAction',
+        compactCode(src).contains(
+          compactCode(
+            'final Future<MinePopupResult> Function(Map<String, String> fields)? '
+            'onMinedCardAction;',
+          ),
         ),
         isTrue,
         reason: 'onMinedCardAction field must be declared on the webview',

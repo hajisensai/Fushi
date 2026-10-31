@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// TODO-1024 / BUG-479 源码守卫：缓存优先 + 后台静默刷新的接线不变量。
 ///
 /// 缓存写入发生在 `_check` 拿到合法 tag 之后（需 BuildContext + PlatformUpdater +
@@ -21,10 +23,12 @@ void main() {
     // cacheWriter 参数存在且默认 null（向后兼容）。
     expect(src, contains('UpdateCheckCacheWriter? cacheWriter,'));
     // 写缓存发生在「拿到 tag」之后、「是否更新」判断之前。
-    final int writeIdx = src.indexOf('await cacheWriter(entry);');
+    // 在掩注释 + 折空白的语料上比顺序，跨 dart format 换行仍锚定同一调用。
+    final String code = compactCode(src);
+    final int writeIdx = code.indexOf('awaitcacheWriter(entry);');
     expect(writeIdx, isNonNegative, reason: '_check 必须写回缓存');
-    final int newerIdx = src.indexOf(
-      'if (!isUpdateVersionNewer(version, currentVersion',
+    final int newerIdx = code.indexOf(
+      'if(!isUpdateVersionNewer(version,currentVersion,',
     );
     expect(newerIdx, isNonNegative);
     expect(

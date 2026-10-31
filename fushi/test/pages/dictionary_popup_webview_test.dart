@@ -355,9 +355,12 @@ void main() {
       );
 
       // (b) 注入顺序：只看真正下发的那段模板，避免被声明顺序蒙混。
-      final int evalAt = pushBody.indexOf(
-        '_controller!.evaluateJavascript(source:',
-      );
+      // 版式无关：`dart format` 会把 `(source:` 拆到下一行。
+      final int evalAt =
+          RegExp(
+            r'_controller!\s*\.evaluateJavascript\(\s*source:',
+          ).firstMatch(pushBody)?.start ??
+          -1;
       expect(evalAt, greaterThanOrEqualTo(0));
       final String evalTemplate = pushBody.substring(evalAt);
       final int staticAt = evalTemplate.indexOf(r'$staticSettingsJs');
@@ -955,7 +958,11 @@ void main() {
       // BUG-261/260 锚点范式：取 showMenu 所用 Overlay 的 RenderBox，把右键点映射到该
       // Overlay 坐标系（吃掉界面大小 FittedBox 缩放残差），再据 Overlay 尺寸算 RelativeRect。
       expect(
-        body.contains('Overlay.of(context).context.findRenderObject()'),
+        // 版式无关（容忍 `dart format` 补的尾逗号与换行）；先掩注释，免得注释里的
+        // 同文字假绿。
+        RegExp(
+          r'Overlay\.of\(\s*context\s*,?\s*\)\s*\.context\s*\.findRenderObject\(\s*\)',
+        ).hasMatch(maskComments(body)),
         isTrue,
         reason: '锚点须落在 showMenu 所用 Overlay 坐标系（取该 Overlay 的 RenderBox）',
       );

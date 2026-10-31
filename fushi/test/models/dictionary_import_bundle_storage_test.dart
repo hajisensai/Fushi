@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/utils.dart';
 
+import '../helpers/source_guard.dart' show compactCode;
+
 void main() {
   group('BUG-2952 整合包判据', () {
     test('zip 里套多个词典 zip（用户的「英语词典整理」形态）= 整合包，逐个算一本', () {
@@ -73,24 +75,33 @@ void main() {
     });
 
     test('整合包的逐本导入同时认内层 zip 与多份 index.json 目录，且递归层不复用外层工作目录', () {
-      final String src = File(
-        'lib/src/models/dictionary_import_manager.dart',
-      ).readAsStringSync();
+      // 钉语义不钉排版：掩注释、折叠空白（compactCode），并把 dart format 补的尾逗号
+      // `,)` 归一成 `)`，needle 同样归一，单行与多行实参写法等价。
+      String norm(String s) => compactCode(s).replaceAll(',)', ')');
+      final String src = norm(
+        File(
+          'lib/src/models/dictionary_import_manager.dart',
+        ).readAsStringSync(),
+      );
       expect(
-        src.contains("ext == '.mdx' || ext == '.dsl' || ext == '.zip'"),
+        src.contains(norm("ext == '.mdx' || ext == '.dsl' || ext == '.zip'")),
         isTrue,
       );
       expect(
-        src.contains('packDirectoryToZip(root, packed, skipPaths: skipPaths)'),
+        src.contains(
+          norm('packDirectoryToZip(root, packed, skipPaths: skipPaths)'),
+        ),
         isTrue,
       );
       expect(
-        src.contains("Directory('\${archive.path}.extracted')"),
+        src.contains(norm("Directory('\${archive.path}.extracted')")),
         isTrue,
         reason: '内层 zip 自己也是整合包时会递归；共用固定工作目录会删掉外层正在逐本导入的解压结果',
       );
       expect(
-        src.contains('t.dict_import_bundle_detected(n: dictionaries.length)'),
+        src.contains(
+          norm('t.dict_import_bundle_detected(n: dictionaries.length)'),
+        ),
         isTrue,
       );
     });

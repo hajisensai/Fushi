@@ -23,6 +23,10 @@ void main() {
   late String headerSource;
   late String dartSource;
 
+  /// 去掉全部空白、并把格式化器补的尾逗号 `,)` 收成 `)`：只钉语义 token，不钉排版。
+  String compactDart(String code) =>
+      code.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
   setUpAll(() {
     expect(
       cpp.existsSync(),
@@ -76,12 +80,16 @@ void main() {
       expect(source.contains(channelName), isTrue);
       expect(source.contains(methodName), isTrue);
       expect(
-        dartSource.contains("MethodChannel('$channelName')"),
+        compactDart(
+          dartSource,
+        ).contains(compactDart("MethodChannel('$channelName')")),
         isTrue,
         reason: 'Dart 侧 channel 名必须与 native 逐字节一致',
       );
       expect(
-        dartSource.contains("call.method != '$methodName'"),
+        compactDart(
+          dartSource,
+        ).contains(compactDart("call.method != '$methodName'")),
         isTrue,
         reason: 'Dart 侧方法名必须与 native InvokeMethod 逐字节一致',
       );
