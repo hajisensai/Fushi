@@ -2692,7 +2692,7 @@
   "feedback_crash_kind_unexpected": "意外退出",
   "feedback_crash_notice_view": "查看",
   "feedback_crash_prompt_always": "以后自动发送",
-  "feedback_crash_prompt_body": "把日志发给开发者帮忙修复？发出后可以在反馈中心看进度。",
+  "feedback_crash_prompt_body": "把错误日志、设备信息（版本、系统、机型）和本机安装标识发给开发者帮忙修复？日志里的用户目录、令牌和邮箱会先遮掉。发出后可以在反馈中心看进度。",
   "feedback_crash_prompt_decline": "不用了",
   "feedback_crash_prompt_retry": "重试",
   "feedback_crash_prompt_send": "发送给开发者",

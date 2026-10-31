@@ -4216,7 +4216,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get feedback_crash_notice_view => 'View';
   String get feedback_crash_prompt_always => 'Always send';
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   String get feedback_crash_prompt_decline => 'No thanks';
   String get feedback_crash_prompt_retry => 'Retry';
   String get feedback_crash_prompt_send => 'Send to developers';
@@ -22153,7 +22153,7 @@ class _StringsAr extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -48141,7 +48141,7 @@ class _StringsDe extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -74437,7 +74437,7 @@ class _StringsEs extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -100797,7 +100797,7 @@ class _StringsFr extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -127113,7 +127113,7 @@ class _StringsId extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -153226,7 +153226,7 @@ class _StringsIt extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -179201,7 +179201,7 @@ class _StringsJa extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -204389,7 +204389,7 @@ class _StringsKo extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -229900,7 +229900,7 @@ class _StringsNl extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -256102,7 +256102,7 @@ class _StringsPtBr extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -282326,7 +282326,7 @@ class _StringsRu extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -308446,7 +308446,7 @@ class _StringsTh extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -334378,7 +334378,7 @@ class _StringsTr extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -360437,7 +360437,7 @@ class _StringsVi extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -385875,7 +385875,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get feedback_crash_prompt_always => '以后自动发送';
   @override
-  String get feedback_crash_prompt_body => '把日志发给开发者帮忙修复？发出后可以在反馈中心看进度。';
+  String get feedback_crash_prompt_body =>
+      '把错误日志、设备信息（版本、系统、机型）和本机安装标识发给开发者帮忙修复？日志里的用户目录、令牌和邮箱会先遮掉。发出后可以在反馈中心看进度。';
   @override
   String get feedback_crash_prompt_decline => '不用了';
   @override
@@ -409857,7 +409858,7 @@ class _StringsZhHk extends _StringsEn {
   String get feedback_crash_prompt_always => 'Always send';
   @override
   String get feedback_crash_prompt_body =>
-      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
   @override
   String get feedback_crash_prompt_decline => 'No thanks';
   @override
@@ -433734,7 +433735,7 @@ extension on _StringsEn {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -455921,7 +455922,7 @@ extension on _StringsAr {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -478134,7 +478135,7 @@ extension on _StringsDe {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -500381,7 +500382,7 @@ extension on _StringsEs {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -522633,7 +522634,7 @@ extension on _StringsFr {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -544866,7 +544867,7 @@ extension on _StringsId {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -567077,7 +567078,7 @@ extension on _StringsIt {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -589271,7 +589272,7 @@ extension on _StringsJa {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -611376,7 +611377,7 @@ extension on _StringsKo {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -633533,7 +633534,7 @@ extension on _StringsNl {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -655764,7 +655765,7 @@ extension on _StringsPtBr {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -677995,7 +677996,7 @@ extension on _StringsRu {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -700200,7 +700201,7 @@ extension on _StringsTh {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -722402,7 +722403,7 @@ extension on _StringsTr {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -744611,7 +744612,7 @@ extension on _StringsVi {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':
@@ -766714,7 +766715,7 @@ extension on _StringsZhCn {
       case 'feedback_crash_prompt_always':
         return '以后自动发送';
       case 'feedback_crash_prompt_body':
-        return '把日志发给开发者帮忙修复？发出后可以在反馈中心看进度。';
+        return '把错误日志、设备信息（版本、系统、机型）和本机安装标识发给开发者帮忙修复？日志里的用户目录、令牌和邮箱会先遮掉。发出后可以在反馈中心看进度。';
       case 'feedback_crash_prompt_decline':
         return '不用了';
       case 'feedback_crash_prompt_retry':
@@ -788665,7 +788666,7 @@ extension on _StringsZhHk {
       case 'feedback_crash_prompt_always':
         return 'Always send';
       case 'feedback_crash_prompt_body':
-        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+        return 'Send the error log, device info (app version, OS, device model) and this install\'s identifier to the developers to help fix it? User folders, tokens and email addresses in the log are masked first. You can follow it in Feedback.';
       case 'feedback_crash_prompt_decline':
         return 'No thanks';
       case 'feedback_crash_prompt_retry':

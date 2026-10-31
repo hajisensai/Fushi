@@ -1,8 +1,8 @@
 // 反馈附带的诊断信息：设备 / 版本信息（meta）、压缩日志、当前画面截图。
 //
 // 只收排查需要的最少信息：App 版本、平台与系统版本、机型、界面语言、窗口尺寸；
-// 不收账号、文件路径以外的个人数据。日志就是「设置 › 诊断」里错误日志 / 调试日志
-// 页面上能看到的那两份（用户在提交页可以关掉）。
+// 不收账号等个人数据。日志就是「设置 › 诊断」里错误日志 / 调试日志页面上能看到的
+// 那两份（用户在提交页可以关掉），上传前经 [redactFeedbackLog] 脱敏。
 
 import 'dart:async';
 import 'dart:convert';
@@ -15,6 +15,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/feedback/feedback_log_redaction.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
@@ -54,11 +55,8 @@ bool get _nativeWindowCaptureSupported => Platform.isIOS || Platform.isAndroid;
 /// 原生侧按 `maxSide` 在合成时就缩到上限内再编码（Android），不把全分辨率
 /// PNG 经通道传过来再由 Dart 解码缩放；iOS 忽略该参数，由
 /// [fitFeedbackScreenshotPng] 兜底缩放。
-Future<Uint8List?> _invokeNativeWindowCapture() =>
-    FloatingBallChannel.channel.invokeMethod<Uint8List>(
-      'captureScreen',
-      nativeWindowCaptureArguments(),
-    );
+Future<Uint8List?> _invokeNativeWindowCapture() => FloatingBallChannel.channel
+    .invokeMethod<Uint8List>('captureScreen', nativeWindowCaptureArguments());
 
 /// `captureScreen` 的通道参数：输出长边上限。
 @visibleForTesting
@@ -307,18 +305,23 @@ Future<Map<String, Object?>> _deviceModel() async {
   return const <String, Object?>{};
 }
 
-/// 当前的错误日志 + 调试日志（调试日志只在用户开着「调试日志」时有内容）。
-String collectFeedbackLogText() {
+/// 要上传的日志：错误日志 + 调试日志（调试日志只在 [includeDebugLog] 且用户开着
+/// 「调试日志」时带）。这是反馈 / 闪退报告日志附件的**唯一汇总点**，出口统一过
+/// [redactFeedbackLog] 脱敏（家目录、令牌、Authorization / Cookie、邮箱）。
+///
+/// 闪退自动报告传 `includeDebugLog: false`（[FeedbackDraft.includeDebugLog]）：用户只
+/// 同意了发错误日志与退出摘要，调试日志是整段 `debugPrint` 原文，不随之发出。
+String collectFeedbackLogText({required bool includeDebugLog}) {
   final StringBuffer buf = StringBuffer()
     ..writeln('==== error log ====')
     ..writeln(ErrorLogService.instance.getFullLog());
-  if (DebugLogService.instance.enabled) {
+  if (includeDebugLog && DebugLogService.instance.enabled) {
     buf
       ..writeln()
       ..writeln('==== debug log ====')
       ..writeln(DebugLogService.instance.getFullLog());
   }
-  return buf.toString();
+  return redactFeedbackLog(buf.toString());
 }
 
 /// 把日志文本压成 gzip，保证不超过 [maxBytes]（服务端上限）：超了就只留**末尾**

@@ -48,7 +48,7 @@ void main() {
       supportRoot: () async => root,
       client: board.feedbackClient,
       meta: () async => <String, Object?>{},
-      logText: () => '',
+      logText: ({required bool includeDebugLog}) => '',
       logEncoder: (String s) => Uint8List.fromList(utf8.encode(s)),
     );
     // 一个容器跨多次 pumpWidget：页面关掉再打开时服务不随 ProviderScope 一起被 dispose。
