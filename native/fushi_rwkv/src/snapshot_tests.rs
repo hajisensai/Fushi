@@ -55,7 +55,7 @@ impl Directory {
 
 impl Drop for Directory {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -91,7 +91,7 @@ fn round_trip(small: bool) {
         assert_eq!(original.snapshot().unwrap(), restored.snapshot().unwrap());
 
         if small {
-            restored.append(&[row(9, 4, false)], &[123]).unwrap();
+            restored.append(&[row(9, 4, false)], &[123], &[1]).unwrap();
         }
         restored.scores_update(&queries.iter().map(|q| row(q.card_id, 5, true)).collect::<Vec<_>>(), &[1; 4], &[0; 4]).unwrap();
         let old_state = restored.inference.snapshot();
