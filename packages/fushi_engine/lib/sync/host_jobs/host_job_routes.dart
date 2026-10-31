@@ -5,6 +5,8 @@
 /// GET    /api/jobs                        列表
 /// POST   /api/jobs                        {kind, params} → {jobId, state}
 /// GET    /api/jobs/<id>                   轮询
+/// POST   /api/jobs/<id>/inputs/match      {files:[{name,sha256,size}]} → {matched:[name]}
+///                                         host 本地有同内容文件的那几份不必上传
 /// PUT    /api/jobs/<id>/input/<name>      上传输入（body=bytes）
 /// POST   /api/jobs/<id>/start
 /// GET    /api/jobs/<id>/result[/<name>]   产物
@@ -15,6 +17,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:shelf/shelf.dart' as shelf;
@@ -74,6 +77,22 @@ Future<shelf.Response> handleHostJobRequest(
       if (method != 'PUT') return shelf.Response(405);
       await jobs.putInput(id, seg[2], request.read());
       return _json(jobs.get(id).toWireJson());
+    }
+    if (action == 'inputs' && seg.length == 3 && seg[2] == 'match') {
+      if (method != 'POST') return shelf.Response(405);
+      final Object? decoded = jsonDecode(await request.readAsString());
+      if (decoded is! Map || decoded['files'] is! List) {
+        return shelf.Response(400, body: 'JSON {files: [...]} required');
+      }
+      final List<HostInputWanted> wanted = <HostInputWanted>[
+        for (final Object? e in decoded['files'] as List)
+          HostInputWanted.fromJson(e),
+      ];
+      final List<String> matched = await jobs.matchInputs(id, wanted);
+      return _json(<String, Object?>{
+        'matched': matched,
+        ...jobs.get(id).toWireJson(),
+      });
     }
     if (action == 'start' && seg.length == 2) {
       if (method != 'POST') return shelf.Response(405);

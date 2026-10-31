@@ -282,6 +282,9 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
+import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
+import 'package:fushi_engine/sync/host_jobs/host_audiobook_inputs.dart';
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -752,6 +755,13 @@ class AppModel with ChangeNotifier {
   /// HomePage（弹窗词典 / 悬浮词典入口）。
   VideoScrapeRuntime? videoScrapeRuntime;
 
+  /// 本机文件内容哈希（SHA-256）缓存：把有声书转录交给互联 host 时，客户端侧给待
+  /// 上传音频算哈希、host 侧给库里候选音频算哈希，都按 `(路径, 大小, 修改时刻)` 复用，
+  /// 同一文件不重算（见 `FileContentHashCache`）。
+  late final FileContentHashCache contentHashCache = FileContentHashCache(
+    store: File(path.join(databaseDirectory.path, 'content_hash_cache.json')),
+  );
+
   /// 手机字幕遥控器的播放器适配宿主：当前视频页登记 / 注销播放绑定，互联服务端
   /// 经 [syncServerController] 把它注入为 `videoRemoteControlV1` 能力。
   late final VideoRemoteHost videoRemoteHost = VideoRemoteHost(
@@ -807,6 +817,11 @@ class AppModel with ChangeNotifier {
     hostJobsFactory: () async {
       final HostJobManager jobs = HostJobManager(
         jobRoot: Directory(path.join(databaseDirectory.path, 'host_jobs')),
+        // 对端交来的有声书转录：本机有声书库里已有内容相同的音频就不必上传。
+        inputMatcher: HostInputMatcher(
+          candidates: () => hostAudiobookInputCandidates(database),
+          cache: contentHashCache,
+        ),
         runners: <HostJobRunner>[
           AsrHostJobRunner(
             serviceFactory: (AsrAudioProfile profile) =>
