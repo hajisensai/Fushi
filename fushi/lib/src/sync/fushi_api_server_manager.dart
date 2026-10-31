@@ -32,7 +32,6 @@ class FushiApiServerManager {
     void Function(BrowserVideoSample sample)? onExtensionStudy,
     ExtensionFavoriteHandler? onExtensionFavorite,
     void Function()? onExtensionSeen,
-    void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
@@ -55,7 +54,6 @@ class FushiApiServerManager {
        _onExtensionStudy = onExtensionStudy,
        _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
-       _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
@@ -89,9 +87,6 @@ class FushiApiServerManager {
   final ExtensionFavoriteHandler? _onExtensionFavorite;
   // 浏览器扩展连接探活回调，透传给 [FushiApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
-  // TODO-2936：查词/制卡活动回调，透传给 [FushiApiServer]（app 侧应用「浏览器」
-  // 媒体类型的 Profile 绑定）。
-  final void Function()? _onLookupActivity;
   // BUG-1079：扩展自报版本回调，透传给 [FushiApiServer]（app 侧记录浏览器中实际
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
@@ -149,7 +144,6 @@ class FushiApiServerManager {
       onExtensionStudy: _onExtensionStudy,
       onExtensionFavorite: _onExtensionFavorite,
       onExtensionSeen: _onExtensionSeen,
-      onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
       subtitleRegistryProvider: _subtitleRegistryProvider,
       extensionTestPageProvider: _extensionTestPageProvider,
