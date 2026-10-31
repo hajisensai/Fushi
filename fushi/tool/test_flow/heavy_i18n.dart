@@ -59,6 +59,17 @@ bool heavyCommandNeedsI18n(
           sub.replaceAll(r'\', '/').split('/').last != 'gen_i18n.dart';
     case 'gradlew':
       return true;
+    case 'powershell':
+    case 'pwsh':
+      // run_windows_itest.ps1 runs `flutter test -d windows` under fushi/
+      // (docs/agent/heavy-lease.md routes it through heavy).
+      return command
+          .skip(1)
+          .any(
+            (String a) =>
+                a.replaceAll(r'\', '/').split('/').last ==
+                'run_windows_itest.ps1',
+          );
   }
   return false;
 }

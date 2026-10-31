@@ -344,6 +344,16 @@ def _unique_sibling(path: Path, suffix: str) -> Path:
 
 def materialize(entry: dict, cache: Path) -> str:
     target = ROOT / entry["path"]
+    # Two fetches into the same checkout (bootstrap + melos post hook, two dist
+    # slots on one worktree) must not hash `target` while the other replaces it
+    # (PermissionError on Windows): serialize per target path. Lock order is
+    # always target -> cache entry, so the two locks cannot deadlock.
+    target_key = "target-" + hashlib.sha256(str(target.resolve()).lower().encode("utf-8")).hexdigest()
+    with cache_lock(cache, target_key):
+        return _materialize_locked(entry, cache, target)
+
+
+def _materialize_locked(entry: dict, cache: Path, target: Path) -> str:
     if matches(target, entry):
         return "ok"
     action = "replaced" if target.exists() else "fetched"
