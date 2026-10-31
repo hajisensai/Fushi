@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 
@@ -32,6 +33,24 @@ const Duration kPluginLyricsNegativeCacheTtl = Duration(days: 1);
 /// 向在线音源插件要一首歌的歌词（app 装配：`MusicPluginManager.source(id).lyrics`）。
 typedef MusicPluginLyricsFetcher =
     Future<MusicPluginLyrics?> Function(String pluginId, String trackId);
+
+/// 向歌词插件搜候选（app 装配：`MusicPluginManager.source(id).lyricsSearch`）。
+typedef MusicPluginLyricsSearcher =
+    Future<List<MusicPluginLyricsCandidate>> Function(
+      String pluginId,
+      String title, {
+      String? artist,
+      String? album,
+      int? durationMs,
+      String? query,
+    });
+
+/// 按候选的 ref 向歌词插件取词（app 装配：`MusicPluginManager.source(id).lyricsFetch`）。
+typedef MusicPluginLyricsRefFetcher =
+    Future<MusicPluginLyrics?> Function(String pluginId, Object ref);
+
+/// 已启用的歌词插件 id，按用户排序（LRCLIB 不在其中，固定最前）。
+typedef MusicLyricsProviderIds = Future<List<String>> Function();
 
 /// 插件歌词 → 落库原文 + 时间轴。有译文（`translation`）时按时间与原文配对、合进同一条时间轴，
 /// 落库存 TTML（无损：缓存版本变化重解析时译文不丢）；没有译文就原样存插件给的格式。
@@ -169,8 +188,14 @@ class MusicLyricsService {
     parse,
     int Function()? now,
     MusicPluginLyricsFetcher? pluginLyrics,
+    MusicPluginLyricsSearcher? pluginSearch,
+    MusicPluginLyricsRefFetcher? pluginFetch,
+    MusicLyricsProviderIds? providers,
   }) : _database = database,
        _pluginLyrics = pluginLyrics,
+       _pluginSearch = pluginSearch,
+       _pluginFetch = pluginFetch,
+       _providers = providers,
        _lrclib = lrclib,
        _onlineEnabled = onlineEnabled,
        _listDir = listDir,
@@ -193,6 +218,9 @@ class MusicLyricsService {
   _parse;
   final int Function() _now;
   final MusicPluginLyricsFetcher? _pluginLyrics;
+  final MusicPluginLyricsSearcher? _pluginSearch;
+  final MusicPluginLyricsRefFetcher? _pluginFetch;
+  final MusicLyricsProviderIds? _providers;
 
   Future<List<MusicLyricRow>> _rows(FushiDatabase db, String trackUid) =>
       (db.select(
@@ -449,8 +477,39 @@ class MusicLyricsService {
       }
     }
 
-    // ④ LRCLIB：先看缓存（含负缓存），再按需在线查。
-    final MusicLyricRow? cached = rowOf(MusicLyricsSource.lrclib);
+    // ④ LRCLIB（固定第一）→ ⑤ 已启用的歌词插件按用户排序，第一个命中的胜出。
+    // LRCLIB 联网失败不挡后面的插件：记下异常，插件也没结果时再抛给调用方。
+    Object? lrclibError;
+    StackTrace? lrclibStack;
+    try {
+      final MusicLyricsResolution? viaLrclib = await _resolveLrclib(
+        db,
+        track,
+        rowOf(MusicLyricsSource.lrclib),
+      );
+      if (viaLrclib != null) return viaLrclib;
+    } on Exception catch (e, st) {
+      lrclibError = e;
+      lrclibStack = st;
+    }
+    final MusicLyricsResolution? viaPlugins = await _resolvePluginProviders(
+      db,
+      track,
+      rowOf,
+    );
+    if (viaPlugins != null) return viaPlugins;
+    if (lrclibError != null) {
+      Error.throwWithStackTrace(lrclibError, lrclibStack!);
+    }
+    return null;
+  }
+
+  /// LRCLIB：先看缓存（含负缓存），再按需在线查。
+  Future<MusicLyricsResolution?> _resolveLrclib(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    MusicLyricRow? cached,
+  ) async {
     if (cached != null) {
       if (cached.format != kMusicLyricsNoneFormat) {
         return MusicLyricsResolution(
@@ -498,6 +557,127 @@ class MusicLyricsService {
       timeline: t.copyWith(offsetMs: cached?.offsetMs ?? 0),
       source: MusicLyricsSource.lrclib,
     );
+  }
+
+  /// 歌词插件来源：按用户排序逐个「缓存（含负缓存）→ lyricsSearch → 评分挑 → lyricsFetch」，
+  /// 第一个拿到歌词的胜出。插件报错只跳过它（不写负缓存），不影响后面的插件。
+  Future<MusicLyricsResolution?> _resolvePluginProviders(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    MusicLyricRow? Function(String source) rowOf,
+  ) async {
+    final MusicLyricsProviderIds? listProviders = _providers;
+    final MusicPluginLyricsSearcher? search = _pluginSearch;
+    final MusicPluginLyricsRefFetcher? fetch = _pluginFetch;
+    if (listProviders == null || search == null || fetch == null) return null;
+    final List<String> ids = await listProviders();
+    for (final String id in ids) {
+      final String source = MusicLyricsSource.plugin(id);
+      final MusicLyricRow? prev = rowOf(source);
+      if (prev != null) {
+        if (prev.format != kMusicLyricsNoneFormat) {
+          return MusicLyricsResolution(
+            timeline: await _timelineOf(db, prev, track.durationMs),
+            source: source,
+          );
+        }
+        if (_now() - prev.updatedAt <
+            kPluginLyricsNegativeCacheTtl.inMilliseconds) {
+          continue;
+        }
+      }
+      if (!_onlineEnabled()) continue;
+      try {
+        final MusicPluginLyrics? got = await _searchAndFetch(
+          id,
+          track,
+          search,
+          fetch,
+        );
+        if (got == null) {
+          await _upsert(
+            db,
+            trackUid: track.trackUid,
+            source: source,
+            format: kMusicLyricsNoneFormat,
+            raw: Uint8List(0),
+          );
+          continue;
+        }
+        final ({Uint8List raw, String format, LyricTimeline timeline}) built =
+            await buildMusicPluginLyrics(got, track.durationMs, _parse);
+        final LyricTimeline t = built.timeline.copyWith(source: source);
+        await _upsert(
+          db,
+          trackUid: track.trackUid,
+          source: source,
+          format: built.format,
+          raw: built.raw,
+          timeline: t,
+        );
+        return MusicLyricsResolution(
+          timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
+          source: source,
+        );
+      } on MusicPluginException {
+        continue;
+      } on LyricsParseException {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Future<MusicPluginLyrics?> _searchAndFetch(
+    String pluginId,
+    MusicLyricsTrackRef track,
+    MusicPluginLyricsSearcher search,
+    MusicPluginLyricsRefFetcher fetch,
+  ) async {
+    final Map<String, MusicPluginLyricsCandidate> byKey =
+        <String, MusicPluginLyricsCandidate>{};
+    final List<LyricsCandidate> all = await searchWithFallbackQueries(
+      title: track.title,
+      artist: track.artist,
+      durationMs: track.durationMs,
+      run: (String q) async {
+        final List<MusicPluginLyricsCandidate> items = await search(
+          pluginId,
+          track.title,
+          artist: track.artist,
+          album: track.album,
+          durationMs: track.durationMs,
+          query: q,
+        );
+        final List<LyricsCandidate> out = <LyricsCandidate>[];
+        for (final MusicPluginLyricsCandidate c in items) {
+          final String key = jsonEncode(c.ref);
+          byKey[key] = c;
+          out.add(
+            LyricsCandidate(
+              providerId: pluginId,
+              title: c.title,
+              artist: c.artist ?? '',
+              durationMs: c.durationMs,
+              ref: <String, String>{'k': key},
+            ),
+          );
+        }
+        return out;
+      },
+    );
+    final LyricsCandidate? best = pickBestLyricsCandidate(
+      all,
+      title: track.title,
+      artist: track.artist,
+      durationMs: track.durationMs,
+    );
+    if (best == null) return null;
+    final MusicPluginLyrics? lyrics = await fetch(
+      pluginId,
+      byKey[best.ref['k']]!.ref,
+    );
+    return lyrics?.original == null ? null : lyrics;
   }
 
   Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {

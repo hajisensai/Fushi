@@ -482,6 +482,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_media_session',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
+  // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
+  'music_lyrics_providers',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
