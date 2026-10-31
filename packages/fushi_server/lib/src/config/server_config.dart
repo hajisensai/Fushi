@@ -276,8 +276,9 @@ class ServerConfig {
         ? doc
         : const <dynamic, dynamic>{};
     String dataDir = map['data_dir']?.toString() ?? 'data';
-    if (!p.isAbsolute(dataDir))
+    if (!p.isAbsolute(dataDir)) {
       dataDir = p.normalize(p.join(configDir, dataDir));
+    }
     final ServerConfig base = ServerConfig.defaults(dataDir: dataDir);
     final Object? libsRaw = map['libraries'];
     final List<LibraryRootConfig> libraries = <LibraryRootConfig>[
@@ -379,8 +380,9 @@ class ServerConfig {
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
-    if ((tmdbApiKey ?? '').isNotEmpty)
+    if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
+    }
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {
@@ -400,8 +402,9 @@ class ServerConfig {
     ai?.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
-    if (torrentLibraryPath != null)
+    if (torrentLibraryPath != null) {
       b.writeln('  library: ${_q(torrentLibraryPath!)}');
+    }
     b.writeln('  listen: ${_q(torrentListen)}');
     if (qbittorrentUrl != null) {
       b.writeln('qbittorrent:');

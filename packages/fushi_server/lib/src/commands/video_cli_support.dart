@@ -93,8 +93,9 @@ int? parseClockArgToMs(String raw) {
     final double? number = i == parts.length - 1
         ? double.tryParse(part)
         : int.tryParse(part)?.toDouble();
-    if (number == null || number < 0 || number.isNaN || number.isInfinite)
+    if (number == null || number < 0 || number.isNaN || number.isInfinite) {
       return null;
+    }
     if (i > 0 && number >= 60) return null;
     total = total * 60 + number;
   }

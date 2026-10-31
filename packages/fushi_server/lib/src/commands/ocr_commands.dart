@@ -237,8 +237,9 @@ class OcrCommands extends CliModule {
       return _io.usage('未知动作 "${leaf.rest.join(' ')}"', usageLine);
     }
     final String? key = leaf['model'] as String?;
-    if (action == 'rm' && key == null)
+    if (action == 'rm' && key == null) {
       return _io.usage('rm 要用 --model 点名删哪个模型', usageLine);
+    }
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
       final Map<String, MangaOcrServiceImpl> services =
@@ -555,8 +556,9 @@ class OcrCommands extends CliModule {
     final List<OcrPageResult> results = <OcrPageResult>[];
     for (int i = 0; i < targets.length; i++) {
       final OcrPageResult? result = await cache.read('manga_ocr', i);
-      if (result == null)
+      if (result == null) {
         throw StateError('页 ${targets[i].relativeUrl} 识别后没有逐页缓存');
+      }
       results.add(result);
     }
     return buildMangaPayloadFromResults(targets, results);
@@ -612,8 +614,9 @@ class OcrCommands extends CliModule {
   // ── manga panels ────────────────────────────────────────────────────
 
   Future<int> _panels(ArgResults leaf, CliContext ctx) async {
-    if (leaf.rest.isEmpty)
+    if (leaf.rest.isEmpty) {
       return _io.usage('缺少图片路径', 'manga panels <image…> [--ltr] [--json]');
+    }
     final List<String> images = <String>[
       for (final String raw in leaf.rest) p.normalize(p.absolute(raw)),
     ];
@@ -643,10 +646,11 @@ class OcrCommands extends CliModule {
         return kExitUnavailable;
       }
       final OcrSessionFactory Function()? builder = ocrSessionFactoryBuilder;
-      if (builder == null)
+      if (builder == null) {
         throw StateError(
           'ocrSessionFactoryBuilder 未装配（installServerHostBindings 没跑）',
         );
+      }
       final OcrSession session = await builder().createSession(
         model.path,
         providers: <OcrExecutionProvider>[OcrExecutionProvider.cpu],

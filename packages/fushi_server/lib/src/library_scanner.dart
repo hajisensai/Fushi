@@ -157,7 +157,7 @@ class LibraryScanner {
           if (pruneMissing) await _pruneVideoRoot(dir, root.id, scan, summary);
         case 'book':
           final _BookScan scan = await _scanBooks(dir, root, summary);
-          if (pruneMissing)
+          if (pruneMissing) {
             await _pruneBookRoot(
               dir,
               root.id,
@@ -165,10 +165,11 @@ class LibraryScanner {
               scan,
               summary,
             );
+          }
           await _groupBookSeries(summary);
         case 'manga':
           final _BookScan scan = await _scanManga(dir, root, summary);
-          if (pruneMissing)
+          if (pruneMissing) {
             await _pruneBookRoot(
               dir,
               root.id,
@@ -176,6 +177,7 @@ class LibraryScanner {
               scan,
               summary,
             );
+          }
           await _groupBookSeries(summary);
         default:
           summary.errors.add(
@@ -333,8 +335,9 @@ class LibraryScanner {
       kind.dbValue,
     )) {
       if (row.transport == 'local' &&
-          p.equals(p.normalize(row.rootPath), rootPath))
+          p.equals(p.normalize(row.rootPath), rootPath)) {
         return row;
+      }
     }
     return null;
   }

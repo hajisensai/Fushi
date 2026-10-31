@@ -134,7 +134,8 @@ Future<VideoSubtitleRecognizerChoice> resolveServerVideoSubtitleRecognizer({
 /// （交给 asr_onnx_ffi 的候选链）。
 String? resolveOrtLibraryPath(ServerConfig config) {
   final String? configured = config.ortLibraryPath;
-  if (configured != null && configured.trim().isNotEmpty)
+  if (configured != null && configured.trim().isNotEmpty) {
     return configured.trim();
+  }
   return locateBundledLibrary(onnxRuntimeLibraryName());
 }

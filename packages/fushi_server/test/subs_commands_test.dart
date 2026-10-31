@@ -76,8 +76,9 @@ class _FakeProvider implements VideoSubtitleProvider {
     VideoSubtitleSearchRequest request,
   ) async {
     requests.add(request);
-    if (failure != null)
+    if (failure != null) {
       return ProviderBatchResult<VideoSubtitleCandidate>.failure(failure!);
+    }
     return ProviderBatchResult<VideoSubtitleCandidate>.success(candidates);
   }
 

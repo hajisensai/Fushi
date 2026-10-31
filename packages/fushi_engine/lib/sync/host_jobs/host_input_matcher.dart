@@ -26,8 +26,9 @@ class HostInputWanted {
 
   /// 解析 wire 上的一条；缺字段 / 类型不对抛 [FormatException]。
   factory HostInputWanted.fromJson(Object? json) {
-    if (json is! Map)
+    if (json is! Map) {
       throw const FormatException('match: entry must be object');
+    }
     final Object? name = json['name'];
     final Object? sha = json['sha256'];
     final Object? size = json['size'];

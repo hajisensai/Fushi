@@ -52,11 +52,13 @@ Future<shelf.Response> handleHostJobRequest(
       }
       if (method == 'POST') {
         final Object? decoded = jsonDecode(await request.readAsString());
-        if (decoded is! Map)
+        if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
+        }
         final String? kind = decoded['kind']?.toString();
-        if (kind == null || kind.isEmpty)
+        if (kind == null || kind.isEmpty) {
           return shelf.Response(400, body: 'Missing kind');
+        }
         final Object? rawParams = decoded['params'];
         final Map<String, Object?> params = rawParams is Map
             ? Map<String, Object?>.from(rawParams)
@@ -116,8 +118,9 @@ Future<shelf.Response> handleHostJobRequest(
       }
       final String? name = seg.length >= 3 ? seg[2] : null;
       final File? file = jobs.result(id, name);
-      if (file == null || !await file.exists())
+      if (file == null || !await file.exists()) {
         return shelf.Response.notFound('No such output');
+      }
       final int length = await file.length();
       return shelf.Response.ok(
         method == 'HEAD' ? null : file.openRead(),

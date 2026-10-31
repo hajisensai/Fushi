@@ -172,8 +172,9 @@ void main() {
         },
         lookup: ({required int size, required String ed2k}) async {
           calls++;
-          if (failLookup)
+          if (failLookup) {
             throw const AnidbUdpException(AnidbUdpFailure.timeout);
+          }
           return identity;
         },
       );

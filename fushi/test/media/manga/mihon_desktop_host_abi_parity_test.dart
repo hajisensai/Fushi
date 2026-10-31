@@ -138,8 +138,9 @@ Map<String, String> _effectiveSidecarVersions(String toml, String patch) {
     final RegExpMatch? coordinate = RegExp(
       r'^(\w[\w.-]*)\s*=\s*"([^":]+:[^":]+):([^"]+)"',
     ).firstMatch(trimmed);
-    if (coordinate != null)
+    if (coordinate != null) {
       versions[coordinate.group(1)!] = coordinate.group(3)!;
+    }
   }
   return versions;
 }

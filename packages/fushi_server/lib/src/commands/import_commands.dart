@@ -138,8 +138,9 @@ AutoImportRoute routeAutoImport(String path) {
                 .contains(kMangaOcrOutDirName))
           e.path,
     ]..sort();
-    if (files.isEmpty)
+    if (files.isEmpty) {
       return const AutoImportRoute(AutoImportKind.unsupported, reason: '空目录');
+    }
     if (files.any(
       (String f) => AudiobookStorage.audioExtensions.contains(_ext(f)),
     )) {
@@ -161,18 +162,21 @@ AutoImportRoute routeAutoImport(String path) {
     if (!planMangaFoldersInDirectory(Directory(path)).isEmpty) {
       return const AutoImportRoute(AutoImportKind.mangaLocal);
     }
-    if (files.any(isDiscoveryArchivePath))
+    if (files.any(isDiscoveryArchivePath)) {
       return AutoImportRoute(AutoImportKind.novel, files: files);
+    }
     return const AutoImportRoute(
       AutoImportKind.unsupported,
       reason: '目录里没有可导入的书 / 漫画 / 有声书',
     );
   }
   final String ext = _ext(path);
-  if (ext == '.mokuro' || _isMangaJson(path))
+  if (ext == '.mokuro' || _isMangaJson(path)) {
     return const AutoImportRoute(AutoImportKind.mangaLocal);
-  if (const <String>{'.cbz', '.cbr', '.cb7'}.contains(ext))
+  }
+  if (const <String>{'.cbz', '.cbr', '.cb7'}.contains(ext)) {
     return const AutoImportRoute(AutoImportKind.mangaArchive);
+  }
   if (ext == '.epub') {
     return MangaArchiveImporter.looksLikeImageArchive(path)
         ? const AutoImportRoute(AutoImportKind.mangaLocal)
@@ -183,8 +187,9 @@ AutoImportRoute routeAutoImport(String path) {
         ? const AutoImportRoute(AutoImportKind.mangaArchive)
         : const AutoImportRoute(AutoImportKind.novel);
   }
-  if (ext == '.7z' || ext == '.pdf' || _isText(path))
+  if (ext == '.7z' || ext == '.pdf' || _isText(path)) {
     return const AutoImportRoute(AutoImportKind.novel);
+  }
   if (AudiobookStorage.audioExtensions.contains(ext) ||
       kDiscoverySubtitleExtensions.contains(ext)) {
     // 单个音频 / 字幕凑不齐有声书三件套：交给执行器按缺哪样给出稳定原因码。
@@ -281,8 +286,9 @@ class _Importer {
 
   Future<ImportItem> text(String path, {String? title, String? author}) =>
       _run(ImportItem(path: path, domain: 'book'), () async {
-        if (title == null && author == null)
+        if (title == null && author == null) {
           return _one(await importDiscoveryText(db, path));
+        }
         // 与 `importDiscoveryText` 同路（TextToEpub → EpubImporter.import），只多了
         // 用户给定的标题 / 作者。
         final String effectiveTitle = title ?? discoveryImportStem(path);
@@ -508,14 +514,16 @@ class ImportCommands extends CliModule {
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
     final ArgResults? leaf = command.command;
     if (name == 'books') {
-      if (leaf == null)
+      if (leaf == null) {
         return _io.usage('缺少子命令', 'books backfill-isbn [--json]');
+      }
       return ctx.withRuntime(
         (ServerRuntime rt) => _backfillIsbn(rt, json: wantsJson(leaf)),
       );
     }
-    if (leaf == null)
+    if (leaf == null) {
       return _io.usage('缺少子命令', 'import epub|manga|text|auto <path…> [--json]');
+    }
     return _import(leaf, ctx);
   }
 
@@ -538,8 +546,9 @@ class ImportCommands extends CliModule {
     final String? author = leaf.options.contains('author')
         ? leaf['author'] as String?
         : null;
-    if (title != null && paths.length != 1)
+    if (title != null && paths.length != 1) {
       return _io.usage('--title 只能配一个输入', usageLine);
+    }
     final List<String> missing = <String>[
       for (final String path in paths)
         if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound)

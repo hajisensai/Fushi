@@ -15,7 +15,7 @@ Future<void> main(List<String> args) async {
   final String jobDir = args[1];
   final String extractDir = args.length > 2
       ? args[2]
-      : p.join(Directory.systemTemp.path, 'asr_align_eval_${pid}');
+      : p.join(Directory.systemTemp.path, 'asr_align_eval_$pid');
   final Stopwatch sw = Stopwatch()..start();
   final List<EpubSection> sections = epubSectionsFromBook(
     EpubParser.parseSyncFromPath(epub, extractDir),

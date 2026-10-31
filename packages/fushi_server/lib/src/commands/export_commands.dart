@@ -77,8 +77,9 @@ Future<File> exportSyncAsset({
       // 键既可以是字幕书 uid，也可以是它挂的 EPUB bookKey（app 两种身份都在用）。
       final SrtBookRow? book =
           await db.getSrtBookByUid(key) ?? await db.getSrtBookByBookKey(key);
-      if (book == null)
+      if (book == null) {
         throw ExportSourceMissing('没有 uid 或 bookKey 为「$key」的有声书');
+      }
       return packages.exportAudioDatabasePackage(
         srtBookUid: book.uid,
         outputFile: output,
@@ -90,8 +91,9 @@ Future<File> exportSyncAsset({
       }
       if (entry == null) throw ExportSourceMissing('没有名为「$key」的本地音频库');
       final File dbFile = File(entry.path);
-      if (!await dbFile.exists())
+      if (!await dbFile.exists()) {
         throw ExportSourceMissing('本地音频库「$key」的数据库文件不在: ${entry.path}');
+      }
       return packages.exportLocalAudioPackage(
         displayName: entry.displayName,
         enabled: entry.enabled,

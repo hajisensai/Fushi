@@ -1634,7 +1634,7 @@ class _Importer {
     // 笔记类型」不换 guid）再导入就是按新类型新加。以前「本机笔记类型不同 → 冲突跳过」排在恢复
     // 之前，删了的笔记照样被拦，用户删光重导也永远导不回来（BUG-3890）。
     final bool restored = existing != null && (noteDeleted || nt.restored);
-    final bool retype = noteDeleted && existing?.noteTypeId != nt.id;
+    final bool retype = noteDeleted && existing.noteTypeId != nt.id;
     final List<(_SrcCard, String)> cardIds = _cardIdsOf(nt, noteId, cards);
     bool update = false;
     if (isNew) {

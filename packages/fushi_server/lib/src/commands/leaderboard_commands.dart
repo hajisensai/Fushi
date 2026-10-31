@@ -116,8 +116,9 @@ const Duration kServerLeaderboardIsbnBackfillInterval = Duration(days: 7);
           '排行榜服务拒绝了请求（${e.status} ${e.code}${e.detail == null ? '' : ': ${e.detail}'}）',
     );
   }
-  if (e is TimeoutException)
+  if (e is TimeoutException) {
     return (code: kExitUnavailable, message: '请求排行榜服务超时');
+  }
   if (e is SocketException ||
       e is http.ClientException ||
       e is TlsException ||
@@ -362,8 +363,9 @@ class LeaderboardModule extends CliModule {
       );
     }
     final Uri? base = _baseUrl(sub['server'] as String?, null);
-    if (base == null)
+    if (base == null) {
       return io.fail(kExitUsage, '--server 不是 http(s) 地址: ${sub['server']}');
+    }
     final bool forLogin = sub['login'] as bool;
     try {
       await _client(base, null).requestEmailCode(
@@ -414,8 +416,9 @@ class LeaderboardModule extends CliModule {
     final Uri? u = Uri.tryParse(raw);
     if (u == null ||
         !(u.scheme == 'http' || u.scheme == 'https') ||
-        u.host.isEmpty)
+        u.host.isEmpty) {
       return null;
+    }
     return u;
   }
 
@@ -675,8 +678,9 @@ class _Session {
   ) async {
     final int? last = account.isbnBackfilledAt;
     if (last != null &&
-        now - last < kServerLeaderboardIsbnBackfillInterval.inMilliseconds)
+        now - last < kServerLeaderboardIsbnBackfillInterval.inMilliseconds) {
       return account;
+    }
     try {
       await backfillEpubIsbns(rt.db);
     } on Object catch (e, st) {
@@ -691,18 +695,21 @@ class _Session {
 
   Future<int> rank(ArgResults sub) async {
     final int? limit = LeaderboardModule._intOption(sub, 'limit');
-    if (limit == null || limit < 1 || limit > 100)
+    if (limit == null || limit < 1 || limit > 100) {
       return io.fail(kExitUsage, '--limit 需要 1..100');
+    }
     final ServerLeaderboardAccount? account = await store.read();
     final Uri? base = LeaderboardModule._baseUrl(
       sub['server'] as String?,
       account?.serverUrl,
     );
-    if (base == null)
+    if (base == null) {
       return io.fail(kExitUsage, '--server 不是 http(s) 地址: ${sub['server']}');
+    }
     final LeaderboardScope scope = LeaderboardScope.fromWire(sub['scope']);
-    if (scope == LeaderboardScope.friends && account == null)
+    if (scope == LeaderboardScope.friends && account == null) {
       return noAccount();
+    }
     final RankPage page;
     try {
       page = await module
@@ -735,10 +742,11 @@ class _Session {
       );
     }
     final UserStanding? me = page.me;
-    if (me != null)
+    if (me != null) {
       io.out.writeln(
         '我：${me.rank == null ? '未上榜' : '第 ${me.rank} 名'}（${me.value}）',
       );
+    }
     return kExitOk;
   }
 
@@ -755,8 +763,9 @@ class _Session {
     }
     final String? serverFlag = sub['server'] as String?;
     final Uri? base = LeaderboardModule._baseUrl(serverFlag, null);
-    if (base == null)
+    if (base == null) {
       return io.fail(kExitUsage, '--server 不是 http(s) 地址: $serverFlag');
+    }
     final String email =
         ((sub.options.contains('email') ? sub['email'] as String? : null) ?? '')
             .trim();

@@ -140,8 +140,9 @@ class ServerAiConfig {
     final String? invalid = invalidReason();
     if (invalid != null) return invalid;
     if (effectiveModel.isEmpty) return '缺少 model';
-    if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty)
+    if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty) {
       return '缺少 api_key';
+    }
     return null;
   }
 

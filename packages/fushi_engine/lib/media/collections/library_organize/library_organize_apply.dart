@@ -44,8 +44,9 @@ Future<Set<int>> applyOrganizeActions(
         };
         for (final OrganizeEntry e in a.entries) {
           for (final OrganizeMemberRow r in e.rows) {
-            if (!present.contains('${r.mediaType}\u0000${r.entryKey}'))
+            if (!present.contains('${r.mediaType}\u0000${r.entryKey}')) {
               continue;
+            }
             await db.removeFromCollectionRaw(
               c.id,
               r.mediaType,

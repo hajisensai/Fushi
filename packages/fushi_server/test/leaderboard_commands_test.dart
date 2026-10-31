@@ -99,8 +99,9 @@ class _FakeLeaderboard {
       );
     } else if (keyId != null) {
       spki = known[keyId];
-      if (spki == null)
+      if (spki == null) {
         return reply(401, <String, Object?>{'error': 'unknown_account'});
+      }
     }
     if (spki != null) {
       final String pathWithQuery = req.uri.hasQuery
@@ -115,8 +116,9 @@ class _FakeLeaderboard {
       if (sig == null || !LeaderboardIdentity.verify(spki, message, sig)) {
         return reply(401, <String, Object?>{'error': 'bad_signature'});
       }
-      if (force401 != null)
+      if (force401 != null) {
         return reply(401, <String, Object?>{'error': force401});
+      }
     }
     Map<String, Object?> self() => <String, Object?>{
       ..._account,
@@ -131,17 +133,19 @@ class _FakeLeaderboard {
         final Map<String, Object?> j =
             (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)
                 .cast<String, Object?>();
-        if (j['code'] != '123456')
+        if (j['code'] != '123456') {
           return reply(401, <String, Object?>{'error': 'bad_code'});
+        }
         known[leaderboardAccountIdFromSpki(spki!)] = spki;
         return reply(200, self());
       case 'GET /v1/me':
         return reply(200, self());
       case 'POST /v1/shelf':
-        if (ownedElsewhere)
+        if (ownedElsewhere) {
           return reply(409, <String, Object?>{
             'error': 'upload_owned_by_other_device',
           });
+        }
         final List<Object?> put =
             (jsonDecode(utf8.decode(body)) as Map<Object?, Object?>)['put']!
                 as List<Object?>;

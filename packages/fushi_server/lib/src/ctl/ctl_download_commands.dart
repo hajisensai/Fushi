@@ -164,8 +164,9 @@ Future<int> runCtlDownloadAdd(
     response = await client.post('/api/admin/downloads', body: body);
   } on AdminApiException catch (ex) {
     err.writeln('POST downloads 失败: $ex');
-    if (command['json'] as bool && ex.body != null)
+    if (command['json'] as bool && ex.body != null) {
       out.writeln(_pretty(ex.body));
+    }
     return exitCodeFor(ex);
   }
   if (command['json'] as bool) {
@@ -176,8 +177,9 @@ Future<int> runCtlDownloadAdd(
   out.writeln('jobId: ${jobId ?? '-'}');
   if (meta != null && selection != null) {
     for (final InspectedTorrentFile file in meta.files) {
-      if (selection.contains(file.index))
+      if (selection.contains(file.index)) {
         out.writeln('  [${file.index}] ${file.path}');
+      }
     }
   }
   return 0;
@@ -273,8 +275,9 @@ Set<int> selectTorrentFiles(
     final Iterable<InspectedTorrentFile> hits = files.where(
       (InspectedTorrentFile f) => re.hasMatch(f.path),
     );
-    if (hits.isEmpty)
+    if (hits.isEmpty) {
       throw FormatException('--select $pattern 没有匹配任何文件（--list-files 看清单）');
+    }
     selected.addAll(hits.map((InspectedTorrentFile f) => f.index));
   }
   if (selected.isEmpty) throw const FormatException('没有选中任何文件');

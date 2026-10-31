@@ -39,8 +39,9 @@ Future<({Process proc, int pid})> _holdLock(String dataDir, String mode) async {
   proc.stderr.transform(utf8.decoder).listen(err.write);
   unawaited(
     proc.exitCode.then((int code) {
-      if (!ready.isCompleted)
+      if (!ready.isCompleted) {
         ready.completeError(StateError('持锁进程提前退出 $code: $err'));
+      }
     }),
   );
   final int holderPid = await ready.future.timeout(const Duration(minutes: 2));
@@ -149,8 +150,9 @@ void main() {
     serve.stderr.transform(utf8.decoder).listen(err.write);
     unawaited(
       serve.exitCode.then((int code) {
-        if (!started.isCompleted)
+        if (!started.isCompleted) {
           started.completeError(StateError('serve 提前退出 $code: $err'));
+        }
       }),
     );
     try {

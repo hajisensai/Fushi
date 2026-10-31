@@ -110,8 +110,9 @@ class ServerVideoScrape {
     final VideoPendingScrapeWork? entry = (await _sweep.pendingWorks())
         .where((VideoPendingScrapeWork e) => e.work.stableKey == workKey)
         .firstOrNull;
-    if (entry == null)
+    if (entry == null) {
       throw StateError('work "$workKey" is not in the pending list');
+    }
     final SourceScrapeReport report = await coordinator.identifyWorkWithAi(
       source: entry.source,
       workTitle: entry.work.title,

@@ -120,8 +120,9 @@ void main() {
         expect(file.existsSync(), isTrue, reason: '$rel 不存在——守卫的语料没了，先修守卫再说');
         final List<String> lines = file.readAsLinesSync();
         for (int i = 0; i < lines.length; i++) {
-          if (!RegExp(r'return (const )?Scaffold\(').hasMatch(lines[i]))
+          if (!RegExp(r'return (const )?Scaffold\(').hasMatch(lines[i])) {
             continue;
+          }
           checked++;
           // 构造体前几行里必须出现 appBar:（它总排在 body 之前）。
           final int end = (i + 8) > lines.length ? lines.length : (i + 8);

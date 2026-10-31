@@ -175,8 +175,9 @@ Future<int> runVideoCommand(
       return videoIdentify(sub, rt: rt, io: io, deps: deps);
     case 'sidecar':
       final ArgResults? leaf = sub.command;
-      if (leaf == null || leaf.name != 'write')
+      if (leaf == null || leaf.name != 'write') {
         return io.fail(kExitUsage, '用法: video sidecar write <workId>|--all');
+      }
       return videoSidecarWrite(leaf, rt: rt, io: io, deps: deps);
     case 'clip':
       return videoClip(sub, io: io, deps: deps);
@@ -188,8 +189,9 @@ Future<int> runVideoCommand(
 
 int? _requireOneFile(ArgResults sub, CliIo io, String usage) {
   if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: $usage');
-  if (!File(sub.rest.single).existsSync())
+  if (!File(sub.rest.single).existsSync()) {
     return io.fail(kExitNoInput, '找不到文件: ${sub.rest.single}');
+  }
   return null;
 }
 
@@ -475,11 +477,12 @@ Future<int> videoSidecarWrite(
     ];
   } else {
     final int? id = int.tryParse(leaf.rest.single);
-    if (id == null)
+    if (id == null) {
       return io.fail(
         kExitUsage,
         'workId 需要整数（video_metadata_works.id），收到 "${leaf.rest.single}"',
       );
+    }
     workIds = <int>[id];
   }
   final rewrite = deps.sidecarRewriter ?? _productionSidecarRewriter;
@@ -488,8 +491,9 @@ Future<int> videoSidecarWrite(
   int failures = 0;
   for (int i = 0; i < workIds.length; i++) {
     final int id = workIds[i];
-    if (workIds.length > 1)
+    if (workIds.length > 1) {
       io.err.writeln('[${i + 1}/${workIds.length}] work $id');
+    }
     try {
       final SourceScrapeReport? report = await rewrite(
         rt,
@@ -572,28 +576,32 @@ Future<int> videoClip(
   }
   final int? startMs = parseClockArgToMs(fromRaw);
   final int? endMs = parseClockArgToMs(toRaw);
-  if (startMs == null || endMs == null)
+  if (startMs == null || endMs == null) {
     return io.fail(kExitUsage, '时间写法不认识：--from $fromRaw --to $toRaw');
+  }
   if (endMs <= startMs) return io.fail(kExitUsage, '--to 必须晚于 --from');
   int? audioTrack;
   int? bitrate;
   if (sub['audio-track'] != null) {
     audioTrack = int.tryParse(sub['audio-track'] as String);
-    if (audioTrack == null || audioTrack < 0)
+    if (audioTrack == null || audioTrack < 0) {
       return io.fail(kExitUsage, '--audio-track 需要非负整数');
+    }
   }
   if (sub['bitrate'] != null) {
     bitrate = int.tryParse(sub['bitrate'] as String);
-    if (bitrate == null || bitrate <= 0)
+    if (bitrate == null || bitrate <= 0) {
       return io.fail(kExitUsage, '--bitrate 需要正整数（kbps）');
+    }
   }
   final String? burnPath = sub['burn-subs'] as String?;
   if (burnPath != null && sub['subs'] != null) {
     return io.fail(kExitUsage, '--subs（软封）与 --burn-subs（硬烧）只能二选一');
   }
   final String input = p.absolute(sub.rest.single);
-  if (!File(input).existsSync())
+  if (!File(input).existsSync()) {
     return io.fail(kExitNoInput, '找不到视频文件: $input');
+  }
   final String output = p.absolute(outRaw);
   if (p.equals(input, output)) return io.fail(kExitUsage, '输出不能覆盖输入文件');
 
@@ -614,17 +622,19 @@ Future<int> videoClip(
   final List<String> subtitleContents = <String>[];
   final String? subsPath = sub['subs'] as String?;
   if (subsPath != null) {
-    if (!File(subsPath).existsSync())
+    if (!File(subsPath).existsSync()) {
       return io.fail(kExitNoInput, '找不到字幕文件: $subsPath');
+    }
     final List<AudioCue>? cues = parseSubtitleFileCues(
       subsPath,
       await File(subsPath).readAsString(),
     );
-    if (cues == null)
+    if (cues == null) {
       return io.fail(
         kExitUsage,
         '字幕格式不认识（支持 .srt / .vtt / .ass / .ssa）: $subsPath',
       );
+    }
     final String? srt = buildClipSrtContent(
       cues: cues,
       startMs: startMs,
@@ -722,8 +732,9 @@ Future<int> _videoClipBurn({
   required VideoDeps deps,
 }) async {
   final String subs = p.absolute(subtitlePath);
-  if (!File(subs).existsSync())
+  if (!File(subs).existsSync()) {
     return io.fail(kExitNoInput, '找不到字幕文件: $subtitlePath');
+  }
   if (!kBurnSubtitleExtensions.contains(p.extension(subs).toLowerCase())) {
     return io.fail(
       kExitUsage,
@@ -829,14 +840,17 @@ Map<String, Object?> _factsJson(VideoProbeFacts facts) => <String, Object?>{
 };
 
 Future<int> videoProbeBluray(ArgResults sub, {required CliIo io}) async {
-  if (sub.rest.length != 1)
+  if (sub.rest.length != 1) {
     return io.fail(kExitUsage, '用法: video probe-bluray <dir>');
+  }
   final String dir = p.absolute(sub.rest.single);
-  if (!await Directory(dir).exists())
+  if (!await Directory(dir).exists()) {
     return io.fail(kExitNoInput, '找不到目录: $dir');
+  }
   final String? root = await blurayDiscRootForDirectory(dir);
-  if (root == null)
+  if (root == null) {
     return io.fail(kExitNoInput, '不是蓝光盘目录（找不到 BDMV/PLAYLIST）: $dir');
+  }
   final BlurayDisc? disc = await readBlurayDisc(root);
   if (disc == null) return io.fail(kExitFailure, '读不出这张盘的播放列表: $root');
   final List<Map<String, Object?>> titles = <Map<String, Object?>>[];

@@ -85,8 +85,9 @@ class AudiobookCommands extends CliModule {
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
     final ArgResults? leaf = command.command;
     if (leaf == null) return _io.usage('缺少子命令', _kAlignUsageLine);
-    if (leaf.rest.length != 1)
+    if (leaf.rest.length != 1) {
       return _io.usage('要且只要一个 bookKey', _kAlignUsageLine);
+    }
     final String bookKey = leaf.rest.single;
     final List<String> audioInputs = <String>[
       for (final String raw in leaf['audio'] as List<String>)

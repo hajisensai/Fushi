@@ -33,8 +33,9 @@ class CommandHarness {
     );
     final File config = File(p.join(tmp.path, 'fushi_server.yaml'));
     final CommandHarness h = CommandHarness._(tmp, config);
-    if (withConfig)
+    if (withConfig) {
       await ServerConfig.defaults(dataDir: h.dataDir).save(config);
+    }
     return h;
   }
 

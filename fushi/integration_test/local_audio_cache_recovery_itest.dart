@@ -236,8 +236,9 @@ void main() {
             if (snapshot.containsKey(key)) key: snapshot[key]!,
         });
         for (final String key in changedKeys) {
-          if (!snapshot.containsKey(key))
+          if (!snapshot.containsKey(key)) {
             await appModel.database.deletePref(key);
+          }
         }
         await appModel.prefsRepo.loadFromDb();
         await manager.bindForNativeHandler();

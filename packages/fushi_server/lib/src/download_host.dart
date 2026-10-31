@@ -115,8 +115,9 @@ class ServerDownloadHost implements HostDownloadHost {
   /// 内置引擎库：配置显式路径 > bundle/lib 随包 > 系统搜索路径（null = 裸名）。
   String? get _torrentLibraryPath {
     final String? configured = config.torrentLibraryPath;
-    if (configured != null && configured.trim().isNotEmpty)
+    if (configured != null && configured.trim().isNotEmpty) {
       return configured.trim();
+    }
     return locateBundledLibrary(torrentLibraryName());
   }
 
@@ -272,8 +273,9 @@ class ServerDownloadHost implements HostDownloadHost {
     _pipeline = null;
     await oldPipeline.dispose(drainTimeout: const Duration(seconds: 5));
     _startPipeline(_buildRegistry());
-    if (oldRegistry != null)
+    if (oldRegistry != null) {
       unawaited(oldPipeline.stop().whenComplete(oldRegistry.close));
+    }
     engineLog.logDiagnostic(
       'ServerDownloadHost',
       'resource indexers reloaded: ${availableResourceProviderIds.join(', ')}',
@@ -411,8 +413,9 @@ class ServerDownloadHost implements HostDownloadHost {
     if (subscriptions != null) await subscriptions.dispose();
     final VideoDownloadPipelineService? pipeline = _pipeline;
     _pipeline = null;
-    if (pipeline != null)
+    if (pipeline != null) {
       await pipeline.dispose(drainTimeout: const Duration(seconds: 5));
+    }
     _registry?.close();
     _registry = null;
     _backend?.close();
@@ -427,8 +430,9 @@ class ServerDownloadHost implements HostDownloadHost {
   Future<int> _ensureDownloadSource() async {
     final String root = p.normalize(downloadRoot.absolute.path);
     for (final MediaSourceRow row in await db.getMediaSourcesByKind('video')) {
-      if (row.transport == 'local' && p.normalize(row.rootPath) == root)
+      if (row.transport == 'local' && p.normalize(row.rootPath) == root) {
         return row.id;
+      }
     }
     return db.insertMediaSource(
       MediaSourcesCompanion(
@@ -454,11 +458,12 @@ class ServerDownloadHost implements HostDownloadHost {
     VideoDownloadJobRow job,
   ) async {
     final TorrentBackend? override = backendOverride;
-    if (override != null)
+    if (override != null) {
       return VideoDownloadBackendBinding(
         backend: override,
         identity: _identity(),
       );
+    }
     switch (_resolvedBackend) {
       case ServerConfig.torrentEngineEmbedded:
         final EmbeddedTorrentHostClient? host = await _ensureEmbedded();

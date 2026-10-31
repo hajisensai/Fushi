@@ -841,8 +841,9 @@ extension VideoDiscMenuController on VideoPlayerController {
       // feature clips. Checking only its primary stream falsely authorizes it.
       for (final String clip in playlist.clipIds.toSet()) {
         final String stream = p.join(root, 'BDMV', 'STREAM', '$clip.m2ts');
-        if (!await File(stream).exists())
+        if (!await File(stream).exists()) {
           return 'extraction-source-unavailable';
+        }
         // A keyed disc decrypts for FFmpeg too: the shared backend resolves the
         // same exact KEYDB entry through AacsMediaSession.
         if (_discAacsState != BlurayMenuAacsState.keyed &&

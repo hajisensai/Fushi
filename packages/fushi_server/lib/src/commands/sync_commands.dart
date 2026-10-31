@@ -50,8 +50,9 @@ Uri? normalizeSyncPeerUrl(String raw) {
   final Uri? uri = Uri.tryParse(raw.trim());
   if (uri == null ||
       !(uri.scheme == 'http' || uri.scheme == 'https') ||
-      uri.host.isEmpty)
+      uri.host.isEmpty) {
     return null;
+  }
   if (uri.query.isNotEmpty || uri.fragment.isNotEmpty) return null;
   final String path = uri.path.replaceAll(RegExp(r'/+$'), '');
   if (path.isNotEmpty) return null;
@@ -361,12 +362,13 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
   required SyncPeerCredentialStore store,
 }) async {
   final Uri? url = normalizeSyncPeerUrl(rawUrl);
-  if (url == null)
+  if (url == null) {
     return (
       null,
       _exitUsage,
       '不是合法的 host 根地址: $rawUrl（形如 https://192.168.1.5:38765）',
     );
+  }
   final SyncPeerCredential? saved = await store.find(url.toString());
   final String? fingerprint =
       (fingerprintArg != null && fingerprintArg.trim().isNotEmpty)
@@ -389,14 +391,16 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
       );
     }
   } else {
-    if (!allowHttp)
+    if (!allowHttp) {
       return (
         null,
         _exitUsage,
         '明文 http 会让 token 明文过线；确认在可信网络里再加 --allow-http',
       );
-    if (fingerprintArg != null)
+    }
+    if (fingerprintArg != null) {
       return (null, _exitUsage, 'http 端点没有证书，--fingerprint 无意义');
+    }
   }
   final String? token = (envToken != null && envToken.isNotEmpty)
       ? envToken
