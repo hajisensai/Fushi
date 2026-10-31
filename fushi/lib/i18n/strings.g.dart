@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 181016 (10648 per locale)
+/// Strings: 181033 (10649 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -8340,6 +8340,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Could not install the plugin: ${error}';
   String get music_plugins_install_title => 'Install this plugin?';
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   String get music_plugins_perm_network => 'Network access';
   String get music_plugins_perm_storage => 'Save data on this device';
@@ -29148,6 +29150,9 @@ class _StringsAr extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -55207,6 +55212,9 @@ class _StringsDe extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -81441,6 +81449,9 @@ class _StringsEs extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -107755,6 +107766,9 @@ class _StringsFr extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -133904,6 +133918,9 @@ class _StringsId extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -160004,6 +160021,9 @@ class _StringsIt extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -185586,6 +185606,9 @@ class _StringsJa extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -210737,6 +210760,9 @@ class _StringsKo extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -236459,6 +236485,9 @@ class _StringsNl extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -262624,6 +262653,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -288762,6 +288794,9 @@ class _StringsRu extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -314711,6 +314746,9 @@ class _StringsTh extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -340646,6 +340684,9 @@ class _StringsTr extends _StringsEn {
   String get music_plugins_install_title => 'Install this plugin?';
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
+  @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
   @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
@@ -366616,6 +366657,9 @@ class _StringsVi extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -391387,6 +391431,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => '已安装 ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      '作为歌词来源，查歌词时此插件会收到曲目的标题、艺人、专辑与时长，并可能发送到它声明的网络域名。';
+  @override
   String get music_plugins_perm_insecure_http => '不加密的 HTTP 连接';
   @override
   String get music_plugins_perm_network => '访问网络';
@@ -415469,6 +415516,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String music_plugins_installed({required Object name}) => 'Installed ${name}';
   @override
+  String get music_plugins_lyrics_privacy =>
+      'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
+  @override
   String get music_plugins_perm_insecure_http => 'Unencrypted HTTP connections';
   @override
   String get music_plugins_perm_network => 'Network access';
@@ -438718,6 +438768,8 @@ extension on _StringsEn {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -460845,6 +460897,8 @@ extension on _StringsAr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -483023,6 +483077,8 @@ extension on _StringsDe {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -505211,6 +505267,8 @@ extension on _StringsEs {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -527409,6 +527467,8 @@ extension on _StringsFr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -549576,6 +549636,8 @@ extension on _StringsId {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -571740,6 +571802,8 @@ extension on _StringsIt {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -593852,6 +593916,8 @@ extension on _StringsJa {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -615902,6 +615968,8 @@ extension on _StringsKo {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -638035,6 +638103,8 @@ extension on _StringsNl {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -660207,6 +660277,8 @@ extension on _StringsPtBr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -682383,6 +682455,8 @@ extension on _StringsRu {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -704524,6 +704598,8 @@ extension on _StringsTh {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -726678,6 +726754,8 @@ extension on _StringsTr {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -748824,6 +748902,8 @@ extension on _StringsVi {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':
@@ -770814,6 +770894,8 @@ extension on _StringsZhCn {
         return '安装这个插件？';
       case 'music_plugins_installed':
         return ({required Object name}) => '已安装 ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return '作为歌词来源，查歌词时此插件会收到曲目的标题、艺人、专辑与时长，并可能发送到它声明的网络域名。';
       case 'music_plugins_perm_insecure_http':
         return '不加密的 HTTP 连接';
       case 'music_plugins_perm_network':
@@ -792742,6 +792824,8 @@ extension on _StringsZhHk {
         return 'Install this plugin?';
       case 'music_plugins_installed':
         return ({required Object name}) => 'Installed ${name}';
+      case 'music_plugins_lyrics_privacy':
+        return 'As a lyrics source, this plugin receives the title, artist, album and duration of tracks whose lyrics are looked up, and may send them to the network domains it declares.';
       case 'music_plugins_perm_insecure_http':
         return 'Unencrypted HTTP connections';
       case 'music_plugins_perm_network':

@@ -11,6 +11,8 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
+    show MusicLyricsSource;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -18,6 +20,19 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+
+/// 选来源面板里一份歌词候选的标题：插件来源（标签是插件 id）标出是平台曲目自带歌词
+/// （`lyrics` 能力）还是歌词插件按标题 / 艺人搜到的（`lyricsSearch` 能力）——同一个插件
+/// 两种能力都有时，两份候选靠这个区分。
+String musicLyricsCandidateTitle(String source, String label) {
+  if (MusicLyricsSource.isPlugin(source)) {
+    return '$label · ${musicPluginCapabilityLabel('lyrics')}';
+  }
+  if (MusicLyricsSource.isLyricsPlugin(source)) {
+    return '$label · ${musicPluginCapabilityLabel('lyricsSearch')}';
+  }
+  return label;
+}
 
 /// 能力 → 用户看得懂的名字。
 String musicPluginCapabilityLabel(String capability) => switch (capability) {
@@ -27,8 +42,7 @@ String musicPluginCapabilityLabel(String capability) => switch (capability) {
   'artist' => t.music_section_artists,
   'stream' => t.music_plugins_cap_stream,
   'lyrics' => t.music_plugins_cap_lyrics,
-  'lyricsSearch' ||
-  'lyricsFetch' => t.music_plugins_cap_lyrics_search,
+  'lyricsSearch' || 'lyricsFetch' => t.music_plugins_cap_lyrics_search,
   _ => capability,
 };
 
@@ -334,6 +348,23 @@ class MusicPluginPackageDetails extends StatelessWidget {
           Text(t.music_plugins_domains, style: label),
           Text(m.networkDomains.join('\n'), style: body),
         ],
+        // 歌词插件装上即默认启用（mergeLyricsProviders）：这里是启用前最后一道告知——它会收到
+        // 每首查歌词的曲目信息，并可发往上面列出的域名。
+        if (m.providesLyricsSource)
+          Row(
+            key: const ValueKey<String>('music-plugin-lyrics-privacy'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spacing.gap * 0.5,
+            children: <Widget>[
+              const FushiIcon(FushiIcons.info, size: 18),
+              Expanded(
+                child: Text(
+                  t.music_plugins_lyrics_privacy,
+                  style: context.fushiType.bodySmall,
+                ),
+              ),
+            ],
+          ),
         SizedBox(height: tokens.spacing.gap * 0.5),
         Row(
           spacing: tokens.spacing.gap * 0.5,
