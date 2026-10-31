@@ -58,10 +58,10 @@ function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelec
 // 这次 click 是不是一次拖选的收尾（BUG-3889）：只有指针点击（detail >= 1；键盘 / 焦点导航激活
 // 是 detail 0）且非折叠选区碰到被点的元素时才是——别处残留的选区不能吞掉对这个元素的点击。
 function __fushiClickEndsTextSelection(e) {
-    if (e && e.detail === 0) return false;
+    if (e?.detail === 0) return false;
     const sel = __fushiSel();
     if (!sel || sel.isCollapsed || String(sel).length === 0) return false;
-    const target = e && e.currentTarget;
+    const target = e?.currentTarget;
     if (target && typeof sel.containsNode === 'function' && !sel.containsNode(target, true)) return false;
     return true;
 }
