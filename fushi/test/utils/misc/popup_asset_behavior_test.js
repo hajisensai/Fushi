@@ -357,6 +357,9 @@ function createPopupContext() {
     toString() {
       return this.text;
     },
+    get isCollapsed() {
+      return this.text === '';
+    },
   };
 
   const document = {
@@ -4365,3 +4368,49 @@ async function testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped() {
   await testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped();
   console.log('SRS visible-batch tests passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
+
+// BUG-3887：拖选词头文字时，松手补发的 click 落在 .expression 上。词头点击处理器原先
+// 不看选区，直接 onLinkClick 原地重查同一个词 → renderPopup 重建 DOM → 选区丢失，
+// Ctrl+C / 右键复制读到空串。结束一次拖选的 click 不是「点词头」。
+function testHeadwordClickEndingDragSelectionKeepsSelection() {
+  const context = loadPopup((ctx) => {
+    ctx.Element = FakeElement;
+  });
+  const bridgeCalls = [];
+  context.window.flutter_inappwebview.callHandler = (...args) => {
+    bridgeCalls.push(args);
+    return Promise.resolve(true);
+  };
+  const header = context.createEntryHeader({
+    expression: 'you',
+    reading: 'you',
+    matched: 'you',
+    frequencies: [],
+    pitches: [],
+    rules: [],
+  }, 0);
+  const expression = findByClassDeep(header, 'expression');
+  assert.ok(expression, 'headword .expression was not created');
+  const click = () => expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  context.window.getSelection().text = 'you';
+  click();
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 0,
+    'a click that ends a drag selection must not re-look-up the headword');
+  assert.equal(context.window.getSelection().toString(), 'you',
+    'the dragged selection must survive for Ctrl+C');
+
+  context.window.getSelection().removeAllRanges();
+  click();
+  const links = bridgeCalls.filter(([name]) => name === 'onLinkClick');
+  assert.equal(links.length, 1, 'a plain headword tap still looks the word up');
+  assert.equal(links[0][1], 'you');
+}
+
+testHeadwordClickEndingDragSelectionKeepsSelection();
+console.log('headword drag-selection tests passed');
