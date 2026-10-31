@@ -1,6 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart'
+    show FushiDatabase, SyncTombstoneKind;
+import 'package:fushi_engine/sync/deletion_propagation.dart'
+    show
+        deletionTombstoneAssetName,
+        deletionTombstoneJson,
+        kSyncTombstonesNamespace;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
@@ -11,6 +18,7 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show isReservedSyncFolderName;
 import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 把任意云盘备份后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）
 /// 的远端书库适配成书架页的 [RemoteBookClient] 契约（TODO-665 阶段1）。
@@ -29,11 +37,12 @@ class CloudRemoteBookClient implements RemoteBookClient {
     required this.backend,
     required this.backendType,
     required this.rootFolderId,
+    this.database,
     this.contentProbeConcurrency = 4,
     this.contentProbeRetries = 1,
     this.contentProbeRetryBackoff = const Duration(milliseconds: 300),
-  })  : assert(contentProbeConcurrency >= 1),
-        assert(contentProbeRetries >= 0);
+  }) : assert(contentProbeConcurrency >= 1),
+       assert(contentProbeRetries >= 0);
 
   /// 远端存储后端；务必是 `resolveSyncBackend` 的产物（带解混淆装饰层）。
   final SyncBackend backend;
@@ -45,6 +54,10 @@ class CloudRemoteBookClient implements RemoteBookClient {
 
   /// 根命名空间定位符（`findOrCreateRootFolder()` 的返回值）。
   final String rootFolderId;
+
+  /// 本机库：「从远端删除」要在这里记删除墓碑、写回书名→folderId 持久缓存。
+  /// null（只读场景，如找回列表核对远端是否还在）时 [deleteRemoteBook] 拒绝执行。
+  final FushiDatabase? database;
 
   @override
   String get remoteLibrarySourceId =>
@@ -101,8 +114,11 @@ class CloudRemoteBookClient implements RemoteBookClient {
   /// 并发（≤[contentProbeConcurrency]）探测每个书文件夹是否含 `.epub` 内容资产，
   /// 返回与 [folders] 等长、同序的结果。
   Future<List<bool>> _probeContentBounded(List<SyncFileRef> folders) async {
-    final List<bool> results =
-        List<bool>.filled(folders.length, false, growable: false);
+    final List<bool> results = List<bool>.filled(
+      folders.length,
+      false,
+      growable: false,
+    );
     int next = 0;
 
     Future<void> worker() async {
@@ -134,11 +150,12 @@ class CloudRemoteBookClient implements RemoteBookClient {
   /// 失败时做至多 [contentProbeRetries] 次有界退避重试吸收瞬时抖动；仍失败即 false。
   /// 正确性不依赖重试成功——重试只降低把真书误藏的概率。
   Future<bool> _remoteFolderHasContent(String folderId) async {
-    for (int attempt = 0;; attempt++) {
+    for (int attempt = 0; ; attempt++) {
       try {
         final List<AssetEntry> children = await backend.listChildren(folderId);
         return children.any(
-            (AssetEntry e) => !e.isFolder && isRemoteBookContentName(e.name));
+          (AssetEntry e) => !e.isFolder && isRemoteBookContentName(e.name),
+        );
       } catch (_) {
         if (attempt >= contentProbeRetries) return false;
         if (contentProbeRetryBackoff > Duration.zero) {
@@ -170,8 +187,11 @@ class CloudRemoteBookClient implements RemoteBookClient {
         'remote book folder has no book content: $folderId',
       );
     }
-    await backend.getAsset(epub.id, destination,
-        onProgress: syncTransferFractionOnly(onProgress));
+    await backend.getAsset(
+      epub.id,
+      destination,
+      onProgress: syncTransferFractionOnly(onProgress),
+    );
   }
 
   /// 云盘备份没有 host 实时 reader_positions DB，进度走 WebDAV 文件箱
@@ -180,6 +200,73 @@ class CloudRemoteBookClient implements RemoteBookClient {
   @override
   Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
       RemoteBookProgress.empty;
+
+  /// 云盘此刻能不能连上（反馈 R8duEiqRuy：远端删除只在来源可达时提供）。
+  ///
+  /// 列一次同步根——与 [listRemoteBooks] / 删除走同一个后端、同一份凭据，连不上或
+  /// 凭据失效在这里如实暴露，而不是等用户确认删除之后才失败。
+  Future<RemoteSourceReachability> probeRemoteReachability() async {
+    try {
+      await backend.listChildren(rootFolderId);
+      return RemoteSourceReachability.reachable;
+    } on SyncAuthError {
+      return RemoteSourceReachability.credentialRejected;
+    } on SyncBackendError {
+      return RemoteSourceReachability.unreachable;
+    } on SocketException {
+      return RemoteSourceReachability.unreachable;
+    } on TimeoutException {
+      return RemoteSourceReachability.unreachable;
+    }
+  }
+
+  /// 从云盘删除这本书（书架「同时从远端删除」，反馈 R8duEiqRuy）。
+  ///
+  /// 云盘备份里一本书的全部对象都在它自己的书文件夹里（`sanitizeTtuFilename(书名)`：
+  /// 内容包 `.epub` / `.manga.zip`、封面、`progress_` / `statistics_` / `audioBook_`
+  /// 元数据 JSON、有声书包 `audiobook.fushiaudio`），跨书的只有合集清单
+  /// （`__collections__`，按键引用、不含书本身）。所以删除 = 三步，顺序有讲究：
+  ///
+  /// 1. **先发布删除墓碑**（`__tombstones__/` 逐条标记，与「从所有设备删除」同一协议）
+  ///    并记进本机墓碑表（标已发布，本机下一轮同步把它并进自己的合并清单）。其它设备
+  ///    据此：本机还有这本的弹确认是否一并删除；自动同步不再把它推回云盘
+  ///    （`SyncOrchestrator` 云通道的推送否决）。墓碑写失败就整体失败，什么都不删。
+  /// 2. **再删书文件夹**（各后端的递归删除；六种云盘后端都支持，404 视为已删）。
+  ///    文件夹删失败时墓碑已在：意图不丢，用户可以重试（重试幂等）。
+  /// 3. 逐出书名→folderId 缓存并写回持久层（BUG-202：陈旧映射会让下次上传打向
+  ///    已删的文件夹）。
+  ///
+  /// [book] 是 [listRemoteBooks] 给出的条目：`downloadId` = 书文件夹定位符，`title` =
+  /// 反解后的原书名，墓碑键 = `sanitizeTtuFilename(title)`（= 文件夹名 = 其它设备上
+  /// 这本书的 bookKey）。
+  Future<void> deleteRemoteBook(RemoteBookInfo book) async {
+    final FushiDatabase? db = database;
+    if (db == null) {
+      throw StateError('CloudRemoteBookClient.deleteRemoteBook needs database');
+    }
+    final String itemKey = sanitizeTtuFilename(book.title);
+    if (itemKey.isEmpty) {
+      throw SyncBackendError('remote book has no folder key: ${book.title}');
+    }
+    final String mediaType = SyncTombstoneKind.book.dbValue;
+    final int deletedAt = DateTime.now().millisecondsSinceEpoch;
+
+    final String ns = await backend.ensureNamespace(kSyncTombstonesNamespace);
+    await backend.putJsonAsset(
+      ns,
+      deletionTombstoneAssetName(mediaType, itemKey),
+      deletionTombstoneJson(mediaType, itemKey, deletedAt),
+    );
+    await db.writeSyncDeletionTombstone(mediaType, itemKey, deletedAt);
+    await db.markSyncDeletionPublished(mediaType, itemKey, deletedAt);
+
+    final String folderId = book.downloadId;
+    await backend.deleteAsset(folderId, isFolder: true);
+    backend.evictFolderId(folderId);
+    await SyncRepository(
+      db,
+    ).setFolderCache(syncChannelScopeOf(backend), backend.cachedFolderIds);
+  }
 
   /// 云后端无 live 进度上报通道：no-op（进度由 SyncManager 的文件箱路径处理）。
   @override

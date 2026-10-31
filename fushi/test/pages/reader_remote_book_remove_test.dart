@@ -218,7 +218,7 @@ void main() {
     WidgetTester tester,
   ) async {
     final _FakeInterconnectClient client = _FakeInterconnectClient()
-      ..reachability = () async => InterconnectHostReachability.unreachable;
+      ..reachability = () async => RemoteSourceReachability.unreachable;
     await tester.pumpWidget(buildApp(client));
     await tester.pumpAndSettle();
 
@@ -242,7 +242,7 @@ void main() {
   testWidgets('互联来源、配对被拒：禁用并提示重新配对', (WidgetTester tester) async {
     final _FakeInterconnectClient client = _FakeInterconnectClient()
       ..reachability = () async =>
-          InterconnectHostReachability.credentialRejected;
+          RemoteSourceReachability.credentialRejected;
     await tester.pumpWidget(buildApp(client));
     await tester.pumpAndSettle();
 
@@ -258,8 +258,8 @@ void main() {
   });
 
   testWidgets('探测进行中禁用（「正在检查」），确认在线后才可点并进入二次确认', (WidgetTester tester) async {
-    final Completer<InterconnectHostReachability> pending =
-        Completer<InterconnectHostReachability>();
+    final Completer<RemoteSourceReachability> pending =
+        Completer<RemoteSourceReachability>();
     final _FakeInterconnectClient client = _FakeInterconnectClient()
       ..reachability = () => pending.future;
     await tester.pumpWidget(buildApp(client));
@@ -274,7 +274,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(confirmDialog(), findsNothing, reason: '结论出来前不能放行删除');
 
-    pending.complete(InterconnectHostReachability.reachable);
+    pending.complete(RemoteSourceReachability.reachable);
     await tester.pumpAndSettle();
     expect(find.text(t.remote_delete_host_checking), findsNothing);
     await tester.tap(find.text(t.remote_book_delete_everywhere));
@@ -549,12 +549,12 @@ class _FakeInterconnectClient extends InterconnectSyncBackend {
   final List<String> deleted = <String>[];
 
   /// 菜单打开时的可达性探测结论；默认在线。
-  Future<InterconnectHostReachability> Function() reachability = () async =>
-      InterconnectHostReachability.reachable;
+  Future<RemoteSourceReachability> Function() reachability = () async =>
+      RemoteSourceReachability.reachable;
   int probes = 0;
 
   @override
-  Future<InterconnectHostReachability> probeHostReachability() {
+  Future<RemoteSourceReachability> probeHostReachability() {
     probes++;
     return reachability();
   }

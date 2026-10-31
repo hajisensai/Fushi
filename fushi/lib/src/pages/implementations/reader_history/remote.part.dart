@@ -461,7 +461,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// * 「同时从远端删除」→ 仅当 host 允许 client 删除时显示。判据 = 当前远端来源是
   ///   [InterconnectSyncBackend]（已配对互联 host）：host 对任一鉴权通过的已配对
   ///   peer 开放 `DELETE /api/library/books/<id>`，没有按 peer 的只读权限；云盘
-  ///   后端（[CloudRemoteBookClient]）没有删除接口，按类型隐藏（真实能力边界）。
+  ///   备份来源（[CloudRemoteBookClient]）同样提供：删书文件夹 + 发布云删除墓碑。
   ///   二次确认写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。只在对端此刻在线、
   ///   可达时可点：菜单打开即重探 host（[RemoteDeleteAvailabilityBuilder]），探测中 /
   ///   离线 / 配对被拒时禁用并写明原因（反馈 R8duEiqRuy，所有者 2026-10-31 拍板）。
@@ -475,13 +475,22 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     VoidCallback? removeFromCollection,
   }) {
     final RemoteBookClient? client = _remoteBookClient;
-    final InterconnectSyncBackend? deleter = client is InterconnectSyncBackend
+    final InterconnectSyncBackend? hostDeleter =
+        client is InterconnectSyncBackend ? client : null;
+    // 云盘备份来源也能从远端删（反馈 R8duEiqRuy 那本书来自云盘，所有者 2026-10-31
+    // 追加）：六种云盘后端都支持递归删书文件夹，删除走云墓碑（见
+    // [CloudRemoteBookClient.deleteRemoteBook]）。
+    final CloudRemoteBookClient? cloudDeleter = client is CloudRemoteBookClient
         ? client
         : null;
+    final Future<RemoteSourceReachability> Function()? probe =
+        hostDeleter?.probeHostReachability ??
+        cloudDeleter?.probeRemoteReachability;
     showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => RemoteDeleteAvailabilityBuilder(
-        probe: deleter?.probeHostReachability,
+        probe: probe,
+        kind: client?.remoteSourceKind ?? RemoteBookSourceKind.interconnect,
         builder: (BuildContext _, String? deleteDisabledReason) =>
             MediaItemDialogFrame(
               coverMaterial: ShelfCoverMaterial.glossyBook,
@@ -525,13 +534,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                       _hideRemoteBookLocally(book, client);
                     },
                   ),
-                if (deleter != null)
+                if (probe != null)
                   DialogDangerAction(
                     label: t.remote_book_delete_everywhere,
                     disabledReason: deleteDisabledReason,
                     onPressed: () {
                       Navigator.pop(dialogContext);
-                      _confirmDeleteRemoteBook(book, deleter);
+                      if (hostDeleter != null) {
+                        _confirmDeleteRemoteBook(book, hostDeleter);
+                      } else {
+                        _confirmDeleteCloudRemoteBook(book, cloudDeleter!);
+                      }
                     },
                   ),
               ],
@@ -699,6 +712,43 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         FushiSnackBar(content: Text(t.remote_delete_audiobook_partial)),
       );
     }
+  }
+
+  /// 从云盘备份删除远端书（[CloudRemoteBookClient.deleteRemoteBook]：先发布删除墓碑、
+  /// 再删书文件夹），删完强制刷新远端列表。二次确认写明是哪个云盘上的哪本书，以及
+  /// 其它设备下次同步会确认是否一并删除。失败如实提示，不假装删成功。
+  Future<void> _confirmDeleteCloudRemoteBook(
+    RemoteBookInfo book,
+    CloudRemoteBookClient client,
+  ) async {
+    final bool? confirmed = await _confirmRemoteDelete(
+      book.displayName,
+      message: t.remote_book_delete_cloud_confirm(
+        name: book.displayName,
+        backend: syncBackendLabel(client.backendType),
+      ),
+      confirmLabel: t.remote_book_delete_everywhere,
+    );
+    if (confirmed != true) return;
+    bool failed = false;
+    try {
+      await client.deleteRemoteBook(book);
+    } catch (e, stack) {
+      failed = true;
+      ErrorLogService.instance.log(
+        'ReaderFushiHistoryPage.deleteCloudRemoteBook',
+        e,
+        stack,
+      );
+    }
+    if (!mounted) return;
+    if (failed) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.remote_delete_failed)));
+      return;
+    }
+    _forceRefreshRemoteBooks();
   }
 
   /// 远端书长按菜单头部模糊垫底与封面宽高比的图源：与 [_buildRemoteBookCover]

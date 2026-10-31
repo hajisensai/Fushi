@@ -137,7 +137,7 @@ void main() {
       final InterconnectSyncBackend client = await pairedClient();
       expect(
         await client.probeHostReachability(),
-        InterconnectHostReachability.reachable,
+        RemoteSourceReachability.reachable,
       );
     });
 
@@ -147,7 +147,7 @@ void main() {
       );
       expect(
         await client.probeHostReachability(),
-        InterconnectHostReachability.credentialRejected,
+        RemoteSourceReachability.credentialRejected,
       );
     });
 
@@ -156,13 +156,13 @@ void main() {
       // 先跑一次真实请求让会话「已解析」。
       expect(
         await client.probeHostReachability(),
-        InterconnectHostReachability.reachable,
+        RemoteSourceReachability.reachable,
       );
       await server.stop();
       serverStopped = true;
       expect(
         await client.probeHostReachability(),
-        InterconnectHostReachability.unreachable,
+        RemoteSourceReachability.unreachable,
         reason: '菜单打开时必须重新探测：对端已离线却放行删除，用户确认后才收到失败',
       );
     });
