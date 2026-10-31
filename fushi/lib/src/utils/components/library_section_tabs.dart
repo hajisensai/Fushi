@@ -3,7 +3,14 @@ import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/rendering.dart'
+    show
+        BoxHitTestEntry,
+        BoxHitTestResult,
+        BoxParentData,
+        RenderAbstractViewport,
+        RenderBox,
+        RenderShiftedBox;
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -43,6 +50,10 @@ const double _kSectionTabOverflowFadeWidth = 24.0;
 
 /// 二级内容域紧凑分段胶囊（`floating` + `secondary`）里页签的高。
 const double _kCompactSecondaryTabHeight = 36.0;
+
+/// 二级下划线页签的最小命中高度：M3 触控目标 48dp。视觉页签只有
+/// [_kCompactSecondaryTabHeight]，由 [_SectionTabTapTarget] 上下补透明命中带。
+const double _kSectionTabMinTapHeight = kMinInteractiveDimension;
 
 const ValueKey<String> _kSectionTabLeadingOverflowCueKey = ValueKey<String>(
   'library-section-tabs-leading-overflow-cue',
@@ -1427,16 +1438,21 @@ class _FushiSectionTabBarState<T extends Object>
     if (widget.secondary) {
       // M3 secondary tabs（2026-10-30 用户拍板方案 B）：文字 + 横贯整个页签的
       // 细下划线 + 整排淡分隔线，与一级的按钮组胶囊拉开层级；不再是分段胶囊。
-      return FushiTabBar.secondary(
-        controller: controller,
-        segmented: false,
-        isScrollable: scrollable,
-        tabAlignment: alignment,
-        labelStyle: labelStyle,
-        unselectedLabelStyle: unselectedLabelStyle,
-        labelPadding: labelPadding,
-        onTap: onTap,
-        tabs: tabs,
+      // 视觉只有 36 高，但命中区不能跟着降到 48dp 以下（M3 触控目标）：上下补
+      // 透明命中带，点在带里等同点在同一列的页签上（[_SectionTabTapTarget]）。
+      return _SectionTabTapTarget(
+        minHeight: _kSectionTabMinTapHeight,
+        child: FushiTabBar.secondary(
+          controller: controller,
+          segmented: false,
+          isScrollable: scrollable,
+          tabAlignment: alignment,
+          labelStyle: labelStyle,
+          unselectedLabelStyle: unselectedLabelStyle,
+          labelPadding: labelPadding,
+          onTap: onTap,
+          tabs: tabs,
+        ),
       );
     }
     return FushiTabBar(
@@ -1451,6 +1467,100 @@ class _FushiSectionTabBarState<T extends Object>
       onTap: onTap,
       tabs: tabs,
     );
+  }
+}
+
+/// 让视觉高度不足 [minHeight] 的一行页签仍有 [minHeight] 高的命中区（Material
+/// `MaterialTapTargetSize.padded` 同一做法）：自身占 [minHeight] 高、页签行竖向
+/// 居中，上下的透明带不绘制任何东西；落在带里的指针只把纵坐标夹回页签行，
+/// 横坐标不动，所以点在某段正上 / 正下方就命中那一段，横向拖滚同样生效。
+class _SectionTabTapTarget extends SingleChildRenderObjectWidget {
+  const _SectionTabTapTarget({required this.minHeight, required super.child});
+
+  final double minHeight;
+
+  @override
+  _RenderSectionTabTapTarget createRenderObject(BuildContext context) =>
+      _RenderSectionTabTapTarget(minHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSectionTabTapTarget renderObject,
+  ) {
+    renderObject.minHeight = minHeight;
+  }
+}
+
+class _RenderSectionTabTapTarget extends RenderShiftedBox {
+  _RenderSectionTabTapTarget(this._minHeight) : super(null);
+
+  double _minHeight;
+  set minHeight(double value) {
+    if (value == _minHeight) return;
+    _minHeight = value;
+    markNeedsLayout();
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      math.max(child?.getMinIntrinsicHeight(width) ?? 0, _minHeight);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      math.max(child?.getMaxIntrinsicHeight(width) ?? 0, _minHeight);
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      child?.getMinIntrinsicWidth(height) ?? 0;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      child?.getMaxIntrinsicWidth(height) ?? 0;
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final RenderBox? child = this.child;
+    if (child == null) return constraints.constrain(Size(0, _minHeight));
+    final Size inner = child.getDryLayout(constraints.copyWith(minHeight: 0));
+    return constraints.constrain(
+      Size(inner.width, math.max(inner.height, _minHeight)),
+    );
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? child = this.child;
+    if (child == null) {
+      size = constraints.constrain(Size(0, _minHeight));
+      return;
+    }
+    child.layout(constraints.copyWith(minHeight: 0), parentUsesSize: true);
+    size = constraints.constrain(
+      Size(child.size.width, math.max(child.size.height, _minHeight)),
+    );
+    (child.parentData! as BoxParentData).offset = Offset(
+      0,
+      (size.height - child.size.height) / 2,
+    );
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final RenderBox? child = this.child;
+    if (child == null || !size.contains(position)) return false;
+    final double top = (child.parentData! as BoxParentData).offset.dy;
+    final double bottom = top + child.size.height;
+    // 夹到页签行内（底边是开区间，留一点余量）；行内的点原样不动。
+    final Offset target = Offset(
+      position.dx,
+      position.dy.clamp(top, math.max(top, bottom - 0.01)).toDouble(),
+    );
+    if (hitTestChildren(result, position: target)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
   }
 }
 
