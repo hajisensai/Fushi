@@ -2260,11 +2260,16 @@ class SrsDbStore implements SrsSync2Host {
 
   /// RWKV 全量回放：[cardIds]（回放的加入顺序）的保留评分行按评分时刻排好序，连同同一快照里的日志指纹；
   /// [since] 之后出现、不在这些卡血统里的卡作为 [SrsRwkvReplay.strays] 返回。
+  ///
+  /// [rebaseSince]：局部重放——同一快照里算出 rowid 在它之后的日志让回放序列最早从哪个时刻起不同
+  /// （[SrsRwkvReplay.divergeAt]），行只取从 [rowsFrom]（给了的话）或分歧时刻起的。
   Future<SrsRwkvReplay> rwkvReplay(
     List<String> cardIds,
     List<int> ids,
     SrsDayContext day, {
     required int since,
+    int? rebaseSince,
+    int? rowsFrom,
   }) async => srsDecodeRwkvReplay(
     await _coreRwkvReplay(
       core.address,
@@ -2275,6 +2280,8 @@ class SrsDbStore implements SrsSync2Host {
       day.utcOffsetMin,
       day.rolloverHour,
       since,
+      rebaseSince,
+      rowsFrom,
     ),
   );
 
@@ -4848,6 +4855,8 @@ Future<Uint8List> _coreRwkvReplay(
   int utcOffsetMin,
   int rolloverHour,
   int since,
+  int? rebaseSince,
+  int? rowsFrom,
 ) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
   address,
   (SrsCore c) => c.rwkvReplay(
@@ -4857,6 +4866,8 @@ Future<Uint8List> _coreRwkvReplay(
     utcOffsetMin: utcOffsetMin,
     rolloverHour: rolloverHour,
     since: since,
+    rebaseSince: rebaseSince,
+    rowsFrom: rowsFrom,
   ),
 );
 

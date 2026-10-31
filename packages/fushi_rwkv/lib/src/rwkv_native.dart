@@ -152,11 +152,25 @@ typedef _RestoreDart = int Function(Pointer<Void>, Pointer<Uint8>, int);
 typedef _StatsC = Int32 Function(Pointer<Void>, Pointer<_Stats>);
 typedef _StatsDart = int Function(Pointer<Void>, Pointer<_Stats>);
 typedef _AppendC =
-    Int32 Function(Pointer<Void>, Pointer<Uint8>, Pointer<Uint64>, Size);
+    Int32 Function(
+      Pointer<Void>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+      Pointer<Int64>,
+      Size,
+    );
 typedef _AppendDart =
-    int Function(Pointer<Void>, Pointer<Uint8>, Pointer<Uint64>, int);
+    int Function(
+      Pointer<Void>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+      Pointer<Int64>,
+      int,
+    );
 typedef _UnappendC = Int32 Function(Pointer<Void>, Uint64);
 typedef _UnappendDart = int Function(Pointer<Void>, int);
+typedef _RewindFromC = Int32 Function(Pointer<Void>, Int64, Pointer<Uint64>);
+typedef _RewindFromDart = int Function(Pointer<Void>, int, Pointer<Uint64>);
 typedef _LookupC =
     Int32 Function(
       Pointer<Void>,
@@ -238,6 +252,9 @@ class _Bindings {
       unappend = lib.lookupFunction<_UnappendC, _UnappendDart>(
         'frwkv_runtime_unappend',
       ),
+      rewindFrom = lib.lookupFunction<_RewindFromC, _RewindFromDart>(
+        'frwkv_runtime_rewind_from',
+      ),
       scoresClear = lib.lookupFunction<_PtrToI32C, _PtrToI32Dart>(
         'frwkv_runtime_scores_clear',
       ),
@@ -277,6 +294,7 @@ class _Bindings {
   final _StatsDart stats;
   final _AppendDart append;
   final _UnappendDart unappend;
+  final _RewindFromDart rewindFrom;
   final _PtrToI32Dart scoresClear;
   final _LookupDart scoresLookup;
   final _UpdateDart scoresUpdate;
@@ -412,23 +430,44 @@ class RwkvNativeRuntime implements Finalizable {
     }
   }
 
-  /// 追加已答复习并记撤销日志（`frwkv_runtime_append`，标签 [tags] 与行同序）：状态与 [replay]
-  /// 同一批行逐位相同，之后可用 [unappend] 原样撤回。只有小模型支持（大模型抛
+  /// 追加已答复习并记撤销日志（`frwkv_runtime_append`，标签 [tags] 与评分时刻 [ats]（毫秒，不得早于
+  /// 日志里最后一条）与行同序）：状态与 [replay] 同一批行逐位相同，之后可用 [unappend] 原样撤回最近
+  /// 一条、用 [rewindFrom] 退到某个时刻之前。只有小模型支持（大模型抛
   /// [RwkvNativeException.isUnsupported]）。
-  void append(RwkvRows rows, List<int> tags) {
+  void append(RwkvRows rows, List<int> tags, List<int> ats) {
     _alive();
     final int n = rows.length;
-    if (tags.length != n) throw ArgumentError('tags/rows length mismatch');
+    if (tags.length != n || ats.length != n) {
+      throw ArgumentError('tags/ats/rows length mismatch');
+    }
     final Pointer<Uint8> input = malloc<Uint8>(n * kFrwkvReviewSize + 1);
     final Pointer<Uint64> tagBuffer = malloc<Uint64>(n + 1);
+    final Pointer<Int64> atBuffer = malloc<Int64>(n + 1);
     try {
       input.asTypedListOutOfLine(n * kFrwkvReviewSize).setAll(0, rows.bytes);
       tagBuffer.asTypedListOutOfLine(n).setAll(0, tags);
-      _b.check(_b.append(_handle, input, tagBuffer, n));
+      atBuffer.asTypedListOutOfLine(n).setAll(0, ats);
+      _b.check(_b.append(_handle, input, tagBuffer, atBuffer, n));
     } finally {
       malloc
         ..free(input)
-        ..free(tagBuffer);
+        ..free(tagBuffer)
+        ..free(atBuffer);
+    }
+  }
+
+  /// 退到时刻 [atMs] 之前（`frwkv_runtime_rewind_from`）：撤掉撤销日志里全部时刻 ≥ [atMs] 的条目，返回
+  /// 撤了几条；状态与「只回放过时刻 < [atMs] 的行」逐位相同。退不到（日志之前还有时刻未知的行）返回
+  /// null，什么都不改。
+  int? rewindFrom(int atMs) {
+    _alive();
+    final Pointer<Uint64> out = malloc<Uint64>();
+    try {
+      final int code = _b.rewindFrom(_handle, atMs, out);
+      if (code < 0) throw _b.error(code);
+      return code == 1 ? out.value : null;
+    } finally {
+      malloc.free(out);
     }
   }
 

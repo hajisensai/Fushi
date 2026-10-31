@@ -32,10 +32,12 @@ class _Worker implements SrsRwkvBackend {
   @override
   Future<void> close() => worker.close();
   @override
-  Future<bool> append(RwkvRows rows, List<int> tags) =>
-      worker.append(rows, tags);
+  Future<bool> append(RwkvRows rows, List<int> tags, List<int> ats) =>
+      worker.append(rows, tags, ats);
   @override
   Future<bool> unappend(int tag) => worker.unappend(tag);
+  @override
+  Future<int?> rewindFrom(int atMs) => worker.rewindFrom(atMs);
   @override
   Future<void> clearScores() => worker.clearScores();
   @override
