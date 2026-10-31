@@ -4,7 +4,7 @@ import { call, makeEnv, nextIp } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
 import {
   devAccountSql, existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds, parseArgs,
-  parseWranglerJson, pickDevAccount, r2WhereArgs, replySql, showSql, sqlText, statusesSql, summarizeBatchSql,
+  parseWranglerJson, pickDevAccount, r2WhereArgs, replySql, showSql, sqlText, summarizeBatchSql,
   summarizeSql,
 } from '../scripts/feedback.mjs';
 
@@ -95,17 +95,29 @@ describe('scripts/feedback.mjs', () => {
     expect(env.DB.raw.prepare(devAccountSql('devacct00000001')).all()).toHaveLength(1);
     expect(() => devAccountSql('')).toThrow(/--as/);
 
-    const statuses = Object.fromEntries(env.DB.raw.prepare(statusesSql([a, b])).all().map((r) => [r.id, r.status]));
-    env.DB.raw.exec(replySql({ [a]: "请补充版本号'); DROP TABLE feedback; --\u202e", [b]: '第二条' }, dev.id, statuses, NOW + 9));
+    const sql = replySql({ [a]: "请补充版本号'); DROP TABLE feedback; --\u202e", [b]: '第二条' }, dev.id, NOW + 9);
+    expect(sql).not.toMatch(/SET status/);
+    env.DB.raw.exec(sql);
     for (const [id, status, body] of [[a, 'open', "请补充版本号'); DROP TABLE feedback; --"], [b, 'in_progress', '第二条']]) {
       const row = env.DB.raw.prepare('SELECT status, dev_reply_at, updated_at FROM feedback WHERE id = ?').get(id);
       expect(row).toEqual({ status, dev_reply_at: NOW + 9, updated_at: NOW + 9 });
       const msg = env.DB.raw.prepare('SELECT author, account_id, body, status FROM feedback_messages WHERE feedback_id = ? ORDER BY id DESC').get(id);
       expect(msg).toEqual({ author: 'dev', account_id: dev.id, body, status: null });
     }
-    expect(() => replySql({ [a]: '   ' }, dev.id, statuses, NOW)).toThrow(/空的/);
-    expect(() => replySql({ 'bad id!': 'x' }, dev.id, statuses, NOW)).toThrow(/编号不合法/);
-    expect(() => replySql({ nothere123: 'x' }, dev.id, statuses, NOW)).toThrow(/状态未知/);
+    expect(() => replySql({ [a]: '   ' }, dev.id, NOW)).toThrow(/空的/);
+    expect(() => replySql({ 'bad id!': 'x' }, dev.id, NOW)).toThrow(/编号不合法/);
+  });
+
+  it('reply 不撤回生成 SQL 之后别人做的结案', async () => {
+    const env = makeEnv();
+    const id = await seed(env, '并发结案');
+    env.DB.raw.exec("INSERT INTO accounts (id, email_hash, nickname, discriminator, role, created_at) VALUES ('devacct00000001', 'h', '哈吉', 1, 'dev', 0)");
+    // CLI 先生成回复 SQL（此时条目还是 open），写库之前处理台把它结了案。
+    const sql = replySql({ [id]: '已收到' }, 'devacct00000001', NOW + 5);
+    env.DB.raw.prepare("UPDATE feedback SET status = 'closed' WHERE id = ?").run(id);
+    env.DB.raw.exec(sql);
+    const row = env.DB.raw.prepare('SELECT status, dev_reply_at, updated_at FROM feedback WHERE id = ?').get(id);
+    expect(row).toEqual({ status: 'closed', dev_reply_at: NOW + 5, updated_at: NOW + 5 });
   });
 
   it('list / show 标出开发者账户自己提的反馈', async () => {

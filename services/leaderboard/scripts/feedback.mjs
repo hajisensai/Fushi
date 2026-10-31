@@ -157,15 +157,12 @@ export function pickDevAccount(who, rows) {
   return rows[0];
 }
 
-export function statusesSql(ids) {
-  return `SELECT id, status FROM feedback WHERE id IN (${ids.map((id) => `'${checkId(id)}'`).join(', ')})`;
-}
-
 /**
  * 以开发者身份回复（不改状态）：与处理台回复执行同一份 SQL（devReplyStatements）、同一清洗口径（cleanDevReply）。
- * replies: {id: 正文}；statuses: {id: 当前状态}（UPDATE 原样写回，不改状态）。任一条不合法整批不生成。
+ * replies: {id: 正文}。UPDATE 不碰 status 列：旧实现先读状态再原样写回，读写之间别人结案会被静默撤回。
+ * 任一条不合法整批不生成；编号是否在库由调用方 requireExisting 核对。
  */
-export function replySql(replies, devId, statuses, now) {
+export function replySql(replies, devId, now) {
   if (!replies || typeof replies !== 'object' || Array.isArray(replies)) throw new Error('--json 文件须是 {"<id>": "<回复>"} 对象');
   const entries = Object.entries(replies);
   if (entries.length === 0) throw new Error('没有要发的回复');
@@ -174,9 +171,7 @@ export function replySql(replies, devId, statuses, now) {
     if (typeof text !== 'string') throw new Error(`#${id} 的回复不是字符串`);
     const body = cleanDevReply(text);
     if (!body) throw new Error(`#${id} 的回复是空的`);
-    const status = statuses[id];
-    if (!STATUSES.includes(status)) throw new Error(`#${id} 的当前状态未知：${status}`);
-    return devReplyStatements({ id, devId, reply: body, timelineStatus: null, status, now: Math.trunc(now) })
+    return devReplyStatements({ id, devId, reply: body, timelineStatus: null, status: null, now: Math.trunc(now) })
       .map(([sql, args]) => `${inlineSql(sql, args)};`).join('\n');
   }).join('\n');
 }
@@ -364,9 +359,7 @@ export function main(argv, out = console.log) {
     const dev = pickDevAccount(flags.as, devRows);
     const ids = Object.keys(replies);
     requireExisting(ids, where);
-    const [statusRows] = d1(statusesSql(ids), where);
-    const statuses = Object.fromEntries(statusRows.map((r) => [r.id, r.status]));
-    d1Write(replySql(replies, dev.id, statuses, Date.now()), where);
+    d1Write(replySql(replies, dev.id, Date.now()), where);
     out(`已以 ${dev.nickname}#${String(dev.discriminator).padStart(4, '0')} 回复 ${ids.length} 条：${ids.map((x) => `#${x}`).join(' ')}`);
     return;
   }
