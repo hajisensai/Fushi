@@ -615,19 +615,6 @@ class WordAudioResolver {
           e.url,
       ];
 
-  /// [defaultFetchAudioSourceList] 的带名版本：保留 `audioSources[].name`，供
-  /// 「选择音频源」菜单区分同一源的多个变体。错误语义与它完全一致（它就是本
-  /// 函数的投影）。
-  ///
-  /// 远端源有两种响应形态（对齐 Yomitan 的「Custom URL」与「Custom URL (JSON)」）：
-  /// - 响应本身就是音频（`Content-Type: audio/*` 或音频魔数，如 uapis.cn 词典发音、
-  ///   GPT-SoVITS `/tts`）：字节经 [cacheAudioBytes] 落盘，返回一条指向本地文件的
-  ///   条目——复用这一次请求的字节，播放端不再请求第二遍；
-  /// - 响应是 `audioSourceList` JSON：按列表展开。
-  ///
-  /// 两种都不是（可达、2xx，但格式认不出）记一条「格式不认识」的错误日志并当空
-  /// 结果返回——**不** rethrow，因为服务器是通的，计入 host 冷却会把格式问题误判
-  /// 成死源（BUG：直返音频的源被当 JSON 解析失败后冷却，永远没声音）。
   /// 把远端音源的连接级失败翻成给用户看的一句话。
   ///
   /// 反馈 uY5I6JRU39：旧实现把**任何** [SocketException] 都报成「无法解析 host」，
@@ -669,6 +656,19 @@ class WordAudioResolver {
     return code == 111 || code == 61 || code == 10061;
   }
 
+  /// [defaultFetchAudioSourceList] 的带名版本：保留 `audioSources[].name`，供
+  /// 「选择音频源」菜单区分同一源的多个变体。错误语义与它完全一致（它就是本
+  /// 函数的投影）。
+  ///
+  /// 远端源有两种响应形态（对齐 Yomitan 的「Custom URL」与「Custom URL (JSON)」）：
+  /// - 响应本身就是音频（`Content-Type: audio/*` 或音频魔数，如 uapis.cn 词典发音、
+  ///   GPT-SoVITS `/tts`）：字节经 [cacheAudioBytes] 落盘，返回一条指向本地文件的
+  ///   条目——复用这一次请求的字节，播放端不再请求第二遍；
+  /// - 响应是 `audioSourceList` JSON：按列表展开。
+  ///
+  /// 两种都不是（可达、2xx，但格式认不出）记一条「格式不认识」的错误日志并当空
+  /// 结果返回——**不** rethrow，因为服务器是通的，计入 host 冷却会把格式问题误判
+  /// 成死源（BUG：直返音频的源被当 JSON 解析失败后冷却，永远没声音）。
   static Future<List<AudioSourceListEntry>> defaultFetchAudioSourceEntries(
     String url, {
     RemoteAudioBytesCache cacheAudioBytes = cacheWordAudioBytes,
