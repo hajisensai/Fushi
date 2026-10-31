@@ -8,11 +8,11 @@ const T0: i64 = 1_700_000_000_000;
 const HOUR: i64 = 60 * 60 * 1000;
 
 fn self_hlc(d: &Device) -> i64 {
-    d.rows(&format!("SELECT hlc_wall FROM sync2_self WHERE profile_uid = '{P}'"))[1][0].parse().unwrap()
+    d.rows(&format!("SELECT hlc_wall FROM sync2_self WHERE profile_uid = srs_id('{P}')"))[1][0].parse().unwrap()
 }
 
 fn tags_of(d: &Device, note: &str) -> String {
-    let r = d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = '{note}' AND field_key = 'tags'"));
+    let r = d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = srs_id('{note}') AND field_key = 'tags'"));
     r.get(1).map(|x| x[0].clone()).unwrap_or_default()
 }
 
@@ -241,7 +241,7 @@ fn register_rebuild_from_the_log_matches_incremental_projection() {
     let snap = |d: &Device| {
         (
             d.rows("SELECT location, name, present, wall, logical, hex(device) FROM sync2_media_at ORDER BY location, name"),
-            d.rows("SELECT note, tags, wall, logical, hex(device) FROM sync2_tag_order ORDER BY note"),
+            d.rows("SELECT srs_idt(note) AS note, tags, wall, logical, hex(device) FROM sync2_tag_order ORDER BY note"),
             d.rows("SELECT reg, hex(device), seq FROM sync2_mvr ORDER BY reg, device, seq"),
         )
     };
@@ -322,7 +322,7 @@ fn same_named_media_with_different_content_converges() {
     let (ib, _) = media_scan(&b, &rb.0, "image.jpg", T0 + 70);
     assert_eq!(ib["have"], json!(false));
     assert_eq!(ib["sha"], json!(sha_hex(b"edited on a")));
-    let bound = |d: &Device| d.rows(&format!("SELECT hex(sha256) FROM sync2_media WHERE profile_uid = '{P}' AND name = 'image.jpg'"));
+    let bound = |d: &Device| d.rows(&format!("SELECT hex(sha256) FROM sync2_media WHERE profile_uid = srs_id('{P}') AND name = 'image.jpg'"));
     assert_eq!(bound(&a), bound(&b));
     // 清理：只被过期名字绑定、不被存活名字绑定的内容。
     let doomed = a.core.sync2_media_doomed(P, &["image.jpg".to_owned()], &[]).unwrap();

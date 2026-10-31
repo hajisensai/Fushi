@@ -28,7 +28,9 @@ Future<Map<String, List<(int, int, int)>>> opsByDevice(BulkFixture f) async {
           .customSelect(
             'SELECT hex(device) AS d, seq, wall, logical FROM sync2_ops '
             'WHERE profile_uid = ? ORDER BY device, seq',
-            variables: <Variable<Object>>[Variable<String>(f.store.profileUid)],
+            variables: <Variable<Object>>[
+              Variable<String>(f.store.profileUid, srsIdType),
+            ],
           )
           .get()) {
     (out[r.read<String>('d')] ??= <(int, int, int)>[]).add((

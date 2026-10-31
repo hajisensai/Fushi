@@ -128,7 +128,7 @@ impl Card {
     }
 }
 
-const CARD_COLUMNS: &str = "id, note_id, template_id, cloze_ord, deck_id, suspended, buried_until_day, flag, queue, \
+const CARD_COLUMNS: &str = "srs_idt(id), srs_idt(note_id), srs_idt(template_id), cloze_ord, srs_idt(deck_id), suspended, buried_until_day, flag, queue, \
      due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at, anki_id";
 
 fn card_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Card> {
@@ -188,7 +188,7 @@ impl Note {
     }
 }
 
-const NOTE_COLUMNS: &str = "id, note_type_id, created_at, sort_field, tags_json, pending_decision, anki_id";
+const NOTE_COLUMNS: &str = "srs_idt(id), srs_idt(note_type_id), created_at, sort_field, tags_json, pending_decision, anki_id";
 
 fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     let tags: String = r.get(4)?;
@@ -915,7 +915,7 @@ impl Session {
             results: Vec::new(),
         };
         {
-            let q = format!("SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL");
+            let q = format!("SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL");
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let mut rows = stmt.query([profile]).map_err(sql)?;
             while let Some(r) = rows.next().map_err(sql)? {
@@ -924,7 +924,7 @@ impl Session {
                 s.notes.push(Some(n));
             }
         }
-        let q = format!("SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE profile_uid = ?1 AND hidden = 0");
+        let q = format!("SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE profile_uid = srs_id(?1) AND hidden = 0");
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let mut rows = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = rows.next().map_err(sql)? {
@@ -946,8 +946,8 @@ impl Session {
         let ids: Vec<&String> = d.cards.iter().collect();
         for chunk in ids.chunks(CHUNK) {
             let q = format!(
-                "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
-                (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+                "SELECT {CARD_COLUMNS} FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
+                (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let args = std::iter::once(profile).chain(chunk.iter().map(|s| s.as_str()));
@@ -986,8 +986,8 @@ impl Session {
         let mut present: Vec<String> = Vec::new();
         for chunk in ids.chunks(CHUNK) {
             let q = format!(
-                "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = ?1 AND deleted_at IS NULL",
-                (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+                "SELECT {NOTE_COLUMNS} FROM srs_notes_cache WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND deleted_at IS NULL",
+                (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
             );
             let mut stmt = c.prepare_cached(&q).map_err(sql)?;
             let args = std::iter::once(profile).chain(chunk.iter().map(|s| s.as_str()));
@@ -1067,10 +1067,10 @@ impl Session {
             let mut stmt = c.prepare_cached(q).map_err(sql)?;
             let mut rows = stmt.query(params_from_iter(args)).map_err(sql)?;
             let mut cur: Option<String> = None;
-            let mut edits: Vec<(String, Option<i64>)> = Vec::new();
-            let flush = |id: Option<String>, edits: &mut Vec<(String, Option<i64>)>, s: &mut Session| -> Result<(), String> {
+            let mut edits: Vec<(String, Option<i64>, Option<registers::EditCols>)> = Vec::new();
+            let flush = |id: Option<String>, edits: &mut Vec<(String, Option<i64>, Option<registers::EditCols>)>, s: &mut Session| -> Result<(), String> {
                 let Some(id) = id else { return Ok(()) };
-                let stored: Vec<StoredEdit<'_>> = edits.iter().map(|(j, t)| (j.as_str(), *t)).collect();
+                let stored: Vec<StoredEdit<'_>> = edits.iter().map(|(j, t, c)| (j.as_str(), *t, c.as_ref())).collect();
                 let (values, modified) = registers::note_browse_values(&stored)?;
                 edits.clear();
                 let Some(&slot) = s.note_at.get(&id) else { return Ok(()) };
@@ -1089,18 +1089,21 @@ impl Session {
                     flush(cur.take(), &mut edits, s)?;
                     cur = Some(id);
                 }
-                edits.push((r.get(1).map_err(sql)?, r.get(2).map_err(sql)?));
+                let (j, cols) = super::slim::edit_row(r, 2).map_err(sql)?;
+                edits.push((j, r.get(1).map_err(sql)?, cols));
             }
             flush(cur.take(), &mut edits, s)
         };
-        const SELECT: &str = "SELECT f.entity_id, f.json, s.server_time FROM srs_field_edits f \
+        // 修改记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`。
+        const SELECT: &str = "SELECT srs_idt(f.entity_id) AS entity_id, s.server_time, \
+             f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq FROM srs_field_edits f \
              LEFT JOIN srs_event_local s ON s.event_id = f.id WHERE f.entity_kind = 'note'";
         match notes {
             None => {
                 // 整列：按 (entity_kind, entity_id) 顺序读（实测 5 万笔记库比走 (profile_uid, entity_kind, entity_id,
                 // field_key) 索引快一倍多：那条按笔记顺序逐行回表是随机读；两种走法摸到的表页一样多——一列的记录
                 // 散在全部笔记的记录之间）。
-                let q = format!("{SELECT} AND +f.profile_uid = ?1{} ORDER BY f.entity_id", key_filter(2, key_args.len()));
+                let q = format!("{SELECT} AND +f.profile_uid = srs_id(?1){} ORDER BY f.entity_id", key_filter(2, key_args.len()));
                 let args: Vec<Sql> =
                     std::iter::once(Sql::Text(profile.to_owned())).chain(key_args.iter().map(|k| Sql::Text(k.clone()))).collect();
                 run(c, &q, args, self)?;
@@ -1108,8 +1111,8 @@ impl Session {
             Some(ids) => {
                 for chunk in ids.chunks(CHUNK) {
                     let q = format!(
-                        "{SELECT} AND f.entity_id IN ({}) AND +f.profile_uid = ?1{} ORDER BY f.entity_id",
-                        (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", "),
+                        "{SELECT} AND f.entity_id IN ({}) AND +f.profile_uid = srs_id(?1){} ORDER BY f.entity_id",
+                        (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", "),
                         key_filter(chunk.len() + 2, key_args.len())
                     );
                     let args: Vec<Sql> = std::iter::once(Sql::Text(profile.to_owned()))
@@ -1650,8 +1653,8 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     let mut by: HashMap<String, Vec<(String, String)>> = HashMap::new();
     for chunk in wanted.chunks(CHUNK) {
         let q = format!(
-            "SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
-             WHERE profile_uid = ?1 AND deleted_at IS NULL AND dupe_norm IN ({})",
+            "SELECT srs_idt(id) AS id, srs_idt(note_type_id) AS note_type_id, dupe_norm FROM srs_notes_cache \
+             WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN ({})",
             (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
@@ -1688,8 +1691,8 @@ fn anki_dupes(c: &Connection, profile: &str, req: &Value) -> Result<Value, Strin
     let deck_notes: Vec<&str> = deck_notes.into_iter().collect();
     for chunk in deck_notes.chunks(CHUNK) {
         let q = format!(
-            "SELECT note_id, deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = ?1 AND +hidden = 0",
-            (2..chunk.len() + 2).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+            "SELECT srs_idt(note_id) AS note_id, srs_idt(deck_id) AS deck_id FROM srs_cards_cache WHERE note_id IN ({}) AND +profile_uid = srs_id(?1) AND +hidden = 0",
+            (2..chunk.len() + 2).map(|i| format!("srs_id(?{i})")).collect::<Vec<_>>().join(", ")
         );
         let mut stmt = c.prepare_cached(&q).map_err(sql)?;
         let args = std::iter::once(profile).chain(chunk.iter().copied());
@@ -1957,7 +1960,7 @@ mod tests {
     /// 每条缓存行的 `dupe_norm`。
     fn dupe_norms(d: &Device) -> Vec<(String, Option<String>)> {
         let w = d.core.writer().unwrap();
-        let mut stmt = w.prepare("SELECT id, dupe_norm FROM srs_notes_cache ORDER BY id").unwrap();
+        let mut stmt = w.prepare("SELECT srs_idt(id), dupe_norm FROM srs_notes_cache ORDER BY srs_idt(id)").unwrap();
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
     }
 
@@ -2006,7 +2009,7 @@ mod tests {
             w.execute_batch("UPDATE srs_notes_cache SET dupe_norm = NULL").unwrap();
             // 缓存孤行（身份记录已不在）：补成空串。
             w.execute(
-                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('orphan', ?1, 'A', 'g', 1)",
+                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at) VALUES ('orphan', srs_id(?1), 'A', 'g', 1)",
                 [P],
             )
             .unwrap();
@@ -2034,11 +2037,11 @@ mod tests {
             // 写连接上自动提交一条改动：COMMIT 已对读连接可见，守卫还没释放（没 settle）。浏览命令不在写连接上读
             // （没有挂着的 Drift 事务），所以持着守卫也照样走读连接。
             let w = d.core.writer().unwrap();
-            w.execute("UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = ?1", [N1]).unwrap();
+            w.execute("UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = srs_id(?1)", [N1]).unwrap();
             assert!(w.is_autocommit());
             assert_eq!(tags(&d), json!(["B", "t1", "zz"]), "the committed write is visible and must be reread");
             // 未提交的改动：读快照重读到的是旧值。
-            w.execute_batch(&format!("BEGIN; UPDATE srs_notes_cache SET tags_json = '[\"yy\"]' WHERE id = '{N2}';")).unwrap();
+            w.execute_batch(&format!("BEGIN; UPDATE srs_notes_cache SET tags_json = '[\"yy\"]' WHERE id = srs_id('{N2}');")).unwrap();
             assert_eq!(tags(&d), json!(["B", "t1", "zz"]));
             w.execute_batch("COMMIT;").unwrap();
             assert_eq!(tags(&d), json!(["yy", "zz"]), "rows committed after an earlier reread are reread again");
@@ -2078,8 +2081,8 @@ mod tests {
         let w = d.core.writer().unwrap();
         let plan: Vec<String> = w
             .prepare(
-                "EXPLAIN QUERY PLAN SELECT id, note_type_id, dupe_norm FROM srs_notes_cache \
-                 WHERE profile_uid = ?1 AND deleted_at IS NULL AND dupe_norm IN (?2, ?3)",
+                "EXPLAIN QUERY PLAN SELECT srs_idt(id) AS id, srs_idt(note_type_id) AS note_type_id, dupe_norm FROM srs_notes_cache \
+                 WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL AND dupe_norm IN (?2, ?3)",
             )
             .unwrap()
             .query_map(rusqlite::params![P, "a", "b"], |r| r.get::<_, String>(3))

@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179044 (10532 per locale)
+/// Strings: 179061 (10533 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11475,6 +11475,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get srs_status_review_by_recall => 'In review (RWKV)';
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   String get srs_status_suspended => 'Suspended';
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   String get srs_sync_auto => 'Auto-sync review data';
   String get srs_sync_auto_hint =>
       'Sync review data in the background after each regular sync, when a paired device has new review data, and shortly after you review. When off, review data only syncs when you tap Sync now in the deck list or open the Review tab (at most once a minute). Book and video progress sync is not affected';
@@ -34398,6 +34400,9 @@ class _StringsAr extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -60221,6 +60226,9 @@ class _StringsDe extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -86166,6 +86174,9 @@ class _StringsEs extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -112200,6 +112211,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -137996,6 +138010,9 @@ class _StringsId extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -163835,6 +163852,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -188963,6 +188983,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -213825,6 +213848,9 @@ class _StringsKo extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -239395,6 +239421,9 @@ class _StringsNl extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -265266,6 +265295,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -291113,6 +291145,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -316711,6 +316746,9 @@ class _StringsTh extends _StringsEn {
   String srs_status_review_in({required Object n}) => 'Review in ${n} days';
   @override
   String get srs_status_suspended => 'Suspended';
+  @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
   @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
@@ -342376,6 +342414,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -368035,6 +368076,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -392092,6 +392136,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get srs_status_suspended => '已暂停';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      '磁盘空间不足，无法升级复习数据库。请至少再腾出 ${size} 后重试（数据没有任何改动）。';
+  @override
   String get srs_sync_auto => '自动同步复习数据';
   @override
   String get srs_sync_auto_hint =>
@@ -416133,6 +416180,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get srs_status_suspended => 'Suspended';
   @override
+  String srs_storage_upgrade_no_space({required Object size}) =>
+      'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
+  @override
   String get srs_sync_auto => 'Auto-sync review data';
   @override
   String get srs_sync_auto_hint =>
@@ -438583,6 +438633,9 @@ extension on _StringsEn {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -460463,6 +460516,9 @@ extension on _StringsAr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -482399,6 +482455,9 @@ extension on _StringsDe {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -504339,6 +504398,9 @@ extension on _StringsEs {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -526290,6 +526352,9 @@ extension on _StringsFr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -548201,6 +548266,9 @@ extension on _StringsId {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -570121,6 +570189,9 @@ extension on _StringsIt {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -591975,6 +592046,9 @@ extension on _StringsJa {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -613778,6 +613852,9 @@ extension on _StringsKo {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -635671,6 +635748,9 @@ extension on _StringsNl {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -657595,6 +657675,9 @@ extension on _StringsPtBr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -679523,6 +679606,9 @@ extension on _StringsRu {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -701411,6 +701497,9 @@ extension on _StringsTh {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -723317,6 +723406,9 @@ extension on _StringsTr {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -745218,6 +745310,9 @@ extension on _StringsVi {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':
@@ -766913,6 +767008,9 @@ extension on _StringsZhCn {
         return ({required Object n}) => '复习中 · ${n}天后';
       case 'srs_status_suspended':
         return '已暂停';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            '磁盘空间不足，无法升级复习数据库。请至少再腾出 ${size} 后重试（数据没有任何改动）。';
       case 'srs_sync_auto':
         return '自动同步复习数据';
       case 'srs_sync_auto_hint':
@@ -788632,6 +788730,9 @@ extension on _StringsZhHk {
         return ({required Object n}) => 'Review in ${n} days';
       case 'srs_status_suspended':
         return 'Suspended';
+      case 'srs_storage_upgrade_no_space':
+        return ({required Object size}) =>
+            'Not enough free disk space to upgrade the review database. Free up at least ${size} and try again — nothing was changed.';
       case 'srs_sync_auto':
         return 'Auto-sync review data';
       case 'srs_sync_auto_hint':

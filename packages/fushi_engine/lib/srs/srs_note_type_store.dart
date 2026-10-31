@@ -106,7 +106,9 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
               'SELECT note_type_id AS t, COUNT(*) AS c FROM srs_notes_cache '
               'WHERE profile_uid = ? AND deleted_at IS NULL '
               'GROUP BY note_type_id',
-              variables: <Variable<Object>>[Variable<String>(profileUid)],
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid, srsIdType),
+              ],
               readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                 db.srsNotesCache,
               },

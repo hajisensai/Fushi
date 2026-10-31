@@ -55,7 +55,7 @@ pub(crate) fn writes(conn: &Connection, profile: &str, reg: &str) -> Result<Vec<
         .prepare_cached(
             "SELECT m.device, m.seq, o.wall, o.logical, d.vv FROM sync2_mvr m \
              JOIN sync2_ops o ON o.profile_uid = m.profile_uid AND o.device = m.device AND o.seq = m.seq \
-             JOIN sync2_deps d ON d.id = o.deps WHERE m.profile_uid = ?1 AND m.reg = ?2",
+             JOIN sync2_deps d ON d.id = o.deps WHERE m.profile_uid = srs_id(?1) AND m.reg = ?2",
         )
         .map_err(sql)?;
     let rows = stmt
@@ -81,13 +81,13 @@ pub(crate) fn write(conn: &Connection, profile: &str, reg: &str, op: &Op) -> Res
     if !known && !dominated {
         let (gone, kept): (Vec<Write>, Vec<Write>) = set.into_iter().partition(|w| covers(&me.id, &me.deps, &w.id));
         let mut del = conn
-            .prepare_cached("DELETE FROM sync2_mvr WHERE profile_uid = ?1 AND reg = ?2 AND device = ?3 AND seq = ?4")
+            .prepare_cached("DELETE FROM sync2_mvr WHERE profile_uid = srs_id(?1) AND reg = ?2 AND device = ?3 AND seq = ?4")
             .map_err(sql)?;
         for w in &gone {
             del.execute(params![profile, reg, w.id.device.0.to_vec(), w.id.seq as i64]).map_err(sql)?;
         }
         set = kept;
-        conn.prepare_cached("INSERT OR IGNORE INTO sync2_mvr (profile_uid, reg, device, seq) VALUES (?1, ?2, ?3, ?4)")
+        conn.prepare_cached("INSERT OR IGNORE INTO sync2_mvr (profile_uid, reg, device, seq) VALUES (srs_id(?1), ?2, ?3, ?4)")
             .map_err(sql)?
             .execute(params![profile, reg, op.id.device.0.to_vec(), op.id.seq as i64])
             .map_err(sql)?;
@@ -101,7 +101,7 @@ pub(crate) fn write(conn: &Connection, profile: &str, reg: &str, op: &Op) -> Res
 pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
     use crate::sync2::op::{Body, KIND_MEDIA, KIND_MEDIA_AT};
     let profiles: Vec<String> = conn
-        .prepare("SELECT profile_uid FROM sync2_self")
+        .prepare("SELECT srs_idt(profile_uid) AS profile_uid FROM sync2_self")
         .map_err(sql)?
         .query_map([], |r| r.get(0))
         .map_err(sql)?
@@ -110,14 +110,14 @@ pub(crate) fn rebuild(conn: &Connection) -> Result<(), String> {
     conn.execute("DELETE FROM sync2_mvr", []).map_err(sql)?;
     for profile in &profiles {
         let mut ids: Vec<(Vec<u8>, i64)> = conn
-            .prepare("SELECT device, seq FROM sync2_ops WHERE profile_uid = ?1 AND kind IN (?2, ?3) AND purged = 0")
+            .prepare("SELECT device, seq FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind IN (?2, ?3) AND purged = 0")
             .map_err(sql)?
             .query_map(params![profile, i64::from(KIND_MEDIA), i64::from(KIND_MEDIA_AT)], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(sql)?
             .collect::<Result<_, _>>()
             .map_err(sql)?;
         let tag_ops: Vec<(Vec<u8>, i64)> = conn
-            .prepare("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = 'note' AND what IN ('#tag', 'tags')")
+            .prepare("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = 'note' AND what IN ('#tag', 'tags')")
             .map_err(sql)?
             .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(sql)?

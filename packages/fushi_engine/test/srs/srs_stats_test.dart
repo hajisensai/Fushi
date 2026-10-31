@@ -71,7 +71,7 @@ statsViaRust(List<SrsReviewLog> logs, SrsDayContext day) {
   core.execBatch(
     <String>[
       'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
-          'review_type, origin, duration_ms, json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, ?, ?, ?, ?, ?, ?)',
     ],
     <(int, List<Object?>)>[
       for (final SrsReviewLog l in logs)

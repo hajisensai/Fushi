@@ -16,6 +16,7 @@ pub(crate) mod mvr;
 pub mod relay;
 pub mod schema;
 pub(crate) mod semantics;
+pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
 
@@ -92,7 +93,7 @@ impl Local {
     pub fn load(conn: &Connection, profile: &str) -> Result<Option<Local>, String> {
         conn.query_row(
             "SELECT collection, device, key_seed, next_seq, chain, hlc_wall, hlc_logical, head_gen, migrated_at, name \
-             FROM sync2_self WHERE profile_uid = ?1",
+             FROM sync2_self WHERE profile_uid = srs_id(?1)",
             [profile],
             |r| {
                 Ok((
@@ -149,14 +150,14 @@ impl Local {
             name: String::new(),
         };
         conn.execute(
-            "INSERT INTO sync2_self (profile_uid, collection, device, key_seed, next_seq, chain) VALUES (?1, ?2, ?3, ?4, 1, ?5) \
+            "INSERT INTO sync2_self (profile_uid, collection, device, key_seed, next_seq, chain) VALUES (srs_id(?1), ?2, ?3, ?4, 1, ?5) \
              ON CONFLICT(profile_uid) DO UPDATE SET collection = excluded.collection, device = excluded.device, \
              key_seed = excluded.key_seed, next_seq = 1, chain = excluded.chain, hlc_wall = 0, hlc_logical = 0, head_gen = 0",
             params![profile, local.collection.0.to_vec(), device.0.to_vec(), local.key.seed().to_vec(), CHAIN_ZERO.to_vec()],
         )
         .map_err(sql)?;
         conn.execute(
-            "INSERT OR REPLACE INTO sync2_devices (profile_uid, device, public, applied, chain) VALUES (?1, ?2, ?3, 0, ?4)",
+            "INSERT OR REPLACE INTO sync2_devices (profile_uid, device, public, applied, chain) VALUES (srs_id(?1), ?2, ?3, 0, ?4)",
             params![profile, device.0.to_vec(), local.key.public().to_vec(), CHAIN_ZERO.to_vec()],
         )
         .map_err(sql)?;
@@ -165,7 +166,7 @@ impl Local {
 
     pub fn save(&self, conn: &Connection) -> Result<(), String> {
         conn.execute(
-            "UPDATE sync2_self SET next_seq = ?2, chain = ?3, hlc_wall = ?4, hlc_logical = ?5, head_gen = ?6 WHERE profile_uid = ?1",
+            "UPDATE sync2_self SET next_seq = ?2, chain = ?3, hlc_wall = ?4, hlc_logical = ?5, head_gen = ?6 WHERE profile_uid = srs_id(?1)",
             params![
                 self.profile,
                 self.next_seq as i64,
@@ -177,7 +178,7 @@ impl Local {
         )
         .map_err(sql)?;
         conn.execute(
-            "UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2",
+            "UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = srs_id(?1) AND device = ?2",
             params![self.profile, self.device.0.to_vec(), (self.next_seq - 1) as i64, self.chain.to_vec()],
         )
         .map_err(sql)?;
@@ -187,7 +188,7 @@ impl Local {
 
 /// 本机已应用的版本向量（含本设备）。
 pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String> {
-    let mut stmt = conn.prepare_cached("SELECT device, applied FROM sync2_devices WHERE profile_uid = ?1").map_err(sql)?;
+    let mut stmt = conn.prepare_cached("SELECT device, applied FROM sync2_devices WHERE profile_uid = srs_id(?1)").map_err(sql)?;
     let mut q = stmt.query([profile]).map_err(sql)?;
     let mut vv = Vv::new();
     while let Some(r) = q.next().map_err(sql)? {
@@ -199,14 +200,16 @@ pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String>
 fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
     let bytes = deps.encode();
     conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([&bytes]).map_err(sql)?;
-    conn.prepare_cached("SELECT id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
+    conn.prepare_cached("SELECT srs_idt(id) AS id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
 }
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
     let deps = intern_deps(conn, &op.deps)?;
+    // 配置快照原文只存一份（snapshots.rs）；载荷读回来逐字节相同（[load_op]）。
+    let (payload, sc, sc_at) = snapshots::pack_payload(conn, op.kind, &op.payload)?;
     conn.prepare_cached(
-        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at, sc, sc_at) \
+         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
     )
     .map_err(sql)?
     .execute(params![
@@ -218,10 +221,12 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
         deps,
         i64::from(op.kind),
         i64::from(op.schema),
-        &op.payload[..],
+        payload,
         i64::from(op.purged),
         chain.to_vec(),
-        now
+        now,
+        sc,
+        sc_at
     ])
     .map_err(sql)?;
     Ok(())
@@ -230,8 +235,8 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
 /// 读一条操作（因果判定、前缀闭包、重签发用）。
 pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Option<Op>, String> {
     conn.prepare_cached(
-        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged FROM sync2_ops o JOIN sync2_deps d ON d.id = o.deps \
-         WHERE o.profile_uid = ?1 AND o.device = ?2 AND o.seq = ?3",
+        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged, o.sc, o.sc_at FROM sync2_ops o \
+         JOIN sync2_deps d ON d.id = o.deps WHERE o.profile_uid = srs_id(?1) AND o.device = ?2 AND o.seq = ?3",
     )
     .map_err(sql)?
     .query_row(params![profile, id.device.0.to_vec(), id.seq as i64], |r| {
@@ -243,12 +248,15 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
             r.get::<_, i64>(4)?,
             r.get::<_, Vec<u8>>(5)?,
             r.get::<_, i64>(6)? != 0,
+            r.get::<_, Option<String>>(7)?,
+            r.get::<_, Option<i64>>(8)?,
         ))
     })
     .optional()
     .map_err(sql)?
-    .map(|(w, l, vv, k, s, p, purged)| {
+    .map(|(w, l, vv, k, s, p, purged, sc, sc_at)| {
         let deps = Vv::read(&mut crate::sync2::codec::Reader::new(&vv)).map_err(|e| e.to_string())?;
+        let p = snapshots::unpack_payload(conn, p, sc, sc_at)?;
         Ok(Op {
             id: *id,
             hlc: Hlc { wall: w, logical: l as u32, device: id.device },
@@ -269,7 +277,7 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
     let mut out = Dvv::default();
     for (d, &s) in &vv.0 {
         let row: Option<(i64, String)> = conn
-            .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = ?1 AND device = ?2")
+            .prepare_cached("SELECT upto, ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
             .map_err(sql)?
             .query_row(params![profile, d.0.to_vec()], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()
@@ -279,9 +287,10 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
             out.merge(&Dvv::parse(&ctx));
             continue;
         }
-        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。
+        // 只覆盖了这台设备迁移操作的一部分（少见）：逐条并到 s 为止。修改操作的载荷从不按引用存（snapshots.rs 只剪日志），
+        // 直读即原文。
         let mut stmt = conn
-            .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = ?1 AND device = ?2 AND seq <= ?3 AND kind = ?4")
+            .prepare_cached("SELECT payload FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq <= ?3 AND kind = ?4")
             .map_err(sql)?;
         let mut q = stmt.query(params![profile, d.0.to_vec(), s as i64, i64::from(op::KIND_EDIT)]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
@@ -297,7 +306,7 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
 
 fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &LegacyStamp) -> Result<(), String> {
     let cur: Option<String> = conn
-        .prepare_cached("SELECT ctx FROM sync2_legacy WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT ctx FROM sync2_legacy WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec()], |r| r.get(0))
         .optional()
@@ -305,7 +314,7 @@ fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &Lega
     let mut d = cur.map(|c| Dvv::parse(&c)).unwrap_or_default();
     d.merge(&Dvv::parse(&l.ctx_json));
     d.add(&l.writer, l.seq);
-    conn.prepare_cached("INSERT OR REPLACE INTO sync2_legacy (profile_uid, device, upto, ctx) VALUES (?1, ?2, ?3, ?4)")
+    conn.prepare_cached("INSERT OR REPLACE INTO sync2_legacy (profile_uid, device, upto, ctx) VALUES (srs_id(?1), ?2, ?3, ?4)")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64, d.to_json().to_string()])
         .map_err(sql)?;
@@ -519,7 +528,7 @@ pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) 
 fn upsert_server_time(conn: &Connection, profile: &str, id: &str, s: Option<i64>, now: i64) -> Result<(), String> {
     let Some(s) = s else { return Ok(()) };
     conn.prepare_cached(
-        "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES (?1, ?2, NULL, ?3, ?4) \
+        "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES (srs_id(?1), srs_id(?2), NULL, ?3, ?4) \
          ON CONFLICT(event_id) DO UPDATE SET server_time = MIN(COALESCE(server_time, excluded.server_time), excluded.server_time)",
     )
     .map_err(sql)?
@@ -571,7 +580,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         }
         Body::Checkpoint { name, reason } => {
             conn.prepare_cached(
-                "INSERT OR IGNORE INTO sync2_checkpoints (profile_uid, device, seq, wall, name, reason) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR IGNORE INTO sync2_checkpoints (profile_uid, device, seq, wall, name, reason) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
             )
             .map_err(sql)?
             .execute(params![profile, op.id.device.0.to_vec(), op.id.seq as i64, op.hlc.wall, name, reason])
@@ -587,7 +596,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
             if project {
                 let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
                 let id = v["x"]["id"].as_str().map(str::to_owned).unwrap_or_else(|| json.clone());
-                conn.prepare_cached("INSERT OR IGNORE INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)")
+                conn.prepare_cached("INSERT OR IGNORE INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), srs_id(?2), ?3)")
                     .map_err(sql)?
                     .execute(params![id, profile, json])
                     .map_err(sql)?;
@@ -602,7 +611,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
 /// 媒体绑定投影 `sync2_media` 落到寄存器的当前值 [win]（与投影已有的相同就不写）。
 pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, win: &mvr::Write) -> Result<(), String> {
     let cur: Option<(i64, i64, Vec<u8>)> = conn
-        .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
+        .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = srs_id(?1) AND name = ?2")
         .map_err(sql)?
         .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
@@ -614,7 +623,7 @@ pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, w
         return Ok(());
     };
     conn.prepare_cached(
-        "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7)",
     )
     .map_err(sql)?
     .execute(params![profile, name, sha256.to_vec(), size as i64, win.wall, win.logical, win.id.device.0.to_vec()])
@@ -628,7 +637,7 @@ pub(crate) fn land_media_binding(conn: &Connection, profile: &str, name: &str, w
 pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>, ahead: &BTreeSet<Id>, now: i64) -> Result<(), String> {
     for d in ahead {
         conn.prepare_cached(
-            "UPDATE sync2_devices SET warning = 'clock_ahead' WHERE profile_uid = ?1 AND device = ?2 AND warning IS NULL",
+            "UPDATE sync2_devices SET warning = 'clock_ahead' WHERE profile_uid = srs_id(?1) AND device = ?2 AND warning IS NULL",
         )
         .map_err(sql)?
         .execute(params![profile, d.0.to_vec()])
@@ -636,7 +645,7 @@ pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>
     }
     let Some(remote) = seen else { return Ok(()) };
     let row: Option<(Vec<u8>, i64, i64)> = conn
-        .prepare_cached("SELECT device, hlc_wall, hlc_logical FROM sync2_self WHERE profile_uid = ?1")
+        .prepare_cached("SELECT device, hlc_wall, hlc_logical FROM sync2_self WHERE profile_uid = srs_id(?1)")
         .map_err(sql)?
         .query_row([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
@@ -648,7 +657,7 @@ pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>
     // 吸收（取最大）而不是 `observe` 的 +1：收段按任意边界切批时结果相同（下一次 tick 自然更大）。
     clock.absorb(remote, now);
     if (clock.last.wall, i64::from(clock.last.logical)) != (w, l) {
-        conn.prepare_cached("UPDATE sync2_self SET hlc_wall = ?2, hlc_logical = ?3 WHERE profile_uid = ?1")
+        conn.prepare_cached("UPDATE sync2_self SET hlc_wall = ?2, hlc_logical = ?3 WHERE profile_uid = srs_id(?1)")
             .map_err(sql)?
             .execute(params![profile, clock.last.wall, i64::from(clock.last.logical)])
             .map_err(sql)?;
@@ -657,7 +666,7 @@ pub(crate) fn observe_remote(conn: &Connection, profile: &str, seen: Option<Hlc>
 }
 
 fn self_device(conn: &Connection, profile: &str) -> Result<Id, String> {
-    conn.prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = ?1")
+    conn.prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = srs_id(?1)")
         .map_err(sql)?
         .query_row([profile], |r| r.get::<_, Vec<u8>>(0))
         .map_err(sql)
@@ -668,7 +677,7 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
     let d: Value = serde_json::from_str(data).unwrap_or(Value::Null);
     let rec = json!({"id": idt, "p": profile, "k": kind.wire(), "d": d});
     let existing: Option<(String, String)> = conn
-        .prepare_cached("SELECT payload_json, kind FROM srs_entities WHERE id = ?1")
+        .prepare_cached("SELECT payload_json, kind FROM srs_entities WHERE id = srs_id(?1)")
         .map_err(sql)?
         .query_row([idt], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()
@@ -687,7 +696,7 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
     };
     if write {
         conn.prepare_cached(
-            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5) \
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, ?5) \
              ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, kind = excluded.kind, \
              payload_json = excluded.payload_json, created_at = excluded.created_at",
         )
@@ -704,7 +713,7 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
         note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
     }
     let (eid, _) = edit_row(conn, profile, op, e)?;
-    conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (?1, ?2, ?3, ?4)")
+    conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (srs_id(?1), srs_id(?2), ?3, ?4)")
         .map_err(sql)?
         .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
         .map_err(sql)?;
@@ -755,31 +764,37 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
 pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, server: Option<i64>, now: i64, t: &mut Touched) -> Result<(), String> {
     let (eid, row) = edit_row(conn, profile, op, e)?;
     let ent = e.entity.text();
-    let existing: Vec<(String, String, Option<i64>)> = conn
+    // 现存记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`：每收一条修改记录都读一遍。
+    let existing: Vec<(String, String, Option<i64>, Option<crate::registers::EditCols>)> = conn
         .prepare_cached(
-            "SELECT f.id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
-             WHERE f.entity_kind = ?1 AND f.entity_id = ?2",
+            "SELECT srs_idt(f.id) AS id, l.server_time, f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq \
+             FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
+             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)",
         )
         .map_err(sql)?
-        .query_map(params![e.kind.wire(), ent], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_map(params![e.kind.wire(), ent], |r| {
+            let (j, cols) = crate::store::slim::edit_row(r, 2)?;
+            Ok((r.get(0)?, j, r.get(1)?, cols))
+        })
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     let row_text = canonical(&row);
-    let mut items: Vec<(&str, Option<i64>)> = existing.iter().map(|(_, j, s)| (j.as_str(), *s)).collect();
-    items.push((&row_text, server));
+    let mut items: Vec<crate::registers::StoredEdit<'_>> = existing.iter().map(|(_, j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
+    items.push((&row_text, server, None));
     let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
     if landed.first().copied() != Some(true) {
         return Ok(());
     }
     for &d in &deleted[0] {
         let id = &existing[d].0;
-        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([id]).map_err(sql)?;
+        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = srs_id(?1)").map_err(sql)?.execute([id]).map_err(sql)?;
         t.dominated.push(id.clone());
     }
     conn.prepare_cached(
-        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        // `jslim`：去掉与列重复的键（store/slim.rs）；拼回用的参数与写进列的值逐个相同。
+        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+         VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, srs_edit_pack(?8, ?1, ?2, ?3, ?4, ?5, ?6, ?7))",
     )
     .map_err(sql)?
     .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
@@ -805,7 +820,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
     let card = l.card.text();
     conn.prepare_cached(
         "INSERT OR IGNORE INTO sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES (srs_id(?1), srs_id(?2), srs_id(?3), srs_id(?4), ?5, ?6, ?7, ?8)",
     )
     .map_err(sql)?
     .execute(params![lid, profile, card, l.note.as_ref().map(Key::text), intent, arg, op.id.device.0.to_vec(), op.id.seq as i64])
@@ -818,15 +833,15 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         return Ok(());
     }
     let exists: bool = conn
-        .prepare_cached("SELECT 1 FROM srs_review_logs WHERE id = ?1")
+        .prepare_cached("SELECT 1 FROM srs_review_logs WHERE id = srs_id(?1)")
         .map_err(sql)?
         .exists([&lid])
         .map_err(sql)?;
     if !exists {
         let row = log_row(profile, op, l);
         conn.prepare_cached(
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
+             VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, srs_log_pack(?10, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9))",
         )
         .map_err(sql)?
         .execute(params![lid, profile, card, l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, canonical(&row)])
@@ -919,9 +934,9 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
     for c in &lineage {
         let mut stmt = conn
             .prepare_cached(
-                "SELECT l.id, l.json, e.server_time, m.intent, m.arg, m.note_id FROM srs_review_logs l \
+                "SELECT srs_idt(l.id) AS id, l.json, e.server_time, m.intent, m.arg, srs_idt(m.note_id) AS note_id FROM srs_review_logs l \
                  LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN sync2_log_meta m ON m.log_id = l.id \
-                 WHERE l.card_id = ?1",
+                 WHERE l.card_id = srs_id(?1)",
             )
             .map_err(sql)?;
         let mut q = stmt.query([c]).map_err(sql)?;
@@ -967,7 +982,8 @@ pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Resul
         let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
-                conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1")
+                conn.prepare_cached("UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms) \
+                 WHERE id = srs_id(?1)")
                     .map_err(sql)?
                     .execute(params![rows[k].0, json])
                     .map_err(sql)?;
@@ -1035,7 +1051,7 @@ pub(crate) fn body_of_event(ev: &Value, note: Option<&str>, stamped: bool, serve
 
 /// 迁移队列：要包成操作的旧行（phase 0 身份记录 / 1 修改记录 / 2 日志 / 3 不认识的事件），`pos` 是确定的包装顺序。
 const MIGRATE_QUEUE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (\
-     profile_uid TEXT NOT NULL, pos INTEGER NOT NULL, phase INTEGER NOT NULL, src TEXT NOT NULL, \
+     profile_uid UUIDTEXT NOT NULL, pos INTEGER NOT NULL, phase INTEGER NOT NULL, src TEXT NOT NULL, \
      PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;";
 
 /// `srs_meta` 里「这个 profile 的迁移已开始、队列已排好」的标记键前缀（值 = 开始时刻）。
@@ -1045,10 +1061,11 @@ const MIGRATING_KEY: &str = "sync2_migrating/";
 /// 写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
 fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
     let phases: [(i64, &str, &str); 4] = [
-        (0, "srs_entities", "created_at, id"),
-        (1, "srs_field_edits", "writer_id, seq"),
-        (2, "srs_review_logs", "occurred_at, id"),
-        (3, "srs_unknown_events", "id"),
+        // 按 ID 文本排（store/ids.rs：非 UUID 的文本与 BLOB 混排时 SQLite 的顺序不同），包装顺序与旧版本逐条相同。
+        (0, "srs_entities", "created_at, srs_idt(id)"),
+        (1, "srs_field_edits", "srs_idt(writer_id), seq"),
+        (2, "srs_review_logs", "occurred_at, srs_idt(id)"),
+        (3, "srs_unknown_events", "srs_idt(id)"),
     ];
     let mut base: i64 = 0;
     for (phase, table, order) in phases {
@@ -1056,7 +1073,7 @@ fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
             .execute(
                 &format!(
                     "INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) \
-                     SELECT ?1, ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, id FROM {table} WHERE profile_uid = ?1"
+                     SELECT srs_id(?1), ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, srs_idt(id) FROM {table} WHERE profile_uid = srs_id(?1)"
                 ),
                 params![profile, base, phase],
             )
@@ -1071,7 +1088,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
     Ok(match phase {
         0 => {
             let row: Option<(String, String)> = c
-                .prepare_cached("SELECT kind, payload_json FROM srs_entities WHERE id = ?1")
+                .prepare_cached("SELECT kind, payload_json FROM srs_entities WHERE id = srs_id(?1)")
                 .map_err(sql)?
                 .query_row([src], |r| Ok((r.get(0)?, r.get(1)?)))
                 .optional()
@@ -1086,7 +1103,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
             let row: Option<(String, Option<i64>)> = c
                 .prepare_cached(
                     "SELECT f.json, e.server_time FROM srs_field_edits f LEFT JOIN srs_event_local e ON e.event_id = f.id \
-                     WHERE f.id = ?1",
+                     WHERE f.id = srs_id(?1)",
                 )
                 .map_err(sql)?
                 .query_row([src], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -1116,9 +1133,9 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
             // 笔记 ID 取缓存行（迁移时卡都已物化过）。
             let row: Option<(String, Option<i64>, Option<String>)> = c
                 .prepare_cached(
-                    "SELECT l.json, e.server_time, cc.note_id FROM srs_review_logs l \
+                    "SELECT l.json, e.server_time, srs_idt(cc.note_id) AS note_id FROM srs_review_logs l \
                      LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN srs_cards_cache cc ON cc.id = l.card_id \
-                     WHERE l.id = ?1",
+                     WHERE l.id = srs_id(?1)",
                 )
                 .map_err(sql)?
                 .query_row([src], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
@@ -1131,7 +1148,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
             Some(Body::Log(log_body_of(&x, note.as_deref(), hlc, st)?))
         }
         _ => c
-            .prepare_cached("SELECT json FROM srs_unknown_events WHERE id = ?1")
+            .prepare_cached("SELECT json FROM srs_unknown_events WHERE id = srs_id(?1)")
             .map_err(sql)?
             .query_row([src], |r| r.get::<_, String>(0))
             .optional()
@@ -1144,7 +1161,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
 fn finish_migration(c: &Connection, local: &mut Local, profile: &str, now: i64, ops: u64) -> Result<Value, String> {
     local.migrated = true;
     local.save(c)?;
-    c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
+    c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = srs_id(?1)", params![profile, now]).map_err(sql)?;
     Ok(json!({"done": true, "ops": ops, "remaining": 0}))
 }
 
@@ -1369,7 +1386,7 @@ impl SrsCore {
                 // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
                 // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
                 let has_ops: bool = c
-                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = ?1 AND device != ?2 LIMIT 1")
+                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device != ?2 LIMIT 1")
                     .map_err(sql)?
                     .exists(params![profile, local.device.0.to_vec()])
                     .map_err(sql)?;
@@ -1383,7 +1400,7 @@ impl SrsCore {
             let mut t = Touched::default();
             let mut n = 0u64;
             let batch: Vec<(i64, i64, String)> = c
-                .prepare_cached("SELECT pos, phase, src FROM sync2_migrate_queue WHERE profile_uid = ?1 ORDER BY pos LIMIT ?2")
+                .prepare_cached("SELECT pos, phase, src FROM sync2_migrate_queue WHERE profile_uid = srs_id(?1) ORDER BY pos LIMIT ?2")
                 .map_err(sql)?
                 .query_map(params![profile, limit.map_or(-1, |l| l.max(1) as i64)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .map_err(sql)?
@@ -1398,13 +1415,13 @@ impl SrsCore {
                 n += 1;
             }
             if let Some((last, _, _)) = batch.last() {
-                c.prepare_cached("DELETE FROM sync2_migrate_queue WHERE profile_uid = ?1 AND pos <= ?2")
+                c.prepare_cached("DELETE FROM sync2_migrate_queue WHERE profile_uid = srs_id(?1) AND pos <= ?2")
                     .map_err(sql)?
                     .execute(params![profile, last])
                     .map_err(sql)?;
             }
             let remaining: i64 = c
-                .prepare_cached("SELECT COUNT(*) FROM sync2_migrate_queue WHERE profile_uid = ?1")
+                .prepare_cached("SELECT COUNT(*) FROM sync2_migrate_queue WHERE profile_uid = srs_id(?1)")
                 .map_err(sql)?
                 .query_row([profile], |r| r.get(0))
                 .map_err(sql)?;
@@ -1448,8 +1465,8 @@ impl SrsCore {
         let r = self.reader()?;
         let mut stmt = r
             .prepare(
-                "SELECT id, kind, entity_kind, entity, device, other_count, at FROM sync2_conflicts \
-                 WHERE profile_uid = ?1 ORDER BY at, id",
+                "SELECT srs_idt(id) AS id, kind, entity_kind, srs_idt(entity) AS entity, device, other_count, at FROM sync2_conflicts \
+                 WHERE profile_uid = srs_id(?1) ORDER BY at, id",
             )
             .map_err(sql)?;
         let rows = stmt
@@ -1476,7 +1493,7 @@ impl SrsCore {
         let (kind, entity): (String, String) = {
             let r = self.reader()?;
             r.query_row(
-                "SELECT entity_kind, entity FROM sync2_conflicts WHERE profile_uid = ?1 AND id = ?2",
+                "SELECT entity_kind, srs_idt(entity) AS entity FROM sync2_conflicts WHERE profile_uid = srs_id(?1) AND id = srs_id(?2)",
                 params![profile, conflict],
                 |x| Ok((x.get(0)?, x.get(1)?)),
             )
@@ -1530,7 +1547,7 @@ impl SrsCore {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let cards: BTreeSet<String> = c
-                .prepare("SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ?1")
+                .prepare("SELECT DISTINCT srs_idt(card_id) AS card_id FROM srs_review_logs WHERE profile_uid = srs_id(?1)")
                 .map_err(sql)?
                 .query_map([profile], |r| r.get(0))
                 .map_err(sql)?
@@ -1560,6 +1577,8 @@ mod tests_break;
 mod tests_digest;
 #[cfg(test)]
 mod tests_replay_pending;
+#[cfg(test)]
+mod tests_footprint;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
@@ -1575,7 +1594,7 @@ impl SrsCore {
             let looked_up: Option<String> = match note {
                 Some(_) => None,
                 None => c
-                    .prepare_cached("SELECT note_id FROM srs_cards_cache WHERE id = ?1")
+                    .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)")
                     .map_err(sql)?
                     .query_row([card], |r| r.get(0))
                     .optional()

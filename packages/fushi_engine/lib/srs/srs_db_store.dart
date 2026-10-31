@@ -820,7 +820,7 @@ class SrsDbStore implements SrsSync2Host {
                 "AND field_key LIKE 'f/%' AND instr(json, '<style>') > 0 "
                 'ORDER BY rowid LIMIT ?',
                 variables: <Variable<Object>>[
-                  Variable<String>(profileUid),
+                  Variable<String>(profileUid, srsIdType),
                   Variable<String>(SrsEntityKind.note.wire),
                   Variable<int>(_styleCursor),
                   Variable<int>(batchSize),
@@ -840,10 +840,16 @@ class SrsDbStore implements SrsSync2Host {
                 ? pending
                 : await pending;
             if (!identical(c, e)) {
-              await (db.update(
-                db.srsFieldEdits,
-              )..where((t) => t.id.equals(r.read<String>('id')))).write(
-                SrsFieldEditsCompanion(json: Value<String>(c.canonical())),
+              // `json` 是生成列（srs.db v18，native store/slim.rs）：写去掉与列重复的键的 `jslim`。
+              await db.customUpdate(
+                'UPDATE srs_field_edits SET jslim = srs_edit_pack(?, id, '
+                'profile_uid, entity_kind, entity_id, field_key, writer_id, seq) '
+                'WHERE rowid = ?',
+                variables: <Variable<Object>>[
+                  Variable<String>(c.canonical()),
+                  Variable<int>(r.read<int>('rid')),
+                ],
+                updates: <TableInfo<Table, Object?>>{db.srsFieldEdits},
               );
               touched.add(e.entityId);
               n++;
@@ -1934,7 +1940,8 @@ class SrsDbStore implements SrsSync2Host {
                 'WHERE f.entity_kind = ? AND f.entity_id IN (${_marks(chunk)})',
                 variables: <Variable<Object>>[
                   Variable<String>(kind.wire),
-                  for (final String id in chunk) Variable<String>(id),
+                  for (final String id in chunk)
+                    Variable<String>(id, srsIdType),
                 ],
                 readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                   db.srsFieldEdits,
@@ -1974,7 +1981,8 @@ class SrsDbStore implements SrsSync2Host {
                 'LEFT JOIN srs_event_local e ON e.event_id = l.id '
                 'WHERE l.card_id IN (${_marks(chunk)})',
                 variables: <Variable<Object>>[
-                  for (final String id in chunk) Variable<String>(id),
+                  for (final String id in chunk)
+                    Variable<String>(id, srsIdType),
                 ],
                 readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                   db.srsReviewLogs,
@@ -2043,7 +2051,7 @@ class SrsDbStore implements SrsSync2Host {
               'SELECT DISTINCT entity_id FROM srs_field_edits '
               'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ?',
               variables: <Variable<Object>>[
-                Variable<String>(profileUid),
+                Variable<String>(profileUid, srsIdType),
                 Variable<String>(SrsEntityKind.card.wire),
                 Variable<String>(SrsFieldKeys.cardNewPosition),
               ],
@@ -3719,11 +3727,11 @@ class SrsDbStore implements SrsSync2Host {
           "AND queue = 'review' AND deck_id IN (${marks(decks.length)})"
           '${ids == null ? '' : ' AND id IN (${marks(ids.length)})'}',
           variables: <Variable<Object>>[
-            Variable<String>(profileUid),
+            Variable<String>(profileUid, srsIdType),
             Variable<int>(today),
-            for (final String d in decks) Variable<String>(d),
+            for (final String d in decks) Variable<String>(d, srsIdType),
             for (final String id in ids ?? const <String>[])
-              Variable<String>(id),
+              Variable<String>(id, srsIdType),
           ],
         )
         .get();
@@ -3900,7 +3908,7 @@ class SrsDbStore implements SrsSync2Host {
             'AND n.term_key IN (SELECT value FROM json_each(?)) '
             'AND n.deleted_at IS NULL AND c.hidden = 0',
             variables: <Variable<Object>>[
-              Variable<String>(profileUid),
+              Variable<String>(profileUid, srsIdType),
               Variable<String>(jsonEncode(chunk)),
             ],
             readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
@@ -4008,7 +4016,9 @@ class SrsDbStore implements SrsSync2Host {
               .customSelect(
                 'SELECT COUNT(*) AS c FROM srs_notes_cache '
                 'WHERE profile_uid = ? AND pending_decision = 1',
-                variables: <Variable<Object>>[Variable<String>(profileUid)],
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                ],
                 readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                   db.srsNotesCache,
                 },
@@ -4044,8 +4054,8 @@ class SrsDbStore implements SrsSync2Host {
           'LEFT JOIN srs_event_local s ON s.event_id = e.id '
           'WHERE e.profile_uid = ?',
           variables: <Variable<Object>>[
-            Variable<String>(profileUid),
-            Variable<String>(profileUid),
+            Variable<String>(profileUid, srsIdType),
+            Variable<String>(profileUid, srsIdType),
           ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             db.srsFieldEdits,
@@ -4136,6 +4146,7 @@ class SrsDbStore implements SrsSync2Host {
                     for (final Object? a in args)
                       switch (a) {
                         final int v => Variable<int>(v),
+                        final SrsId v => Variable<String>(v.value, srsIdType),
                         final String v => Variable<String>(v),
                         _ => throw ArgumentError.value(a, 'args'),
                       },
@@ -4359,7 +4370,7 @@ class SrsDbStore implements SrsSync2Host {
             '${extraWhere == null ? '' : ' AND $extraWhere'} '
             'ORDER BY rowid LIMIT ?',
             variables: <Variable<Object>>[
-              Variable<String>(profileUid),
+              Variable<String>(profileUid, srsIdType),
               Variable<int>(after),
               Variable<int>(pageSize),
             ],
@@ -4432,7 +4443,9 @@ class SrsDbStore implements SrsSync2Host {
                 "WHERE profile_uid = ? AND entity_kind = '$noteKind' "
                 "AND substr(field_key, 1, 2) = 'f/' "
                 'GROUP BY entity_id, field_key HAVING COUNT(*) > 1',
-                variables: <Variable<Object>>[Variable<String>(profileUid)],
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                ],
               )
               .get()) {
         contested.add(
