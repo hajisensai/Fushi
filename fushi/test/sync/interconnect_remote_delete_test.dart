@@ -11,6 +11,7 @@
 ///    host 上的文件。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -93,6 +94,7 @@ void main() {
   /// 已配对 client 的互联后端（探针真打本地 server）。
   Future<InterconnectSyncBackend> pairedClient({
     String useToken = token,
+    FushiProbe probe = _realProbe,
   }) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
@@ -102,7 +104,7 @@ void main() {
     ]);
     await repo.setFushiClientToken(useToken);
     final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
-      _realProbe,
+      probe,
     );
     expect(await backend.restoreAuth(repo), isTrue);
     return backend;
@@ -167,6 +169,42 @@ void main() {
         RemoteSourceReachability.unreachable,
         reason: '菜单打开时必须重新探测：对端已离线却放行删除，用户确认后才收到失败',
       );
+    });
+
+    test('会话已解析：只原地复核已选地址，探测期间不置脏会话（并发请求不重跑选路）', () async {
+      int probeCalls = 0;
+      Completer<void>? gate;
+      Future<bool> countingProbe(String url, String tok) async {
+        probeCalls++;
+        final Completer<void>? hold = gate;
+        gate = null;
+        if (hold != null) await hold.future;
+        return _realProbe(url, tok);
+      }
+
+      final InterconnectSyncBackend client = await pairedClient(
+        probe: countingProbe,
+      );
+      await client.ensureResolved();
+      expect(probeCalls, 1);
+      final String? resolvedBase = client.activeBaseUrl;
+
+      // 菜单打开：复核卡在探针里的这段时间，别的操作照常发请求。
+      final Completer<void> hold = Completer<void>();
+      gate = hold;
+      final Future<RemoteSourceReachability> probing = client
+          .probeHostReachability();
+      await Future<void>.delayed(Duration.zero);
+      expect(probeCalls, 2, reason: '复核已选地址：发出一次探测');
+
+      // 探测窗口里的并发请求不能被逼着重跑选路（旧实现先置脏会话，这里会再探一次）。
+      await client.ensureResolved();
+      expect(probeCalls, 2, reason: '会话没被置脏，并发请求直接沿用已解析地址');
+
+      hold.complete();
+      expect(await probing, RemoteSourceReachability.reachable);
+      expect(probeCalls, 2);
+      expect(client.activeBaseUrl, resolvedBase, reason: '地址没变，连接句柄原样保留');
     });
   });
 
