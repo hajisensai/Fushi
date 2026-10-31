@@ -7,7 +7,8 @@ set -euo pipefail
 #
 # Use this when you are NOT going through `melos bootstrap` (which runs the same
 # follow-up steps via its post hook). CI invokes `flutter pub get` +
-# `ci/apply-patches.sh` directly and does not need this wrapper.
+# `ci/apply-patches.sh` + the .github/actions/gen-i18n action directly and
+# does not need this wrapper.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -18,6 +19,12 @@ echo "==> flutter pub get (fushi/)"
 
 echo "==> Applying pub-cache patches"
 bash ci/apply-patches.sh
+
+# fushi/lib/i18n/strings.g.dart is not tracked: generate it from the i18n json
+# (stamped, a no-op when nothing changed).
+echo "==> Generating i18n (fushi/tool/gen_i18n.dart)"
+# The SDK pub get just used (flutter on PATH), not some other dart on PATH.
+"$(dirname "$(command -v flutter)")/dart" fushi/tool/gen_i18n.dart
 
 # Rust 原生库 native/fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv / fushi_music / fushi_corpus 是 app 与 flutter test 的硬依赖：
 # CMake / Xcode / Gradle 缺库直接构建失败，测试成片报库不可用。按主机平台各编一次；没有 cargo 就失败。
