@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart' show SchedulerBinding, Ticker;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/widgets.dart';
 import '_static_channel.dart';
+import 'texture_capacity.dart';
 import 'trackpad_gesture_router.dart';
 
 const Map<String, SystemMouseCursor> _cursors = {
@@ -244,6 +245,13 @@ class CustomPlatformViewController
   // 的无谓重复下发，避免 native 端每帧重建 WGC 帧池。判定逻辑见 SetSizeDedup。
   final SetSizeDedup _setSizeDedup = SetSizeDedup();
 
+  /// BUG-3895：native 共享目标纹理 / WGC 帧池的容量（物理像素）与算它时的栅格倍率。
+  /// 只增不减（[nextTextureCapacity]），布局在容量内变化时 native 不换纹理、不重建帧池；
+  /// widget 按它把 [Texture] 摆成「容量 / 倍率」逻辑尺寸并裁到自身大小，纹理与屏幕像素
+  /// 1:1、只露出左上角的可见内容。null = 还没下发过尺寸（native 也还没有纹理）。
+  final ValueNotifier<TextureLayout?> _textureLayout =
+      ValueNotifier<TextureLayout?>(null);
+
   /// A stream reflecting the current cursor style.
   Stream<SystemMouseCursor> get _cursor => _cursorStreamController.stream;
 
@@ -316,6 +324,7 @@ class CustomPlatformViewController
     // 失败时 _textureId 保持默认 0：native manager 对未知 id 是纯 no-op
     // （map_contains(webViews, 0) 为 false），不会 double-free。
     await _pluginChannel.invokeMethod('dispose', {"id": _textureId});
+    _textureLayout.dispose();
     super.dispose();
   }
 
@@ -379,7 +388,8 @@ class CustomPlatformViewController
   }
 
   /// Sets the surface size to the provided [size].
-  Future<void> _setSize(Size size, double scaleFactor) async {
+  Future<void> _setSize(
+      Size size, double scaleFactor, TextureCapacity display) async {
     if (_isDisposed) {
       return;
     }
@@ -390,8 +400,29 @@ class CustomPlatformViewController
     if (!_setSizeDedup.shouldDispatch(size.width, size.height, scaleFactor)) {
       return;
     }
-    return _methodChannel
-        .invokeMethod('setSize', [size.width, size.height, scaleFactor]);
+    final TextureLayout? previous = _textureLayout.value;
+    final TextureCapacity capacity = nextTextureCapacity(
+      current: previous?.capacity ?? (width: 0, height: 0),
+      needed: textureCapacityNeeded(size.width, size.height, scaleFactor),
+      display: display,
+    );
+    // 先把容量发给 native（消息先于下一帧排进平台线程），再让 widget 按新容量摆
+    // Texture。native 另按引擎每帧请求的盒子尺寸挑「这一帧布局对应的那份容量」，
+    // 两边换档差一帧也不会画错比例（texture_bridge_gpu.cc SelectSurfaceSize）。
+    final Future<void> sent = _methodChannel.invokeMethod('setSize', [
+      size.width,
+      size.height,
+      scaleFactor,
+      capacity.width.toDouble(),
+      capacity.height.toDouble(),
+    ]);
+    if (previous == null ||
+        previous.capacity != capacity ||
+        previous.scaleFactor != scaleFactor) {
+      _textureLayout.value =
+          TextureLayout(capacity: capacity, scaleFactor: scaleFactor);
+    }
+    return sent;
   }
 
   /// Sets the surface size to the provided [size].
@@ -537,6 +568,8 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
 
   @override
   Widget build(BuildContext context) {
+    final Size display = View.of(context).display.size;
+    _display = (width: display.width.round(), height: display.height.round());
     return Focus(
       autofocus: true,
       focusNode: _focusNode,
@@ -709,13 +742,39 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
                     },
                     child: MouseRegion(
                         cursor: _cursor,
-                        child: Texture(
-                          textureId: _controller._textureId,
-                          filterQuality: widget.filterQuality,
+                        child: ValueListenableBuilder<TextureLayout?>(
+                          valueListenable: _controller._textureLayout,
+                          builder: _buildTextureLayout,
+                          child: Texture(
+                            textureId: _controller._textureId,
+                            filterQuality: widget.filterQuality,
+                          ),
                         )),
                   )
                 : const SizedBox()));
   }
+
+  /// BUG-3895：native 纹理按容量分配（≥ 可见内容），内容在左上角。引擎把整张纹理画满
+  /// [Texture] 的盒子，所以盒子必须正好是「容量 / 倍率」，再裁回 widget 自身大小——
+  /// 纹理像素与屏幕像素 1:1，容量里多出来的部分被裁掉，不拉伸、不错位。
+  Widget _buildTextureLayout(
+      BuildContext context, TextureLayout? layout, Widget? texture) {
+    if (layout == null) return texture!;
+    return ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.topLeft,
+        minWidth: layout.logicalWidth,
+        maxWidth: layout.logicalWidth,
+        minHeight: layout.logicalHeight,
+        maxHeight: layout.logicalHeight,
+        child: texture,
+      ),
+    );
+  }
+
+  /// 当前窗口所在显示器的物理像素尺寸，喂 [nextTextureCapacity] 的增长上限。每次
+  /// build 刷新（View 依赖变化 = 换显示器 / 改 DPI 都会触发 rebuild）。
+  TextureCapacity _display = (width: 0, height: 0);
 
   void _reportSurfaceSize() async {
     // 先等 native WebView2 跨帧创建完成；await 之后旧的 box/context 可能已随
@@ -728,7 +787,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     if (context == null || box == null || !box.attached) return;
     final double rasterScale = _surfaceScaleOf(context, box);
     _lastSeenSurfaceScale = rasterScale;
-    unawaited(_controller._setSize(box.size, rasterScale));
+    unawaited(_controller._setSize(box.size, rasterScale, _display));
   }
 
   /// 纹理 / 栅格倍率（见 [surfaceRasterScale]）；显式 [CustomPlatformView.scaleFactor]
@@ -753,7 +812,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     final bool settled = rasterScale == _lastSeenSurfaceScale;
     _lastSeenSurfaceScale = rasterScale;
     if (settled) {
-      unawaited(_controller._setSize(box.size, rasterScale));
+      unawaited(_controller._setSize(box.size, rasterScale, _display));
     } else {
       // 动画的最后一帧之后不一定还有帧：补一帧确认稳定值，否则会停在中途的倍率上。
       SchedulerBinding.instance.scheduleFrame();
