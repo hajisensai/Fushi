@@ -18,12 +18,17 @@ import 'dart:io';
 class DistSnapshot {
   const DistSnapshot({
     required this.commit,
+    required this.base,
     required this.tree,
     required this.isHead,
     required this.protectedPaths,
   });
 
   final String commit;
+
+  /// HEAD: [commit] itself, or its parent.
+  final String base;
+
   final String tree;
 
   /// True when the working tree had no change: [commit] is HEAD itself.
@@ -112,6 +117,7 @@ Future<DistSnapshot> createDistSnapshot(
   if (tree == headTree) {
     return DistSnapshot(
       commit: head,
+      base: head,
       tree: tree,
       isHead: true,
       protectedPaths: protectedPaths,
@@ -131,6 +137,7 @@ Future<DistSnapshot> createDistSnapshot(
   );
   return DistSnapshot(
     commit: commit,
+    base: head,
     tree: tree,
     isHead: false,
     protectedPaths: protectedPaths,

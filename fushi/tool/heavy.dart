@@ -1,7 +1,8 @@
 // Runs one heavy command under the machine-wide lease (test_flow/heavy_lease.dart):
 //
 //   dart run tool/heavy.dart [--wait-max-min=0] [--max-minutes=120]
-//                            [--cap-mb=N] -- <command...>
+//                            [--cap-mb=N] [--here] [--check-only]
+//                            -- <command...>
 //   dart run tool/heavy.dart --status
 //
 //   e.g. dart run tool/heavy.dart -- flutter test test/foo_test.dart --no-pub
@@ -22,11 +23,31 @@
 // command's; 2 for a mismatched SDK; 75 when an
 // explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
 // run the command directly.
+//
+// Before queueing here, the work goes to the other machines of the dist_test
+// worker config (FUSHI_DIST_CONFIG, else fushi/tool/dist_test/
+// workers.local.json) through tool/dist_test.dart when it may
+// (test_flow/heavy_offload.dart): a `flutter test` (also `--coverage`, merged
+// back here) of the app from fushi/, a `flutter test` / `dart test` of a
+// package from packages/<name>/, a `flutter analyze` from fushi/, and with
+// --check-only a compile check (`flutter build apk|appbundle|windows|macos`
+// from fushi/, `gradlew :app:assemble*` from fushi/android/) whose output is
+// not wanted here. Its output and exit code are then dist_test's (`DIST TEST
+// VERDICT` / `DIST ANALYZE` / `DIST BUILD` last lines). When no other machine
+// takes it, or dist_test cannot get going (bad worker config, no snapshot:
+// exit 75 with a `DIST OFFLOAD: declined:` line), it runs here as before; a
+// compile check that was red elsewhere is built here once more, since that
+// machine's toolchain may be the cause. --max-minutes is dist_test's own
+// deadline there (remote run killed, worker released, 124), Ctrl-C likewise
+// (130). The Job Object below is joined first, so all of it is throttled.
+// `--here` or FUSHI_HEAVY_OFFLOAD=off keep it here.
 import 'dart:async';
 import 'dart:io';
 
+import 'test_flow/dist_plan.dart' show kDistOffloadDeclined;
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_lease.dart';
+import 'test_flow/heavy_offload.dart';
 import 'test_flow/heavy_sdk_check.dart';
 
 Future<void> main(List<String> args) async {
@@ -64,10 +85,27 @@ Future<void> main(List<String> args) async {
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
 
+  // Joined before anything starts: the offloaded run (dist_test and its own
+  // local fallback worker) and a run here after it declined both live in this
+  // Job (below-normal priority, memory ceiling, whatever is left killed when
+  // this process ends), as a run that never tried the other machines would.
   final HeavyJob? job = joinHeavyJob(
     need.capMb,
     log: (String l) => stderr.writeln(l),
   );
+
+  if (!own.contains('--here') && checkout != null) {
+    // Planned from the command as typed: the default --concurrency above is
+    // this machine's, while an explicit -j caps the other machines too.
+    final int? remote = await _offload(
+      sdk.command,
+      checkout: checkout,
+      checkOnly: own.contains('--check-only'),
+      maxMinutes: maxMinutes,
+    );
+    if (remote != null) exit(remote);
+  }
+
   final HeavyLease lease;
   try {
     lease = await acquireHeavyLease(
@@ -127,6 +165,131 @@ Future<void> main(List<String> args) async {
     );
   }
   exit(cut ? 124 : code);
+}
+
+/// Runs [command] on the other machines through tool/dist_test.dart when it
+/// may go there (test_flow/heavy_offload.dart); its exit code, or null when
+/// it is to run here (not offloadable, no worker config, or no other machine
+/// took it).
+Future<int?> _offload(
+  List<String> command, {
+  required String checkout,
+  required bool checkOnly,
+  required int maxMinutes,
+}) async {
+  final Map<String, String> env = Platform.environment;
+  if (heavyLeaseSkipReason(env) != null || heavyOffloadDisabled(env)) {
+    return null;
+  }
+  final String cwd = Directory.current.absolute.path.replaceAll(r'\', '/');
+  final String? where = heavyOffloadWhere(cwd, checkout);
+  final String appDir =
+      '${Directory(checkout).absolute.path.replaceAll(r'\', '/')}/fushi';
+  if (where == null || !File('$appDir/tool/dist_test.dart').existsSync()) {
+    return null;
+  }
+  final HeavyOffload? plan = planHeavyOffload(
+    command,
+    where: where,
+    cwd: cwd,
+    checkOnly: checkOnly,
+    exists: (String p) =>
+        FileSystemEntity.typeSync('$cwd/$p') != FileSystemEntityType.notFound,
+  );
+  if (plan == null) return null;
+  final String? config = heavyOffloadConfig(env, appDir);
+  if (config == null) {
+    final String? named = env['FUSHI_DIST_CONFIG'];
+    if (named != null && named.isNotEmpty) {
+      stderr.writeln(
+        'heavy: FUSHI_DIST_CONFIG=$named does not exist; running it here',
+      );
+    }
+    return null;
+  }
+  stderr.writeln(
+    'heavy: handing this ${plan.kind.name} to the other machines '
+    '(tool/dist_test.dart ${plan.distArgs.join(' ')}); --here or '
+    'FUSHI_HEAVY_OFFLOAD=off keeps it on this machine',
+  );
+  final Process p;
+  try {
+    p = await Process.start(
+      Platform.resolvedExecutable,
+      <String>[
+        'tool/dist_test.dart',
+        '--config=$config',
+        // dist_test keeps the deadline itself: it kills the remote run and
+        // releases the worker's checkout before exiting 124.
+        if (maxMinutes > 0) '--max-minutes=$maxMinutes',
+        ...plan.distArgs,
+      ],
+      workingDirectory: appDir,
+      mode: ProcessStartMode.inheritStdio,
+    );
+  } on ProcessException catch (e) {
+    stderr.writeln(
+      'heavy: cannot start dist_test (${e.message}); running here',
+    );
+    return null;
+  }
+  // Ctrl-C reaches dist_test too (same console / process group): it kills
+  // the remote run and releases the worker before it exits, and this process
+  // waits for that instead of dying first and leaving it half done.
+  bool interrupted = false;
+  final List<StreamSubscription<ProcessSignal>> signals =
+      <StreamSubscription<ProcessSignal>>[
+        ProcessSignal.sigint.watch().listen((_) {
+          interrupted = true;
+          if (!Platform.isWindows) p.kill(ProcessSignal.sigint);
+        }),
+        if (!Platform.isWindows)
+          ProcessSignal.sigterm.watch().listen((_) {
+            interrupted = true;
+            p.kill(ProcessSignal.sigint);
+          }),
+      ];
+  // Only a backstop for a dist_test that does not stop by itself at
+  // --max-minutes (its own deadline cleans up; this kill cannot).
+  bool cut = false;
+  final Timer? limit = maxMinutes <= 0
+      ? null
+      : Timer(Duration(minutes: maxMinutes) + kHeavyOffloadStopGrace, () {
+          cut = true;
+          stderr.writeln(
+            'heavy: offloaded run did not stop by itself '
+            '${kHeavyOffloadStopGrace.inMinutes} min after its '
+            '$maxMinutes min limit; killing it (the remote run may go on '
+            'until its own timeout)',
+          );
+          _killTree(p);
+        });
+  final int code = await p.exitCode;
+  limit?.cancel();
+  for (final StreamSubscription<ProcessSignal> s in signals) {
+    await s.cancel();
+  }
+  if (cut) return 124;
+  if (interrupted) return 130;
+  // Over its time limit there: as over it here, never run once more.
+  if (code == 124) return 124;
+  if (code == kDistOffloadDeclined) {
+    stderr.writeln(
+      'heavy: dist_test did not run it elsewhere (the DIST OFFLOAD line '
+      'above says why); running it here',
+    );
+    return null;
+  }
+  if (plan.kind == HeavyOffloadKind.build && code != 0) {
+    // Another machine's SDK / NDK / Visual Studio is not this one's: a red
+    // compile check there is only taken as red once it is red here.
+    stderr.writeln(
+      'heavy: the compile check was red on another machine (exit $code); '
+      'building here to tell the code from that machine\'s toolchain',
+    );
+    return null;
+  }
+  return code;
 }
 
 void _killTree(Process p) {
