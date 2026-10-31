@@ -116,3 +116,12 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release --locked
+      # `id_audit` 打开的是桥入口（exec / select / batch / read_session）上的审计分支，默认构建里那几行
+      # 不编译；在一格上带 feature 编一遍跑一遍，免得它烂掉没人知道。
+      - name: cargo test --release --features id_audit (fushi_fsrs)
+        if: matrix.name == 'linux-x86_64'
+        shell: bash
+        working-directory: native/fushi_fsrs
+        run: |
+          set -euo pipefail
+          cargo test --release --locked --features id_audit

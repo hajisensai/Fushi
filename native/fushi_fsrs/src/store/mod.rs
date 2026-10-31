@@ -17,7 +17,10 @@
 pub mod bulk;
 pub(crate) mod browse;
 pub(crate) mod caches;
+pub(crate) mod compact;
 pub mod ffi;
+pub(crate) mod ids;
+pub(crate) mod slim;
 pub mod rows;
 mod profile_data;
 mod projections;
@@ -32,7 +35,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-use rusqlite::types::Value;
+use rusqlite::types::{Value, ValueRef};
 use rusqlite::{Connection, OpenFlags};
 
 const LEGACY_KEY: &str = "legacy_import";
@@ -149,7 +152,10 @@ impl ReadSession {
     /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
     pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         let conn = Conn::of(self.conn.lock().map_err(|_| "srs read session poisoned".to_string())?)?;
-        query_rows(&conn, sql, params)
+        let out = query_rows(&conn, sql, params);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&conn, sql)?;
+        out
     }
 
     /// 回滚读事务并关闭连接（幂等）。会等别的线程上在途的查询跑完；之后的查询报「已关闭」。
@@ -190,6 +196,7 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
         .map(|n| Value::Text((*n).to_string()))
         .collect();
     let n = names.len();
+    let id_cols = ids::id_columns(&stmt);
     let mut out: Vec<Vec<Value>> = vec![names];
     let mut q = stmt
         .query(rusqlite::params_from_iter(params.iter()))
@@ -197,11 +204,26 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
     while let Some(row) = q.next().map_err(|e| e.to_string())? {
         let mut vals = Vec::with_capacity(n);
         for i in 0..n {
-            vals.push(row.get::<_, Value>(i).map_err(|e| e.to_string())?);
+            let v = row.get_ref(i).map_err(|e| e.to_string())?;
+            vals.push(match ids::outward(&id_cols, i, v) {
+                Some(t) => Value::Text(t),
+                None => v.into(),
+            });
         }
         out.push(vals);
     }
     Ok(rows::encode(n, &out))
+}
+
+/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）。
+#[cfg(test)]
+impl Drop for SrsCore {
+    fn drop(&mut self) {
+        if let Ok(w) = self.writer() {
+            ids::audit::check_stored(&w);
+        }
+        ids::audit::check();
+    }
 }
 
 fn configure(conn: &Connection) -> Result<(), String> {
@@ -209,6 +231,9 @@ fn configure(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     // 摘要桶触发器用的 SQL 函数（store/sync2/digest.rs，审查 S-7）：三张投影表的每次写入都经它们增减桶值。
     sync2::digest::register(conn).map_err(|e| e.to_string())?;
+    // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
+    ids::register(conn).map_err(|e| e.to_string())?;
+    slim::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
     // 上限 256 MB；WAL 模式下 SQLite 照常处理。
@@ -222,6 +247,12 @@ fn configure(conn: &Connection) -> Result<(), String> {
 impl SrsCore {
     /// 打开（不存在就建）。建表 / 升级在写连接上一个事务里做完才开读连接。
     pub fn open(path: &Path) -> Result<Self, String> {
+        Self::open_with_free_space(path, compact::free_bytes)
+    }
+
+    /// [open]，库所在卷的空闲空间由 [free] 给（测试注入）：升级前空间不够就不升级、报
+    /// [schema::UPGRADE_NO_SPACE]（库不动）。
+    pub(crate) fn open_with_free_space(path: &Path, free: impl Fn(&Path) -> Option<u64>) -> Result<Self, String> {
         let mut writer = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -230,13 +261,19 @@ impl SrsCore {
         )
         .map_err(|e| format!("open {}: {e}", path.display()))?;
         configure(&writer)?;
+        #[cfg(any(test, feature = "id_audit"))]
+        ids::audit::install(&mut writer);
         let mode: String = writer
             .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
         if !mode.eq_ignore_ascii_case("wal") {
             return Err(format!("srs.db journal_mode is {mode}, expected wal"));
         }
+        schema::check_upgrade_space(&writer, free(path))?;
         schema::migrate(&mut writer)?;
+        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+        compact::run(&writer, path.parent().unwrap_or(Path::new(".")), free(path), now);
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
@@ -245,12 +282,16 @@ impl SrsCore {
         )
         .map_err(|e| format!("open reader {}: {e}", path.display()))?;
         configure(&reader)?;
+        #[cfg(any(test, feature = "id_audit"))]
+        let reader = ids::audit::installed(reader);
         let drift_reader = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
         configure(&drift_reader)?;
+        #[cfg(any(test, feature = "id_audit"))]
+        let drift_reader = ids::audit::installed(drift_reader);
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
@@ -387,12 +428,17 @@ impl SrsCore {
             ));
         }
         let w = self.writer()?;
-        let marks = vec!["?"; t.columns.len()].join(", ");
-        let sql = format!(
-            "INSERT INTO {} ({}) VALUES ({marks})",
-            t.name,
-            t.columns.join(", ")
-        );
+        // ID 列编码（store/ids.rs）：旧库搬来的是文本。
+        let id_cols = ids::COLUMNS.iter().find(|(n, _)| *n == t.name).map_or(&[][..], |(_, c)| *c);
+        let place = |i: usize| if id_cols.contains(&t.columns[i]) { format!("srs_id(?{})", i + 1) } else { format!("?{}", i + 1) };
+        // 投影的 `json` 是生成列（store/slim.rs）：写 `jslim`，按同一行的列值瘦存。
+        let (names, marks): (Vec<String>, Vec<String>) = (0..t.columns.len())
+            .map(|i| match slim::insert_column(t.name, t.columns, i, place) {
+                Some((name, expr)) => (name.to_owned(), expr),
+                None => (t.columns[i].to_owned(), place(i)),
+            })
+            .unzip();
+        let sql = format!("INSERT INTO {} ({}) VALUES ({})", t.name, names.join(", "), marks.join(", "));
         let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
         for row in &rows {
             stmt.execute(rusqlite::params_from_iter(row.iter()))
@@ -452,6 +498,7 @@ impl SrsCore {
         }
         if strip_device_local {
             let snap = Connection::open(target).map_err(|e| e.to_string())?;
+            configure(&snap)?;
             snap.execute_batch(
                 // srs_event_local 不删：它的 server_time 是迁移来的旧修改记录 / 外来带戳事件的排序键（S），
                 // 删了恢复出来的设备会按另一种顺序解寄存器、与其它设备分叉。发件箱列早已无人读写。
@@ -483,6 +530,8 @@ impl SrsCore {
         let w = self.writer()?;
         let out = Self::exec_on(&w, sql, params, select);
         self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&w, sql)?;
         out
     }
 
@@ -505,7 +554,10 @@ impl SrsCore {
             let r = self.drift_reader()?;
             let readonly = r.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?.readonly();
             if readonly {
-                return Self::exec_on(&r, sql, params, true);
+                let out = Self::exec_on(&r, sql, params, true);
+                #[cfg(feature = "id_audit")]
+                ids::audit::take(&r, sql)?;
+                return out;
             }
         }
         self.exec(sql, params, true)
@@ -531,6 +583,7 @@ impl SrsCore {
             .iter()
             .map(|c| Value::Text((*c).to_string()))
             .collect();
+        let id_cols = ids::id_columns(&stmt);
         let mut out = Vec::with_capacity(4096);
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&(n as u32).to_le_bytes());
@@ -543,7 +596,11 @@ impl SrsCore {
             .map_err(|e| format!("{e} in {sql}"))?;
         while let Some(row) = q.next().map_err(|e| e.to_string())? {
             for i in 0..n {
-                rows::push_value(&mut out, row.get_ref(i).map_err(|e| e.to_string())?);
+                let v = row.get_ref(i).map_err(|e| e.to_string())?;
+                match ids::outward(&id_cols, i, v) {
+                    Some(t) => rows::push_value(&mut out, ValueRef::Text(t.as_bytes())),
+                    None => rows::push_value(&mut out, v),
+                }
             }
             count += 1;
         }
@@ -570,6 +627,8 @@ impl SrsCore {
         };
         let out = run();
         self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&w, "")?;
         out
     }
 
@@ -585,18 +644,16 @@ impl SrsCore {
     /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
     pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
         let logs = self.writer_logs(groups)?;
-        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let empty: Vec<LogRow> = Vec::new();
         let mut states = Vec::with_capacity(groups.len());
         for g in groups {
-            let mut jsons: Vec<&str> = Vec::new();
-            let mut servers: Vec<Option<i64>> = Vec::new();
+            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for c in g {
-                for (j, s) in logs.get(c).unwrap_or(&empty) {
-                    jsons.push(j);
-                    servers.push(*s);
+                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref()));
                 }
             }
-            states.push(crate::history::state_from_json(&jsons, &servers)?);
+            states.push(crate::history::state_from_stored(&stored)?);
         }
         Ok(crate::history::encode_states(&states))
     }
@@ -609,19 +666,17 @@ impl SrsCore {
     /// kind, durationMs, prevDueDay|NULL, maturityDelta。
     pub fn stat_projection(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
         let logs = self.writer_logs(groups)?;
-        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let empty: Vec<LogRow> = Vec::new();
         let mut out: Vec<Vec<Value>> = Vec::new();
         let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
         for (gi, g) in groups.iter().enumerate() {
-            let mut jsons: Vec<&str> = Vec::new();
-            let mut servers: Vec<Option<i64>> = Vec::new();
+            let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for c in g {
-                for (j, s) in logs.get(c).unwrap_or(&empty) {
-                    jsons.push(j);
-                    servers.push(*s);
+                for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref()));
                 }
             }
-            for r in crate::history::stats_from_json(&jsons, &servers)? {
+            for r in crate::history::stats_from_stored(&stored)? {
                 out.push(vec![
                     Value::Integer(gi as i64),
                     Value::Text(r.log_id),
@@ -638,11 +693,8 @@ impl SrsCore {
         Ok(rows::encode(9, &out))
     }
 
-    /// 这些组里全部卡的日志原文 + 服务器时刻（写连接，一条 JOIN 按块取）。
-    fn writer_logs(
-        &self,
-        groups: &[Vec<String>],
-    ) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
+    /// 这些组里全部卡的日志（[LogRow]：存储值 + 服务器时刻 + 列；写连接，一条 JOIN 按块取）。
+    fn writer_logs(&self, groups: &[Vec<String>]) -> Result<std::collections::HashMap<String, Vec<LogRow>>, String> {
         let w = self.writer()?;
         logs_of(&w, groups)
     }
@@ -668,6 +720,8 @@ impl SrsCore {
         )
         .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
         configure(&conn)?;
+        #[cfg(any(test, feature = "id_audit"))]
+        let conn = ids::audit::installed(conn);
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
             .map_err(|e| e.to_string())?;
@@ -717,10 +771,14 @@ impl SrsCore {
 }
 
 /// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取；写连接看得见 Drift 事务里未提交的行）。
+/// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
+/// 拼回的 `json`。
+pub(crate) type LogRow = (String, Option<i64>, Option<crate::history::LogCols>);
+
 pub(crate) fn logs_of(
     conn: &rusqlite::Connection,
     groups: &[Vec<String>],
-) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
+) -> Result<std::collections::HashMap<String, Vec<LogRow>>, String> {
     let mut wanted: Vec<&str> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for g in groups {
@@ -730,12 +788,13 @@ pub(crate) fn logs_of(
             }
         }
     }
-    let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
+    let mut logs: std::collections::HashMap<String, Vec<LogRow>> =
         std::collections::HashMap::with_capacity(wanted.len());
     for chunk in wanted.chunks(500) {
-        let marks = vec!["?"; chunk.len()].join(", ");
+        let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+            "SELECT srs_idt(l.card_id) AS card_id, e.server_time, {} FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})",
+            slim::LOG_READ
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
         let mut q = stmt
@@ -743,14 +802,16 @@ pub(crate) fn logs_of(
             .map_err(|e| e.to_string())?;
         while let Some(row) = q.next().map_err(|e| e.to_string())? {
             let card: String = row.get(0).map_err(|e| e.to_string())?;
-            let json: String = row.get(1).map_err(|e| e.to_string())?;
-            let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-            logs.entry(card).or_default().push((json, st));
+            let st: Option<i64> = row.get(1).map_err(|e| e.to_string())?;
+            let (json, cols) = slim::log_row(row, 2).map_err(|e| e.to_string())?;
+            logs.entry(card).or_default().push((json, st, cols));
         }
     }
     Ok(logs)
 }
 
+#[cfg(test)]
+mod tests_v15_upgrade;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -881,8 +942,9 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引 + v15 的查重索引。
-        assert_eq!(idx, 23);
+        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引 + v15 的查重索引，
+        // 减去 v16 去掉的 idx_srs_review_logs_profile_time。
+        assert_eq!(idx, 22);
     }
 
     #[test]
@@ -979,7 +1041,7 @@ mod tests {
             core.writer()
                 .unwrap()
                 .execute(
-                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, 'p', '{}')",
+                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
                     [id],
                 )
                 .unwrap();
@@ -1030,7 +1092,7 @@ mod exec_tests {
         assert!(core.in_transaction().unwrap());
         let r = core
             .exec(
-                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)",
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), srs_id(?2), ?3)",
                 &[Value::Text("a".into()), Value::Text("p".into()), Value::Text("{}".into())],
                 false,
             )
@@ -1038,14 +1100,14 @@ mod exec_tests {
         let (_, rows) = rows::decode(&r).unwrap();
         assert_eq!(rows[0][0], Value::Integer(1));
         // 同一条连接，事务里看得见。
-        let s = core.exec("SELECT id FROM srs_unknown_events", &[], true).unwrap();
+        let s = core.exec("SELECT srs_idt(id) AS id FROM srs_unknown_events", &[], true).unwrap();
         let (cols, rows) = rows::decode(&s).unwrap();
         assert_eq!(cols, 1);
         assert_eq!(rows.len(), 2);
         core.exec("ROLLBACK", &[], false).unwrap();
         assert!(!core.in_transaction().unwrap());
         core.exec_batch(
-            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?, 'p', '{}')"],
+            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?), 'p', '{}')"],
             &[(0, vec![Value::Text("b".into())]), (0, vec![Value::Text("c".into())])],
         )
         .unwrap();
@@ -1075,7 +1137,7 @@ mod read_routing_tests {
 
     fn insert(core: &SrsCore, id: &str) {
         core.exec(
-            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, 'p', '{}')",
+            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
             &[Value::Text(id.into())],
             false,
         )
@@ -1224,7 +1286,7 @@ mod direct_tests {
         core.exec("BEGIN", &[], false).unwrap();
         core.exec(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
-             review_type, origin, duration_ms, json) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
+             review_type, origin, duration_ms, jslim) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
             &[],
             false,
         )
@@ -1258,7 +1320,7 @@ mod direct_tests {
         for (id, card, json) in [("a", "old", a.as_str()), ("b", "c1", b.as_str()), ("c", "c1", c.as_str()), ("u", "c1", undo)] {
             core.exec(
                 "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
-                 review_type, origin, duration_ms, json) VALUES (?1, 'p', ?2, 'k', NULL, 0, 'r', 'o', 0, ?3)",
+                 review_type, origin, duration_ms, jslim) VALUES (srs_id(?1), 'p', srs_id(?2), 'k', NULL, 0, 'r', 'o', 0, ?3)",
                 &[Value::Text(id.into()), Value::Text(card.into()), Value::Text(json.into())],
                 false,
             )

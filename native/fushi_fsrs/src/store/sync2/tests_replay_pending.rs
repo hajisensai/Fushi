@@ -12,7 +12,7 @@ const T0: i64 = 1_700_000_000_000;
 const DAY: i64 = 86_400_000;
 
 fn logs(d: &Device) -> Vec<Vec<String>> {
-    d.rows("SELECT id, card_id, json FROM srs_review_logs ORDER BY id")
+    d.rows("SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, json FROM srs_review_logs ORDER BY id")
 }
 
 fn heads(b: &Bucket) -> Vec<Vec<u8>> {

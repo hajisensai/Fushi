@@ -90,7 +90,7 @@ class _Device {
       final QueryRow r = await srs.db
           .customSelect(
             'SELECT COUNT(*) AS c FROM $t WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(uid)],
+            variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
           )
           .getSingle();
       n += r.read<int>('c');
@@ -285,7 +285,7 @@ void main() {
     final QueryRow ops0 = await b.srs.db
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(target)],
+          variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
         )
         .getSingle();
     final SrsProfileMergeResult again = await srsMergeProfileUid(
@@ -301,7 +301,7 @@ void main() {
     final QueryRow ops1 = await b.srs.db
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(target)],
+          variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
         )
         .getSingle();
     expect(ops1.read<int>('c'), ops0.read<int>('c'));
@@ -498,7 +498,7 @@ Future<String> _guidOfOnly(_Device d) async =>
             .customSelect(
               'SELECT guid FROM srs_notes_cache WHERE profile_uid = ?',
               variables: <Variable<Object>>[
-                Variable<String>(d.store.profileUid),
+                Variable<String>(d.store.profileUid, srsIdType),
               ],
             )
             .getSingle())

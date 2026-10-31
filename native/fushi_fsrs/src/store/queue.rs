@@ -204,8 +204,9 @@ impl StudyHub {
         let h = Arc::clone(hub);
         c.create_scalar_function("srs_study_touch", 3, FunctionFlags::SQLITE_UTF8, move |ctx| {
             let kind = ctx.get::<i64>(0)?;
-            let profile = ctx.get::<String>(1)?;
-            let id = ctx.get::<String>(2)?;
+            // ID 列存编码后的值（store/ids.rs）：这里要文本。
+            let profile = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
+            let id = crate::store::ids::text(ctx.get_raw(2)).unwrap_or_default();
             let mut t = lock(&h.touched);
             // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
             if kind != TOUCH_NOTE {
@@ -298,15 +299,15 @@ pub(crate) struct LogState {
 }
 
 /// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
-pub(crate) const LOGS_SQL: &str = "SELECT card_id, occurred_at, review_type, \
-     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id \
-     FROM srs_review_logs WHERE profile_uid = ?1 AND kind = 'review' AND occurred_at >= ?2";
+pub(crate) const LOGS_SQL: &str = "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, \
+     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id \
+     FROM srs_review_logs WHERE profile_uid = srs_id(?1) AND kind = 'review' AND occurred_at >= ?2";
 
 /// 按 id 重读几条日志（参数同 [LOGS_SQL]，其后是 id）：走主键，profile / 种类 / 时刻只当过滤（`+`），不让 SQLite 改走
 /// 区间索引把 30 天日志扫一遍。
 pub(crate) fn logs_by_id_sql(n: usize) -> String {
     format!(
-        "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = ?1 AND +kind = 'review' AND +occurred_at >= ?2",
+        "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
         marks(n)
     )
 }
@@ -437,7 +438,8 @@ impl LogState {
 }
 
 fn marks(n: usize) -> String {
-    vec!["?"; n].join(", ")
+    // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
+    vec!["srs_id(?)"; n].join(", ")
 }
 
 // ------------------------------------------------------------------ 卡
@@ -473,7 +475,7 @@ impl Row {
     }
 }
 
-pub(crate) const ROW_COLUMNS: &str = "SELECT id, deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
+pub(crate) const ROW_COLUMNS: &str = "SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
      last_reviewed_at, stability FROM srs_cards_cache";
 
 /// 一个牌组自己（不含子牌组）的计数原料。
@@ -581,7 +583,7 @@ impl Session {
             logs: LogState::scan(c, profile, day, today)?,
         };
         // `+profile_uid`：整表顺扫比按 profile 前缀索引逐行回表快（一个 profile 通常就是全表）。
-        let mut stmt = c.prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = ?1")).map_err(sql)?;
+        let mut stmt = c.prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = srs_id(?1)")).map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         let mut due: Vec<Vec<(u32, Option<i64>, Option<f64>)>> = Vec::new();
         while let Some(r) = q.next().map_err(sql)? {
@@ -639,7 +641,7 @@ impl Session {
         for chunk in all.chunks(CHUNK) {
             let mut fetched: HashMap<u32, Row> = HashMap::new();
             {
-                let text = format!("{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = ?", marks(chunk.len()));
+                let text = format!("{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = srs_id(?)", marks(chunk.len()));
                 let mut stmt = c.prepare_cached(&text).map_err(sql)?;
                 let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
                 args.push(Sql::Text(profile.to_owned()));

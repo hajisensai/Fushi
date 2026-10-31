@@ -49,7 +49,7 @@ fn id_of(b: Vec<u8>) -> Result<Id, String> {
 /// 转发目标：本机同步的全部位置里最近 [ACTIVE_WINDOW_MS] 内成功过的（还没成功过的也算）。
 fn active_locations(c: &Connection, profile: &str) -> Result<Vec<String>, String> {
     let rows: Vec<(String, Option<i64>)> = c
-        .prepare_cached("SELECT location, last_ok FROM sync2_locations WHERE profile_uid = ?1")
+        .prepare_cached("SELECT location, last_ok FROM sync2_locations WHERE profile_uid = srs_id(?1)")
         .map_err(sql)?
         .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(sql)?
@@ -62,7 +62,7 @@ fn active_locations(c: &Connection, profile: &str) -> Result<Vec<String>, String
 /// 一台设备的转发源 head：`(代号, 序号, 段名)`。
 fn relay_head(c: &Connection, profile: &str, device: &Id) -> Result<Option<(u64, u64, BTreeSet<String>)>, String> {
     Ok(c
-        .prepare_cached("SELECT gen, seq, segments FROM sync2_relay_heads WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT gen, seq, segments FROM sync2_relay_heads WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
         .optional()
@@ -73,14 +73,14 @@ fn relay_head(c: &Connection, profile: &str, device: &Id) -> Result<Option<(u64,
 /// [location] 上 [device] 已有的段（上一轮看到的 head 引用的 + 本机转发上去的）与那份 head 的序号。
 fn present_at(c: &Connection, profile: &str, location: &str, device: &Id) -> Result<(u64, BTreeSet<String>), String> {
     let (seq, mut names) = c
-        .prepare_cached("SELECT seq, segments FROM sync2_location_heads WHERE profile_uid = ?1 AND location = ?2 AND device = ?3")
+        .prepare_cached("SELECT seq, segments FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3")
         .map_err(sql)?
         .query_row(params![profile, location, device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
         .optional()
         .map_err(sql)?
         .map_or((0, BTreeSet::new()), |(s, n)| (s as u64, parse_names(&n)));
     let out: Vec<String> = c
-        .prepare_cached("SELECT name FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND device = ?3")
+        .prepare_cached("SELECT name FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3")
         .map_err(sql)?
         .query_map(params![profile, location, device.0.to_vec()], |r| r.get(0))
         .map_err(sql)?
@@ -111,7 +111,7 @@ fn relayable(c: &Connection, profile: &str, local: &Local, device: &Id) -> Resul
         return Ok(false);
     }
     let frozen: Option<i64> = c
-        .prepare_cached("SELECT frozen FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec()], |r| r.get(0))
         .optional()
@@ -134,7 +134,7 @@ pub(crate) fn note_heads(
         }
         let changed = c
             .prepare_cached(
-                "INSERT INTO sync2_relay_heads (profile_uid, device, gen, seq, segments, bytes) VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                "INSERT INTO sync2_relay_heads (profile_uid, device, gen, seq, segments, bytes) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6) \
                  ON CONFLICT(profile_uid, device) DO UPDATE SET gen = excluded.gen, seq = excluded.seq, \
                  segments = excluded.segments, bytes = excluded.bytes WHERE excluded.gen > sync2_relay_heads.gen",
             )
@@ -151,7 +151,7 @@ pub(crate) fn note_heads(
     let seen: BTreeMap<Id, u64> = heads.iter().filter(|(h, _)| h.device != local.device).map(|(h, _)| (h.device, h.gen)).collect();
     let relayed: Vec<(Vec<u8>, i64)> = c
         .prepare_cached(
-            "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
+            "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
         )
         .map_err(sql)?
         .query_map(params![profile, location], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -162,16 +162,16 @@ pub(crate) fn note_heads(
         let device = id_of(d)?;
         if seen.get(&device).copied().unwrap_or(0) < g as u64 {
             c.execute(
-                "DELETE FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND device = ?3",
+                "DELETE FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3",
                 params![profile, location, device.0.to_vec()],
             )
             .map_err(sql)?;
         }
     }
-    c.execute("DELETE FROM sync2_location_heads WHERE profile_uid = ?1 AND location = ?2", params![profile, location]).map_err(sql)?;
+    c.execute("DELETE FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2", params![profile, location]).map_err(sql)?;
     for (h, _) in heads.iter().filter(|(h, _)| h.device != local.device) {
         c.prepare_cached(
-            "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
         )
         .map_err(sql)?
         .execute(params![profile, location, h.device.0.to_vec(), h.gen as i64, h.seq as i64, names_of(h)])
@@ -192,7 +192,7 @@ pub(crate) fn heads_noted(c: &Connection, profile: &str, local: &Local, location
     let seen: BTreeMap<Id, u64> = heads.iter().filter(|(h, _)| h.device != local.device).map(|(h, _)| (h.device, h.gen)).collect();
     let relayed: Vec<(Vec<u8>, i64)> = c
         .prepare_cached(
-            "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
+            "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
         )
         .map_err(sql)?
         .query_map(params![profile, location], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -205,7 +205,7 @@ pub(crate) fn heads_noted(c: &Connection, profile: &str, local: &Local, location
         }
     }
     let have: BTreeMap<Vec<u8>, (i64, i64, String)> = c
-        .prepare_cached("SELECT device, gen, seq, segments FROM sync2_location_heads WHERE profile_uid = ?1 AND location = ?2")
+        .prepare_cached("SELECT device, gen, seq, segments FROM sync2_location_heads WHERE profile_uid = srs_id(?1) AND location = ?2")
         .map_err(sql)?
         .query_map(params![profile, location], |r| Ok((r.get::<_, Vec<u8>>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))
         .map_err(sql)?
@@ -242,7 +242,7 @@ pub(crate) fn relay_fetch(c: &Connection, profile: &str, local: &Local, heads: &
 
 fn held(c: &Connection, profile: &str, device: &Id, name: &str) -> Result<bool, String> {
     Ok(c
-        .prepare_cached("SELECT 1 FROM sync2_relay_segs WHERE profile_uid = ?1 AND device = ?2 AND name = ?3")
+        .prepare_cached("SELECT 1 FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2 AND name = ?3")
         .map_err(sql)?
         .query_row(params![profile, device.0.to_vec(), name], |_| Ok(()))
         .optional()
@@ -261,7 +261,7 @@ pub(crate) fn keep(c: &Connection, profile: &str, local: &Local, header: &Segmen
         return Ok(());
     }
     let (orig, plain) = segment::relay_parts(bytes, key).map_err(|e| e.to_string())?;
-    c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_segs (profile_uid, device, name, orig, plain) VALUES (?1, ?2, ?3, ?4, ?5)")
+    c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_segs (profile_uid, device, name, orig, plain) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
         .map_err(sql)?
         .execute(params![profile, header.device.0.to_vec(), name, orig, plain])
         .map_err(sql)?;
@@ -271,7 +271,7 @@ pub(crate) fn keep(c: &Connection, profile: &str, local: &Local, header: &Segmen
 /// 删掉 [device] 不再有位置需要的原段。
 fn prune(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     let names: Vec<String> = c
-        .prepare_cached("SELECT name FROM sync2_relay_segs WHERE profile_uid = ?1 AND device = ?2")
+        .prepare_cached("SELECT name FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
         .query_map(params![profile, device.0.to_vec()], |r| r.get(0))
         .map_err(sql)?
@@ -280,7 +280,7 @@ fn prune(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     let locations = active_locations(c, profile)?;
     for n in names {
         if !needed(c, profile, &locations, device, &n)? {
-            c.prepare_cached("DELETE FROM sync2_relay_segs WHERE profile_uid = ?1 AND device = ?2 AND name = ?3")
+            c.prepare_cached("DELETE FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2 AND name = ?3")
                 .map_err(sql)?
                 .execute(params![profile, device.0.to_vec(), n])
                 .map_err(sql)?;
@@ -315,7 +315,7 @@ impl SrsCore {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let ck = key.map(CollectionKey);
             let devices: Vec<(Vec<u8>, i64, i64, String, Vec<u8>)> = c
-                .prepare_cached("SELECT device, gen, seq, segments, bytes FROM sync2_relay_heads WHERE profile_uid = ?1")
+                .prepare_cached("SELECT device, gen, seq, segments, bytes FROM sync2_relay_heads WHERE profile_uid = srs_id(?1)")
                 .map_err(sql)?
                 .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
                 .map_err(sql)?
@@ -338,7 +338,7 @@ impl SrsCore {
                 let mut parts = Vec::with_capacity(missing.len());
                 for n in &missing {
                     let row: Option<(Vec<u8>, Option<Vec<u8>>)> = c
-                        .prepare_cached("SELECT orig, plain FROM sync2_relay_segs WHERE profile_uid = ?1 AND device = ?2 AND name = ?3")
+                        .prepare_cached("SELECT orig, plain FROM sync2_relay_segs WHERE profile_uid = srs_id(?1) AND device = ?2 AND name = ?3")
                         .map_err(sql)?
                         .query_row(params![profile, device.0.to_vec(), n], |r| Ok((r.get(0)?, r.get(1)?)))
                         .optional()
@@ -377,7 +377,7 @@ impl SrsCore {
         in_savepoint(&w, |c| {
             for path in paths {
                 // 刚写上去的文件不能再按旧的待删记录删掉（同名转发件可能被重新转发）。
-                c.prepare_cached("DELETE FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 AND path = ?3")
+                c.prepare_cached("DELETE FROM sync2_relay_gone WHERE profile_uid = srs_id(?1) AND location = ?2 AND path = ?3")
                     .map_err(sql)?
                     .execute(params![profile, location, path])
                     .map_err(sql)?;
@@ -386,7 +386,7 @@ impl SrsCore {
                 let Some((device, file)) = split_path(path) else { continue };
                 if let Some(rest) = file.strip_prefix("rly-") {
                     c.prepare_cached(
-                        "INSERT OR IGNORE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (?1, ?2, ?3, ?4, 0)",
+                        "INSERT OR IGNORE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (srs_id(?1), ?2, ?3, ?4, 0)",
                     )
                     .map_err(sql)?
                     .execute(params![profile, location, device.0.to_vec(), format!("seg-{rest}")])
@@ -395,7 +395,7 @@ impl SrsCore {
                 }
                 let Some(gen) = segment::parse_head_file_name(file) else { continue };
                 let Some(row) = c
-                    .prepare_cached("SELECT gen, seq, segments FROM sync2_relay_heads WHERE profile_uid = ?1 AND device = ?2")
+                    .prepare_cached("SELECT gen, seq, segments FROM sync2_relay_heads WHERE profile_uid = srs_id(?1) AND device = ?2")
                     .map_err(sql)?
                     .query_row(params![profile, device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
                     .optional()
@@ -409,7 +409,7 @@ impl SrsCore {
                 let names = parse_names(&row.2);
                 // 这个位置现在有这份 head 了（下一轮看 head 时以看到的为准）。
                 c.prepare_cached(
-                    "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT OR REPLACE INTO sync2_location_heads (profile_uid, location, device, gen, seq, segments) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
                 )
                 .map_err(sql)?
                 .execute(params![profile, location, device.0.to_vec(), row.0, row.1, row.2])
@@ -417,7 +417,7 @@ impl SrsCore {
                 // 本机之前转发的：旧 head 全删；上一份转发 head 之前就传上去、新 head 不再引用的旧转发件删（晚一代删：
                 // 正读着上一份 head 的读者不至于扑空）。刚传的转发件记到这份 head 名下。
                 let old: Vec<(String, i64)> = c
-                    .prepare_cached("SELECT name, gen FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND device = ?3")
+                    .prepare_cached("SELECT name, gen FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3")
                     .map_err(sql)?
                     .query_map(params![profile, location, device.0.to_vec()], |r| Ok((r.get(0)?, r.get(1)?)))
                     .map_err(sql)?
@@ -434,22 +434,22 @@ impl SrsCore {
                     if gone {
                         // 两段式：先记进待删表，Dart 删成功后 `obsolete_ack` 才移除（删到一半失败的下一轮再删）。
                         let file = format!("{dir}/{}", if n.starts_with("head-") { n.clone() } else { segment::relay_file_name(n) });
-                        c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_gone (profile_uid, location, path) VALUES (?1, ?2, ?3)")
+                        c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_gone (profile_uid, location, path) VALUES (srs_id(?1), ?2, ?3)")
                             .map_err(sql)?
                             .execute(params![profile, location, file])
                             .map_err(sql)?;
-                        c.prepare_cached("DELETE FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND device = ?3 AND name = ?4")
+                        c.prepare_cached("DELETE FROM sync2_relay_out WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3 AND name = ?4")
                             .map_err(sql)?
                             .execute(params![profile, location, device.0.to_vec(), n])
                             .map_err(sql)?;
                     }
                 }
-                c.prepare_cached("UPDATE sync2_relay_out SET gen = ?4 WHERE profile_uid = ?1 AND location = ?2 AND device = ?3 AND gen = 0")
+                c.prepare_cached("UPDATE sync2_relay_out SET gen = ?4 WHERE profile_uid = srs_id(?1) AND location = ?2 AND device = ?3 AND gen = 0")
                     .map_err(sql)?
                     .execute(params![profile, location, device.0.to_vec(), gen as i64])
                     .map_err(sql)?;
                 c.prepare_cached(
-                    "INSERT OR REPLACE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT OR REPLACE INTO sync2_relay_out (profile_uid, location, device, name, gen) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)",
                 )
                 .map_err(sql)?
                 .execute(params![profile, location, device.0.to_vec(), file, gen as i64])
@@ -458,7 +458,7 @@ impl SrsCore {
             }
             // 这个位置上全部还没确认删掉的转发清理（含之前删到一半失败的）。
             let delete: Vec<String> = c
-                .prepare_cached("SELECT path FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 ORDER BY path")
+                .prepare_cached("SELECT path FROM sync2_relay_gone WHERE profile_uid = srs_id(?1) AND location = ?2 ORDER BY path")
                 .map_err(sql)?
                 .query_map(params![profile, location], |r| r.get(0))
                 .map_err(sql)?

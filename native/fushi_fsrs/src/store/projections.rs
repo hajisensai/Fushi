@@ -19,9 +19,9 @@ type LogsByCard = HashMap<String, Vec<(String, Option<i64>)>>;
 pub(super) fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
     let mut logs: LogsByCard = HashMap::with_capacity(cards.len());
     for chunk in cards.chunks(500) {
-        let marks = vec!["?"; chunk.len()].join(", ");
+        let marks = vec!["srs_id(?)"; chunk.len()].join(", ");
         let sql = format!(
-            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l \
+            "SELECT srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
              LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks}) ORDER BY l.rowid"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
@@ -239,8 +239,8 @@ impl SrsCore {
             }
             let mut stmt = r
                 .prepare_cached(
-                    "SELECT l.rowid, l.card_id, l.json, e.server_time FROM srs_review_logs l \
-                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = ?1 ORDER BY l.rowid",
+                    "SELECT l.rowid, srs_idt(l.card_id) AS card_id, l.json, e.server_time FROM srs_review_logs l \
+                     LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.profile_uid = srs_id(?1) ORDER BY l.rowid",
                 )
                 .map_err(|e| e.to_string())?;
             let mut q = stmt.query([profile]).map_err(|e| e.to_string())?;
@@ -318,7 +318,7 @@ impl SrsCore {
                 let (c, m): (i64, i64) = r
                     .query_row(
                         "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = ?1",
+                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1)",
                         rusqlite::params![profile, since],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
@@ -327,7 +327,7 @@ impl SrsCore {
             } else {
                 r.query_row(
                     "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
-                     FROM srs_review_logs WHERE profile_uid = ?1",
+                     FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
                     rusqlite::params![profile, since],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
@@ -337,8 +337,8 @@ impl SrsCore {
             if with_rows {
                 let mut stmt = r
                     .prepare_cached(
-                        "SELECT id, card_id, kind, occurred_at, json FROM srs_review_logs \
-                         WHERE rowid > ?2 AND +profile_uid = ?1 ORDER BY occurred_at, rowid",
+                        "SELECT srs_idt(id) AS id, srs_idt(card_id) AS card_id, kind, occurred_at, json FROM srs_review_logs \
+                         WHERE rowid > ?2 AND +profile_uid = srs_id(?1) ORDER BY occurred_at, rowid",
                     )
                     .map_err(|e| e.to_string())?;
                 let mut q = stmt.query(rusqlite::params![profile, since]).map_err(|e| e.to_string())?;
@@ -393,8 +393,8 @@ mod tests {
 
     fn insert(c: &SrsCore, id: &str, card: &str, kind: &str, at: i64, json: &str) {
         c.exec(
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-             VALUES (?1, 'p', ?2, ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
+             VALUES (srs_id(?1), 'p', srs_id(?2), ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
             &[
                 Value::Text(id.into()),
                 Value::Text(card.into()),

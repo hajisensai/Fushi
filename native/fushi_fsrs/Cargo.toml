@@ -9,6 +9,10 @@ license = "GPL-3.0-only"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# 测试构建之外也装 ID 绑定审计（store/ids.rs `audit`）：Dart 经桥跑的语句绑了文本 UUID 就报错。只给测试用的库。
+id_audit = ["rusqlite/trace"]
+
 [dependencies]
 # FSRS-7 还没发版：钉 fsrs-rs 主干的 git rev（Cargo.lock 锁死）。
 # 这个 rev 的 Cargo.toml 版本号仍写 6.6.2；FSRS-6 的数值要与 6.6.2 / Anki 26.09.3 一致（第 0 步对拍）。
@@ -27,7 +31,7 @@ regex = "1"
 # srs.db（docs/specs/2026-10-23-srs-rust-store.md）：自带一份 SQLite（bundled），只开 srs.db，绝不开主库 fushi.db。
 # `functions`：注册 SQL 自定义函数——摘要桶哈希（store/sync2/digest.rs）与写连接上常驻复习队列的临时触发器回调
 # （store/queue.rs）。
-rusqlite = { version = "0.37", features = ["bundled", "functions"] }
+rusqlite = { version = "0.37", features = ["bundled", "functions", "column_decltype"] }
 # 字段寄存器（registers.rs）：修改记录 ID 的 UUIDv5 与「释义样式去重」规范形的样式文件名（与 native/fushi_compute 同一个包）。
 sha1 = "0.10"
 # sha256：内容寻址媒体（store/sync2/media.rs，`media/<前2位>/<sha256>`）与 Anki 数字 id（`hash53`，与 Dart
@@ -43,7 +47,13 @@ argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 getrandom = "0.4"
 libm = "0.2.16"
 
+# 格式升级后整理库文件前查库所在卷的可用空间（store/compact.rs；Windows 直接调 kernel32）。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
+# 测试构建里盯住漏编码的 ID 绑定（store/ids.rs `audit`）。
+rusqlite = { version = "0.37", features = ["trace"] }
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 
 [profile.release]

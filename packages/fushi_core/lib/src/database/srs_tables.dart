@@ -4,6 +4,8 @@ library;
 
 import 'package:drift/drift.dart';
 
+import 'srs_id_type.dart';
+
 // ── SRS（v117，docs/specs/2026-10-14-fushi-srs-design.md）──────────────
 //
 // 同步的只有三种事件：身份记录（srs_entities）、修改记录（srs_field_edits）、复习日志（srs_review_logs）。
@@ -12,8 +14,8 @@ import 'package:drift/drift.dart';
 /// 不可变身份记录（牌组 / 笔记类型 / 笔记）。
 @DataClassName('SrsEntityRow')
 class SrsEntities extends Table {
-  TextColumn get id => text()();
-  TextColumn get profileUid => text()();
+  Column<String> get id => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
 
   /// deck / notetype / note（SrsEntityKind.wire）。
   TextColumn get kind => text()();
@@ -29,12 +31,12 @@ class SrsEntities extends Table {
 /// 修改记录（铁律 H）。只保留同一字段键上没被支配的记录。
 @DataClassName('SrsFieldEditRow')
 class SrsFieldEdits extends Table {
-  TextColumn get id => text()();
-  TextColumn get profileUid => text()();
+  Column<String> get id => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
   TextColumn get entityKind => text()();
-  TextColumn get entityId => text()();
+  Column<String> get entityId => customType(srsIdType)();
   TextColumn get fieldKey => text()();
-  TextColumn get writerId => text()();
+  Column<String> get writerId => customType(srsIdType)();
   IntColumn get seq => integer()();
 
   /// 完整事件的规范 JSON（含 ctx / 值 / hlc），读回时整条解析，不靠列拼装。
@@ -47,9 +49,9 @@ class SrsFieldEdits extends Table {
 /// 复习日志（只追加）。[json] 是完整事件内容（含不认识的字段，原样保留）；其余列只为查询。
 @DataClassName('SrsReviewLogRow')
 class SrsReviewLogs extends Table {
-  TextColumn get id => text()();
-  TextColumn get profileUid => text()();
-  TextColumn get cardId => text()();
+  Column<String> get id => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
+  Column<String> get cardId => customType(srsIdType)();
   TextColumn get kind => text()();
   IntColumn get rating => integer().nullable()();
   IntColumn get occurredAt => integer()();
@@ -65,8 +67,8 @@ class SrsReviewLogs extends Table {
 /// 本机不认识的同步事件（更新版本写来的）：原样保留、原样转写。
 @DataClassName('SrsUnknownEventRow')
 class SrsUnknownEvents extends Table {
-  TextColumn get id => text()();
-  TextColumn get profileUid => text()();
+  Column<String> get id => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
   TextColumn get json => text()();
 
   @override
@@ -76,8 +78,8 @@ class SrsUnknownEvents extends Table {
 /// 事件的本机发布元信息（与事件内容分离，不同步）。
 @DataClassName('SrsEventLocalRow')
 class SrsEventLocal extends Table {
-  TextColumn get eventId => text()();
-  TextColumn get profileUid => text()();
+  Column<String> get eventId => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
 
   /// 本机产生的事件在发件箱里的顺序；null = 对端来的或已发布。
   IntColumn get outboxSeq => integer().nullable()();
@@ -93,7 +95,7 @@ class SrsEventLocal extends Table {
 /// 每个 profile 的本机同步 / 写入者状态（SrsSyncLocalState、写入者 seq、已应用上下文、HLC、时间锚点），JSON。
 @DataClassName('SrsLocalStateRow')
 class SrsLocalState extends Table {
-  TextColumn get profileUid => text()();
+  Column<String> get profileUid => customType(srsIdType)();
   TextColumn get json => text()();
 
   @override
@@ -105,8 +107,8 @@ class SrsLocalState extends Table {
 /// 留存到最近同步过的所有目录都确认收到为止（fushi_srs 的 `SrsSyncEngine`）。
 @DataClassName('SrsSentBatchRow')
 class SrsSentBatches extends Table {
-  TextColumn get profileUid => text()();
-  TextColumn get writerId => text()();
+  Column<String> get profileUid => customType(srsIdType)();
+  Column<String> get writerId => customType(srsIdType)();
 
   /// 批次号（写入者内从 1 起连续）。
   IntColumn get batchNo => integer()();
@@ -121,12 +123,12 @@ class SrsSentBatches extends Table {
 /// 笔记缓存（本机可重建，不同步）。
 @DataClassName('SrsNoteCacheRow')
 class SrsNotesCache extends Table {
-  TextColumn get id => text()();
-  TextColumn get profileUid => text()();
-  TextColumn get noteTypeId => text()();
+  Column<String> get id => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
+  Column<String> get noteTypeId => customType(srsIdType)();
   TextColumn get guid => text()();
   IntColumn get createdAt => integer()();
-  TextColumn get deckId => text().nullable()();
+  Column<String> get deckId => customType(srsIdType).nullable()();
   IntColumn get deletedAt => integer().nullable()();
 
   /// 词状态索引：词形 / 读音归一化（第六轮审查第 20 条）。
@@ -152,12 +154,12 @@ class SrsNotesCache extends Table {
 /// 卡片缓存（本机可重建，不同步）：可编辑字段的生效值 + 最后一条有效日志的排程结果。
 @DataClassName('SrsCardCacheRow')
 class SrsCardsCache extends Table {
-  TextColumn get id => text()();
-  TextColumn get profileUid => text()();
-  TextColumn get noteId => text()();
-  TextColumn get templateId => text()();
+  Column<String> get id => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
+  Column<String> get noteId => customType(srsIdType)();
+  Column<String> get templateId => customType(srsIdType)();
   IntColumn get clozeOrd => integer().withDefault(const Constant(0))();
-  TextColumn get deckId => text()();
+  Column<String> get deckId => customType(srsIdType)();
   BoolColumn get suspended => boolean().withDefault(const Constant(false))();
   IntColumn get buriedUntilDay => integer().nullable()();
   IntColumn get flag => integer().withDefault(const Constant(0))();
@@ -174,7 +176,7 @@ class SrsCardsCache extends Table {
   RealColumn get stability => real().nullable()();
   RealColumn get difficulty => real().nullable()();
   IntColumn get lastReviewedAt => integer().nullable()();
-  TextColumn get lastLogId => text().nullable()();
+  Column<String> get lastLogId => customType(srsIdType).nullable()();
   TextColumn get scheduler => text().withDefault(const Constant('fushi'))();
 
   /// 新卡出卡顺序的兜底键（笔记 createdAt, cardId）：没有 [newPosition] 的新卡按它排。
@@ -209,9 +211,9 @@ class SrsCardsCache extends Table {
 ///   变化（[maturityDelta] ≠ 0）的非评分日志。
 @DataClassName('SrsStatReviewRow')
 class SrsStatReviews extends Table {
-  TextColumn get logId => text()();
-  TextColumn get profileUid => text()();
-  TextColumn get cardId => text()();
+  Column<String> get logId => customType(srsIdType)();
+  Column<String> get profileUid => customType(srsIdType)();
+  Column<String> get cardId => customType(srsIdType)();
   IntColumn get occurredAt => integer()();
   IntColumn get utcOffsetMin => integer().withDefault(const Constant(0))();
   IntColumn get rating => integer().nullable()();

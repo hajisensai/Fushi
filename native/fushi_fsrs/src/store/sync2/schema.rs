@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS sync2_ent_ops (
   what TEXT NOT NULL,
   PRIMARY KEY (profile_uid, kind, entity, device, seq)
 ) WITHOUT ROWID;
-CREATE INDEX IF NOT EXISTS idx_sync2_ent_ops_what ON sync2_ent_ops (profile_uid, kind, entity, what);
+-- 原有的 idx_sync2_ent_ops_what (profile_uid, kind, entity, what) 在 v16 去掉（store/schema.rs `V16_DROP`）。
 CREATE TABLE IF NOT EXISTS sync2_tag_adds (
   profile_uid TEXT NOT NULL,
   note TEXT NOT NULL,

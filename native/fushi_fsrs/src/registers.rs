@@ -92,21 +92,24 @@ impl Ctx {
 
 // ---------------------------------------------------------------- 修改记录
 
+// 与列重复的键（id / p / k / e / f / w / s）在 srs.db v18 的瘦存里不在 JSON 里（store/slim.rs）：都可缺，缺了从
+// [EditCols] 补；原文（不是瘦存）缺必需的键照旧报错。
 #[derive(Deserialize)]
 struct WireEdit<'a> {
     #[serde(default, borrow)]
     id: Option<&'a RawValue>,
-    #[serde(borrow)]
-    p: Cow<'a, str>,
+    #[serde(default, borrow, rename = "p")]
+    _p: Option<Cow<'a, str>>,
     #[serde(default, borrow)]
     k: Option<Cow<'a, str>>,
-    #[serde(borrow)]
-    e: Cow<'a, str>,
-    #[serde(borrow)]
-    f: Cow<'a, str>,
-    #[serde(borrow)]
-    w: Cow<'a, str>,
-    s: i64,
+    #[serde(default, borrow)]
+    e: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    f: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    w: Option<Cow<'a, str>>,
+    #[serde(default)]
+    s: Option<i64>,
     #[serde(default)]
     ctx: Option<Value>,
     #[serde(default)]
@@ -207,14 +210,54 @@ pub fn edit_id(writer: &str, seq: i64) -> String {
 }
 
 /// Dart `SrsFieldEdit.fromJson`：kind 不认识 / 必填键缺失或类型不对 / ID 与 dot 不符 → 坏数据。
+/// 修改记录行里与 JSON 键重复的列（ID 已解码成文本）。读 `jslim` + 这些列的读者（store/slim.rs）用它代替拼回的 `json`。
+pub(crate) struct EditCols {
+    pub id: String,
+    pub k: String,
+    pub e: String,
+    pub f: String,
+    pub w: String,
+    pub s: i64,
+}
+
 fn parse_edit<'a>(
-    json: &'a str,
+    stored: &'a str,
     server_time: Option<i64>,
+    cols: Option<&'a EditCols>,
     ns: &[u8; 16],
 ) -> Result<Edit<'a>, String> {
+    // 瘦存 `~<原文没有的键>{…}`：去掉的键从列补，记为原文没有的不补（与 slim::expand 拼回的原文同义）。
+    let (json, absent, cols) = match (stored.strip_prefix('~'), cols) {
+        (Some(rest), Some(c)) => {
+            let brace = rest.find('{').ok_or("bad slim field edit")?;
+            (&rest[brace..], &rest[..brace], Some(c))
+        }
+        (Some(_), None) => return Err("slim field edit read without its columns".to_owned()),
+        (None, _) => (stored, "", None),
+    };
     let w: WireEdit<'a> = serde_json::from_str(json).map_err(|e| format!("bad field edit: {e}"))?;
-    let _ = &w.p;
-    let kind = match w.k.as_deref() {
+    let col = |v: Option<Cow<'a, str>>, key: &str, pick: fn(&'a EditCols) -> &'a str| -> Option<Cow<'a, str>> {
+        v.or_else(|| cols.filter(|_| !absent.split(',').any(|a| a == key)).map(|c| Cow::Borrowed(pick(c))))
+    };
+    let need = |v: Option<Cow<'a, str>>, key: &str| v.ok_or_else(|| format!("bad field edit: missing field `{key}`"));
+    // p 解出来用不到：瘦存里缺了不补，原文缺照旧报错。
+    need(col(w._p, "p", |c| &c.id), "p")?;
+    let k = col(w.k, "k", |c| &c.k);
+    let e = need(col(w.e, "e", |c| &c.e), "e")?;
+    let f = need(col(w.f, "f", |c| &c.f), "f")?;
+    let wr = need(col(w.w, "w", |c| &c.w), "w")?;
+    let seq = match w.s {
+        Some(s) => s,
+        None => cols.filter(|_| !absent.split(',').any(|a| a == "s")).map(|c| c.s).ok_or("bad field edit: missing field `s`")?,
+    };
+    let given_id: Option<Cow<'a, str>> = match w.id {
+        Some(raw) if raw.get().starts_with('"') => {
+            Some(Cow::Owned(serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?))
+        }
+        Some(_) => None,
+        None => col(None, "id", |c| &c.id),
+    };
+    let kind = match k.as_deref() {
         Some(k) => KINDS
             .iter()
             .copied()
@@ -226,23 +269,19 @@ fn parse_edit<'a>(
         let (p, c, wr) = parse_hlc(&w.hlc)?;
         (p, c, wr.to_owned())
     };
-    let id = uuid_v5(ns, &format!("edit/{}/{}", w.w, w.s));
-    if let Some(raw) = w.id {
-        if raw.get().starts_with('"') {
-            let given: String =
-                serde_json::from_str(raw.get()).map_err(|e| format!("bad field edit id: {e}"))?;
-            if given != id {
-                return Err(format!("field edit id mismatch: {given} vs {id}"));
-            }
+    let id = uuid_v5(ns, &format!("edit/{wr}/{seq}"));
+    if let Some(given) = given_id {
+        if given != id {
+            return Err(format!("field edit id mismatch: {given} vs {id}"));
         }
     }
     Ok(Edit {
         id,
         kind,
-        entity: w.e,
-        key: w.f,
-        writer: w.w,
-        seq: w.s,
+        entity: e,
+        key: f,
+        writer: wr,
+        seq,
         ctx: Ctx::parse(w.ctx.as_ref()),
         value: w.v.unwrap_or(Value::Null),
         physical,
@@ -1015,7 +1054,7 @@ pub fn materialize(
         let mut out = Vec::with_capacity(n);
         for i in from..from + n {
             let s = servers[i];
-            out.push(parse_edit(item(i)?, (s != NONE_I64).then_some(s), &ns)?);
+            out.push(parse_edit(item(i)?, (s != NONE_I64).then_some(s), None, &ns)?);
         }
         at.set(from + n);
         Ok(out)
@@ -1092,11 +1131,12 @@ fn entity_json(ent: &Entity<'_, '_>, view: Option<Value>) -> Value {
 // ---------------------------------------------------------------- crate 内部入口（同步 v2，sync2）
 
 /// 一条落库修改记录（JSON 原文 + S(e)）。
-pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>);
+/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列)。
+pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>, Option<&'a EditCols>);
 
 fn parse_stored<'a>(edits: &[StoredEdit<'a>]) -> Result<Vec<Edit<'a>>, String> {
     let ns = uuid_bytes(SRS_NAMESPACE);
-    edits.iter().map(|(j, s)| parse_edit(j, *s, &ns)).collect()
+    edits.iter().map(|(j, s, c)| parse_edit(j, *s, *c, &ns)).collect()
 }
 
 /// 落库裁剪（[land]，与 `materialize` 的 `land` 组同一个判据）：前 [existing] 条是已有的，其余依次到达。
@@ -1227,7 +1267,7 @@ mod tests {
                 .map(|(id, items)| {
                     let edits = items
                         .iter()
-                        .map(|j| (j.as_str(), id_of(j).and_then(|e| server.get(&e)).and_then(Value::as_i64)))
+                        .map(|j| (j.as_str(), id_of(j).and_then(|e| server.get(&e)).and_then(Value::as_i64), None))
                         .collect();
                     (id.clone(), edits)
                 })
@@ -1310,7 +1350,7 @@ mod tests {
             // 用户真改过名。
             edit(3, "fieldDef/c", json!({"name": "我的来源", "ord": 2, "ankiNum": 13})),
         ];
-        let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None)).collect();
+        let stored: Vec<StoredEdit<'_>> = edits.iter().map(|j| (j.as_str(), None, None)).collect();
         let builtin = json!({
             "name": "Fushi Card", "css": "",
             "fields": [
@@ -1338,7 +1378,7 @@ mod tests {
             "fields": [{"id": "a", "name": "Expression", "ord": 0, "ankiNum": 11}],
             "templates": [],
         });
-        let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None)];
+        let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None, None)];
         let v = note_type_view_of(&payload, &only_a, &lapis).unwrap();
         assert_eq!(v["fs"][0]["name"], "Expression");
     }

@@ -45,7 +45,7 @@ pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, locati
     }
     if flags & MEDIA_AT_SEEDED != 0 {
         conn.prepare_cached(
-            "INSERT INTO sync2_media_seeded (profile_uid, location, wall) VALUES (?1, ?2, ?3) \
+            "INSERT INTO sync2_media_seeded (profile_uid, location, wall) VALUES (srs_id(?1), ?2, ?3) \
              ON CONFLICT(profile_uid, location) DO UPDATE SET wall = MAX(wall, excluded.wall)",
         )
         .map_err(sql)?
@@ -59,7 +59,7 @@ pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, locati
 /// 相同就不写。
 pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, name: &str, win: &mvr::Write, present: Option<i64>) -> Result<(), String> {
     let cur: Option<(i64, i64, Vec<u8>)> = conn
-        .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
+        .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = srs_id(?1) AND location = ?2 AND name = ?3")
         .map_err(sql)?
         .query_row(params![profile, location, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
@@ -76,7 +76,7 @@ pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, na
     };
     conn.prepare_cached(
         "INSERT OR REPLACE INTO sync2_media_at (profile_uid, location, name, present, wall, logical, device) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6, ?7)",
     )
     .map_err(sql)?
     .execute(params![profile, location, name, present, win.wall, win.logical, win.id.device.0.to_vec()])
@@ -88,7 +88,7 @@ pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, na
 /// 日志里灌重复事实。
 fn changed(conn: &Connection, profile: &str, location: &str, names: &[String], present: i64) -> Result<Vec<String>, String> {
     let mut stmt =
-        conn.prepare_cached("SELECT present FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3").map_err(sql)?;
+        conn.prepare_cached("SELECT present FROM sync2_media_at WHERE profile_uid = srs_id(?1) AND location = ?2 AND name = ?3").map_err(sql)?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for n in names {
@@ -105,7 +105,7 @@ fn changed(conn: &Connection, profile: &str, location: &str, names: &[String], p
 
 fn is_seeded(conn: &Connection, profile: &str, location: &str) -> Result<bool, String> {
     Ok(conn
-        .prepare_cached("SELECT 1 FROM sync2_media_seeded WHERE profile_uid = ?1 AND location = ?2")
+        .prepare_cached("SELECT 1 FROM sync2_media_seeded WHERE profile_uid = srs_id(?1) AND location = ?2")
         .map_err(sql)?
         .query_row(params![profile, location], |_| Ok(()))
         .optional()
@@ -124,7 +124,7 @@ impl SrsCore {
         let mut absent = Vec::new();
         let mut suspect = Vec::new();
         let mut stmt = r
-            .prepare("SELECT name, present FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 ORDER BY name")
+            .prepare("SELECT name, present FROM sync2_media_at WHERE profile_uid = srs_id(?1) AND location = ?2 ORDER BY name")
             .map_err(sql)?;
         let rows = stmt.query_map(params![profile, location], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))).map_err(sql)?;
         for row in rows {
@@ -258,7 +258,7 @@ type LocalRow = (i64, i64, [u8; 32], Option<[u8; 32]>);
 
 fn local_row(c: &Connection, profile: &str, name: &str) -> Result<Option<LocalRow>, String> {
     let row: Option<(i64, i64, Vec<u8>, Option<Vec<u8>>)> = c
-        .prepare_cached("SELECT size, mtime, sha256, synced FROM sync2_media_local WHERE profile_uid = ?1 AND name = ?2")
+        .prepare_cached("SELECT size, mtime, sha256, synced FROM sync2_media_local WHERE profile_uid = srs_id(?1) AND name = ?2")
         .map_err(sql)?
         .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .optional()
@@ -271,7 +271,7 @@ fn local_row(c: &Connection, profile: &str, name: &str) -> Result<Option<LocalRo
 
 fn put_local_row(c: &Connection, profile: &str, name: &str, row: &LocalRow) -> Result<(), String> {
     c.prepare_cached(
-        "INSERT OR REPLACE INTO sync2_media_local (profile_uid, name, size, mtime, sha256, synced) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR REPLACE INTO sync2_media_local (profile_uid, name, size, mtime, sha256, synced) VALUES (srs_id(?1), ?2, ?3, ?4, ?5, ?6)",
     )
     .map_err(sql)?
     .execute(params![profile, name, row.0, row.1, row.2.to_vec(), row.3.map(|s| s.to_vec())])
@@ -282,7 +282,7 @@ fn put_local_row(c: &Connection, profile: &str, name: &str, row: &LocalRow) -> R
 /// 名字此刻绑定的内容 (sha256, size)。
 fn binding(c: &Connection, profile: &str, name: &str) -> Result<Option<([u8; 32], i64)>, String> {
     let row: Option<(Vec<u8>, i64)> = c
-        .prepare_cached("SELECT sha256, size FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
+        .prepare_cached("SELECT sha256, size FROM sync2_media WHERE profile_uid = srs_id(?1) AND name = ?2")
         .map_err(sql)?
         .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()

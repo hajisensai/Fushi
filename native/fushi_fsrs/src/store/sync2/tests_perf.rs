@@ -70,7 +70,7 @@ fn own_fork_fetches_only_past_the_divergence_and_survives_an_interrupted_round()
     let r: Value = serde_json::from_str(&a.core.sync2_ingest_finish(P, T0 + 50).unwrap()).unwrap();
     assert_eq!(r["fork"], json!(true), "{r}");
     assert_ne!(device_of(&a), me, "rotated to a new identity");
-    let frozen = a.rows(&format!("SELECT applied FROM sync2_devices WHERE profile_uid = '{P}' AND frozen = 1"));
+    let frozen = a.rows(&format!("SELECT applied FROM sync2_devices WHERE profile_uid = srs_id('{P}') AND frozen = 1"));
     assert_eq!(frozen[1][0], shared.to_string(), "frozen at the copy point");
     assert_eq!(a.rows("SELECT COUNT(*) FROM srs_meta WHERE key LIKE 'sync2_fork_at/%'")[1][0], "0");
     let plan = a.core.sync2_plan_at(P, &heads(&other), Some("loc")).unwrap();

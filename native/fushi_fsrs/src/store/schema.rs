@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 18;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -182,7 +182,6 @@ CREATE TABLE IF NOT EXISTS srs_cards_cache (
 CREATE INDEX IF NOT EXISTS idx_srs_entities_profile_kind ON srs_entities (profile_uid, kind);
 CREATE INDEX IF NOT EXISTS idx_srs_field_edits_entity ON srs_field_edits (entity_kind, entity_id);
 CREATE INDEX IF NOT EXISTS idx_srs_review_logs_card ON srs_review_logs (card_id);
-CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_time ON srs_review_logs (profile_uid, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_srs_event_local_outbox ON srs_event_local (profile_uid, outbox_seq);
 CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_term ON srs_notes_cache (profile_uid, term_key);
 CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_note ON srs_cards_cache (note_id);
@@ -295,6 +294,15 @@ CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_anki_id ON srs_cards_cache (profi
 const V15_NOTES: (&str, &str) = ("dupe_norm", "ALTER TABLE srs_notes_cache ADD COLUMN dupe_norm TEXT NULL;");
 const V15_INDEX: &str = "CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_dupe ON srs_notes_cache (profile_uid, dupe_norm)      WHERE deleted_at IS NULL;";
 
+/// V16：去掉两条整表复制级的冗余索引（2026-10-30 磁盘占用，10 万卡库合计约 120 MB）。
+/// - `idx_sync2_ent_ops_what (profile, kind, entity, what)`：表是 WITHOUT ROWID、主键 (profile, kind, entity, device, seq)，
+///   这条索引的每一行就是整行换个序——体积与表本身相同。所有查询都带 (profile, kind, entity) 主键前缀，`what` 在
+///   一个实体的十几行里过滤；按 `what` 跨实体扫的（标签寄存器重建、时间线）本来就是整个 profile 扫一遍。
+/// - `idx_srs_review_logs_profile_time (profile, occurred_at)`：`idx_srs_review_logs_profile_kind_time (profile, kind,
+///   occurred_at, card_id, review_type)` 以它为前缀之外只多一个低基数的 `kind`；读日志的查询都按种类取（计数上下文、
+///   统计走 `srs_stat_reviews`），按 profile 的全扫用另一条索引的 profile 前缀同样能走。
+const V16_DROP: &str = "DROP INDEX IF EXISTS idx_sync2_ent_ops_what; DROP INDEX IF EXISTS idx_srs_review_logs_profile_time;";
+
 fn has_column(tx: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
     tx.query_row(
         &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
@@ -326,13 +334,13 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
     for table in ["srs_notes_cache", "srs_cards_cache"] {
         let ids: Vec<String> = {
             let mut stmt = c
-                .prepare(&format!("SELECT id FROM {table} WHERE anki_id = 0"))
+                .prepare(&format!("SELECT srs_idt(id) AS id FROM {table} WHERE anki_id = 0"))
                 .map_err(|e| e.to_string())?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
         };
         let mut up = c
-            .prepare(&format!("UPDATE {table} SET anki_id = ?1 WHERE id = ?2"))
+            .prepare(&format!("UPDATE {table} SET anki_id = ?1 WHERE id = srs_id(?2)"))
             .map_err(|e| e.to_string())?;
         for id in &ids {
             up.execute(rusqlite::params![anki_numeric_id(id), id]).map_err(|e| e.to_string())?;
@@ -341,9 +349,51 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// 升级前空间不够时的错误前缀（store/ffi.rs 据此回报 `STORE_NO_SPACE`，Dart 侧解析后面的 JSON 报可读错误）。
+pub const UPGRADE_NO_SPACE: &str = "srs.db upgrade needs more free disk space: ";
+
+/// 升级余量。
+const UPGRADE_MARGIN: u64 = 64 << 20;
+
+/// 升级前的空间守卫（与 store/compact.rs 同一套估算）：库要升级（`0 < 现版本 < [SCHEMA_VERSION]`）时，升级在一个事务
+/// 里整表重建（v17 的 ID 编码、v18 的瘦 JSON），新页先写进 WAL、提交前旧页不能复用，峰值约多占「两倍有效数据」。
+/// [free] 是库所在卷的空闲字节（拿不到为 None：照样升级）。空间不够就在开事务之前报错（库一个字节不动），而不是
+/// 写到一半磁盘满、整个事务回滚、每次打开都白写一遍。
+pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Result<(), String> {
+    let Some(free) = free else { return Ok(()) };
+    let has_meta = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'srs_meta'", [], |_| Ok(())).is_ok();
+    if !has_meta {
+        return Ok(());
+    }
+    let current: i64 = c
+        .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get::<_, String>(0))
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    if current < 1 || current >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    let pragma = |name: &str| -> Result<u64, String> {
+        c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).map(|v| v.max(0) as u64).map_err(|e| e.to_string())
+    };
+    let live = pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
+    let need = live.saturating_mul(2).saturating_add(UPGRADE_MARGIN);
+    if free < need {
+        return Err(format!(
+            "{UPGRADE_NO_SPACE}{}",
+            serde_json::json!({"need": need, "free": free, "from": current, "to": SCHEMA_VERSION})
+        ));
+    }
+    Ok(())
+}
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
+    // 升级步骤与触发器用的 SQL 函数：只建表的裸连接（测试）也要有。
+    super::ids::register(conn).map_err(|e| e.to_string())?;
+    super::slim::register(conn).map_err(|e| e.to_string())?;
+    super::sync2::digest::register(conn).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);",
@@ -356,6 +406,20 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    // 读操作的代码要 `sync2_ops` 的快照引用两列（v16，store/sync2/snapshots.rs）；v16 之前的步骤（v10 的寄存器重建）
+    // 已经在读操作了，所以从更老的版本直接升上来时先补上。可重放，没有 `sync2_ops` 的库什么也不做。
+    if current < 16 {
+        super::sync2::snapshots::ensure_columns(&tx)?;
+    }
+    // v17 的 ID 编码（store/ids.rs）：之后的旧步骤用新代码按编码读写，所以从更老的版本升上来时先把已有的表转过去；
+    // 中途建出来的表在结尾再转一次。可重放。
+    if (1..17).contains(&current) {
+        super::ids::migrate(&tx)?;
+    }
+    // v18 的瘦 JSON（store/slim.rs）同理：旧步骤用新代码写 `jslim`，先把已有的两张投影表转过去。可重放。
+    if (1..18).contains(&current) {
+        super::slim::migrate(&tx)?;
+    }
     if current > SCHEMA_VERSION {
         return Err(format!(
             "srs.db schema {current} is newer than this build ({SCHEMA_VERSION})"
@@ -392,6 +456,7 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 5 {
         // V5：同步 v2 的事实表与元数据（store/sync2/schema.rs）。旧表不动：它们从此是 ops 的投影。
         tx.execute_batch(super::sync2::schema::V5).map_err(|e| e.to_string())?;
+        super::sync2::snapshots::ensure_columns(&tx)?;
     }
     if current < 6 {
         // V6：本机切段点记下压缩后体积（按体积切段与分层合并用，store/sync2/transport.rs）。老段留 0 = 未知，
@@ -467,6 +532,38 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         }
         tx.execute_batch(V15_INDEX).map_err(|e| e.to_string())?;
     }
+    if current < 16 {
+        // V16：磁盘占用（[V16_DROP]、store/sync2/snapshots.rs）：操作日志里的配置快照原文挪进快照表。只改
+        // `sync2_ops`（投影与摘要不动），读回的载荷逐字节相同；每一步都可重放。
+        tx.execute_batch(V16_DROP).map_err(|e| e.to_string())?;
+        super::sync2::snapshots::migrate(&tx)?;
+        // 腾出来的页只进空闲链表：打开时整理一次文件（store/compact.rs，事务外做）。
+        // 新建的库没有可整理的页。
+        if current > 0 { tx.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, '16') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [super::compact::PENDING],
+        )
+        .map_err(|e| e.to_string())?; }
+    }
+    if current < 17 {
+        // V17：ID 列存 16 字节 BLOB（store/ids.rs）。整表重建，腾出的页同样留给打开时的整理。
+        super::ids::migrate(&tx)?;
+        // 新建的库没有可整理的页。
+        if current > 0 { tx.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, '17') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [super::compact::PENDING],
+        )
+        .map_err(|e| e.to_string())?; }
+    }
+    if current < 18 {
+        // V18：两张投影表的 `json` 改成生成列，磁盘上只存去掉与列重复的键的 `jslim`（store/slim.rs）。
+        super::slim::migrate(&tx)?;
+        if current > 0 { tx.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, '18') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [super::compact::PENDING],
+        )
+        .map_err(|e| e.to_string())?; }
+    }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -516,7 +613,7 @@ mod tests {
         assert!(indexes(&c).contains(&"idx_srs_notes_cache_dupe".to_owned()));
         let v: Option<String> = c.query_row("SELECT dupe_norm FROM srs_notes_cache WHERE id = 'n1'", [], |r| r.get(0)).unwrap();
         assert_eq!(v, None, "old rows wait for the backfill");
-        assert_eq!(version(&c), "15");
+        assert_eq!(version(&c), SCHEMA_VERSION.to_string());
         c.execute_batch("UPDATE srs_notes_cache SET dupe_norm = 'x'; UPDATE srs_meta SET value = '14' WHERE key = 'schema';")
             .unwrap();
         let before = indexes(&c);
@@ -578,7 +675,7 @@ mod tests {
                     .prepare(
                         "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, hidden, \
                          queue, due_day, due_at, stability, last_reviewed_at, note_created_at, new_position, freq_rank) \
-                         VALUES (?1, 'p', ?2, 't', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                         VALUES (srs_id(?1), 'p', srs_id(?2), 't', srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                     )
                     .unwrap();
                 let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -620,7 +717,7 @@ mod tests {
                 let mut log = tx
                     .prepare(
                         "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, \
-                         origin, json) VALUES (?1, 'p', ?2, ?3, 3, ?4, ?5, 'fushi', ?6)",
+                         origin, jslim) VALUES (srs_id(?1), 'p', srs_id(?2), ?3, 3, ?4, ?5, 'fushi', ?6)",
                     )
                     .unwrap();
                 let body = format!("{{\"res\":{{\"reps\":2}},\"pad\":\"{}\"}}", "x".repeat(300));
@@ -652,11 +749,11 @@ mod tests {
             ];
             let filter = decks.map_or(String::new(), |d| {
                 args.extend(d.iter().map(|s| Value::Text(s.clone())));
-                format!(" AND deck_id IN ({})", vec!["?"; d.len()].join(", "))
+                format!(" AND deck_id IN ({})", vec!["srs_id(?)"; d.len()].join(", "))
             });
             (
                 format!(
-                    "SELECT deck_id, COUNT(*) AS total, \
+                    "SELECT srs_idt(deck_id) AS deck_id, COUNT(*) AS total, \
                      SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END) AS new_avail, \
                      SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END) AS learn, \
                      SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) AS due \
@@ -672,7 +769,7 @@ mod tests {
             args.extend(order_vars);
             (
                 format!(
-                    "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} AND deck_id IN ({deck_in}) \
+                    "SELECT srs_idt(id), due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({deck_in}) \
                      AND {cond} ORDER BY {order} LIMIT 1"
                 ),
                 args,
@@ -707,8 +804,8 @@ mod tests {
                 vec![Value::Text("p".into()), Value::Text("review".into()), Value::Integer(now - 29 * 86_400_000)],
             );
             let today_logs = (
-                "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = ? THEN json END AS j FROM srs_review_logs \
-                 WHERE profile_uid = ? AND kind = ? AND occurred_at >= ? ORDER BY occurred_at"
+                "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = ? THEN json END AS j FROM srs_review_logs \
+                 WHERE profile_uid = srs_id(?) AND kind = ? AND occurred_at >= ? ORDER BY occurred_at"
                     .to_owned(),
                 vec![
                     Value::Text("learn".into()),

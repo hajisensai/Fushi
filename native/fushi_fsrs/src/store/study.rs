@@ -177,7 +177,7 @@ impl Source for SessionSource<'_> {
 fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> String {
     let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
     format!(
-        "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
+        "SELECT srs_idt(id), due_at FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({}) AND {condition}{not_in} ORDER BY {order} LIMIT 1",
         marks(decks)
     )
 }
@@ -186,7 +186,8 @@ const NEW_BY_POSITION: &str = "new_position IS NULL, new_position, note_created_
 const NEW_BY_FREQUENCY: &str = "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id";
 
 fn marks(n: usize) -> String {
-    vec!["?"; n].join(", ")
+    // ID 列表（store/ids.rs）：srs_id 对非 UUID 的值原样返回。
+    vec!["srs_id(?)"; n].join(", ")
 }
 
 /// RWKV-Instant 合格的复习卡（按 R 升序，同 R 按 id）。与旧 Dart `_instantReviews` 同口径：
@@ -585,18 +586,18 @@ mod tests {
         pub(super) fn tallies_sql(decks: Option<usize>) -> String {
             let deck_sql = decks.map_or(String::new(), |n| format!(" AND deck_id IN ({})", marks(n)));
             format!(
-                "SELECT deck_id, COUNT(*), \
+                "SELECT srs_idt(deck_id) AS deck_id, COUNT(*), \
                  SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
                  SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
                  SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
-                 FROM srs_cards_cache WHERE profile_uid = ? AND hidden = 0{deck_sql} GROUP BY deck_id"
+                 FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND hidden = 0{deck_sql} GROUP BY deck_id"
             )
         }
 
         pub(super) fn due_sql(decks: usize, exclude: usize) -> String {
             let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
             format!(
-                "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} \
+                "SELECT srs_idt(id), last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} \
                  AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
                  ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
                  / (9.0 * COALESCE(stability, 1.0))), id LIMIT 2",
@@ -645,7 +646,7 @@ mod tests {
                 let all: Vec<&String> = ids.iter().collect();
                 let mut out = HashMap::new();
                 for chunk in all.chunks(400) {
-                    let sql_text = format!("SELECT id, deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = ?", marks(chunk.len()));
+                    let sql_text = format!("SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = srs_id(?)", marks(chunk.len()));
                     let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
                     let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
                     args.push(Sql::Text(self.profile.to_owned()));
@@ -731,7 +732,7 @@ mod tests {
         }
         uses("logs", LOGS_SQL, "idx_srs_review_logs_profile_kind_time", true);
         uses("logs by id", &crate::store::queue::logs_by_id_sql(2), "sqlite_autoindex_srs_review_logs_1", false);
-        uses("rows by id", &format!("{ROW_COLUMNS} WHERE id IN (?, ?) AND +profile_uid = ?"), "sqlite_autoindex_srs_cards_cache_1", false);
+        uses("rows by id", &format!("{ROW_COLUMNS} WHERE id IN (?, ?) AND +profile_uid = srs_id(?)"), "sqlite_autoindex_srs_cards_cache_1", false);
         assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
     }
 
@@ -768,7 +769,7 @@ mod tests {
         let json = json!({"p": P, "k": "deck", "e": entity, "f": key, "w": "w", "s": *n, "v": v, "hlc": format!("{}:0:w", 1_700_000_000_000i64 + *n)}).to_string();
         exec(
             core,
-            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES (?, ?, 'deck', ?, ?, 'w', ?, ?)",
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) VALUES (srs_id(?), srs_id(?), 'deck', srs_id(?), ?, 'w', ?, ?)",
             vec![Sql::Text(format!("e{n}")), Sql::Text(P.into()), Sql::Text(entity.into()), Sql::Text(key.into()), Sql::Integer(*n), Sql::Text(json)],
         );
     }
@@ -813,13 +814,13 @@ mod tests {
 
     const CARD_UPSERT: &str = "INSERT OR REPLACE INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, buried_until_day, \
          hidden, queue, due_day, due_at, stability, last_reviewed_at, scheduler, note_created_at, new_position, freq_rank) \
-         VALUES (?1, ?2, ?1, 't', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)";
+         VALUES (srs_id(?1), srs_id(?2), srs_id(?1), 't', srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)";
 
     fn log(core: &SrsCore, n: &mut i64, card: &str, at: i64, ty: &str, reps: i64, kind: &str) {
         *n += 1;
         exec(
             core,
-            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) VALUES (?, ?, ?, ?, 3, ?, ?, 'local', ?)",
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, 3, ?, ?, 'local', ?)",
             vec![
                 Sql::Text(format!("l{n}")),
                 Sql::Text(P.into()),
@@ -874,7 +875,7 @@ mod tests {
         let mut n = 0i64;
         let mut logs = 0i64;
         for d in DECKS {
-            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (?, ?, 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
+            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
         }
         for (d, parent) in [("RA", "R"), ("RA1", "RA"), ("RB", "R")] {
             edit(&core, &mut n, d, "parent", json!(parent));
@@ -916,7 +917,7 @@ mod tests {
                         3 => ("hidden", Sql::Integer(rng.below(2) as i64)),
                         _ => ("stability", Sql::Real(rng.below(30) as f64 + 0.5)),
                     };
-                    exec(&core, &format!("UPDATE srs_cards_cache SET {col} = ? WHERE id = ?"), vec![v, Sql::Text(id)]);
+                    exec(&core, &format!("UPDATE srs_cards_cache SET {col} = ? WHERE id = srs_id(?)"), vec![v, Sql::Text(id)]);
                 }
                 38..=42 => {
                     let id = format!("c{:04}", cards.len());
@@ -925,7 +926,7 @@ mod tests {
                 }
                 43..=45 => {
                     let id = rng.pick(&cards).clone();
-                    exec(&core, "DELETE FROM srs_cards_cache WHERE id = ?", vec![Sql::Text(id)]);
+                    exec(&core, "DELETE FROM srs_cards_cache WHERE id = srs_id(?)", vec![Sql::Text(id)]);
                 }
                 46..=60 => {
                     // 作答：今天的日志（第一次学 / 复习），偶尔是别的种类或很久以前的。
@@ -936,7 +937,7 @@ mod tests {
                 }
                 61..=63 => {
                     let id = format!("l{}", 1 + rng.below(logs as u64));
-                    exec(&core, "DELETE FROM srs_review_logs WHERE id = ?", vec![Sql::Text(id)]);
+                    exec(&core, "DELETE FROM srs_review_logs WHERE id = srs_id(?)", vec![Sql::Text(id)]);
                 }
                 64..=66 => {
                     let d = *rng.pick(&DECKS);
@@ -1014,11 +1015,11 @@ mod tests {
         let path = dir.join("srs.db");
         let _ = std::fs::remove_file(&path);
         let core = SrsCore::open(&path).unwrap();
-        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', ?, 'deck', '{}')", vec![Sql::Text(P.into())]);
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', srs_id(?), 'deck', '{}')", vec![Sql::Text(P.into())]);
         for (id, stab) in [("weak", 0.5), ("strong", 90.0)] {
             exec(
                 &core,
-                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (?, ?, 'n', 't', 'O', 'review', 0, ?, ?)",
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (srs_id(?), srs_id(?), 'n', 't', 'O', 'review', 0, ?, ?)",
                 vec![Sql::Text(id.into()), Sql::Text(P.into()), Sql::Real(stab), Sql::Integer(now - 10 * 86_400_000)],
             );
         }
@@ -1061,7 +1062,7 @@ mod tests {
         let path = dir.join("srs.db");
         let _ = std::fs::remove_file(&path);
         let core = SrsCore::open(&path).unwrap();
-        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', ?, 'deck', '{}')", vec![Sql::Text(P.into())]);
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', srs_id(?), 'deck', '{}')", vec![Sql::Text(P.into())]);
         let mut want: Vec<(Option<f64>, String)> = Vec::new();
         for i in 0..3000 {
             let id = format!("d{:05}", rng.below(1_000_000));
@@ -1081,7 +1082,7 @@ mod tests {
             };
             exec(
                 &core,
-                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (?, ?, 'n', 't', 'O', 'review', 0, ?, ?)",
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (srs_id(?), srs_id(?), 'n', 't', 'O', 'review', 0, ?, ?)",
                 vec![Sql::Text(id.clone()), Sql::Text(P.into()), stab.map_or(Sql::Null, Sql::Real), last.map_or(Sql::Null, Sql::Integer)],
             );
             want.push((crate::store::queue::sql_r(now, last, stab), id));
@@ -1092,7 +1093,7 @@ mod tests {
             .read_visible(|c| {
                 let mut stmt = c
                     .prepare(
-                        "SELECT id FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+                        "SELECT srs_idt(id) FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
                          / (9.0 * COALESCE(stability, 1.0))), id",
                     )
                     .map_err(sql)?;
@@ -1117,7 +1118,7 @@ mod tests {
             if ex.len() % 2 == 0 {
                 ex.push(expected.clone());
             } else {
-                exec(&core, "DELETE FROM srs_cards_cache WHERE id = ?", vec![Sql::Text(expected.clone())]);
+                exec(&core, "DELETE FROM srs_cards_cache WHERE id = srs_id(?)", vec![Sql::Text(expected.clone())]);
             }
         }
         core.close();

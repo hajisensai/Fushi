@@ -394,6 +394,7 @@ dependencies = [
  "ed25519-dalek",
  "fsrs",
  "getrandom 0.4.3",
+ "libc",
  "libm",
  "proptest",
  "regex",

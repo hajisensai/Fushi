@@ -243,7 +243,12 @@ jobs:
       with:
         workspaces: native/fushi_fsrs -> target
         key: fushi-fsrs-linux-x64
-    - name: Build fushi_fsrs (Linux x64) for package tests
+    # 包测试的库带 ID 审计（src/store/ids.rs `audit`）：schema v17 起 ID 列存 16 字节 BLOB，Dart 原生 SQL
+    # 漏了 srs_id() 会查不到 / 写错形状，审计让这类语句直接报错；fushi_srs 的金丝雀测试凭
+    # FUSHI_FSRS_ID_AUDIT=1 断言审计真的开着（库换成不带审计的构建就红）。
+    - name: Build fushi_fsrs (Linux x64, id_audit) for package tests
+      env:
+        FUSHI_FSRS_FEATURES: id_audit
       run: bash native/fushi_fsrs/build_linux_so.sh
     # 计算内核 fushi_compute 是硬依赖：包测试（fushi_compute / fushi_engine）要 Linux .so
     # （导出 FUSHI_COMPUTE_LIB），下面的 Android release 验证构建（android-arm64）要 arm64-v8a .so，
@@ -281,6 +286,7 @@ jobs:
     - name: Run package tests
       env:
         FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+        FUSHI_FSRS_ID_AUDIT: '1'
         FUSHI_DICTS_LIB: ${{ github.workspace }}/native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，

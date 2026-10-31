@@ -41,15 +41,15 @@ fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
 /// 用户看得见的规模：未删除的笔记、它们的卡、全部复习记录；外加该 uid 在各表里的总行数。
 fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
     let count = |q: &str| -> Result<i64, String> { c.query_row(q, [profile], |r| r.get(0)).map_err(sql) };
-    let notes = count("SELECT COUNT(*) FROM srs_notes_cache WHERE profile_uid = ?1 AND deleted_at IS NULL")?;
+    let notes = count("SELECT COUNT(*) FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND deleted_at IS NULL")?;
     let cards = count(
-        "SELECT COUNT(*) FROM srs_cards_cache c WHERE c.profile_uid = ?1 AND EXISTS \
+        "SELECT COUNT(*) FROM srs_cards_cache c WHERE c.profile_uid = srs_id(?1) AND EXISTS \
          (SELECT 1 FROM srs_notes_cache n WHERE n.id = c.note_id AND n.deleted_at IS NULL)",
     )?;
-    let reviews = count("SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = ?1")?;
+    let reviews = count("SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = srs_id(?1)")?;
     let mut rows = 0i64;
     for t in profile_tables(c)? {
-        rows += count(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = ?1"))?;
+        rows += count(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"))?;
     }
     Ok(json!({"notes": notes, "cards": cards, "reviews": reviews, "rows": rows}))
 }
@@ -80,7 +80,7 @@ impl SrsCore {
             let mut tables = Map::new();
             let mut deleted = 0i64;
             for t in profile_tables(c)? {
-                let n = c.execute(&format!("DELETE FROM \"{t}\" WHERE profile_uid = ?1"), [profile]).map_err(sql)? as i64;
+                let n = c.execute(&format!("DELETE FROM \"{t}\" WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)? as i64;
                 if n > 0 {
                     tables.insert(t, json!(n));
                 }
@@ -120,8 +120,8 @@ impl SrsCore {
             let tables = profile_tables(&r)?;
             let mut uids: Vec<String> = Vec::new();
             if !tables.is_empty() {
-                let union = tables.iter().map(|t| format!("SELECT profile_uid FROM \"{t}\"")).collect::<Vec<_>>().join(" UNION ");
-                let mut stmt = r.prepare(&format!("SELECT profile_uid FROM ({union}) ORDER BY profile_uid")).map_err(sql)?;
+                let union = tables.iter().map(|t| format!("SELECT srs_idt(profile_uid) AS profile_uid FROM \"{t}\"")).collect::<Vec<_>>().join(" UNION ");
+                let mut stmt = r.prepare(&format!("SELECT srs_idt(profile_uid) AS profile_uid FROM ({union}) ORDER BY profile_uid")).map_err(sql)?;
                 uids = stmt.query_map([], |x| x.get::<_, String>(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
             }
             let swept: Option<i64> = r
@@ -157,7 +157,8 @@ mod tests {
 
     /// 不按 profile 分、删除时不按 uid 删的表：库级元数据（按 profile 的键单独按后缀删）、跨 profile 去重存的
     /// 因果上下文（按引用回收）。
-    const SHARED_TABLES: [&str; 2] = ["srs_meta", "sync2_deps"];
+    // sync2_snapshots：配置快照原文按内容共用、只增（store/sync2/snapshots.rs），删 profile 后剩下的几行无害。
+    const SHARED_TABLES: [&str; 3] = ["srs_meta", "sync2_deps", "sync2_snapshots"];
 
     fn open(tag: &str) -> (SrsCore, tempdir::Dir) {
         let dir = tempdir::new(tag);
@@ -191,23 +192,23 @@ mod tests {
         for i in 0..notes {
             let deleted: Option<i64> = if i == 0 && notes > 1 { Some(5) } else { None };
             w.execute(
-                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deleted_at) VALUES (?1, ?2, 'NT', ?1, 1, ?3)",
+                "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, deleted_at) VALUES (srs_id(?1), srs_id(?2), 'NT', ?1, 1, ?3)",
                 params![format!("N-{profile}-{i}"), profile, deleted],
             )
             .unwrap();
             w.execute(
-                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id) VALUES (?1, ?2, ?3, 'T', 'D')",
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id) VALUES (srs_id(?1), srs_id(?2), srs_id(?3), 'T', 'D')",
                 params![format!("C-{profile}-{i}"), profile, format!("N-{profile}-{i}")],
             )
             .unwrap();
         }
-        w.execute("INSERT INTO srs_local_state (profile_uid, json) VALUES (?1, '{}')", [profile]).unwrap();
+        w.execute("INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')", [profile]).unwrap();
         w.execute_batch(
-            "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (profile_uid TEXT NOT NULL, pos INTEGER NOT NULL, \
+            "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (profile_uid UUIDTEXT NOT NULL, pos INTEGER NOT NULL, \
              phase INTEGER NOT NULL, src TEXT NOT NULL, PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;",
         )
         .unwrap();
-        w.execute("INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) VALUES (?1, 1, 0, 'x')", [profile]).unwrap();
+        w.execute("INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) VALUES (srs_id(?1), 1, 0, 'x')", [profile]).unwrap();
         w.execute("INSERT INTO srs_meta (key, value) VALUES ('sync2_migrating/' || ?1, '1')", [profile]).unwrap();
     }
 
@@ -224,8 +225,8 @@ mod tests {
         seed(&core, Q, 2, 2);
         let q_before = core.profile_footprint(Q).unwrap();
         let deps_before = count(&core, "SELECT COUNT(*) FROM sync2_deps");
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = '{P}'")) > 0);
-        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_self WHERE profile_uid = '{P}'")) == 1);
+        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_ops WHERE profile_uid = srs_id('{P}')")) > 0);
+        assert!(count(&core, &format!("SELECT COUNT(*) FROM sync2_self WHERE profile_uid = srs_id('{P}')")) == 1);
         assert!(count(&core, &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")) >= 2);
 
         let out = core.profile_purge(P).unwrap();
@@ -249,7 +250,7 @@ mod tests {
             .unwrap();
         assert!(every.len() > 25, "{every:?}");
         for t in every {
-            let n: i64 = w.query_row(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = ?1"), [P], |r| r.get(0)).unwrap();
+            let n: i64 = w.query_row(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"), [P], |r| r.get(0)).unwrap();
             assert_eq!(n, 0, "{t} still has rows of the purged profile");
         }
         let meta: i64 = w.query_row("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/' || ?1", [P], |r| r.get(0)).unwrap();
