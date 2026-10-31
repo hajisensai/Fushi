@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179350 (10550 per locale)
+/// Strings: 179401 (10553 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4759,6 +4759,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get gal_line_tts_speaker_pattern_invalid =>
       'Invalid regular expression';
   String get gal_line_tts_speaker_section => 'Speaker name';
+  String get gal_line_tts_speed => 'TTS speed';
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   String get gal_line_tts_strip_speaker_hint =>
       'Recognizes 【Name】line, Name「line」, Name followed by a new line, and Name: line';
@@ -7878,7 +7879,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get mining_audio_follow_playback_speed =>
       'Match sentence audio to playback speed';
   String get mining_audio_follow_playback_speed_hint =>
-      'When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Audiobook mining only.';
+      'When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Applies to audiobook mining; TTS word audio on cards follows the fallback voice speed.';
   String get mining_audio_head_pad => 'Audio padding before sentence';
   String get mining_audio_head_pad_hint =>
       'Extra audio kept before the subtitle starts, so the first syllable is not clipped. Never runs into the previous line.';
@@ -7916,6 +7917,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get models_tts_fallback_off => 'Don\'t use TTS';
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  String get models_tts_fallback_speed => 'Fallback voice speed';
+  String get models_tts_fallback_speed_hint =>
+      'Speed of TTS word audio when looking up words (pitch preserved). Cards follow it too when "Match sentence audio to playback speed" is on.';
   String get models_tts_fallback_voice => 'Fallback voice';
   String get models_tts_fallback_voice_hint =>
       'Voice used to generate word audio when none is found';
@@ -22900,6 +22904,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'سرعة TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -28194,7 +28200,7 @@ class _StringsAr extends _StringsEn {
       'مطابقة صوت الجملة لسرعة التشغيل';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'عندما يُشغَّل الكتاب الصوتي أسرع أو أبطأ من 1×، يُمدَّد صوت الجملة في البطاقة زمنيًا إلى السرعة نفسها مع الحفاظ على النغمة. لاستخراج الكتب الصوتية فقط.';
+      'عندما يُشغَّل الكتاب الصوتي أسرع أو أبطأ من 1×، يُمدَّد صوت الجملة في البطاقة زمنيًا إلى السرعة نفسها مع الحفاظ على النغمة. ينطبق على استخراج الكتب الصوتية؛ ويتبع صوت الكلمة بتقنية TTS في البطاقات سرعة الصوت الاحتياطي.';
   @override
   String get mining_audio_head_pad => 'إضافة صوتية قبل الجملة';
   @override
@@ -28259,6 +28265,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'سرعة الصوت الاحتياطي';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'سرعة صوت الكلمة بتقنية TTS عند البحث (مع الحفاظ على النغمة). تتبعها البطاقات أيضًا عند تفعيل «مطابقة صوت الجملة لسرعة التشغيل».';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -48590,6 +48601,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'TTS-Geschwindigkeit';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -54004,7 +54017,7 @@ class _StringsDe extends _StringsEn {
       'Satz-Audio an Wiedergabegeschwindigkeit anpassen';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Wenn das Hörbuch schneller oder langsamer als 1× läuft, wird das Satz-Audio auf der Karte mit erhaltener Tonhöhe auf dieselbe Geschwindigkeit gedehnt. Nur für Hörbuch-Mining.';
+      'Wenn das Hörbuch schneller oder langsamer als 1× läuft, wird das Satz-Audio auf der Karte mit erhaltener Tonhöhe auf dieselbe Geschwindigkeit gedehnt. Gilt für Hörbuch-Mining; TTS-Wortaudio auf Karten folgt der Geschwindigkeit der Ersatzstimme.';
   @override
   String get mining_audio_head_pad => 'Audio-Puffer vor dem Satz';
   @override
@@ -54069,6 +54082,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Geschwindigkeit der Ersatzstimme';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Wiedergabegeschwindigkeit der TTS-Wortaussprache beim Nachschlagen (Tonhöhe bleibt erhalten). Bei aktivierter Option „Satz-Audio an Wiedergabegeschwindigkeit anpassen“ gilt sie auch für Karten.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -74568,6 +74586,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Velocidad de TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -79989,7 +80009,7 @@ class _StringsEs extends _StringsEn {
       'Ajustar el audio de la frase a la velocidad de reproducción';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Cuando el audiolibro se reproduce más rápido o más lento que 1×, el audio de la frase de la tarjeta se estira en el tiempo a la misma velocidad conservando el tono. Solo al crear tarjetas desde audiolibros.';
+      'Cuando el audiolibro se reproduce más rápido o más lento que 1×, el audio de la frase de la tarjeta se estira en el tiempo a la misma velocidad conservando el tono. Se aplica al crear tarjetas desde audiolibros; el audio TTS de palabras sigue la velocidad de la voz de respaldo.';
   @override
   String get mining_audio_head_pad => 'Margen de audio antes de la frase';
   @override
@@ -80054,6 +80074,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Velocidad de la voz de respaldo';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Velocidad del audio TTS de palabras al buscar (conserva el tono). Las tarjetas también la siguen cuando "Ajustar el audio de la frase a la velocidad de reproducción" está activado.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -100612,6 +100637,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Vitesse TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -106053,7 +106080,7 @@ class _StringsFr extends _StringsEn {
       'Adapter l\'audio de la phrase à la vitesse de lecture';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Quand le livre audio est lu plus vite ou plus lentement qu\'à 1×, l\'audio de la phrase sur la carte est étiré à la même vitesse en préservant la hauteur. Création de cartes depuis un livre audio uniquement.';
+      'Quand le livre audio est lu plus vite ou plus lentement qu\'à 1×, l\'audio de la phrase sur la carte est étiré à la même vitesse en préservant la hauteur. S\'applique aux cartes créées depuis un livre audio ; l\'audio TTS des mots suit la vitesse de la voix de secours.';
   @override
   String get mining_audio_head_pad => 'Marge audio avant la phrase';
   @override
@@ -106118,6 +106145,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Vitesse de la voix de secours';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Vitesse de l\'audio TTS des mots lors des recherches (hauteur préservée). Les cartes la suivent aussi quand « Adapter l\'audio de la phrase à la vitesse de lecture » est activé.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -126598,6 +126630,8 @@ class _StringsId extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Kecepatan TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -131953,7 +131987,7 @@ class _StringsId extends _StringsEn {
       'Sesuaikan audio kalimat dengan kecepatan putar';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Saat buku audio diputar lebih cepat atau lebih lambat dari 1×, audio kalimat pada kartu direntangkan waktunya ke kecepatan yang sama dengan nada dipertahankan. Hanya untuk mining buku audio.';
+      'Saat buku audio diputar lebih cepat atau lebih lambat dari 1×, audio kalimat pada kartu direntangkan waktunya ke kecepatan yang sama dengan nada dipertahankan. Berlaku untuk mining buku audio; audio kata TTS pada kartu mengikuti kecepatan suara cadangan.';
   @override
   String get mining_audio_head_pad => 'Bantalan audio sebelum kalimat';
   @override
@@ -132018,6 +132052,11 @@ class _StringsId extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Kecepatan suara cadangan';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Kecepatan audio kata TTS saat mencari kata (nada dipertahankan). Kartu juga mengikutinya saat "Sesuaikan audio kalimat dengan kecepatan putar" aktif.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -152401,6 +152440,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Velocità TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -157804,7 +157845,7 @@ class _StringsIt extends _StringsEn {
       'Adatta l\'audio della frase alla velocità di riproduzione';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Quando l\'audiolibro viene riprodotto più veloce o più lento di 1×, l\'audio della frase sulla carta viene allungato/accorciato nel tempo alla stessa velocità mantenendo l\'intonazione. Solo per il mining da audiolibri.';
+      'Quando l\'audiolibro viene riprodotto più veloce o più lento di 1×, l\'audio della frase sulla carta viene allungato/accorciato nel tempo alla stessa velocità mantenendo l\'intonazione. Vale per il mining da audiolibri; l\'audio TTS delle parole sulle carte segue la velocità della voce di riserva.';
   @override
   String get mining_audio_head_pad => 'Margine audio prima della frase';
   @override
@@ -157869,6 +157910,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Velocità della voce di riserva';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Velocità dell\'audio TTS delle parole durante la ricerca (intonazione preservata). Anche le carte la seguono quando "Adatta l\'audio della frase alla velocità di riproduzione" è attivo.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -178011,6 +178057,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'TTS の再生速度';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -183139,7 +183187,7 @@ class _StringsJa extends _StringsEn {
   String get mining_audio_follow_playback_speed => '文の音声を再生速度に合わせる';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'オーディオブックを 1 倍速以外で再生しているとき、カードの文の音声を同じ速度に、音程を保ったまま伸縮します。オーディオブックのカード作成のみ。';
+      'オーディオブックを 1 倍速以外で再生しているとき、カードの文の音声を同じ速度に、音程を保ったまま伸縮します。オーディオブックのカード作成に適用。カードの TTS 単語発音は「代替音声の再生速度」に従います。';
   @override
   String get mining_audio_head_pad => '文の音声の前の余白';
   @override
@@ -183202,6 +183250,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => '代替音声の再生速度';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      '単語検索時の TTS 発音の再生速度（音程は保持）。「文の音声を再生速度に合わせる」がオンのとき、カードの TTS 発音もこの速度になります。';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -202903,6 +202956,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'TTS 속도';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -208039,7 +208094,7 @@ class _StringsKo extends _StringsEn {
   String get mining_audio_follow_playback_speed => '문장 오디오를 재생 속도에 맞추기';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      '오디오북을 1배속보다 빠르거나 느리게 재생 중이면, 카드의 문장 오디오도 음높이를 유지한 채 같은 속도로 시간이 조정됩니다. 오디오북 마이닝에만 해당합니다.';
+      '오디오북을 1배속보다 빠르거나 느리게 재생 중이면, 카드의 문장 오디오도 음높이를 유지한 채 같은 속도로 시간이 조정됩니다. 오디오북 마이닝에 적용되며, 카드의 TTS 단어 발음은 "대체 음성 속도"를 따릅니다.';
   @override
   String get mining_audio_head_pad => '문장 앞 오디오 여유';
   @override
@@ -208102,6 +208157,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => '대체 음성 속도';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      '단어 검색 시 TTS 발음의 재생 속도(음높이 유지). "문장 오디오를 재생 속도에 맞추기"가 켜져 있으면 카드의 TTS 발음도 이 속도를 따릅니다.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -228133,6 +228193,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'TTS-snelheid';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -233509,7 +233571,7 @@ class _StringsNl extends _StringsEn {
       'Zinsaudio afstemmen op afspeelsnelheid';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Wanneer het luisterboek sneller of langzamer dan 1× speelt, wordt de zinsaudio op de kaart naar dezelfde snelheid uitgerekt met behoud van de toonhoogte. Alleen voor mining uit luisterboeken.';
+      'Wanneer het luisterboek sneller of langzamer dan 1× speelt, wordt de zinsaudio op de kaart naar dezelfde snelheid uitgerekt met behoud van de toonhoogte. Geldt voor mining uit luisterboeken; TTS-woordaudio op kaarten volgt de snelheid van de reservestem.';
   @override
   String get mining_audio_head_pad => 'Audio-marge vóór de zin';
   @override
@@ -233574,6 +233636,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Snelheid van reservestem';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Snelheid van TTS-woordaudio bij opzoeken (toonhoogte blijft behouden). Kaarten volgen deze ook wanneer "Zinsaudio afstemmen op afspeelsnelheid" aan staat.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -254023,6 +254090,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Velocidade do TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -259424,7 +259493,7 @@ class _StringsPtBr extends _StringsEn {
       'Ajustar o áudio da frase à velocidade de reprodução';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Quando o audiolivro toca mais rápido ou mais devagar que 1×, o áudio da frase no cartão é esticado no tempo para a mesma velocidade, preservando o tom. Somente mineração de audiolivro.';
+      'Quando o audiolivro toca mais rápido ou mais devagar que 1×, o áudio da frase no cartão é esticado no tempo para a mesma velocidade, preservando o tom. Vale para mineração de audiolivro; o áudio TTS das palavras nos cartões segue a velocidade da voz reserva.';
   @override
   String get mining_audio_head_pad => 'Margem de áudio antes da frase';
   @override
@@ -259489,6 +259558,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Velocidade da voz reserva';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Velocidade do áudio TTS das palavras ao pesquisar (tom preservado). Os cartões também a seguem quando "Ajustar o áudio da frase à velocidade de reprodução" está ativado.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -279928,6 +280002,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Скорость TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -285313,7 +285389,7 @@ class _StringsRu extends _StringsEn {
       'Согласовывать аудио предложения со скоростью воспроизведения';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Если аудиокнига играет быстрее или медленнее 1×, аудио предложения на карточке растягивается по времени до той же скорости с сохранением высоты тона. Только для карточек из аудиокниг.';
+      'Если аудиокнига играет быстрее или медленнее 1×, аудио предложения на карточке растягивается по времени до той же скорости с сохранением высоты тона. Действует для карточек из аудиокниг; TTS-произношение слов на карточках следует скорости резервного голоса.';
   @override
   String get mining_audio_head_pad => 'Запас аудио перед предложением';
   @override
@@ -285378,6 +285454,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Скорость резервного голоса';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Скорость TTS-произношения слов при поиске (высота тона сохраняется). Карточки тоже её используют, когда включено «Согласовывать аудио предложения со скоростью воспроизведения».';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -305716,6 +305797,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'ความเร็ว TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -311013,7 +311096,7 @@ class _StringsTh extends _StringsEn {
       'ปรับเสียงประโยคให้ตรงกับความเร็วการเล่น';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'เมื่อหนังสือเสียงเล่นเร็วหรือช้ากว่า 1× เสียงประโยคบนการ์ดจะถูกยืด/หดเวลาให้เป็นความเร็วเดียวกันโดยคงระดับเสียง ใช้กับการสร้างการ์ดจากหนังสือเสียงเท่านั้น';
+      'เมื่อหนังสือเสียงเล่นเร็วหรือช้ากว่า 1× เสียงประโยคบนการ์ดจะถูกยืด/หดเวลาให้เป็นความเร็วเดียวกันโดยคงระดับเสียง ใช้กับการสร้างการ์ดจากหนังสือเสียง ส่วนเสียงอ่านคำ TTS บนการ์ดจะใช้ความเร็วเสียงสำรอง';
   @override
   String get mining_audio_head_pad => 'ช่องว่างเสียงก่อนประโยค';
   @override
@@ -311077,6 +311160,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'ความเร็วเสียงสำรอง';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'ความเร็วของเสียงอ่านคำด้วย TTS ขณะค้นหาคำ (คงระดับเสียง) การ์ดจะใช้ความเร็วนี้ด้วยเมื่อเปิด "ปรับเสียงประโยคให้ตรงกับความเร็วการเล่น"';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -331342,6 +331430,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'TTS hızı';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -336699,7 +336789,7 @@ class _StringsTr extends _StringsEn {
       'Cümle sesini oynatma hızına uydur';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Sesli kitap 1×\'ten hızlı veya yavaş oynatılırken karttaki cümle sesi, perde korunarak aynı hıza zaman esnetmesiyle uyarlanır. Yalnızca sesli kitaptan kart oluşturmada.';
+      'Sesli kitap 1×\'ten hızlı veya yavaş oynatılırken karttaki cümle sesi, perde korunarak aynı hıza zaman esnetmesiyle uyarlanır. Sesli kitaptan kart oluşturmada geçerlidir; karttaki TTS kelime sesi yedek ses hızını izler.';
   @override
   String get mining_audio_head_pad => 'Cümleden önce ses payı';
   @override
@@ -336764,6 +336854,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Yedek ses hızı';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Kelime ararken TTS kelime sesinin hızı (perde korunur). "Cümle sesini oynatma hızına uydur" açıkken kartlar da bu hızı kullanır.';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -357086,6 +357181,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'Tốc độ TTS';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -362419,7 +362516,7 @@ class _StringsVi extends _StringsEn {
       'Khớp âm thanh câu với tốc độ phát';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      'Khi sách nói phát nhanh hoặc chậm hơn 1×, âm thanh câu trên thẻ được co giãn thời gian theo cùng tốc độ và giữ nguyên cao độ. Chỉ áp dụng cho tạo thẻ từ sách nói.';
+      'Khi sách nói phát nhanh hoặc chậm hơn 1×, âm thanh câu trên thẻ được co giãn thời gian theo cùng tốc độ và giữ nguyên cao độ. Áp dụng cho tạo thẻ từ sách nói; âm thanh từ TTS trên thẻ theo tốc độ giọng dự phòng.';
   @override
   String get mining_audio_head_pad => 'Đệm âm thanh trước câu';
   @override
@@ -362484,6 +362581,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => 'Tốc độ giọng dự phòng';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      'Tốc độ âm thanh từ TTS khi tra từ (giữ nguyên cao độ). Thẻ cũng theo tốc độ này khi bật "Khớp âm thanh câu với tốc độ phát".';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -382116,6 +382218,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => '人名';
   @override
+  String get gal_line_tts_speed => 'TTS 倍速';
+  @override
   String get gal_line_tts_strip_speaker => '不读人名';
   @override
   String get gal_line_tts_strip_speaker_hint => '识别【名】台词、名「台词」、名＋换行＋台词、名：台词';
@@ -387003,7 +387107,7 @@ class _StringsZhCn extends _StringsEn {
   String get mining_audio_follow_playback_speed => '句子音频跟随播放倍速';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      '有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；仅对有声书制卡生效。';
+      '有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；对有声书制卡生效；卡片的 TTS 单词发音按「兜底发音倍速」变速。';
   @override
   String get mining_audio_head_pad => '句子音频开头余量';
   @override
@@ -387062,6 +387166,11 @@ class _StringsZhCn extends _StringsEn {
   String get models_tts_fallback_off => '不使用 TTS 兜底';
   @override
   String get models_tts_fallback_online_notice => '词条文本会发送给该在线服务';
+  @override
+  String get models_tts_fallback_speed => '兜底发音倍速';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      '查词时 TTS 发音的播放倍速（变速不变调）。开启「句子音频跟随播放倍速」时，制卡的 TTS 发音也按此倍速。';
   @override
   String get models_tts_fallback_voice => '兜底声音';
   @override
@@ -405837,6 +405946,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get gal_line_tts_speaker_section => 'Speaker name';
   @override
+  String get gal_line_tts_speed => 'TTS 倍速';
+  @override
   String get gal_line_tts_strip_speaker => 'Don\'t read the speaker name';
   @override
   String get gal_line_tts_strip_speaker_hint =>
@@ -410802,7 +410913,7 @@ class _StringsZhHk extends _StringsEn {
   String get mining_audio_follow_playback_speed => '句子音頻跟隨播放倍速';
   @override
   String get mining_audio_follow_playback_speed_hint =>
-      '有聲書以非 1 倍速播放時，卡片的句子音頻按同一倍率變速不變調；僅對有聲書制卡生效。';
+      '有聲書以非 1 倍速播放時，卡片的句子音頻按同一倍率變速不變調；對有聲書制卡生效；卡片的 TTS 單詞發音按「兜底發音倍速」變速。';
   @override
   String get mining_audio_head_pad => '句子音頻開頭餘量';
   @override
@@ -410862,6 +410973,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get models_tts_fallback_online_notice =>
       'The word is sent to this online service';
+  @override
+  String get models_tts_fallback_speed => '兜底發音倍速';
+  @override
+  String get models_tts_fallback_speed_hint =>
+      '查詞時 TTS 發音的播放倍速（變速不變調）。開啟「句子音頻跟隨播放倍速」時，制卡的 TTS 發音也按此倍速。';
   @override
   String get models_tts_fallback_voice => 'Fallback voice';
   @override
@@ -429340,6 +429456,8 @@ extension on _StringsEn {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS speed';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -433892,7 +434010,7 @@ extension on _StringsEn {
       case 'mining_audio_follow_playback_speed':
         return 'Match sentence audio to playback speed';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Audiobook mining only.';
+        return 'When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Applies to audiobook mining; TTS word audio on cards follows the fallback voice speed.';
       case 'mining_audio_head_pad':
         return 'Audio padding before sentence';
       case 'mining_audio_head_pad_hint':
@@ -433947,6 +434065,10 @@ extension on _StringsEn {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Fallback voice speed';
+      case 'models_tts_fallback_speed_hint':
+        return 'Speed of TTS word audio when looking up words (pitch preserved). Cards follow it too when "Match sentence audio to playback speed" is on.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -451262,6 +451384,8 @@ extension on _StringsAr {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'سرعة TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -455809,7 +455933,7 @@ extension on _StringsAr {
       case 'mining_audio_follow_playback_speed':
         return 'مطابقة صوت الجملة لسرعة التشغيل';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'عندما يُشغَّل الكتاب الصوتي أسرع أو أبطأ من 1×، يُمدَّد صوت الجملة في البطاقة زمنيًا إلى السرعة نفسها مع الحفاظ على النغمة. لاستخراج الكتب الصوتية فقط.';
+        return 'عندما يُشغَّل الكتاب الصوتي أسرع أو أبطأ من 1×، يُمدَّد صوت الجملة في البطاقة زمنيًا إلى السرعة نفسها مع الحفاظ على النغمة. ينطبق على استخراج الكتب الصوتية؛ ويتبع صوت الكلمة بتقنية TTS في البطاقات سرعة الصوت الاحتياطي.';
       case 'mining_audio_head_pad':
         return 'إضافة صوتية قبل الجملة';
       case 'mining_audio_head_pad_hint':
@@ -455864,6 +455988,10 @@ extension on _StringsAr {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'سرعة الصوت الاحتياطي';
+      case 'models_tts_fallback_speed_hint':
+        return 'سرعة صوت الكلمة بتقنية TTS عند البحث (مع الحفاظ على النغمة). تتبعها البطاقات أيضًا عند تفعيل «مطابقة صوت الجملة لسرعة التشغيل».';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -473210,6 +473338,8 @@ extension on _StringsDe {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS-Geschwindigkeit';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -477777,7 +477907,7 @@ extension on _StringsDe {
       case 'mining_audio_follow_playback_speed':
         return 'Satz-Audio an Wiedergabegeschwindigkeit anpassen';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Wenn das Hörbuch schneller oder langsamer als 1× läuft, wird das Satz-Audio auf der Karte mit erhaltener Tonhöhe auf dieselbe Geschwindigkeit gedehnt. Nur für Hörbuch-Mining.';
+        return 'Wenn das Hörbuch schneller oder langsamer als 1× läuft, wird das Satz-Audio auf der Karte mit erhaltener Tonhöhe auf dieselbe Geschwindigkeit gedehnt. Gilt für Hörbuch-Mining; TTS-Wortaudio auf Karten folgt der Geschwindigkeit der Ersatzstimme.';
       case 'mining_audio_head_pad':
         return 'Audio-Puffer vor dem Satz';
       case 'mining_audio_head_pad_hint':
@@ -477832,6 +477962,10 @@ extension on _StringsDe {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Geschwindigkeit der Ersatzstimme';
+      case 'models_tts_fallback_speed_hint':
+        return 'Wiedergabegeschwindigkeit der TTS-Wortaussprache beim Nachschlagen (Tonhöhe bleibt erhalten). Bei aktivierter Option „Satz-Audio an Wiedergabegeschwindigkeit anpassen“ gilt sie auch für Karten.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -495192,6 +495326,8 @@ extension on _StringsEs {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Velocidad de TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -499755,7 +499891,7 @@ extension on _StringsEs {
       case 'mining_audio_follow_playback_speed':
         return 'Ajustar el audio de la frase a la velocidad de reproducción';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Cuando el audiolibro se reproduce más rápido o más lento que 1×, el audio de la frase de la tarjeta se estira en el tiempo a la misma velocidad conservando el tono. Solo al crear tarjetas desde audiolibros.';
+        return 'Cuando el audiolibro se reproduce más rápido o más lento que 1×, el audio de la frase de la tarjeta se estira en el tiempo a la misma velocidad conservando el tono. Se aplica al crear tarjetas desde audiolibros; el audio TTS de palabras sigue la velocidad de la voz de respaldo.';
       case 'mining_audio_head_pad':
         return 'Margen de audio antes de la frase';
       case 'mining_audio_head_pad_hint':
@@ -499810,6 +499946,10 @@ extension on _StringsEs {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Velocidad de la voz de respaldo';
+      case 'models_tts_fallback_speed_hint':
+        return 'Velocidad del audio TTS de palabras al buscar (conserva el tono). Las tarjetas también la siguen cuando "Ajustar el audio de la frase a la velocidad de reproducción" está activado.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -517179,6 +517319,8 @@ extension on _StringsFr {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Vitesse TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -521743,7 +521885,7 @@ extension on _StringsFr {
       case 'mining_audio_follow_playback_speed':
         return 'Adapter l\'audio de la phrase à la vitesse de lecture';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Quand le livre audio est lu plus vite ou plus lentement qu\'à 1×, l\'audio de la phrase sur la carte est étiré à la même vitesse en préservant la hauteur. Création de cartes depuis un livre audio uniquement.';
+        return 'Quand le livre audio est lu plus vite ou plus lentement qu\'à 1×, l\'audio de la phrase sur la carte est étiré à la même vitesse en préservant la hauteur. S\'applique aux cartes créées depuis un livre audio ; l\'audio TTS des mots suit la vitesse de la voix de secours.';
       case 'mining_audio_head_pad':
         return 'Marge audio avant la phrase';
       case 'mining_audio_head_pad_hint':
@@ -521798,6 +521940,10 @@ extension on _StringsFr {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Vitesse de la voix de secours';
+      case 'models_tts_fallback_speed_hint':
+        return 'Vitesse de l\'audio TTS des mots lors des recherches (hauteur préservée). Les cartes la suivent aussi quand « Adapter l\'audio de la phrase à la vitesse de lecture » est activé.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -539147,6 +539293,8 @@ extension on _StringsId {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Kecepatan TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -543700,7 +543848,7 @@ extension on _StringsId {
       case 'mining_audio_follow_playback_speed':
         return 'Sesuaikan audio kalimat dengan kecepatan putar';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Saat buku audio diputar lebih cepat atau lebih lambat dari 1×, audio kalimat pada kartu direntangkan waktunya ke kecepatan yang sama dengan nada dipertahankan. Hanya untuk mining buku audio.';
+        return 'Saat buku audio diputar lebih cepat atau lebih lambat dari 1×, audio kalimat pada kartu direntangkan waktunya ke kecepatan yang sama dengan nada dipertahankan. Berlaku untuk mining buku audio; audio kata TTS pada kartu mengikuti kecepatan suara cadangan.';
       case 'mining_audio_head_pad':
         return 'Bantalan audio sebelum kalimat';
       case 'mining_audio_head_pad_hint':
@@ -543755,6 +543903,10 @@ extension on _StringsId {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Kecepatan suara cadangan';
+      case 'models_tts_fallback_speed_hint':
+        return 'Kecepatan audio kata TTS saat mencari kata (nada dipertahankan). Kartu juga mengikutinya saat "Sesuaikan audio kalimat dengan kecepatan putar" aktif.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -561093,6 +561245,8 @@ extension on _StringsIt {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Velocità TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -565654,7 +565808,7 @@ extension on _StringsIt {
       case 'mining_audio_follow_playback_speed':
         return 'Adatta l\'audio della frase alla velocità di riproduzione';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Quando l\'audiolibro viene riprodotto più veloce o più lento di 1×, l\'audio della frase sulla carta viene allungato/accorciato nel tempo alla stessa velocità mantenendo l\'intonazione. Solo per il mining da audiolibri.';
+        return 'Quando l\'audiolibro viene riprodotto più veloce o più lento di 1×, l\'audio della frase sulla carta viene allungato/accorciato nel tempo alla stessa velocità mantenendo l\'intonazione. Vale per il mining da audiolibri; l\'audio TTS delle parole sulle carte segue la velocità della voce di riserva.';
       case 'mining_audio_head_pad':
         return 'Margine audio prima della frase';
       case 'mining_audio_head_pad_hint':
@@ -565709,6 +565863,10 @@ extension on _StringsIt {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Velocità della voce di riserva';
+      case 'models_tts_fallback_speed_hint':
+        return 'Velocità dell\'audio TTS delle parole durante la ricerca (intonazione preservata). Anche le carte la seguono quando "Adatta l\'audio della frase alla velocità di riproduzione" è attivo.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -583020,6 +583178,8 @@ extension on _StringsJa {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS の再生速度';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -587556,7 +587716,7 @@ extension on _StringsJa {
       case 'mining_audio_follow_playback_speed':
         return '文の音声を再生速度に合わせる';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'オーディオブックを 1 倍速以外で再生しているとき、カードの文の音声を同じ速度に、音程を保ったまま伸縮します。オーディオブックのカード作成のみ。';
+        return 'オーディオブックを 1 倍速以外で再生しているとき、カードの文の音声を同じ速度に、音程を保ったまま伸縮します。オーディオブックのカード作成に適用。カードの TTS 単語発音は「代替音声の再生速度」に従います。';
       case 'mining_audio_head_pad':
         return '文の音声の前の余白';
       case 'mining_audio_head_pad_hint':
@@ -587611,6 +587771,10 @@ extension on _StringsJa {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return '代替音声の再生速度';
+      case 'models_tts_fallback_speed_hint':
+        return '単語検索時の TTS 発音の再生速度（音程は保持）。「文の音声を再生速度に合わせる」がオンのとき、カードの TTS 発音もこの速度になります。';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -604861,6 +605025,8 @@ extension on _StringsKo {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS 속도';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -609395,7 +609561,7 @@ extension on _StringsKo {
       case 'mining_audio_follow_playback_speed':
         return '문장 오디오를 재생 속도에 맞추기';
       case 'mining_audio_follow_playback_speed_hint':
-        return '오디오북을 1배속보다 빠르거나 느리게 재생 중이면, 카드의 문장 오디오도 음높이를 유지한 채 같은 속도로 시간이 조정됩니다. 오디오북 마이닝에만 해당합니다.';
+        return '오디오북을 1배속보다 빠르거나 느리게 재생 중이면, 카드의 문장 오디오도 음높이를 유지한 채 같은 속도로 시간이 조정됩니다. 오디오북 마이닝에 적용되며, 카드의 TTS 단어 발음은 "대체 음성 속도"를 따릅니다.';
       case 'mining_audio_head_pad':
         return '문장 앞 오디오 여유';
       case 'mining_audio_head_pad_hint':
@@ -609450,6 +609616,10 @@ extension on _StringsKo {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return '대체 음성 속도';
+      case 'models_tts_fallback_speed_hint':
+        return '단어 검색 시 TTS 발음의 재생 속도(음높이 유지). "문장 오디오를 재생 속도에 맞추기"가 켜져 있으면 카드의 TTS 발음도 이 속도를 따릅니다.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -626753,6 +626923,8 @@ extension on _StringsNl {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS-snelheid';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -631318,7 +631490,7 @@ extension on _StringsNl {
       case 'mining_audio_follow_playback_speed':
         return 'Zinsaudio afstemmen op afspeelsnelheid';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Wanneer het luisterboek sneller of langzamer dan 1× speelt, wordt de zinsaudio op de kaart naar dezelfde snelheid uitgerekt met behoud van de toonhoogte. Alleen voor mining uit luisterboeken.';
+        return 'Wanneer het luisterboek sneller of langzamer dan 1× speelt, wordt de zinsaudio op de kaart naar dezelfde snelheid uitgerekt met behoud van de toonhoogte. Geldt voor mining uit luisterboeken; TTS-woordaudio op kaarten volgt de snelheid van de reservestem.';
       case 'mining_audio_head_pad':
         return 'Audio-marge vóór de zin';
       case 'mining_audio_head_pad_hint':
@@ -631373,6 +631545,10 @@ extension on _StringsNl {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Snelheid van reservestem';
+      case 'models_tts_fallback_speed_hint':
+        return 'Snelheid van TTS-woordaudio bij opzoeken (toonhoogte blijft behouden). Kaarten volgen deze ook wanneer "Zinsaudio afstemmen op afspeelsnelheid" aan staat.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -648719,6 +648895,8 @@ extension on _StringsPtBr {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Velocidade do TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -653280,7 +653458,7 @@ extension on _StringsPtBr {
       case 'mining_audio_follow_playback_speed':
         return 'Ajustar o áudio da frase à velocidade de reprodução';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Quando o audiolivro toca mais rápido ou mais devagar que 1×, o áudio da frase no cartão é esticado no tempo para a mesma velocidade, preservando o tom. Somente mineração de audiolivro.';
+        return 'Quando o audiolivro toca mais rápido ou mais devagar que 1×, o áudio da frase no cartão é esticado no tempo para a mesma velocidade, preservando o tom. Vale para mineração de audiolivro; o áudio TTS das palavras nos cartões segue a velocidade da voz reserva.';
       case 'mining_audio_head_pad':
         return 'Margem de áudio antes da frase';
       case 'mining_audio_head_pad_hint':
@@ -653335,6 +653513,10 @@ extension on _StringsPtBr {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Velocidade da voz reserva';
+      case 'models_tts_fallback_speed_hint':
+        return 'Velocidade do áudio TTS das palavras ao pesquisar (tom preservado). Os cartões também a seguem quando "Ajustar o áudio da frase à velocidade de reprodução" está ativado.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -670685,6 +670867,8 @@ extension on _StringsRu {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Скорость TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -675246,7 +675430,7 @@ extension on _StringsRu {
       case 'mining_audio_follow_playback_speed':
         return 'Согласовывать аудио предложения со скоростью воспроизведения';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Если аудиокнига играет быстрее или медленнее 1×, аудио предложения на карточке растягивается по времени до той же скорости с сохранением высоты тона. Только для карточек из аудиокниг.';
+        return 'Если аудиокнига играет быстрее или медленнее 1×, аудио предложения на карточке растягивается по времени до той же скорости с сохранением высоты тона. Действует для карточек из аудиокниг; TTS-произношение слов на карточках следует скорости резервного голоса.';
       case 'mining_audio_head_pad':
         return 'Запас аудио перед предложением';
       case 'mining_audio_head_pad_hint':
@@ -675301,6 +675485,10 @@ extension on _StringsRu {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Скорость резервного голоса';
+      case 'models_tts_fallback_speed_hint':
+        return 'Скорость TTS-произношения слов при поиске (высота тона сохраняется). Карточки тоже её используют, когда включено «Согласовывать аудио предложения со скоростью воспроизведения».';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -692625,6 +692813,8 @@ extension on _StringsTh {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'ความเร็ว TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -697177,7 +697367,7 @@ extension on _StringsTh {
       case 'mining_audio_follow_playback_speed':
         return 'ปรับเสียงประโยคให้ตรงกับความเร็วการเล่น';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'เมื่อหนังสือเสียงเล่นเร็วหรือช้ากว่า 1× เสียงประโยคบนการ์ดจะถูกยืด/หดเวลาให้เป็นความเร็วเดียวกันโดยคงระดับเสียง ใช้กับการสร้างการ์ดจากหนังสือเสียงเท่านั้น';
+        return 'เมื่อหนังสือเสียงเล่นเร็วหรือช้ากว่า 1× เสียงประโยคบนการ์ดจะถูกยืด/หดเวลาให้เป็นความเร็วเดียวกันโดยคงระดับเสียง ใช้กับการสร้างการ์ดจากหนังสือเสียง ส่วนเสียงอ่านคำ TTS บนการ์ดจะใช้ความเร็วเสียงสำรอง';
       case 'mining_audio_head_pad':
         return 'ช่องว่างเสียงก่อนประโยค';
       case 'mining_audio_head_pad_hint':
@@ -697232,6 +697422,10 @@ extension on _StringsTh {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'ความเร็วเสียงสำรอง';
+      case 'models_tts_fallback_speed_hint':
+        return 'ความเร็วของเสียงอ่านคำด้วย TTS ขณะค้นหาคำ (คงระดับเสียง) การ์ดจะใช้ความเร็วนี้ด้วยเมื่อเปิด "ปรับเสียงประโยคให้ตรงกับความเร็วการเล่น"';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -714562,6 +714756,8 @@ extension on _StringsTr {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS hızı';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -719121,7 +719317,7 @@ extension on _StringsTr {
       case 'mining_audio_follow_playback_speed':
         return 'Cümle sesini oynatma hızına uydur';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Sesli kitap 1×\'ten hızlı veya yavaş oynatılırken karttaki cümle sesi, perde korunarak aynı hıza zaman esnetmesiyle uyarlanır. Yalnızca sesli kitaptan kart oluşturmada.';
+        return 'Sesli kitap 1×\'ten hızlı veya yavaş oynatılırken karttaki cümle sesi, perde korunarak aynı hıza zaman esnetmesiyle uyarlanır. Sesli kitaptan kart oluşturmada geçerlidir; karttaki TTS kelime sesi yedek ses hızını izler.';
       case 'mining_audio_head_pad':
         return 'Cümleden önce ses payı';
       case 'mining_audio_head_pad_hint':
@@ -719176,6 +719372,10 @@ extension on _StringsTr {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Yedek ses hızı';
+      case 'models_tts_fallback_speed_hint':
+        return 'Kelime ararken TTS kelime sesinin hızı (perde korunur). "Cümle sesini oynatma hızına uydur" açıkken kartlar da bu hızı kullanır.';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -736506,6 +736706,8 @@ extension on _StringsVi {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'Tốc độ TTS';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -741057,7 +741259,7 @@ extension on _StringsVi {
       case 'mining_audio_follow_playback_speed':
         return 'Khớp âm thanh câu với tốc độ phát';
       case 'mining_audio_follow_playback_speed_hint':
-        return 'Khi sách nói phát nhanh hoặc chậm hơn 1×, âm thanh câu trên thẻ được co giãn thời gian theo cùng tốc độ và giữ nguyên cao độ. Chỉ áp dụng cho tạo thẻ từ sách nói.';
+        return 'Khi sách nói phát nhanh hoặc chậm hơn 1×, âm thanh câu trên thẻ được co giãn thời gian theo cùng tốc độ và giữ nguyên cao độ. Áp dụng cho tạo thẻ từ sách nói; âm thanh từ TTS trên thẻ theo tốc độ giọng dự phòng.';
       case 'mining_audio_head_pad':
         return 'Đệm âm thanh trước câu';
       case 'mining_audio_head_pad_hint':
@@ -741112,6 +741314,10 @@ extension on _StringsVi {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return 'Tốc độ giọng dự phòng';
+      case 'models_tts_fallback_speed_hint':
+        return 'Tốc độ âm thanh từ TTS khi tra từ (giữ nguyên cao độ). Thẻ cũng theo tốc độ này khi bật "Khớp âm thanh câu với tốc độ phát".';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':
@@ -758333,6 +758539,8 @@ extension on _StringsZhCn {
         return '正则表达式无效';
       case 'gal_line_tts_speaker_section':
         return '人名';
+      case 'gal_line_tts_speed':
+        return 'TTS 倍速';
       case 'gal_line_tts_strip_speaker':
         return '不读人名';
       case 'gal_line_tts_strip_speaker_hint':
@@ -762849,7 +763057,7 @@ extension on _StringsZhCn {
       case 'mining_audio_follow_playback_speed':
         return '句子音频跟随播放倍速';
       case 'mining_audio_follow_playback_speed_hint':
-        return '有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；仅对有声书制卡生效。';
+        return '有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；对有声书制卡生效；卡片的 TTS 单词发音按「兜底发音倍速」变速。';
       case 'mining_audio_head_pad':
         return '句子音频开头余量';
       case 'mining_audio_head_pad_hint':
@@ -762904,6 +763112,10 @@ extension on _StringsZhCn {
         return '不使用 TTS 兜底';
       case 'models_tts_fallback_online_notice':
         return '词条文本会发送给该在线服务';
+      case 'models_tts_fallback_speed':
+        return '兜底发音倍速';
+      case 'models_tts_fallback_speed_hint':
+        return '查词时 TTS 发音的播放倍速（变速不变调）。开启「句子音频跟随播放倍速」时，制卡的 TTS 发音也按此倍速。';
       case 'models_tts_fallback_voice':
         return '兜底声音';
       case 'models_tts_fallback_voice_hint':
@@ -780029,6 +780241,8 @@ extension on _StringsZhHk {
         return 'Invalid regular expression';
       case 'gal_line_tts_speaker_section':
         return 'Speaker name';
+      case 'gal_line_tts_speed':
+        return 'TTS 倍速';
       case 'gal_line_tts_strip_speaker':
         return 'Don\'t read the speaker name';
       case 'gal_line_tts_strip_speaker_hint':
@@ -784556,7 +784770,7 @@ extension on _StringsZhHk {
       case 'mining_audio_follow_playback_speed':
         return '句子音頻跟隨播放倍速';
       case 'mining_audio_follow_playback_speed_hint':
-        return '有聲書以非 1 倍速播放時，卡片的句子音頻按同一倍率變速不變調；僅對有聲書制卡生效。';
+        return '有聲書以非 1 倍速播放時，卡片的句子音頻按同一倍率變速不變調；對有聲書制卡生效；卡片的 TTS 單詞發音按「兜底發音倍速」變速。';
       case 'mining_audio_head_pad':
         return '句子音頻開頭餘量';
       case 'mining_audio_head_pad_hint':
@@ -784611,6 +784825,10 @@ extension on _StringsZhHk {
         return 'Don\'t use TTS';
       case 'models_tts_fallback_online_notice':
         return 'The word is sent to this online service';
+      case 'models_tts_fallback_speed':
+        return '兜底發音倍速';
+      case 'models_tts_fallback_speed_hint':
+        return '查詞時 TTS 發音的播放倍速（變速不變調）。開啟「句子音頻跟隨播放倍速」時，制卡的 TTS 發音也按此倍速。';
       case 'models_tts_fallback_voice':
         return 'Fallback voice';
       case 'models_tts_fallback_voice_hint':

@@ -131,6 +131,9 @@ Future<String?> _synthesizeLookupTtsFallback(
             languageTag: languageTag,
           ),
       voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
+      // 倍速烧进文件：弹窗 <audio>、Android 原生、桌面 just_audio 与跨设备查词
+      // 拿到的都是同一份已变速的音频。
+      tempo: ttsFallbackSpeedOf(appModel.prefsRepo),
     );
     return file?.path;
   } on WordAudioUnavailable catch (e, stack) {

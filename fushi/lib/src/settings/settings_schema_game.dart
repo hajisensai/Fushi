@@ -213,6 +213,33 @@ SettingsDestination buildGameDestination() {
               settingsContext.refresh();
             },
           ),
+          SettingsSliderItem(
+            id: 'game.gal_line_tts_speed',
+            title: t.gal_line_tts_speed,
+            icon: FushiIcons.speed,
+            visible: (_) => Platform.isWindows,
+            min: kGalLineTtsSpeedMin,
+            max: kGalLineTtsSpeedMax,
+            divisions: 55,
+            step: 0.05,
+            defaultValue: 1.0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.toStringAsFixed(2)}x',
+            value: (SettingsContext settingsContext) =>
+                _lineTtsController(settingsContext).lineTtsSettings.speed,
+            onChanged: (SettingsContext settingsContext, double v) async {
+              final GalHookTextOverlayController c = _lineTtsController(
+                settingsContext,
+              );
+              await c.setLineTtsSettings(
+                c.lineTtsSettings.copyWith(
+                  speed: (v * 20).roundToDouble() / 20,
+                ),
+              );
+              settingsContext.refresh();
+            },
+          ),
           SettingsNavigationItem(
             id: 'game.gal_line_tts_rules',
             title: t.gal_line_tts_rules,

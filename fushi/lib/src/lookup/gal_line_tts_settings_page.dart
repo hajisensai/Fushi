@@ -257,7 +257,11 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
         presetId: speak.presetId,
         cancel: TtsCancelToken(),
       );
-      await DesktopAudioPlayback.playFile(path, volume: _settings.volume);
+      await DesktopAudioPlayback.playFile(
+        path,
+        volume: _settings.volume,
+        speed: _settings.speed,
+      );
     } catch (error, stack) {
       if (error is TtsFailure && error.code == TtsFailureCode.cancelled) return;
       // 按失败类型给原因（没配声音 / 鉴权 / 超时……），并留日志；以前一律报
