@@ -74,9 +74,11 @@
 | [BUG-3893](bugs/BUG-3893-download-keepalive-no-wakelock.md) | ✅ | ✅ | download-keepalive-no-wakelock |
 | [BUG-3892](bugs/BUG-3892-android-white-screen-srs-upgrade-on-ui-thread.md) | ✅ | ✅ | android-white-screen-srs-upgrade-on-ui-thread |
 > 共 3496 条。点号进各自文件。
+> 共 3497 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3893](bugs/BUG-3893-siglus-ninearg-harvest-festa.md) | 🚧 | ✅ | Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用 |
 | [BUG-3892](bugs/BUG-3892-siglus-enigma-plain-frame.md) | ✅ | ✅ | Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用 |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
