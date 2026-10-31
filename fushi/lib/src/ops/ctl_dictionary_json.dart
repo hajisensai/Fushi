@@ -402,6 +402,11 @@ Map<String, Object?> ctlFlushReportJson(PendingFlushReport report) =>
       'unreachable': report.unreachable,
       'skipped': report.skipped,
       'awaitingConfirmation': report.awaitingConfirmation,
+      // 停下 / 失败的原因：稳定码 + 后端原文（诊断用，不本地化）。
+      'stopErrorCode': report.stopOutcome?.errorCode,
+      'stopError': report.stopOutcome?.errorDetail,
+      'failureErrorCode': report.failureOutcome?.errorCode,
+      'failureError': report.failureOutcome?.errorDetail,
     };
 
 /// 词典内容语言覆盖的取值：`auto`（或 `-`）= 恢复自动（null），其余当 BCP-47 码原样用。

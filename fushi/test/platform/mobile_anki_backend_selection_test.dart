@@ -66,12 +66,18 @@ void main() {
           'card_creation.anki.connect_api_key',
         ]),
       );
-      // 连接子页先放「直连同步」一节，AnkiConnect 字段收在 _buildAnkiConnectSection。
+      // 连接子页：AnkiConnect 字段（_buildAnkiConnectSection）在最上面，默认折叠的
+      // 高级「直连同步」一节排在它后面（2026-10-31：此前反过来，常用配置被压在下面）。
       final String connectionPanel = methodBody(
         source,
         'Widget _buildConnectionPanel(',
       );
       expect(connectionPanel, contains('_buildAnkiConnectSection('));
+      expect(
+        connectionPanel.indexOf('_buildAnkiConnectSection('),
+        lessThan(connectionPanel.indexOf('AnkiSyncClientSection()')),
+        reason: 'AnkiConnect 配置必须排在高级的同步客户端之前',
+      );
       final String panel = methodBody(
         source,
         'Widget _buildAnkiConnectSection(',

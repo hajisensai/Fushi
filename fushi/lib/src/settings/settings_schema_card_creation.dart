@@ -28,7 +28,44 @@ SettingsDestination buildCardCreationDestination() {
     icon: FushiIcons.ankiCard,
     body: (_) => const AnkiSettingsBody(),
     bodyBeforeSections: true,
+    // 层级（2026-10-31 重排）：正文只有目标切换条（+ Fushi 复习分组），紧接着是当前
+    // 目标的配置——「Anki」分组（连接 / 牌组 / 笔记类型等）与「发送与待发卡片」；之后
+    // 才是两种目标都生效的「卡片内容」「制卡提示」「默认标签」「媒体」。此前 Anki 配置
+    // 排在这些通用分组之后，切到 Anki 的用户要翻过三组才看到自己的牌组。
     sections: <SettingsSection>[
+      // 「Anki」分组：全部 Anki 专属设置，只在目标为 Anki 时出现（目标切换在正文顶部
+      // 的分段条里；发往 Fushi 复习时非空的待发队列在「Fushi 复习」分组末尾）。
+      _ankiSection(),
+      _ankiDeliverySection(),
+      _rowsSection(
+        id: 'card_creation.content',
+        title: t.card_creation_section_content,
+        rows: const <AnkiSectionRow>[
+          AnkiSectionRow.allowDuplicates,
+          AnkiSectionRow.overwriteScope,
+          AnkiSectionRow.compactGlossaries,
+        ],
+      ),
+      _rowsSection(
+        id: 'card_creation.notices',
+        title: t.card_creation_section_notices,
+        rows: const <AnkiSectionRow>[
+          AnkiSectionRow.noticeSuccess,
+          AnkiSectionRow.noticeDuplicate,
+        ],
+      ),
+      _rowsSection(
+        id: 'card_creation.tags',
+        title: t.anki_tag_default_section,
+        rows: const <AnkiSectionRow>[
+          AnkiSectionRow.globalTags,
+          AnkiSectionRow.tags,
+          AnkiSectionRow.tagIncludeFushi,
+          AnkiSectionRow.tagIncludeCategory,
+          AnkiSectionRow.tagBookName,
+          AnkiSectionRow.tagCharPosition,
+        ],
+      ),
       // 两种目标都生效：截图 / 动图 / 音频片段参数（SRS 制卡走同一条采集链路）。
       SettingsSection(
         id: 'card_creation.configuration',
@@ -42,9 +79,6 @@ SettingsDestination buildCardCreationDestination() {
           ),
         ],
       ),
-      // 「Anki」分组：全部 Anki 专属设置，只在目标为 Anki 时出现（目标切换在正文顶部
-      // 的分段条里；发往 Fushi 复习时非空的待发队列在「Fushi 复习」分组末尾）。
-      _ankiSection(),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
       // 挖词目标（Anki / Fushi 复习，二选一）：只在复习模块开着时存在。目标为
@@ -77,6 +111,13 @@ SettingsDestination buildCardCreationDestination() {
         visible: _toReview,
         title: t.anki_note_type,
         subtitle: t.srs_mining_target_srs,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.mine_to_server',
+        visible: _ankiOnly(_mineToServerVisible),
+        title: t.anki_mine_to_server,
+        subtitle: t.anki_mine_to_server_hint,
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
@@ -517,58 +558,104 @@ bool _ankiDecksLoaded(SettingsContext c) {
   return s.isConfigured || s.settings.availableDecks.isNotEmpty;
 }
 
-/// 「Anki」分组里此刻出现的行（顺序即显示顺序）。
-@visibleForTesting
-List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) {
-  final bool review = _toReview(c);
+/// 「制卡到 Fushi 互联服务端」镜像行：开着时露出——这时卡片落在服务端的 Anki，用户
+/// 在 Anki 配置里必须看得到这一点并能就地关掉（此前它只在互联设置里，制卡页上的牌组 /
+/// 笔记类型看起来生效、其实不用）。打开它仍在互联设置里（要先配对）。
+bool _mineToServerVisible(SettingsContext c) => c.appModel.mineToServerEnabled;
+
+/// 「Anki」分组首段：制卡去向（互联服务端 / 本机）。
+List<AnkiSectionRow> _ankiRouteRows(SettingsContext c) => <AnkiSectionRow>[
+  if (!_toReview(c) && _mineToServerVisible(c)) AnkiSectionRow.mineToServer,
+];
+
+/// 「Anki」分组中段：档案、刷新、牌组与笔记类型。
+List<AnkiSectionRow> _ankiDeckRows(SettingsContext c) {
+  if (_toReview(c)) return const <AnkiSectionRow>[];
   final AnkiUiState s = c.ref.watch(ankiViewModelProvider);
   final bool loaded = _ankiDecksLoaded(c);
   return <AnkiSectionRow>[
-    if (!review) ...<AnkiSectionRow>[
-      AnkiSectionRow.profile,
-      AnkiSectionRow.fetch,
-      AnkiSectionRow.createLapis,
-      if (s.errorMessage != null || !loaded) AnkiSectionRow.notice,
-      if (loaded) ...<AnkiSectionRow>[
-        AnkiSectionRow.deck,
-        AnkiSectionRow.noteType,
-      ],
-      if (s.isConfigured) ...<AnkiSectionRow>[
-        AnkiSectionRow.reposition,
-        AnkiSectionRow.autoReposition,
-        AnkiSectionRow.duplicateScope,
-        if (Platform.isIOS &&
-            ankiMobileLedgerIsDuplicateSource(
-              useAnkiConnectOnMobile: s.settings.useAnkiConnectOnMobile,
-              mineToServer: c.appModel.mineToServerEnabled,
-            ))
-          AnkiSectionRow.backupImport,
-      ],
-      AnkiSectionRow.batchMining,
-      AnkiSectionRow.queueUndelivered,
-      AnkiSectionRow.pendingLanding,
+    AnkiSectionRow.profile,
+    AnkiSectionRow.fetch,
+    AnkiSectionRow.createLapis,
+    if (s.errorMessage != null || !loaded) AnkiSectionRow.notice,
+    if (loaded) ...<AnkiSectionRow>[
+      AnkiSectionRow.deck,
+      AnkiSectionRow.noteType,
     ],
-    AnkiSectionRow.pendingMines,
   ];
 }
 
-/// 「Anki」分组（目标为 Fushi 复习时整组不显示）。
+/// 「Anki」分组末段：Anki 已配置后才有意义的项（重排、查重范围、备份查重）。
+List<AnkiSectionRow> _ankiConfiguredRows(SettingsContext c) {
+  if (_toReview(c)) return const <AnkiSectionRow>[];
+  final AnkiUiState s = c.ref.watch(ankiViewModelProvider);
+  if (!s.isConfigured) return const <AnkiSectionRow>[];
+  return <AnkiSectionRow>[
+    AnkiSectionRow.reposition,
+    AnkiSectionRow.autoReposition,
+    AnkiSectionRow.duplicateScope,
+    if (Platform.isIOS &&
+        ankiMobileLedgerIsDuplicateSource(
+          useAnkiConnectOnMobile: s.settings.useAnkiConnectOnMobile,
+          mineToServer: c.appModel.mineToServerEnabled,
+        ))
+      AnkiSectionRow.backupImport,
+  ];
+}
+
+/// 「Anki」分组里此刻出现的自绘行（顺序即显示顺序；子页入口行穿插其间）。
+@visibleForTesting
+List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) => <AnkiSectionRow>[
+  ..._ankiRouteRows(c),
+  ..._ankiDeckRows(c),
+  ..._ankiConfiguredRows(c),
+];
+
+/// 「发送与待发卡片」分组里此刻出现的行。待发队列不受「Anki 已配置」门控——恰恰
+/// 是连不上 Anki 的时候卡会攒在这里；目标为 Fushi 复习时它在「Fushi 复习」分组末尾。
+@visibleForTesting
+List<AnkiSectionRow> ankiDeliveryRowsFor(SettingsContext c) => _toReview(c)
+    ? const <AnkiSectionRow>[]
+    : const <AnkiSectionRow>[
+        AnkiSectionRow.batchMining,
+        AnkiSectionRow.queueUndelivered,
+        AnkiSectionRow.pendingLanding,
+        AnkiSectionRow.pendingMines,
+      ];
+
+/// 一组 [AnkiSectionRow] 渲染成分组里的独立行（每行一个 [AnkiSettingsBody]）。
+SettingsCustomItem _rowsItem(
+  String id,
+  List<AnkiSectionRow> Function(SettingsContext c) rows,
+) => SettingsCustomItem.rows(
+  id: id,
+  visible: (SettingsContext c) => rows(c).isNotEmpty,
+  rowsBuilder: (SettingsContext c) => <Widget>[
+    for (final AnkiSectionRow row in rows(c))
+      AnkiSettingsBody(key: ValueKey<String>('anki-row-${row.name}'), row: row),
+  ],
+);
+
+/// 两种目标都生效的固定行分组（卡片内容 / 制卡提示 / 默认标签）。
+SettingsSection _rowsSection({
+  required String id,
+  required String title,
+  required List<AnkiSectionRow> rows,
+}) => SettingsSection(
+  id: id,
+  title: title,
+  items: <SettingsItem>[_rowsItem('$id.rows', (_) => rows)],
+);
+
+/// 「Anki」分组（目标为 Fushi 复习时整组不显示）：制卡去向 → 连接 → 牌组 / 笔记类型
+/// → 字段映射 / Lapis → 重排与查重 → 媒体维护。
 SettingsSection _ankiSection() => SettingsSection(
   id: 'card_creation.anki',
   title: t.srs_mining_target_anki,
   visible: (SettingsContext c) => !_toReview(c),
-  presentation: SettingsSectionPresentation.expanded,
+  presentation: SettingsSectionPresentation.alwaysExpanded,
   items: <SettingsItem>[
-    SettingsCustomItem.rows(
-      id: 'card_creation.anki.rows',
-      rowsBuilder: (SettingsContext c) => <Widget>[
-        for (final AnkiSectionRow row in ankiSectionRowsFor(c))
-          AnkiSettingsBody(
-            key: ValueKey<String>('anki-row-${row.name}'),
-            row: row,
-          ),
-      ],
-    ),
+    _rowsItem('card_creation.anki.route_rows', _ankiRouteRows),
     SettingsNavigationItem(
       id: 'card_creation.connection.open',
       title: 'AnkiConnect',
@@ -581,6 +668,7 @@ SettingsSection _ankiSection() => SettingsSection(
       },
       child: () => _buildAnkiPanel(AnkiSettingsPanel.connection, 'AnkiConnect'),
     ),
+    _rowsItem('card_creation.anki.rows', _ankiDeckRows),
     SettingsNavigationItem(
       id: 'card_creation.fields.open',
       title: t.anki_field_mappings,
@@ -607,6 +695,7 @@ SettingsSection _ankiSection() => SettingsSection(
       child: () =>
           _buildAnkiPanel(AnkiSettingsPanel.lapis, t.anki_lapis_section),
     ),
+    _rowsItem('card_creation.anki.configured_rows', _ankiConfiguredRows),
     SettingsNavigationItem(
       id: 'card_creation.maintenance.open',
       title: t.anki_dedup_section,
@@ -621,5 +710,15 @@ SettingsSection _ankiSection() => SettingsSection(
       child: () =>
           _buildAnkiPanel(AnkiSettingsPanel.maintenance, t.anki_dedup_section),
     ),
+  ],
+);
+
+/// 「发送与待发卡片」分组：批量制卡、连不上时暂存、接收其他设备的卡、待发队列。
+SettingsSection _ankiDeliverySection() => SettingsSection(
+  id: 'card_creation.anki.delivery',
+  title: t.anki_delivery_section,
+  visible: (SettingsContext c) => !_toReview(c),
+  items: <SettingsItem>[
+    _rowsItem('card_creation.anki.delivery_rows', ankiDeliveryRowsFor),
   ],
 );

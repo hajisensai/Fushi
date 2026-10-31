@@ -81,6 +81,34 @@ void main() {
     ]);
   });
 
+  test('服务器地址：带路径前缀补结尾 /（否则 rslib 丢掉前缀 → missing original size）', () {
+    expect(normalizeAnkiSyncEndpoint(null), isNull);
+    expect(normalizeAnkiSyncEndpoint('  '), isNull);
+    expect(normalizeAnkiSyncEndpoint('http://nas:8080'), 'http://nas:8080');
+    expect(normalizeAnkiSyncEndpoint('http://nas:8080/'), 'http://nas:8080/');
+    expect(normalizeAnkiSyncEndpoint(' https://h/anki '), 'https://h/anki/');
+    expect(normalizeAnkiSyncEndpoint('https://h/a/b/'), 'https://h/a/b/');
+  });
+
+  test('login / sync / full_download 都把地址规范后交给 helper', () async {
+    final _FakeHelper h = _FakeHelper((Map<String, Object?> r) {
+      return switch (r['cmd']) {
+        'login' => _ok(<String, Object?>{'hkey': 'H'}),
+        'sync' => _ok(<String, Object?>{'status': 'ok'}),
+        _ => _ok(<String, Object?>{}),
+      };
+    });
+    final FushiAnkiSyncClient c = h.client();
+    await c.login(endpoint: 'https://h/anki', username: 'u', password: 'p');
+    await c.sync(hkey: 'H', endpoint: 'https://h/anki');
+    await c.fullDownload(hkey: 'H', endpoint: 'https://h/anki');
+    expect(h.requests.map((Map<String, Object?> r) => r['endpoint']), <String>[
+      'https://h/anki/',
+      'https://h/anki/',
+      'https://h/anki/',
+    ]);
+  });
+
   test('helper 报错 → FushiAnkiSyncException，后续请求照常', () async {
     final _FakeHelper h = _FakeHelper((Map<String, Object?> r) {
       if (r['cmd'] == 'list_meta') {

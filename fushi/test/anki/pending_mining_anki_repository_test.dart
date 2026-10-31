@@ -245,6 +245,8 @@ void main() {
     expect(first.delivered, 1);
     expect(first.unreachable, isTrue);
     expect(first.remaining, 2);
+    // 停下的原因随报告带回（界面据此说清是连不上 Anki 还是连不上互联服务端）。
+    expect(first.stopOutcome?.errorCode, AnkiErrorCode.connectionRefused);
 
     final _FakeBackend online = _FakeBackend();
     final PendingFlushReport second = await repoOver(online).flush();
@@ -277,6 +279,7 @@ void main() {
     expect(backend.expressions, <String>['p', 'q', 'r']);
     expect(report.failed, 1);
     expect(report.delivered, 2);
+    expect(report.failureOutcome?.errorDetail, 'bad field');
     final List<PendingMineRow> left = await store.all();
     expect(left.single.expression, 'p');
     expect(left.single.status, PendingMineStatus.failed);
