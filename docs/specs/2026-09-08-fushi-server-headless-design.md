@@ -103,7 +103,7 @@ Flutter SDK（构建工具链），运行时二进制不含 Flutter**。服务�
 
 ```
 POST   /api/jobs                       {kind, params}          → {jobId}
-POST   /api/jobs/<id>/inputs/match     {files:[{name,sha256,size}]} → {matched:[name]}
+POST   /api/jobs/<id>/inputs/match     {files:[{name,sha256,size}]} → {matched:[name], pending}
 PUT    /api/jobs/<id>/input/<name>     body=bytes              上传输入
 POST   /api/jobs/<id>/start
 GET    /api/jobs/<id>                  {state, progress, message, kind}
@@ -123,7 +123,12 @@ GET    /api/jobs                       列表（admin）
 客户端先发输入的内容哈希清单（`inputs/match`），host 在本机有声书库会播的音频里找
 **SHA-256 相同**的文件（大小只用来缩小要算哈希的范围；不按文件名 / 书 ID / 时长
 判），命中的不上传、runner 直接读 host 本地路径。哈希两端都按 `(路径, 大小, 修改
-时刻)` 缓存（`FileContentHashCache`）。host 开跑前按缓存核对、跑完整份重读核对；
+时刻)` 缓存（`FileContentHashCache`，纯派生数据：app 落平台缓存目录、服务端落
+`<data_dir>/tmp`，不进 support 根，不随备份 / 更改数据位置搬走）。匹配请求**只查
+缓存、不在请求里读文件**：大小吻合但没缓存的候选排进 host 后台逐个预热，应答带
+`pending: true`，客户端按轮询节奏再问直到 `pending` 为假（2026-10-31 审查：此前在
+请求里同步算冷文件哈希，慢盘大文件超过客户端 30 s 请求超时，整个转录失败）。匹配是
+可选优化：应答出错 / 超时 / 断连一律当没命中、照旧上传。host 开跑前按缓存核对、跑完整份重读核对；
 内容变了任务以 `host_input_changed` 失败，客户端整份上传重跑一次。上传名为
 `<定宽序号>_<文件名>`，runner 按名字顺序转全部输入。
 

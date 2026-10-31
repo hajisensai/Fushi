@@ -768,8 +768,13 @@ class AppModel with ChangeNotifier {
   /// 本机文件内容哈希（SHA-256）缓存：把有声书转录交给互联 host 时，客户端侧给待
   /// 上传音频算哈希、host 侧给库里候选音频算哈希，都按 `(路径, 大小, 修改时刻)` 复用，
   /// 同一文件不重算（见 `FileContentHashCache`）。
+  ///
+  /// 纯派生缓存（按绝对路径记，换设备 / 换数据位置后全部失效），落平台缓存目录
+  /// （[contentHashCacheFile]）：不进数据根，就不会被「更改数据位置」整树搬走，也不在
+  /// 备份的打包范围里；系统 / 用户清缓存只意味着下次重算。
   late final FileContentHashCache contentHashCache = FileContentHashCache(
-    store: File(path.join(databaseDirectory.path, 'content_hash_cache.json')),
+    locateStore: () async =>
+        contentHashCacheFile(await AppPaths.appCacheRootDirectory()),
   );
 
   /// 手机字幕遥控器的播放器适配宿主：当前视频页登记 / 注销播放绑定，互联服务端
