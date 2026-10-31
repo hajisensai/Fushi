@@ -12,6 +12,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 通知语义。
@@ -69,8 +70,11 @@ enum ToastSeverity { neutral, info, success, warning, error }
 /// [addedWithWarning]：卡建成了，但有一项需要用户知道的缺失（如单词音频下载失败）。
 /// 它与 [added] 分开，是因为用户关掉「制卡成功提示」后，这一条仍必须弹出来——
 /// 否则「没音频不知为何」又回来了（TODO-779）。
+/// [overwritten]：覆盖了 Anki 里已有的卡（update 路径）。与 [added] 分开是为了配色——
+/// 新制与覆盖此前同为绿色，用户分不出这次是新加了一张还是改掉了旧卡。
 enum MineToastStatus {
   added,
+  overwritten,
   addedWithWarning,
   duplicate,
   failed,
@@ -92,6 +96,7 @@ bool mineToastShown(
   required bool showDuplicate,
 }) => switch (status) {
   MineToastStatus.added ||
+  MineToastStatus.overwritten ||
   MineToastStatus.queued ||
   MineToastStatus.pending => showSuccess,
   MineToastStatus.duplicate => showDuplicate,
@@ -132,6 +137,12 @@ abstract final class MineNotices {
         foreground: Colors.white,
         icon: FushiIcons.filled(FushiIcons.success),
       );
+    case MineToastStatus.overwritten:
+      return (
+        background: const Color(0xFF6750A4), // M3 baseline primary（紫）
+        foreground: Colors.white,
+        icon: FushiIcons.filled(FushiIcons.swap),
+      );
     case MineToastStatus.addedWithWarning:
       return (
         background: const Color(0xFFEF6C00), // orange 800
@@ -170,6 +181,7 @@ abstract final class MineNotices {
 ToastSeverity mineToastSeverity(MineToastStatus status) {
   switch (status) {
     case MineToastStatus.added:
+    case MineToastStatus.overwritten:
       return ToastSeverity.success;
     case MineToastStatus.addedWithWarning:
     case MineToastStatus.duplicate:
@@ -181,3 +193,75 @@ ToastSeverity mineToastSeverity(MineToastStatus status) {
       return ToastSeverity.info;
   }
 }
+
+/// 制卡结果卡片（[FushiMineNoticeCard]）的 M3 tonal 三色 + 图标。
+///
+/// * [container] / [onContainer]：卡片底与文字（浅色 tonal container，深字，正文对比
+///   ≥ 7:1）；
+/// * [accent]：图标色块与倒计时条（白色图标压在上面，图形对比 ≥ 3:1）。
+///
+/// 与 [mineToastPalette] 一样用固定色阶、不随主题：结果卡多半压在视频画面 / 正文
+/// 上，主题取色在深色主题下会退成深底深色块，在画面上反而不醒目。五种结果五种
+/// 颜色（新制绿 / 覆盖紫 / 已存在与缺东西琥珀 / 待发蓝 / 失败红），每种再配一个
+/// 不同形状的图标——墨水屏与色觉障碍下颜色塌掉时靠形状区分。
+typedef MineNoticeTone = ({
+  Color container,
+  Color onContainer,
+  Color accent,
+  IconData icon,
+});
+
+MineNoticeTone mineNoticeTone(MineToastStatus status) {
+  final IconData icon = mineToastPalette(status).icon;
+  switch (status) {
+    case MineToastStatus.added:
+      return (
+        container: const Color(0xFFC8F5D0),
+        onContainer: const Color(0xFF00210B),
+        accent: const Color(0xFF1E8E3E),
+        icon: icon,
+      );
+    case MineToastStatus.overwritten:
+      return (
+        container: const Color(0xFFE9DDFF),
+        onContainer: const Color(0xFF22005D),
+        accent: const Color(0xFF6750A4),
+        icon: icon,
+      );
+    case MineToastStatus.addedWithWarning:
+    case MineToastStatus.duplicate:
+      return (
+        container: const Color(0xFFFFDDB3),
+        onContainer: const Color(0xFF2A1800),
+        accent: const Color(0xFFB26A00),
+        icon: icon,
+      );
+    case MineToastStatus.pending:
+    case MineToastStatus.queued:
+      return (
+        container: const Color(0xFFD3E3FD),
+        onContainer: const Color(0xFF041E49),
+        accent: const Color(0xFF0B57D0),
+        icon: icon,
+      );
+    case MineToastStatus.failed:
+      return (
+        container: const Color(0xFFFFDAD6),
+        onContainer: const Color(0xFF410002),
+        accent: const Color(0xFFC5221F),
+        icon: icon,
+      );
+  }
+}
+
+/// 结果卡第一行的状态标题；第二行是调用方传来的具体消息（牌组名 / 失败原因）。
+/// [MineToastStatus.pending] 没有标题——它的消息「制卡中…」本身就是状态。
+String? mineNoticeTitle(MineToastStatus status) => switch (status) {
+  MineToastStatus.added => t.card_notice_title_added,
+  MineToastStatus.overwritten => t.card_notice_title_overwritten,
+  MineToastStatus.addedWithWarning => t.card_notice_title_warning,
+  MineToastStatus.duplicate => t.card_notice_title_duplicate,
+  MineToastStatus.queued => t.card_notice_title_queued,
+  MineToastStatus.failed => t.card_notice_title_failed,
+  MineToastStatus.pending => null,
+};
