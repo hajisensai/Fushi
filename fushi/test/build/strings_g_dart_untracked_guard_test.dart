@@ -179,7 +179,12 @@ void main() {
       final String name = wf.uri.pathSegments.last;
       final Map<String, String> jobs = jobsOf(wf.readAsStringSync());
       for (final MapEntry<String, String> job in jobs.entries) {
-        final String body = job.value;
+        // 报错文案里提到 `flutter build ipa` 的 echo 不是命令（release-desktop.yml 的
+        // testflight job 只下载已签名的 IPA，不编 app）。
+        final String body = job.value
+            .split('\n')
+            .where((String l) => !l.trimLeft().startsWith('echo '))
+            .join('\n');
         final RegExpMatch? pub = flutterPubGet.firstMatch(body);
         final RegExpMatch? run = appFlutterRun.firstMatch(body);
         if (pub == null && run == null) continue;
