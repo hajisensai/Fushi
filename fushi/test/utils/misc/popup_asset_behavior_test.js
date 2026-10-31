@@ -4410,6 +4410,48 @@ function testHeadwordClickEndingDragSelectionKeepsSelection() {
   const links = bridgeCalls.filter(([name]) => name === 'onLinkClick');
   assert.equal(links.length, 1, 'a plain headword tap still looks the word up');
   assert.equal(links[0][1], 'you');
+
+  // 键盘 / 焦点导航激活（click.detail === 0）不是拖选收尾：别处残留的选区不能吞掉它。
+  const selection = context.window.getSelection();
+  selection.text = 'leftover';
+  expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    currentTarget: expression,
+    detail: 0,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 2,
+    'a keyboard activation must look the headword up despite a leftover selection');
+
+  // 指针点击，但选区在弹窗别处、没碰到词头：照常查词。
+  selection.containsNode = (node) => node !== expression;
+  expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    currentTarget: expression,
+    detail: 1,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 3,
+    'a selection elsewhere in the popup must not swallow a headword click');
+
+  // 选区碰到词头的指针点击仍是拖选收尾。
+  selection.containsNode = (node) => node === expression;
+  expression.dispatchEvent({
+    type: 'click',
+    target: expression,
+    currentTarget: expression,
+    detail: 1,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(bridgeCalls.filter(([name]) => name === 'onLinkClick').length, 3,
+    'a drag selection over the headword still survives its closing click');
+  delete selection.containsNode;
+  selection.removeAllRanges();
 }
 
 testHeadwordClickEndingDragSelectionKeepsSelection();

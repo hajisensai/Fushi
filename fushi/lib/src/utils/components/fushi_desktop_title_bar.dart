@@ -757,6 +757,12 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
   /// 指针停在最顶边时的浮出倒计时；离开顶边即取消。
   Timer? _revealDwell;
 
+  /// 指针停过 Windows 的原生最大化键（HTMAXBUTTON）：Flutter 那边只收到「移除」，
+  /// [_hovered] 已清掉。指针从最大化键回到 Flutter 区时还在带子里（移向相邻的
+  /// 关闭 / 最小化键），就是一直没离开带子——直接接着显示，不再要求顶边停留，
+  /// 否则原生悬停一撤整条就在指针下面隐去、这一下点击落进页面。
+  bool _leftForMaxButton = false;
+
   /// 改显隐输入（[_shown] 的各项）都走这里：重建之外，把「标题行此刻隐去」
   /// 同步给 macOS 红绿灯。平台消息在状态变化点发，不在 build 里发（build 可能
   /// 因无关原因重跑，也不该带副作用）。
@@ -795,8 +801,15 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     if (box is! RenderBox || !box.hasSize) return;
     final double dy = box.globalToLocal(event.position).dy;
     if (dy >= box.size.height) {
+      _leftForMaxButton = false;
       _cancelRevealDwell();
       _setHovered(false);
+      return;
+    }
+    if (_leftForMaxButton) {
+      _leftForMaxButton = false;
+      _cancelRevealDwell();
+      _setHovered(true);
       return;
     }
     if (_hovered) return;
@@ -840,7 +853,11 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     _update(() => _touchRevealed = false);
   }
 
-  void _onNativeMaxButton() => _update(() {});
+  void _onNativeMaxButton() => _update(() {
+    if (WindowCaptionChannel.captionMaxButtonHovered.value) {
+      _leftForMaxButton = true;
+    }
+  });
 
   @override
   void initState() {
@@ -880,6 +897,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     if (!widget.enabled && oldWidget.enabled) {
       _cancelRevealDwell();
       _hovered = false;
+      _leftForMaxButton = false;
       _touchRevealed = false;
     }
     // enabled 翻转（普通页 ↔ 沉浸页）本身就改 [_shown]；框架随后会重建，

@@ -280,6 +280,8 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 「改用 AnkiConnect」同一顺序，三步缺一步就是存储与运行时不一致）。
   Future<void> _setEnabled(bool value) async {
     if (value && !await _confirmEnable()) return;
+    // 确认框期间页面可能已被关掉。
+    if (!mounted) return;
     setState(() => _switching = true);
     try {
       await setAnkiSyncClientEnabled(ref, value);

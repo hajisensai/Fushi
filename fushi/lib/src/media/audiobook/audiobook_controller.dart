@@ -707,6 +707,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 0/5/10/15 四档）。
   static const int maxImagePauseSec = 60;
 
+  /// 从「关」打开插图停留时的初始秒数（所有者 2026-10-31：默认关，打开默认 5 秒）。
+  static const int imagePauseOnSec = 5;
+
+  /// 停留步进器往上调一档：关着时直接到 [imagePauseOnSec]，开着时 +1 秒。
+  /// 往下照常 -1 秒，减到 0 即关。
+  static int imagePauseStepped(int current, int next) =>
+      current == 0 && next > 0 ? imagePauseOnSec : next;
+
   void setImagePauseSec(int sec) {
     final int clamped = sec.clamp(0, maxImagePauseSec);
     if (imagePauseSec.value == clamped) return;

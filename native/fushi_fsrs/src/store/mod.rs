@@ -270,10 +270,15 @@ impl SrsCore {
             return Err(format!("srs.db journal_mode is {mode}, expected wal"));
         }
         schema::check_upgrade_space(&writer, free(path))?;
-        schema::migrate(&mut writer)?;
+        let dir = path.parent().unwrap_or(Path::new("."));
+        // 升级阶梯整表重建、建索引，大库的排序会溢出到临时文件：与整理一样放在库所在目录（Android 没有默认临时目录）。
+        compact::set_temp_dir(&writer, dir);
+        let migrated = schema::migrate(&mut writer);
+        compact::clear_temp_dir(&writer);
+        migrated?;
         // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-        compact::run(&writer, path.parent().unwrap_or(Path::new(".")), free(path), now);
+        compact::run(&writer, dir, free(path), now);
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
