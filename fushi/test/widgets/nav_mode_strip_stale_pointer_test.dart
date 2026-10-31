@@ -96,13 +96,15 @@ Future<void> _lostMouseDrag(WidgetTester tester, Finder strip) async {
 /// 靠两端的项贴边，所以按同一份几何算期望位置，而不是一律比条带中线。
 void _expectSettled(WidgetTester tester, ValueNotifier<int> index) {
   final Finder stripFinder = find.byType(NavModeStripBar);
-  final Rect strip = tester.getRect(stripFinder);
+  final RenderBox strip = tester.renderObject<RenderBox>(stripFinder);
   final NavOverflowSpec spec = tester.widget<NavModeStripBar>(stripFinder).spec;
   final int pos = spec.indices.indexOf(index.value);
   final int count = spec.indices.length;
   final double slot = navModeStripSlotWidth(spec.width, count);
-  final double expected =
-      strip.left +
+  // 条带几何（[spec.width]、槽宽、轨道偏移）都在条带自身坐标系里；Material
+  // 浮动底栏整体按 kFushiFloatingCapsuleScale 缩放，所以先在局部坐标算出静止
+  // 位置，再经完整的祖先变换换成屏幕坐标，与 getRect 量到的图标同一坐标系。
+  final double localX =
       navModeStripTrackOffset(
         width: spec.width,
         count: count,
@@ -111,6 +113,9 @@ void _expectSettled(WidgetTester tester, ValueNotifier<int> index) {
       ) +
       pos * slot +
       slot / 2;
+  final double expected = strip
+      .localToGlobal(Offset(localX, strip.size.height / 2))
+      .dx;
   final Rect icon = tester.getRect(find.byIcon(_icons[index.value]).first);
   expect(
     (icon.center.dx - expected).abs(),
