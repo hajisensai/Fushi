@@ -169,11 +169,11 @@ class FileContentHashCache {
 
   void _evict() {
     if (_entries.length <= maxEntries) return;
-    final List<MapEntry<String, _CacheEntry>> byAge =
-        _entries.entries.toList()..sort(
-          (MapEntry<String, _CacheEntry> a, MapEntry<String, _CacheEntry> b) =>
-              a.value.usedAt.compareTo(b.value.usedAt),
-        );
+    final List<MapEntry<String, _CacheEntry>> byAge = _entries.entries.toList()
+      ..sort(
+        (MapEntry<String, _CacheEntry> a, MapEntry<String, _CacheEntry> b) =>
+            a.value.usedAt.compareTo(b.value.usedAt),
+      );
     for (int i = 0; i < byAge.length - maxEntries; i++) {
       _entries.remove(byAge[i].key);
     }

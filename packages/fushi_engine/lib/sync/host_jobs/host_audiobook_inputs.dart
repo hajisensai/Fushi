@@ -17,12 +17,18 @@ Future<List<String>> hostAudiobookInputCandidates(FushiDatabase db) async {
   final Set<String> paths = <String>{};
   for (final AudiobookRow row in await db.getAllAudiobooks()) {
     paths.addAll(
-      await resolvePlayableAudiobookAudioPaths(row.audioPathsJson, row.audioRoot),
+      await resolvePlayableAudiobookAudioPaths(
+        row.audioPathsJson,
+        row.audioRoot,
+      ),
     );
   }
   for (final SrtBookRow row in await db.getAllSrtBooks()) {
     paths.addAll(
-      await resolvePlayableAudiobookAudioPaths(row.audioPathsJson, row.audioRoot),
+      await resolvePlayableAudiobookAudioPaths(
+        row.audioPathsJson,
+        row.audioRoot,
+      ),
     );
   }
   return paths.toList(growable: false);
