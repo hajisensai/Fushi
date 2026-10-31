@@ -18,6 +18,8 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_book_client.dart'
+    show RemoteSourceReachability;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';

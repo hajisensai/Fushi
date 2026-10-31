@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3893](bugs/BUG-3893-remote-delete-gated-on-host-reachability.md) | ✅ | ✅ | 库页远端条目的「从远端删除」不看对端是否在线，离线时无从得知为何删不掉 |
+| [BUG-3893](bugs/BUG-3893-remote-delete-gated-on-host-reachability.md) | ✅ | ✅ | 库页远端条目缺「从远端删除」（云盘来源没有、互联来源不看对端是否在线） |
 | [BUG-3892](bugs/BUG-3892-delete-scope-subtitle-contradiction.md) | ✅ | ✅ | 「从所有设备删除」不勾时副标题写「其他设备保留」，读成自相矛盾 |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
