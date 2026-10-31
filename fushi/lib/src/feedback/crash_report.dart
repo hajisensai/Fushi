@@ -304,7 +304,9 @@ class CrashReporter extends ChangeNotifier {
   /// 「自动发送」开关的读写，不记录、不问、不发（debug 构建、集成测试根下）。
   void attach(Directory dir, {required bool enabled}) {
     _dir = dir;
-    _store = CrashReportStore(File(p.join(dir.path, kCrashReportStateFileName)));
+    _store = CrashReportStore(
+      File(p.join(dir.path, kCrashReportStateFileName)),
+    );
     _state = _store!.read();
     _enabled = enabled;
     notifyListeners();
@@ -326,8 +328,9 @@ class CrashReporter extends ChangeNotifier {
         ).totalCount;
 
   /// 启动即闪退时提前提交的落脚目录。
-  Directory? get spoolDir =>
-      _dir == null ? null : Directory(p.join(_dir!.path, kCrashReportSpoolDirName));
+  Directory? get spoolDir => _dir == null
+      ? null
+      : Directory(p.join(_dir!.path, kCrashReportSpoolDirName));
 
   void _save(CrashReportState next) {
     _state = next;
@@ -348,7 +351,9 @@ class CrashReporter extends ChangeNotifier {
   void recordVerdict(PreviousExitVerdict? verdict) {
     if (!_enabled || verdict == null || !verdict.worthReporting) return;
     final CrashOccurrence next = CrashOccurrence.fromVerdict(verdict);
-    if (_state.pending.any((CrashOccurrence c) => c.identity == next.identity)) {
+    if (_state.pending.any(
+      (CrashOccurrence c) => c.identity == next.identity,
+    )) {
       return;
     }
     final List<CrashOccurrence> pending = <CrashOccurrence>[
