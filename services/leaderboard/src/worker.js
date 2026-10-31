@@ -35,6 +35,7 @@
 //   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
 //   /v1/ci/feedback/**                    [Bearer FEEDBACK_CI_TOKEN]  CI 回填修复 commit / 发布版本（同上）
 //   POST /v1/ci/usage                     [Bearer USAGE_UPLOAD_TOKEN] 上传 AI 额度消耗日汇总（ai_usage.js；没配 token 则 404）
+//   GET  /v1/musickit/token                                Apple Music API developer token（musickit.js；没配 MUSICKIT_* 则 503）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
 //
@@ -65,6 +66,7 @@ import { leaderboard, popularWorks, userCard, userShelf, workPage } from './view
 import { handleAdmin } from './admin.js';
 import { listBlocks, listFriends, matchSocialWrite } from './social.js';
 import { isPagePath, renderPage } from './pages.js';
+import { issueMusicKitToken } from './musickit.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
 import { purgeInstallStats, recordPing } from './installs.js';
@@ -197,6 +199,12 @@ async function route(request, env, now, ctx) {
     await bindingLimit(env.AUTH_LIMITER, request);
     const bytes = await readBodyBytes(request, USAGE_LIMITS.maxBodyBytes);
     return json(await recordAiUsage(env, request, parseJsonBytes(bytes), now));
+  }
+
+  // ---- Apple Music developer token（musickit.js）：无账户，按 IP 过 READ_LIMITER；不进边缘缓存 ----
+  if (method === 'GET' && path === '/v1/musickit/token') {
+    await bindingLimit(env.READ_LIMITER, request);
+    return json(await issueMusicKitToken(env, now), 200, { 'Cache-Control': 'no-store' });
   }
 
   // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----

@@ -324,6 +324,32 @@ $W secret put APNS_ENV       --config wrangler.toml   # production（见下）
 
 GitHub Release 里的未签名 ipa（AltStore / Sideloadly 侧载）没有推送能力，照旧走后台检查。
 
+## MusicKit 密钥（Apple Music API developer token）
+
+Apple Music API（`api.music.apple.com`）每个请求都要 `Authorization: Bearer <developer token>`，
+token 是用 Media Services 密钥签的 ES256 JWT。**私钥只放在排行榜 Worker 的 secret 里**，由
+`GET /v1/musickit/token`（`services/leaderboard/src/musickit.js`）代签一天有效的 token 发给 App；
+私钥不进 App 包、不进 git、不进 GitHub secrets（随包分发等于公开，只能作废重建）。
+
+| 项 | 值 |
+|---|---|
+| 密钥名 | Fushi MusicKit（Keys → Media Services：MusicKit、ShazamKit、Apple Music Feed） |
+| Key ID | `687L35A8T2` |
+| Team ID | `8N35BLYGL5`（与签名证书同一团队；2026-10-31 用真 token 调 catalog search 实测 200） |
+| `.p8` | 只能下一次；原件在维护者本机，丢了就在 Keys 里作废重建、重写下面三个 secret |
+
+```bash
+W="node services/leaderboard/node_modules/wrangler/bin/wrangler.js"
+$W secret put MUSICKIT_KEY_P8  --config services/leaderboard/wrangler.toml < AuthKey_687L35A8T2.p8
+printf 687L35A8T2 | $W secret put MUSICKIT_KEY_ID  --config services/leaderboard/wrangler.toml
+printf 8N35BLYGL5 | $W secret put MUSICKIT_TEAM_ID --config services/leaderboard/wrangler.toml
+```
+
+三项缺任何一项，接口回 `503 musickit_not_configured`，其它接口不受影响。验证：
+`curl https://rank.fushi.moe/v1/musickit/token` 拿到 token 后，带它调
+`https://api.music.apple.com/v1/catalog/jp/search?term=yoasobi&types=albums&limit=1` 应为 200
+（Team ID / Key ID 填错是 401）。
+
 ## 排障
 
 | 症状 | 原因 |
