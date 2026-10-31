@@ -259,7 +259,7 @@
   "mine_already_queued": "Staat al in de kaartenwachtrij",
   "mine_queued_n": "Toegevoegd aan de kaartenwachtrij ({n})",
   "mine_already_queued_n": "Staat al in de kaartenwachtrij ({n})",
-  "mine_queued_generate_later": "Genereer ze allemaal na het kijken",
+  "mine_queued_generate_later": "Klik op de knop “kaart maken” in de extensie om ze allemaal te genereren",
   "mine_no_cue": "Geen huidige ondertitelregel gevonden, probeer het zo opnieuw",
   "mine_enqueue_failed": "Kan niet aan de wachtrij toevoegen",
   "mine_failed": "Kaart maken mislukt",

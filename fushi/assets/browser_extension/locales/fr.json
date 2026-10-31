@@ -259,7 +259,7 @@
   "mine_already_queued": "Déjà dans la file de minage",
   "mine_queued_n": "Ajouté à la file de minage ({n})",
   "mine_already_queued_n": "Déjà dans la file de minage ({n})",
-  "mine_queued_generate_later": "Générez-les toutes après le visionnage",
+  "mine_queued_generate_later": "Cliquez sur le bouton de minage de l’extension pour toutes les générer",
   "mine_no_cue": "Aucune ligne de sous-titre en cours trouvée, réessayez dans un instant",
   "mine_enqueue_failed": "Impossible d’ajouter à la file",
   "mine_failed": "Échec du minage",
