@@ -13,8 +13,10 @@ import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart';
 /// 实例是无状态的：进程、库、日志都在 [session] 里（全 app 一份），
 /// `createAnkiRepository()` 被频繁调用也只是新建一个薄壳。
 class AnkiSyncClientRepository extends BaseAnkiRepository {
-  AnkiSyncClientRepository({required AnkiSyncSession? session})
-    : _session = session,
+  AnkiSyncClientRepository({
+    required AnkiSyncSession? session,
+    super.settingsStore,
+  }) : _session = session,
       _miner = session == null ? null : AnkiSyncMiner(session);
 
   /// null = 本机没有 `fushi-anki-sync`（平台 / 安装包不带）。

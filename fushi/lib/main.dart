@@ -40,7 +40,10 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
+import 'package:fushi/src/srs/srs_mining.dart' show SrsMiner;
+import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -145,6 +148,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/profile/extension_profile_adapter.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
@@ -154,7 +158,6 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        ProfileMediaKind,
         VideoBookRow,
         VideoBooksCompanion;
 import 'package:fushi/src/media/media_item.dart';
@@ -645,15 +648,23 @@ void main([List<String> args = const <String>[]]) {
       await FushiDicts.preloadTransforms();
 
       final appModel = container.read(appProvider);
-      // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
-      // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
-      // 查词是与正在看的条目并存的旁路活动：只应用命中的「浏览器」绑定，无绑定时
-      // 不回退、不消费回退点（否则阅读器背后的配置会被一次查词换掉）。
-      appModel.browserLookupProfileApplier = () => container
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            mediaType: ProfileMediaKind.browser,
-            restoreFallback: false,
+      // 反馈 biLEesNqWb（并入 TODO-2936 的「浏览器」媒体类型绑定）：扩展请求按哪份配置处理
+      // ——扩展手动所选 > 「浏览器」绑定 > 跟随 App；都只影响扩展请求、按该配置的只读设置
+      // 视图读设置，不切换 App 的激活配置。须在 initialise() 之前注入（server 在其内启动）。
+      appModel.browserExtensionProfileApi = AppExtensionProfileApi(
+        repository: () => container.read(profileRepositoryProvider),
+        database: () => appModel.database,
+        servicesForView: appModel.extensionRequestServicesForView,
+      );
+      // 扩展所选配置的挖词目标是 Fushi 复习时，卡进那份配置的复习：同一个 srs.db 句柄上按它的
+      // uid 取副本（srs_profile_stores.dart），「在复习里打开」的编辑页套那份副本。
+      appModel.srsProfileStoresReader = () =>
+          container.read(srsProfileStoresProvider);
+      appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
+          srsPushProfileNoteEditor(
+            appModel.navigatorKey.currentState,
+            miner,
+            noteId,
           );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);

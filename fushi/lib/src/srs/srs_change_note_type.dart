@@ -59,13 +59,17 @@ Future<bool> showSrsChangeNoteTypeFlow(
   final bool? changed = await Navigator.of(context).push<bool>(
     adaptivePageRoute<bool>(
       context: context,
-      builder: (_) => SrsChangeNoteTypePage(
-        noteIds: List<String>.unmodifiable(noteIds),
-        from: from,
-        targets: targets,
-        initialTargetId: initialTargetId,
-        initialFieldMap: initialFieldMap,
-        initialTemplateMap: initialTemplateMap,
+      // 沿用调用方的复习作用域（别的配置的笔记编辑页里改类型，见 srsInheritProviderScope）。
+      builder: (_) => UncontrolledProviderScope(
+        container: container,
+        child: SrsChangeNoteTypePage(
+          noteIds: List<String>.unmodifiable(noteIds),
+          from: from,
+          targets: targets,
+          initialTargetId: initialTargetId,
+          initialFieldMap: initialFieldMap,
+          initialTemplateMap: initialTemplateMap,
+        ),
       ),
     ),
   );
