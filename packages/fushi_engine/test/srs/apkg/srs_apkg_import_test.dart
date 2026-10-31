@@ -1378,6 +1378,95 @@ void main() {
       expect((await other.note(g4))!.noteTypeId, dup);
     });
 
+    test('来源换了笔记类型（Anki「更改笔记类型」）：本机仍在的记冲突；本机删掉后再导入按新类型恢复（BUG-3887）', () async {
+      const int kKiku = 1700000000003;
+      // 同一批 guid 在来源里改挂到另一个笔记类型（Anki 改类型不换 guid）。
+      Uint8List retyped() {
+        final Map<String, Object?> models = legacyModels();
+        models['$kKiku'] = <String, Object?>{
+          'id': kKiku,
+          'name': 'Kiku',
+          'type': 0,
+          'css': '',
+          'flds': <Object?>[
+            <String, Object?>{'name': 'Expression', 'ord': 0, 'id': 555},
+            <String, Object?>{'name': 'Meaning', 'ord': 1, 'id': 666},
+          ],
+          'tmpls': <Object?>[
+            <String, Object?>{
+              'name': 'Mining',
+              'ord': 0,
+              'qfmt': '{{Expression}}',
+              'afmt': '{{FrontSide}}<hr id=answer>{{Meaning}}',
+              'id': 777,
+            },
+          ],
+        };
+        return customApkg(
+          t,
+          models: models,
+          patch: (Database db) {
+            db.execute('UPDATE notes SET mid = ? WHERE mid = ?', <Object?>[
+              kKiku,
+              kBasic,
+            ]);
+            // Kiku 只有一个模板：原来第二张卡在 Anki 改类型时被删掉。
+            db.execute(
+              'DELETE FROM cards WHERE ord = 1 AND nid IN '
+              '(SELECT id FROM notes WHERE mid = $kKiku)',
+            );
+          },
+        );
+      }
+
+      final String kiku = SrsIds.noteType(kProfile, kKiku);
+      final String g1 = SrsIds.note(kProfile, 'g1');
+      final String g3 = SrsIds.note(kProfile, 'g3');
+      final SrsDbStore s = await seeded();
+
+      // 本机笔记还在：与 Anki 相同，不擅自换类型，记冲突且报告带笔记类型名。
+      final SrsImportReport live = await importInto(s, retyped());
+      expect(
+        <(String, String, String)>{
+          for (final SrsImportNoteIssue i in live.conflictNotes)
+            (i.guid, i.noteType, i.reason),
+        },
+        <(String, String, String)>{
+          ('g1', 'Kiku', SrsImportIssueReason.noteTypeChanged),
+          ('g3', 'Kiku', SrsImportIssueReason.noteTypeChanged),
+        },
+      );
+      expect((await s.note(g1))!.noteTypeId, basicNt(kProfile));
+
+      // 用户在 Fushi 里删掉这批笔记再导入：按来源的新类型恢复，卡片可见。
+      await srsBatchDeleteNotes(s, <String>[g1, g3]);
+      final SrsImportReport rep = await importInto(s, retyped());
+      expect(rep.conflictNotes, isEmpty);
+      expect(rep.notesRestored, 2);
+      for (final String id in <String>[g1, g3]) {
+        final SrsNoteView n = (await s.note(id))!;
+        expect(n.deletedAt, isNull);
+        expect(n.noteTypeId, kiku);
+        expect(
+          <String>[
+            for (final SrsCardCacheRow c in await s.allCardRows())
+              if (c.noteId == id && !c.hidden) c.templateId,
+          ],
+          <String>[SrsIds.template(kiku, 777)],
+          reason: 'note $id should show exactly its Kiku card',
+        );
+      }
+      expect((await s.note(g3))!.field(SrsIds.field(kiku, 666)), 'future');
+      expect(<String>[
+        for (final SrsNoteCacheRow n in await s.listNotes()) n.id,
+      ], containsAll(<String>[g1, g3]));
+
+      // 再导入一次：已恢复，不再计入恢复、也不再冲突。
+      final SrsImportReport again = await importInto(s, retyped());
+      expect(again.conflictNotes, isEmpty);
+      expect(again.notesRestored, 0);
+    });
+
     test('不含排程：全部作为新卡、无复习日志、无锚点、不暂停、去掉 leech 标签', () async {
       final SrsDbStore s = await openTestStore(
         profileUid: kProfile,

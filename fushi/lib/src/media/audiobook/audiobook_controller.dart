@@ -616,9 +616,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   // ── 图片暂停 ───────────────────────────────────────────────────────────────
-  // 遇到图片时自动暂停播放，停留指定秒数后恢复。0 = 不暂停。
+  // 遇到图片时自动暂停播放，停留指定秒数后恢复。0 = 不暂停。默认值与持久层同源
+  // （[AudiobookRepository.defaultImagePauseSec]，没存过值的书吃它）。
 
-  final ValueNotifier<int> imagePauseSec = ValueNotifier<int>(0);
+  final ValueNotifier<int> imagePauseSec = ValueNotifier<int>(
+    AudiobookRepository.defaultImagePauseSec,
+  );
 
   Future<void> Function(int sec)? onImagePausePersist;
 
@@ -700,8 +703,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     required bool readerMovedDuringPause,
   }) => !readerMovedDuringPause;
 
+  /// 插图停留秒数上限（BUG-3887：设置项改成可自定义秒数的步进器，原先只有
+  /// 0/5/10/15 四档）。
+  static const int maxImagePauseSec = 60;
+
   void setImagePauseSec(int sec) {
-    final int clamped = sec.clamp(0, 15);
+    final int clamped = sec.clamp(0, maxImagePauseSec);
     if (imagePauseSec.value == clamped) return;
     imagePauseSec.value = clamped;
     final Future<void> Function(int)? persist = onImagePausePersist;
@@ -1093,7 +1100,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     int initialDelayMs = 0,
     double initialSpeed = 1.0,
     int initialPositionMs = 0,
-    int initialImagePauseSec = 0,
+    int initialImagePauseSec = AudiobookRepository.defaultImagePauseSec,
     double initialVolume = 1.0,
   }) async {
     // 新一轮加载：旧 Completer 若未完成则补完（防上次 load 异常中断），

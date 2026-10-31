@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
 /// 播放器 chrome 的「小窗表面」种类：视频当前被摆在什么形态的窗口里。
@@ -185,4 +186,88 @@ bool videoSlimProgressBarVisible({
   if (surface.systemOwnsChrome) return false;
   if (!spec.showSeekBar) return true;
   return preferenceEnabled && !controlsVisible;
+}
+
+/// 按**密度档**而不是按约束重建子树的 `LayoutBuilder`。
+///
+/// 播放区宽度会连续变：字幕跳转侧栏是 push-aside 的真 `Row` 子列，开 / 关时列宽走
+/// 200ms 的 `AnimatedSize`，画面区每一帧都换一次宽度。裸 `LayoutBuilder` 每次约束
+/// 变化都重跑 builder，而页面把**整棵** controls 子树（控制条、字幕 overlay、rail…）
+/// 建在 builder 里——侧栏开 / 关一次就是几十次整套 chrome 重建，用户看到的就是
+/// 「字幕列表打开和关闭都很卡」。档位只有三档，宽度连续变时绝大多数帧档位不变：
+/// 档位没变就把上次建好的同一个 widget 实例原样返回，Flutter 对 identical 子 widget
+/// 直接跳过整棵子树的重建，子树里需要随尺寸重排的部分（字幕 overlay 自己的
+/// `LayoutBuilder` 等）照常只走 layout。
+///
+/// 本组件被父级重建（[didUpdateWidget]）时缓存作废、下一次布局重新 build：外层状态
+/// 变化仍然每次都能刷到子树，缓存只省掉「只有约束变了」的那部分重建。
+class VideoControlsDensityBuilder extends StatefulWidget {
+  const VideoControlsDensityBuilder({
+    required this.surface,
+    required this.builder,
+    super.key,
+  });
+
+  /// 小窗表面（参与解档，见 [resolveVideoControlsDensity]）。每次布局读当前值，
+  /// 变化时也会重新解档。
+  final ValueListenable<VideoMiniSurface> surface;
+
+  final Widget Function(BuildContext context, VideoControlsDensitySpec spec)
+  builder;
+
+  @override
+  State<VideoControlsDensityBuilder> createState() =>
+      _VideoControlsDensityBuilderState();
+}
+
+class _VideoControlsDensityBuilderState
+    extends State<VideoControlsDensityBuilder> {
+  Widget? _child;
+  VideoControlsDensitySpec? _spec;
+
+  @override
+  void didUpdateWidget(VideoControlsDensityBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.surface != widget.surface) {
+      oldWidget.surface.removeListener(_onSurfaceChanged);
+      widget.surface.addListener(_onSurfaceChanged);
+    }
+    _child = null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.surface.addListener(_onSurfaceChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.surface.removeListener(_onSurfaceChanged);
+    super.dispose();
+  }
+
+  // 小窗表面变了：让 LayoutBuilder 重跑一次解档（换档才会重建子树）。
+  void _onSurfaceChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final VideoControlsDensitySpec spec = resolveVideoControlsDensity(
+          playerSize: constraints.biggest,
+          surface: widget.surface.value,
+        );
+        final Widget? cached = _child;
+        // 档位规格是共享的 const 实例，identical 即同档。
+        if (cached != null && identical(spec, _spec)) return cached;
+        _spec = spec;
+        // 子树包进自己的 [Builder]：InheritedWidget 依赖登记在这层 element 上，
+        // 依赖变化时它自己重建，不会因为上面命中缓存而读到旧 theme / MediaQuery。
+        return _child = Builder(
+          builder: (BuildContext context) => widget.builder(context, spec),
+        );
+      },
+    );
+  }
 }
