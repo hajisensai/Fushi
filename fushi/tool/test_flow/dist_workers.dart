@@ -489,6 +489,15 @@ class DistWorkerError implements Exception {
   String toString() => message;
 }
 
+/// Test processes per batch on a worker configured for [configured] (null:
+/// flutter's default) when the caller capped them at [cap] (an explicit
+/// `flutter test -j N` handed to dist_test): the lower of the two.
+int? distEffectiveConcurrency(int? configured, int? cap) {
+  if (cap == null) return configured;
+  if (configured == null) return cap;
+  return configured < cap ? configured : cap;
+}
+
 abstract class DistWorker {
   DistWorker(this.config);
 
@@ -529,6 +538,7 @@ abstract class DistWorker {
     required List<String> flutterArgs,
     required IOSink stderrLog,
     required Duration timeout,
+    int? concurrencyCap,
   });
 
   /// `flutter analyze --no-pub [options] [paths]` of the prepared checkout
@@ -683,6 +693,7 @@ class LocalDistWorker extends DistWorker {
     required List<String> flutterArgs,
     required IOSink stderrLog,
     required Duration timeout,
+    int? concurrencyCap,
   }) async {
     if (batch.files.any(isDistItestPath)) {
       return _runItests(batch, stderrLog: stderrLog, timeout: timeout);
@@ -727,7 +738,7 @@ class LocalDistWorker extends DistWorker {
           if (covFile != null)
             '--concurrency=$kDistCoverageConcurrency'
           else
-            '--concurrency=${config.concurrency ?? kDefaultTestConcurrency}',
+            '--concurrency=${distEffectiveConcurrency(config.concurrency ?? kDefaultTestConcurrency, concurrencyCap)}',
           if (covFile != null) ...<String>[
             '--coverage',
             '--coverage-path=${covFile.path}',
@@ -1299,6 +1310,7 @@ class SshDistWorker extends DistWorker {
     required List<String> flutterArgs,
     required IOSink stderrLog,
     required Duration timeout,
+    int? concurrencyCap,
   }) async {
     for (final String f in batch.files) {
       if (!isSafeDistTestPath(f)) {
@@ -1327,13 +1339,13 @@ class SshDistWorker extends DistWorker {
     } else if (_shim) {
       remote = shimRequest('run', <String>[
         '${config.slotIndex}',
-        '${config.concurrency ?? 0}',
+        '${distEffectiveConcurrency(config.concurrency, concurrencyCap) ?? 0}',
         ...args,
       ]);
     } else {
       remote =
           '${_prefix}bash fushi/tool/dist_test/worker_run.sh '
-          '${<String>['${config.concurrency ?? 0}', ...args.map(shellQuote)].join(' ')}';
+          '${<String>['${distEffectiveConcurrency(config.concurrency, concurrencyCap) ?? 0}', ...args.map(shellQuote)].join(' ')}';
     }
     final Process process = await Process.start(distSshExecutable(), <String>[
       ..._sshBase,

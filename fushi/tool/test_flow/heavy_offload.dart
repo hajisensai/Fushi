@@ -34,6 +34,11 @@ class HeavyOffload {
 /// (30 s apart): heavy.dart would rather run here than wait long.
 const int kHeavyOffloadBusyRetries = 2;
 
+/// How long heavy.dart lets an offloaded run go past `--max-minutes` before
+/// it kills it: dist_test enforces the same limit itself (killing the remote
+/// run, releasing the worker), so this is only for one that hangs doing so.
+const Duration kHeavyOffloadStopGrace = Duration(minutes: 5);
+
 /// `FUSHI_HEAVY_OFFLOAD=off` keeps every heavy run on this machine.
 bool heavyOffloadDisabled(Map<String, String> env) =>
     (env['FUSHI_HEAVY_OFFLOAD'] ?? '').toLowerCase() == 'off';
@@ -107,11 +112,30 @@ const Map<String, String> _testValueOptions = <String, String>{
 
 /// What dist_test takes care of itself: dropped from the command.
 bool _droppedTestOption(String a) =>
-    a == '--no-pub' ||
-    a.startsWith('--concurrency=') ||
-    a.startsWith('-j') ||
-    a.startsWith('--reporter=') ||
-    a.startsWith('-r');
+    a == '--no-pub' || a.startsWith('--reporter=') || a.startsWith('-r');
+
+/// The value of a concurrency option at [args][i] (`-j N`, `-jN`, `-j=N`,
+/// `--concurrency N`, `--concurrency=N`) and how many arguments it took;
+/// null when [args][i] is none. A value that is no positive number yields
+/// `value: null`.
+({int? value, int taken})? _concurrencyAt(List<String> args, int i) {
+  final String a = args[i];
+  String? raw;
+  int taken = 1;
+  if (a == '-j' || a == '--concurrency') {
+    raw = i + 1 < args.length ? args[i + 1] : null;
+    taken = 2;
+  } else if (a.startsWith('--concurrency=')) {
+    raw = a.substring('--concurrency='.length);
+  } else if (a.startsWith('-j')) {
+    raw = a.substring(2);
+    if (raw.startsWith('=')) raw = raw.substring(1);
+  } else {
+    return null;
+  }
+  final int? n = raw == null ? null : int.tryParse(raw);
+  return (value: n != null && n >= 1 ? n : null, taken: taken);
+}
 
 /// A value the shim passes on unchanged (worker_shim.sh check_flutter_arg).
 final RegExp _plainValue = RegExp(r'^[A-Za-z0-9_,.:+][A-Za-z0-9_,.:+-]*$');
@@ -189,9 +213,20 @@ HeavyOffload? _planTest(
   final List<String> paths = <String>[];
   bool coverage = false;
   String? coveragePath;
+  int? concurrency;
   for (int i = 0; i < args.length; i++) {
     final String a = args[i];
-    if (a == '-j' || a == '--concurrency' || a == '-r' || a == '--reporter') {
+    final ({int? value, int taken})? jobs = _concurrencyAt(args, i);
+    if (jobs != null) {
+      // An explicit `-j N` caps every worker's processes at N (dist_test
+      // `--concurrency=N`): it is often there for a reason (a shared
+      // resource), and must not silently become the worker's own count.
+      if (jobs.value == null) return null;
+      concurrency = jobs.value;
+      i += jobs.taken - 1;
+      continue;
+    }
+    if (a == '-r' || a == '--reporter') {
       i++; // the dropped option's value
       continue;
     }
@@ -248,6 +283,7 @@ HeavyOffload? _planTest(
       '--busy-retries=$kHeavyOffloadBusyRetries',
       if (package != kDistAppPackage) '--package=$package',
       if (lcov != null) ...<String>['--coverage', '--coverage-out=$lcov'],
+      if (concurrency != null) '--concurrency=$concurrency',
       ...options,
       ...paths,
     ],

@@ -8,6 +8,7 @@ import 'test_flow/dist_coverage.dart';
 import 'test_flow/dist_plan.dart';
 import 'test_flow/dist_results.dart';
 import 'test_flow/dist_snapshot.dart';
+import 'test_flow/dist_stop.dart';
 import 'test_flow/dist_workers.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/suite_timings.dart';
@@ -48,14 +49,56 @@ import 'test_flow/suite_timings.dart';
 ///
 /// Last stdout line: `DIST TEST VERDICT: PASSED|FAILED - ...`; exit code 0
 /// only when green.
+///
+/// Off this machine (`--offload` / `--analyze` / `--build`, tool/heavy.dart)
+/// a run that cannot get going here (bad or missing worker config, no
+/// snapshot, an internal error) is no verdict on the code: it exits
+/// [kDistOffloadDeclined] with the reason, and heavy.dart runs the command
+/// here. Ctrl-C and `--max-minutes=N` stop the workers' remote runs and
+/// release their checkouts before exiting (130 / 124).
 Future<void> main(List<String> args) async {
   final _Options options = _Options.parse(args);
+  _stop.watch(
+    deadline: options.maxMinutes > 0
+        ? Duration(minutes: options.maxMinutes)
+        : null,
+  );
+  try {
+    await _main(options);
+  } on Object catch (e, s) {
+    if (!options.offMachine) rethrow;
+    stderr.writeln('dist_test: internal error: $e\n$s');
+    await _stop.stop(
+      kDistOffloadDeclined,
+      'DIST OFFLOAD: declined after an internal error of dist_test; '
+      'stopping the workers',
+    );
+  }
+  await _stop.dispose();
+}
+
+/// The one stopper of this run: Ctrl-C, the deadline and internal errors all
+/// end the run through it (test_flow/dist_stop.dart).
+final DistStopper _stop = DistStopper();
+
+/// Refuses a run that cannot start: off this machine heavy.dart then runs the
+/// command here ([kDistOffloadDeclined]); otherwise a usage error.
+Never _refuse(_Options options, String why) {
+  stderr.writeln(why);
+  if (options.offMachine) {
+    stdout.writeln('DIST OFFLOAD: declined: ${why.split('\n').first}');
+    exit(kDistOffloadDeclined);
+  }
+  exit(64);
+}
+
+Future<void> _main(_Options options) async {
   if (options.itest && options.flutterArgs.isNotEmpty) {
-    stderr.writeln(
+    _refuse(
+      options,
       '--itest takes no flutter test options '
       '(${options.flutterArgs.join(' ')}): each file is one app launch',
     );
-    exit(64);
   }
   if (<bool>[
         options.itest,
@@ -63,27 +106,26 @@ Future<void> main(List<String> args) async {
         options.build != null,
       ].where((bool b) => b).length >
       1) {
-    stderr.writeln('--itest, --analyze and --build each run on their own');
-    exit(64);
+    _refuse(options, '--itest, --analyze and --build each run on their own');
   }
   if (options.buildCommand != null && options.build == null) {
-    stderr.writeln(
+    _refuse(
+      options,
       '--build takes `-- flutter build <apk|appbundle|windows|macos> '
       '[--debug|--profile|--release] [--split-per-abi] '
       '[--target-platform=android-...]` or `-- gradlew '
       '<:app:assemble*|:app:bundle*>` (macos --debug only), not: '
       '${options.buildCommand!.join(' ')}',
     );
-    exit(64);
   }
   if (!isDistPackageDir(options.package) ||
       (options.package != kDistAppPackage &&
           (options.itest || options.analyze || options.build != null))) {
-    stderr.writeln(
+    _refuse(
+      options,
       '--package takes packages/<name> and goes with test runs only: '
       '${options.package}',
     );
-    exit(64);
   }
   if (options.analyze) {
     final List<String> bad = <String>[
@@ -93,25 +135,24 @@ Future<void> main(List<String> args) async {
         if (!isSafeDistAnalyzePath(p)) p,
     ];
     if (bad.isNotEmpty) {
-      stderr.writeln(
+      _refuse(
+        options,
         '--analyze takes ${kDistAnalyzeOptions.join(' / ')} and paths under '
         'lib/ test/ tool/ integration_test/ test_driver/ bin/ only: '
         '${bad.join(', ')}',
       );
-      exit(64);
     }
   }
   if (!hasSharedConsole()) {
-    stderr.writeln(
+    _refuse(
+      options,
       'dist_test: this process has no console, so every flutter / git / ssh '
       'it starts would open a window of its own and take the focus. Run it '
       'from a terminal or an agent shell.',
     );
-    exit(64);
   }
   if (!File('pubspec.yaml').existsSync() || !Directory('test').existsSync()) {
-    stderr.writeln('run from fushi/ (the Flutter app directory)');
-    exit(64);
+    _refuse(options, 'run from fushi/ (the Flutter app directory)');
   }
   final String repoRoot = Directory.current.parent.absolute.path.replaceAll(
     r'\',
@@ -120,42 +161,41 @@ Future<void> main(List<String> args) async {
   // The package whose test/ this run covers; suite paths stay relative to it.
   final String packageDir = '$repoRoot/${options.package}';
   if (!Directory('$packageDir/test').existsSync()) {
-    stderr.writeln('${options.package} has no test/ directory');
-    exit(64);
+    _refuse(options, '${options.package} has no test/ directory');
   }
   final String runner = distTestRunnerOf(
     File('$packageDir/pubspec.yaml').readAsStringSync(),
   );
   if (options.coverage && (options.itest || runner == 'dart')) {
-    stderr.writeln(
+    _refuse(
+      options,
       '--coverage goes with flutter test runs only (not --itest, not a pure '
       'Dart package)',
     );
-    exit(64);
   }
 
   final File configFile = File(options.configPath);
   if (!configFile.existsSync()) {
-    stderr.writeln(
+    _refuse(
+      options,
       'no worker config at ${options.configPath}; copy '
       'tool/dist_test/workers.example.json there and edit it',
     );
-    exit(64);
   }
   List<DistWorkerConfig> configs;
   try {
     configs = readDistWorkers(configFile.readAsStringSync());
   } on DistConfigError catch (e) {
-    stderr.writeln('${options.configPath}: $e');
-    exit(64);
+    _refuse(options, '${options.configPath}: $e');
+  } on FormatException catch (e) {
+    _refuse(options, '${options.configPath}: not JSON: ${e.message}');
   }
   if (options.workers != null) {
     final Set<String> unknown = options.workers!.difference(
       configs.map((DistWorkerConfig c) => c.name).toSet(),
     );
     if (unknown.isNotEmpty) {
-      stderr.writeln('unknown worker(s): ${unknown.join(', ')}');
-      exit(64);
+      _refuse(options, 'unknown worker(s): ${unknown.join(', ')}');
     }
     configs = <DistWorkerConfig>[
       for (final DistWorkerConfig c in configs)
@@ -181,13 +221,13 @@ Future<void> main(List<String> args) async {
         if (c.kind == DistWorkerKind.local)
           ...createDistWorkers(c, repoRoot: repoRoot),
   ];
+  _stop.register(<DistWorker>[...workers, ...fallback]);
   if (workers.isEmpty) {
     if (offMachine) {
       stdout.writeln('DIST OFFLOAD: no other machine is configured');
       exit(kDistOffloadDeclined);
     }
-    stderr.writeln('no workers selected');
-    exit(64);
+    _refuse(options, 'no workers selected');
   }
 
   if (options.status) {
@@ -199,8 +239,9 @@ Future<void> main(List<String> args) async {
   }
 
   if (job != null) {
-    final DistSnapshot snapshot = await _snapshot(repoRoot);
+    final DistSnapshot snapshot = await _snapshot(repoRoot, options);
     final String runId = _runId();
+    _stop.runId = runId;
     final Directory out = Directory(
       options.outputDir ?? '../.codex-test/dist/$runId',
     )..createSync(recursive: true);
@@ -231,19 +272,18 @@ Future<void> main(List<String> args) async {
   } else {
     final Map<String, int> bytes = _discoverSuites(packageDir, options.paths);
     if (bytes.isEmpty) {
-      stderr.writeln('no *_test.dart under ${options.paths.join(', ')}');
-      exit(64);
+      _refuse(options, 'no *_test.dart under ${options.paths.join(', ')}');
     }
     final List<String> unsafe = <String>[
       for (final String p in bytes.keys)
         if (!isSafeDistTestPath(p)) p,
     ];
     if (unsafe.isNotEmpty) {
-      stderr.writeln(
+      _refuse(
+        options,
         'test paths outside [A-Za-z0-9_./-] cannot be shipped: '
         '${unsafe.join(', ')}',
       );
-      exit(64);
     }
     // Measured timings and manual pins exist for the app's suites only; a
     // package's weights come from file sizes.
@@ -290,9 +330,10 @@ Future<void> main(List<String> args) async {
   if (options.dryRun) return;
 
   // ---- snapshot ----
-  final DistSnapshot snapshot = await _snapshot(repoRoot);
+  final DistSnapshot snapshot = await _snapshot(repoRoot, options);
 
   final String runId = _runId();
+  _stop.runId = runId;
   final Directory out = Directory(
     options.outputDir ?? '../.codex-test/dist/$runId',
   )..createSync(recursive: true);
@@ -310,19 +351,8 @@ Future<void> main(List<String> args) async {
     runId: runId,
     snapshot: snapshot,
     busyRetries: options.busyRetries,
+    concurrency: options.concurrency,
   );
-  final StreamSubscription<ProcessSignal> sigint = ProcessSignal.sigint
-      .watch()
-      .listen((_) async {
-        stderr.writeln('\ninterrupted: stopping the workers');
-        await Future.wait(<Future<void>>[
-          for (final DistWorker w in everyWorker) w.cancel(),
-        ]);
-        await Future.wait(<Future<void>>[
-          for (final DistWorker w in everyWorker) w.finish(runId),
-        ]);
-        exit(130);
-      });
   await Future.wait(<Future<void>>[
     for (final DistWorker w in workers) scheduler.drive(w),
   ]);
@@ -332,7 +362,6 @@ Future<void> main(List<String> args) async {
     await Future.wait(<Future<void>>[
       for (final DistWorker w in everyWorker) w.finish(runId),
     ]);
-    await sigint.cancel();
     stdout.writeln('DIST OFFLOAD: no other machine took any suite');
     exit(kDistOffloadDeclined);
   }
@@ -350,7 +379,6 @@ Future<void> main(List<String> args) async {
   await Future.wait(<Future<void>>[
     for (final DistWorker w in everyWorker) w.finish(runId),
   ]);
-  await sigint.cancel();
   wall.stop();
 
   final DistRunVerdict verdict = DistRunVerdict(
@@ -423,6 +451,7 @@ class _Scheduler {
     required this.runId,
     required this.snapshot,
     this.busyRetries = kBusyRetries,
+    this.concurrency,
   }) : _speeds = <DistWorker, DistSpeed>{
          for (final DistWorker w in workers) w: DistSpeed(),
        };
@@ -432,6 +461,9 @@ class _Scheduler {
   /// Whose suites these are ([kDistAppPackage] or `packages/<name>`).
   final String package;
   final List<String> flutterArgs;
+
+  /// The caller's cap on test processes per batch (`--concurrency=N`).
+  final int? concurrency;
 
   /// lcov of every batch that ran to the end (`--coverage`), unchecked.
   final List<String> coverage = <String>[];
@@ -532,6 +564,7 @@ class _Scheduler {
     int busyStreak = 0;
     bool dropped = false;
     while (true) {
+      await _stop.holdIfStopping();
       final DistBatch? batch = queue.take(
         eligible: worker.eligible,
         budgetMs: distChunkBudgetMs(
@@ -559,6 +592,7 @@ class _Scheduler {
           flutterArgs: flutterArgs,
           stderrLog: errLog,
           timeout: _batchTimeout(worker, batch, speed),
+          concurrencyCap: concurrency,
         );
       } on Object catch (e) {
         run = DistBatchRun(
@@ -770,6 +804,7 @@ class _Scheduler {
           in plan.entries)
         () async {
           for (final ({DistUnit unit, String redOn}) r in e.value) {
+            await _stop.holdIfStopping();
             final DistBatch batch = DistBatch(
               id: nextId++,
               units: <DistUnit>[r.unit],
@@ -785,6 +820,7 @@ class _Scheduler {
                 flutterArgs: flutterArgs,
                 stderrLog: errLog,
                 timeout: _batchTimeout(e.key, batch, _speeds[e.key]!),
+                concurrencyCap: concurrency,
               );
             } on Object catch (err) {
               run = DistBatchRun(
@@ -829,12 +865,18 @@ class _Scheduler {
 }
 
 /// The run's snapshot commit (HEAD + working tree, secrets held at HEAD).
-Future<DistSnapshot> _snapshot(String repoRoot) async {
+Future<DistSnapshot> _snapshot(String repoRoot, _Options options) async {
   final Directory scratch = Directory.systemTemp.createTempSync('dist_test_');
   final DistSnapshot snapshot;
   try {
     snapshot = await createDistSnapshot(gitIn(repoRoot), scratchDir: scratch);
   } on DistSnapshotError catch (e) {
+    // No commit to ship says nothing about the code: off this machine
+    // heavy.dart runs the command here instead.
+    if (options.offMachine) {
+      scratch.deleteSync(recursive: true);
+      _refuse(options, 'no snapshot of the working tree: ${e.message}');
+    }
     stderr.writeln(e.message);
     stdout.writeln('DIST TEST VERDICT: FAILED - no snapshot');
     exit(1);
@@ -865,6 +907,7 @@ Future<int> _jobOffMachine(
   final DistBuild? build = job.build;
   final String tag = build == null ? 'analyze' : 'build';
   for (final DistWorker w in workers) {
+    await _stop.holdIfStopping();
     final String? blocker = await w.jobBlocker(job);
     if (blocker != null) {
       stdout.writeln('[${w.name}] skipped: $blocker');
@@ -908,6 +951,7 @@ Future<int> _jobOffMachine(
       );
     }
     await errLog.close();
+    await _stop.holdIfStopping();
     await w.finish(runId);
     final String? skipped = run.busy ?? run.infraError;
     if (skipped != null) {
@@ -969,7 +1013,21 @@ class _Options {
     required this.package,
     required this.coverageOut,
     required this.buildCommand,
+    required this.maxMinutes,
+    required this.concurrency,
   });
+
+  /// `--max-minutes=N`: the whole run stops after N minutes (124), remote
+  /// runs killed and checkouts released; 0 = no limit.
+  final int maxMinutes;
+
+  /// `--concurrency=N`: at most N test processes per batch on any worker
+  /// (the caller's explicit `flutter test -j N`); null = each worker's own.
+  final int? concurrency;
+
+  /// Off this machine: tool/heavy.dart runs the command here itself when
+  /// this run declines ([kDistOffloadDeclined]).
+  bool get offMachine => offload || analyze || buildCommand != null;
 
   final List<String> paths;
   final List<String> flutterArgs;
@@ -1025,6 +1083,8 @@ class _Options {
     String? coverageOut;
     bool build = false;
     List<String>? buildCommand;
+    int maxMinutes = 0;
+    int? concurrency;
     for (int i = 0; i < args.length; i++) {
       final String arg = args[i];
       if (arg == '--' && build) {
@@ -1054,6 +1114,11 @@ class _Options {
         busyRetries =
             int.tryParse(arg.substring('--busy-retries='.length)) ??
             busyRetries;
+      } else if (arg.startsWith('--max-minutes=')) {
+        maxMinutes = int.tryParse(arg.substring('--max-minutes='.length)) ?? 0;
+      } else if (arg.startsWith('--concurrency=')) {
+        final int? n = int.tryParse(arg.substring('--concurrency='.length));
+        concurrency = n != null && n >= 1 ? n : null;
       } else if (arg.startsWith('--config=')) {
         configPath = arg.substring('--config='.length);
       } else if (arg.startsWith('--workers=')) {
@@ -1092,6 +1157,8 @@ class _Options {
       package: package,
       coverageOut: coverageOut,
       buildCommand: buildCommand,
+      maxMinutes: maxMinutes,
+      concurrency: concurrency,
     );
   }
 }
