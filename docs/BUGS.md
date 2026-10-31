@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3518 条。点号进各自文件。
+> 共 3519 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3915](bugs/BUG-3915-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
 | [BUG-3914](bugs/BUG-3914-ort-webgpu-provider-probe.md) | ✅ | ✅ | ort-webgpu-provider-probe |
 | [BUG-3913](bugs/BUG-3913-webview-resize-vram-leak.md) | ✅ | ✅ | webview-resize-vram-leak |
 | [BUG-3912](bugs/BUG-3912-audio-source-refused-reported-as-dns.md) | ✅ | ✅ | 音频源「连接被拒」被报成「无法解析 host」 |
