@@ -14,12 +14,14 @@ static_assert(sizeof(wchar_t) == sizeof(char16_t),
 using fushi_voice_hook::SiglusGlyphLayoutFn;
 using fushi_voice_hook::SiglusEightArgGlyphLayoutFn;
 using fushi_voice_hook::SiglusLegacyGlyphLayoutFn;
+using fushi_voice_hook::SiglusNineArgGlyphLayoutFn;
 using SiglusInputMessageFn = void(__stdcall *)(UINT, WPARAM, LPARAM);
 using SiglusLegacyInputMessageFn = void(__fastcall *)(LPARAM, WPARAM, UINT);
 
 SiglusGlyphLayoutFn g_orig_SiglusGlyphLayout = nullptr;
 SiglusEightArgGlyphLayoutFn g_orig_SiglusEightArgGlyphLayout = nullptr;
 SiglusLegacyGlyphLayoutFn g_orig_SiglusLegacyGlyphLayout = nullptr;
+SiglusNineArgGlyphLayoutFn g_orig_SiglusNineArgGlyphLayout = nullptr;
 decltype(&GetKeyState) g_orig_SiglusGetKeyState = nullptr;
 decltype(&GetKeyboardState) g_orig_SiglusGetKeyboardState = nullptr;
 SiglusInputMessageFn g_orig_SiglusInputMessage = nullptr;
@@ -341,6 +343,7 @@ bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
 
 uint32_t SiglusDesignWidthOffset(
     const fushi_voice_hook::SiglusLookupProfile& profile) {
+  if (IsNineArgSiglusLookup(profile)) return siglus_ninearg::kConfigWidth;
   if (IsEightArgSiglusLookup(profile) ||
       profile.input_entry_abi == fushi_voice_hook::SiglusInputEntryAbi::kPlainFrame)
     return kSiglusDesignWidthCompact;
@@ -423,10 +426,42 @@ bool ResolveSiglusLiveFamily(HMODULE module,
     siglus_eightarg::Sites eightarg_sites;
     const bool eightarg_matched = siglus_eightarg::Resolve(
         image, eightarg_imports, &eightarg_sites);
+    // The nine-argument sampler calls GetKeyState through a pointer slot that
+    // a protector may emulate; the slot must behave as GetKeyState live.
+    siglus_ninearg::Sites ninearg_sites;
+    const bool ninearg_matched =
+        siglus_ninearg::Resolve(image, &ninearg_sites) &&
+        VerifyProtectorKeyStateSlot(
+            module, ninearg_sites.key_state_slot,
+            reinterpret_cast<decltype(&GetKeyState)>(key_state));
     // Complete families are mutually exclusive; no digest or scan order
     // may choose between ambiguous contracts.
     if (!fushi_voice_hook::HasUniqueSiglusLookupFamily(
-            luna_matched, native_matched, legacy_matched, eightarg_matched)) return false;
+            luna_matched, native_matched, legacy_matched, eightarg_matched,
+            ninearg_matched)) return false;
+    if (ninearg_matched) {
+      siglus_ninearg_live::Snapshot snapshot;
+      if (!siglus_ninearg_live::ReadSnapshot(reinterpret_cast<uintptr_t>(module),
+              ninearg_sites, ReadSiglusLegacyMemory, nullptr, &snapshot)) return false;
+      *profile = {};
+      profile->pe_machine = IMAGE_FILE_MACHINE_I386;
+      profile->pointer_bits = 32;
+      profile->text_feed = fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane;
+      profile->glyph_abi = fushi_voice_hook::SiglusGlyphLayoutAbi::kStackNineArguments;
+      profile->glyph_layout_rva = ninearg_sites.glyph_entry;
+      profile->dialogue_glyph_return_rva = ninearg_sites.dialogue_glyph_return;
+      profile->exact_text_rva = ninearg_sites.text_entry;
+      profile->exact_text_return_rva = ninearg_sites.message_text_return;
+      profile->input_message_rva = ninearg_sites.input_message;
+      profile->main_input_message_return_rva = ninearg_sites.main_message_return;
+      profile->get_key_state_return_rva = ninearg_sites.key_state_return;
+      profile->get_key_state_slot_rva = ninearg_sites.key_state_slot;
+      profile->viewport_config_rva = ninearg_sites.config_slot;
+      profile->viewport_width = snapshot.design_width;
+      profile->viewport_height = snapshot.design_height;
+      g_siglus_ninearg_sites = ninearg_sites;
+      return true;
+    }
     if (eightarg_matched) {
       siglus_eightarg_live::Snapshot snapshot;
       if (!siglus_eightarg::ValidateLiveEntries(image, eightarg_sites) ||
@@ -685,6 +720,11 @@ bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
     return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
         fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
   }
+  if (profile != nullptr && IsNineArgSiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_ninearg::kGlyphEntry.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
   if (profile != nullptr && IsLegacySiglusLookup(*profile)) {
     const auto pattern = fushi_voice_hook::siglus_legacy_glyph::kGlyphEntry.pattern();
     return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
@@ -703,6 +743,11 @@ bool MatchesSiglusInputMessageEntry(const uint8_t *target) {
   const auto *profile = ActiveSiglusLookupProfile();
   if (profile != nullptr && IsEightArgSiglusLookup(*profile)) {
     const auto pattern = fushi_voice_hook::siglus_eightarg_input_viewport::kMessage.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
+  if (profile != nullptr && IsNineArgSiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_ninearg::kInputMessage.pattern();
     return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
         fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
   }
@@ -992,6 +1037,9 @@ bool InstallSiglusLookupSensor() {
   // The occurrence observer must own Scenario before glyph/input capture.
   if (eightarg && !IsSiglusMessageTextInstalled()) return false;
   const bool legacy = IsLegacySiglusLookup(*profile);
+  const bool ninearg = IsNineArgSiglusLookup(*profile);
+  // Both stack-ABI families share the fastcall (lparam, wparam, message) entry.
+  const bool legacy_message = legacy || ninearg;
   if (profile->viewport_config_rva != 0) {
     int32_t width = 0, height = 0;
     if (!ReadSiglusDesignSize(module, profile->viewport_config_rva,
@@ -1010,9 +1058,11 @@ bool InstallSiglusLookupSensor() {
       g_siglus_sampled_input_game_window.load(std::memory_order_acquire);
   const bool glyph_installed = eightarg ? g_orig_SiglusEightArgGlyphLayout != nullptr
                                       : legacy ? g_orig_SiglusLegacyGlyphLayout != nullptr
+                                      : ninearg ? g_orig_SiglusNineArgGlyphLayout != nullptr
                                       : g_orig_SiglusGlyphLayout != nullptr;
-  const bool message_installed = legacy ? g_orig_SiglusLegacyInputMessage != nullptr
-                                        : g_orig_SiglusInputMessage != nullptr;
+  const bool message_installed = legacy_message
+                                     ? g_orig_SiglusLegacyInputMessage != nullptr
+                                     : g_orig_SiglusInputMessage != nullptr;
   if (glyph_installed &&
       g_orig_SiglusGetKeyState != nullptr &&
       IsSiglusProtectorKeyStateSlotRedirected(module, *profile) &&
@@ -1034,9 +1084,11 @@ bool InstallSiglusLookupSensor() {
                    profile->glyph_layout_rva;
     void* callback = eightarg ? reinterpret_cast<void*>(&Detour_SiglusEightArgGlyphLayout)
                             : legacy ? reinterpret_cast<void*>(&Detour_SiglusLegacyGlyphLayout)
+                            : ninearg ? reinterpret_cast<void*>(&Detour_SiglusNineArgGlyphLayout)
                             : reinterpret_cast<void*>(&Detour_SiglusGlyphLayout);
     void** original = eightarg ? reinterpret_cast<void**>(&g_orig_SiglusEightArgGlyphLayout)
                               : legacy ? reinterpret_cast<void**>(&g_orig_SiglusLegacyGlyphLayout)
+                              : ninearg ? reinterpret_cast<void**>(&g_orig_SiglusNineArgGlyphLayout)
                               : reinterpret_cast<void**>(&g_orig_SiglusGlyphLayout);
     if (!MatchesSiglusGlyphLayoutEntry(target) ||
         !HookFn(target, callback, original) || *original == nullptr) {
@@ -1089,10 +1141,12 @@ bool InstallSiglusLookupSensor() {
   if (!message_installed) {
     auto *target = reinterpret_cast<uint8_t *>(module) +
                    profile->input_message_rva;
-    void* callback = legacy ? reinterpret_cast<void*>(&Detour_SiglusLegacyInputMessage)
-                            : reinterpret_cast<void*>(&Detour_SiglusInputMessage);
-    void** original = legacy ? reinterpret_cast<void**>(&g_orig_SiglusLegacyInputMessage)
-                              : reinterpret_cast<void**>(&g_orig_SiglusInputMessage);
+    void* callback = legacy_message
+                         ? reinterpret_cast<void*>(&Detour_SiglusLegacyInputMessage)
+                         : reinterpret_cast<void*>(&Detour_SiglusInputMessage);
+    void** original = legacy_message
+                          ? reinterpret_cast<void**>(&g_orig_SiglusLegacyInputMessage)
+                          : reinterpret_cast<void**>(&g_orig_SiglusInputMessage);
     if (!MatchesSiglusInputMessageEntry(target) ||
         !HookFn(target, callback, original) || *original == nullptr) {
       RevokeSiglusSampledInputShieldReady(

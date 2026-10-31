@@ -452,6 +452,32 @@ bool TryHookSiglusMessageText() {
     g_siglus_message_targets[1] = reinterpret_cast<void*>(base + sites.scenario_entry_rva);
     return InstallSiglusMessageHookGroup();
   }
+  if (IsNineArgSiglusLookup(*lane)) {
+    // The family resolver already proved the wrapper, its legacy text call
+    // and the shared stack layout. Install only over original prologues.
+    const auto& sites = g_siglus_ninearg_sites;
+    bool original = false;
+    __try {
+      original = sites.message_entry != 0 && sites.text_entry != 0 &&
+          reinterpret_cast<const uint8_t*>(base)[sites.message_entry] == 0x6a &&
+          reinterpret_cast<const uint8_t*>(base)[sites.text_entry] == 0x6a;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      original = false;
+    }
+    if (!original) {
+      g_siglus_message_install_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    g_siglus_message_legacy = true;
+    g_siglus_legacy_message_layout = {
+        0u, static_cast<uint32_t>(base + sites.message_text_return),
+        kSiglusMessageMaxTextUnits, false};
+    g_siglus_message_scenario_rva = sites.text_entry;
+    g_siglus_message_profile.scenario_return_rva = sites.message_text_return;
+    g_siglus_message_targets[0] = reinterpret_cast<void*>(base + sites.message_entry);
+    g_siglus_message_targets[1] = reinterpret_cast<void*>(base + sites.text_entry);
+    return InstallSiglusMessageHookGroup();
+  }
   if (lane->glyph_abi ==
       fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments) {
     if (!fushi_voice_hook::ResolveLiveSiglusLegacyMessage(

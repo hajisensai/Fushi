@@ -13,5 +13,8 @@ using SiglusLegacyGlyphLayoutFn = uint8_t(__stdcall *)(void*, uintptr_t,
     uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
     uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
     uintptr_t, uintptr_t);
+using SiglusNineArgGlyphLayoutFn = uint8_t(__stdcall *)(void*, uintptr_t,
+    uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+    uintptr_t);
 }  // namespace fushi_voice_hook
 #endif

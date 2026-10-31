@@ -53,6 +53,36 @@ void CaptureSiglusLookupGlyph(void* self, uint8_t result,
   }
 }
 
+// The nine-argument record holds only a line-local offset, so its position is
+// decoded with the walker's origin. Only the admitted dialogue walker joins
+// the lookup line, and only for a glyph of the current owner walk.
+void CaptureSiglusNineArgLookupGlyph(void* self, uint8_t result,
+                                     uintptr_t return_address,
+                                     int32_t origin_x, int32_t origin_y) {
+  if (self == nullptr || result == 0 ||
+      !g_siglus_lookup_capture_enabled.load(std::memory_order_acquire)) return;
+  const uintptr_t module = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+  const auto* profile = ActiveSiglusLookupProfile();
+  if (profile == nullptr ||
+      profile->glyph_abi != fushi_voice_hook::SiglusGlyphLayoutAbi::kStackNineArguments ||
+      return_address < module ||
+      return_address - module != profile->dialogue_glyph_return_rva ||
+      !IsSiglusLookupGlyphOwned(self)) return;
+  constexpr size_t size = fushi_voice_hook::SiglusGlyphRecordBytes(
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kStackNineArguments);
+  __try {
+    uint8_t bytes[size] = {};
+    memcpy(bytes, self, size);
+    fushi_voice_hook::SiglusGlyphRecord glyph;
+    if (fushi_voice_hook::DecodeSiglusNineArgGlyphRecord(
+            bytes, size, origin_x, origin_y, profile->viewport_width,
+            profile->viewport_height, &glyph))
+      PublishSiglusLookupGlyphEvent(glyph.code_unit, glyph.x, glyph.y,
+                                    glyph.extent, kSiglusLookupGlyphEventBody);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
 uint8_t __fastcall Detour_SiglusGlyphLayout(void* self, void*, uintptr_t arg1,
     uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5,
     uintptr_t arg6, uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
@@ -96,5 +126,21 @@ uint8_t __stdcall Detour_SiglusLegacyGlyphLayout(void* self, uintptr_t arg1,
       arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15);
   CaptureSiglusLookupGlyph(self, result, caller,
       fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments);
+  return result;
+}
+
+// Nine stack DWORDs including self, callee cleanup (RET 0x24), AL result.
+// Arguments 8 and 9 (a7/a8 here) are the walker's origin for this glyph.
+uint8_t __stdcall Detour_SiglusNineArgGlyphLayout(void* self, uintptr_t arg1,
+    uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5,
+    uintptr_t arg6, uintptr_t arg7, uintptr_t arg8) {
+  const uintptr_t caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
+  const auto original = g_orig_SiglusNineArgGlyphLayout;
+  if (original == nullptr) return 0;
+  const uint8_t result = original(self, arg1, arg2, arg3, arg4, arg5, arg6,
+                                  arg7, arg8);
+  CaptureSiglusNineArgLookupGlyph(self, result, caller,
+                                  static_cast<int32_t>(arg7),
+                                  static_cast<int32_t>(arg8));
   return result;
 }
